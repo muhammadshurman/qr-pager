@@ -94,6 +94,8 @@ Break any of these and the task is not done.
 ### Edge & ops
 - The QR landing page is static and CloudFront-cached. A scan burst must never reach origin.
 - Rate limits per IP **and** per tenant. Load shedding drops nice-to-haves (live timer, analytics) before alerts.
+- Load shedding is **implemented, not just stated**: a fast 503 when the DB connection pool is saturated, and a 503 under memory or CPU pressure — while **health and readiness endpoints keep answering**. A health check that sheds with everything else makes the load balancer kill a task that is merely busy, and the pressure moves to its neighbours. That is a cascade, not shedding.
+- Every dependency has a declared **fail-open or fail-closed** posture, chosen deliberately and tested by taking the dependency down. "It stayed up in testing" is not a posture.
 - No secrets in logs. Redaction tested against captured log output. Stack traces never carry SQL or bound parameters.
 - Graceful shutdown: stop reporting live, drain in-flight requests, close DB connections, exit 0.
 
@@ -119,7 +121,7 @@ Break any of these and the task is not done.
 
 **After coding — evidence shown in the chat:**
 - `composer pint`, `composer stan`, `php artisan test` all green against **real** Postgres + Redis. No DB mocks for DB behaviour.
-- Fresh DB: migrations apply from empty; a second apply is a no-op; **a rollback of this task's migrations runs clean**.
+- **Fresh clone, not just a fresh DB:** the gates pass from a clean checkout of the branch — nothing that only exists on the builder's machine. Migrations apply from empty; a second apply is a no-op; **a rollback of this task's migrations runs clean**. (Task 0's empty `tests/Unit/` directory passed locally and broke CI. That is the failure mode this clause exists for.)
 - **Unit coverage ≥ 90%** on code this task added (Blueprint §7 QA). Report the number.
 - Every bug found gets a regression test that fails without the fix.
 - All previous tasks' tests still pass.
