@@ -2,7 +2,8 @@
 
 > Living decision log + the **only** task table. Precedence and invariants live in `PROJECT_INSTRUCTIONS.md`; this file never duplicates them.
 
-**Version:** 2.0 · **Status:** pre-Task-0, no repo yet · **Backend:** Laravel 13 (O1) · **Realtime:** Web Push + polling (O2)
+**Version:** 2.1 · **Status:** `task-0` green and tagged · **Backend:** Laravel 13 (O1) · **Realtime:** Web Push + polling (O2)
+**Repo:** `github.com/muhammadshurman/qr-pager` (private) · `main` protected, PR + 2 required checks
 
 ---
 
@@ -78,6 +79,27 @@ Platform dashboard · Restaurants list · **Create-restaurant wizard** (identity
 
 ### 4.4 Public tenant landing page (Task 11)
 Hero · How the pager works · Menu highlights · Gallery · Hours + location + map · Contact / social · Footer · SEO + OG + structured data. All blocks optional and reorderable, all styled from tenant tokens.
+
+---
+
+## 4a. Gate evidence
+
+### Task 0 — complete, tagged `task-0` (2026-10-25)
+
+| Gate clause | Evidence |
+|---|---|
+| `php artisan serve` responds | `curl` → `200` |
+| `php artisan test` green against the **real** composed Postgres | 4 tests / 12 assertions. `RealDatabaseTest` asserts driver `pgsql`, database `qrpager_test`, `PostgreSQL 16`, and **fails** when forced to SQLite (verified) |
+| `gitleaks detect` clean | clean locally and in CI over full history (`fetch-depth: 0`) |
+| CI green on first push | run #2, both jobs green, 37s |
+| tag `task-0` | pushed |
+
+Built: Laravel 13.38.0 in `apps/api`, Docker Compose (Postgres 16.14 + Redis 7, bound to `127.0.0.1` only, `log_statement=all` for the Task 4 proof), Pint + PHPStan level 8 (larastan) + Pest 5, gitleaks pre-commit + conventional-commit hook (both proven to block), `CLAUDE.md`, `.claude/agents/{qa,security}-reviewer.md`, `.claude/commands/task.md`, GitHub Actions.
+
+**Bugs found and fixed in Task 0 — do not repeat:**
+1. `.gitignore` had `/build/`, which anchors to the repo root, so `apps/api/build/` (the PHPStan `tmpDir`) was committed — 678 cache files. Fixed to `build/`. Any new tool cache must be verified with `git status` after running the tool, not assumed ignored.
+2. Deleting the last file in `tests/Unit/` left an empty directory that git does not track, so `phpunit.xml`'s `Unit` testsuite broke on a fresh CI clone while passing locally. Fixed with a real unit test asserting PHP 8.4 and the required extensions — never a `.gitkeep`.
+3. `apps/api/CLAUDE.md` shipped by the Laravel skeleton (laravel-boost) instructed agents to install PHP 8.5, contradicting §1. Deleted; one `CLAUDE.md` at the repo root only.
 
 ---
 
