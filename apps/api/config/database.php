@@ -15,7 +15,12 @@ $pgsql = static fn (string $username, string $password): array => [
     'prefix' => '',
     'prefix_indexes' => true,
     'search_path' => 'public',
-    'sslmode' => env('DB_SSLMODE', 'prefer'),
+    // Fails closed. 'prefer' silently downgrades to an unencrypted session when the
+    // server does not offer TLS, which would put the role passwords and every
+    // tenant row on the wire in the clear with nothing in any log (F7, security
+    // review of task-1). Local Postgres has no TLS, so .env.example and CI set
+    // DB_SSLMODE=disable explicitly -- an opt-out that is visible in a diff.
+    'sslmode' => env('DB_SSLMODE', 'require'),
 ];
 
 return [

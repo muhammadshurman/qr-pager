@@ -51,6 +51,8 @@ jobs:
       DB_ROOT_USERNAME: qrpager_root
       DB_ROOT_PASSWORD: local_dev_only
       DB_MAINTENANCE_DATABASE: postgres
+      # The service container has no TLS; config/database.php defaults to require.
+      DB_SSLMODE: disable
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
 

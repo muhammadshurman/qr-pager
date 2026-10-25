@@ -36,3 +36,39 @@ it('holds only a handful of backends open at any point in the suite', function (
     // connections of previous tests are gone.
     expect($backends)->toBeLessThan(10);
 });
+
+it('fails closed on transport encryption rather than silently downgrading', function (): void {
+    // F7 (security review of task-1): 'prefer' accepts an unencrypted session without
+    // a word in any log, which would put the role passwords and every tenant row on
+    // the wire in the clear. Local and CI opt out explicitly, so what matters is what
+    // a deployment that sets nothing inherits.
+    expect(config('database.connections.pgsql.sslmode'))->toBe('disable');
+
+    $saved = [$_ENV['DB_SSLMODE'] ?? null, $_SERVER['DB_SSLMODE'] ?? null, getenv('DB_SSLMODE')];
+
+    try {
+        unset($_ENV['DB_SSLMODE'], $_SERVER['DB_SSLMODE']);
+        putenv('DB_SSLMODE');
+
+        $fresh = require base_path('config/database.php');
+
+        foreach (['pgsql', 'pgsql_owner', 'pgsql_worker', 'pgsql_root', 'pgsql_bootstrap'] as $name) {
+            expect($fresh['connections'][$name]['sslmode'])
+                ->toBe('require', "{$name} would downgrade when DB_SSLMODE is unset");
+        }
+    } finally {
+        [$env, $server, $raw] = $saved;
+
+        if ($env !== null) {
+            $_ENV['DB_SSLMODE'] = $env;
+        }
+
+        if ($server !== null) {
+            $_SERVER['DB_SSLMODE'] = $server;
+        }
+
+        if (is_string($raw)) {
+            putenv('DB_SSLMODE='.$raw);
+        }
+    }
+});

@@ -74,6 +74,17 @@ it('keeps the global allowlist honest: nothing on it carries a tenant_id', funct
     expect(array_values(array_diff(GLOBAL_TABLES, Schema::allTables())))->toBe([]);
 });
 
+it('pins the global allowlist as an exact set, not just a consistent one', function (): void {
+    // F9 (security review of task-1): tenantScopedTables() classifies a table as
+    // tenant-scoped by looking for a column NAMED tenant_id, and the test above only
+    // checks the allowlist against that same rule. A future tenant table scoped by a
+    // differently named column -- Task 7's landing pages, media and custom domains
+    // are the realistic candidates -- would be classified global, would need one line
+    // added here, and neither check could tell. Pinning the set exactly means a new
+    // arrival cannot join the allowlist without showing up in a diff.
+    expect(GLOBAL_TABLES)->toBe(['failed_jobs', 'migrations', 'password_reset_tokens', 'users']);
+});
+
 it('gives every tenant table both an isolation policy and an owner bypass policy', function (): void {
     foreach (Schema::tenantScopedTables() as $table) {
         $names = array_map(static fn (array $p): string => $p['polname'], Schema::policies($table));
