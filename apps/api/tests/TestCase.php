@@ -91,7 +91,11 @@ abstract class TestCase extends BaseTestCase
         withTenant($id, fn () => DB::connection('pgsql_owner')->table('tenants')->insert([
             'id' => $id,
             'name' => 'Tenant '.substr($id, 0, 8),
-            'slug' => $slug ?? 'tenant-'.substr(str_replace('-', '', $id), 0, 16),
+            // The whole id, not a prefix: Laravel's uuid7 keeps its first 25 hex
+            // digits stable inside one millisecond, so a prefix-based slug collided
+            // with tenants_slug_unique whenever two were made back to back. Found by
+            // the composition matrix, which makes two tenants in most of its tests.
+            'slug' => $slug ?? 'tenant-'.str_replace('-', '', $id),
         ]), 'pgsql_owner');
 
         return $id;

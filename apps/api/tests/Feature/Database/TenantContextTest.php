@@ -218,22 +218,50 @@ it('never runs an unscoped query inside a bypass block', function (): void {
     ))->not->toBe('Pacific/Auckland');
 });
 
-it('returns the callback result when the callback handled a database error itself', function (): void {
-    // The callback swallows a QueryException, so it returns normally while the Postgres
-    // transaction is already aborted. The GUC restore then raises 25P02 -- which must
-    // not surface, because it would discard this result and put the set_config
-    // statement and its bound tenant id into the message (§4).
+it('never reports success when the work was rolled back', function (): void {
+    // H-B, fix-agnostic: this asserts the property, not the mechanism. The callback
+    // catches a QueryException and returns -- the shape Task 3's idempotency pattern
+    // will use (catch 23505, treat as already-done) -- which leaves the Postgres
+    // transaction aborted. Swallowing the clear let this return normally while the
+    // write was silently rolled back. Either the write survives or something is
+    // raised; "returned fine and the write is gone" must never happen.
     $tenant = $this->makeTenant();
+    $reference = 'DURABILITY-'.Str::random(6);
 
-    $result = withTenant($tenant, function (): string {
-        try {
-            DB::select('select 1 / 0');
-        } catch (QueryException) {
-            // handled here on purpose
-        }
+    $raised = null;
+    $returned = null;
 
-        return 'callback-finished';
-    });
+    try {
+        $returned = withTenant($tenant, function () use ($tenant, $reference): string {
+            DB::table('outbox')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenant,
+                'type' => 'pager.ready',
+                'dedupe_key' => $reference,
+            ]);
 
-    expect($result)->toBe('callback-finished');
+            try {
+                DB::select('select 1 / 0');
+            } catch (QueryException) {
+                // handled inside the callback, on purpose
+            }
+
+            return 'callback-finished';
+        });
+    } catch (TenantContextException $e) {
+        $raised = $e;
+    }
+
+    $persisted = withTenant($tenant, fn () => DB::table('outbox')->where('dedupe_key', $reference)->exists());
+
+    expect($persisted || $raised !== null)->toBeTrue(
+        'withTenant returned '.var_export($returned, true).' and the write is gone',
+    );
+
+    // Whatever is raised must carry no statement text and no bindings (§4).
+    if ($raised !== null) {
+        expect($raised->getMessage())->not->toContain('set_config')
+            ->and($raised->getMessage())->not->toContain('select ')
+            ->and($raised->getPrevious())->toBeNull();
+    }
 });

@@ -44,6 +44,37 @@ final class TenantContextException extends RuntimeException
         );
     }
 
+    /**
+     * The message deliberately names no tenant id: the point of the refusal is that
+     * the caller's tenant was about to mean nothing.
+     */
+    public static function cannotBypassInsideTenantScope(string $connection): self
+    {
+        return new self(
+            'A tenant bypass cannot be opened while a tenant context is open on connection '
+            ."[{$connection}]: the scope's caller believes its queries are narrowed, and a "
+            .'bypass would stop them being. Close the tenant scope first -- PLAN.md §2.10 '
+            .'takes the tenant list in its own bypass and loops outside it.'
+        );
+    }
+
+    /**
+     * A driver error on one of this class's own statements. The statement and its
+     * bindings are withheld and the original is deliberately NOT chained: Laravel
+     * interpolates bindings into QueryException::getMessage(), and a chained previous
+     * would put the statement back into any rendered trace
+     * (PROJECT_INSTRUCTIONS.md §4 › Edge & ops). The SQLSTATE is what survives.
+     */
+    public static function statementFailed(string $operation, string $sqlstate): self
+    {
+        return new self(
+            "Tenant context could not be {$operation}"
+            .($sqlstate === '' || $sqlstate === '0' ? '' : " (SQLSTATE {$sqlstate})")
+            .'. The statement and its bindings are withheld deliberately: an escaping '
+            .'driver message would carry both.'
+        );
+    }
+
     public static function bypassRequiresOwner(string $role, string $owner): self
     {
         return new self(

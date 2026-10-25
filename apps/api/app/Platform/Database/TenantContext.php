@@ -17,16 +17,36 @@ use Throwable;
  * The GUC is always set with set_config(name, value, true) -- transaction-local,
  * third argument always true (C2). A session-scoped tenant setting is a hard
  * failure, so there is deliberately no code path here that can produce one.
+ *
+ * ONE SOURCE OF TRUTH: app.tenant_id on the target connection. This class keeps no
+ * mirror of it and current() reads it. Four fix rounds each added one more
+ * order-dependent guard to run() and the next composition walked around it; H-A
+ * existed because withoutTenantScope() cleared the GUC in Postgres and left a PHP
+ * field set, and the re-entry short-circuit trusted the stale field. Removing the
+ * mirror removes that class of bug rather than guarding it.
+ *
+ * $openScopes is NOT a mirror of the GUC. It records which connections this object
+ * opened a scope on, is read only to refuse cross-connection reuse, and cannot
+ * affect which tenant is in force -- a stale entry can only make this class
+ * stricter, never looser.
+ *
+ * Every statement here goes through setGuc() or readContext(), which convert a
+ * driver error into a TenantContextException carrying no statement text and no
+ * bindings (§4 › Edge & ops).
  */
 class TenantContext
 {
-    private ?string $tenantId = null;
+    /** @var array<string, true> */
+    private array $openScopes = [];
 
-    private ?string $connectionName = null;
-
-    public function current(): ?string
+    /** What app.tenant_id holds on $connection right now; null when nothing is in force. */
+    public function current(?string $connection = null): ?string
     {
-        return $this->tenantId;
+        $connection ??= DatabaseRoles::connection('app');
+
+        $tenant = $this->readContext(DB::connection($connection))['tenant'];
+
+        return $tenant === '' ? null : $tenant;
     }
 
     /**
@@ -44,110 +64,61 @@ class TenantContext
         }
 
         $connection ??= DatabaseRoles::connection('app');
+        $db = DB::connection($connection);
 
-        if ($this->tenantId !== null) {
-            // Re-entry with the same tenant on the same connection is the nested-service
-            // case and is fine -- the context is already set on this transaction.
-            if ($this->tenantId !== $tenantId) {
-                throw TenantContextException::alreadyInAnotherTenant($this->tenantId, $tenantId);
-            }
+        $active = $this->readContext($db);
 
-            if ($this->connectionName !== $connection) {
-                throw TenantContextException::alreadyOnAnotherConnection((string) $this->connectionName, $connection);
+        // FIRST, above every short-circuit. Measured on 16.14: owner_bypass_* and
+        // tenant_isolation_* are both PERMISSIVE and FOR ALL, so Postgres ORs them --
+        // while a bypass is live the tenant predicate narrows nothing and this block
+        // would run completely unscoped, for reads and for writes. ANY non-empty value
+        // refuses, so no configuration value can disarm this check.
+        if ($active['bypass'] !== '') {
+            throw TenantContextException::cannotScopeInsideBypass($connection);
+        }
+
+        // Re-entry is decided by what is in force on this connection, never by PHP
+        // state. A service calling another service with the same tenant is fine.
+        if ($active['tenant'] !== '') {
+            if ($active['tenant'] !== $tenantId) {
+                throw TenantContextException::alreadyInAnotherTenant($active['tenant'], $tenantId);
             }
 
             return $callback();
         }
 
-        $db = DB::connection($connection);
-
-        // Every owner_bypass_* policy is PERMISSIVE, so it is OR'd with the matching
-        // tenant_isolation_* policy: while a bypass is active the tenant predicate
-        // narrows nothing and this block would run completely unscoped, for reads and
-        // for writes alike. Refuse rather than clear it -- silently re-scoping would
-        // hide the caller's mistake, and the §2.10 pattern deliberately closes the
-        // bypass before the per-tenant loop starts. H-1, scoped security review of the
-        // task-1 fixes.
-        if ($this->readGuc($db, DatabaseRoles::guc('bypass')) === DatabaseRoles::bypassValue()) {
-            throw TenantContextException::cannotScopeInsideBypass($connection);
+        foreach (array_keys($this->openScopes) as $open) {
+            if ($open !== $connection) {
+                throw TenantContextException::alreadyOnAnotherConnection($open, $connection);
+            }
         }
 
-        return $db->transaction(function () use ($db, $tenantId, $connection, $callback): mixed {
-            $guc = DatabaseRoles::guc('tenant');
+        $guc = DatabaseRoles::guc('tenant');
 
-            // Laravel opens a SAVEPOINT rather than a BEGIN when this runs inside a
-            // transaction it did not start, and set_config(..., true) binds to the
-            // OUTERMOST transaction, never to the savepoint. Without putting the old
-            // value back, the context would outlive this block and the next query on
-            // the connection would read the last tenant used. Migrations are the
-            // ordinary case, not an exotic one: PostgresGrammar reports
-            // supportsSchemaTransactions, so every migration body already runs at
-            // transaction level 1 (PLAN.md §2.2).
-            $previous = $this->readGuc($db, $guc);
-
-            $db->select('select set_config(?, ?, true)', [$guc, $tenantId]);
-
-            $this->tenantId = $tenantId;
-            $this->connectionName = $connection;
-
-            $completed = false;
+        return $db->transaction(function () use ($db, $guc, $tenantId, $connection, $callback): mixed {
+            $this->setGuc($db, $guc, $tenantId);
+            $this->openScopes[$connection] = true;
 
             try {
                 $result = $callback();
-                $completed = true;
+
+                // Success path only. A callback that threw needs no clearing: Laravel
+                // rolls back -- the transaction, or to the savepoint it opened for a
+                // nested block -- and measured on 16.14 a full ROLLBACK leaves the
+                // setting empty while ROLLBACK TO SAVEPOINT restores the value held
+                // when the savepoint was taken.
+                //
+                // This clear is LOUD. Swallowing it let an aborted transaction commit as
+                // a silent rollback while this method returned the callback's value:
+                // measured, a write made before a caught QueryException was gone
+                // afterwards with nothing raised anywhere.
+                $this->setGuc($db, $guc, '');
 
                 return $result;
             } finally {
-                // Only the success path restores, because a throwing callback needs no
-                // restore: Laravel rolls back -- the transaction, or to the savepoint it
-                // opened for a nested block -- and a rollback reverts set_config on its
-                // own, measured on 16.14.
-                //
-                // An earlier version of this comment gave the wrong reason, that a
-                // callback which threw leaves the transaction aborted. It does not: a
-                // plain PHP exception leaves the Postgres transaction live and usable.
-                // 25P02 is real only where the callback handled a database error itself
-                // and still returned, which is the case restoreGuc() absorbs.
-                if ($completed) {
-                    $this->restoreGuc($db, $guc, $previous);
-                }
-
-                $this->tenantId = null;
-                $this->connectionName = null;
+                unset($this->openScopes[$connection]);
             }
         });
-    }
-
-    /**
-     * What a GUC holds right now. "Never set" and "set to empty" both read as '',
-     * which is exactly the value every policy treats as no context (PLAN.md §2.2).
-     */
-    private function readGuc(ConnectionInterface $db, string $name): string
-    {
-        $row = $db->selectOne('select coalesce(current_setting(?, true), ?) as value', [$name, '']);
-
-        return is_object($row) && is_string($row->value ?? null) ? $row->value : '';
-    }
-
-    /**
-     * Put a GUC back without ever throwing.
-     *
-     * A callback that CATCHES a QueryException returns normally while the Postgres
-     * transaction is already aborted, so this statement would raise 25P02 -- and
-     * letting that propagate would discard the callback's result and put the
-     * statement plus its bound tenant id into the exception message, breaking
-     * "stack traces never carry SQL or bound parameters" (PROJECT_INSTRUCTIONS.md
-     * §4). The transaction is doomed either way and its rollback reverts the
-     * setting, so a restore that fails is nothing to report. M-3, scoped security
-     * review of the task-1 fixes.
-     */
-    private function restoreGuc(ConnectionInterface $db, string $name, string $value): void
-    {
-        try {
-            $db->select('select set_config(?, ?, true)', [$name, $value]);
-        } catch (Throwable) {
-            // Deliberate. The rollback is the control here, not this statement.
-        }
     }
 
     /**
@@ -171,58 +142,111 @@ class TenantContext
         $connection ??= DatabaseRoles::connection('owner');
         $db = DB::connection($connection);
 
-        $role = (string) $db->selectOne('select current_user as role')->role;
         $owner = DatabaseRoles::name('owner');
+        $role = $this->currentRole($db);
 
         if ($role !== $owner) {
             throw TenantContextException::bypassRequiresOwner($role, $owner);
         }
 
-        return $db->transaction(function () use ($db, $reason, $callback): mixed {
-            $bypass = DatabaseRoles::guc('bypass');
-            $tenant = DatabaseRoles::guc('tenant');
+        // A bypass may not open inside a tenant scope: the scope's caller believes its
+        // queries are narrowed, and they would stop being. Both halves fail closed --
+        // what is in force on this connection, and whether this object holds a scope
+        // anywhere.
+        $active = $this->readContext($db);
 
-            // Same savepoint trap as run(), and worse here: a leaked app.bypass_tenant
-            // is OR'd into every owner_bypass_* policy, so it would hand the rest of
-            // the outer transaction an unaudited cross-tenant read and write.
-            $previousBypass = $this->readGuc($db, $bypass);
-            $previousTenant = $this->readGuc($db, $tenant);
+        if ($active['tenant'] !== '') {
+            throw TenantContextException::cannotBypassInsideTenantScope($connection);
+        }
 
-            $db->select('select set_config(?, ?, true)', [$bypass, DatabaseRoles::bypassValue()]);
+        if ($this->openScopes !== []) {
+            throw TenantContextException::cannotBypassInsideTenantScope((string) array_key_first($this->openScopes));
+        }
 
-            // A bypass block must not inherit a tenant filter from whatever opened the
-            // transaction. The two policies are permissive, so a stale app.tenant_id
-            // cannot narrow what the block sees -- but leaving it set makes the block's
-            // scope ambiguous to read and to debug.
-            $db->select('select set_config(?, ?, true)', [$tenant, '']);
+        $bypass = DatabaseRoles::guc('bypass');
+        $previousBypass = $active['bypass'];
+
+        return $db->transaction(function () use ($db, $bypass, $previousBypass, $reason, $callback): mixed {
+            $this->setGuc($db, $bypass, DatabaseRoles::bypassValue());
 
             // Written first and inside the same transaction, so a bypass that commits
-            // always carries its own audit row. A bypass that *throws* rolls the row
-            // back with the work and leaves no trace: recorded as F12 in PLAN.md §5,
-            // owned by Task 2, which owns logging.
+            // always carries its own audit row. A bypass that throws rolls that row
+            // back with the work and leaves no trace: R-005, owned by Task 2.
+            $this->insertBypassAudit($db, $reason);
+
+            $result = $callback();
+
+            // Only the bypass is restored, and no ordering hazard is left to get wrong:
+            // app.tenant_id is '' on entry because this helper refuses to open inside a
+            // tenant scope, and it stays '' because run() refuses to open inside a
+            // bypass. The "narrowed tenant with the bypass still open" state is
+            // therefore unreachable rather than merely ordered against.
+            $this->setGuc($db, $bypass, $previousBypass);
+
+            return $result;
+        });
+    }
+
+    /**
+     * Both GUCs in one round trip, so opening a scope costs one read and one write.
+     *
+     * "Never set" and "set to empty" both read as '', which is exactly the value
+     * every policy treats as no context: each tenant_isolation_* policy compares
+     * against NULLIF(current_setting('app.tenant_id', true), '').
+     *
+     * @return array{tenant: string, bypass: string}
+     */
+    private function readContext(ConnectionInterface $db): array
+    {
+        try {
+            $row = $db->selectOne(
+                'select coalesce(current_setting(?, true), ?) as tenant,
+                        coalesce(current_setting(?, true), ?) as bypass',
+                [DatabaseRoles::guc('tenant'), '', DatabaseRoles::guc('bypass'), ''],
+            );
+        } catch (Throwable $e) {
+            throw TenantContextException::statementFailed('read', (string) $e->getCode());
+        }
+
+        return [
+            'tenant' => is_object($row) && is_string($row->tenant ?? null) ? $row->tenant : '',
+            'bypass' => is_object($row) && is_string($row->bypass ?? null) ? $row->bypass : '',
+        ];
+    }
+
+    private function setGuc(ConnectionInterface $db, string $name, string $value): void
+    {
+        try {
+            $db->select('select set_config(?, ?, true)', [$name, $value]);
+        } catch (Throwable $e) {
+            throw TenantContextException::statementFailed(
+                $value === '' ? 'cleared' : 'set', (string) $e->getCode(),
+            );
+        }
+    }
+
+    private function currentRole(ConnectionInterface $db): string
+    {
+        try {
+            $row = $db->selectOne('select current_user as role');
+        } catch (Throwable $e) {
+            throw TenantContextException::statementFailed('read', (string) $e->getCode());
+        }
+
+        return is_object($row) && is_string($row->role ?? null) ? $row->role : '';
+    }
+
+    private function insertBypassAudit(ConnectionInterface $db, string $reason): void
+    {
+        try {
             $db->table('audit_log')->insert([
                 'tenant_id' => null,
                 'actor_type' => AuditActorType::System->value,
                 'action' => 'tenancy.bypass',
                 'context' => json_encode(['reason' => $reason], JSON_THROW_ON_ERROR),
             ]);
-
-            $completed = false;
-
-            try {
-                $result = $callback();
-                $completed = true;
-
-                return $result;
-            } finally {
-                // Success path only, for the reason in run(). Order matters on the way
-                // out: the bypass goes last, so nothing between these two statements
-                // sees a narrowed tenant with the bypass still open.
-                if ($completed) {
-                    $this->restoreGuc($db, $tenant, $previousTenant);
-                    $this->restoreGuc($db, $bypass, $previousBypass);
-                }
-            }
-        });
+        } catch (Throwable $e) {
+            throw TenantContextException::statementFailed('audited', (string) $e->getCode());
+        }
     }
 }
