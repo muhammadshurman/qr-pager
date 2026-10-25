@@ -80,10 +80,13 @@ Break any of these and the task is not done.
 - **No `RETURNING`** on the worker expiry UPDATE: RLS re-checks the NEW row against SELECT policies, and expired rows are deliberately not selectable by the worker. Pattern: `SELECT id` (policy-limited) → `UPDATE ... WHERE id = ? AND status = ?` → check affected rows.
 - Error mapping must read the **real driver code**: `42501` RLS denied, `23505` unique, `23514` check, `23503` FK.
 - Role bootstrap races when suites run in parallel. Serialize with `pg_advisory_lock`.
+- A **repo guard in lint** rejects session-scoped tenant settings, a raw `SET app.*`, and any `app.*` name not in C1. C1 and C2 are enforced mechanically, not by review. The guard must be proven to fail on a deliberately bad file.
+- **Data migrations run as `owner` under FORCE RLS**, so the owner sees no rows either. Any migration that touches data must set tenant context per tenant, or use a named, audited bypass. Discovered and documented on the lost build; it blocks the first data migration anyone writes.
 
 ### Realtime (post-O2)
 - `markReady` is **idempotent**. A retry never double-notifies.
 - Polling endpoint: **Redis-only read, zero Postgres queries**, p99 under 5 ms, client-side jittered interval + exponential backoff, short-TTL cache headers. A polling endpoint that touches Postgres is a rejected design.
+- **Redis carries no RLS.** Every key that holds tenant data is namespaced by tenant id, and every read derives that id from the caller's own context — never from client input. A projection key that is not tenant-namespaced is a cross-tenant read with none of Postgres's protection behind it.
 - Web Push dispatcher prunes subscriptions on 404 / 410.
 - Outbox worker: `FOR UPDATE SKIP LOCKED`, backoff, dead-letter. Killing it mid-batch loses nothing and duplicates nothing.
 - iOS: Web Push only works from a Home Screen install. The install guidance is a required product path, not a nice-to-have.
