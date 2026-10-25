@@ -2,7 +2,7 @@
 
 > Living decision log + the **only** task table. Precedence and invariants live in `PROJECT_INSTRUCTIONS.md`; this file never duplicates them.
 
-**Version:** 2.3 · **Backend:** Laravel 13 (O1) · **Realtime:** Web Push + polling (O2)
+**Version:** 2.4 · **Backend:** Laravel 13 (O1) · **Realtime:** Web Push + polling (O2)
 
 ---
 
@@ -24,6 +24,7 @@
 | Rules, invariants, precedence | `docs/PROJECT_INSTRUCTIONS.md` — also pasted into the claude.ai Project instructions |
 | This file — decisions, data contract, tasks, risks | `docs/PLAN.md` in the repo is the **source**; the copy in Project knowledge is a mirror, refreshed after each `task-N` |
 | Accepted stack deviations | `docs/adr/` |
+| Surviving source material | `docs/BLUEPRINT.md` — an **archive**, not the original. Read its header before using it. |
 | Agent entry point | `CLAUDE.md` at repo root |
 | Reviewer definitions | `.claude/agents/qa-reviewer.md`, `.claude/agents/security-reviewer.md` |
 | Task intake template | `.claude/commands/task.md` |
@@ -77,6 +78,8 @@ Each ticket carries its own acceptance gate **copied verbatim from §3 below**, 
 | 2026-10-25 | `laravel/pao` v1.1.5 kept (ships with the Laravel 13 skeleton). | First-party, MIT, strips ANSI/noise from test and Artisan output when an AI agent is detected — supports the §11 agent workflow. Logged for the Task 0 security review (§11.7). |
 | 2026-10-25 | **ADR-002:** S3 + MinIO for object storage, SES + Mailpit for transactional mail. | Task 7's media library and Task 6's staff invites had no component in §1 and were blocked. Both were in the Blueprint's own local stack (§8) and were lost when §1 was written. `docs/adr/002-storage-and-mail.md`. |
 | 2026-10-25 | Blueprint §7 department checklists audited against the task table; 14 gaps closed. | §7 is binding per `PROJECT_INSTRUCTIONS.md §2` but had never been mapped onto an acceptance gate. Added: OpenAPI generation and publication, 90% coverage bar, migration rollback test, cross-browser Playwright, `pushsubscriptionchange`, PITR, named CloudWatch dashboards, X-Ray, Shield, 3 AZs, RDS Proxy pinning measurement, S3, SES. |
+| 2026-10-25 | `docs/BLUEPRINT.md` created as an **archive** of the surviving source material. | Precedence rank 4 in `PROJECT_INSTRUCTIONS.md §0` pointed at a file that never existed — the original Blueprint v2.0 is gone and only a conversation transcript quoting parts of it survives. The archive holds exactly what the transcript preserves, maps each part to where it is now binding, and lists what is **known to be missing** rather than reconstructing it (§8). |
+| 2026-10-25 | **C6 corrected:** the launch tier is set by **Task 14**, not Task 9. | C6 carried the Blueprint's own 10-task numbering, where load testing was Task 9. `PLAN.md §3` has 15 tasks and Task 9 is the customer PWA. A direct contradiction between ranks 2 and 3. |
 
 ---
 

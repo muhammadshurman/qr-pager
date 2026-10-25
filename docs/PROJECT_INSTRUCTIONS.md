@@ -6,10 +6,12 @@ On conflict, the higher number wins. **Never silently resolve a conflict. Stop a
 1. The user's message in the current chat
 2. This file
 3. `docs/PLAN.md` in the repo (living decision log + task table)
-4. `docs/BLUEPRINT.md` (the original v2.0 context document)
+4. `docs/BLUEPRINT.md` — **an archive**, not the original. The original Blueprint v2.0 no longer exists; only a conversation transcript quoting parts of it survives. The archive contains exactly what that transcript preserves, and lists in its §9 what is known to be missing.
 
 The Blueprint is a **binding baseline**, not a suggestion. Only the overrides in §2 cancel parts of it.
 Anything not covered by 1–3 follows the Blueprint. Do not invent alternatives.
+
+Everything in the archive that is still binding has already been absorbed into this file and `PLAN.md` — its §8 maps each part to where it now lives. Read it for **provenance**, to check what the original actually said. If it is silent on something, that is a gap to **ask the client about**, never to fill in. Do not reconstruct a missing section from memory (§8).
 
 ---
 
@@ -28,7 +30,7 @@ Anything not covered by 1–3 follows the Blueprint. Do not invent alternatives.
 | Object storage | S3 (`league/flysystem-aws-s3-v3`); MinIO locally — see `docs/adr/002-storage-and-mail.md` |
 | Transactional mail | Amazon SES; Mailpit locally — see `docs/adr/002-storage-and-mail.md` |
 | Tests | Pest 5 + PHPUnit 13 (real Postgres + Redis), Playwright, k6 — see `docs/adr/001-pest-5.md` |
-| IaC | Terraform — VPC, ECS Fargate, Aurora PG, ElastiCache, ALB, CloudFront, WAF, Secrets Manager |
+| IaC | Terraform — VPC (3 AZ), ECS Fargate, Aurora PG (PITR), ElastiCache, S3, SES, ALB, CloudFront, WAF, Shield, Secrets Manager, CloudWatch + X-Ray |
 | CI/CD | GitHub Actions + OIDC to AWS (no stored keys) |
 
 Verify every library API by running code in-session. Never from memory. If a version has moved, read the primary changelog before choosing.
@@ -55,7 +57,7 @@ Everything else in the Blueprint stands: RLS model, DB roles, outbox pattern, QR
 | C3 | Blueprint §3.1 schema vs the schema actually built | §3.1 is **superseded**. Source of truth = the Laravel migrations in the repo. The real table list must be transcribed into `PLAN.md §2` before Task 2 starts. |
 | C4 | RLS policy covers `orders` only | RLS `ENABLE` **and** `FORCE` on **every** tenant table, no exception. A meta-test fails the build if any table lacks either. |
 | C5 | Who sends Web Push | The **outbox queue worker**, never the HTTP request. The request only commits status + outbox row inside one transaction. |
-| C6 | 100K vs 300K | Design ceiling **300K concurrent active sessions**. The launch tier is set by Task 9 load results, never by assumption. |
+| C6 | 100K vs 300K | Design ceiling **300K concurrent active sessions**. The launch tier is set by **Task 14** load results, never by assumption. (The Blueprint said "Task 9" under its own 10-task numbering; `PLAN.md §3` has 15 tasks and load testing is Task 14.) |
 | C7 | §5 task table duplicated verbatim | One task table only, in `PLAN.md`. This file never duplicates it. |
 
 ---
