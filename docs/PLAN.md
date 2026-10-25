@@ -12,11 +12,11 @@
 
 | | |
 |---|---|
-| **Last completed** | **Task 1** — DB foundation. Branch `task-1-db-foundation`, ticket `QRPAGER-1`. Awaiting QA + Security review, PR and `task-1` tag. |
+| **Last completed** | **Task 1** — DB foundation. Branch `task-1-db-foundation`, ticket `QRPAGER-1`. QA and Security reviews have both run (§11); findings are fixed or accepted into §5. PR and `task-1` tag pending. |
 | **Next up** | **Task 2** — API core. Ticket `QRPAGER-9`. Does not start until `task-1` is tagged (§3 order is strict). |
-| **Blocking anything?** | Task 2 is blocked on the `task-1` tag, which is blocked on the two §11 reviews. |
-| **Open debt that must die in Task 2** | Nothing from Task 1. `assertSafeRuntimeRole()` exists and is tested but **nothing calls it yet** — Task 2 wires it into boot, which is Task 2's own gate clause. |
-| **Needs the user's decision** | `PROJECT_INSTRUCTIONS.md §4 › Postgres traps` explains the no-`RETURNING` rule with a mechanism that measurement contradicts. §2.12 has the evidence and the proposed wording; the edit is rank 2, so it is **reported, not made** (§0). |
+| **Blocking anything?** | Task 2 is blocked on the `task-1` tag, which is blocked on the PR's two required checks. |
+| **Open debt that must die in Task 2** | Three things, each with a gate clause of its own. (1) `assertSafeRuntimeRole()` exists and is tested but **nothing calls it yet** — Task 2 wires it into boot, and must also widen it to refuse a runtime task that can resolve owner or root credentials, which §2.1 previously claimed it already did (F6). (2) **R-005** — a `withoutTenantScope()` that throws leaves no audit trace. (3) **R-007**, the error-mapping half: `23514` must not return a constraint name or any SQL. |
+| **Needs the user's decision** | Nothing open. **R-003's owner was decided on 2026-10-25: Task 3** (`QRPAGER-10`). The disposition had named Task 4, which contradicted `§3` row 3 — that row states the expiry job in Task 3's scope and its gate clause verbatim — so the plan won (rank 3, `§0`). Task 3 now narrows the two worker policies and re-proves the expiry job in the same change. |
 
 ### Where everything lives
 
@@ -118,9 +118,18 @@ FORCE RLS" was unsatisfiable by construction. The bootstrap superuser is therefo
 and `qrpager_owner` is created as a **non-superuser** table owner. This maps to production exactly: the
 Aurora master user bootstraps the roles once, migrations run as `owner`, and neither is the runtime role.
 
-`DB_OWNER_*` and `DB_ROOT_*` credentials belong **only** to the migration/CI environment. A runtime task
-carries `DB_USERNAME=qrpager_app` (or `qrpager_worker`) and nothing else; `assertSafeRuntimeRole()` fails
-the boot if it ever carries more (Task 2 wires it to boot).
+`DB_OWNER_*` and `DB_ROOT_*` credentials belong **only** to the migration/CI environment, and a runtime task
+should carry `DB_USERNAME=qrpager_app` (or `qrpager_worker`) and nothing else.
+
+**Corrected 2026-10-25 (F6, security review of task-1).** This paragraph used to claim that
+`assertSafeRuntimeRole()` "fails the boot if it ever carries more". It does not, and never did. What exists
+is narrower: the guard asks **one connection** for its `current_user` and refuses a role that can see past
+row level security — owner, superuser, `BYPASSRLS`, or a member of the owner. It does **not** inspect the
+environment, so a runtime task that also carries `DB_OWNER_PASSWORD` passes it; and `withoutTenantScope()`
+is a global function defaulting to the owner connection, so request-handling code is one call from a
+cross-tenant bypass that is audited but not prevented. Nothing calls the guard yet either. Both halves —
+wiring it into boot, and widening it to refuse a resolvable non-runtime credential — are **Task 2's**, whose
+gate carries "boot refuses a runtime task that can resolve owner or root credentials".
 
 ### 2.2 GUCs — the only two that exist (C1)
 
@@ -288,22 +297,42 @@ role is a superuser and `owner` holds no `SUPERUSER` or `BYPASSRLS` attribute.
 ### 2.10 Data migrations under FORCE RLS — the settled pattern
 
 `PLAN.md §6` recorded this as the trap that blocks the first data migration anyone writes. `owner` is bound
-by FORCE RLS, so a migration that touches rows sees **none** of them. Two patterns, in order of preference:
+by FORCE RLS, so a migration that touches rows sees **none** of them — including the `tenants` table it wants
+to loop over. **Corrected 2026-10-25 (H-1, QA review of task-1):** pattern 1 below used to open with a plain
+`DB::connection('pgsql_owner')->table('tenants')->pluck('id')`. That returns **zero rows** inside a migration,
+so the loop body never ran. A backfill that silently does nothing is worse than one that fails loudly.
+
+Two patterns, in order of preference:
 
 ```php
-// 1. Preferred — per tenant, no bypass at all:
-foreach (DB::connection('pgsql_owner')->table('tenants')->pluck('id') as $id) {
+// 1. Preferred — the per-tenant work needs no bypass. Enumerating the tenants does:
+//    that one cross-tenant read is the only part the owner cannot do under FORCE RLS.
+$ids = withoutTenantScope(
+    '2026_11_02 backfill pager_sessions.order_reference: list tenants',
+    fn () => DB::connection('pgsql_owner')->table('tenants')->pluck('id'),
+);
+
+foreach ($ids as $id) {
+    // Keyed, never bulk: an UPDATE or DELETE that references no column of the table
+    // escapes RLS row filtering entirely (PROJECT_INSTRUCTIONS.md §4 › Postgres traps).
     withTenant($id, fn () => /* ... */, 'pgsql_owner');
 }
 
-// 2. Only when the work genuinely spans tenants — named, audited, owner-only:
+// 2. Only when the work itself genuinely spans tenants — named, audited, owner-only:
 withoutTenantScope('2026_11_02 backfill pager_sessions.order_reference', fn () => /* ... */);
 ```
 
+Both helpers always run **nested** here: `Migrator` wraps every migration in a transaction because
+`PostgresGrammar` reports `supportsSchemaTransactions`, so a migration body is already at transaction level 1.
+`set_config(name, value, true)` binds to the **outermost** transaction and not to the savepoint Laravel opens
+for the inner block, so both helpers capture the previous value and restore it on the way out (F1). Proven by
+`DataMigrationPatternTest`.
+
 `withoutTenantScope()` refuses to run on any connection whose role is not `qrpager_owner`, and writes an
 `audit_log` row (`actor_type = system`, `action = tenancy.bypass`, the reason in `context`) inside the same
-transaction, so a bypass cannot happen silently. A **schema** migration needs neither pattern; only a
-migration that reads or writes rows does.
+transaction, so a bypass that **commits** always carries its own audit row. A bypass that **throws** rolls
+that row back with the work and leaves no trace: carried as F12 in `§5`, owned by Task 2. A **schema**
+migration needs neither pattern; only a migration that reads or writes rows does.
 
 A third pattern needs no bypass and is the one to reach for first: seed rows **before** the table's RLS is
 enabled, within the same migration.
@@ -331,16 +360,27 @@ second half would **break the expiry job outright**:
 | same, with `RETURNING id` | `ERROR 42501` |
 | `UPDATE … SET status='expired'` with **no `WHERE`** | succeeds |
 | `UPDATE … SET status='ready'` — new row still visible | succeeds |
+| `UPDATE … WHERE id = ?` — **old** row hidden by the SELECT policy | `UPDATE 0` — silent, no error |
+| `UPDATE … SET status='touched'` with **no `WHERE`** — old row hidden | succeeds — **writes a row the role cannot read** |
 
 The actual rule: **when an `UPDATE` reads any column of the table, the SELECT policies are applied to the
 new row as well.** The prescribed pattern `SELECT id → UPDATE … WHERE id = ? AND status = ?` reads columns,
 so a worker SELECT policy that hid expired rows would make the expiry job impossible — `42501` every time,
 or a silent `UPDATE 0` if no cross-tenant SELECT policy existed at all.
 
+The same trigger has an **old-row half**, and it is the more dangerous one: when a column is referenced a row
+invisible to the SELECT policy is silently skipped (`UPDATE 0`, no error), but when **no** column is referenced
+the filter does not apply at all and the statement writes rows the role cannot read — measured as `UPDATE 2`
+where the same statement with a `WHERE` reported `UPDATE 0`.
+
 This is why `worker_reads_expired_sessions` is bounded by **time** (`expires_at <= now()`) and not by status:
 the new row still satisfies it. The no-`RETURNING` rule is kept — it costs nothing and still protects any
 future policy that hides a new row — but it is now a defensive convention, not the mechanism. **The §4
-wording needs a correction that only the user can authorise (`§0`); it is raised, not edited.**
+wording was corrected on 2026-10-25 with the user's approval (rank 2, `§0`): the trigger is restated as any
+column reference by the statement, the old-row asymmetry is recorded as its own trap, and the claim that
+expired rows are not selectable by the worker is dropped.** The time-only bound on
+`worker_reads_expired_sessions` is wider than the path it implements and is carried as an accepted risk
+(`§5` R-003, owner Task 3, which also owns the expiry job).
 
 ---
 
@@ -414,11 +454,15 @@ Built: Laravel 13.38.0 in `apps/api`, Docker Compose (Postgres 16.14 + Redis 7, 
 
 ---
 
-### Task 1 — complete on `task-1-db-foundation` (2026-10-25), tag pending the §11 reviews
+### Task 1 — complete on `task-1-db-foundation` (2026-10-25), reviewed; tag pending the PR
 
-Gates: `composer pint` **passed** · `composer stan` (level 8) **0 errors** · `php artisan test`
-**135 passed, 343 assertions** against the composed Postgres 16.14 and Redis 7 · coverage **98.6 %**
-(gate is 90 %; `--min=90` enforced in CI) · `gitleaks detect` clean over 10 commits.
+Gates, re-run after the §11 review fixes: `composer pint` **passed** · `composer stan` (level 8)
+**0 errors** · `php artisan test` **149 passed, 405 assertions** against the composed Postgres 16.14 and
+Redis 7, from a **dropped and rebuilt** test database. Coverage is enforced in CI with `--min=90`; this
+machine has no Xdebug or PCOV, so the figure comes from the CI run on the PR and is deliberately not quoted
+here from an earlier measurement. `gitleaks` is **not installed on this machine** — the pre-commit hook and
+the CI job both require it (CI installs 8.30.1), so the secret scan for these commits is the CI job's, not a
+local run, and is not claimed here as local evidence.
 
 | Gate clause | Evidence |
 |---|---|
@@ -430,7 +474,7 @@ Gates: `composer pint` **passed** · `composer stan` (level 8) **0 errors** · `
 | `audit_log` immutable even for superuser | UPDATE / DELETE / TRUNCATE → `42501` for `app`, `worker`, `owner` **and `qrpager_root`, a real superuser**, including with `session_replication_role = replica`; zero-row statements refused too; both triggers assert `tgenabled = 'A'` |
 | **Meta-test fails the build if any table lacks ENABLE or FORCE** | `RlsCoverageTest` reads `pg_catalog`, not the migrations. It also **creates a deliberately bad table and proves itself failing**, then checks every table is either tenant-scoped or on the named global allowlist |
 | **A push subscription cannot point at another tenant's session** | `23503` from a **composite** FK `(tenant_id, pager_session_id)` → `pager_sessions (tenant_id, id)`. Structural: FK checks bypass RLS, so this does not depend on a policy. Same for `outbox` |
-| **The `ALTER ROLE` timeouts are verified to fire, per role** | `SHOW` on a fresh connection per role, compared **as intervals** (Postgres reports `60s` as `1min`) · `lock_timeout` **fires** for `app`, `worker` and `owner` (`55P03`, after the configured wait, proven with an advisory lock) · `app` `statement_timeout` **fires** (`57014`) · `pg_roles.rolconfig` confirms the settings are on the role, not one database |
+| **The `ALTER ROLE` timeouts are verified to fire, per role** | `SHOW` on a fresh connection per role, compared **as intervals** (Postgres reports `60s` as `1min`) · `lock_timeout` **fires** for `app`, `worker` and `owner` (`55P03`, after the configured wait, proven with an advisory lock) · `app` `statement_timeout` **fires** (`57014`, asserted with a lower wall-clock bound only — see F10) · `pg_roles.rolconfig` confirms the settings are on the role, not one database |
 | Migrations apply clean from empty **twice** | Database dropped, `db:bootstrap`, apply → 5 migrations, apply again → `Nothing to migrate` |
 | **`migrate:rollback` clean and a re-apply returns the identical schema** | Rollback leaves exactly one table (`migrations`). Re-apply then matches **byte for byte** on both a 1219-line `pg_dump --schema-only` diff and a 421-fact catalog fingerprint (`database/schema-fingerprint.sql`) covering RLS flags, policy expressions, policy roles, column grants, triggers, enums, constraints and indexes. Re-proven in CI, which is where the ticket asked for it |
 | `PLAN.md §2` is filled | §2.1-§2.12 |
@@ -439,6 +483,29 @@ Carry-over from Task 0, now closed: `.env` and `.env.example` connect as `qrpage
 a separate `pgsql_owner` connection; `assertSafeRuntimeRole()` exists with tests proving it rejects the
 owner **and** a superuser, and — proven against the live cluster rather than asserted — a role granted
 `BYPASSRLS` or membership of the owner.
+
+**§11 review findings — what the two reviews produced.** QA raised H-1; Security raised F1-F12.
+Two High, five Medium, five Low, one informational. Fixed here, each with a regression test proven to
+fail when the fix is reverted:
+
+| # | Sev | Finding | Fix | Proof |
+|---|---|---|---|---|
+| **F1** | High | `withTenant()` leaked tenant context out of any transaction it did not start. Laravel opens a `SAVEPOINT` rather than a `BEGIN` when nested, and `set_config(…, true)` binds to the **outermost** transaction, so the GUC outlived the block and the next query read the last tenant used — *another tenant's rows*, not the designed "0 rows, no error". The PHP-side switch guard stopped firing too. | Both helpers capture the previous GUC value and restore it on the success path. Restoring in a bare `finally` would raise `25P02` on a failed callback and mask the original exception; a rollback — of the transaction or to the savepoint — reverts `set_config` by itself, measured on 16.14. The **refusal** alternative was rejected: `PostgresGrammar::supportsSchemaTransactions()` is `true`, so `Migrator` wraps every migration body in a transaction, and refusing to nest would have broken every data migration using the `§2.10` per-tenant loop. | `TenantContextTest`: 3 tests. Reverted, they fail with `app.tenant_id` reading the leaked uuid and `app.bypass_tenant` reading `'on'` |
+| **F4** | High | Every role password reached the Postgres server log **and** Laravel exception messages. `ALTER ROLE … PASSWORD '<plaintext>'` puts it in the statement text that `log_statement` captures, and `format()` sent it as a bound parameter, which Postgres logs on error and Laravel interpolates into `QueryException::getMessage()`. Two breaches of `§4` at once. | The SCRAM-SHA-256 verifier is now computed in PHP — PBKDF2-HMAC-SHA256, 4096 iterations, 16-byte salt — so the plaintext never crosses the wire. Non-ASCII passwords are refused rather than silently producing a verifier that authenticates nobody, since SASLprep is the identity only on printable ASCII. Role statements are additionally wrapped so no exception can carry the statement text; the SQLSTATE survives, the original is deliberately not chained. | `BootstrapDatabaseCommandTest`: the bootstrap's own query log contains the verifier and **not** the password. Measured end to end: 0 occurrences of the dev password in 110 new lines of container log, where the same bootstrap previously logged it twice |
+| **H-1** | High | `§2.10`'s data-migration loop opened with a plain owner read of `tenants`. The owner is bound by FORCE RLS, so that list is **empty** inside a migration and the loop body never ran — a backfill that silently does nothing. | The tenant list now comes through one audited `withoutTenantScope()` read; the per-tenant work still needs no bypass. `§2.10` and the `§6` bullet both corrected. | `DataMigrationPatternTest`: 2 tests, including the whole pattern at transaction level 1 |
+| **F2** | Med | `users` and `password_reset_tokens` were the only tables granted **table-wide**, and the only ones with no assertion in `GrantMatrixTest` — so the widest grants in the schema were the ones nothing would catch widening. | Stated per column in the migration. The worker is narrowed to `SELECT (id, name, email)`: it authenticates nobody and has no business holding credentials. The app's set is unchanged in effect but now explicit, minus `id` and `created_at` on `UPDATE`. Residual carried as **R-006**, owner Task 5. | `GrantMatrixTest`: 3 tests pinning exact column sets **and** asserting the grants are column grants rather than table-wide. All three fail when reverted |
+| **F5** | Med | No `CONNECTION LIMIT` on any role: `rolconnlimit = -1` everywhere, and Postgres reserves slots for superusers only, so `qrpager_app` exhausting the pool starved the worker (the only sender of notifications, C5) and the owner (migrations, incident response). This task's own bug 2 was that exhaustion. | Per-role limits in `config/tenancy.php` — owner 10, app 40, worker 20 — applied by `ALTER ROLE` and read back from `pg_roles`. A missing limit is a hard failure, not an unlimited default. | `BootstrapDatabaseCommandTest`: limits match config, their sum leaves the cluster headroom above `superuser_reserved_connections`, and a missing limit throws |
+| **F6** | Med | `§2.1` claimed `assertSafeRuntimeRole()` "fails the boot if it ever carries more" than the runtime credential. It never did: the guard inspects one connection's `current_user` and never looks at the environment. | `§2.1` corrected to describe what exists. Widening the guard stays Task 2's gate clause, where it already was. | §2.1 and §0 |
+| **F7** | Low | `sslmode` defaulted to `prefer`, which silently downgrades to an unencrypted session — including on the connections that carry the role credentials. | Defaults to `require`, so it **fails closed**. Local and CI opt out with one explicit `DB_SSLMODE=disable`. `verify-full` carried as **R-008**, owner Task 13. | `ConnectionHygieneTest` asserts the unset default across all five connections |
+| **F9** | Low | `RlsCoverageTest`'s global allowlist was only checked against the same `tenant_id`-name heuristic used to classify tenant tables, so a future tenant table scoped by a differently named column could join the allowlist undetected. | The allowlist is pinned as an exact set. | `RlsCoverageTest` |
+| **F10** | Low | The `statement_timeout` proof asserted wall-clock time **below** 7 s. It measures host scheduling, not Postgres, and it **failed on the reviewer's run at 27.6 s** while `57014` passed — gate evidence that gets re-run until green rather than believed. | `57014` is the proof; the only sound wall-clock assertion is the **lower** bound, since Postgres cannot cancel before the timeout but a loaded host can report it arbitrarily late. The identical upper bound on the `lock_timeout` proof is removed for the same reason. | Both proofs re-run green with eight cores saturated |
+| **F3, F8, F11, F12** | Med/Low | Accepted, not fixed. | — | **R-003** (owner Task 3), **R-004**, **R-007**, **R-005** |
+
+The reviews also confirmed, against `pg_catalog` and the live cluster rather than the migrations: FORCE RLS
+on all six tenant tables, exactly two `app.*` GUCs, `set_config` called in exactly two places and always
+with third argument `true`, no `BYPASSRLS` on any application role, exactly the four named cross-tenant
+policies, no cross-tenant policy for `qrpager_app`, `audit_log` immutable for a real superuser including
+under `session_replication_role = replica`, and `composer.lock` unchanged by this task.
 
 **Bugs found and fixed in Task 1 — each with a regression test that fails without the fix:**
 
@@ -465,6 +532,18 @@ owner **and** a superuser, and — proven against the live cluster rather than a
 
 | **R-002** | **PHPStan no longer analyses Pest test bodies.** Pest binds `$this` inside a test closure at runtime, so PHPStan types it as `Pest\PendingCalls\TestCall` and every `$this->makeTenant()` in a test body is an "undefined method" — 182 such errors once this task's suite existed. `phpstan.neon` excludes `tests/**/*Test.php`. | Low | The test *infrastructure* — `tests/TestCase.php` and `tests/Support` — is still analysed at level 8, and that is where the logic lives. A typo in a closure fails the moment `php artisan test` runs, which is every gate, so the feedback loop is seconds either way. The alternative was a stub that lies about Pest's own types, which would mask real errors. | The exclusion is three explicit globs in `phpstan.neon`, visible in any diff that widens them, with the reason written beside them. | Muhammad | When a Pest/PHPStan integration for closure binding exists, or at Task 12 (SAST), whichever is first. |
 
+| **R-003** | **The worker's two cross-tenant `pager_sessions` policies are bounded by time alone.** `worker_reads_expired_sessions USING (expires_at <= now())` and `worker_expires_sessions USING (expires_at <= now()) WITH CHECK (status = 'expired')`. `expires_at` only recedes into the past, so the worker holds a permanent, context-free, cross-tenant **read** of every historical session (everything but `token_hash`) and a cross-tenant **write** over every terminal row — it can mark another tenant's `completed` order `expired`, with no audit row. F3, security review of task-1. | Medium | Not reachable without a leaked `qrpager_worker` credential or a bug in the worker Task 4 builds, and no worker exists yet. Narrowing it is **not blocked by Postgres**: measured on 16.14, a status **whitelist that includes the value the update writes** — `status IN ('waiting','ready','expired')` on SELECT, `status IN ('waiting','ready')` on UPDATE — keeps the prescribed `SELECT id → UPDATE … WHERE id = ? AND status = ?` pattern working and still refuses any other transition with `42501`. It is left alone here only because the task that owns the expiry job should narrow the policy and re-prove the job in the same change. | `worker_expires_sessions`'s `WITH CHECK (status = 'expired')` still pins the only transition the worker may make without context, and `WorkerScopeTest` asserts every other cross-tenant transition raises `42501`. The worker holds no `INSERT` or `DELETE` on `pager_sessions` at all. | Task 3 (`QRPAGER-10`), which owns the expiry job. Decided 2026-10-25: the finding was first dispositioned to Task 4, which contradicted `§3` row 3 — that row carries the expiry job and its gate clause verbatim — so the plan won (rank 3, `§0`). Narrowing the policies in Task 4 would have meant Task 3 building the expiry job against the un-narrowed ones and Task 4 changing them underneath it. | **At Task 3's acceptance gate**: the two policies are narrowed and the expiry job re-proven in the same change, not in a later task |
+
+| **R-004** | **`log_statement=all` is set cluster-wide in `compose.yaml`, and from Task 3 it will log every QR token-hash binding.** It already logged the role passwords twice per bootstrap until F4 moved them off the wire. F8, security review of task-1. | Low | Local only: `compose.yaml` binds Postgres to `127.0.0.1` and the setting exists for Task 4's "polling endpoint touches zero Postgres queries" proof, which is a real gate clause. The hash is not the token, so logging it is not logging a credential — but it is tenant data in a log nobody redacts. | Written down here rather than remembered, which is the control that matters: the next person to widen the deployment has a line to find. `§4 › Data` already forbids the raw token from any log. | Task 3 (`QRPAGER-10`), which writes the first token | **Before Task 3 writes its first token**, and Task 4 scopes the setting per-session rather than cluster-wide |
+
+| **R-005** | **A bypass that fails leaves no trace.** `withoutTenantScope()` writes its `audit_log` row inside the same transaction as the work, so a committed bypass always carries its audit row — and a bypass that **throws** rolls that row back with the work. An attacker-triggered or buggy bypass that errors is therefore invisible. F12, raised by the task-1 security review. | Medium | The detection gap only matters once something can trigger a bypass from outside, and nothing can: `withoutTenantScope()` is called by no production code path in Task 1, only by tests and the `§2.10` migration pattern. Fixing it properly means a second connection or a log sink, which is logging infrastructure Task 2 owns — doing it here would mean inventing that infrastructure in the database task. | The misleading comment that claimed a bypass "cannot happen silently" is corrected in both `TenantContext.php` and `§2.10`, so nobody relies on a guarantee that does not hold. The bypass still refuses any role but the owner. | Task 2 (`QRPAGER-9`), which owns logging and error mapping | **At Task 2's acceptance gate** |
+
+| **R-006** | **`qrpager_app` can still read and write `users.password` and `users.remember_token`, with no tenant context required.** `users` is global, so no RLS stands behind it: the role can read every platform admin's and every tenant's staff credentials in one statement, and `UPDATE users SET password = …` is a direct authentication bypass. Residual half of F2, security review of task-1. | Medium | Task 1 did what it can at this layer: the grants are now stated per column and pinned as exact sets, and the worker lost credential access entirely. The real fix needs an actor identity to scope rows to "your own user", which would be a **third `app.*` GUC** — forbidden by C1 without editing `PROJECT_INSTRUCTIONS.md` first — or the `§2.8` `SECURITY DEFINER` login function, which belongs with the authentication code. Not reachable today: no HTTP surface, no query layer, no `User` read path exists. | `GrantMatrixTest` now pins the `users` and `password_reset_tokens` grants as exact column sets **and** asserts they are column grants rather than table-wide, so any widening appears in a diff. `#[Hidden(['password','remember_token'])]` keeps both out of serialisation. | Task 5 (`QRPAGER-12`) | **At Task 5's acceptance gate**, which must carry: "`qrpager_app` holds no `SELECT` on `users.password` or `users.remember_token`; authentication reads the hash only through a named `SECURITY DEFINER` function granted to `qrpager_app` alone, proven by a test that the role gets `42501` on `select password from users`" |
+
+| **R-007** | **The tenant role matrix is entirely application-enforced, and `users_email_is_lowercase` surfaces as a raw `23514`.** `qrpager_app` holds table-wide `INSERT`/`DELETE` and `UPDATE (role, updated_at)` on `tenant_users`, so within its own tenant a broken authorisation check can promote a `staff` row to `owner` with nothing underneath it. Separately, the `CHECK (email = lower(email))` constraint turns any un-normalised email into a driver error. F11, security review of task-1. | Low | Correct for this layer: the database cannot know who the actor is, so it cannot distinguish a legitimate promotion from an illegitimate one. RLS still confines the damage to one tenant — this is not a cross-tenant path. | `GrantMatrixTest` asserts no role holds `UPDATE` on any `tenant_id` or on `tenants.id`, so a row cannot be moved between tenants whatever the role column says. | Task 5 (`QRPAGER-12`) for the role matrix and the lower-casing; Task 2 (`QRPAGER-9`) for mapping `23514` without returning the constraint name or the SQL | **At each of those tasks' acceptance gates** |
+
+| **R-008** | **`sslmode` is `require`, not `verify-full`: the transport is encrypted but the server is not authenticated.** `require` accepts any certificate, so it stops passive interception and not an active man-in-the-middle. Residual half of F7, security review of task-1. | Low | `require` closes the actual finding, which was `prefer` silently downgrading to plaintext. `verify-full` additionally needs an RDS CA bundle shipped into the image and a hostname that matches the certificate — deployment work with no deployment to do it against, since nothing is hosted yet. | The default now **fails closed**: a deployment that sets nothing gets `require` and a server without TLS is refused rather than silently accepted. `ConnectionHygieneTest` asserts the unset default across all five connections, and the local opt-out is one explicit `DB_SSLMODE=disable` in `.env.example` and in CI. | Task 13 (`QRPAGER-20`), which owns deployment sizing and configuration | **Before the first deployed environment exists** |
+
 _Medium/Low review findings that are not fixed land here with an owner and a date._
 
 ---
@@ -474,7 +553,7 @@ _Medium/Low review findings that are not fixed land here with an owner and a dat
 - Billing / subscriptions: not in the Blueprint and not requested by the client. **Out of scope until stated.**
 - Launch tier: unset by design until Task 14.
 - **Queue transport for push dispatch.** The Blueprint specified SQS. The design is an outbox table plus a worker, which satisfies the guarantee — "ready" commits instantly, the send happens behind it with retries — independently of transport. Laravel's Redis queue is the default. **Task 13 decides whether the launch tier needs SQS instead, and Task 14 measures it.** Do not assume either.
-- **Data migrations under FORCE RLS — settled.** The pattern is `PLAN.md §2.10`: per-tenant `withTenant()` on the owner connection first, `withoutTenantScope($reason, …)` only when the work genuinely spans tenants, and it refuses to run as anything but the owner and writes its own `audit_log` row.
+- **Data migrations under FORCE RLS — settled, and corrected.** The pattern is `PLAN.md §2.10`. It was wrong until 2026-10-25 (H-1, QA review of task-1): it opened by enumerating tenants with a plain owner read, which returns **zero rows** under FORCE RLS, so the loop body never ran and a backfill would have silently done nothing. The list now comes through one audited `withoutTenantScope()` read; the per-tenant work still needs no bypass. `DataMigrationPatternTest` proves both halves, including at transaction level 1, which is where every migration body runs.
 - **`outbox` and `audit_log` retention is unassigned.** Both grow without bound (§2.11): no grant deletes a `sent` or `dead` outbox row, and `audit_log` is append-only, so pruning it can only ever be a partition drop, never a `DELETE`. Nothing breaks before launch; it is a disk bill that grows. **Decide in Task 13 (storage sizing) and measure in Task 14.** Do not let the first person who notices invent a `DELETE`, because the trigger will refuse it.
 - **Platform-admin cross-tenant reads are not on the §4 named list.** Task 6 builds a platform dashboard, a restaurants list and an audit-log viewer, all of which read across tenants. `§4 › Tenancy` names exactly four cross-tenant paths and says "adding one requires editing this file first". Task 1 deliberately built **no** policy for these: `qrpager_app` has no cross-tenant policy anywhere. Task 6 must either get §4 amended (a rank-2 edit, so the user's call) or go through §2.8's `SECURITY DEFINER` recipe with its own authorisation. **Raised now so Task 6 does not discover it mid-wizard.**
 - **Platform-scope `audit_log` rows (`tenant_id` NULL) can currently be written only through the owner bypass.** `app` holds `INSERT` but the isolation policy's `WITH CHECK` compares `tenant_id` to the context, and `NULL = x` is never true. Task 6's "platform admin actions all land in `audit_log`" therefore needs a decision: an `INSERT`-only policy allowing `tenant_id IS NULL` (write-only for the app, readable only through §2.8), or every platform action naming a tenant. Not invented here.
