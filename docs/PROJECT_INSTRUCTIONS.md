@@ -25,6 +25,8 @@ Anything not covered by 1–3 follows the Blueprint. Do not invent alternatives.
 | Auth | Fortify + Sanctum + WebAuthn passkeys + 2FA |
 | Runtime | Octane (FrankenPHP) |
 | Push | `minishlink/web-push` (VAPID) |
+| Object storage | S3 (`league/flysystem-aws-s3-v3`); MinIO locally — see `docs/adr/002-storage-and-mail.md` |
+| Transactional mail | Amazon SES; Mailpit locally — see `docs/adr/002-storage-and-mail.md` |
 | Tests | Pest 5 + PHPUnit 13 (real Postgres + Redis), Playwright, k6 — see `docs/adr/001-pest-5.md` |
 | IaC | Terraform — VPC, ECS Fargate, Aurora PG, ElastiCache, ALB, CloudFront, WAF, Secrets Manager |
 | CI/CD | GitHub Actions + OIDC to AWS (no stored keys) |
@@ -112,9 +114,11 @@ Break any of these and the task is not done.
 
 **After coding — evidence shown in the chat:**
 - `composer pint`, `composer stan`, `php artisan test` all green against **real** Postgres + Redis. No DB mocks for DB behaviour.
-- Fresh DB: migrations apply from empty; a second apply is a no-op.
+- Fresh DB: migrations apply from empty; a second apply is a no-op; **a rollback of this task's migrations runs clean**.
+- **Unit coverage ≥ 90%** on code this task added (Blueprint §7 QA). Report the number.
 - Every bug found gets a regression test that fails without the fix.
 - All previous tasks' tests still pass.
+- Any REST endpoint added is in the **generated OpenAPI spec**, and the spec is committed (Blueprint §7 API).
 - `PLAN.md` updated, commit + tag `task-N`.
 
 **Order is strict. No task starts before the previous one is green and tagged.**
