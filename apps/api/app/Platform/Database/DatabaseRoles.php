@@ -51,6 +51,26 @@ final class DatabaseRoles
         return $name;
     }
 
+    /**
+     * Postgres reserves connection slots for superusers only, so without a per-role
+     * limit one role exhausting max_connections locks the others out of the cluster
+     * (F5, security review of task-1). A missing limit is a hard failure rather than
+     * an unlimited default: unlimited is the bug being fixed.
+     */
+    public static function connectionLimit(string $key): int
+    {
+        $limit = config("tenancy.connection_limits.{$key}");
+
+        if (! is_int($limit) || $limit < 1) {
+            throw new RuntimeException(
+                "No connection limit is configured for role [{$key}]. One role flooding "
+                .'the pool must not be able to lock the others out (PLAN.md §2.1).'
+            );
+        }
+
+        return $limit;
+    }
+
     public static function bypassValue(): string
     {
         $value = config('tenancy.bypass_value');

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Platform\Database;
 
+use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Throwable;
 
 /**
  * Creates the database and the three application roles, and applies the per-role
@@ -61,19 +63,95 @@ class RoleBootstrapper
     private function ensureRole(ConnectionInterface $bootstrap, string $roleKey): string
     {
         $name = DatabaseRoles::name($roleKey);
-        $password = $this->password($roleKey);
+        $limit = DatabaseRoles::connectionLimit($roleKey);
+        $verifier = $this->scramVerifier($this->password($roleKey));
 
         $exists = $this->exists($bootstrap, 'select exists(select 1 from pg_roles where rolname = ?) as present', $name);
 
+        // The limit is an int straight from config, so it is interpolated rather than
+        // quoted: CONNECTION LIMIT takes an integer and %L would hand it a string.
         $template = ($exists ? 'ALTER' : 'CREATE')
-            .' ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L';
+            .' ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT'
+            ." CONNECTION LIMIT {$limit} PASSWORD %L";
 
         // ALTER on every run, so the attributes converge: a role that was granted
         // SUPERUSER or BYPASSRLS by hand loses it the next time this runs.
-        $bootstrap->statement($this->format($bootstrap, $template, [$name, $password]));
+        $this->withoutLeakingCredentials($name, fn () => $bootstrap->statement(
+            $this->format($bootstrap, $template, [$name, $verifier]),
+        ));
 
         // Re-asserted on every run, so a role that was tampered with converges back.
         return ($exists ? 'role updated: ' : 'role created: ').$name;
+    }
+
+    /**
+     * The SCRAM-SHA-256 verifier Postgres would have built from this password, built
+     * here instead so the plaintext never crosses the wire (F4, security review of
+     * task-1). ALTER ROLE ... PASSWORD '<plaintext>' puts the password in the
+     * statement text, which log_statement captures, and in a bound parameter, which
+     * Postgres logs on error and Laravel interpolates into QueryException::getMessage()
+     * -- two breaches of "no secrets in logs" (PROJECT_INSTRUCTIONS.md §4).
+     *
+     * Shape and defaults follow Postgres itself:
+     * SCRAM-SHA-256$<iterations>:<salt>$<StoredKey>:<ServerKey>, 4096 iterations,
+     * 16-byte salt. The verifier is what pg_authid stores either way.
+     */
+    private function scramVerifier(string $password): string
+    {
+        // libpq applies SASLprep to the password at authentication time, and SASLprep
+        // is the identity only for printable ASCII. Rather than ship a partial
+        // SASLprep, refuse what it would rewrite: a verifier built from an
+        // unnormalised password authenticates nobody. The password is never echoed.
+        if (preg_match('/\A[\x20-\x7E]+\z/', $password) !== 1) {
+            throw new RuntimeException(
+                'A database role password must be printable ASCII. The SCRAM verifier is '
+                .'computed locally so the plaintext never reaches the server, and that is '
+                .'only sound for the range where SASLprep normalisation is a no-op.'
+            );
+        }
+
+        $iterations = 4096;
+        $salt = random_bytes(16);
+
+        $saltedPassword = hash_pbkdf2('sha256', $password, $salt, $iterations, 32, true);
+        $clientKey = hash_hmac('sha256', 'Client Key', $saltedPassword, true);
+        $storedKey = hash('sha256', $clientKey, true);
+        $serverKey = hash_hmac('sha256', 'Server Key', $saltedPassword, true);
+
+        return sprintf(
+            'SCRAM-SHA-256$%d:%s$%s:%s',
+            $iterations,
+            base64_encode($salt),
+            base64_encode($storedKey),
+            base64_encode($serverKey),
+        );
+    }
+
+    /**
+     * A role statement carries that role's password verifier, so none of it may reach
+     * an exception message: Laravel interpolates bindings into
+     * QueryException::getMessage(), and a chained previous exception would carry the
+     * statement into any rendered stack trace (PROJECT_INSTRUCTIONS.md §4). The
+     * original is deliberately not chained -- the SQLSTATE is what survives.
+     *
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $statement
+     * @return TReturn
+     */
+    private function withoutLeakingCredentials(string $role, Closure $statement): mixed
+    {
+        try {
+            return $statement();
+        } catch (Throwable $e) {
+            $state = (string) $e->getCode();
+
+            throw new RuntimeException(
+                "Could not create or alter role [{$role}]"
+                .($state === '' || $state === '0' ? '' : " (SQLSTATE {$state})")
+                .'. The statement text is withheld: it carries the role password verifier.'
+            );
+        }
     }
 
     /** @return list<string> */
@@ -167,7 +245,7 @@ class RoleBootstrapper
 
     /**
      * Let Postgres do the identifier and literal quoting, so nothing -- least of all
-     * a password -- passes through string concatenation on the way to the server.
+     * a credential -- passes through string concatenation on the way to the server.
      *
      * @param  list<string>  $arguments
      */

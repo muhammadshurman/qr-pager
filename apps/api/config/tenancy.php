@@ -85,6 +85,25 @@ return [
     ],
 
     /*
+    |--------------------------------------------------------------------------
+    | Per-role connection limits, applied with ALTER ROLE
+    |--------------------------------------------------------------------------
+    |
+    | Postgres reserves slots for superusers only, so without these one role
+    | exhausting max_connections starves the others -- and the worker is the only
+    | sender of notifications (C5) while the owner is how migrations and incident
+    | response get in. Sized against max_connections = 100 with three reserved for
+    | the superuser, leaving headroom for the root and bootstrap connections.
+    |
+    */
+
+    'connection_limits' => [
+        'owner' => 10,
+        'app' => 40,
+        'worker' => 20,
+    ],
+
+    /*
     | Role bootstrap races when suites run in parallel (PROJECT_INSTRUCTIONS.md
     | §4 › Postgres traps), so the whole bootstrap holds this advisory lock.
     */
