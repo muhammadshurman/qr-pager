@@ -94,3 +94,71 @@ it('reaches exactly the tables in the matrix and no others', function (): void {
         'push_subscriptions', 'tenant_users', 'tenants', 'users',
     ]);
 });
+
+/*
+ * F2 (security review of task-1): users and password_reset_tokens were the only
+ * tables granted table-wide, and the only ones with no assertion here at all --
+ * so the widest grants in the schema were the ones nothing would ever catch
+ * widening. They are now stated per column in the migration and pinned here.
+ */
+
+it('states the app grants on users as exact column sets', function (): void {
+    $all = ['created_at', 'email', 'email_verified_at', 'id', 'name', 'password', 'remember_token', 'updated_at'];
+
+    expect(Schema::grantedColumns('qrpager_app', 'users', 'SELECT'))->toBe($all)
+        ->and(Schema::grantedColumns('qrpager_app', 'users', 'INSERT'))->toBe($all);
+
+    // No id and no created_at: a uuid primary key and a creation timestamp are never
+    // rewritten by the application.
+    expect(Schema::grantedColumns('qrpager_app', 'users', 'UPDATE'))->toBe([
+        'email', 'email_verified_at', 'name', 'password', 'remember_token', 'updated_at',
+    ]);
+
+    // Nobody deletes a user row; deactivation is a status change (PLAN.md §2.4).
+    expect(Schema::hasTablePrivilege('qrpager_app', 'users', 'DELETE'))->toBeFalse();
+
+    // And the grants are COLUMN grants, not a table-wide one that happens to cover
+    // every column: has_table_privilege reports false for a table reachable only
+    // through column grants, so this is what pins the shape rather than the set.
+    foreach (['SELECT', 'INSERT', 'UPDATE'] as $privilege) {
+        expect(Schema::hasTablePrivilege('qrpager_app', 'users', $privilege))
+            ->toBeFalse("users.{$privilege} is granted table-wide, not per column");
+    }
+});
+
+it('keeps user credentials away from the worker role entirely', function (): void {
+    // The worker authenticates nobody: a name and an address are all a notification
+    // needs. password and remember_token are not reachable at all.
+    expect(Schema::grantedColumns('qrpager_worker', 'users', 'SELECT'))->toBe(['email', 'id', 'name']);
+
+    foreach (['INSERT', 'UPDATE', 'DELETE'] as $privilege) {
+        expect(Schema::hasTablePrivilege('qrpager_worker', 'users', $privilege))
+            ->toBeFalse("the worker role holds {$privilege} on users");
+    }
+
+    expect(Schema::hasTablePrivilege('qrpager_worker', 'users', 'SELECT'))
+        ->toBeFalse('users.SELECT is granted to the worker table-wide, not per column');
+});
+
+it('states the password_reset_tokens grants as exact column sets', function (): void {
+    $all = ['created_at', 'email', 'token'];
+
+    expect(Schema::grantedColumns('qrpager_app', 'password_reset_tokens', 'SELECT'))->toBe($all)
+        ->and(Schema::grantedColumns('qrpager_app', 'password_reset_tokens', 'INSERT'))->toBe($all)
+        ->and(Schema::hasTablePrivilege('qrpager_app', 'password_reset_tokens', 'DELETE'))->toBeTrue()
+        // A reset token is written once and consumed whole; it is never edited.
+        ->and(Schema::hasTablePrivilege('qrpager_app', 'password_reset_tokens', 'UPDATE'))->toBeFalse();
+
+    // SELECT and INSERT are column grants; only DELETE is table-wide, because
+    // Postgres has no column form for it.
+    foreach (['SELECT', 'INSERT'] as $privilege) {
+        expect(Schema::hasTablePrivilege('qrpager_app', 'password_reset_tokens', $privilege))
+            ->toBeFalse("password_reset_tokens.{$privilege} is granted table-wide, not per column");
+    }
+
+    // The worker has no part in password recovery.
+    foreach (['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as $privilege) {
+        expect(Schema::hasTablePrivilege('qrpager_worker', 'password_reset_tokens', $privilege))
+            ->toBeFalse("the worker role holds {$privilege} on password_reset_tokens");
+    }
+});

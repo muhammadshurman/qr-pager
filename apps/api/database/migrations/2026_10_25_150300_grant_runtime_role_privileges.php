@@ -29,10 +29,29 @@ return new class extends Migration
 
         DB::unprepared(<<<'SQL'
             -- global tables -------------------------------------------------------
-            GRANT SELECT, INSERT, UPDATE ON users TO qrpager_app;
-            GRANT SELECT ON users TO qrpager_worker;
+            -- Stated per column rather than table-wide, so the widest grants in the
+            -- schema are visible in the diff and pinned as exact sets by
+            -- GrantMatrixTest (F2, security review of task-1). The app still reaches
+            -- password and remember_token: moving authentication behind a SECURITY
+            -- DEFINER function and dropping both is Task 5's gate clause
+            -- (QRPAGER-12, PLAN.md §2.8), carried until then as an accepted risk.
+            GRANT SELECT (id, name, email, email_verified_at, password, remember_token,
+                          created_at, updated_at) ON users TO qrpager_app;
+            GRANT INSERT (id, name, email, email_verified_at, password, remember_token,
+                          created_at, updated_at) ON users TO qrpager_app;
+            -- No id and no created_at: a uuid primary key and a creation timestamp are
+            -- never rewritten by the application.
+            GRANT UPDATE (name, email, email_verified_at, password, remember_token,
+                          updated_at) ON users TO qrpager_app;
 
-            GRANT SELECT, INSERT, DELETE ON password_reset_tokens TO qrpager_app;
+            -- The worker authenticates nobody. It needs a name and an address to send
+            -- a notification; credentials are not its business.
+            GRANT SELECT (id, name, email) ON users TO qrpager_worker;
+
+            GRANT SELECT (email, token, created_at) ON password_reset_tokens TO qrpager_app;
+            GRANT INSERT (email, token, created_at) ON password_reset_tokens TO qrpager_app;
+            -- DELETE has no column form in Postgres: a reset token is consumed whole.
+            GRANT DELETE ON password_reset_tokens TO qrpager_app;
 
             -- worker only: a serialized job payload can carry tenant data, and a
             -- global table has no row level security behind it (PLAN.md §2.4).
