@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * The only way tenant context reaches a query (PLAN.md §2.2).
@@ -60,6 +61,17 @@ class TenantContext
 
         $db = DB::connection($connection);
 
+        // Every owner_bypass_* policy is PERMISSIVE, so it is OR'd with the matching
+        // tenant_isolation_* policy: while a bypass is active the tenant predicate
+        // narrows nothing and this block would run completely unscoped, for reads and
+        // for writes alike. Refuse rather than clear it -- silently re-scoping would
+        // hide the caller's mistake, and the §2.10 pattern deliberately closes the
+        // bypass before the per-tenant loop starts. H-1, scoped security review of the
+        // task-1 fixes.
+        if ($this->readGuc($db, DatabaseRoles::guc('bypass')) === DatabaseRoles::bypassValue()) {
+            throw TenantContextException::cannotScopeInsideBypass($connection);
+        }
+
         return $db->transaction(function () use ($db, $tenantId, $connection, $callback): mixed {
             $guc = DatabaseRoles::guc('tenant');
 
@@ -86,12 +98,18 @@ class TenantContext
 
                 return $result;
             } finally {
-                // Only the success path restores. A callback that threw leaves the
-                // transaction aborted, so a statement here would raise 25P02 and mask
-                // the original exception -- and the rollback, of the transaction or to
-                // the savepoint, reverts set_config on its own. Verified on 16.14.
+                // Only the success path restores, because a throwing callback needs no
+                // restore: Laravel rolls back -- the transaction, or to the savepoint it
+                // opened for a nested block -- and a rollback reverts set_config on its
+                // own, measured on 16.14.
+                //
+                // An earlier version of this comment gave the wrong reason, that a
+                // callback which threw leaves the transaction aborted. It does not: a
+                // plain PHP exception leaves the Postgres transaction live and usable.
+                // 25P02 is real only where the callback handled a database error itself
+                // and still returned, which is the case restoreGuc() absorbs.
                 if ($completed) {
-                    $db->select('select set_config(?, ?, true)', [$guc, $previous]);
+                    $this->restoreGuc($db, $guc, $previous);
                 }
 
                 $this->tenantId = null;
@@ -109,6 +127,27 @@ class TenantContext
         $row = $db->selectOne('select coalesce(current_setting(?, true), ?) as value', [$name, '']);
 
         return is_object($row) && is_string($row->value ?? null) ? $row->value : '';
+    }
+
+    /**
+     * Put a GUC back without ever throwing.
+     *
+     * A callback that CATCHES a QueryException returns normally while the Postgres
+     * transaction is already aborted, so this statement would raise 25P02 -- and
+     * letting that propagate would discard the callback's result and put the
+     * statement plus its bound tenant id into the exception message, breaking
+     * "stack traces never carry SQL or bound parameters" (PROJECT_INSTRUCTIONS.md
+     * §4). The transaction is doomed either way and its rollback reverts the
+     * setting, so a restore that fails is nothing to report. M-3, scoped security
+     * review of the task-1 fixes.
+     */
+    private function restoreGuc(ConnectionInterface $db, string $name, string $value): void
+    {
+        try {
+            $db->select('select set_config(?, ?, true)', [$name, $value]);
+        } catch (Throwable) {
+            // Deliberate. The rollback is the control here, not this statement.
+        }
     }
 
     /**
@@ -176,10 +215,12 @@ class TenantContext
 
                 return $result;
             } finally {
-                // Success path only, for the 25P02 reason in run().
+                // Success path only, for the reason in run(). Order matters on the way
+                // out: the bypass goes last, so nothing between these two statements
+                // sees a narrowed tenant with the bypass still open.
                 if ($completed) {
-                    $db->select('select set_config(?, ?, true)', [$tenant, $previousTenant]);
-                    $db->select('select set_config(?, ?, true)', [$bypass, $previousBypass]);
+                    $this->restoreGuc($db, $tenant, $previousTenant);
+                    $this->restoreGuc($db, $bypass, $previousBypass);
                 }
             }
         });

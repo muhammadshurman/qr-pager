@@ -15,7 +15,12 @@ use Illuminate\Support\Facades\DB;
  * per tenant with no bypass at all.
  */
 
-it('touches every tenant, which the loop as previously documented silently did not', function (): void {
+// CHARACTERISATION TEST, not a regression test. H-1's fix was a prose change to
+// PLAN.md §2.10, so there is no code to revert and this cannot "fail without the fix"
+// in the §6 sense -- it passes against 122d203 too. It is here to keep the trap proven
+// rather than remembered, and §4a records that H-1 has no discriminating regression
+// test. Do not count it as §11 coverage.
+it('characterises the data-migration trap and its corrected pattern, with no fix to revert', function (): void {
     $alpha = $this->makeTenant();
     $beta = $this->makeTenant();
 

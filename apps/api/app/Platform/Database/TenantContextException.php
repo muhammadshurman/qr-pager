@@ -30,6 +30,20 @@ final class TenantContextException extends RuntimeException
         );
     }
 
+    /**
+     * The message deliberately names no tenant id: the whole point of the refusal is
+     * that the caller's tenant was about to mean nothing.
+     */
+    public static function cannotScopeInsideBypass(string $connection): self
+    {
+        return new self(
+            "A tenant context cannot be opened on connection [{$connection}] while a tenant "
+            .'bypass is active: every owner_bypass_* policy is permissive, so the tenant '
+            .'predicate would narrow nothing and the block would run unscoped. Close the '
+            .'bypass first -- PLAN.md §2.10 keeps the per-tenant loop outside it.'
+        );
+    }
+
     public static function bypassRequiresOwner(string $role, string $owner): self
     {
         return new self(

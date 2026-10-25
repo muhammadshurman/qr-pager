@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantContextException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -169,4 +170,70 @@ it('never leaves app.bypass_tenant set behind inside a transaction it does not o
             ->toBe('')
             ->and($owner->table('tenants')->count())->toBe(0);
     });
+});
+
+/*
+ * H-1 and M-3, scoped security review of the task-1 fixes. The F1 fix guarded one
+ * direction only: withoutTenantScope() cleared app.tenant_id, but withTenant() did
+ * nothing about an active app.bypass_tenant -- and because every owner_bypass_*
+ * policy is permissive, a scoped block inside a bypass was not scoped at all.
+ */
+
+it('refuses to open a tenant context while a bypass is active', function (): void {
+    $alpha = $this->makeTenant();
+    $owner = DB::connection('pgsql_owner');
+
+    withoutTenantScope('task-1 regression: refuse to scope inside a bypass', function () use ($owner, $alpha): void {
+        expect(fn () => withTenant($alpha, fn () => $owner->table('tenants')->count(), 'pgsql_owner'))
+            ->toThrow(TenantContextException::class, 'while a tenant bypass is active');
+    }, 'pgsql_owner');
+});
+
+it('never runs an unscoped query inside a bypass block', function (): void {
+    // Written fix-agnostically: refusing and correctly re-scoping both pass, running
+    // unscoped does not. Before the fix this reported every tenant visible and a
+    // committed cross-tenant write.
+    $alpha = $this->makeTenant();
+    $beta = $this->makeTenant();
+    $owner = DB::connection('pgsql_owner');
+
+    withoutTenantScope('task-1 regression: a bypass must not leak into a scoped block', function () use ($owner, $alpha, $beta): void {
+        try {
+            $visible = withTenant($alpha, fn () => $owner->table('tenants')->count(), 'pgsql_owner');
+            $affected = withTenant($alpha, fn () => $owner->table('tenants')
+                ->where('id', $beta)
+                ->update(['timezone' => 'Pacific/Auckland']), 'pgsql_owner');
+
+            expect($visible)->toBe(1)
+                ->and($affected)->toBe(0);
+        } catch (TenantContextException) {
+            // Refused is a pass: nothing ran unscoped.
+        }
+    }, 'pgsql_owner');
+
+    expect(withoutTenantScope(
+        'task-1 regression: read the other tenant back',
+        fn () => $owner->table('tenants')->where('id', $beta)->value('timezone'),
+        'pgsql_owner',
+    ))->not->toBe('Pacific/Auckland');
+});
+
+it('returns the callback result when the callback handled a database error itself', function (): void {
+    // The callback swallows a QueryException, so it returns normally while the Postgres
+    // transaction is already aborted. The GUC restore then raises 25P02 -- which must
+    // not surface, because it would discard this result and put the set_config
+    // statement and its bound tenant id into the message (§4).
+    $tenant = $this->makeTenant();
+
+    $result = withTenant($tenant, function (): string {
+        try {
+            DB::select('select 1 / 0');
+        } catch (QueryException) {
+            // handled here on purpose
+        }
+
+        return 'callback-finished';
+    });
+
+    expect($result)->toBe('callback-finished');
 });

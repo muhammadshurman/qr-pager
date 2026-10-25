@@ -170,10 +170,12 @@ it('never sends a role password to the server, in a statement or in a binding', 
     }
 });
 
-// Note: asserting that pg_authid holds a SCRAM verifier proves nothing here --
-// password_encryption defaults to scram-sha-256, so the server stores one even
-// when it is handed a plaintext PASSWORD. What changed is that the plaintext no
-// longer reaches the server at all, which the test above is what proves.
+// A shape assertion proves nothing here: password_encryption defaults to
+// scram-sha-256, so pg_authid holds a verifier even when the server was handed a
+// plaintext PASSWORD. An equality assertion does prove something: Postgres silently
+// re-salts anything it cannot parse as a verifier, so rolpassword matching the string
+// this run built, byte for byte, is what shows the verifier arrived intact. The test
+// below does that (M-2, scoped security review of the task-1 fixes).
 it('refuses a password SASLprep would rewrite, without echoing it', function (): void {
     // The verifier is built locally, which is only sound where SASLprep is the
     // identity. A non-ASCII password would produce a verifier that authenticates
@@ -244,6 +246,12 @@ it('withholds the statement text when a role statement fails', function (): void
     // CONNECTION LIMIT takes a signed int4, so PHP_INT_MAX fails the ALTER ROLE with
     // 42601 and leaves the role untouched. It is the only lever that reaches the
     // redaction path without doing something destructive to the cluster.
+    //
+    // COUPLING, deliberate and fragile: this test reaches the redaction path only
+    // through F5's CONNECTION LIMIT clause. Remove that clause, or stop interpolating
+    // the limit into the statement, and this test stops exercising redaction -- it
+    // fails loudly rather than passing vacuously, but the next person to change the
+    // limit should know it disarms this test's lever, not just its last assertion.
     $limit = (int) config('tenancy.connection_limits.app');
 
     config(['tenancy.connection_limits.app' => PHP_INT_MAX]);
@@ -270,4 +278,46 @@ it('withholds the statement text when a role statement fails', function (): void
     expect((int) $this->asRoot()->selectOne(
         'select rolconnlimit from pg_roles where rolname = ?', ['qrpager_app'],
     )->rolconnlimit)->toBe($limit);
+});
+
+it('stores the verifier it built, byte for byte', function (): void {
+    // Postgres accepts a malformed verifier silently: get_password_type() fails to
+    // parse it, falls back to PLAINTEXT and re-hashes the string with a fresh salt. The
+    // role's live password then becomes the verifier string -- which this same code
+    // writes to the Postgres log. Nothing in the server tells you; only equality does.
+    //
+    // What this does NOT catch, measured by injecting each defect: a verifier that is
+    // mis-derived but still well-formed is stored verbatim, so equality passes and only
+    // authentication failing reveals it. And if a MALFORMED verifier breaks a role the
+    // suite needs, TestCase::setUp dies with 08006 before this assertion runs -- loud,
+    // but not from here. The precise diagnosis this gives is for the case where the
+    // cluster still works: it says which role Postgres refused to take a verifier for.
+    $bootstrap = DB::connection('pgsql_bootstrap');
+    $bootstrap->flushQueryLog();
+    $bootstrap->enableQueryLog();
+
+    try {
+        app(RoleBootstrapper::class)->run();
+
+        $built = [];
+
+        foreach ($bootstrap->getQueryLog() as $entry) {
+            if (preg_match('/ROLE "?(\w+)"? .*PASSWORD \'(SCRAM-SHA-256\$[^\']+)\'/', (string) $entry['query'], $match) === 1) {
+                $built[$match[1]] = $match[2];
+            }
+        }
+
+        expect($built)->toHaveCount(3);
+
+        foreach ($built as $role => $verifier) {
+            $stored = $this->asRoot()->selectOne(
+                'select rolpassword = ? as intact from pg_authid where rolname = ?', [$verifier, $role],
+            );
+
+            expect((bool) $stored->intact)
+                ->toBeTrue("{$role}: pg_authid does not hold the verifier this run built, so Postgres did not accept it as one");
+        }
+    } finally {
+        $bootstrap->disableQueryLog();
+    }
 });
