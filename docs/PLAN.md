@@ -2,8 +2,64 @@
 
 > Living decision log + the **only** task table. Precedence and invariants live in `PROJECT_INSTRUCTIONS.md`; this file never duplicates them.
 
-**Version:** 2.1 · **Status:** `task-0` green and tagged · **Backend:** Laravel 13 (O1) · **Realtime:** Web Push + polling (O2)
-**Repo:** `github.com/muhammadshurman/qr-pager` (private) · `main` protected, PR + 2 required checks
+**Version:** 2.2 · **Backend:** Laravel 13 (O1) · **Realtime:** Web Push + polling (O2)
+
+---
+
+## 0. WHERE WE ARE RIGHT NOW
+
+> **Read this section first in every new chat. It is the only place that states current state. Update it at the end of every task.**
+
+| | |
+|---|---|
+| **Last completed** | **Task 0** — repo, local environment, quality gates. Tagged `task-0`, CI green. |
+| **Next up** | **Task 1** — DB foundation. Ticket `QRPAGER-1`. Nothing else starts first (§3 order is strict). |
+| **Blocking anything?** | No. Task 1 is unblocked and ready. |
+| **Open debt that must die in Task 1** | The app connects as `qrpager_owner`. See §6. |
+
+### Where everything lives
+
+| What | Where |
+|---|---|
+| Rules, invariants, precedence | `docs/PROJECT_INSTRUCTIONS.md` — also pasted into the claude.ai Project instructions |
+| This file — decisions, data contract, tasks, risks | `docs/PLAN.md` in the repo is the **source**; the copy in Project knowledge is a mirror, refreshed after each `task-N` |
+| Accepted stack deviations | `docs/adr/` |
+| Agent entry point | `CLAUDE.md` at repo root |
+| Reviewer definitions | `.claude/agents/qa-reviewer.md`, `.claude/agents/security-reviewer.md` |
+| Task intake template | `.claude/commands/task.md` |
+| Repo | `github.com/muhammadshurman/qr-pager` (private, SSH) |
+| Board | `muhdshurman.atlassian.net` → project `QRPAGER` |
+
+### Jira ↔ task map
+
+Board columns: `Backlog → Selected for development → In Progress → QA Review → Security Review → Done`. The last two exist because `PROJECT_INSTRUCTIONS.md §11` requires both reviews; a task that skips them is not done.
+
+| Task | Ticket | Epic | Task | Ticket | Epic |
+|---|---|---|---|---|---|
+| 0 ✅ | `QRPAGER-8` | E1 | 8 | `QRPAGER-15` | E5 |
+| 1 | `QRPAGER-1` | E1 | 9 | `QRPAGER-16` | E5 |
+| 2 | `QRPAGER-9` | E1 | 10 | `QRPAGER-17` | E5 |
+| 3 | `QRPAGER-10` | E2 | 11 | `QRPAGER-18` | E5 |
+| 4 | `QRPAGER-11` | E2 | 12 | `QRPAGER-19` | E6 |
+| 5 | `QRPAGER-12` | E3 | 13 | `QRPAGER-20` | E6 |
+| 6 | `QRPAGER-13` | E4 | 14 | `QRPAGER-21` | E6 |
+| 7 | `QRPAGER-14` | E4 | | | |
+
+Epics: E1 `QRPAGER-2` foundation · E2 `QRPAGER-3` domain + notifications · E3 `QRPAGER-4` auth · E4 `QRPAGER-5` admin (S1/S2) · E5 `QRPAGER-6` design + frontend · E6 `QRPAGER-7` hardening + launch.
+
+Each ticket carries its own acceptance gate **copied verbatim from §3 below**, the §6 pre-coding questions as a checklist, an explicit *out of scope* table naming which task owns each excluded item, and the known traps for that task. Tickets are linked `blocks` in order.
+
+### How a task runs
+
+1. Open the ticket. Read `PROJECT_INSTRUCTIONS.md`, this file, `docs/adr/`.
+2. Answer the seven §6 pre-coding questions **as a comment on the ticket**. Then move to In Progress.
+3. Branch `task-N-<slug>`. Build. Three gates green against real Postgres + Redis.
+4. PR. Both required checks green.
+5. **QA Review** — separate agent session, diff + ticket only.
+6. **Security Review** — separate agent session, diff + ticket only.
+7. Every Critical and High fixed with a regression test. Medium / Low → §5 with owner and date.
+8. Squash merge. Tag `task-N`. Push the tag.
+9. **Update §0 of this file, and §4a with the gate evidence.**
 
 ---
 

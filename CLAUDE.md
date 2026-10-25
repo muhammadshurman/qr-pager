@@ -1,13 +1,26 @@
 # QR Pager SaaS
 
-Read before any work, in this order:
+## Start here, every time
+
+**`docs/PLAN.md §0` tells you where the project is right now** — what was finished
+last, what is next, which ticket, and what debt is outstanding. Read it first.
+Nothing else in this repo states current state.
+
+Then, in this order:
 
 1. `docs/PROJECT_INSTRUCTIONS.md` — precedence, locked stack, invariants, gates, agent workflow
-2. `docs/PLAN.md` — decision log, data contract, task table, accepted risks
+2. `docs/PLAN.md` — the rest of it: decisions, data contract, task table, risks
 3. `docs/adr/` — accepted deviations from the locked stack
 
 This file duplicates nothing. On conflict between files, follow precedence in
-`PROJECT_INSTRUCTIONS.md §0`: stop and report, never silently resolve.
+`PROJECT_INSTRUCTIONS.md §0`: **stop and report, never silently resolve.**
+
+## Tickets
+
+Board: `muhdshurman.atlassian.net`, project `QRPAGER`. The task ↔ ticket map is in
+`docs/PLAN.md §0`. Each ticket carries that task's acceptance gate, the §6
+pre-coding questions, and an explicit *out of scope* table. Work from the ticket,
+not from memory.
 
 ## Layout
 
