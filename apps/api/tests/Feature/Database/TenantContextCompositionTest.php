@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Database\TenantContextException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /*
@@ -206,6 +207,56 @@ it('scopes correctly inside an outer transaction, and clears on the way out', fu
 
         expect($seen)->toBe(1)
             ->and((string) $owner->selectOne("select coalesce(current_setting('app.tenant_id', true), '') as v")->v)->toBe('');
+    });
+});
+
+it('withholds the statement when it cannot even read the context', function (): void {
+    // M-A: the pre-check is the first statement run, so on an already-aborted
+    // transaction it was the one that failed -- and it propagated a raw QueryException
+    // carrying its own SQL, a fresh breach of the clause the H-B fix was about.
+    $tenant = $this->makeTenant();
+    $owner = DB::connection(OWNER);
+
+    $owner->transaction(function () use ($owner, $tenant): void {
+        try {
+            $owner->select('select 1 / 0');
+        } catch (QueryException) {
+            // the transaction is aborted from here on
+        }
+
+        try {
+            withTenant($tenant, fn () => true, OWNER);
+            $this->fail('a tenant scope opened on an aborted transaction');
+        } catch (TenantContextException $e) {
+            expect($e->getMessage())->toContain('could not be read')
+                ->and($e->getMessage())->toContain('25P02')
+                ->and($e->getMessage())->not->toContain('current_setting')
+                ->and($e->getMessage())->not->toContain('select ')
+                ->and($e->getPrevious())->toBeNull();
+        }
+    });
+});
+
+it('withholds the statement when a bypass cannot read the current role', function (): void {
+    $owner = DB::connection(OWNER);
+
+    $owner->transaction(function () use ($owner): void {
+        try {
+            $owner->select('select 1 / 0');
+        } catch (QueryException) {
+            // aborted
+        }
+
+        try {
+            withoutTenantScope('aborted transaction', fn () => true, OWNER);
+            $this->fail('a bypass opened on an aborted transaction');
+        } catch (TenantContextException $e) {
+            expect($e->getMessage())->toContain('could not be read')
+                ->and($e->getMessage())->toContain('25P02')
+                ->and($e->getMessage())->not->toContain('current_user')
+                ->and($e->getMessage())->not->toContain('select ')
+                ->and($e->getPrevious())->toBeNull();
+        }
     });
 });
 
