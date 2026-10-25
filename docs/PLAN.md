@@ -461,13 +461,16 @@ Gates, re-run after the §11 review fixes: `composer pint` **passed** · `compos
 Redis 7, from a **dropped and rebuilt** test database · `gitleaks protect --staged` passed on every commit
 locally (8.30.1, the CI pin) and `gitleaks detect` passed over full history in CI.
 
-Coverage on the CI run for PR #1 at `d252260`: **96.7 %** against the 90 % gate (`--min=90`). The only file
-below 100 % was `Platform/Database/RoleBootstrapper` at **92.2 %**, and its uncovered lines were the
-credential-redaction `catch` added for F4, plus two pre-existing unreachable guard throws. That `catch` is
-covered by the regression test added in this commit, which drives a real `ALTER ROLE` failure through an
-int4-overflowing `CONNECTION LIMIT` and asserts the thrown message carries neither the password, nor the
-verifier, nor the statement — so the figure for the branch head is the later CI run on the same PR. This
-machine has no Xdebug or PCOV, so no coverage number recorded here is ever a local measurement.
+Coverage **99.3 %** against the 90 % gate (`--min=90`), measured by PCOV on the CI run for PR #1 at
+`5f27c63` — run `40227176887`, step "Unit coverage on the code this branch adds". The only file below
+100 % is `Platform/Database/RoleBootstrapper` at **98.3 %**, and its two uncovered lines are 263 and 275:
+the `RuntimeException` guards for "Postgres did not return a formatted statement" and "The root database
+connection is not configured". Neither is reachable from configuration and neither was added by this task.
+The credential-redaction `catch` that left the same file at 92.2 % on `d252260` is covered by the test
+added alongside this line, which drives a real `ALTER ROLE` failure through an int4-overflowing
+`CONNECTION LIMIT`. **No coverage figure in this file is ever a local measurement:** the build machine has
+neither PCOV nor Xdebug, and CI gets PCOV from `shivammathur/setup-php`. A figure recorded here always
+names the run and the commit that produced it.
 
 | Gate clause | Evidence |
 |---|---|
