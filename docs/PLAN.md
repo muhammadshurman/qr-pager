@@ -105,7 +105,11 @@ Built: Laravel 13.38.0 in `apps/api`, Docker Compose (Postgres 16.14 + Redis 7, 
 
 ## 5. Accepted risks
 
-_None yet. Medium/Low review findings that are not fixed land here with an owner and a date._
+| # | Risk | Severity | Why accepted | Compensating control | Owner | Review by |
+|---|---|---|---|---|---|---|
+| **R-001** | **`main` is not actually protected.** GitHub rulesets are not enforced on a private repository under an individual plan ("won't be enforced on this private repository until you move to GitHub Team"). Branch protection is configured but inert, so a direct push to `main` succeeds and can bypass PR review. | Medium | Single developer. The core of `PROJECT_INSTRUCTIONS.md §11` is that QA and Security reviewers run in **separate agent sessions without the builder's reasoning** — that is enforced by process, not by a GitHub button. CI runs on every push to `main` (proven), so a broken merge is caught within a minute. Paying for GitHub Team before the first paying tenant is not justified. | **Working rule, binding:** one task = one branch = one PR. Never commit to `main` directly. Never merge until both required checks are green and the §11 QA + Security reviews have run. Squash merge only. | Muhammad | At client handover (Transfer Ownership to an Organization, where rulesets are enforced) **or** when a second developer joins — whichever is first. |
+
+_Medium/Low review findings that are not fixed land here with an owner and a date._
 
 ---
 
