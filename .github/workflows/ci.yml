@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['task-*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          VER=8.30.1
+          curl -sL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" -o /tmp/gl.tar.gz
+          tar -xzf /tmp/gl.tar.gz -C /tmp gitleaks
+          sudo install -m 755 /tmp/gitleaks /usr/local/bin/gitleaks
+      - run: gitleaks detect --no-banner --redact
+
+  gates:
+    name: Pint, PHPStan, Pest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: qrpager_owner
+          POSTGRES_PASSWORD: local_dev_only
+          POSTGRES_DB: qrpager_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U qrpager_owner -d qrpager_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, redis, mbstring, intl, bcmath, gd, curl, zip, xml
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ hashFiles('apps/api/composer.lock') }}
+          restore-keys: composer-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+        env:
+          DB_USERNAME: qrpager_owner
+          DB_PASSWORD: local_dev_only
+
+      - run: composer pint
+
+      - run: composer stan
+
+      - name: Migrations apply clean from empty, twice
+        run: |
+          php artisan migrate --force
+          php artisan migrate --force | tee /tmp/second.txt
+          grep -q "Nothing to migrate" /tmp/second.txt
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: qrpager_test
+          DB_USERNAME: qrpager_owner
+          DB_PASSWORD: local_dev_only
+
+      - name: Tests against real Postgres and Redis
+        run: php artisan test
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USERNAME: qrpager_owner
+          DB_PASSWORD: local_dev_only
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379

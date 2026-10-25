@@ -1,0 +1,207 @@
+# PROJECT INSTRUCTIONS — QR Pager SaaS
+
+## 0. PRECEDENCE — read before anything else, every chat
+On conflict, the higher number wins. **Never silently resolve a conflict. Stop and report it.**
+
+1. The user's message in the current chat
+2. This file
+3. `docs/PLAN.md` in the repo (living decision log + task table)
+4. `docs/BLUEPRINT.md` (the original v2.0 context document)
+
+The Blueprint is a **binding baseline**, not a suggestion. Only the overrides in §2 cancel parts of it.
+Anything not covered by 1–3 follows the Blueprint. Do not invent alternatives.
+
+---
+
+## 1. LOCKED STACK — no substitution without a written ADR
+
+| Layer | Locked |
+|---|---|
+| Backend | Laravel 13, PHP 8.4 |
+| Admin panel | Filament 5 |
+| Frontend | Next.js 15 — customer PWA + staff dashboard/KDS |
+| Database | PostgreSQL 16, RLS forced |
+| Cache / queue | Redis 7 |
+| Auth | Fortify + Sanctum + WebAuthn passkeys + 2FA |
+| Runtime | Octane (FrankenPHP) |
+| Push | `minishlink/web-push` (VAPID) |
+| Tests | Pest 5 + PHPUnit 13 (real Postgres + Redis), Playwright, k6 — see `docs/adr/001-pest-5.md` |
+| IaC | Terraform — VPC, ECS Fargate, Aurora PG, ElastiCache, ALB, CloudFront, WAF, Secrets Manager |
+| CI/CD | GitHub Actions + OIDC to AWS (no stored keys) |
+
+Verify every library API by running code in-session. Never from memory. If a version has moved, read the primary changelog before choosing.
+
+---
+
+## 2. OVERRIDES TO THE BLUEPRINT — only these two
+
+| # | Blueprint said | Now |
+|---|---|---|
+| **O1** | NestJS + Drizzle + tRPC + Better Auth | **Laravel 13 owns the entire backend.** Those four are removed. |
+| **O2** | SSE hub as the live channel | **No persistent connection.** Web Push is the primary channel; short polling is the live-status fallback. Reverb may be added later as an enhancement only — never as a dependency. |
+
+Everything else in the Blueprint stands: RLS model, DB roles, outbox pattern, QR token design, task gates §5, universal gate §6, department checklists §7, security posture, scale targets.
+
+---
+
+## 3. BLUEPRINT CONTRADICTIONS — RESOLVED. DO NOT RE-LITIGATE.
+
+| ID | Conflict | Resolution |
+|---|---|---|
+| C1 | `app.current_tenant_id` vs `app.tenant_id` | **`app.tenant_id`** is the only tenant GUC. Bypass GUC is **`app.bypass_tenant`**. No other `app.*` setting may be introduced without editing this file. |
+| C2 | `SET LOCAL app.x = $1` | **Forbidden** — Postgres `SET` takes no bind parameters. Always `SELECT set_config('app.tenant_id', ?, true)`. Third arg is always `true` (transaction-scoped). A session-scoped tenant setting is a hard failure. |
+| C3 | Blueprint §3.1 schema vs the schema actually built | §3.1 is **superseded**. Source of truth = the Laravel migrations in the repo. The real table list must be transcribed into `PLAN.md §2` before Task 2 starts. |
+| C4 | RLS policy covers `orders` only | RLS `ENABLE` **and** `FORCE` on **every** tenant table, no exception. A meta-test fails the build if any table lacks either. |
+| C5 | Who sends Web Push | The **outbox queue worker**, never the HTTP request. The request only commits status + outbox row inside one transaction. |
+| C6 | 100K vs 300K | Design ceiling **300K concurrent active sessions**. The launch tier is set by Task 9 load results, never by assumption. |
+| C7 | §5 task table duplicated verbatim | One task table only, in `PLAN.md`. This file never duplicates it. |
+
+---
+
+## 4. NON-NEGOTIABLE INVARIANTS
+Break any of these and the task is not done.
+
+### Tenancy
+- Three DB roles: `owner` (migrations only), `app` (web), `worker` (queue). `app` and `worker` cannot run DDL, cannot `BYPASSRLS`, cannot become owner.
+- The app **refuses to boot** on an unsafe role: exit 1, reason logged.
+- Tenant context is set per transaction and must never leak across a pooled connection. A test proves this.
+- Cross-tenant reads exist **only** on these named paths: QR token lookup, a user's own memberships, the outbox queue, the expiry job. Adding one requires editing this file first.
+
+### Data
+- QR token: 128-bit CSPRNG, **stored only as a hash**, TTL 2 hours. Never logged, never in a URL query string, never in an error body.
+- No customer accounts. No phone numbers stored.
+- `audit_log` is append-only, enforced by trigger on UPDATE / DELETE / TRUNCATE — superuser included.
+
+### Postgres traps — already paid for, do not rediscover
+- **No `RETURNING`** on the worker expiry UPDATE: RLS re-checks the NEW row against SELECT policies, and expired rows are deliberately not selectable by the worker. Pattern: `SELECT id` (policy-limited) → `UPDATE ... WHERE id = ? AND status = ?` → check affected rows.
+- Error mapping must read the **real driver code**: `42501` RLS denied, `23505` unique, `23514` check, `23503` FK.
+- Role bootstrap races when suites run in parallel. Serialize with `pg_advisory_lock`.
+
+### Realtime (post-O2)
+- `markReady` is **idempotent**. A retry never double-notifies.
+- Polling endpoint: **Redis-only read, zero Postgres queries**, p99 under 5 ms, client-side jittered interval + exponential backoff, short-TTL cache headers. A polling endpoint that touches Postgres is a rejected design.
+- Web Push dispatcher prunes subscriptions on 404 / 410.
+- Outbox worker: `FOR UPDATE SKIP LOCKED`, backoff, dead-letter. Killing it mid-batch loses nothing and duplicates nothing.
+- iOS: Web Push only works from a Home Screen install. The install guidance is a required product path, not a nice-to-have.
+
+### Edge & ops
+- The QR landing page is static and CloudFront-cached. A scan burst must never reach origin.
+- Rate limits per IP **and** per tenant. Load shedding drops nice-to-haves (live timer, analytics) before alerts.
+- No secrets in logs. Redaction tested against captured log output. Stack traces never carry SQL or bound parameters.
+- Graceful shutdown: stop reporting live, drain in-flight requests, close DB connections, exit 0.
+
+---
+
+## 5. SCOPE ADDED BY THE CLIENT — build it, it is not in the Blueprint
+- **S1 — Tenant provisioning:** the platform admin creates a new restaurant end-to-end from the Filament panel.
+- **S2 — Landing page builder:** the admin builds a public landing page per restaurant (blocks, media, SEO, theme). Per-tenant custom domain with automatic TLS. Pages are statically rendered and CDN-cached.
+- **S3 — Pager replaces the physical buzzer:** scan QR → sit down → "order ready" push notification.
+
+---
+
+## 6. UNIVERSAL GATE — every task, no exceptions
+
+**Before coding — written into the task notes:**
+1. Which tables / columns / roles / GUCs does this touch? Any change to the data contract → update `PLAN.md` **first**.
+2. Which shared contracts (statuses, enums, DTOs) does it use or add? One source only. Never a duplicated enum.
+3. Show the exact path by which tenant context reaches **every** query.
+4. Security: authn, authz, input validation, rate limit, log redaction, secrets.
+5. Scale: cost per request and per active session. What is bounded?
+6. Failure: timeout, retry, duplicate, crash mid-way.
+7. Research done for anything version-specific, verified by running code.
+
+**After coding — evidence shown in the chat:**
+- `composer pint`, `composer stan`, `php artisan test` all green against **real** Postgres + Redis. No DB mocks for DB behaviour.
+- Fresh DB: migrations apply from empty; a second apply is a no-op.
+- Every bug found gets a regression test that fails without the fix.
+- All previous tasks' tests still pass.
+- `PLAN.md` updated, commit + tag `task-N`.
+
+**Order is strict. No task starts before the previous one is green and tagged.**
+
+---
+
+## 7. WORKING RULES
+- One task at a time, A to Z. Finish it and prove it before moving on.
+- Research → write the stable plan → get approval → **then** code.
+- Think cross-layer before writing a line: DB → model → service → API → frontend → infra. Never optimize one layer and break another.
+- Never mark something done without showing gate output.
+- Never fix the same bug twice. If it recurs, the regression test was missing — add it.
+- Build and test locally at every task.
+- This is an **isolated pilot repo**. It never touches the user's production client projects.
+
+---
+
+## 8. ANTI-HALLUCINATION
+- Do not claim a library API exists without verifying it in this session.
+- Do not claim a test passed without showing the output.
+- Do not invent table, column, route, or env names. Read them from the repo.
+- If the repo state and this file disagree — **stop and report**. Do not guess which is right.
+- If something is unspecified, ask one concise question. Do not write speculative code.
+
+---
+
+## 9. OUTPUT FORMAT — always
+- No greetings, no apologies, no closing remarks.
+- CLI command first (`php artisan make:...`, `composer require ...`), then the code.
+- Only the specific logic. No framework boilerplate.
+- No explanation unless the user's message starts with `EXPLAIN:`.
+- Modifying existing code — never print the whole file:
+
+```
+// REPLACE THIS:
+
+// WITH THIS:
+```
+
+- Assume an expert developer. Skip setup basics.
+
+---
+
+## 10. REPO
+- Private repo under the developer's account from the first commit. Delivered to the client later via GitHub **Transfer Ownership**.
+- **Zero secrets in history, ever.** `.env.example` only. `gitleaks` in pre-commit and in CI.
+- Tags `task-1 … task-N` are the delivery record and must be pushed.
+- Conventional commits. `main` protected.
+
+---
+
+## 11. CLAUDE CODE AGENT WORKFLOW — three roles per task, never the same context
+
+Tasks are executed by Claude Code as an autonomous agent. One task = one branch = one ticket.
+
+**Role 1 — BUILDER.** Answers the §6 pre-coding gate inside the ticket, then implements. Runs `composer pint`, `composer stan`, `php artisan test` until green against real Postgres + Redis. Opens the PR.
+
+**Role 2 — QA REVIEWER.** A separate agent session that did not write the code. Receives the diff and the ticket only — never the builder's reasoning.
+Checks: the acceptance gate is met literally, not approximately; every branch of the state machine has a test; failure paths (timeout, retry, duplicate, crash mid-way) are tested; a fresh DB migrates clean twice; no test mocks DB behaviour; all previous tasks' suites still pass; every bug fixed in this task has a regression test that fails without the fix; `PLAN.md` is updated.
+Output: findings with severity. **No code changes.**
+
+**Role 3 — SECURITY REVIEWER.** A separate agent session. Receives the diff and the ticket only.
+Checks, in this order:
+1. **Tenant isolation** — can any new query run with `app.tenant_id` unset? Any new cross-tenant path not named in §4? Any `BYPASSRLS`, any new `app.*` GUC, any session-scoped `set_config`?
+2. **IDOR** — every route taking an ID is proven inaccessible across tenants by a test, not by reading the code.
+3. **AuthN / AuthZ** — route default is deny. Public routes explicitly marked and justified.
+4. **Input** — validation on every entry point. Mass assignment guarded.
+5. **Secrets & logs** — no secret, token, QR value, SQL or bound parameter reachable in logs or error bodies. Verified against captured output, not assumed.
+6. **Abuse & rate limiting** — per IP and per tenant. What does an attacker's loop cost us per request?
+7. **Dependencies** — any new package: license, maintenance status, known CVEs.
+8. **OWASP ASVS L2** — the items this diff touches.
+Output: findings with severity. **No code changes.**
+
+**Merge rule.** The task is not done and `task-N` is not tagged until every **Critical** and **High** finding is fixed with a regression test. Medium and Low are either fixed or written into `PLAN.md §5 — Accepted Risks` with an owner and a date. "No findings" is valid only when the reviewer states what it actually checked.
+
+**Repo wiring for Claude Code:**
+- `CLAUDE.md` at repo root — points to this file and `docs/PLAN.md`. Duplicates nothing.
+- `.claude/agents/qa-reviewer.md` and `.claude/agents/security-reviewer.md` — the two reviewers above, read-only tool sets.
+- `.claude/commands/task.md` — the task intake template (the §6 pre-coding questions).
+
+---
+
+## 12. FRONTEND QUALITY BAR
+
+- Every screen is specified before it is coded: purpose, all states (empty / loading / error / offline / permission-denied), content inventory, and the exact copy.
+- Design tokens are a single source. **No hard-coded hex, spacing or font size in any component.** A tenant theme overrides tokens, never components.
+- Visual direction is approved as a rendered artifact **before** any component is written. Code never leads design.
+- Required on every screen: keyboard reachable, visible focus ring, WCAG AA contrast (AAA on the "order ready" screen), 44px minimum touch target, `prefers-reduced-motion` respected, RTL-safe layout — Arabic is a launch language.
+- Customer PWA bar: Lighthouse Performance ≥ 95, installable, usable on a cold 3G start, fully operable one-handed.
+- **No library default look.** If a reviewer can name the UI framework from a screenshot, the screen is rejected.
