@@ -24,9 +24,23 @@ not from memory.
 
 ## Layout
 
-- `apps/api` — Laravel 13 backend (PHP 8.4). All backend work happens here.
-- `docs/` — the two documents above plus ADRs.
-- `compose.yaml` — Postgres 16 + Redis 7. Tests run against these, never SQLite.
+pnpm workspaces (ADR-003). The frontend half is created at **Task 8** — the first
+task that needs it. Until then only `apps/api` exists, and that is correct.
+
+```
+apps/api      Laravel 13 (PHP 8.4) — backend + Filament admin
+apps/web      Next.js 15 — customer PWA + staff dashboard/KDS   (Task 8+)
+apps/site     Next.js 15 — public tenant landing renderer        (Task 8+)
+packages/
+  tokens      design tokens, single source                       (Task 8)
+  ui          component kit                                      (Task 8)
+  contracts   TS mirror of the PHP status enum — GENERATED       (Task 8)
+docs/         PROJECT_INSTRUCTIONS · PLAN · BLUEPRINT · adr/
+compose.yaml  Postgres 16 + Redis 7. Tests run against these, never SQLite.
+```
+
+`packages/contracts` is generated from the PHP enum in `apps/api`. **Never hand-edit
+it** — one source, and CI fails when the mirror is stale.
 
 ## Gates (`PROJECT_INSTRUCTIONS.md §6`)
 
@@ -37,6 +51,17 @@ composer pint
 composer stan
 php artisan test
 ```
+
+From the repo root, once the workspace exists (Task 8+):
+
+```
+pnpm lint
+pnpm typecheck
+pnpm test
+```
+
+Gates run from a **fresh clone**, not just a fresh database — a pass that depends
+on something only present on the builder's machine is not a pass.
 
 No task is done until its own acceptance gate in `docs/PLAN.md §3` is demonstrated,
 QA and Security reviews have run (§11), and `task-N` is tagged.

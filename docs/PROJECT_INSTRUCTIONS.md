@@ -29,7 +29,8 @@ Everything in the archive that is still binding has already been absorbed into t
 | Push | `minishlink/web-push` (VAPID) |
 | Object storage | S3 (`league/flysystem-aws-s3-v3`); MinIO locally — see `docs/adr/002-storage-and-mail.md` |
 | Transactional mail | Amazon SES; Mailpit locally — see `docs/adr/002-storage-and-mail.md` |
-| Tests | Pest 5 + PHPUnit 13 (real Postgres + Redis), Playwright, k6 — see `docs/adr/001-pest-5.md` |
+| Monorepo | pnpm workspaces — `apps/api` (Laravel), `apps/web` (PWA + staff), `apps/site` (public renderer), `packages/{tokens,ui,contracts}` — see `docs/adr/003-monorepo-and-frontend-tooling.md` |
+| Tests | PHP: Pest 5 + PHPUnit 13 (real Postgres + Redis) — see `docs/adr/001-pest-5.md`. TypeScript: **Vitest**. E2E: Playwright. Load: k6 |
 | IaC | Terraform — VPC (3 AZ), ECS Fargate, Aurora PG (PITR), ElastiCache, S3, SES, ALB, CloudFront, WAF, Shield, Secrets Manager, CloudWatch + X-Ray |
 | CI/CD | GitHub Actions + OIDC to AWS (no stored keys) |
 
@@ -70,6 +71,8 @@ Break any of these and the task is not done.
 - The app **refuses to boot** on an unsafe role: exit 1, reason logged.
 - Tenant context is set per transaction and must never leak across a pooled connection. A test proves this.
 - Cross-tenant reads exist **only** on these named paths: QR token lookup, a user's own memberships, the outbox queue, the expiry job. Adding one requires editing this file first.
+- **Two authentication surfaces, never confused.** Staff and admins authenticate as **users** (Task 5). A customer has no account and authenticates **only** by presenting the QR token, which resolves to exactly one session in exactly one tenant — built in Task 3, consumed by Task 4. A customer-facing route that accepts anything other than that token is a rejected design.
+- **Before Task 5 exists**, every route built in Tasks 2-4 is either on the customer token path above, or guarded by Task 2's deny-by-default guard with a **test-only** authentication stub that is deleted in Task 5. A stub that survives Task 5 is a Critical finding.
 
 ### Data
 - QR token: 128-bit CSPRNG, **stored only as a hash**, TTL 2 hours. Never logged, never in a URL query string, never in an error body.
@@ -122,10 +125,11 @@ Break any of these and the task is not done.
 **After coding — evidence shown in the chat:**
 - `composer pint`, `composer stan`, `php artisan test` all green against **real** Postgres + Redis. No DB mocks for DB behaviour.
 - **Fresh clone, not just a fresh DB:** the gates pass from a clean checkout of the branch — nothing that only exists on the builder's machine. Migrations apply from empty; a second apply is a no-op; **a rollback of this task's migrations runs clean**. (Task 0's empty `tests/Unit/` directory passed locally and broke CI. That is the failure mode this clause exists for.)
-- **Unit coverage ≥ 90%** on code this task added (Blueprint §7 QA). Report the number.
+- **Unit coverage ≥ 90%** on code this task added (Blueprint §7 QA). Report the number — Pest for PHP, Vitest for TypeScript.
+- Any **shared contract** (status enum, DTO) is generated from its single source, committed, and **CI fails when it is stale** — never hand-copied across languages (§6.2).
 - Every bug found gets a regression test that fails without the fix.
 - All previous tasks' tests still pass.
-- Any REST endpoint added is in the **generated OpenAPI spec**, and the spec is committed (Blueprint §7 API).
+- Any REST endpoint added is in the **generated OpenAPI spec**, and the spec is committed (Blueprint §7 API). Public routes are versioned — `/v1/...` — and a published path is never changed in place.
 - `PLAN.md` updated, commit + tag `task-N`.
 
 **Order is strict. No task starts before the previous one is green and tagged.**
@@ -216,3 +220,5 @@ Output: findings with severity. **No code changes.**
 - Required on every screen: keyboard reachable, visible focus ring, WCAG AA contrast (AAA on the "order ready" screen), 44px minimum touch target, `prefers-reduced-motion` respected, RTL-safe layout — Arabic is a launch language.
 - Customer PWA bar: Lighthouse Performance ≥ 95, installable, usable on a cold 3G start, fully operable one-handed.
 - **No library default look.** If a reviewer can name the UI framework from a screenshot, the screen is rejected.
+- **Where that bar applies, and when.** It is binding on every customer-facing and staff-facing surface: the PWA, the staff dashboard and KDS, and public tenant pages. The **Filament admin** is built functionally first in Tasks 6-7 — correct, accessible, keyboard-reachable, RTL-safe — and is **restyled from the approved tokens in Task 8**, which is where the tokens first exist. Holding Tasks 6-7 to a token set that has not been created yet is a contradiction, not a standard.
+- **Order.** The visual direction is approved in Task 8 and no component is written before it. Tasks 6-7 precede that and are explicitly exempt from the visual bar, never from the accessibility bar.
