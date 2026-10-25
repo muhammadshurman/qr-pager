@@ -234,3 +234,40 @@ it('refuses to create a role with no connection limit configured', function (): 
     expect(fn () => app(RoleBootstrapper::class)->run())
         ->toThrow(RuntimeException::class, 'No connection limit is configured for role [app]');
 });
+
+it('withholds the statement text when a role statement fails', function (): void {
+    // The other half of F4: the plaintext never reaching the server is measured
+    // above, but a role statement that FAILS must not carry the verifier either --
+    // Laravel interpolates bindings into QueryException::getMessage(), and a chained
+    // previous exception would put the statement back into a rendered stack trace.
+    //
+    // CONNECTION LIMIT takes a signed int4, so PHP_INT_MAX fails the ALTER ROLE with
+    // 42601 and leaves the role untouched. It is the only lever that reaches the
+    // redaction path without doing something destructive to the cluster.
+    $limit = (int) config('tenancy.connection_limits.app');
+
+    config(['tenancy.connection_limits.app' => PHP_INT_MAX]);
+
+    $password = (string) config('database.connections.pgsql.password');
+    $caught = null;
+
+    try {
+        app(RoleBootstrapper::class)->run();
+    } catch (RuntimeException $e) {
+        $caught = $e;
+    }
+
+    expect($caught)->not->toBeNull('an invalid role statement was accepted')
+        ->and($caught->getMessage())->toContain('Could not create or alter role [qrpager_app]')
+        ->and($caught->getMessage())->toContain('statement text is withheld')
+        ->and($caught->getMessage())->not->toContain($password)
+        ->and($caught->getMessage())->not->toContain('SCRAM-SHA-256')
+        ->and($caught->getMessage())->not->toContain('ALTER ROLE')
+        ->and($caught->getPrevious())->toBeNull();
+
+    // The failed role statement changed nothing: the owner was altered idempotently
+    // before app threw, and the limit under test never landed.
+    expect((int) $this->asRoot()->selectOne(
+        'select rolconnlimit from pg_roles where rolname = ?', ['qrpager_app'],
+    )->rolconnlimit)->toBe($limit);
+});

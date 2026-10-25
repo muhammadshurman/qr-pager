@@ -457,12 +457,17 @@ Built: Laravel 13.38.0 in `apps/api`, Docker Compose (Postgres 16.14 + Redis 7, 
 ### Task 1 — complete on `task-1-db-foundation` (2026-10-25), reviewed; tag pending the PR
 
 Gates, re-run after the §11 review fixes: `composer pint` **passed** · `composer stan` (level 8)
-**0 errors** · `php artisan test` **149 passed, 405 assertions** against the composed Postgres 16.14 and
-Redis 7, from a **dropped and rebuilt** test database. Coverage is enforced in CI with `--min=90`; this
-machine has no Xdebug or PCOV, so the figure comes from the CI run on the PR and is deliberately not quoted
-here from an earlier measurement. `gitleaks` is **not installed on this machine** — the pre-commit hook and
-the CI job both require it (CI installs 8.30.1), so the secret scan for these commits is the CI job's, not a
-local run, and is not claimed here as local evidence.
+**0 errors** · `php artisan test` **150 passed, 413 assertions** against the composed Postgres 16.14 and
+Redis 7, from a **dropped and rebuilt** test database · `gitleaks protect --staged` passed on every commit
+locally (8.30.1, the CI pin) and `gitleaks detect` passed over full history in CI.
+
+Coverage on the CI run for PR #1 at `d252260`: **96.7 %** against the 90 % gate (`--min=90`). The only file
+below 100 % was `Platform/Database/RoleBootstrapper` at **92.2 %**, and its uncovered lines were the
+credential-redaction `catch` added for F4, plus two pre-existing unreachable guard throws. That `catch` is
+covered by the regression test added in this commit, which drives a real `ALTER ROLE` failure through an
+int4-overflowing `CONNECTION LIMIT` and asserts the thrown message carries neither the password, nor the
+verifier, nor the statement — so the figure for the branch head is the later CI run on the same PR. This
+machine has no Xdebug or PCOV, so no coverage number recorded here is ever a local measurement.
 
 | Gate clause | Evidence |
 |---|---|
