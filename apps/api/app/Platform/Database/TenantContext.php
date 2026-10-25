@@ -6,6 +6,7 @@ namespace App\Platform\Database;
 
 use App\Domain\Audit\AuditActorType;
 use Closure;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -60,18 +61,54 @@ class TenantContext
         $db = DB::connection($connection);
 
         return $db->transaction(function () use ($db, $tenantId, $connection, $callback): mixed {
-            $db->select('select set_config(?, ?, true)', [DatabaseRoles::guc('tenant'), $tenantId]);
+            $guc = DatabaseRoles::guc('tenant');
+
+            // Laravel opens a SAVEPOINT rather than a BEGIN when this runs inside a
+            // transaction it did not start, and set_config(..., true) binds to the
+            // OUTERMOST transaction, never to the savepoint. Without putting the old
+            // value back, the context would outlive this block and the next query on
+            // the connection would read the last tenant used. Migrations are the
+            // ordinary case, not an exotic one: PostgresGrammar reports
+            // supportsSchemaTransactions, so every migration body already runs at
+            // transaction level 1 (PLAN.md §2.2).
+            $previous = $this->readGuc($db, $guc);
+
+            $db->select('select set_config(?, ?, true)', [$guc, $tenantId]);
 
             $this->tenantId = $tenantId;
             $this->connectionName = $connection;
 
+            $completed = false;
+
             try {
-                return $callback();
+                $result = $callback();
+                $completed = true;
+
+                return $result;
             } finally {
+                // Only the success path restores. A callback that threw leaves the
+                // transaction aborted, so a statement here would raise 25P02 and mask
+                // the original exception -- and the rollback, of the transaction or to
+                // the savepoint, reverts set_config on its own. Verified on 16.14.
+                if ($completed) {
+                    $db->select('select set_config(?, ?, true)', [$guc, $previous]);
+                }
+
                 $this->tenantId = null;
                 $this->connectionName = null;
             }
         });
+    }
+
+    /**
+     * What a GUC holds right now. "Never set" and "set to empty" both read as '',
+     * which is exactly the value every policy treats as no context (PLAN.md §2.2).
+     */
+    private function readGuc(ConnectionInterface $db, string $name): string
+    {
+        $row = $db->selectOne('select coalesce(current_setting(?, true), ?) as value', [$name, '']);
+
+        return is_object($row) && is_string($row->value ?? null) ? $row->value : '';
     }
 
     /**
@@ -103,13 +140,27 @@ class TenantContext
         }
 
         return $db->transaction(function () use ($db, $reason, $callback): mixed {
-            $db->select('select set_config(?, ?, true)', [
-                DatabaseRoles::guc('bypass'),
-                DatabaseRoles::bypassValue(),
-            ]);
+            $bypass = DatabaseRoles::guc('bypass');
+            $tenant = DatabaseRoles::guc('tenant');
 
-            // Written first and inside the same transaction, so a bypass cannot happen
-            // silently and cannot be committed without its own audit row.
+            // Same savepoint trap as run(), and worse here: a leaked app.bypass_tenant
+            // is OR'd into every owner_bypass_* policy, so it would hand the rest of
+            // the outer transaction an unaudited cross-tenant read and write.
+            $previousBypass = $this->readGuc($db, $bypass);
+            $previousTenant = $this->readGuc($db, $tenant);
+
+            $db->select('select set_config(?, ?, true)', [$bypass, DatabaseRoles::bypassValue()]);
+
+            // A bypass block must not inherit a tenant filter from whatever opened the
+            // transaction. The two policies are permissive, so a stale app.tenant_id
+            // cannot narrow what the block sees -- but leaving it set makes the block's
+            // scope ambiguous to read and to debug.
+            $db->select('select set_config(?, ?, true)', [$tenant, '']);
+
+            // Written first and inside the same transaction, so a bypass that commits
+            // always carries its own audit row. A bypass that *throws* rolls the row
+            // back with the work and leaves no trace: recorded as F12 in PLAN.md §5,
+            // owned by Task 2, which owns logging.
             $db->table('audit_log')->insert([
                 'tenant_id' => null,
                 'actor_type' => AuditActorType::System->value,
@@ -117,7 +168,20 @@ class TenantContext
                 'context' => json_encode(['reason' => $reason], JSON_THROW_ON_ERROR),
             ]);
 
-            return $callback();
+            $completed = false;
+
+            try {
+                $result = $callback();
+                $completed = true;
+
+                return $result;
+            } finally {
+                // Success path only, for the 25P02 reason in run().
+                if ($completed) {
+                    $db->select('select set_config(?, ?, true)', [$tenant, $previousTenant]);
+                    $db->select('select set_config(?, ?, true)', [$bypass, $previousBypass]);
+                }
+            }
         });
     }
 }

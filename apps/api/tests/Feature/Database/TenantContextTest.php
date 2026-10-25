@@ -107,3 +107,66 @@ it('passes the tenant id as a bound parameter, never as SQL', function (): void 
     expect($queries)->toContain('select set_config(?, ?, true)')
         ->and(implode(' ', $queries))->not->toContain($tenant);
 });
+
+/*
+ * Nesting inside a transaction withTenant() did not start (F1, security review of
+ * task-1). set_config(..., true) binds to the OUTERMOST transaction, so without
+ * save-and-restore the context outlives the block. Migrations are the ordinary
+ * case: PostgresGrammar reports supportsSchemaTransactions, so every migration
+ * body is already at transaction level 1.
+ */
+
+it('works inside a transaction it did not start, and leaves no residue', function (): void {
+    $alpha = $this->makeTenant();
+
+    DB::transaction(function () use ($alpha): void {
+        $before = DB::selectOne("select coalesce(current_setting('app.tenant_id', true), '') as tenant")->tenant;
+
+        $seen = withTenant($alpha, fn () => DB::table('tenants')->pluck('id')->all());
+
+        expect($seen)->toBe([$alpha])
+            ->and(DB::selectOne("select coalesce(current_setting('app.tenant_id', true), '') as tenant")->tenant)
+            ->toBe($before);
+    });
+});
+
+it('never leaves app.tenant_id set behind inside a transaction it does not own', function (): void {
+    $alpha = $this->makeTenant();
+
+    DB::transaction(function () use ($alpha): void {
+        try {
+            withTenant($alpha, fn () => DB::table('tenants')->count());
+        } catch (TenantContextException) {
+            // refused is also a pass: nothing was set
+        }
+
+        expect(DB::selectOne("select coalesce(current_setting('app.tenant_id', true), '') as tenant")->tenant)
+            ->toBe('')
+            ->and(DB::table('tenants')->count())->toBe(0);
+    });
+});
+
+it('never leaves app.bypass_tenant set behind inside a transaction it does not own', function (): void {
+    $this->makeTenant();
+    $this->makeTenant();
+
+    $owner = DB::connection('pgsql_owner');
+
+    $owner->transaction(function () use ($owner): void {
+        try {
+            $inside = withoutTenantScope(
+                'task-1 regression: a nested bypass must not outlive its block',
+                fn () => $owner->table('tenants')->count(),
+            );
+
+            // The bypass itself still has to work, or the test proves nothing.
+            expect($inside)->toBe(2);
+        } catch (TenantContextException) {
+            // refused is also a pass: nothing was set
+        }
+
+        expect($owner->selectOne("select coalesce(current_setting('app.bypass_tenant', true), '') as bypass")->bypass)
+            ->toBe('')
+            ->and($owner->table('tenants')->count())->toBe(0);
+    });
+});
