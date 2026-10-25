@@ -12,11 +12,11 @@
 
 | | |
 |---|---|
-| **Last completed** | **Nothing since Task 0.** **Task 1 is not complete.** Branch `task-1-db-foundation`, ticket `QRPAGER-1`, PR #1, head `46e2e3e`, both CI checks green and 154 tests passing — and **not safe to tag**. Four reviews have run. The fourth, reading the third's fixes, found **2 High, 1 Medium, 5 Low, all inside the fix commits**: `H-1` was never closed (**H-A**) and the `M-3` fix traded a §4 prose breach for **silent data loss** (**H-B**). Both reproduced independently. See §4a. |
+| **Last completed** | **Task 1 is not tagged.** Branch `task-1-db-foundation`, ticket `QRPAGER-1`, PR #1, head `7bcfdb3`, both CI checks green, **170 passed / 480 assertions**, coverage **98.7 %**. Five rounds have run. The fifth stopped patching and changed the state model: **`app.tenant_id` is now the only source of truth** and the PHP mirror is gone, which is what H-A was. All eight fourth-review findings are closed, each proven by revert where there is code to revert. See §4a. |
 | **Next up** | **Task 2** — API core. Ticket `QRPAGER-9`. Does not start until `task-1` is tagged (§3 order is strict). |
-| **Blocking anything?** | Task 2 is blocked on the `task-1` tag, which is blocked on **H-A, H-B, M-A and L-A…L-E** — open, unowned, unfixed findings in `TenantContext.php`, listed in §4a and deliberately **not** in §5. Green CI is not evidence here: every one of these is a shape no test covers. |
-| **Open debt that must die in Task 2** | Unchanged, and separate from the open findings above: (1) `assertSafeRuntimeRole()` is tested but **nothing calls it yet**, and it must also refuse a runtime task that can resolve owner or root credentials — §2.1 previously claimed it already did (F6). (2) **R-005**, a bypass that throws leaves no audit trace. (3) **R-007**, error mapping: `23514` must not return a constraint name or any SQL. (4) **R-009**, the role verifier reaches the Postgres log 6× per bootstrap. (5) **R-010**, the §4 repo guard for C1/C2 **does not exist** although §4 states it does — the wording is a rank-2 edit and should be corrected in the same change. (6) **R-013** and **R-014**, bootstrap diagnostics and the timeout proofs' missing upper bound. |
-| **Needs the user's decision** | **Whether `TenantContext` gets a fifth patch round or a redesign.** The case for redesign: PHP state mirrors database state and the two are allowed to disagree — `withoutTenantScope()` clears `app.tenant_id` in Postgres but leaves `$this->tenantId` set, which is the door **H-A** walks through. Correctness is spread across one method as order-dependent guards — a re-entry short-circuit, a uuid check, a bypass check, a capture, a success-path-only restore — each added by a different fix round, so each round's guard can be reached around by a composition the previous round did not imagine. **Four reviews have now each found a different door into the same failure**, a scoped block that is not scoped, which reads as one design that cannot be guarded incrementally rather than five separate bugs. |
+| **Blocking anything?** | Task 2 is blocked on the `task-1` tag, which is blocked on **the fifth review** of the fifth round's diff. Nothing else is outstanding on this branch. The standing reason for that review: each of the last two rounds produced a High inside the previous round's fix, so a fix diff nobody has read is the one thing this branch has reliably got wrong. |
+| **Open debt that must die in Task 2** | (1) `assertSafeRuntimeRole()` is tested but **nothing calls it yet**, and it must also refuse a runtime task that can resolve owner or root credentials — §2.1 previously claimed it already did (F6). (2) **R-005**, a bypass that throws leaves no audit trace. (3) **R-007**, error mapping: `23514` must not return a constraint name or any SQL. (4) **R-009**, the role verifier reaches the Postgres log 6× per bootstrap. (5) **R-010**, the §4 repo guard for C1/C2 **does not exist** although §4 states it does — the wording is a rank-2 edit and should be corrected in the same change. (6) **R-013** and **R-014**, bootstrap diagnostics and the timeout proofs' missing upper bound. |
+| **Needs the user's decision** | Nothing open. The fifth-round question — patch again or redesign — was answered by doing the structural part: one source of truth for tenant scope, with the PHP mirror removed rather than guarded. R-003's owner was decided on 2026-10-25: **Task 3** (`QRPAGER-10`), because `§3` row 3 states the expiry job in Task 3's scope and its gate clause verbatim, so the plan won over the disposition (rank 3, `§0`). |
 
 ### Where everything lives
 
@@ -454,23 +454,21 @@ Built: Laravel 13.38.0 in `apps/api`, Docker Compose (Postgres 16.14 + Redis 7, 
 
 ---
 
-### Task 1 — **not complete**. On `task-1-db-foundation` (built 2026-10-25), four reviews run, two Highs open
+### Task 1 — **not tagged**. On `task-1-db-foundation` (built 2026-10-25), five rounds run, fifth review pending
 
 Gates, re-run after the §11 review fixes: `composer pint` **passed** · `composer stan` (level 8)
-**0 errors** · `php artisan test` **154 passed, 421 assertions** against the composed Postgres 16.14 and
+**0 errors** · `php artisan test` **170 passed, 480 assertions** against the composed Postgres 16.14 and
 Redis 7, from a **dropped and rebuilt** test database · `gitleaks protect --staged` passed on every commit
 locally (8.30.1, the CI pin) and `gitleaks detect` passed over full history in CI.
 
-Coverage **99.3 %** against the 90 % gate (`--min=90`), measured by PCOV on the CI run for PR #1 at
-`5f27c63` — run `40227176887`, step "Unit coverage on the code this branch adds". The only file below
-100 % is `Platform/Database/RoleBootstrapper` at **98.3 %**, and its two uncovered lines are 263 and 275:
-the `RuntimeException` guards for "Postgres did not return a formatted statement" and "The root database
-connection is not configured". Neither is reachable from configuration and neither was added by this task.
-The credential-redaction `catch` that left the same file at 92.2 % on `d252260` is covered by the test
-added alongside this line, which drives a real `ALTER ROLE` failure through an int4-overflowing
-`CONNECTION LIMIT`. **No coverage figure in this file is ever a local measurement:** the build machine has
-neither PCOV nor Xdebug, and CI gets PCOV from `shivammathur/setup-php`. A figure recorded here always
-names the run and the commit that produced it.
+Coverage **98.7 %** against the 90 % gate (`--min=90`), measured by PCOV on the CI run for PR #1 at
+`7bcfdb3` — run `40235159657`, step "Unit coverage on the code this branch adds". Two files sit below
+100 %: `Platform/Database/TenantContext` at **97.4 %**, uncovered only at `248-249`, the
+`insertBypassAudit()` catch named above; and `Platform/Database/RoleBootstrapper` at **98.3 %**, uncovered
+only at `263` and `275`, two pre-existing unreachable guard throws this task did not add. **No coverage
+figure in this file is ever a local measurement:** the build machine has neither PCOV nor Xdebug, and CI
+gets PCOV from `shivammathur/setup-php`. A figure recorded here always names the run and the commit that
+produced it.
 
 | Gate clause | Evidence |
 |---|---|
@@ -547,18 +545,17 @@ and finds a High in them.
 
 | # | Sev | Finding | State |
 |---|---|---|---|
-| **H-A** | **High** | **H-1 was never closed, only moved behind a second door.** The refusal added for H-1 sits *after* the same-tenant re-entry short-circuit, so `withTenant` → `withoutTenantScope` → `withTenant` on one connection returns `$callback()` without ever reaching it. Measured: 2 of 2 tenants read inside the "scoped" block, and a keyed cross-tenant `UPDATE` **committed**. Contributing cause: `withoutTenantScope()` clears `app.tenant_id` in Postgres but never touches `$this->tenantId`, so `current()` reports a tenant that is not in force and the short-circuit trusts that stale PHP state. Both H-1 regression tests exercise only the bypass-outermost shape, so they pass. | **OPEN** |
-| **H-B** | **High** | **The M-3 fix traded a §4 prose breach for silent data loss.** `restoreGuc()` swallows, so a callback that catches a `QueryException` and returns leaves `$completed` true: Laravel issues `COMMIT`, Postgres silently converts it to `ROLLBACK`, and the helper returns the callback's value with **no exception anywhere**. Measured at transaction level 0: a write made before the swallowed error was gone afterwards. Concrete case — Task 3's canonical idempotency pattern, catch `23505` and treat as already-done (C5, "`markReady` is idempotent"), would return success while the status change, the outbox row **and** the audit row all roll back. On the bypass path the `audit_log` row the block writes is lost too, which **R-005 does not cover** (that row is scoped to a bypass that *throws*). Before the fix this failure was loud. | **OPEN** |
-| **M-A** | Medium | The pre-check added for H-1 is itself an unwrapped statement, so on an already-aborted transaction it propagates `SQL: select coalesce(current_setting(app.bypass_tenant, true), ) as value` — a fresh breach of "stack traces never carry SQL or bound parameters", at the same call site M-3 was raised for. | **OPEN** |
-| **L-A** | Low | The comment on the two restores in `withoutTenantScope()` asserts the opposite of what the code does: it claims the bypass is restored last "so nothing between these two statements sees a narrowed tenant with the bypass still open", and restoring tenant-first/bypass-last produces exactly that state. Restoring the bypass first is what fails safe. | **OPEN** |
-| **L-B** | Low | `withoutTenantScope()` has no reciprocal guard against being opened inside a tenant scope, and leaves `current()` disagreeing with the database. Loaded gun for §4 › Realtime, where "every read derives that id from the caller's own context" — a Redis key namespaced from `current()` inside a bypass would be built from a tenant id that is not in force. | **OPEN** |
-| **L-C** | Low | The refusal compares against `config('tenancy.bypass_value')` while the policies hard-code `'on'`. Diverge them and the PHP check stops firing while Postgres still grants the bypass: measured, 2 tenants visible inside a "scoped" block. Nothing pins the config value against the policy literal. | **OPEN** |
-| **L-D** | Low | `withTenant()` now costs 5 statements per scope where it cost 4; both GUCs could be read in the one round trip that already exists. §6.5 cost per request. | **OPEN** |
-| **L-E** | Low | Two claims written into *this file* by the previous round that measurement does not support. **R-014's mitigation text is wrong:** `RoleTimeoutTest`'s first test compares `current_setting` against *the same config value*, so it catches role-vs-config drift only — a far-too-high value **in config** passes it and is then waited out, not caught. And §4a's note that the M-3 test leaks `<previous tenant id>` overstates it: on that path the previous value is empty, so no tenant uuid leaks in the test cited. | **OPEN** |
+| **H-A** | **High** | **H-1 was never closed, only moved behind a second door.** The refusal added for H-1 sits *after* the same-tenant re-entry short-circuit, so `withTenant` → `withoutTenantScope` → `withTenant` on one connection returns `$callback()` without ever reaching it. Measured: 2 of 2 tenants read inside the "scoped" block, and a keyed cross-tenant `UPDATE` **committed**. Contributing cause: `withoutTenantScope()` clears `app.tenant_id` in Postgres but never touches `$this->tenantId`, so `current()` reports a tenant that is not in force and the short-circuit trusts that stale PHP state. Both H-1 regression tests exercise only the bypass-outermost shape, so they pass. | **CLOSED** — fifth round, structurally |
+| **H-B** | **High** | **The M-3 fix traded a §4 prose breach for silent data loss.** `restoreGuc()` swallows, so a callback that catches a `QueryException` and returns leaves `$completed` true: Laravel issues `COMMIT`, Postgres silently converts it to `ROLLBACK`, and the helper returns the callback's value with **no exception anywhere**. Measured at transaction level 0: a write made before the swallowed error was gone afterwards. Concrete case — Task 3's canonical idempotency pattern, catch `23505` and treat as already-done (C5, "`markReady` is idempotent"), would return success while the status change, the outbox row **and** the audit row all roll back. On the bypass path the `audit_log` row the block writes is lost too, which **R-005 does not cover** (that row is scoped to a bypass that *throws*). Before the fix this failure was loud. | **CLOSED** — fifth round |
+| **M-A** | Medium | The pre-check added for H-1 is itself an unwrapped statement, so on an already-aborted transaction it propagates `SQL: select coalesce(current_setting(app.bypass_tenant, true), ) as value` — a fresh breach of "stack traces never carry SQL or bound parameters", at the same call site M-3 was raised for. | **CLOSED** — fifth round |
+| **L-A** | Low | The comment on the two restores in `withoutTenantScope()` asserts the opposite of what the code does: it claims the bypass is restored last "so nothing between these two statements sees a narrowed tenant with the bypass still open", and restoring tenant-first/bypass-last produces exactly that state. Restoring the bypass first is what fails safe. | **CLOSED** — fifth round, structurally |
+| **L-B** | Low | `withoutTenantScope()` has no reciprocal guard against being opened inside a tenant scope, and leaves `current()` disagreeing with the database. Loaded gun for §4 › Realtime, where "every read derives that id from the caller's own context" — a Redis key namespaced from `current()` inside a bypass would be built from a tenant id that is not in force. | **CLOSED** — fifth round |
+| **L-C** | Low | The refusal compares against `config('tenancy.bypass_value')` while the policies hard-code `'on'`. Diverge them and the PHP check stops firing while Postgres still grants the bypass: measured, 2 tenants visible inside a "scoped" block. Nothing pins the config value against the policy literal. | **CLOSED** — fifth round, structurally |
+| **L-D** | Low | `withTenant()` now costs 5 statements per scope where it cost 4; both GUCs could be read in the one round trip that already exists. §6.5 cost per request. | **CLOSED** — fifth round |
+| **L-E** | Low | Two claims written into *this file* by the previous round that measurement does not support. **R-014's mitigation text is wrong:** `RoleTimeoutTest`'s first test compares `current_setting` against *the same config value*, so it catches role-vs-config drift only — a far-too-high value **in config** passes it and is then waited out, not caught. And §4a's note that the M-3 test leaks `<previous tenant id>` overstates it: on that path the previous value is empty, so no tenant uuid leaks in the test cited. | **CLOSED** — fifth round |
 
-**These are not accepted risks and are deliberately not in §5.** §5 is for findings carried with an owner and
-a review date. These are unfixed findings on an untagged branch: no owner, no date, nothing shipped. They are
-what the tag is blocked on.
+**All eight were closed in the fifth round** (below) and none was moved into §5. They were never accepted
+risks: they were unfixed findings on an untagged branch.
 
 Also still unaddressed: three comments in `TenantContext.php` have now each asserted something false — the
 §4 trap mechanism (corrected), the `25P02` justification (corrected), and the restore order (L-A, still
@@ -566,6 +563,54 @@ wrong). What survived the fourth review intact: the **M-2** fix, verified discri
 with its recorded limits confirmed and one of its own hedges found pessimistic; the corrected `25P02`
 reasoning on both halves; the §4a note that QA's H-1 has no discriminating regression test; and all six tests
 added or renamed by the fix commit, revert-verified.
+
+**The fifth round (2026-10-26) — the last patch round, and a structural change rather than a sixth guard.**
+Head `7bcfdb3`. Four rounds had each added one more order-dependent check to `run()` and the next
+composition walked around it, so the first change was not a fix for any listed finding:
+
+**`app.tenant_id` on the target connection is now the only source of truth.** The PHP mirror is gone and
+`current()` reads the GUC. That was chosen over making the mirror follow the GUC, because a mirror that
+agrees today can diverge tomorrow and that divergence *was* H-A: `withoutTenantScope()` cleared the GUC in
+Postgres, left `$this->tenantId` set, and the re-entry short-circuit trusted the stale field. There is no
+field left to go stale. `$openScopes` is not a mirror — it records which connections the object opened a
+scope on, is read only to refuse cross-connection reuse, cannot affect which tenant is in force, and a stale
+entry can only make the class stricter.
+
+| # | Closed how | Proven by revert |
+|---|---|---|
+| **H-A** | Structural, three ways: the mirror is gone; the bypass check runs **first**, above every short-circuit; and `withoutTenantScope()` refuses while a tenant context is open — both the GUC on its own connection and `$openScopes` on any connection, both failing closed. | Bypass check moved below re-entry → the order test fails. The two bypass-inside-scope guards removed → four tests fail. |
+| **H-B** | The clear is loud again, and sanitised: a `TenantContextException` with no statement text, no bindings, no chained previous. | `setGuc` swallowing → the durability test fails with *"returned 'callback-finished' and the write is gone"*. |
+| **M-A** | All four statement sites — `setGuc`, `readContext`, `currentRole`, `insertBypassAudit` — convert a driver error into a sanitised exception. | Both catches rethrowing raw → the two sanitisation tests error with the unsanitised message. |
+| **L-A** | Structurally gone: there is no restore order left. `app.tenant_id` is `''` when a bypass opens (the bypass refuses inside a scope) and stays `''` (`run()` refuses inside a bypass), so only the bypass is restored and the "narrowed tenant with the bypass still open" state is unreachable rather than ordered against. | n/a — the second statement no longer exists. |
+| **L-B** | `withoutTenantScope()` has the reciprocal guard, and `current()` reads the GUC so it can no longer disagree with the database. | Guards removed → four tests fail. |
+| **L-C** | Structural: the refusal fires on **any** non-empty bypass GUC, so no configuration value can disarm it. A separate test pins the value used to *set* the bypass against the literal every `owner_bypass_*` policy compares against, read from `pg_policies`. | Config diverged from the policy literal → the pin fails. |
+| **L-D** | `readContext()` reads both GUCs in one round trip. | n/a — a cost change, not a behaviour change. |
+| **L-E** | Doc corrections, including **R-014's mitigation text, now reworded** to what measurement supports rather than flagged as disputed. | n/a |
+
+**The composition matrix.** `TenantContextCompositionTest` walks every composition of the two helpers —
+both nesting directions, same connection and cross connection, with and without an outer transaction —
+because every previous round guarded the one shape its author imagined. Shapes covered: re-entry with the
+same tenant; a different tenant; cross-connection reuse; bypass inside a scope, same and cross connection;
+scope inside a bypass, same and cross connection; bypass inside a bypass; the `scope → bypass → scope`
+shape H-A used; both refusals inside an outer transaction with a residue check; correct scoping inside an
+outer transaction; and a fix-agnostic sweep asserting that **no** nesting of the two yields a block that can
+read or write another tenant. The matrix found one of its own shape definitions wrong on the first run.
+
+**Postgres behaviour asserted in the new comments was measured in this session, none carried over:** a full
+`ROLLBACK` leaves a transaction-local setting empty; `ROLLBACK TO SAVEPOINT` restores the value held when
+the savepoint was taken; `owner_bypass_*` and `tenant_isolation_*` are both `PERMISSIVE` and `FOR ALL`, so
+Postgres ORs them; a plain PHP exception does not abort the transaction while a caught `QueryException`
+does, with `25P02`.
+
+**Not claimed:** `insertBypassAudit()`'s catch (`TenantContext.php:248-249`) is the one uncovered line pair
+in the class. Forcing the audit insert specifically to fail needs the earlier statements on the same
+connection to succeed first, which could not be arranged without reaching around the helper. It is the same
+shape as the two sanitisation paths that *are* covered.
+
+**Also fixed, found by the new matrix:** `TestCase::makeTenant()` built its slug from the first 16 hex
+digits of a `uuid7`, and Laravel's `uuid7` keeps its first **25** stable inside one millisecond, so two
+tenants made back to back collided on `tenants_slug_unique`. A live flake in the gate — the same class as
+F10 — now using the full id.
 
 **Bugs found and fixed in Task 1 — each with a regression test that fails without the fix:**
 
@@ -609,7 +654,7 @@ added or renamed by the fix commit, revert-verified.
 | **R-011** | **`.env.example` ships `DB_SSLMODE=disable`, and `cp .env.example .env` is the documented bootstrap.** The code default is now `require` and genuinely fails closed — verified that `require` and `verify-full` are refused by the TLS-less compose Postgres while `disable` and `prefer` connect — but any environment started from the template inherits plaintext transport. That is F7 with one extra step, and not "visible in a diff" as the template comment claims. L-1, scoped security review of the task-1 fixes. | Low | The template is for local development against a Postgres bound to `127.0.0.1`, which has no TLS to negotiate; without the line a fresh clone cannot run the gates at all. Nothing is deployed, and no deployment inherits `.env.example` — deployments get their environment from Secrets Manager (`§2.1`). | The default is fail-closed, so an environment that sets *nothing* is refused rather than silently downgraded. | Task 13 (`QRPAGER-20`), with R-008 | **Before the first deployed environment exists.** The companion control is a boot refusal of `sslmode` in `{disable, allow, prefer}` outside `local`/`testing`, which pairs with Task 2 wiring `assertSafeRuntimeRole()` |
 | **R-012** | **The per-role connection limits are sized against a local `max_connections` with no deploy-time check, and the app's limit can starve a health check.** 10 + 40 + 20 = 70 against a local `max_connections` of 100 with 3 reserved. Aurora derives `max_connections` from instance class, so on a small instance the sum can exceed capacity and the limits become decorative with nothing noticing. Separately, capping `qrpager_app` at 40 sharpens the §4 load-shedding clause rather than softening it: once 40 app connections are held, a readiness endpoint that queries Postgres **as `qrpager_app`** also fails — the cascade §4 forbids. L-2, scoped security review of the task-1 fixes. | Low | The limits are applied, match config and fit the local cluster, which is what Task 1 can demonstrate. Instance sizing is Task 13's by definition and the endpoints are Task 2's; neither exists. | `BootstrapDatabaseCommandTest` asserts the limits match config and that their sum leaves headroom above `superuser_reserved_connections` on the cluster being bootstrapped. | Task 13 (`QRPAGER-20`) for the sizing check; Task 2 (`QRPAGER-9`) for the readiness coupling | **At each task's gate.** Task 13: `db:bootstrap` refuses when `sum(limits) >= max_connections - superuser_reserved_connections`. Task 2: readiness answers with the app role's pool exhausted |
 | **R-013** | **`withoutLeakingCredentials()` discards every diagnostic, including for failures that carry no credential.** It catches `Throwable`, keeps only `getCode()` and deliberately does not chain. For a `QueryException` that leaves the SQLSTATE, but `format()`'s own `RuntimeException` has code `0`, which the formatter suppresses — so a connectivity or configuration failure reports only *"Could not create or alter role [qrpager_app]. The statement text is withheld…"* and nothing else. L-3, scoped security review of the task-1 fixes. | Low | Operability, not security: the redaction is correct and deliberately total. `db:bootstrap` is run by a human or a deploy step with the Postgres log beside it, not by a request. | The message always names the role, so the failure is localised even without the cause. | Task 2 (`QRPAGER-9`), which owns error mapping to real driver codes | **At Task 2's acceptance gate**, where the message should distinguish "the statement failed" from "the statement was never built" |
-| **R-014** | *(Mitigation text disputed — see **L-E** in §4a.)* **Removing the wall-clock upper bounds from the timeout proofs trades a flaky assertion for an unbounded hang.** F10's fix is right in principle and the remaining assertions are discriminating — disabling `statement_timeout` in config makes the `57014` assertion fail. But the removed upper bound was the only thing that would catch a timeout configured far too high; such a value now hangs the suite until the harness kills it. L-5, scoped security review of the task-1 fixes. | Low | Residual risk is small: the `SHOW`-comparison test in the same file pins the configured value against config, so a wrong value fails there first and fast. A hang is also unmistakable, where the old upper bound produced a *misleading* red on a loaded host — which is what made `§4a` record "135 passed" for a suite that was 134 passed and 1 failed. | `RoleTimeoutTest`'s first test compares every configured timeout as an interval on a fresh connection per role, so a far-too-high value is caught by equality rather than by waiting for it. | Task 2 (`QRPAGER-9`), the next task to touch this suite and the timeouts' load-shedding clause | **At Task 2's acceptance gate** |
+| **R-014** | **Removing the wall-clock upper bounds from the timeout proofs trades a flaky assertion for an unbounded hang.** F10's fix is right in principle and the remaining assertions are discriminating — disabling `statement_timeout` in config makes the `57014` assertion fail. But the removed upper bound was the only thing that would catch a timeout configured far too high; such a value now hangs the suite until the harness kills it. L-5, scoped security review of the task-1 fixes. | Low | Residual risk is small: the `SHOW`-comparison test in the same file pins the configured value against config, so a wrong value fails there first and fast. A hang is also unmistakable, where the old upper bound produced a *misleading* red on a loaded host — which is what made `§4a` record "135 passed" for a suite that was 134 passed and 1 failed. | **Reworded 2026-10-26 (L-E).** The earlier text here claimed `RoleTimeoutTest`'s first test catches a far-too-high value by equality. It does not: that test compares `current_setting` against the **same** config value, so it catches role-vs-config drift only. A far-too-high value *in config* passes it and is then waited out by the firing proof — which is the hang this row is about. There is no compensating control today beyond the configured values being short, visible in `config/tenancy.php`, and in the diff of any change to them. | Task 2 (`QRPAGER-9`), the next task to touch this suite and the timeouts' load-shedding clause | **At Task 2's acceptance gate** |
 _Medium/Low review findings that are not fixed land here with an owner and a date._
 
 ---
