@@ -3,6 +3,21 @@
 use Illuminate\Support\Str;
 use Pdo\Mysql;
 
+$pgsql = static fn (string $username, string $password): array => [
+    'driver' => 'pgsql',
+    'url' => env('DB_URL'),
+    'host' => env('DB_HOST', '127.0.0.1'),
+    'port' => env('DB_PORT', '5432'),
+    'database' => env('DB_DATABASE', 'qrpager'),
+    'username' => $username,
+    'password' => $password,
+    'charset' => env('DB_CHARSET', 'utf8'),
+    'prefix' => '',
+    'prefix_indexes' => true,
+    'search_path' => 'public',
+    'sslmode' => env('DB_SSLMODE', 'prefer'),
+];
+
 return [
 
     /*
@@ -17,7 +32,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'pgsql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -84,20 +99,23 @@ return [
             ]) : [],
         ],
 
-        'pgsql' => [
-            'driver' => 'pgsql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '5432'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'search_path' => 'public',
-            'sslmode' => env('DB_SSLMODE', 'prefer'),
-        ],
+        // One role per connection (PLAN.md §2.1). 'pgsql' is the only connection the
+        // application itself may use; the others belong to migrations, the queue worker
+        // and the one-off role bootstrap.
+        'pgsql' => $pgsql(env('DB_USERNAME', 'qrpager_app'), env('DB_PASSWORD', '')),
+
+        'pgsql_owner' => $pgsql(env('DB_OWNER_USERNAME', 'qrpager_owner'), env('DB_OWNER_PASSWORD', '')),
+
+        'pgsql_worker' => $pgsql(env('DB_WORKER_USERNAME', 'qrpager_worker'), env('DB_WORKER_PASSWORD', '')),
+
+        'pgsql_root' => $pgsql(env('DB_ROOT_USERNAME', 'qrpager_root'), env('DB_ROOT_PASSWORD', '')),
+
+        // Same superuser, pointed at the maintenance database, because CREATE DATABASE
+        // cannot run from inside the database it is creating.
+        'pgsql_bootstrap' => array_merge(
+            $pgsql(env('DB_ROOT_USERNAME', 'qrpager_root'), env('DB_ROOT_PASSWORD', '')),
+            ['database' => env('DB_MAINTENANCE_DATABASE', 'postgres'), 'url' => null],
+        ),
 
         'sqlsrv' => [
             'driver' => 'sqlsrv',

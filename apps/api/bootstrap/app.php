@@ -1,5 +1,6 @@
 <?php
 
+use App\Platform\Console\BootstrapDatabaseCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -11,6 +12,11 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // The platform layer keeps its own console entry points rather than living in
+    // app/Console/Commands, so they are registered explicitly.
+    ->withCommands([
+        BootstrapDatabaseCommand::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         //
     })

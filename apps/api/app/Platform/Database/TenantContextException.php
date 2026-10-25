@@ -1,0 +1,45 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Platform\Database;
+
+use RuntimeException;
+
+final class TenantContextException extends RuntimeException
+{
+    public static function notAUuid(string $value): self
+    {
+        // The value is echoed back deliberately: it is a tenant id, never a secret,
+        // and a rejected value is useless to debug without it.
+        return new self("Tenant id [{$value}] is not a uuid.");
+    }
+
+    public static function alreadyInAnotherTenant(string $active, string $requested): self
+    {
+        return new self(
+            "Tenant context is already set to [{$active}]; it cannot be changed to [{$requested}] "
+            .'inside the same transaction.'
+        );
+    }
+
+    public static function alreadyOnAnotherConnection(string $active, string $requested): self
+    {
+        return new self(
+            "Tenant context is already open on connection [{$active}]; it cannot be reused on [{$requested}]."
+        );
+    }
+
+    public static function bypassRequiresOwner(string $role, string $owner): self
+    {
+        return new self(
+            "A tenant bypass may only run as [{$owner}], not [{$role}]. "
+            .'Every bypass policy is TO the owner role alone (PLAN.md §2.2).'
+        );
+    }
+
+    public static function bypassNeedsAReason(): self
+    {
+        return new self('A tenant bypass needs a reason: it is written to audit_log (PLAN.md §2.10).');
+    }
+}

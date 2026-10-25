@@ -37,16 +37,33 @@ jobs:
       run:
         working-directory: apps/api
 
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: qrpager_test
+      DB_USERNAME: qrpager_app
+      DB_PASSWORD: local_dev_only
+      DB_OWNER_USERNAME: qrpager_owner
+      DB_OWNER_PASSWORD: local_dev_only
+      DB_WORKER_USERNAME: qrpager_worker
+      DB_WORKER_PASSWORD: local_dev_only
+      DB_ROOT_USERNAME: qrpager_root
+      DB_ROOT_PASSWORD: local_dev_only
+      DB_MAINTENANCE_DATABASE: postgres
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: qrpager_owner
+          POSTGRES_USER: qrpager_root
           POSTGRES_PASSWORD: local_dev_only
           POSTGRES_DB: qrpager_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U qrpager_owner -d qrpager_test"
+          --health-cmd "pg_isready -U qrpager_root -d qrpager_test"
           --health-interval 3s
           --health-timeout 3s
           --health-retries 20
@@ -68,7 +85,7 @@ jobs:
         with:
           php-version: '8.4'
           extensions: pdo_pgsql, redis, mbstring, intl, bcmath, gd, curl, zip, xml
-          coverage: none
+          coverage: pcov
           tools: composer:v2
 
       - name: Cache Composer
@@ -84,33 +101,46 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
-        env:
-          DB_USERNAME: qrpager_owner
-          DB_PASSWORD: local_dev_only
 
       - run: composer pint
 
       - run: composer stan
 
+      - name: Bootstrap roles and the database
+        run: php artisan db:bootstrap
+
       - name: Migrations apply clean from empty, twice
         run: |
-          php artisan migrate --force
-          php artisan migrate --force | tee /tmp/second.txt
+          php artisan migrate --database=pgsql_owner --force
+          php artisan migrate --database=pgsql_owner --force | tee /tmp/second.txt
           grep -q "Nothing to migrate" /tmp/second.txt
-        env:
-          DB_CONNECTION: pgsql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 5432
-          DB_DATABASE: qrpager_test
-          DB_USERNAME: qrpager_owner
-          DB_PASSWORD: local_dev_only
+
+      # Proven here rather than locally: rollback under FORCE RLS as a non-superuser
+      # owner is exactly the kind of thing that works on a developer's machine and
+      # fails on a clean one (QRPAGER-1, gate amendment).
+      - name: Rollback runs clean and a re-apply returns the identical schema
+        run: |
+          fingerprint() {
+            PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test \
+              -q -f database/schema-fingerprint.sql
+          }
+          fingerprint > /tmp/schema-before.txt
+          wc -l /tmp/schema-before.txt
+
+          php artisan migrate:rollback --database=pgsql_owner --force
+
+          remaining=$(PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -tAc \
+            "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r'")
+          echo "tables left after rollback: $remaining (expected 1, the migrations table)"
+          test "$remaining" = "1"
+
+          php artisan migrate --database=pgsql_owner --force
+          fingerprint > /tmp/schema-after.txt
+          diff -u /tmp/schema-before.txt /tmp/schema-after.txt
+          echo "schema identical after rollback and re-apply"
 
       - name: Tests against real Postgres and Redis
         run: php artisan test
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 5432
-          DB_USERNAME: qrpager_owner
-          DB_PASSWORD: local_dev_only
-          REDIS_HOST: 127.0.0.1
-          REDIS_PORT: 6379
+
+      - name: Unit coverage on the code this branch adds
+        run: php artisan test --coverage --min=90
