@@ -30,7 +30,34 @@ beforeEach(function (): void {
     // Each case gets its own IP and tenant, so buckets never carry between tests -- and
     // real Redis keeps them for a minute.
     $this->tenant = $this->actingForTenant();
-    $this->ip = '203.0.113.'.random_int(1, 254);
+
+    // A COUNTER, AND THEN THE BUCKETS ARE CLEARED. Both halves are load-bearing and
+    // both were learned here rather than reasoned about:
+    //
+    //   random_int(1, 254) per test: this file now makes ~26 requests, so by the
+    //   birthday bound a collision is likely rather than rare -- and the bucket lives
+    //   in REAL Redis for a minute, so a collision makes one test refuse another test's
+    //   FIRST request. Two unrelated cases failed with 429 the moment the verb dataset
+    //   below was added.
+    //
+    //   A counter alone is worse, not better: it restarts at 1 every run, so a second
+    //   run inside the same minute reuses every address and NINE cases failed
+    //   deterministically. Measured, immediately after swapping random for the counter.
+    //
+    // So the address is deterministic -- a failure reproduces -- and the state this
+    // file depends on is REMOVED rather than hoped to be absent. That is the "correct
+    // on a clean build, wrong on a machine carrying earlier state" shape §4a records
+    // four times on this branch; the only reliable answer to it is to own the state.
+    static $nth = 0;
+    $this->ip = '203.0.113.'.(++$nth);
+
+    // Bucket names from config, so this cannot drift from the limiter's own list.
+    $limiter = app(RequestLimiter::class);
+
+    foreach (array_keys((array) config('ratelimit.buckets')) as $bucket) {
+        $limiter->clear("ratelimit:{$bucket}:ip:".sha1($this->ip));
+        $limiter->clear("ratelimit:{$bucket}:tenant:{$this->tenant}");
+    }
 
     Route::middleware('api')->prefix('v1')->get('limit-probe', fn () => response()->json(['ok' => true]));
 });
@@ -199,6 +226,121 @@ it('counts unknown paths on their own bucket, and not against /v1’s', function
     // Separate buckets: a scan that exhausts the 404 limit must not lock the same
     // address out of the real API, and vice versa.
     $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->getJson('/v1/limit-probe')->assertStatus(200);
+});
+
+/*
+ * Security finding #1. Route::fallback() registers the route for GET alone, and
+ * RouteCollection::match() looks only in the bucket for the request's own method -- so
+ * every other verb found no route, fell through to checkForAlternateVerbs, and was
+ * answered 405 by the ROUTER before any route middleware ran. Measured at cb584c3:
+ * GET /nope recorded 3 attempts while POST, PUT, DELETE and OPTIONS recorded 0, and
+ * OPTIONS /nope was answered 200 text/html with an Allow header.
+ *
+ * The clause is "the rate limiter covers unknown routes (404s)" and it held for GET
+ * only, which is also why the case above -- the one that was supposed to prove it --
+ * stayed green: it uses getJson.
+ */
+
+it('counts an unknown path on every verb the router dispatches, not only GET', function (string $verb): void {
+    config(['ratelimit.buckets.unknown.per_ip.attempts' => 1]);
+
+    // First request through: 404, and COUNTED. Second: refused, which is the proof that
+    // the first one reached the bucket at all -- asserting 404 twice would pass against
+    // a limiter that never ran.
+    $first = $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->json($verb, '/no-such-path-a');
+    $second = $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->json($verb, '/no-such-path-b');
+
+    $first->assertStatus(404);
+    $second->assertStatus(429);
+
+    // HEAD carries no body by definition, so the envelope is asserted on the verbs that
+    // have one. The status and the bucket are the property under test either way.
+    if ($verb !== 'HEAD') {
+        $first->assertJsonPath('type', ProblemType::NotFound->value);
+        $second->assertJsonPath('type', ProblemType::RateLimited->value);
+    }
+})->with([
+    // Router::$verbs in full, spelled out here on purpose: the production registration
+    // uses any() so it cannot go stale, and this list is the independent check that it
+    // really covers them. POST and OPTIONS are the two the review named.
+    'GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'QUERY',
+]);
+
+it('no longer answers an unauthenticated 200 to OPTIONS on any path', function (): void {
+    // The router's own OPTIONS short-circuit returned 200 text/html with an Allow
+    // header, on no middleware at all -- a free, uncounted, unshed 200 for any path in
+    // the application, and the one response that was not a problem document.
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->json('OPTIONS', '/healthz');
+
+    expect($response->status())->toBe(404)
+        ->and($response->headers->get('Content-Type'))->toContain('application/problem+json')
+        ->and($response->headers->get('Allow'))->toBeNull();
+});
+
+it('answers a wrong verb on a real route as 404 rather than 405', function (): void {
+    // The accepted trade of registering the fallback for every verb: the fallback sits
+    // in that verb's bucket and matches, so the router never reaches
+    // checkForAlternateVerbs. For an API that is the better answer -- a 405 tells a
+    // scanner the path exists under some other verb -- and it is asserted here so the
+    // change is deliberate rather than discovered later.
+    $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->json('POST', '/healthz')
+        ->assertStatus(404);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->json('DELETE', '/v1/limit-probe')
+        ->assertStatus(404);
+});
+
+/*
+ * Security finding #2. The per-IP bucket is only a per-IP bucket if ip() is the client.
+ *
+ * Both directions are asserted, and the second one is why the boot check exists: the
+ * DEFAULT is wrong, not merely unset. These go through a real request and read the key
+ * the middleware actually wrote, for the same reason the case below does -- a test that
+ * computes the key it expects is testing its own arithmetic.
+ */
+
+it('keys the per-IP bucket on the forwarded client when the peer is a trusted proxy', function (): void {
+    config(['trustedproxy.proxies' => '10.0.0.0/8']);
+
+    $client = '198.51.100.23';
+    $proxy = '10.0.0.7';
+
+    $this->withServerVariables(['REMOTE_ADDR' => $proxy])
+        ->withHeaders(['X-Forwarded-For' => $client])
+        ->getJson('/v1/limit-probe')
+        ->assertStatus(200);
+
+    $keys = implode(' ', array_map('strval', (array) Redis::connection('cache')->keys('*ratelimit*')));
+
+    // No message argument: Pest's toContain takes FURTHER NEEDLES, so a message there
+    // becomes a second string the key list has to contain. The file's own earlier case
+    // records that trap; this one walked into it anyway.
+    expect($keys)->toContain(sha1($client))
+        ->not->toContain(sha1($proxy));
+});
+
+it('keys it on the peer when nothing is trusted, which is the default the boot check refuses', function (): void {
+    // THE MEASUREMENT BEHIND THE REFUSAL, kept as a test rather than a comment. With no
+    // trusted proxy Laravel calls setTrustedProxies([], ...) and ip() is REMOTE_ADDR,
+    // so behind the ALB every client shares one bucket. Asserting the broken behaviour
+    // is what makes the boot check's existence checkable: delete the check and this
+    // still passes, delete the CONFIG and the case above fails.
+    config(['trustedproxy.proxies' => null]);
+
+    $client = '198.51.100.99';
+    $proxy = '10.0.0.8';
+
+    $this->withServerVariables(['REMOTE_ADDR' => $proxy])
+        ->withHeaders(['X-Forwarded-For' => $client])
+        ->getJson('/v1/limit-probe')
+        ->assertStatus(200);
+
+    $keys = implode(' ', array_map('strval', (array) Redis::connection('cache')->keys('*ratelimit*')));
+
+    expect($keys)->toContain(sha1($proxy))
+        ->not->toContain(sha1($client));
 });
 
 it('hashes the address in the key the middleware actually writes', function (): void {

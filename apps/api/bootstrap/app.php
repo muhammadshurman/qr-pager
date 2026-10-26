@@ -31,18 +31,6 @@ return Application::configure(basePath: dirname(__DIR__))
             // version did. Approved 2026-10-26; the reason is in §6 beside the policy.
             require __DIR__.'/../routes/probes.php';
 
-            // "The rate limiter covers unknown routes (404s)" -- PLAN.md §3, row 2,
-            // which names this clause explicitly. A 404 costs almost nothing to serve
-            // and everything to scan with, so an unmatched path gets its own tighter
-            // bucket and a problem+json document rather than Laravel's HTML page.
-            //
-            // Registered LAST, after the probes and after /v1, because a fallback
-            // matches anything: declared earlier it would swallow them. It carries no
-            // tenant middleware, because an unknown path has no tenant to resolve and
-            // refusing it as unauthenticated would tell a scanner which paths exist.
-            // ->fallback() first and ->middleware() after: RouteRegistrar has no
-            // fallback() method, so Route::middleware([...])->fallback(...) fails at boot
-            // with "Method Illuminate\Routing\RouteRegistrar::fallback does not exist".
             // The SIGTERM drain proof's slow route, and the only conditional route
             // loading in this file. Two conditions, both visible here: the file has to
             // exist, and the environment must not be production. It is mounted into the
@@ -60,9 +48,52 @@ return Application::configure(basePath: dirname(__DIR__))
                 require __DIR__.'/../routes/drain.php';
             }
 
-            Route::fallback(
+            // "The rate limiter covers unknown routes (404s)" -- PLAN.md §3, row 2,
+            // which names this clause explicitly. A 404 costs almost nothing to serve
+            // and everything to scan with, so an unmatched path gets its own tighter
+            // bucket and a problem+json document rather than Laravel's HTML page.
+            //
+            // any() AND NOT fallback(), which is the whole of security finding #1.
+            // Router::fallback() registers the route for GET alone -- addRoute('GET',
+            // ...) -- and RouteCollection::match() looks only in the bucket for the
+            // request's own method. So a POST to an unmatched path found no route at
+            // all, fell through to checkForAlternateVerbs, and the ROUTER answered 405
+            // before any route middleware could run. Measured at cb584c3: GET /nope
+            // recorded 3 attempts against the unknown bucket while POST, PUT, DELETE
+            // and OPTIONS each recorded 0, and OPTIONS /nope was answered 200 text/html
+            // with an Allow header by the router's own short-circuit. The gate clause
+            // held for GET and for nothing else, and every other verb was an unmetered,
+            // unshed request into this application.
+            //
+            // any() rather than a hand-written verb list, because the list is
+            // Router::$verbs and in Laravel 13 that is eight entries including QUERY --
+            // a list written out here would be a copy that goes stale the next time the
+            // framework adds a method, which is the shape the guard's own duplicated
+            // path list just cost us (QA H-1).
+            //
+            // THE TRADE, stated because it changes observable behaviour: a wrong verb on
+            // a real route is now 404, not 405, because the fallback sits in that verb's
+            // bucket and matches. For an API that is the better answer -- a 405 tells a
+            // scanner the path exists under some other verb -- but it means
+            // ProblemType::MethodNotAllowed is no longer reachable through routing. The
+            // case stays: ProblemRenderer still maps a MethodNotAllowedHttpException,
+            // which a package or a controller can raise.
+            //
+            // Registered LAST, after the probes and after /v1, because a fallback
+            // matches anything: declared earlier it would swallow them. It carries no
+            // tenant middleware, because an unknown path has no tenant to resolve and
+            // refusing it as unauthenticated would tell a scanner which paths exist.
+            //
+            // ->any() then ->where() then ->fallback() then ->middleware(), in that
+            // order: RouteRegistrar has no fallback() method, so putting middleware
+            // first fails at boot with "Method Illuminate\Routing\RouteRegistrar::
+            // fallback does not exist".
+            Route::any(
+                '{fallbackPlaceholder}',
                 fn (Request $request) => (new Problem(ProblemType::NotFound, $request->getPathInfo()))->toResponse(),
-            )->middleware([RateLimit::class.':unknown']);
+            )->where('fallbackPlaceholder', '.*')
+                ->fallback()
+                ->middleware([RateLimit::class.':unknown']);
         },
     )
     // Laravel's health: '/up' was removed here. It was the only other public route, it
@@ -89,6 +120,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // The global arming above still applies, and there is nothing for it to refuse:
         // /healthz reads nothing and /readyz reads one Redis key.
         $middleware->group('probe', []);
+
+        // TrustProxies is already on the global stack, and what it trusts is
+        // config/trustedproxy.php -- read there, not configured here, because the
+        // Middleware closure runs before LoadConfiguration and config() is not
+        // available to it yet. That file is where the per-IP rate limit's key really
+        // comes from: with nothing trusted, $request->ip() is the peer, which behind
+        // the locked ALB is the balancer and not the client (security #2). BootChecks
+        // refuses to serve on an empty or catch-all value.
 
         // Every /v1 route, in this order and for a reason each. The limiter runs FIRST
         // so an unauthenticated flood costs the limiter and not the resolver; the tenant

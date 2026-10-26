@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 /*
  * Gate clause (b), approved on 2026-10-26: "no error response body carries a database
@@ -147,7 +148,21 @@ it('renders 404 and 405 as problem documents', function (): void {
     $notFound->assertStatus(404)->assertJsonPath('type', ProblemType::NotFound->value);
     expect($notFound->headers->get('Content-Type'))->toContain('application/problem+json');
 
+    // A WRONG VERB IS NOW 404, not 405, and that is deliberate: the fallback is
+    // registered for every verb the router dispatches (security #1), so it sits in the
+    // POST bucket and matches before checkForAlternateVerbs is reached. This case used
+    // to assert 405 here, and it is the one place in the suite that observed the
+    // router's method handling -- so it is also where the trade is recorded.
     $this->postJson('/v1/probe-method')
+        ->assertStatus(404)
+        ->assertJsonPath('type', ProblemType::NotFound->value);
+
+    // ...and the 405 document still renders, which is what keeps the enum case honest
+    // now that routing cannot produce it. ProblemRenderer maps the exception, and a
+    // package or a controller can still raise it.
+    throwingRoute('probe-method-thrown', fn () => throw new MethodNotAllowedHttpException(['GET']));
+
+    $this->getJson('/v1/probe-method-thrown')
         ->assertStatus(405)
         ->assertJsonPath('type', ProblemType::MethodNotAllowed->value);
 });

@@ -15,7 +15,7 @@ use Throwable;
 /**
  * The ordered boot checks from `§6.4 › config validation at boot`.
  *
- * One class, five clauses, returning REASONS rather than throwing: the caller decides
+ * One class, six clauses, returning REASONS rather than throwing: the caller decides
  * what refusing means -- a worker exits 1, a console command returns 1 -- and a check
  * that returns a list can be tested one clause at a time without catching anything.
  *
@@ -39,6 +39,18 @@ final class BootChecks
     public const SESSION_SCOPED_TENANT_SETTING = 'session-scoped-tenant-setting';
 
     public const DEBUG_ENABLED = 'debug-enabled';
+
+    public const UNTRUSTED_PROXY_CONFIGURATION = 'untrusted-proxy-configuration';
+
+    /**
+     * Values that make X-Forwarded-For attacker-controlled rather than trustworthy.
+     *
+     * Laravel maps both to the catch-all 0.0.0.0/0 and ::/0, so every peer is a
+     * trusted proxy and the forwarded header is whatever the caller sent.
+     *
+     * @var list<string>
+     */
+    private const CATCH_ALL_PROXIES = ['*', '**'];
 
     /**
      * sslmode values that do not guarantee an encrypted session.
@@ -81,6 +93,7 @@ final class BootChecks
             ...$this->runtimeRoleIsSafe($connection),
             ...$this->privilegedCredentialsAreAbsent(),
             ...$this->sslmodeIsNotWeak(),
+            ...$this->trustedProxiesAreSound(),
             ...$this->connectionCarriesNoTenantSetting($connection),
             ...$this->debugIsOff(),
         ]));
@@ -202,6 +215,116 @@ final class BootChecks
         return [self::WEAK_SSLMODE.': '.implode(', ', $weak).'. [prefer] is libpq\'s own default and '
             .'silently downgrades to an unencrypted session when the server does not offer TLS, with '
             .'nothing in any log (F7). Use require or stronger; Task 13 owns verify-full.'];
+    }
+
+    /**
+     * Security finding #2: what $request->ip() returns is what the per-IP limit counts.
+     *
+     * With no trusted proxy, ip() is the raw REMOTE_ADDR -- measured: REMOTE_ADDR
+     * 10.0.0.7 plus X-Forwarded-For 203.0.113.9 gave 10.0.0.7. Behind the locked ALB
+     * that is the balancer's own ENI, so the per-IP bucket becomes one bucket per ALB
+     * node shared by every client, the per-IP limit §4 › Edge & ops requires does not
+     * exist, and the limiter inverts into a shared-fate denial of service.
+     *
+     * THREE WAYS TO GET THIS WRONG, AND ALL THREE REFUSE HERE. Empty is the bug above.
+     * '*' is worse: it trusts every peer, so the forwarded header becomes whatever the
+     * caller sent and the limit is bypassed by rotating it. And an entry that does not
+     * parse is the quietest of the three -- Symfony's IpUtils simply never matches it,
+     * so a typo in a CIDR silently restores the first case with nothing in any log.
+     * A check that accepted a malformed value would be a control that reports success
+     * it has not established, which is the shape this branch has paid for twice.
+     *
+     * Exempt in local and testing: neither has a proxy in front of it, so the peer IS
+     * the client and trusting nothing is correct there.
+     *
+     * The single-ingress assumption this depends on is written down in
+     * config/trustedproxy.php and owned by Task 13 along with the CIDR itself.
+     *
+     * @return list<string>
+     */
+    public function trustedProxiesAreSound(): array
+    {
+        if ($this->isDevelopment()) {
+            return [];
+        }
+
+        $entries = $this->configuredProxies();
+
+        if ($entries === []) {
+            return [self::UNTRUSTED_PROXY_CONFIGURATION.': no trusted proxy is configured, so '
+                .'$request->ip() is the peer address. Behind a load balancer that is the balancer, '
+                .'and the per-IP rate limit becomes one bucket shared by every client on this task '
+                .'(§4 › Edge & ops requires a limit per IP). Set TRUSTED_PROXIES to the CIDR the '
+                .'balancer connects from -- never to a catch-all; see config/trustedproxy.php.'];
+        }
+
+        foreach ($entries as $entry) {
+            if (in_array($entry, self::CATCH_ALL_PROXIES, true)) {
+                return [self::UNTRUSTED_PROXY_CONFIGURATION.': TRUSTED_PROXIES trusts every peer '
+                    ."([{$entry}]), which makes X-Forwarded-For whatever the caller sent -- the per-IP "
+                    .'rate limit is then bypassed by rotating one header, which is worse than having '
+                    .'no value at all. Name the balancer\'s CIDR instead.'];
+            }
+        }
+
+        $invalid = array_values(array_filter(
+            $entries,
+            fn (string $entry): bool => ! $this->isProxyAddress($entry),
+        ));
+
+        if ($invalid !== []) {
+            return [self::UNTRUSTED_PROXY_CONFIGURATION.': TRUSTED_PROXIES carries entries that are '
+                .'not an address, a CIDR or REMOTE_ADDR: ['.implode('], [', $invalid).']. Symfony '
+                .'never matches such an entry, so it would be inert and $request->ip() would quietly '
+                .'go back to being the peer address.'];
+        }
+
+        return [];
+    }
+
+    /**
+     * The configured entries, from either spelling Laravel accepts.
+     *
+     * @return list<string>
+     */
+    private function configuredProxies(): array
+    {
+        /** @var mixed $configured */
+        $configured = config('trustedproxy.proxies');
+
+        $raw = match (true) {
+            is_string($configured) => explode(',', $configured),
+            is_array($configured) => $configured,
+            default => [],
+        };
+
+        return array_values(array_filter(
+            array_map(static fn (mixed $entry): string => is_string($entry) ? trim($entry) : '', $raw),
+            static fn (string $entry): bool => $entry !== '',
+        ));
+    }
+
+    /** An address, a CIDR, or the REMOTE_ADDR token Laravel resolves to the peer. */
+    private function isProxyAddress(string $entry): bool
+    {
+        if ($entry === 'REMOTE_ADDR') {
+            return true;
+        }
+
+        if (! str_contains($entry, '/')) {
+            return filter_var($entry, FILTER_VALIDATE_IP) !== false;
+        }
+
+        [$address, $prefix] = explode('/', $entry, 2);
+
+        if (filter_var($address, FILTER_VALIDATE_IP) === false || ! ctype_digit($prefix)) {
+            return false;
+        }
+
+        // The ceiling is per family: a /64 is ordinary for IPv6 and meaningless for v4.
+        $bits = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? 32 : 128;
+
+        return (int) $prefix <= $bits;
     }
 
     /**

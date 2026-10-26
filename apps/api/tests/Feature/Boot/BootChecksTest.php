@@ -139,6 +139,73 @@ it('refuses an sslmode that can silently downgrade to plaintext — D8', functio
     }
 });
 
+/*
+ * Security finding #2. Three ways to get trusted proxies wrong, all three refused, and
+ * the exemption for local/testing asserted so the suite's own exemption is deliberate.
+ */
+
+it('refuses to serve with no trusted proxy configured, outside local and testing', function (): void {
+    app()->detectEnvironment(fn () => 'production');
+    config(['trustedproxy.proxies' => null]);
+
+    $failures = app(BootChecks::class)->trustedProxiesAreSound();
+
+    expect($failures)->toHaveCount(1)
+        ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
+        // The remedy is in the message, because the person reading it is holding a
+        // container that will not start.
+        ->and($failures[0])->toContain('TRUSTED_PROXIES');
+});
+
+it('refuses a catch-all, which is worse than refusing an empty value', function (string $catchAll): void {
+    app()->detectEnvironment(fn () => 'production');
+    config(['trustedproxy.proxies' => $catchAll]);
+
+    $failures = app(BootChecks::class)->trustedProxiesAreSound();
+
+    // Laravel maps both spellings to 0.0.0.0/0 and ::/0, so every peer becomes a
+    // trusted proxy and X-Forwarded-For is whatever the caller sent -- the per-IP
+    // limit is then bypassed by rotating one header.
+    expect($failures)->toHaveCount(1)
+        ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
+        ->and($failures[0])->toContain('every peer');
+})->with(['*', '**']);
+
+it('refuses an entry that does not parse, because Symfony would leave it inert', function (): void {
+    app()->detectEnvironment(fn () => 'production');
+
+    // One good entry and one typo. The good entry would make this "work" while the
+    // typo quietly does nothing, which is the failure mode worth refusing: IpUtils
+    // never matches a malformed entry and nothing says so.
+    config(['trustedproxy.proxies' => '10.0.0.0/8, 10.0.0.0/33, not-an-address']);
+
+    $failures = app(BootChecks::class)->trustedProxiesAreSound();
+
+    expect($failures)->toHaveCount(1)
+        ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
+        ->and($failures[0])->toContain('10.0.0.0/33')
+        ->and($failures[0])->toContain('not-an-address');
+});
+
+it('accepts a CIDR, a bare address, both families and the REMOTE_ADDR token', function (): void {
+    app()->detectEnvironment(fn () => 'production');
+
+    foreach (['10.0.0.0/8', '10.0.0.7', '2001:db8::/32', '2001:db8::1', 'REMOTE_ADDR', '10.0.0.0/8,REMOTE_ADDR'] as $value) {
+        config(['trustedproxy.proxies' => $value]);
+
+        expect(app(BootChecks::class)->trustedProxiesAreSound())->toBe([], "[{$value}] was refused");
+    }
+});
+
+it('exempts local and testing, where the peer is the client', function (string $environment): void {
+    app()->detectEnvironment(fn () => $environment);
+    config(['trustedproxy.proxies' => null]);
+
+    // No proxy sits in front of either, so trusting nothing is the correct answer and
+    // the suite is not asked to configure one.
+    expect(app(BootChecks::class)->trustedProxiesAreSound())->toBe([]);
+})->with(['local', 'testing']);
+
 it('refuses to serve on a connection carrying a session-scoped tenant setting — R-020', function (): void {
     $tenant = (string) Str::uuid7();
 
@@ -195,9 +262,13 @@ it('logs every reason at critical and then stops, which is the gate’s own word
 
     expect($stopped)->toBe(1);
 
-    // Three reasons, each its own line: credentials, sslmode, debug. One line carrying
-    // all of them is one line an operator has to parse.
-    Log::shouldHaveReceived('critical')->times(3);
+    // Four reasons, each its own line: credentials, sslmode, trusted proxies, debug.
+    // One line carrying all of them is one line an operator has to parse.
+    //
+    // Trusted proxies joined the list with security finding #2: the suite's
+    // TRUSTED_PROXIES is empty, which is correct for local and refused for production,
+    // so this production scenario reports it too.
+    Log::shouldHaveReceived('critical')->times(4);
 });
 
 it('does not stop a healthy boot', function (): void {
@@ -214,9 +285,10 @@ it('exits 1 as a real process, because an exit code cannot be asserted in-proces
     // subprocess does not inherit phpunit's environment block, and the database the
     // suite just bootstrapped is the only one a fresh clone is guaranteed to have.
     // DB_SSLMODE stays `disable` because local Postgres has no TLS -- which is itself
-    // the reason the production run below reports TWO reasons and cannot be reduced to
-    // one here: a production boot check against a TLS-less cluster always refuses on
-    // sslmode as well, and that is correct.
+    // the reason the production run below reports THREE reasons and cannot be reduced
+    // to one here: a production boot check against a TLS-less cluster always refuses on
+    // sslmode as well, and with no TRUSTED_PROXIES it refuses on that too. Both are
+    // correct, and both are asserted rather than tolerated.
     $shared = [
         'DB_DATABASE' => (string) config('database.connections.pgsql.database'),
         'DB_SSLMODE' => 'disable',
@@ -232,6 +304,10 @@ it('exits 1 as a real process, because an exit code cannot be asserted in-proces
     expect($refused->exitCode())->toBe(1)
         ->and($said)->toContain(BootChecks::PRIVILEGED_CREDENTIALS_RESOLVABLE)
         ->and($said)->toContain(BootChecks::WEAK_SSLMODE)
+        // Security #2, proven on the real-process path as well as in-process: a
+        // production boot with no TRUSTED_PROXIES refuses, so the per-IP rate limit
+        // cannot silently become one bucket per load balancer.
+        ->and($said)->toContain(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
         // The role was verifiable, so the 1 is the check's verdict and not a process
         // that could not reach Postgres.
         ->and($said)->not->toContain(BootChecks::UNSAFE_RUNTIME_ROLE);
