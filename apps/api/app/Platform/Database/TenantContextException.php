@@ -13,9 +13,11 @@ final class TenantContextException extends RuntimeException
      * Anything interpolated into one of these messages that did not come from this
      * class, rendered so it cannot forge a log line.
      *
-     * Three of these messages carry text this class never validated: the tenant
-     * setting read from the session, the role read from current_user, and the caller's
-     * own rejected value. Measured with the GUC set to
+     * Four of these messages carry text this class never validated: the tenant setting
+     * read from the session, the role read from current_user, the caller's own rejected
+     * value, and the SQLSTATE taken from whatever Throwable escaped a statement -- which
+     * is only five alphanumerics when it comes from PDO, and is not guaranteed to come
+     * from PDO (F8, seventh security review). Measured with the GUC set to
      * "injected\nFAKE LOG LINE level=emergency token=secret": the message, and the
      * Monolog line built from it, carried the newline and the forged content verbatim
      * (L-1, sixth security review). An exception message reaches the log, so an
@@ -84,25 +86,24 @@ final class TenantContextException extends RuntimeException
      * Laravel's transaction counter resets with it, so the COMMIT became a no-op and
      * the block's writes were discarded. Loud, because silent was H-B
      * (M-2, fifth security review).
+     *
+     * Deliberately does not claim the work was discarded. Measured: a callback that
+     * calls commit() reaches this refusal with its writes COMMITTED, so a caller that
+     * retried on the old wording would double-write, against §4 › Realtime's "a retry
+     * never double-notifies" (F7, seventh security review).
      */
     public static function scopeWasLostDuringCallback(string $connection): self
     {
         return new self(
             "The tenant scope opened on connection [{$connection}] was no longer in force when the "
-            .'block finished, so the connection underneath it was replaced and the transaction '
-            .'this method opened no longer exists. Anything the block wrote has been discarded. '
-            .'Reported rather than returned: returning here is how a rolled-back write looks '
-            .'like a success.'
+            .'block finished: the transaction this method opened is gone, either because the '
+            .'connection underneath it was replaced or because something in the block committed '
+            .'it. Whether the block\'s writes were discarded or already committed cannot be '
+            .'determined from here, so this is not safe to retry blindly. Reported rather than '
+            .'returned: returning here is how a rolled-back write looks like a success.'
         );
     }
 
-    /**
-     * The callback left the transaction deeper than the scope opened it, so Laravel's
-     * commit at that depth only decrements and issues no COMMIT: the callback's work is
-     * discarded while this method would otherwise have returned its value. The third
-     * route to H-B's failure, and the one that also carries an open transaction into
-     * the next request on an Octane worker (M-2, sixth security review).
-     */
     /**
      * The setting in force at the end of the block is not the one this scope set, at
      * the same transaction depth -- so something inside the callback wrote over it with
@@ -120,13 +121,20 @@ final class TenantContextException extends RuntimeException
         );
     }
 
+    /**
+     * The callback left the transaction deeper than the scope opened it, so Laravel's
+     * commit at that depth only decrements and issues no COMMIT: the callback's work is
+     * discarded while this method would otherwise have returned its value. The third
+     * route to H-B's failure, and the one that also carries an open transaction into
+     * the next request on an Octane worker (M-2, sixth security review).
+     */
     public static function transactionLeftOpenByCallback(string $connection, int $opened, int $found): self
     {
         return new self(
             "The callback left connection [{$connection}] at transaction depth {$found}, where this "
             ."tenant scope opened it at {$opened}. A transaction the callback opened and did not close "
-            .'swallows the commit for everything the block wrote, so the work has been rolled back and '
-            .'the connection reset rather than reported as a success.'
+            .'swallows the commit for everything the block wrote, so the work this scope opened has been '
+            .'rolled back, back to the depth the caller was at, rather than reported as a success.'
         );
     }
 
@@ -175,8 +183,8 @@ final class TenantContextException extends RuntimeException
     public static function statementFailed(string $operation, string $sqlstate): self
     {
         return new self(
-            "Tenant context could not be {$operation}"
-            .($sqlstate === '' || $sqlstate === '0' ? '' : " (SQLSTATE {$sqlstate})")
+            'Tenant context could not be '.self::printable($operation, 16)
+            .($sqlstate === '' || $sqlstate === '0' ? '' : ' (SQLSTATE '.self::printable($sqlstate, 16).')')
             .'. The statement and its bindings are withheld deliberately: an escaping '
             .'driver message would carry both.'
         );

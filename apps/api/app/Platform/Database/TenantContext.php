@@ -30,10 +30,14 @@ use Throwable;
  * affect which tenant is in force -- a stale entry can only make this class
  * stricter, never looser.
  *
- * Every statement here goes through setGuc(), readState(), clearScope() or
- * insertBypassAudit(), each of which converts a driver error into a
- * TenantContextException carrying no statement text and no bindings
- * (§4 › Edge & ops).
+ * Five places issue a statement. Four of them -- setGuc(), readState(), clearScope()
+ * and insertBypassAudit() -- convert a driver error into a TenantContextException
+ * carrying no statement text and no bindings (§4 › Edge & ops). The fifth is the
+ * rollBack() inside assertScopeSurvived(), which deliberately SWALLOWS: it runs while
+ * already reporting a failure, and replacing that failure with this one would hide the
+ * problem the caller needs to see. Nothing escapes it, so nothing leaks; what it costs
+ * is that a failed reset is not reported, which is why the refusal below says what it
+ * attempted rather than what it achieved (F6, seventh security review).
  *
  * Neither helper trusts the connection it was handed. readState() reads the role's
  * rolsuper and rolbypassrls in the same round trip as the GUCs, and both helpers
@@ -76,9 +80,14 @@ class TenantContext
 
         $tenant = $this->readState(DB::connection($connection))['tenant'];
 
-        // run() validates on the way in; this validates on the way out, so a value
-        // written over ours inside the scope -- a raw set_config in a callback -- cannot
-        // leave here as a tenant id either.
+        // Shape only. This is deliberately NOT a claim that the value is the one this
+        // scope set: measured, after a raw set_config to another tenant's uuid inside a
+        // live scope, current() returns that uuid -- provenance is satisfied by the open
+        // entry and the format check cannot tell two uuids apart (F4, seventh security
+        // review). clearScope() refuses the block at its end, but a Redis key already
+        // written from this answer is not rolled back by that refusal. Closing it needs
+        // the tenant recorded alongside the scope, which is the mirror H-A was; carried
+        // as R-017 with its own entry rather than reintroduced here unasked.
         return Str::isUuid($tenant) ? $tenant : null;
     }
 
@@ -247,7 +256,9 @@ class TenantContext
         $bypass = DatabaseRoles::guc('bypass');
         $previousBypass = $active['bypass'];
 
-        return $db->transaction(function () use ($db, $bypass, $previousBypass, $reason, $callback): mixed {
+        return $db->transaction(function () use ($db, $bypass, $previousBypass, $reason, $connection, $callback): mixed {
+            $depth = $db->transactionLevel();
+
             $this->setGuc($db, $bypass, DatabaseRoles::bypassValue());
 
             // Written first and inside the same transaction, so a bypass that commits
@@ -256,6 +267,15 @@ class TenantContext
             $this->insertBypassAudit($db, $reason);
 
             $result = $callback();
+
+            // The same postcondition run() has, for the same reason, on the one path
+            // that is cross-tenant by design. Without it the bypass was still M-2:
+            // measured, a callback that left a transaction open made this method return
+            // its value while the bypass's OWN audit_log row stayed uncommitted and
+            // invisible to any other session, with the connection going back to the
+            // pool at depth 1 -- after which the next scope on it opened as a savepoint
+            // inside the previous request's transaction (F2, seventh security review).
+            $this->assertScopeSurvived($db, $depth, $connection);
 
             // Only the bypass is restored, and no ordering hazard is left to get wrong:
             // app.tenant_id is '' on entry because this helper refuses to open inside a
@@ -338,12 +358,20 @@ class TenantContext
             return;
         }
 
-        // Put the connection back in a known state before reporting. Left as it is, it
-        // returns to the pool carrying an open transaction AND the tenant GUC, which is
-        // the next request's problem rather than this one's. Each rollBack() unwinds one
-        // level and the last issues the real ROLLBACK; the cap is there because a loop
-        // that depends on a driver's own counter should not be able to spin.
-        for ($i = 0; $i < 32 && $db->transactionLevel() > 0; $i++) {
+        // Unwind only what the callback added, down to the depth this scope was opened
+        // at -- never past it. Unwinding to 0 took the CALLER's transaction with it:
+        // measured, a scope nested inside an application transaction (which §2.10 says
+        // every migration body is) left the caller at depth 0, so its earlier write was
+        // gone, its later writes autocommitted one at a time, and a caller that caught
+        // the refusal -- the shape §2.10's own loop uses -- had its transaction
+        // returned as 'outer-ok' with nothing raised. That is H-B's failure one level
+        // up, introduced by the fix for H-B's third route (F1, seventh security review).
+        //
+        // run()'s own level is left to Laravel: transaction() rolls back exactly the
+        // level it opened when this throw reaches it. Each rollBack() unwinds one level;
+        // the cap is there because a loop driven by a driver's own counter should not be
+        // able to spin.
+        for ($i = 0; $i < 32 && $db->transactionLevel() > $depth; $i++) {
             try {
                 $db->rollBack();
             } catch (Throwable) {

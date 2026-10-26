@@ -380,13 +380,11 @@ it('never reports success when the connection under an open scope was replaced',
     // so the COMMIT became a no-op; measured before the fix, run() returned
     // 'callback-finished' with the write gone and nothing raised.
     //
-    // Scoped deliberately to THAT shape. This is not the general property "either the
-    // write survives or something is raised": measured, a callback that leaves a
-    // transaction open (a bare DB::beginTransaction() it never commits) still returns
-    // normally with the write discarded, because clearScope()'s postcondition reads
-    // the right tenant inside the still-open outer transaction and Laravel's commit at
-    // level 2 issues no COMMIT. That gap is open -- M-2 of the sixth security review --
-    // and the H-B test above carries the same caveat.
+    // Scoped deliberately to THAT shape; the other routes to the same property have
+    // their own tests below -- a callback that leaves a transaction open, and one that
+    // writes over the tenant setting. (This comment used to say that first gap was
+    // open. It was closed in the same range that added the comment, which is how it
+    // came to describe the wrong hole -- F11, seventh security review.)
     $tenant = $this->makeTenant();
     $reference = 'RECONNECT-'.Str::random(6);
 
@@ -645,4 +643,135 @@ it('never reports success when something in the block wrote over the tenant sett
             ->and($raised->getMessage())->not->toContain('set_config')
             ->and($raised->getPrevious())->toBeNull();
     }
+});
+
+it('never unwinds past the depth the caller was already at', function (): void {
+    // F1, seventh security review -- a High introduced by the previous round's own fix.
+    // The reset loop unwound to 0 instead of to the depth the scope opened at, so a
+    // scope nested inside an application transaction took the CALLER's transaction with
+    // it. §2.10 says every migration body is already at level 1, so that is the normal
+    // case, not an exotic one. Measured before the fix: the caller was left at depth 0,
+    // its earlier write was gone, its later writes autocommitted one at a time, and
+    // because the caller caught the refusal -- the shape §2.10's own loop uses -- its
+    // transaction() returned 'outer-ok' with nothing raised. H-B's failure one level up.
+    $alpha = $this->makeTenant();
+    $owner = DB::connection('pgsql_owner');
+    $first = 'F1-FIRST-'.Str::random(6);
+    $second = 'F1-SECOND-'.Str::random(6);
+
+    $observed = $owner->transaction(function () use ($owner, $alpha, $first, $second): array {
+        $outer = $owner->transactionLevel();
+
+        withTenant($alpha, fn () => $owner->table('outbox')->insert([
+            'id' => (string) Str::uuid7(), 'tenant_id' => $alpha,
+            'type' => 'pager.ready', 'dedupe_key' => $first,
+        ]), 'pgsql_owner');
+
+        $raised = null;
+
+        try {
+            withTenant($alpha, function () {
+                DB::connection('pgsql_owner')->beginTransaction();
+
+                return 'inner';
+            }, 'pgsql_owner');
+        } catch (TenantContextException $e) {
+            $raised = $e;
+        }
+
+        // The caller swallows it and carries on, which it is entitled to do.
+        withTenant($alpha, fn () => $owner->table('outbox')->insert([
+            'id' => (string) Str::uuid7(), 'tenant_id' => $alpha,
+            'type' => 'pager.ready', 'dedupe_key' => $second,
+        ]), 'pgsql_owner');
+
+        return ['outer' => $outer, 'raised' => $raised, 'after' => $owner->transactionLevel()];
+    });
+
+    expect($observed['raised'])->not->toBeNull('the dangling transaction was not refused')
+        ->and($observed['after'])->toBe(
+            $observed['outer'],
+            'the refusal unwound past the depth the caller was at',
+        );
+
+    // Both of the caller's writes committed together, with its transaction intact.
+    $root = $this->asRoot();
+
+    expect($root->table('outbox')->where('dedupe_key', $first)->exists())->toBeTrue()
+        ->and($root->table('outbox')->where('dedupe_key', $second)->exists())->toBeTrue();
+});
+
+it('never reports success when a bypass callback leaves a transaction open', function (): void {
+    // F2, seventh security review: the postcondition went to run() and not to the
+    // bypass, so the one path that is cross-tenant by design was still M-2. Measured
+    // before the fix: withoutTenantScope returned 'finished', its own audit_log row
+    // was uncommitted and invisible to another session, and the connection went back
+    // at depth 1 -- where the next scope on it opened as a savepoint inside it.
+    $reason = 'F2 regression '.Str::random(6);
+
+    $raised = null;
+    $returned = null;
+
+    try {
+        $returned = withoutTenantScope($reason, function (): string {
+            DB::connection('pgsql_owner')->beginTransaction();
+
+            return 'finished';
+        }, 'pgsql_owner');
+    } catch (TenantContextException $e) {
+        $raised = $e;
+    }
+
+    expect($raised)->not->toBeNull('withoutTenantScope returned '.var_export($returned, true));
+
+    // The audit row went with it, and the connection is clean for the next caller.
+    expect(DB::connection('pgsql_owner')->transactionLevel())->toBe(0)
+        ->and($this->asRoot()->table('audit_log')->where('context->reason', $reason)->count())->toBe(0);
+
+    withoutTenantScope('F2 follow-up', function (): void {
+        expect(DB::connection('pgsql_owner')->transactionLevel())->toBe(1);
+    }, 'pgsql_owner');
+});
+
+it('keeps a driver code from forging a log line on its way into a message', function (): void {
+    // F8: $sqlstate is whatever Throwable escaped a statement call, so it is text this
+    // class did not produce. Five alphanumerics when it comes from PDO -- and nothing
+    // guarantees it comes from PDO.
+    $message = TenantContextException::statementFailed('read', "42501\nFAKE LOG LINE level=emergency")
+        ->getMessage();
+
+    expect(preg_split('/\R/', $message))->toHaveCount(1)
+        ->and($message)->toContain('42501');
+});
+
+it('tells the two depth failures apart, because the remedies differ', function (): void {
+    // F7: the shallower and deeper branches carry different refusals on purpose -- a
+    // commit inside the callback has already committed, a dangling transaction has not
+    // -- and collapsing the conditional so both raise one of them left the suite green.
+    $tenant = $this->makeTenant();
+
+    $shallower = null;
+    try {
+        withTenant($tenant, function (): void {
+            DB::commit();
+        });
+    } catch (TenantContextException $e) {
+        $shallower = $e->getMessage();
+    }
+
+    $deeper = null;
+    try {
+        withTenant($tenant, function (): void {
+            DB::beginTransaction();
+        });
+    } catch (TenantContextException $e) {
+        $deeper = $e->getMessage();
+    }
+
+    expect($shallower)->toContain('was no longer in force')
+        // And it must not claim the work is gone: measured, on this path it is committed.
+        ->and($shallower)->not->toContain('has been discarded')
+        ->and($shallower)->toContain('not safe to retry blindly')
+        ->and($deeper)->toContain('transaction depth')
+        ->and($deeper)->not->toContain('was no longer in force');
 });
