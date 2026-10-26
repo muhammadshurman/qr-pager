@@ -52,7 +52,7 @@ Board columns: `Backlog → Selected for development → In Progress → QA Revi
 | Task | Ticket | Epic | Task | Ticket | Epic |
 |---|---|---|---|---|---|
 | 0 ✅ | `QRPAGER-8` | E1 | 8 | `QRPAGER-15` | E5 |
-| 1 | `QRPAGER-1` | E1 | 9 | `QRPAGER-16` | E5 |
+| 1 ✅ | `QRPAGER-1` | E1 | 9 | `QRPAGER-16` | E5 |
 | 2 | `QRPAGER-9` | E1 | 10 | `QRPAGER-17` | E5 |
 | 3 | `QRPAGER-10` | E2 | 11 | `QRPAGER-18` | E5 |
 | 4 | `QRPAGER-11` | E2 | 12 | `QRPAGER-19` | E6 |
