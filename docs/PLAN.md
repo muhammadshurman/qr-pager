@@ -1171,6 +1171,53 @@ _Medium/Low review findings that are not fixed land here with an owner and a dat
 - **Platform-scope `audit_log` rows (`tenant_id` NULL) can currently be written only through the owner bypass.** `app` holds `INSERT` but the isolation policy's `WITH CHECK` compares `tenant_id` to the context, and `NULL = x` is never true. Task 6's "platform admin actions all land in `audit_log`" therefore needs a decision: an `INSERT`-only policy allowing `tenant_id IS NULL` (write-only for the app, readable only through §2.8), or every platform action naming a tenant. Not invented here.
 - **Laravel wraps the driver error.** `QueryException::getCode()` is not reliably the SQLSTATE; the real code is on the PDO exception underneath, at `getPrevious()->errorInfo[0]`. `tests/TestCase.php::sqlState()` has the working shape. Task 2 owns error mapping and should start there rather than re-finding it.
 
+### API versioning — the policy for a breaking change
+
+Written here at Task 2, which the `§3` gate requires ("the versioning policy for a breaking change is
+written into §6") and `D6` places in this file rather than in `PROJECT_INSTRUCTIONS.md §6`: it is a
+project decision, not a universal rule, so it belongs at rank 3.
+
+**The surface.** Every public API route is under `/v1`, served by `bootstrap/app.php`'s
+`apiPrefix: 'v1'`. Enforced by `tests/Feature/Http/RouteSurfaceTest.php`, which fails on any public
+route outside `/v1` that is not in a written allowlist.
+
+**The two exceptions, and why they are not versioned.** `/healthz` and `/readyz`. A load balancer's
+health-check path is infrastructure configuration, and versioning it means the target group has to be
+reconfigured because the API's major version changed — a deploy-time coupling with no benefit. They are
+on their own middleware group, carrying no rate limiter, no tenant middleware and no load shedding,
+which is the mechanism behind `§4 › Edge & ops`'s "while health and readiness keep answering". Approved
+by the user on 2026-10-26, after confirming that nothing called the route being replaced: Laravel's
+`/up` was referenced in exactly one place outside `vendor/` — `bootstrap/app.php` — and by no
+healthcheck, no CI step, no test and no document.
+
+**A published path is never changed in place.** Once a path under `/v1` has been deployed, its
+behaviour may only be extended compatibly. The following are **breaking** and may not be done to a
+published path:
+
+| Breaking | Compatible |
+| --- | --- |
+| removing or renaming a field in a response | adding a field |
+| narrowing an accepted input, or making an optional field required | widening an accepted input, or adding an optional field |
+| changing a field's type, or the meaning of a value | adding a value to an enum **only** where the client is specified to ignore unknown values |
+| changing a status code for an existing outcome | adding a status code for a new outcome |
+| removing a route, or changing what a path matches | adding a route |
+
+**How a breaking change ships.** A new prefix — `/v2` — carrying only the routes that change. `/v1`
+keeps working until it is retired. The two live side by side; there is no "upgrade in place" path, and
+no version negotiation by header: the version is in the path, where a CDN, a log line and a WAF rule
+can all see it. Retiring `/v1` is its own decision with its own notice period, taken when a tenant is
+actually on `/v2`.
+
+**The enum caveat is not theoretical.** `pager_status` is a shared contract generated into
+`packages/contracts` at Task 8 (ADR-003) from the PHP enum. Adding a case is a **breaking** change to
+any client that switches exhaustively on it, which a TypeScript client does by default. So a new
+`pager_status` value is a `/v2` change unless the client contract states that unknown values map to a
+documented fallback — a decision for the task that adds the case, recorded with it.
+
+**What enforces this.** The committed OpenAPI document. CI regenerates it from the routes and fails on
+a diff, so a breaking change cannot reach `main` without appearing in a reviewed spec diff. The
+document is the record of what was published; this policy is what may be done to it.
+
 ### Deliberately different from the Blueprint — recorded so nobody "fixes" it
 
 | The Blueprint said                                         | We do not                              | Why                                                                                                                                                                                                                                      |
