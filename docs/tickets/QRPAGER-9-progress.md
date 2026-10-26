@@ -397,6 +397,39 @@ number is the code's and not one builder's machine's.
 **Coverage** is deliberately not quoted here: `§4a` forbids measuring it locally, so the figure is the
 one the CI run produces.
 
+### The fresh-clone run, which is the one that counts
+
+`§6`: *"Gates run from a **fresh clone**, not just a fresh database — a pass that depends on something
+only present on the builder's machine is not a pass."* Done at `202b146`, by cloning the branch into a
+new directory and running everything there:
+
+```
+composer install  ·  cp .env.example .env  ·  php artisan key:generate
+
+pint      passed
+stan      0 errors
+deptrac   0 violations
+guard     C1 and C2 hold across 6 scanned path(s)
+openapi   docs/openapi.json matches the routes
+boot:check  passed, exit 0
+test      341 passed, 1149 assertions
+drain     FrankenPHP v1.13.3 PHP 8.4.27 (ZTS) · in-flight 200 {"completed":true,"held_seconds":3.004} · exit 0
+redis     /healthz 200 · /readyz 503 · unknown path 404 · recovered to 200
+```
+
+The container image was built from the fresh clone's own source, not from this machine's `vendor/` --
+`.dockerignore` excludes it -- so the drain figure is a build from the repository and not from a
+developer's state.
+
+**And the run earned its keep.** The Redis proof failed once, on the fresh clone, with *"/readyz did not
+recover"* against an application that was fine, then passed unchanged on the next run. The recovery loop
+broke on `readiness:refresh`'s exit code, and that command exits 0 even when it could not write -- by
+design, because the scheduler runs it again in five seconds. So the `&& break` fired on the first
+iteration whatever happened, and whether the key existed came down to how fast Redis restarted. Fixed at
+`5f081b7` by looping on `/readyz` itself; run three times after, PASS each time. **A signal that is
+always success is not a signal** -- the same shape as every unproven control on this branch, and the only
+non-deterministic thing in it.
+
 ### Environment note
 
 `.env`'s `APP_KEY` was empty on this machine, which `CLAUDE.md`'s documented setup (`php artisan
