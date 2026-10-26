@@ -1,0 +1,86 @@
+# The three named architecture guards from PLAN.md §3, row 2:
+#
+#   1. domain logic imports no framework or DB code  -> Domain depends on nothing
+#   2. the platform layer imports no feature modules -> Platform's list omits Features
+#   3. production code imports no test helpers       -> nothing may depend on TestHelpers
+#
+# "Proven to fail on a deliberately bad file" is not a claim made here: it is
+# tests/Feature/Architecture/ArchitectureGuardTest.php, which runs deptrac against the
+# fixtures in guard/fixtures/architecture and asserts it exits non-zero. Those fixtures
+# are deliberately broken and live outside ./app, so this configuration never sees them
+# and no autoloader maps them.
+deptrac:
+  paths:
+    - ./app
+    - ./database
+    - ./routes
+
+  layers:
+    # No framework, no DB. The enum registry and the status enums are the whole of it
+    # today; the error-envelope type enum joins them in this task.
+    - name: Domain
+      collectors:
+        - type: directory
+          value: app/Domain/.*
+
+    # Framework and DB, and it may not import a feature module. Models, providers,
+    # controllers, factories and seeders all belong here: they are framework-coupled
+    # application code, and the rule that matters for them is the same one.
+    - name: Platform
+      collectors:
+        - type: directory
+          value: app/Platform/.*
+        - type: directory
+          value: app/Http/.*
+        - type: directory
+          value: app/Models/.*
+        - type: directory
+          value: app/Providers/.*
+        - type: directory
+          value: database/factories/.*
+        - type: directory
+          value: database/seeders/.*
+
+    - name: Features
+      collectors:
+        - type: directory
+          value: app/Features/.*
+
+    # Wiring: it may reach anything, which is why it is a layer of its own rather than
+    # being folded into Platform and widening Platform's rule.
+    - name: Bootstrapping
+      collectors:
+        - type: directory
+          value: database/migrations/.*
+        - type: directory
+          value: routes/.*
+
+    - name: Framework
+      collectors:
+        - type: classLike
+          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery)\\.*
+
+    # Rule 3. Test helpers are a layer so that "production code imports no test
+    # helpers" is a dependency rule rather than a convention -- and so that the
+    # pre-Task-5 auth stub cannot quietly become a production dependency (B5).
+    - name: TestHelpers
+      collectors:
+        - type: classLike
+          value: ^Tests\\.*
+
+  ruleset:
+    Domain: ~
+    Platform:
+      - Domain
+      - Framework
+    Features:
+      - Domain
+      - Platform
+      - Framework
+    Bootstrapping:
+      - Domain
+      - Platform
+      - Features
+      - Framework
+    Framework: ~
+    TestHelpers: ~

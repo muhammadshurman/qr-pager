@@ -1,0 +1,11 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Features\Deliberately;
+
+/** The feature module the fixture above reaches into. Nothing else references it. */
+final class SomeFeatureService
+{
+    public function handle(): void {}
+}

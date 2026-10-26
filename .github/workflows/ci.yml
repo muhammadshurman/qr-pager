@@ -121,6 +121,11 @@ jobs:
 
       - run: composer stan
 
+      # The three named architecture guards (PLAN.md §3, row 2). Proven to fail on a
+      # deliberately bad file by tests/Feature/Architecture/ArchitectureGuardTest.php,
+      # which runs this same config against the fixtures in guard/fixtures/architecture.
+      - run: composer deptrac
+
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
 

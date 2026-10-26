@@ -1,0 +1,16 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Platform\Deliberately;
+
+use Tests\Support\Composition;
+
+/** Guard 3: production code imports no test helpers. */
+final class BadTestHelperDependency
+{
+    public function connection(): string
+    {
+        return Composition::APP;
+    }
+}

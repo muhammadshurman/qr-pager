@@ -21,4 +21,5 @@ parameters:
             - tests/Unit/*Test.php
             - tests/Feature/*Test.php
             - tests/Feature/Database/*Test.php
+            - tests/Feature/Architecture/*Test.php
     tmpDir: build/phpstan
