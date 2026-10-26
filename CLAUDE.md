@@ -52,6 +52,16 @@ composer stan
 php artisan test
 ```
 
+**Run them through `composer gate`, which also runs `guard`, `deptrac` and
+`openapi:check` and tees every line to `storage/logs/gate-<utc>.log`.** The three above
+stay correct by hand; the wrapper is the form that leaves evidence. A full suite run on
+`task-2-api-core` went red once at 363 passed and the failing test's identity was never
+captured, because what was kept was a one-line summary rather than the output — so the
+honest state of the suite was "one unexplained" until a run whose output went to a file
+identified it in one sitting (two concurrent runners and an unserialized `TRUNCATE`,
+`PLAN.md` R-049). A gate you cannot read afterwards is a gate you have to re-run to
+learn anything from.
+
 First run on a machine, or after `docker compose down -v`: the cluster's superuser is
 `qrpager_root` and the three application roles are created by
 

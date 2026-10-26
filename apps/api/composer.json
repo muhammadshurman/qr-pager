@@ -82,7 +82,8 @@
         "deptrac": "deptrac analyse --no-progress --formatter=table",
         "guard": "@php guard/bin/guard",
         "openapi": "@php artisan scramble:export",
-        "openapi:check": "bin/openapi-check"
+        "openapi:check": "bin/openapi-check",
+        "gate": "bin/gate"
     },
     "extra": {
         "laravel": {

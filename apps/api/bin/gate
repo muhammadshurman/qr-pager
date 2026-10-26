@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Runs the §6 gate and KEEPS THE OUTPUT, which is the whole point of the script.
+#
+# THE FAILURE THIS EXISTS FOR. A full suite run on this branch went red once at 363
+# passed and the identity of the failing test was never captured, because what was
+# recorded was a one-line summary rather than the output. "13 of 14 green, one
+# unexplained" was then the honest state of the suite for a week, and an unidentified
+# flake is the most expensive defect shape this branch has (§4a records four). The cause
+# is now identified -- two concurrent runners and an unserialized TRUNCATE, PLAN.md
+# R-049 -- and it was identified in one run, by a run whose output went to a file.
+#
+# So: every step's full output is tee'd to one file under storage/logs (git-ignored),
+# the path is printed before the first step and again at the end, and the file survives
+# the run. A red run leaves the test name, the SQLSTATE and the stack on disk.
+#
+# NOT A REPLACEMENT FOR THE THREE COMMANDS in PROJECT_INSTRUCTIONS.md §6 -- it runs
+# them, in the gate's own order, plus the three this task added (guard, deptrac,
+# openapi:check). Running them by hand stays correct; this is the form that leaves
+# evidence.
+#
+# First failure stops the run: a stan error makes the suite's result uninteresting, and
+# a half-read log is worse than a short one.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+log="storage/logs/gate-$(date -u +%Y%m%dT%H%M%SZ).log"
+: >"$log"
+
+echo "gate: full output -> $(pwd)/$log"
+echo
+
+# composer's own scripts, so this cannot drift from what CI runs.
+steps=(
+  "composer pint"
+  "composer stan"
+  "composer guard"
+  "composer deptrac"
+  "composer openapi:check"
+  "php artisan test"
+)
+
+for step in "${steps[@]}"; do
+  echo "=== $step" | tee -a "$log"
+
+  # tee so the operator sees it live AND the file has it; pipefail so the status is the
+  # step's and not tee's.
+  if ! $step 2>&1 | tee -a "$log"; then
+    echo | tee -a "$log"
+    echo "gate: FAILED at '$step'. Full output: $(pwd)/$log" | tee -a "$log" >&2
+    exit 1
+  fi
+
+  echo | tee -a "$log"
+done
+
+echo "gate: all six steps green. Full output: $(pwd)/$log" | tee -a "$log"
