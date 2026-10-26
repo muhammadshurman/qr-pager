@@ -74,8 +74,11 @@ runtime_wait_for_health() {
 
 # Build, establish the precondition, start, wait. In that order, every time.
 runtime_start() {
+  # --pull, so the pinned tag is re-resolved from the registry rather than trusted from
+  # whatever layer this machine happens to hold. The tag names a PHP version but not a
+  # digest, so a local base image can be an older build of the same tag.
   say "building the pinned runtime"
-  $RUNTIME_COMPOSE --profile app build "$RUNTIME_SERVICE"
+  $RUNTIME_COMPOSE --profile app build --pull "$RUNTIME_SERVICE"
 
   runtime_bootstrap_roles || return 1
 

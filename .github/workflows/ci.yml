@@ -250,6 +250,16 @@ jobs:
       - name: Postgres and Redis, from the project's own compose file
         run: docker compose -f compose.yaml up -d --wait postgres redis
 
+      # ONE place where freshness is established, and it is mechanical rather than
+      # hoped for. Each proof builds the image itself so it can be run standalone, so
+      # the job otherwise builds twice and the SECOND build is legitimately all-CACHED
+      # -- which reads exactly like a stale cache in the log and is not one. Building
+      # once here with --no-cache --pull means the proofs' own builds are cached off a
+      # build that cannot be stale, and there is a single step to look at when asking
+      # whether the image under test is the current Dockerfile.
+      - name: Build the runtime from nothing, so no proof can run against a stale layer
+        run: docker compose -f compose.yaml --profile app build --no-cache --pull frankenphp
+
       # Redis first: it leaves the cluster and Redis running, which the drain proof then
       # reuses. The other order would have the drain proof's cleanup remove the service
       # between them.

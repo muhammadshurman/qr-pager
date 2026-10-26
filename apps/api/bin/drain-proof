@@ -39,9 +39,37 @@ $COMPOSE --profile app exec -T "$SERVICE" frankenphp version
 $COMPOSE --profile app exec -T "$SERVICE" php -v | head -1
 # The extensions the base image does NOT ship, so a build that silently lost one is a
 # failure here rather than at the first query.
-for ext in pdo_pgsql redis pcntl intl bcmath; do
-  $COMPOSE --profile app exec -T "$SERVICE" php -m | grep -qix "$ext" || fail "extension [$ext] is missing from the image"
-done
+#
+# ONE exec, asking PHP directly, with a sentinel line -- not five `php -m | grep -q`
+# pipelines, which is what this was and which could not tell "the extension is absent"
+# from "I did not manage to read the whole list". `grep -q` closes the pipe on its first
+# match, there was one exec per extension, and `pipefail` turned any producer-side
+# failure into "missing from the image". Measured: `extension_loaded("redis")` says
+# PRESENT on the same image where a short read reports MISSING, and `pdo_pgsql` is line
+# 21 of `php -m` while `redis` is line 27 -- so a stream cut short finds the first and
+# misses the second, which is exactly what CI reported.
+#
+# The MISSING= line is the part that matters. If the stream is truncated the sentinel is
+# gone, and that is reported as a failure to MEASURE rather than as a missing extension.
+# A check that cannot tell those apart should not be allowed to claim the alarming one.
+say "the extensions the base image does not ship"
+
+report="$($COMPOSE --profile app exec -T "$SERVICE" php -r '
+$want = ["pdo_pgsql", "redis", "pcntl", "intl", "bcmath"];
+$missing = [];
+foreach ($want as $e) {
+    $ok = extension_loaded($e);
+    printf("  %-10s %s\n", $e, $ok ? "present" : "MISSING");
+    if (! $ok) { $missing[] = $e; }
+}
+printf("MISSING=%s\n", implode(",", $missing));
+')" || fail "could not query the image for its extensions -- a failure to MEASURE, not a missing extension"
+
+printf '%s\n' "$report" | grep -v '^MISSING='
+
+verdict="$(printf '%s\n' "$report" | grep '^MISSING=' || true)"
+[ -n "$verdict" ] || fail "the extension query returned no verdict line -- a short read, not a missing extension"
+[ "$verdict" = "MISSING=" ] || fail "extensions genuinely missing from the image: ${verdict#MISSING=}"
 
 say "holding one slow request in flight"
 body="$(mktemp)"; code="$(mktemp)"
