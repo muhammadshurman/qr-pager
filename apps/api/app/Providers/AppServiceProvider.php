@@ -4,7 +4,9 @@ namespace App\Providers;
 
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
+use App\Platform\Database\TenantScopeGuard;
 use Dedoc\Scramble\Scramble;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -18,6 +20,14 @@ class AppServiceProvider extends ServiceProvider
         // resetting it between Octane requests.
         $this->app->singleton(TenantContext::class);
         $this->app->singleton(RuntimeRoleGuard::class);
+
+        // One guard for the worker's life, deliberately: it holds the armed flag that
+        // says a request is in flight, and it has to be the same object the global
+        // middleware arms and the connection listener consults. Its state is a single
+        // boolean about THIS process, never about a tenant, so sharing it across
+        // requests carries nothing between them -- and the request boundary disarms it
+        // in both of the two ways a request can end (R-022).
+        $this->app->singleton(TenantScopeGuard::class);
 
         // Scramble registers GET docs/api, GET docs/api.json and a dev-tools asset
         // route by default. The spec this project ships is a committed file generated
@@ -33,6 +43,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Attach the tenant-scope guard to every database connection the manager
+        // builds from here on, including the ones built after an Octane purge. It is
+        // registered unconditionally and armed per request, so the registration cannot
+        // be the thing that is missing -- see TenantScopeGuard for why the attachment
+        // is beforeExecuting() and not DB::listen().
+        $this->app->make(TenantScopeGuard::class)->listen($this->app->make(Dispatcher::class));
     }
 }

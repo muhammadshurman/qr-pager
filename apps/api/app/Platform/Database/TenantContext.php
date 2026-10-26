@@ -70,6 +70,27 @@ class TenantContext
      */
     private array $openScopes = [];
 
+    /**
+     * Has a scope this object opened been left open on $connection?
+     *
+     * Read by TenantScopeGuard, and this is the one question it is sound to ask of
+     * $openScopes. It is a record of what this object DID, not a mirror of what is in
+     * force: it cannot name a tenant, so the guard can use it to refuse "no scope was
+     * ever opened here" and cannot use it to conclude anything about which tenant is
+     * in force. The failure where a scope is opened and then lost mid-callback stays
+     * owned by clearScope()'s read-back and assertScopeSurvived()'s depth check, which
+     * ask Postgres rather than PHP.
+     *
+     * A stale entry would make the guard LOOSER rather than stricter, which is the
+     * opposite direction from every other reader of this array. It is not reachable:
+     * the finally in run() decrements unconditionally, and if the process dies before
+     * it, so does this object.
+     */
+    public function hasOpenScope(string $connection): bool
+    {
+        return isset($this->openScopes[$connection]);
+    }
+
     /** What app.tenant_id holds on $connection right now; null when nothing is in force. */
     public function current(?string $connection = null): ?string
     {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Platform\Console\BootstrapDatabaseCommand;
+use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
 use Illuminate\Foundation\Application;
@@ -31,9 +32,19 @@ return Application::configure(basePath: dirname(__DIR__))
         BootstrapDatabaseCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
+        // without tenant context never reaches the DB", and a route group is something
+        // a later route can be added without. This runs before routing, so an
+        // unmatched path is armed too -- a 404 that touches the database on its way out
+        // is still a request. Arming is all it does; the refusal is
+        // TenantScopeGuard's, before the statement reaches Postgres.
+        $middleware->prepend(ArmTenantScopeGuard::class);
+
         // The probes' own group. Empty, and that is the mechanism behind "while health
         // and readiness keep answering": they carry no rate limiter, no tenant
         // middleware and no load shedding, so there is nothing that can shed them.
+        // The global arming above still applies, and there is nothing for it to refuse:
+        // /healthz reads nothing and /readyz reads one Redis key.
         $middleware->group('probe', []);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
