@@ -229,6 +229,63 @@ it('refuses every value that hands the caller the address the limiter counts', f
     'a real CIDR beside one' => ['10.0.0.0/8,0.0.0.0/0', '198.51.100.77'],
 ]);
 
+/*
+ * THE SAME BYPASS SPELLED AS A LIST. Every refusal above reads one entry at a time and
+ * the trusted set is their union, so two entries that are each half a family are each
+ * accepted and together are '*'. These are the forms measured at ae43e12, where all
+ * three were ACCEPTED while ip() was the caller's own header.
+ */
+
+it('refuses entries that trust every peer between them', function (string $list, string $peer): void {
+    app()->detectEnvironment(fn () => 'production');
+    config(['trustedproxy.proxies' => $list]);
+
+    $failures = app(BootChecks::class)->trustedProxiesAreSound();
+
+    expect($failures)->toHaveCount(1, "[{$list}] was accepted")
+        ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
+        // The union clause and not the per-entry one: each half passes that on its own,
+        // so a refusal naming a single entry would mean the wrong clause fired.
+        ->and($failures[0])->toContain('BETWEEN THEM')
+        // THE REASON, MEASURED, as for the single-entry catch-alls above.
+        ->and(forwardedIpUnder($list, $peer))->toBe('203.0.113.9');
+})->with([
+    // The two halves TOUCH without overlapping, which is why the sweep has to treat
+    // adjacency as coverage rather than merging on overlap alone.
+    'v4 halves, peer in the lower' => ['0.0.0.0/1,128.0.0.0/1', '10.0.0.7'],
+    'v4 halves, peer in the upper' => ['0.0.0.0/1,128.0.0.0/1', '255.1.2.3'],
+    // The v6 pair. ::/1 against a v4 peer would leave ip() as the peer, so proving this
+    // family needs a v6 peer -- the same trap the nine-case dataset above records.
+    'v6 halves' => ['::/1,8000::/1', '2001:db8::77'],
+    // Quarters, to show the clause is about coverage and not about a pair of /1s.
+    'v4 quarters' => ['0.0.0.0/2,64.0.0.0/2,128.0.0.0/2,192.0.0.0/2', '198.51.100.77'],
+    // Out of order, and with a sound entry inside the cover: sorting is the sweep's job.
+    'unsorted, with a real CIDR among them' => ['128.0.0.0/1,10.0.0.0/8,0.0.0.0/1', '255.1.2.3'],
+]);
+
+it('refuses a single range wider than any balancer, which the old floor of 1 did not', function (string $entry, string $peer): void {
+    app()->detectEnvironment(fn () => 'production');
+    config(['trustedproxy.proxies' => $entry]);
+
+    $failures = app(BootChecks::class)->trustedProxiesAreSound();
+
+    expect($failures)->toHaveCount(1, "[{$entry}] was accepted")
+        ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
+        ->and($failures[0])->toContain('wider than any load balancer')
+        // The peer is INSIDE the range, which is the point: ip() is its own header.
+        ->and(forwardedIpUnder($entry, $peer))->toBe('203.0.113.9');
+})->with([
+    // Accepted AND pinned as acceptable in the test below for one round. Half of every
+    // v4 address there is.
+    'v4 half' => ['0.0.0.0/1', '10.0.0.7'],
+    'v4 sixteenth' => ['0.0.0.0/4', '10.0.0.7'],
+    // One short of the floor, so the boundary is pinned from both sides: /7 refused
+    // here, /8 accepted below.
+    'one below the v4 floor' => ['10.0.0.0/7', '10.0.0.7'],
+    'v6 half' => ['::/1', '2001:db8::77'],
+    'one below the v6 floor' => ['2001:db8::/31', '2001:db8::77'],
+]);
+
 it('sees a catch-all set through trustProxies(at:), which is not in the config at all', function (): void {
     app()->detectEnvironment(fn () => 'production');
 
@@ -275,9 +332,16 @@ it('accepts a CIDR and a bare address, in both families', function (): void {
     app()->detectEnvironment(fn () => 'production');
 
     // REMOTE_ADDR is deliberately NOT here. It was, for one round, and it trusts every
-    // peer -- see the refusal dataset above. A /1 is the narrowest prefix that is still
-    // a range rather than the whole internet, so it is the boundary worth pinning.
-    foreach (['10.0.0.0/8', '10.0.0.7', '10.0.0.0/32', '0.0.0.0/1', '2001:db8::/32', '2001:db8::1', '2001:db8::/128', '10.0.0.0/8,2001:db8::/32'] as $value) {
+    // peer -- see the refusal dataset above.
+    //
+    // NEITHER IS `0.0.0.0/1`, WHICH THIS LINE PINNED AS ACCEPTABLE FOR ONE ROUND on the
+    // ground that it is "the narrowest prefix that is still a range rather than the whole
+    // internet". It is half of every address there is, and the floor it was pinning
+    // excluded nothing. The boundary now pinned is the real one: /8 and /32 accepted
+    // here, /7 and /31 refused by the dataset above.
+    // The last two are the union clause's other direction: several ranges in ONE family
+    // that do not cover it must still pass, or a two-subnet balancer would be refused.
+    foreach (['10.0.0.0/8', '10.0.0.7', '10.0.0.0/32', '2001:db8::/32', '2001:db8::1', '2001:db8::/128', '10.0.0.0/8,2001:db8::/32', '10.0.0.0/8,192.168.0.0/16', '10.0.0.0/8,10.0.0.0/8,172.16.0.0/12'] as $value) {
         config(['trustedproxy.proxies' => $value]);
 
         expect(app(BootChecks::class)->trustedProxiesAreSound())->toBe([], "[{$value}] was refused");

@@ -45,10 +45,20 @@ return [
     | be the trusted peer. Task 13 owns the VPC and therefore owns both halves: the real
     | CIDR, and the security group that makes it true. Neither half is useful alone.
     |
+    | AND THE LIST IS CHECKED, NOT ONLY ITS ENTRIES. Added 2026-10-27, after the second
+    | review measured `0.0.0.0/1,128.0.0.0/1` ACCEPTED with ip() = the caller's own
+    | header: two entries that are each half a family are each sound on their own and
+    | together are a catch-all. BootChecks merges them and refuses a list that leaves no
+    | address of a family untrusted.
+    |
     | Comma-separated. Each entry is a bare address or a CIDR with a prefix of at least
-    | 1. BootChecks validates every entry, because an entry that does not parse is
-    | silently inert inside Symfony's IpUtils -- which would put us back in the first
-    | paragraph with nothing in any log to say so.
+    | /8 for IPv4 and /32 for IPv6 -- the widest values this project documents, and
+    | far wider than the /16-to-/28 an AWS VPC CIDR occupies, so Task 13's real value
+    | sits well inside. Below that floor a range is not a balancer: a /1 hands ip() to
+    | any peer inside it exactly as '*' does, which is why the previous floor of 1
+    | excluded nothing. BootChecks validates every entry, because an entry that does not
+    | parse is silently inert inside Symfony's IpUtils -- which would put us back in the
+    | first paragraph with nothing in any log to say so.
     |
     | AND IT IS NOT THE ONLY SOURCE. `$middleware->trustProxies(at: ...)` in
     | bootstrap/app.php wins over this file inside TrustProxies, so BootChecks reads

@@ -67,6 +67,22 @@ final class BootChecks
     private const CATCH_ALL_PROXIES = ['*', '**', 'REMOTE_ADDR'];
 
     /**
+     * The widest single range a TRUSTED_PROXIES entry may name, per family.
+     *
+     * NOT A ROUND NUMBER PICKED HERE: /8 and /32 are the widest values this project
+     * already documents as legitimate -- `10.0.0.0/8` in .env.example's guidance and in
+     * BootChecksTest's accepted set, `2001:db8::/32` beside it. An AWS VPC IPv4 CIDR is
+     * between /16 and /28, so Task 13's real value sits well inside this floor, and a
+     * value outside it is a decision rather than a CIDR: one edit here, with a reason.
+     *
+     * The old floor was 1, which excluded nothing -- a /1 is half of every address there
+     * is, and `0.0.0.0/1` was accepted AND pinned as acceptable in the test.
+     */
+    private const NARROWEST_V4_PREFIX = 8;
+
+    private const NARROWEST_V6_PREFIX = 32;
+
+    /**
      * sslmode values that do not guarantee an encrypted session.
      *
      * `prefer` is the dangerous one, and it is also libpq's default: it silently
@@ -253,6 +269,18 @@ final class BootChecks
      * thing accepted, one of them documented as valid, which is a control refusing the
      * mistake it can recognise rather than the mistake.
      *
+     * AND IT IS A PROPERTY OF THE LIST, NOT ONLY OF AN ENTRY. Every refusal above reads
+     * one entry at a time, and the trusted set is their UNION, so two entries that are
+     * each half the internet are each accepted and together are '*'. Measured
+     * 2026-10-27: TRUSTED_PROXIES=0.0.0.0/1,128.0.0.0/1 was ACCEPTED and $request->ip()
+     * was the caller's own X-Forwarded-For from peer 198.51.100.77 and from 255.1.2.3;
+     * ::/1,8000::/1 did the same for every v6 peer. Same bypass as the catch-all above,
+     * spelled with two entries instead of one. unionCoversAFamily() closes it by
+     * merging the entries and asking whether anything is left uncovered, and
+     * isWiderThanABalancer() refuses a single range wider than this project's own widest
+     * documented value -- because a /1 alone is half of every address there is, and the
+     * old floor of 1 was placed where it excluded nothing.
+     *
      * Exempt in local and testing: neither has a proxy in front of it, so the peer IS
      * the client and trusting nothing is correct there.
      *
@@ -286,6 +314,26 @@ final class BootChecks
             }
         }
 
+        if ($this->unionCoversAFamily($entries)) {
+            return [self::UNTRUSTED_PROXY_CONFIGURATION.': the TRUSTED_PROXIES entries trust every '
+                .'peer BETWEEN THEM (['.implode('], [', $entries).']), which is the catch-all above '
+                .'spelled as a list -- $request->ip() is whatever the caller sent from any address '
+                .'of that family. Each entry is read on its own by every other check here; this one '
+                .'merges them. Name the balancer\'s CIDR instead.'];
+        }
+
+        foreach ($entries as $entry) {
+            if ($this->isWiderThanABalancer($entry)) {
+                return [self::UNTRUSTED_PROXY_CONFIGURATION.": TRUSTED_PROXIES carries [{$entry}], a "
+                    .'range far wider than any load balancer: the prefix floor here is /'
+                    .self::NARROWEST_V4_PREFIX.' for IPv4 and /'.self::NARROWEST_V6_PREFIX.' for '
+                    .'IPv6, which are the widest values this project documents. Below that the '
+                    .'single-ingress assumption in config/trustedproxy.php cannot hold -- a /1 is '
+                    .'half of every address there is, and it hands $request->ip() to any peer '
+                    .'inside it exactly as a catch-all does.'];
+            }
+        }
+
         $invalid = array_values(array_filter(
             $entries,
             fn (string $entry): bool => ! $this->isProxyAddress($entry),
@@ -302,12 +350,14 @@ final class BootChecks
     }
 
     /**
-     * The entries, from whichever of the two sources TrustProxies will really use.
+     * The entries, from the sources TrustProxies will really use.
      *
      * ResolvedTrustedProxies, never config() directly: the middleware prefers the
      * trustProxies(at: ...) override and reading the config alone made this clause
      * blind to the one call that sets a catch-all in one line. That class carries the
-     * measurement.
+     * measurement -- and names the THIRD source it does not see, a subclass's own
+     * $proxies property, which is R-053 and latent while the global stack carries the
+     * framework's own TrustProxies.
      *
      * @return list<string>
      */
@@ -361,6 +411,193 @@ final class BootChecks
         return ctype_digit($prefix)
             && (int) $prefix === 0
             && filter_var($address, FILTER_VALIDATE_IP) !== false;
+    }
+
+    /**
+     * Do the entries, taken TOGETHER, leave no address of a family untrusted?
+     *
+     * THE UNION AND NOT THE WIDEST MEMBER. `0.0.0.0/1` and `128.0.0.0/1` are each half
+     * the internet, so each passes every per-entry check here, and between them they are
+     * `*`: measured at the previous head, ACCEPTED with ip() = the caller's own header
+     * from 198.51.100.77 and from 255.1.2.3. The two halves do not overlap, so a check
+     * that looked for a single total entry -- or that summed widths and compared against
+     * the widest one -- would not see it.
+     *
+     * A SWEEP RATHER THAN ARITHMETIC, deliberately: the ranges are merged as packed
+     * addresses and the question asked is "is any address left over", which is exact in
+     * both families and needs no integer wider than a byte. A v6 family is 2^128
+     * addresses, so counting them would mean bcmath or gmp -- a boot-path dependency a
+     * fresh clone might not have, and §6 requires these gates to pass from one.
+     *
+     * Entries that are already refused above (a literal catch-all, a /0) and entries
+     * that do not parse are skipped: each has its own clause with a better message, and
+     * including them here would only change which message an operator reads.
+     *
+     * @param  list<string>  $entries
+     */
+    private function unionCoversAFamily(array $entries): bool
+    {
+        /** @var array<int, list<array{0: string, 1: string}>> $families */
+        $families = [];
+
+        foreach ($entries as $entry) {
+            if ($this->trustsEveryPeer($entry)) {
+                continue;
+            }
+
+            $range = $this->entryRange($entry);
+
+            if ($range !== null) {
+                $families[strlen($range[0])][] = $range;
+            }
+        }
+
+        foreach ($families as $ranges) {
+            if ($this->coversEveryAddress($ranges)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * One family's ranges, sorted and swept for a gap.
+     *
+     * The cursor is the lowest address nothing has covered yet. Sorting by first address
+     * makes one pass enough: a range that starts above the cursor proves a gap, and
+     * otherwise the cursor moves to just past that range's last address. Running off the
+     * top of the family is what total coverage looks like, and it is the only way out
+     * with true -- ADJACENCY IS THE WHOLE POINT, since 0.0.0.0/1 and 128.0.0.0/1 touch
+     * without overlapping, so merging on overlap alone would miss exactly this case.
+     *
+     * @param  list<array{0: string, 1: string}>  $ranges
+     */
+    private function coversEveryAddress(array $ranges): bool
+    {
+        if ($ranges === []) {
+            return false;
+        }
+
+        usort($ranges, static fn (array $a, array $b): int => strcmp($a[0], $b[0]));
+
+        $cursor = str_repeat("\x00", strlen($ranges[0][0]));
+
+        foreach ($ranges as [$first, $last]) {
+            if (strcmp($first, $cursor) > 0) {
+                return false;
+            }
+
+            $next = $this->nextAddress($last);
+
+            if ($next === null) {
+                return true;
+            }
+
+            if (strcmp($next, $cursor) > 0) {
+                $cursor = $next;
+            }
+        }
+
+        return false;
+    }
+
+    /** The address one above this one, or null at the top of the family. */
+    private function nextAddress(string $packed): ?string
+    {
+        for ($i = strlen($packed) - 1; $i >= 0; $i--) {
+            $byte = ord($packed[$i]);
+
+            if ($byte < 255) {
+                $packed[$i] = chr($byte + 1);
+
+                return $packed;
+            }
+
+            $packed[$i] = "\x00";
+        }
+
+        return null;
+    }
+
+    /**
+     * An entry's first and last address, packed, or null if it is not a range at all.
+     *
+     * inet_pton rather than filter_var because the packed form is what the sweep needs,
+     * and its LENGTH is the family -- 4 bytes or 16 -- which is also the per-family
+     * width the prefix is read against.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    private function entryRange(string $entry): ?array
+    {
+        $slash = strpos($entry, '/');
+        $address = $slash === false ? $entry : substr($entry, 0, $slash);
+        $prefix = $slash === false ? null : substr($entry, $slash + 1);
+
+        $packed = @inet_pton($address);
+
+        if ($packed === false) {
+            return null;
+        }
+
+        $width = strlen($packed) * 8;
+
+        if ($prefix === null) {
+            $bits = $width;
+        } elseif (ctype_digit($prefix) && (int) $prefix <= $width) {
+            $bits = (int) $prefix;
+        } else {
+            return null;
+        }
+
+        $mask = $this->packedMask($bits, strlen($packed));
+        $first = $packed & $mask;
+
+        return [$first, $first | ~$mask];
+    }
+
+    /** A prefix length as a packed netmask of the given byte width. */
+    private function packedMask(int $bits, int $bytes): string
+    {
+        $mask = str_repeat("\xff", intdiv($bits, 8));
+
+        if ($bits % 8 !== 0) {
+            $mask .= chr((0xFF << (8 - $bits % 8)) & 0xFF);
+        }
+
+        return str_pad($mask, $bytes, "\x00");
+    }
+
+    /**
+     * Is this entry a wider range than a load balancer could plausibly connect from?
+     *
+     * The single-entry half of the union bypass: a /1 is accepted by every other clause
+     * here and hands ip() to any peer inside it, which is half the internet. Measured
+     * 2026-10-27 before this clause: `0.0.0.0/1` with peer 10.0.0.7 gave ip()
+     * 203.0.113.9. The floor is in NARROWEST_V4_PREFIX / NARROWEST_V6_PREFIX, with the
+     * reason it is those two numbers and not others.
+     *
+     * A bare address is one host and is never too wide. An entry that does not parse
+     * belongs to the malformed clause, which says something more useful about it.
+     */
+    private function isWiderThanABalancer(string $entry): bool
+    {
+        if (! str_contains($entry, '/')) {
+            return false;
+        }
+
+        [$address, $prefix] = explode('/', $entry, 2);
+
+        $packed = @inet_pton($address);
+
+        if ($packed === false || ! ctype_digit($prefix)) {
+            return false;
+        }
+
+        $floor = strlen($packed) === 4 ? self::NARROWEST_V4_PREFIX : self::NARROWEST_V6_PREFIX;
+
+        return (int) $prefix < $floor;
     }
 
     /**
