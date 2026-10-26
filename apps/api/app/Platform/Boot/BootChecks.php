@@ -45,12 +45,26 @@ final class BootChecks
     /**
      * Values that make X-Forwarded-For attacker-controlled rather than trustworthy.
      *
-     * Laravel maps both to the catch-all 0.0.0.0/0 and ::/0, so every peer is a
+     * Laravel maps '*' and '**' to the catch-all 0.0.0.0/0 and ::/0, so every peer is a
      * trusted proxy and the forwarded header is whatever the caller sent.
+     *
+     * 'REMOTE_ADDR' JOINED THEM ON 2026-10-27 and it is the one that reads like a
+     * restriction: setTrustedProxyIpAddressesToSpecificIps() resolves the token to the
+     * CURRENT peer, so the trusted list is always whoever is connecting,
+     * isFromTrustedProxy() is always true, and the header is honoured from anywhere.
+     * It was accepted here -- and documented as valid in config/trustedproxy.php, and
+     * asserted as acceptable in BootChecksTest -- for one round. Measured with peer
+     * 198.51.100.77 and X-Forwarded-For 203.0.113.9: ip() was 203.0.113.9 under all
+     * three of these, and 198.51.100.77 under a real CIDR the peer is outside of.
+     *
+     * The ground this clause gives for refusing '*' is "it trusts every peer", and that
+     * is a property REMOTE_ADDR shares. The single-ingress assumption that would make
+     * REMOTE_ADDR sound is the same one that would make '*' sound, it is written down
+     * in config/trustedproxy.php as Task 13's to establish, and it is not true today.
      *
      * @var list<string>
      */
-    private const CATCH_ALL_PROXIES = ['*', '**'];
+    private const CATCH_ALL_PROXIES = ['*', '**', 'REMOTE_ADDR'];
 
     /**
      * sslmode values that do not guarantee an encrypted session.
@@ -227,12 +241,17 @@ final class BootChecks
      * exist, and the limiter inverts into a shared-fate denial of service.
      *
      * THREE WAYS TO GET THIS WRONG, AND ALL THREE REFUSE HERE. Empty is the bug above.
-     * '*' is worse: it trusts every peer, so the forwarded header becomes whatever the
-     * caller sent and the limit is bypassed by rotating it. And an entry that does not
-     * parse is the quietest of the three -- Symfony's IpUtils simply never matches it,
-     * so a typo in a CIDR silently restores the first case with nothing in any log.
-     * A check that accepted a malformed value would be a control that reports success
-     * it has not established, which is the shape this branch has paid for twice.
+     * Trusting every peer is worse: the forwarded header becomes whatever the caller
+     * sent and the limit is bypassed by rotating it. And an entry that does not parse
+     * is the quietest of the three -- Symfony's IpUtils simply never matches it, so a
+     * typo in a CIDR silently restores the first case with nothing in any log. A check
+     * that accepted a malformed value would be a control that reports success it has
+     * not established, which is the shape this branch has paid for twice.
+     *
+     * THE MIDDLE CASE IS A SET OF VALUES AND NOT A PAIR OF LITERALS -- see
+     * trustsEveryPeer(). Refusing '*' and '**' alone left three spellings of the same
+     * thing accepted, one of them documented as valid, which is a control refusing the
+     * mistake it can recognise rather than the mistake.
      *
      * Exempt in local and testing: neither has a proxy in front of it, so the peer IS
      * the client and trusting nothing is correct there.
@@ -259,11 +278,11 @@ final class BootChecks
         }
 
         foreach ($entries as $entry) {
-            if (in_array($entry, self::CATCH_ALL_PROXIES, true)) {
+            if ($this->trustsEveryPeer($entry)) {
                 return [self::UNTRUSTED_PROXY_CONFIGURATION.': TRUSTED_PROXIES trusts every peer '
                     ."([{$entry}]), which makes X-Forwarded-For whatever the caller sent -- the per-IP "
                     .'rate limit is then bypassed by rotating one header, which is worse than having '
-                    .'no value at all. Name the balancer\'s CIDR instead.'];
+                    .'no value at all. Name the balancer\'s CIDR instead, with a prefix of at least 1.'];
             }
         }
 
@@ -274,23 +293,28 @@ final class BootChecks
 
         if ($invalid !== []) {
             return [self::UNTRUSTED_PROXY_CONFIGURATION.': TRUSTED_PROXIES carries entries that are '
-                .'not an address, a CIDR or REMOTE_ADDR: ['.implode('], [', $invalid).']. Symfony '
-                .'never matches such an entry, so it would be inert and $request->ip() would quietly '
-                .'go back to being the peer address.'];
+                .'not an address or a CIDR: ['.implode('], [', $invalid).']. Symfony never matches '
+                .'such an entry, so it would be inert and $request->ip() would quietly go back to '
+                .'being the peer address.'];
         }
 
         return [];
     }
 
     /**
-     * The configured entries, from either spelling Laravel accepts.
+     * The entries, from whichever of the two sources TrustProxies will really use.
+     *
+     * ResolvedTrustedProxies, never config() directly: the middleware prefers the
+     * trustProxies(at: ...) override and reading the config alone made this clause
+     * blind to the one call that sets a catch-all in one line. That class carries the
+     * measurement.
      *
      * @return list<string>
      */
     private function configuredProxies(): array
     {
         /** @var mixed $configured */
-        $configured = config('trustedproxy.proxies');
+        $configured = ResolvedTrustedProxies::asTrustProxiesReadsThem();
 
         $raw = match (true) {
             is_string($configured) => explode(',', $configured),
@@ -304,13 +328,51 @@ final class BootChecks
         ));
     }
 
-    /** An address, a CIDR, or the REMOTE_ADDR token Laravel resolves to the peer. */
-    private function isProxyAddress(string $entry): bool
+    /**
+     * Does this entry make every peer a trusted proxy?
+     *
+     * FOUR SPELLINGS, AND ONLY TWO OF THEM LOOK LIKE ONE. The literals and the
+     * REMOTE_ADDR token are in CATCH_ALL_PROXIES above. The fourth is a /0 prefix,
+     * which reads like a CIDR and is one -- measured against the pinned Symfony's
+     * IpUtils: checkIp4() returns true for ANY v4 peer when the netmask is 0, whatever
+     * the base address, so 10.0.0.0/0 is as total as 0.0.0.0/0; checkIp6() does the
+     * same for every v6 peer. A /0 is '*' written so that it passes a CIDR check.
+     *
+     * The prefix is compared as a NUMBER rather than against the string '0', because
+     * Symfony's v4 path reaches the same place by two routes: '0' short-circuits to
+     * true, and '00' falls through to a zero-length substr_compare that also returns
+     * true. Refusing on (int) 0 covers both and cannot be narrower than the library.
+     *
+     * A /0 whose address does not parse is a typo rather than a catch-all, and the
+     * malformed clause says so more usefully, so it is left to fall through.
+     */
+    private function trustsEveryPeer(string $entry): bool
     {
-        if ($entry === 'REMOTE_ADDR') {
+        if (in_array($entry, self::CATCH_ALL_PROXIES, true)) {
             return true;
         }
 
+        if (! str_contains($entry, '/')) {
+            return false;
+        }
+
+        [$address, $prefix] = explode('/', $entry, 2);
+
+        return ctype_digit($prefix)
+            && (int) $prefix === 0
+            && filter_var($address, FILTER_VALIDATE_IP) !== false;
+    }
+
+    /**
+     * An address, or a CIDR whose prefix is between 1 and the family's width.
+     *
+     * The floor of 1 is deliberate duplication: a /0 is already refused above as a
+     * catch-all, and repeating the bound here means the ORDER of the two clauses is not
+     * the only thing standing between a /0 and a pass. REMOTE_ADDR is no longer
+     * accepted anywhere -- it is in CATCH_ALL_PROXIES.
+     */
+    private function isProxyAddress(string $entry): bool
+    {
         if (! str_contains($entry, '/')) {
             return filter_var($entry, FILTER_VALIDATE_IP) !== false;
         }
@@ -324,7 +386,7 @@ final class BootChecks
         // The ceiling is per family: a /64 is ordinary for IPv6 and meaningless for v4.
         $bits = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? 32 : 128;
 
-        return (int) $prefix <= $bits;
+        return (int) $prefix >= 1 && (int) $prefix <= $bits;
     }
 
     /**

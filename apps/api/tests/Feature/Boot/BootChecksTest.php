@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Platform\Boot\BootChecks;
 use App\Platform\Boot\RefuseUnsafeBoot;
 use App\Platform\Database\DatabaseRoles;
+use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -157,19 +159,101 @@ it('refuses to serve with no trusted proxy configured, outside local and testing
         ->and($failures[0])->toContain('TRUSTED_PROXIES');
 });
 
-it('refuses a catch-all, which is worse than refusing an empty value', function (string $catchAll): void {
+/**
+ * What $request->ip() becomes under a given TRUSTED_PROXIES value, through the real
+ * middleware rather than through reasoning about it.
+ *
+ * This is the half that makes the refusals below mean something: a list of forbidden
+ * spellings is a list of opinions until each one is shown to hand the caller control of
+ * the address the per-IP limiter counts.
+ */
+function forwardedIpUnder(string $value, string $peer): string
+{
+    config(['trustedproxy.proxies' => $value]);
+
+    $request = Request::create('/healthz', 'GET', [], [], [], [
+        'REMOTE_ADDR' => $peer,
+        'HTTP_X_FORWARDED_FOR' => '203.0.113.9',
+    ]);
+
+    $seen = '';
+
+    try {
+        (new TrustProxies)->handle($request, function (Request $request) use (&$seen): void {
+            $seen = (string) $request->ip();
+        });
+    } finally {
+        // Symfony keeps the trusted-proxy list STATIC on the Request class, so this
+        // helper puts it back. Every kernel request re-sets it anyway, but "something
+        // later will fix it" is the assumption §4a records four times on this branch.
+        Request::setTrustedProxies([], Request::getTrustedHeaderSet());
+    }
+
+    return $seen;
+}
+
+/*
+ * EVERY SPELLING OF A CATCH-ALL, not the two that look like one. Refusing '*' and '**'
+ * alone left three more accepted, one of which -- REMOTE_ADDR -- this repo documented
+ * as valid and asserted as acceptable for a round.
+ */
+
+it('refuses every value that hands the caller the address the limiter counts', function (string $catchAll, string $peer): void {
     app()->detectEnvironment(fn () => 'production');
     config(['trustedproxy.proxies' => $catchAll]);
 
     $failures = app(BootChecks::class)->trustedProxiesAreSound();
 
-    // Laravel maps both spellings to 0.0.0.0/0 and ::/0, so every peer becomes a
-    // trusted proxy and X-Forwarded-For is whatever the caller sent -- the per-IP
-    // limit is then bypassed by rotating one header.
-    expect($failures)->toHaveCount(1)
+    expect($failures)->toHaveCount(1, "[{$catchAll}] was accepted")
         ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
-        ->and($failures[0])->toContain('every peer');
-})->with(['*', '**']);
+        ->and($failures[0])->toContain('every peer')
+        // THE REASON, MEASURED. The peer is outside any legitimate proxy range, and
+        // under each of these values it still dictates ip() by sending one header.
+        ->and(forwardedIpUnder($catchAll, $peer))->toBe('203.0.113.9');
+})->with([
+    // Laravel maps these two to 0.0.0.0/0 and ::/0 itself.
+    'star' => ['*', '198.51.100.77'],
+    'double star' => ['**', '198.51.100.77'],
+    // Resolved to the CURRENT peer, so the trusted list is whoever is connecting.
+    'REMOTE_ADDR token' => ['REMOTE_ADDR', '198.51.100.77'],
+    // A /0 is '*' written so that it passes a CIDR check. The base address is
+    // irrelevant to IpUtils, which is why the third case is not 0.0.0.0.
+    'v4 zero prefix' => ['0.0.0.0/0', '198.51.100.77'],
+    'v6 zero prefix' => ['::/0', '2001:db8::77'],
+    'v4 zero prefix behind a real address' => ['10.0.0.0/0', '198.51.100.77'],
+    // Symfony's v4 path reaches "matches everything" by two routes: '0' short-circuits
+    // and '00' falls through to a zero-length comparison. Both are refused.
+    'padded zero prefix' => ['10.0.0.0/00', '198.51.100.77'],
+    // One sound entry does not redeem the list: the limit is only as narrow as its
+    // widest member.
+    'a real CIDR beside one' => ['10.0.0.0/8,0.0.0.0/0', '198.51.100.77'],
+]);
+
+it('sees a catch-all set through trustProxies(at:), which is not in the config at all', function (): void {
+    app()->detectEnvironment(fn () => 'production');
+
+    // The config is sound. The override is not, and it is the one call a maintainer
+    // reaches for -- $middleware->trustProxies(at: '*') in bootstrap/app.php, which
+    // PLAN.md §4a names as the alternative this fix deliberately did not take.
+    // TrustProxies prefers it over the config, so a check reading only the config
+    // reported a pass while ip() was the caller's own header. Measured, then fixed.
+    config(['trustedproxy.proxies' => '10.0.0.0/8']);
+    TrustProxies::at('*');
+
+    try {
+        $failures = app(BootChecks::class)->trustedProxiesAreSound();
+
+        expect($failures)->toHaveCount(1)
+            ->and($failures[0])->toStartWith(BootChecks::UNTRUSTED_PROXY_CONFIGURATION)
+            ->and($failures[0])->toContain('every peer');
+    } finally {
+        TrustProxies::flushState();
+    }
+
+    // And with the override gone the same config is accepted, so the case above is
+    // about the override and not about the CIDR.
+    expect(app(BootChecks::class)->trustedProxiesAreSound())->toBe([]);
+});
 
 it('refuses an entry that does not parse, because Symfony would leave it inert', function (): void {
     app()->detectEnvironment(fn () => 'production');
@@ -187,14 +271,21 @@ it('refuses an entry that does not parse, because Symfony would leave it inert',
         ->and($failures[0])->toContain('not-an-address');
 });
 
-it('accepts a CIDR, a bare address, both families and the REMOTE_ADDR token', function (): void {
+it('accepts a CIDR and a bare address, in both families', function (): void {
     app()->detectEnvironment(fn () => 'production');
 
-    foreach (['10.0.0.0/8', '10.0.0.7', '2001:db8::/32', '2001:db8::1', 'REMOTE_ADDR', '10.0.0.0/8,REMOTE_ADDR'] as $value) {
+    // REMOTE_ADDR is deliberately NOT here. It was, for one round, and it trusts every
+    // peer -- see the refusal dataset above. A /1 is the narrowest prefix that is still
+    // a range rather than the whole internet, so it is the boundary worth pinning.
+    foreach (['10.0.0.0/8', '10.0.0.7', '10.0.0.0/32', '0.0.0.0/1', '2001:db8::/32', '2001:db8::1', '2001:db8::/128', '10.0.0.0/8,2001:db8::/32'] as $value) {
         config(['trustedproxy.proxies' => $value]);
 
         expect(app(BootChecks::class)->trustedProxiesAreSound())->toBe([], "[{$value}] was refused");
     }
+
+    // The contrast that makes the refusals above readable: under a real CIDR the peer
+    // sits outside of, the forwarded header is ignored and ip() is the peer.
+    expect(forwardedIpUnder('10.0.0.0/8', '198.51.100.77'))->toBe('198.51.100.77');
 });
 
 it('exempts local and testing, where the peer is the client', function (string $environment): void {
