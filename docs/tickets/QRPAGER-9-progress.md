@@ -43,11 +43,34 @@ planning decision, and two are defects no `§5` row covers:
 R-009's own measurement reproduced (6 verifier occurrences in the Postgres log per bootstrap) and its
 one-line fix verified to take it to 0, session-scoped, leaving R-004's `log_statement=all` intact.
 
-**Blocked, and named in the ticket as Q7:** the FrankenPHP binary could not be downloaded or executed in
-this session (sandbox policy), so its bundled PHP version is unverified and the gate's
-"`SIGTERM` … proven against the compiled app" clause has no route to a proof yet.
+**Q1–Q7 answered by the user the same day.** Scope is all 17 rows; the three gate clauses, R-017's
+disposition, the unversioned probes and the two `§4` rank-2 edits are approved; Scramble is pinned to
+exactly `0.13.50` with the pre-1.0 risk going to `§5` owner Task 12; the runtime is the pinned
+FrankenPHP container and **the SIGTERM drain proof must run in CI, not only locally**.
 
-**Open:** seven questions (Q1–Q7) in the ticket's §0.3. Phase 2 does not begin until they are answered.
+Three things the user asked to be verified before approving, all run:
+
+- **The bundled PHP version.** `dunglas/frankenphp:1.13.3-php8.4-bookworm` →
+  `PHP 8.4.27 (cli) … (ZTS)`, `FrankenPHP v1.13.3 PHP 8.4.27 Caddy v2.11.7`. Output in the ticket's
+  §0.3. Two findings came out of it: the unqualified `1.13.3` tag is ambiguous because
+  `1.13.3-php8.5` ships in the same release, and the image has **no** `pdo_pgsql`, `redis`, `pcntl`,
+  `intl` or `bcmath` — `pcntl` is not optional, because Laravel's `trap()` is how the readiness
+  carrier drains on `SIGTERM`.
+- **That nothing calls `/up`.** One reference outside `vendor/`: `apps/api/bootstrap/app.php:13`.
+  `compose.yaml`'s healthchecks are `pg_isready` and `redis-cli ping`, each against its own service;
+  CI's `--health-*` flags belong to the same two service containers; nothing curls the app. Safe to
+  remove.
+- **What replaces the Swoole-only tick for readiness.** `readiness:refresh`, a sub-minute scheduled
+  command on the **worker** connection writing one Redis key, readiness reading only that key —
+  specified in the ticket's §6.3. The choice that decides it is the connection: measured, with
+  `qrpager_app` at 40/40 and a new app connection refused `08006`, the worker-role probe still
+  returned `saturation: 1`. A probe on the app connection would fail exactly when the number matters.
+  Sub-minute cadence verified in the framework source rather than assumed.
+
+**Owed to the user:** when the two `§4` rank-2 edits land, say so, so they can paste the same text into
+the claude.ai Project instructions (Q6).
+
+**Open:** the user's approval of phase 1 as a whole. No application code until then.
 
 Housekeeping, so it is recorded rather than noticed later: four untracked `*:Zone.Identifier` files
 (Windows download markers beside `docs/PLAN.md`, `docs/claude/*` and the prompt) were deleted. No tracked

@@ -63,10 +63,10 @@ The cleanup therefore registers on **both** `OperationTerminated` and `WorkerErr
 
 **(iii) B6's "off the request path" has no carrier under FrankenPHP.** `Worker::handleTick()` is called
 from exactly one place in the package, `bin/swoole-server`. Ticks are Swoole-only, so `TickReceived`
-never fires under FrankenPHP. Proposed carrier: a scheduled Artisan command writes the saturation
-number and the Postgres/Redis probe results to Redis; readiness reads Redis only. That keeps the gate's
-"health and readiness keep answering" literal, because a saturated app role cannot accept a new
-connection at all (next item).
+never fires under FrankenPHP. The replacement is **`readiness:refresh`**, a sub-minute scheduled command
+on the **worker** connection writing one Redis key, with readiness reading only that key — specified
+and measured in **§6.3**, including the part that decides it: the probe must not run on the connection
+whose saturation it measures.
 
 **(iv) The saturation signal is `08006`, not `53300`.** Held 40 `qrpager_app` PDO connections against
 the live cluster; the 41st failed with `errorInfo[0] = 08006` and the message
@@ -117,55 +117,47 @@ running **before** `BEGIN`, which is R-022 visible in a server log.
   reproduced); the HTML debug page was 862 KB and carried everything. Two of the gate's clauses are
   therefore false until this task writes the redaction and the mapper.
 
-### 0.3 Questions. Phase 2 does not start until these are answered.
+### 0.3 Questions — **answered 2026-10-26.** What phase 2 is now bound to.
 
-1. **Q1 — scope.** B1: all **17** §5 rows (R-005, R-007 Task 2 half, R-009, R-010, R-012 Task 2 half,
-   R-013, R-014, R-015, R-016, R-017, R-018, R-019, R-020, R-021, R-022, R-023, R-024), or §0's **6**?
-   Recommendation: all 17. Two are Medium (R-017, R-022) and `§11`'s merge rule already requires a
-   Medium to be fixed or re-dispositioned by you explicitly.
-2. **Q2 — the three gate clauses** in §3 below, added to `PLAN.md §3` row 2. Rank-3 edit, your call.
-3. **Q3 — R-017's disposition.** Mark the depth-counter half closed (it is in the code), ship the lint
-   half under R-010, move **F4** to Task 4 per B3?
-4. **Q4 — what `/v1` covers.** The gate says "every public route is under `/v1`". `bootstrap/app.php`
-   currently registers Laravel's health endpoint at **`/up`**, and `§4 › Edge & ops` requires health and
-   readiness to keep answering while everything else sheds. Versioning a liveness probe means the load
-   balancer's health-check path changes when the API version does. Recommendation: `/v1` governs the
-   **public API surface**; the two probes are unversioned infrastructure endpoints at `/healthz` and
-   `/readyz`, `/up` is removed, and D6's policy text in `§6` lists them as the explicit exception. The
-   alternative is `/v1/healthz` and a note in Task 13 that the ALB health-check path is version-coupled.
-5. **Q5 — the OpenAPI generator.** `dedoc/scramble` 0.13.50 matches the gate's wording ("generated from
-   the routes"), needs no annotations, is MIT, had a release yesterday (161 published versions), reports
-   no advisories, exports with `scramble:export --path=` so CI's staleness check is a `diff`, and emits
-   a PHP enum as an OpenAPI enum, which is what makes D3's single source mechanical. It is **pre-1.0**.
-   The stable alternative is `darkaonline/l5-swagger` 11.2.1 + `zircote/swagger-php` 6.18.0 (both support
-   Laravel ^13), at the cost that the spec comes from hand-written attributes — a second source that can
-   drift from the routes, which `§6.2` and the gate's own wording argue against. Recommendation:
-   Scramble, pinned exactly, with the generated spec committed so a generator change shows up as a spec
-   diff in CI rather than silently. Note for Task 12: Scramble registers `GET docs/api`,
-   `GET docs/api.json` and `GET _scramble/dev-tools/devtools.js`; its `RestrictedDocsAccess` middleware
-   allows `local` and otherwise needs a `viewApiDocs` gate, so it is 403 by default — I propose
-   disabling the routes outright outside `local` rather than relying on a gate nobody defines.
-6. **Q6 — two rank-2 edits to `PROJECT_INSTRUCTIONS.md §4`,** both of which the ledger already asks for:
-   - R-010's own review column says §4's wording is a rank-2 edit. §4 says *"A **repo guard in lint**
-     rejects session-scoped tenant settings…"*. There is no lint rule that can see `false` inside the
-     string `'select set_config(?, ?, false)'` — Pint formats and PHPStan analyses the AST, and the
-     offending value is SQL text. The guard has to be a source scan. Proposed wording: *"A **repo guard
-     in CI** rejects…"*, with the rest unchanged.
-   - `§3.2` finding 2: no clause anywhere names **error response bodies** — every redaction clause in the
-     project is scoped to logs, which is why R-007's Task 2 half and R-021 are caught by nothing.
-     Proposed: `§4 › Edge & ops`'s "No secrets in logs" sentence gains *"…or in an error response body,
-     at any `APP_DEBUG` setting"*. Clause (b) in §3 below is the gate half of the same fix.
-7. **Q7 — the FrankenPHP binary, which blocks one gate clause.** The gate requires
-   *"`SIGTERM` drains in-flight requests and exits 0 (**proven against the compiled app**)"*. Octane
-   v2.22.0 requires a FrankenPHP binary ≥ 1.13.0; the current release is **v1.13.3** (2026-10-23), whose
-   notes record that 1.13.0–1.13.2 broke worker mode for symlinked document roots, so ≥ 1.13.3 is the
-   pin. Downloading and running that binary was **refused in this session by the sandbox policy**
-   ("Code from External"), so I could not verify which PHP version the static binary bundles, and I
-   cannot demonstrate the SIGTERM clause without it. Options: (a) you allow the download, (b) you run
-   `php artisan octane:install --server=frankenphp` yourself with `!` in the prompt, or (c) the clause is
-   demonstrated against a FrankenPHP **container image** in compose instead of a downloaded binary,
-   which also matches how it will run on Fargate. Recommendation: (c), with (b) as the fallback.
-   Everything else about the runtime is verified from source and by driving the real worker.
+| | Answer | What it binds |
+|---|---|---|
+| **Q1 scope** | **All 17 §5 rows** (B1 confirmed) | R-005, R-007 (T2 half), R-009, R-010, R-012 (T2 half), R-013, R-014, R-015, R-016, R-017, R-018, R-019, R-020, R-021, R-022, R-023, R-024 — §4 below is the whole of it |
+| **Q2 gate clauses** | **Approved** | The three clauses in §3 go into `PLAN.md §3` row 2 (rank-3 edit) before the branch is complete (B2) |
+| **Q3 R-017** | **Approved per B3** | Depth-counter half marked closed in §5 (it is in the code at `7f1c8f6`); lint half ships under R-010; **F4 moves to Task 4** |
+| **Q4 `/v1`** | **Approved — the probes stay unversioned.** Verified before removal, as asked: the **only** reference to `/up` anywhere outside `vendor/` is `apps/api/bootstrap/app.php:13` (`health: '/up'`). No compose healthcheck targets the application — `compose.yaml` has only `postgres` (`pg_isready`) and `redis` (`redis-cli ping`), each checking itself. The CI workflow never curls it; its only `--health-*` flags belong to the two service containers. No test and no doc references it. **Removing it breaks nothing** | `/healthz` + `/readyz`, unversioned; `/up` removed; D6's policy text in `§6` lists them as the explicit exception |
+| **Q5 OpenAPI** | **`dedoc/scramble`, pinned to exactly `0.13.50` — no caret.** The pre-1.0 risk goes to `PLAN.md §5` as a new row, **owner Task 12** | `composer require dedoc/scramble:0.13.50`. The committed spec means a generator change surfaces as a spec diff in CI |
+| **Q6 §4 rank-2 edits** | **Approved — both.** "A **repo guard in lint**" → "**in CI**"; "No secrets in logs" gains "…or in an error response body, at any `APP_DEBUG` setting" | **Action owed to the user:** when the two edits land, tell them, so they paste the same text into the claude.ai Project instructions. `§0`'s "Where everything lives" already records that the Project copy of `§11` is out of step; this adds `§4` to that debt unless it is pasted |
+| **Q7 FrankenPHP** | **Container, and the drain proof runs in CI, not only locally.** Image pinned to **`dunglas/frankenphp:1.13.3-php8.4-bookworm`** | A `frankenphp` service in `compose.yaml` and a CI job that sends `SIGTERM` to it mid-request and asserts the in-flight request completes and the process exits 0 |
+
+**Q7's verification, run in this session as asked:**
+
+```
+$ docker run --rm dunglas/frankenphp:1.13.3-php8.4-bookworm php -v
+PHP 8.4.27 (cli) (built: Oct 21 2026 15:55:55) (ZTS)
+Copyright (c) The PHP Group
+Built by https://github.com/docker-library/php
+Zend Engine v4.4.27, Copyright (c) Zend Technologies
+    with Zend OPcache v8.4.27, Copyright (c), by Zend Technologies
+
+$ docker run --rm dunglas/frankenphp:1.13.3-php8.4-bookworm frankenphp version
+FrankenPHP v1.13.3 PHP 8.4.27 Caddy v2.11.7 h1:yj0Y4fYZGPkSvibBJ1sTWE33xC0fxztVyXEW5iIdUT4=
+```
+
+**PHP 8.4.27** — the same patch version as this machine's CLI, so `§1`'s locked PHP 8.4 holds. It is a
+**ZTS** build, which is correct and not incidental: FrankenPHP's worker mode is threaded, and an
+extension compiled for NTS will not load in it.
+
+Two things that follow, both measured rather than assumed:
+
+- **The tag must name the PHP version.** `dunglas/frankenphp:1.13.3` alone is ambiguous —
+  `1.13.3-php8.5` and `1.13.3-php8.5.12` exist in the same release, so the unqualified tag can float to
+  a PHP this project does not run. Task 0 already lost time to a file telling agents to install PHP 8.5
+  against `§1` (`§4a`). Pin `1.13.3-php8.4-bookworm`, or `1.13.3-php8.4.27-bookworm` to pin the patch.
+- **The image ships almost none of the extensions this app needs.** Measured inside it: `PDO`,
+  `mbstring` and `posix` are present; **`pdo_pgsql`, `redis`, `pcntl`, `intl` and `bcmath` are not.**
+  `install-php-extensions` is at `/usr/local/bin/install-php-extensions`, so the Dockerfile installs
+  them. `pcntl` is not optional: Laravel's `trap()` is how `schedule:work` — the readiness carrier in
+  §6.3 — drains on `SIGTERM`. The FrankenPHP drain itself is Go-side and needs no extension.
 
 **No `§2` data-contract change is required by anything in this ticket** — no table, column, enum value,
 role, GUC or grant. Both GUCs are read-only through `TenantContext`; all four roles are read-only through
@@ -232,7 +224,7 @@ is reported** (§6 of the prompt).
 | **R-007** (T2 half) | Low | `DatabaseErrorMapper` keyed on `getPrevious()->errorInfo[0]`: `42501`→403, `23505`→409, `23514`→422, `23503`→409, `08006`→503, each a `problem+json` document whose `type` is a `App\Domain\Http` enum case | A real `23514` (an un-lower-cased email) returns a body carrying no constraint name, no SQL and no bindings |
 | **R-009** | Med | `SET log_statement = 'none'` on the bootstrap session, before the advisory lock | The test sets `log_statement = 'all'` **cluster-wide as root first**, then asserts the bootstrap session reports `none` — otherwise it passes for the wrong reason in CI, whose Postgres service defaults to `none`. Measured end to end locally: **6 verifier occurrences → 0** |
 | **R-010** | Med | A source-scanning guard: no `set_config(…, false)`, no raw `SET app.*`, no `app.*` name outside C1. Shipped as a `composer guard` script **and** a Pest test, so CI fails independently of the suite | Deliberately-bad fixtures in `tests/Fixtures/guard/` (which the repo-wide scan skips and the test feeds in explicitly) make the guard report each violation; the guard exits non-zero |
-| **R-012** (T2 half) | Low | B6: readiness opens no connection; it reads the cached probe | 40 app connections held, then `/readyz` **answers** and `/healthz` returns 200. Reverting to a readiness query gives `08006` and a 500 |
+| **R-012** (T2 half) | Low | B6: readiness opens no connection; it reads the key `readiness:refresh` writes from the **worker** connection (§6.3) | 40 app connections held, then `/readyz` **answers** and `/healthz` returns 200. Reverting to a readiness query gives `08006` and a 500 |
 | **R-013** | Low | Distinguish "the statement failed" from "the statement was never built", and read the real SQLSTATE rather than `getCode()` | A connectivity failure names `08006` (today it would print "SQLSTATE 7" — 0.2 viii); a `format()` failure says the statement was never built; neither message contains a verifier substring |
 | **R-014** | Low | A ceiling assertion on `config('tenancy.timeouts')`, so a far-too-high configured value fails fast instead of hanging the suite | Setting `app.statement_timeout` to `600s` in config makes the ceiling test fail. The firing proofs keep their lower bound only (F10) |
 | **R-015** | Low | Closed by D9's boot assertion, which is where `§5` already puts the real control | With `APP_ENV=production` and `DB_OWNER_PASSWORD` resolvable, boot refuses: exit 1, reason logged |
@@ -325,6 +317,39 @@ queries against the four global tables (`migrations`, `users`, `password_reset_t
 which the guard does not match because they carry no tenant column — the same list as `§2.4`, read from
 the shared registry so the two cannot drift. Nothing else is exempt: there is no allowlist of routes.
 
+### What replaces the tick — the readiness carrier
+
+The prompt's research list asked which source readiness reads and whether it reports what I think it
+reports. Measurement (0.2 iii) removed the obvious answer: `Worker::handleTick()` is called from exactly
+one place in Octane, `bin/swoole-server`, so **ticks do not exist under FrankenPHP** and there is no
+in-process timer to hang a probe on. What replaces it, with every part verified:
+
+**`readiness:refresh` — a sub-minute scheduled command, on the worker connection, writing one Redis key.**
+
+| Part | Why that part, and what proves it |
+|---|---|
+| **Cadence: `->everyFiveSeconds()`** | Verified present in Laravel 13 (`ManagesFrequencies.php:109`), and verified to actually fire sub-minute: `ScheduleRunCommand::repeatEvents()` loops until the end of the minute re-running repeatable events, while `schedule:work` starts one `schedule:run` per minute. So a 5-second cadence is real, from one extra process, with no tick |
+| **Carrier process: `php artisan schedule:work`** | Locally a second terminal; on Fargate a second container **in the same task definition**, so it shares the task's lifecycle. That co-location is what makes staleness meaningful (below). It needs `pcntl` in the image — measured absent from the base image |
+| **Probe connection: `pgsql_worker`, never `pgsql`** | **This is the load-bearing choice.** A probe that measures app-role saturation must not be subject to it. Measured: with `qrpager_app` at **40/40** and a new app connection refused `08006`, the worker-role probe still returned `{"app_backends":40,"app_limit":40,"saturation":1}`. A non-superuser can read `usename` from `pg_stat_activity`, so no `pg_read_all_stats` grant and no `§2` change is needed. It costs one long-lived connection out of the worker's separate 20-slot budget |
+| **What it writes** | One Redis key: `{saturation, app_backends, app_limit, postgres_ok, redis_ok, measured_at}` |
+| **What `/readyz` does** | Reads that key. **Nothing else.** Zero Postgres round trips on the request path, which is B6 literally, and the reason R-012's coupling cannot recur |
+| **What the shedding middleware does** | Reads the same key, so the fast 503 for a saturated pool is also DB-free on the request path |
+| **Staleness** | The value carries `measured_at`; older than a configured budget (proposed: 3× the cadence, 15 s) ⇒ **not ready**. Because the carrier is a container in the same task, a dead carrier is a task that should be replaced, so "stale ⇒ not ready" is the correct reading rather than a dangerous one |
+| **Redis down** | No value to read ⇒ not ready, which is the gate's "health reflects real Postgres + Redis state". `/healthz` reads **nothing at all** and still returns 200, so neither a saturated pool nor a dead Redis can make the load balancer kill a task that is merely busy (`§4 › Edge & ops`) |
+
+Rejected, each for a measured reason rather than a preference:
+
+- **Octane ticks** — Swoole-only, measured.
+- **A sampled refresh on the `/v1` request path** (refresh at most once per *N* seconds from requests
+  that already hold a connection). Needs no second process, and fails under zero traffic: the value goes
+  stale and both readings are wrong. "Stale ⇒ not ready" kills an idle task; "stale ⇒ ready" means
+  readiness has stopped reflecting real state, which is the clause it exists for.
+- **Readiness queries Postgres itself** — fails exactly when it matters. Measured: at 40/40 a new app
+  connection is refused `08006`, so readiness would return 500 under the one condition it exists to
+  report. That is R-012's coupling restated.
+- **A dedicated second connection for readiness** — a new `§2.1` surface and a new failure mode, which
+  is the same shape D7 rejected for R-005.
+
 **4. Security.**
 
 - *authn:* none exists before Task 5. Every `/v1` route is deny-by-default behind
@@ -388,8 +413,9 @@ the shared registry so the two cannot drift. Nothing else is exempt: there is no
 | a connection returning to the pool dirty | **Measured as broken today**: the next request on the same worker enters at `transactionLevel 1` with the previous request's `app.tenant_id` still set, and after a *failed* request even the `RequestTerminated` hook never fires. Fixed by the two-hook cleanup; clause (a) is the gate half |
 
 **7. Research.** §7 below. Every claim in this ticket that names a number or an API was produced by
-running code in this session, except the two things I could not run and have said so: the FrankenPHP
-binary's own PHP version (Q7) and the CI coverage figure, which `§4a` forbids measuring locally.
+running code in this session. One thing is still unmeasured and says so: the CI coverage figure, which
+`§4a` forbids measuring locally. The FrankenPHP static binary stayed unrunnable here, so the runtime is
+the container instead and its PHP version **is** verified (§0.3).
 
 ## 7. Research — what was run, and what it returned
 
@@ -432,6 +458,13 @@ found**, before and after adding all three packages.
    connection: `{"app_backends":40,"max_connections":"100","reserved":"3","role_limit":40}`. Ticks are
    Swoole-only (`handleTick` called from `bin/swoole-server` alone). cgroup v2 readable;
    `sys_getloadavg()` returns host figures; `memory.max` reads `max` with no limit set.
+   **The carrier (§6.3), measured separately:** with `qrpager_app` held at 40/40 and a new app
+   connection refused `08006`, the same probe statement run as **`qrpager_worker`** still returned
+   `{"app_backends":40,"app_limit":40,"saturation":1}` — a non-superuser reads `usename` from
+   `pg_stat_activity` with no `pg_read_all_stats` grant and no `§2` change. Sub-minute scheduling
+   verified in the framework source: `ManagesFrequencies::everyFiveSeconds()` exists, and
+   `ScheduleRunCommand::repeatEvents()` re-runs repeatable events until the end of the minute, so
+   the 5-second cadence is real without a tick.
 8. **Redis down (B7).** Dead port set before boot: `ping`, `Cache::get`, `RateLimiter::attempt` and
    `tooManyAttempts` all threw `RedisException: Connection refused`. (A first run reported `ping: OK`;
    that was a stale facade root resolved before the config change, not a property of Redis — re-run
@@ -453,16 +486,34 @@ found**, before and after adding all three packages.
     string-backed PHP enum produced `#/components/schemas/ProblemType` with all four cases as `enum`.
     Caveat for phase 2: Scramble infers `const` from literal constructor arguments, so a controller must
     return a declared shape rather than one branch's literals or the spec over-constrains.
-13. **FrankenPHP.** Octane requires binary ≥ **1.13.0**; current release **v1.13.3**, 2026-10-23, whose
-    notes record worker mode broken for symlinked document roots in 1.13.0–1.13.2. The binary itself was
-    not downloaded or run — refused by the sandbox policy — so its bundled PHP version is **unverified**
-    and the SIGTERM clause is blocked on **Q7**.
+13. **FrankenPHP (Q7, now verified).** Octane requires ≥ **1.13.0**; release **v1.13.3** (2026-10-23),
+    whose notes record worker mode broken for symlinked document roots in 1.13.0–1.13.2, so ≥ 1.13.3 is
+    the floor. The **static binary** could not be downloaded or executed here (sandbox policy), so the
+    runtime is the **container**: `dunglas/frankenphp:1.13.3-php8.4-bookworm` reports
+    `PHP 8.4.27 (cli) … (ZTS)` and `FrankenPHP v1.13.3 PHP 8.4.27 Caddy v2.11.7` — output in §0.3.
+    The unqualified `1.13.3` tag is ambiguous (`1.13.3-php8.5` ships in the same release), so the tag
+    names the PHP version. The image ships `PDO`, `mbstring`, `posix` and **not** `pdo_pgsql`, `redis`,
+    `pcntl`, `intl` or `bcmath`; `install-php-extensions` is present to add them.
+14. **Q4, before removing anything.** `/up` is referenced in exactly one place outside `vendor/`:
+    `apps/api/bootstrap/app.php:13`. `compose.yaml`'s two healthchecks are `pg_isready` and
+    `redis-cli ping`, each against its own service; CI's `--health-*` flags belong to the same two
+    service containers and nothing curls the app. No test, no doc, no workflow calls it.
+
+**New `§5` row to write in phase 2 (Q5).** *`dedoc/scramble` is pinned at a pre-1.0 version (`0.13.50`).*
+Severity Low. Why accepted: it is the only candidate that generates the spec from the routes rather
+than from hand-written attributes, which is what `§6.2` and the gate's own wording require; the
+alternative's second source is the larger risk. Compensating control: the version is pinned exactly
+with no caret, the generated spec is committed, and CI `diff`s a fresh export against it — so a
+generator behaviour change appears as a spec diff on a deliberate upgrade and cannot arrive
+silently. Owner **Task 12** (`QRPAGER-19`), which owns the SAST/DAST and dependency pass. Review by:
+at Task 12's acceptance gate, or when Scramble reaches 1.0, whichever is first.
 
 Repeatable probes, if you want to re-run any of it:
 `/tmp/claude-1000/-home-lenovo-code-qr-pager/072d249a-9782-4a5c-9240-efaab327a002/scratchpad/` —
 `octane-worker-probe.php`, `octane-lifecycle-probe.php`, `listener-probe.php`, `guard-probe.php`,
 `monolog-probe.php`, `queryexception-probe.php`, `sqlstate-probe.php`, `body-probe.php`, `pool-probe.php`,
-`redis-probe2.php`, `scope-cost-probe.php`, `scope-wire-probe.php`, against the sandbox copy in `probe/`.
+`redis-probe2.php`, `scope-cost-probe.php`, `scope-wire-probe.php`, `readiness-carrier-probe.php`,
+against the sandbox copy in `probe/`.
 Nothing in `apps/api` was modified in phase 1.
 
 ## 8. Phase 2 — what gets built, once the questions are answered
@@ -470,9 +521,10 @@ Nothing in `apps/api` was modified in phase 1.
 Commands, in order:
 
 ```
-composer require laravel/octane:^2.22 dedoc/scramble:^0.13.50
+composer require laravel/octane:^2.22 "dedoc/scramble:0.13.50"   # exact pin, no caret (Q5)
 composer require --dev deptrac/deptrac:^4.7
-php artisan octane:install --server=frankenphp     # Q7
+# No octane:install -- the runtime is the pinned container (Q7):
+#   dunglas/frankenphp:1.13.3-php8.4-bookworm, + pdo_pgsql redis pcntl intl bcmath
 ```
 
 Files, by layer — `App\Domain` (no framework, no DB) · `App\Platform` (framework + DB, imports no
@@ -489,12 +541,18 @@ feature module) · `App\Features\*` created empty (D1):
 - `app/Platform/Octane/RequestBoundaryCleanup.php` — on `OperationTerminated` **and**
   `WorkerErrorOccurred` (R-022)
 - `app/Platform/Auth/HarnessTenantResolver.php` — the stub deptrac is pointed at (B5)
-- `app/Platform/Console/RefreshReadinessProbeCommand.php` — B6's carrier
+- `app/Platform/Console/RefreshReadinessCommand.php` (`readiness:refresh`) — the carrier, on the
+  **worker** connection, `->everyFiveSeconds()` (§6.3)
+- `Dockerfile` + a `frankenphp` service in `compose.yaml` — pinned image, extensions installed
 - `guard/` + `composer guard` — the C1/C2 source scan (R-010, R-019), with its bad fixtures
 - `deptrac.yaml`, `config/octane.php`, `config/scramble.php`, `config/shedding.php`, `routes/v1.php`
 - `docs/openapi.json` — committed, diffed in CI
 
-CI gains: `composer guard`, `vendor/bin/deptrac analyse`, the OpenAPI staleness `diff`, and a
-Redis-down job. Then the three gates green from a fresh clone, the coverage number from the CI run that
-produced it, `PLAN.md` updated (`§0`, `§4a`, `§5` dispositions, `§2.11` for D11, `§6` for D6), and the PR.
+CI gains: `composer guard`, `vendor/bin/deptrac analyse`, the OpenAPI staleness `diff`, a Redis-down
+job, and **the SIGTERM drain proof — in CI, not only locally (Q7)**: start the pinned FrankenPHP
+container, hold one slow in-flight request, send `SIGTERM`, assert the in-flight request completes and
+the process exits 0. Then the three gates green from a fresh clone, the coverage number from the CI run that
+produced it, `PLAN.md` updated (`§0`, `§4a`, `§5` dispositions **plus the new pre-1.0 Scramble row owned by
+Task 12**, `§2.11` for D11, `§6` for D6), the two `§4` rank-2 edits made **and reported to the user so
+they can paste them into the Project instructions (Q6)**, and the PR.
 No merge and no `task-2` tag until both `§11` reviews have run.
