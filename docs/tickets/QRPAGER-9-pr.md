@@ -1,7 +1,7 @@
 # Task 2 — API core (`QRPAGER-9`, epic E1)
 
 Closes all **seventeen** `§5` rows Task 2 owns, plus **H-C's two remaining boot clauses**, and builds
-every clause of the `§3` row-2 gate. 29 commits, one logically complete unit each, every `§5` row proven
+every clause of the `§3` row-2 gate. 33 commits, one logically complete unit each, every `§5` row proven
 by revert with its failure count explained.
 
 **Not ready to merge:** the `§11` QA review and the `§11` Security review have not run, and `§6` makes
@@ -28,7 +28,7 @@ both a precondition for the `task-2` tag. This PR is for those reviews.
 
 ## What this branch adds, in full
 
-**120 files changed, +12,797 / −561**, measured at `eaea965` — this document's own inventory was added after it and is not in that figure. Every class below is new unless marked *(modified)*.
+**121 files changed, +13,293 / −562**, measured at `547911d`. Every class below is new unless marked *(modified)*.
 
 ### `App\Domain` — no framework, no DB (deptrac enforces it)
 
@@ -114,8 +114,8 @@ not over-reach (`comment-only`, which spells a forbidden `set_config` out inside
 | Config modified | `config/tenancy.php` (timeout ceilings + exemptions) · `config/logging.php` (the `RedactLogs` tap on every channel, plus the `tenancy` channel for R-005) · `config/filesystems.php` (`serve => false`) · `phpstan.neon` |
 | Composer scripts | `composer deptrac` · `composer guard` · `composer openapi` · `composer openapi:check` |
 | Runtime | `Dockerfile` (`dunglas/frankenphp:1.13.3-php8.4-bookworm`, extensions installed and asserted) · `docker/Caddyfile` · `.dockerignore` · a `frankenphp` compose service behind a profile |
-| Proof scripts | `bin/drain-proof` · `bin/redis-down-proof` · `bin/openapi-check` |
-| CI | `composer openapi:check` · `boot:check` in both directions · `ALTER SYSTEM log_statement=all` + a Postgres-log scan for the verifier across the whole run · a new **`runtime`** job running both proofs against the built image |
+| Proof scripts | `bin/drain-proof` · `bin/redis-down-proof` · `bin/openapi-check`, over `bin/_runtime.sh` — one source for *build → create the roles → start → wait*, called by each proof itself |
+| CI | triggers on `task-*` branches as well as `main`, so a task branch gets a verdict · `composer openapi:check` · `boot:check` in both directions · `ALTER SYSTEM log_statement=all` + a Postgres-log scan for the verifier across the whole run · a new **`runtime`** job running both proofs against the built image |
 | Committed artefact | `docs/openapi.json`, generated from the routes, byte-identical across three consecutive exports |
 
 ## The test inventory — 341 cases, 1,149 assertions
@@ -195,6 +195,8 @@ Three of them are the phase-1 ticket and the baseline; the rest are one logicall
 | 29 | `2e26d71` | the fresh-clone run, and the one flake it found |
 | 30 | `b35511a` | this document, in the repo |
 | 31 | `eaea965` | ignore `report.md` |
+| 32 | `ee2ae6c` | **two passes that depended on state outside the clone** — the runtime proofs' precondition, and deptrac's environment-chosen formatter |
+| 33 | `547911d` | CI did not trigger on task branches; this one reached thirty commits with no verdict |
 
 ## Four measurements that changed a design, not just an implementation
 
@@ -243,6 +245,38 @@ Three of them are the phase-1 ticket and the baseline; the rest are one logicall
   never committed, with tests asserting its absence from the repository and from the served surface. The
   alternative — a sleep in a middleware behind a header — is a production code path a request can trigger.
 
+## Three §6 fresh-clone findings, found after the work was "done"
+
+`§6`: *"a pass that depends on something only present on the builder's machine is not a pass."* All three
+are that, and the last one is why the first two survived so long.
+
+1. **The runtime proofs never established their own precondition.** `bin/drain-proof` had no
+   `db:bootstrap` at all and `bin/redis-down-proof` ran it *after* the first `up`; both passed only
+   because an earlier run had left the roles in the cluster. Against a fresh Postgres volume — what CI
+   starts from every run — both fail with `boot refused: unsafe-runtime-role`, five worker restarts, and
+   `worker has not reached frankenphp_handle_request()`. **That is the boot check working**, and it means
+   the bootstrap has to run **before the first `up`**, not merely before the health wait: by the time the
+   wait times out the process is already gone. `bin/_runtime.sh` is one source for *build → create the
+   roles → start → wait*, called by each proof **itself**, because they are separate CI steps and a proof
+   that only passes second is not a proof. `depends_on: condition: service_healthy` cannot express it —
+   `pg_isready` answers "the cluster accepts connections" while **role existence is an application
+   precondition**, and **Task 13 inherits the constraint**: ECS task dependencies have the same gap, so
+   the roles must be created by a separate task that completes before the service task starts.
+2. **`ArchitectureGuardTest` asserted on text that does not exist in CI.** deptrac picks its formatter
+   from the environment (`AnalyseCommand.php:99`), so under `GITHUB_ACTIONS` it uses the github-actions
+   formatter — which with no violations emits **nothing at all**: 292 bytes of Report table without the
+   variable, **0 bytes** with it, exit 0 either way. The case was asserting that an empty string contained
+   `"Violations           0"`. Every run now pins `--formatter=json` and asserts the **exit code plus a
+   parsed count**, decoded from `output() . errorOutput()` — concatenated deliberately, because
+   `Process::run` captures stderr where Pest never prints it, so "the report went to stderr" and "deptrac
+   aborted" are otherwise the same empty actual. The four fixture cases moved the same way, onto the
+   report's structured `files` map.
+3. **The branch had never been given a verdict.** CI triggered on `main`, on `task-*` **tags** and on
+   pull requests — so this branch reached **thirty commits** with no CI run, which makes R-001's "never
+   merge until both checks are green" unperformable in the window where acting on it is cheap. Both
+   findings above are exactly the shape that only CI could have caught, and neither could have been seen
+   here before the PR opened. `branches: [main, 'task-*']` closes it.
+
 ## Two new `§5` rows, named rather than hidden
 
 - **R-026** — `dedoc/scramble` pinned pre-1.0 (`0.13.50`). Pinned exactly with no caret, spec committed,
@@ -253,21 +287,25 @@ Three of them are the phase-1 ticket and the baseline; the rest are one logicall
 
 ## Evidence
 
-From a **fresh clone** (`§6`: a pass that depends on the builder's machine is not a pass):
+From a **fresh clone against a fresh cluster** (`docker compose down -v`), under **CI's environment**
+(`GITHUB_ACTIONS=true CI=true`) and in CI's step order — all three variables that hid the findings above:
 
 ```
 pint      passed            stan      0 errors
 deptrac   0 violations      guard     C1 and C2 hold across 6 scanned path(s)
 openapi   in sync           boot:check passed, exit 0
-test      341 passed, 1149 assertions   (198 at 7f1c8f6)
+boot:check  refuses before the roles exist, passes after, exit 1 for owner credentials
+test      341 passed, 1166 assertions   (198 at 7f1c8f6)
 
 drain  FrankenPHP v1.13.3 PHP 8.4.27 (ZTS) · in-flight 200 {"completed":true,"held_seconds":3.004} · exit 0
 redis  /healthz 200 · /readyz 503 · unknown path 404 · recovered to 200
 pool   40 held, the 41st refused 08006 · worker probe still returned saturation 1 · both probes answered
 ```
 
-The 240 figure was re-measured on a second machine and was identical. **Coverage is deliberately not
-quoted** — `§4a` forbids measuring it locally, so the figure is the CI run's.
+The 240 figure was re-measured on a second machine and was identical, and the whole suite was re-run
+under `GITHUB_ACTIONS=true CI=true` with the same result, so nothing in it is environment-sensitive.
+**Coverage is deliberately not quoted** — `§4a` forbids measuring it locally, so the figure is the CI
+run's.
 
 The `404` in the Redis line is the one to read: that request goes through the rate limiter, which cannot
 reach Redis, so 404 means it failed open. **500** would mean a `RedisException` reached the renderer,
