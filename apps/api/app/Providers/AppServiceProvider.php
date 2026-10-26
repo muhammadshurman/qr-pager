@@ -16,9 +16,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // One tenant context per request/worker lifecycle. Task 2 is responsible for
-        // resetting it between Octane requests.
-        $this->app->singleton(TenantContext::class);
+        // scoped(), not singleton(), and D10's measurement is the reason. Three
+        // requests through the real Octane worker resolved this class as three
+        // different objects although it was bound singleton() -- not because the
+        // binding says so, but because nothing warms it, so each request resolved it
+        // inside `clone $this->app` and the sandbox flush discarded it. That is a
+        // guarantee by accident: anything that resolves it during boot moves it into
+        // the root application and it becomes shared for the worker's life, carrying
+        // $openScopes between requests. scoped() says what is meant, and
+        // FlushTemporaryContainerInstances forgets it on OperationTerminated, so the
+        // guarantee survives someone warming it.
+        $this->app->scoped(TenantContext::class);
         $this->app->singleton(RuntimeRoleGuard::class);
 
         // One guard for the worker's life, deliberately: it holds the armed flag that

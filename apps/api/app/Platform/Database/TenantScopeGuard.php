@@ -6,7 +6,7 @@ namespace App\Platform\Database;
 
 use App\Domain\Database\TenantTables;
 use Closure;
-use Illuminate\Contracts\Container\Container;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Events\ConnectionEstablished;
@@ -61,18 +61,7 @@ final class TenantScopeGuard
     /** @var list<string> */
     private array $guarded;
 
-    /**
-     * The container is held rather than the TenantContext, and that is not a style
-     * choice. This guard is resolved at boot to register its connection listener, so it
-     * lives in Octane's ROOT application for the worker's life -- D10's measurement is
-     * about exactly this: a binding resolved during boot stops being per-request. A
-     * constructor-injected TenantContext would therefore pin the root app's instance,
-     * while the request resolves its own inside the sandbox clone, and the guard would
-     * be asking an object that never has a scope open whether a scope is open. It
-     * would refuse every scoped query in production and pass every test that called
-     * inspect() directly. Resolved per call, from the container in force, instead.
-     */
-    public function __construct(private readonly Container $container)
+    public function __construct()
     {
         // The runtime connections, and only those. The owner, root and bootstrap
         // connections are not runtime surfaces: the audited cross-tenant bypass runs
@@ -171,8 +160,18 @@ final class TenantScopeGuard
             return;
         }
 
+        // Resolved per call from the CONTAINER IN FORCE, and neither half of that is
+        // decoration. This guard is resolved at boot to register its connection
+        // listener, so it lives in Octane's root application for the worker's life,
+        // while TenantContext is scoped() and a request resolves its own inside
+        // `clone $this->app` (D10's measurement is about exactly this). An injected
+        // container would be the root one: the guard would ask an object that never has
+        // a scope open whether a scope is open, refusing every scoped query in
+        // production while passing every test that called inspect() directly.
+        // Container::getInstance() is the sandbox during a request, because Octane's
+        // CurrentApplication::set() makes it so.
         /** @var TenantContext $context */
-        $context = $this->container->make(TenantContext::class);
+        $context = Container::getInstance()->make(TenantContext::class);
 
         if ($context->hasOpenScope($connection)) {
             return;
