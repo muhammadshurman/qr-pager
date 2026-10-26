@@ -18,6 +18,98 @@
 | **Blocking anything?**                | Nothing. Task 1 is tagged and its record is complete: **coverage 97.5 %** (run #30, `cdadb43`) and **CI #27 confirmed `Cancelled`**, which closes the `3fe10c2` discrepancy — the run was superseded, not failed, and the cause is fixed (PR #2, `c07bae6`). Every commit on `main` since carries a green verdict (#31, #33, #34, #35). **The CI-configuration fix has landed** — PR #2, merged as `c07bae6`: `cancel-in-progress` no longer applies to `main` or to tags, so every commit on `main` now produces a verdict. `c07bae6` is the first such commit and carries the new expression itself. **But R-001's squash half was broken a second time on that very PR** — it merged as a merge commit (`c07bae6` has two parents and `296db14` is in `main`'s history), on the PR that was meant to be the first clean exercise of the rule. See `R-001`. Historically: The eighth review ran, found S-1 blocking, and S-1 is closed in the ninth round below; **there will be no ninth review**, by the user's decision recorded in §1. **The eighth review's bar was set before it was commissioned** — see "The eighth review — the bar, set before it ran" above. Only a cross-tenant read or write reachable _without_ a raw `set_config` in a callback blocks the tag; everything else goes to §5 with an owner and a date. **The seventh review found a High — `F1`, introduced by the seventh round's own fix — closed here.** The sixth review's eleven findings are **now** all dispositioned, which they were not when this row previously said so: that claim covered **eight**. The three it silently dropped — L-3, L-4, L-5 — are **R-019**, **R-020**, **R-021**. They were dropped because the builder's own summary of the sixth review listed eight findings, so the dispositions could only cover eight, and §11's merge rule was unsatisfied while this file said otherwise (F5, seventh review). **The sixth review found no Critical and no High, so nothing it raised blocks the tag.** It confirmed all ten of the fifth review's findings closed, four of them by its own measurement against the live cluster. It raised 5 Medium and 6 Low; §11 requires each to be fixed or written into §5 with an owner and a date, and **that disposition is the one thing outstanding** — see "Needs the user's decision". **Corrected 2026-10-26 (F5, seventh review): this sentence claimed "three of its Mediums were false or imprecise claims … plus one real regression … all four corrected", and the arithmetic was wrong.** Measured against the findings list: **two** of its Mediums were false claims in this file (M-3's claim half, and M-4), and M-3 was also the coverage regression; M-1, M-2 and M-5 were code or test defects. The other two corrected items are the two halves of **L-6**, a Low. Task 2 is blocked on the `task-1` tag, which is blocked on that disposition. Nothing else is outstanding on this branch. The standing reason is unchanged and has held at every review that read a fix diff: each one reads the previous round's fixes for the first time and finds something in them. **Four of the nine rounds introduced a finding whose whole shape is _correct on a clean build, wrong on a machine carrying earlier state_** — the fourth being the ninth round's own S-1 regression test, which filtered `audit_log` on a reason string that repeated across runs and so matched a row left by an earlier run made while the vulnerability was live (R-016's predicted shape, caught by refusing to report a revert proof that could not be explained). Every review from the sixth on was told to look for that shape first, under Octane, where the connection and the `TenantContext` singleton both outlive a request. · **Task 2 blocks Task 3 until it is tagged, and two things block the tag:** the `§11` QA review and the `§11` Security review of this branch's diff, neither of which has run. Nothing else is outstanding — every `§5` row Task 2 owned is closed, the three invariants are re-measured in `§4a`, and both runtime proofs are green against the pinned image. · **CI did not trigger on task branches until 2026-10-26.** The workflow ran on pushes to `main`, on `task-*` tags and on pull requests, so a task branch had NO verdict until its PR opened — `task-2-api-core` reached thirty commits that way, which makes R-001's "never merge until both checks are green" unperformable in the window where acting on it is cheap. `branches: [main, 'task-*']` closes it; the tag trigger stays, because that is what gave `task-1`'s tag its own verdict in its own concurrency group. |
 | **Open debt that must die in Task 2** | **All of it is dead as of `73a5d78` (2026-10-26).** Every one of the seventeen `§5` rows Task 2 owned is closed with a revert proof and a named test, and each row's "Review by" cell records which commit closed it and how. H-C's two remaining clauses are closed by `BootChecks`: `assertSafeRuntimeRole()` runs at boot (exit 1, reason logged at critical, proven as a real process), and D9 widens it so a serving process cannot resolve owner or root credentials — reading the resolved CONFIG as well as the environment, because `config:cache` bakes the password in and leaves `env()` returning null, which would otherwise have been an unproven control. Two residuals were raised rather than hidden: **R-026** (Scramble pinned pre-1.0) and **R-027** (an attacker who downs Redis removes rate limiting), both owned by Task 12. |
 | **Needs the user's decision**         | Nothing open. **R-017's acceptance was VOIDED on 2026-10-26, by the user, the same day it was given:** it rested on this file's sentence "not reachable without a raw `set_config`", the eighth review measured that sentence false, and the user's ruling was that a decision made on bad information is void rather than merely revisited. S-1 was fixed instead of carried. The tenant-mirror fix stayed forbidden and was not used — the fix is a depth counter: a connection name and a number, never a tenant id. The sixth review's findings were dispositioned on 2026-10-26: (a), (b), (c) fixed here; (d) → **R-017**; (e) → **R-018**, recorded as pre-existing across three sites, two from `122d203` and one from the sixth round. (c) was explicitly **not** deferred: its stated dependency on R-010 was not real — escaping text before interpolating it into a message needs no lint guard — and deferring on a dependency that does not exist is the "another task owns it" move that went wrong four times on this branch. ~~The sixth review's five Mediums and six Lows need dispositioning.~~ Four are repaired already (see §4a): the lost `setGuc` proof, and three false claims in this file. The open ones, with what was measured: **(a)** `current()` has a _format_ check but no _provenance_ check, so it returns a session-scoped tenant that `run()` would refuse as a hard failure — the two entry points disagree about the same value, and §4 › Realtime makes `current()` the Redis namespace. Latent: no production caller yet. **(b)** `clearScope()`'s postcondition does not catch a callback that leaves a transaction open — measured, `run()` returns normally, the write is discarded, and a second request on the same Octane worker nests into the first's transaction. That is the H-B property failing by a third route; the fix is a transaction-level postcondition. **(c)** `tenantContextNotOpenedHere()` interpolates unvalidated GUC text into a logged message — measured to carry an embedded newline and forged log content. **(d)** `openScopes` is a boolean rather than a depth counter, so a nested `run()` reached via raw `set_config` destroys the outer scope's record and a bypass can open inside a live scope; the outer `clearScope` still raises, so nothing commits silently. **(e)** Three tests mutate the real `qrpager_app` role's attributes cluster-wide (`bypassrls`, and one `superuser bypassrls`); an interrupted run leaves local tenant isolation off until the next `db:bootstrap` repairs it. **The review called (e) new; it is not** — two of the three sites date from `122d203` and only one is this round's, so it is pre-existing debt with three sites, not a regression. The fifth-round question — patch again or redesign — was answered by doing the structural part: one source of truth for tenant scope, with the PHP mirror removed rather than guarded. R-003's owner was decided on 2026-10-25: **Task 3** (`QRPAGER-10`), because `§3` row 3 states the expiry job in Task 3's scope and its gate clause verbatim, so the plan won over the disposition (rank 3, `§0`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Waiting on Muhammad**              | **Five open items that no agent session can do, and one deferred.** W-1 paste the repo copy of `PROJECT_INSTRUCTIONS.md` over the claude.ai Project instructions (27 paragraphs behind) · W-2 GitHub → allow **squash merging only**, which makes R-001's twice-broken clause mechanical · W-3 confirm CI's three jobs on `task-2-api-core` · W-4 run the `§11` QA and Security reviews · W-5 open Task 2's PR · W-6 (deferred) branch protection becomes live on transfer to an organisation. **Each one's what / why-no-agent / how-verified is in `§0.1` below, with what I checked in the repo and what I cannot see.** |
+
+### 0.1 Waiting on Muhammad — the standing list
+
+Written 2026-10-26 because these were being carried **verbally**, surfacing only when somebody remembered
+to mention them. This subsection is reached from `§0`'s row above, which step 1 of "How a task runs" makes
+a fresh session read before anything else — so nothing here depends on being reminded.
+
+Split honestly: what I **can** check from the repo is checked, with the result; what I **cannot** says
+exactly what to look at and what the right answer looks like.
+
+#### (a) Checked in the repo — results as of `1c383ae`
+
+| Claim | Result |
+| --- | --- |
+| `docs/PROJECT_INSTRUCTIONS.md` carries the `§11` **Relay rule** | **Yes** — line 209 |
+| …the `§11` **Round limit** | **Yes** — line 211 |
+| …`§4`'s first rank-2 edit, "a **repo guard in CI**" | **Yes** — line 87, with the reason appended |
+| …`§4`'s second, "**or in an error response body, at any `APP_DEBUG` setting**" | **Yes** — line 103, with the `7f1c8f6` measurement beside it |
+
+So **the repo copy is complete**; every rank-2 edit this project has approved is in it. What is unverified
+is the *other* copy, which is W-1.
+
+#### (b) Cannot be checked from here — what to look at, and the right answer
+
+**W-1 · Paste the repo copy over the claude.ai Project instructions.**
+*What:* replace the Project-instructions copy of `PROJECT_INSTRUCTIONS.md` **wholesale** with the current
+repo file. *Why no agent:* the Project instructions live in the claude.ai Project, not the filesystem — no
+session can read or write them, which is also why the drift was invisible. *How verified:* search the
+pasted copy for four phrases — `Relay rule`, `Round limit`, `repo guard in CI`, `or in an error response
+body`. Four searches, four hits.
+
+**Wholesale, not paragraph by paragraph, and the count is the argument.** The repo copy has gained
+**27 paragraphs across 10 sections** since Task 1 started (`task-0..HEAD`), not the two `§0` used to name:
+
+| Section | Paragraphs gained | What they are |
+| --- | --- | --- |
+| `§0` Precedence | 2 | `BLUEPRINT.md` is an **archive**, not the original, and its §8 maps what is still binding |
+| `§1` Locked stack | 5 | object storage, transactional mail, monorepo, tests, IaC rows (ADR-002, ADR-003) |
+| `§3` Contradictions | 1 | C6's 300K design ceiling, launch tier set by Task 14 |
+| `§4` Tenancy | 2 | two authentication surfaces; what guards Tasks 2-4 before Task 5 exists |
+| `§4` Postgres traps | 4 | the worker expiry UPDATE's visibility rule · a bulk UPDATE/DELETE referencing no column **escapes RLS** · the repo guard in CI · data migrations under FORCE RLS |
+| `§4` Realtime | 1 | **Redis carries no RLS** — every tenant key namespaced by tenant id |
+| `§4` Edge & ops | 3 | load shedding implemented not stated · a declared fail-open/closed posture per dependency · no secrets in logs **or response bodies** |
+| `§6` Universal gate | 4 | fresh clone not just a fresh DB · coverage ≥ 90% · shared contracts generated and CI-checked · OpenAPI committed and `/v1` versioned |
+| `§11` Agent workflow | 3 | Relay rule · Round limit · the invariant named in the task's `§3` gate |
+| `§12` Frontend bar | 2 | where the bar applies · direction approved in Task 8 before any component |
+
+Reconciling ten sections by hand is how a copy drifts in the first place. One paste ends it.
+
+**W-2 · GitHub: allow squash merging only.**
+*What:* repo **Settings → General → Pull Requests** — tick **Allow squash merging**, untick **Allow merge
+commits** and **Allow rebase merging**. *Why no agent:* a repository setting with no representation in the
+filesystem, and this sandbox has no `gh` and no token. *Why it matters more than it looks:* R-001's
+"squash merge only" is the one clause in this project that has been broken **twice by hand** — `task-1`'s
+merge was a merge commit, and PR #2, created specifically to be the first clean exercise of the rule after
+it failed, broke it again the same day. **This is not a ruleset**, so R-001's "rulesets are not enforced on
+a private repository under an individual plan" does **not** apply to it: the merge-method checkboxes are
+plain repository settings and they bind on every plan. One setting turns a twice-broken manual rule into
+something that cannot be got wrong. *How verified:* open any PR — the green button reads **Squash and
+merge** and has **no dropdown** offering the other two.
+
+**W-3 · Confirm CI's conclusion on `task-2-api-core`.**
+*What:* **Actions** → latest run for this branch → **three** jobs must be green: `Secret scan`,
+`Pint, PHPStan, Pest`, and `FrankenPHP runtime — SIGTERM drain and a Redis outage`. *Why no agent:* CI
+conclusions live on GitHub; there is no `gh` and no token here. *How verified:* all three green **on the
+branch's head commit**. **A `Cancelled` run is not a pass** — `§4a` records that exact confusion costing a
+day on `task-1`, where `3fe10c2` looked un-green on `main` because run #27 had been superseded.
+CI only began triggering on task branches on 2026-10-26 (`547911d`), so the first run for this branch is
+the first verdict it has ever had.
+
+**W-4 · Run the `§11` QA and Security reviews.**
+*What:* two reviews, each in a **separate agent session**, given the diff and the ticket only. *Why no
+agent — specifically not this one:* `§11` requires a context **without the builder's reasoning**, and this
+session is the builder. A review I ran on my own diff would be the thing `§11` exists to prevent. *How
+verified:* each review's findings relayed **in full with a matching count** (`§11` Relay rule), then every
+Critical and High fixed with a regression test and every Medium/Low dispositioned into `§5` with an owner
+and a date. Both are preconditions for the `task-2` tag.
+
+**W-5 · Open Task 2's PR.**
+*What:* PR from `task-2-api-core` into `main`, body from `docs/tickets/QRPAGER-9-pr.md`. *Why no agent:*
+no `gh`, no token. *How verified:* the PR exists and its body matches that file.
+
+**W-6 · (deferred) Branch protection on `main`.**
+*What:* nothing to do now — the ruleset is configured and inert. *Why no agent:* a GitHub plan and
+ownership decision. *How verified:* at handover, after **Transfer Ownership to an Organization**, a direct
+push to `main` is rejected. R-001's review-by is that transfer or a second developer, whichever is first.
+
+**R-025 is also assigned to Muhammad and is not an action** — it is the standing instruction that a claim
+in this file is checked against measurement before it is written. It belongs in `§5`, not here, but it is
+the reason every row above says how it will be verified rather than only what it is.
+
 
 ### The eighth review — the bar, set before it ran
 
@@ -34,7 +126,7 @@
 
 | What                                                    | Where                                                                                                                                                                                                                     |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rules, invariants, precedence                           | `docs/PROJECT_INSTRUCTIONS.md` — also pasted into the claude.ai Project instructions. **§11 gained a Relay rule and a Round limit on 2026-10-26; the Project-instructions copy needs the same paste or the two disagree** |
+| Rules, invariants, precedence                           | `docs/PROJECT_INSTRUCTIONS.md` — also pasted into the claude.ai Project instructions. **The two copies disagree by 27 paragraphs across 10 sections, not the two `§11` ones this row used to name: see `§0.1` W-1.** The repo copy is the complete one and every rank-2 edit is in it, verified 2026-10-26 |
 | What each task ships on, and what each gate still needs | `docs/PLAN.md §3.1` — read it when a task starts, not at the end                                                                                                                                                          |
 | Which `§5` rows a task owns, and whether its gate can catch them | `docs/PLAN.md §3.2` — **read it when a task starts, with §3.1.** Added here on 2026-10-26, acting on §3.2's own finding 3: `§0`'s debt list exists for Task 2 and no other task, so for Tasks 3-14 `§5`'s owner column is the only record and nothing told anyone to read it. That is the gap the Task 2 surprise came out of |
 | This file — decisions, data contract, tasks, risks      | `docs/PLAN.md` in the repo is the **source**; the copy in Project knowledge is a mirror, refreshed after each `task-N`                                                                                                    |
