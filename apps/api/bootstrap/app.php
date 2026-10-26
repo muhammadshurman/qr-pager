@@ -2,6 +2,7 @@
 
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Http\ProblemRenderer;
+use App\Platform\Logging\ReportRedactedException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -36,6 +37,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->group('probe', []);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Redaction at the PRODUCER as well as at the sink. The RedactLogs tap covers
+        // every channel in config/logging.php, but not Laravel's emergency logger,
+        // which LogManager builds directly when a channel cannot be resolved and which
+        // no tap reaches. Reporting here and returning false means the record is
+        // already redacted whichever logger receives it.
+        $exceptions->report(fn (Throwable $error) => app(ReportRedactedException::class)($error));
+
         // One RFC 7807 document for every uncaught throwable, for EVERY request and at
         // any APP_DEBUG setting (D3, and §4 › Edge & ops as amended on 2026-10-26).
         // Registered rather than conditional on expectsJson(): the clause is about what
