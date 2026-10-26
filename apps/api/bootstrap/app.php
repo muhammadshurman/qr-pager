@@ -7,6 +7,7 @@ use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\Middleware\RequireTenantScope;
+use App\Platform\Http\Middleware\ShedLoad;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
@@ -78,6 +79,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // Neither is on the probe group, which is what "while health and readiness keep
         // answering" means.
         $middleware->appendToGroup('api', [
+            // Shedding first: it is the cheapest refusal (one Redis read, no write) and
+            // the one that protects the task rather than apportioning it. Then the
+            // limiter, so an unauthenticated flood costs the limiter and not the
+            // resolver. Then the tenant requirement, which is deny-by-default.
+            ShedLoad::class,
             RateLimit::class,
             RequireTenantScope::class,
         ]);

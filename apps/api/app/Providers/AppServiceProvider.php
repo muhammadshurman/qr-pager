@@ -7,6 +7,7 @@ use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
 use App\Platform\Http\TenantResolver;
+use App\Platform\Readiness\PressureGauge;
 use Dedoc\Scramble\Scramble;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\ServiceProvider;
@@ -45,6 +46,12 @@ class AppServiceProvider extends ServiceProvider
         // reads a container binding a test sets, never an HTTP input, and refuses to run
         // outside local/testing, so it cannot serve a production request at all.
         $this->app->bind(TenantResolver::class, HarnessTenantResolver::class);
+
+        // One gauge for the worker's life, because CPU throttling is a cumulative
+        // counter and the signal is its DELTA over a window: a per-request instance
+        // would have no previous reading and could never report throttling at all.
+        // It holds two integers about this process and nothing about any tenant.
+        $this->app->singleton(PressureGauge::class);
 
         // Scramble registers GET docs/api, GET docs/api.json and a dev-tools asset
         // route by default. The spec this project ships is a committed file generated

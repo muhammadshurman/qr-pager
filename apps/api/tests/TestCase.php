@@ -8,6 +8,7 @@ use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Tenancy\TenantRole;
 use App\Platform\Auth\HarnessTenantResolver;
+use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Database\Connection;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -52,6 +53,23 @@ abstract class TestCase extends BaseTestCase
 
         DB::connection('pgsql_owner')
             ->unprepared('TRUNCATE '.implode(', ', self::RESETTABLE).' RESTART IDENTITY CASCADE');
+
+        // The readiness key is cross-test shared state in a REAL store, exactly like the
+        // tables above, and it has a 60-second TTL -- so a saturated snapshot one test
+        // publishes sheds every /v1 request in the tests after it. Measured: three
+        // TenantResolutionTest cases and two LogRedactionTest cases started answering 503
+        // the moment ShedLoadTest existed. Cleared here for the same reason the tables
+        // are: a test must not inherit the state of the one before it.
+        //
+        // An absent key is the safe default, and that is not an accident -- shedding
+        // fails OPEN on a missing snapshot while readiness fails closed, so clearing it
+        // leaves /v1 served and /readyz refusing, which is each one's own posture.
+        try {
+            $this->app->make(ReadinessStore::class)->forget();
+        } catch (Throwable) {
+            // A Redis that cannot be reached has no key to clear, and the tests that
+            // care about Redis being down say so themselves.
+        }
     }
 
     /**
