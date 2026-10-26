@@ -2,6 +2,7 @@
 
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
+use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
@@ -32,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
         BootstrapDatabaseCommand::class,
         CheckBootCommand::class,
+        RefreshReadinessCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
