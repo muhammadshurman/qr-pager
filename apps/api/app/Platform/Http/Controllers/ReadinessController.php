@@ -49,8 +49,7 @@ final class ReadinessController
      * caller how close this task is to the edge. `ShedLoadTest` asserts that absence;
      * two reviews found the contradiction independently. The shed threshold is
      * `0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact
-     * onset of shedding and watch it work, and `redis_up` published the signal R-027
-     * says means rate limiting is currently off.
+     * onset of shedding and watch it work.
      *
      * Nothing operational is lost: ShedLoad logs its reason at warning, the carrier
      * prints the snapshot it wrote, and `reason` still names WHICH dependency failed,
@@ -61,6 +60,26 @@ final class ReadinessController
      */
     public function __invoke(): JsonResponse
     {
+        /*
+         * WHAT THE TRIM DID NOT REMOVE, corrected 2026-10-27 (R-050). The docblock
+         * above also said `redis_up` "published the signal R-027 says means rate
+         * limiting is currently off", and offered its removal as closing that. It does
+         * not: `reason` is `redis is not reachable`, on this same unlimited endpoint,
+         * and the generated spec publishes that string in an enum. The docblock's own
+         * next paragraph is the reason it stays -- naming the dependency is what makes
+         * a 503 actionable -- so the disclosure is deliberate and only the claim about
+         * it was wrong. What the trim removed is the CAPACITY figures.
+         *
+         * IN THE BODY AND NOT THE DOCBLOCK, deliberately, and this is R-052: Scramble
+         * publishes a controller's whole docblock as the endpoint's `description` in
+         * docs/openapi.json, so a paragraph written here for a maintainer becomes part
+         * of a shipped artefact. Adding `§5` row ids and the words "unlimited endpoint"
+         * to a published document would have been R-031's own mistake in the correction
+         * to R-031. The pre-existing half -- the committed spec already carries the shed
+         * threshold `0.9 x app_limit` in this endpoint's description -- is R-052, at
+         * Task 12.
+         */
+
         $snapshot = $this->store->read();
         $budget = (int) config('shedding.readiness.freshness');
         $now = time();

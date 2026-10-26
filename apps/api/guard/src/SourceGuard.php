@@ -112,6 +112,15 @@ final class SourceGuard
      * and read nothing" is the same vacuous pass as "I could not find it", and only the
      * second one has an obvious cause.
      *
+     * THE THIRD CASE IS STILL OPEN AND IS R-048. This rule covers a path that resolves
+     * to nothing and a path that yields no file. It does not cover a file that is
+     * COUNTED and then not read: scan() reads content as
+     * `(string) file_get_contents($absolute)`, so a failed open becomes an empty string
+     * and yields no violations. Measured 2026-10-27: a file containing a forbidden
+     * literal, at mode 000, left `composer guard` printing "C1 and C2 hold across 125
+     * file(s)" and exiting 0 -- counted as read, never read. Task 12 owns it with
+     * R-030, because the fix is in the same clause.
+     *
      * @param  list<string>  $relativePaths
      * @return list<Violation>
      */

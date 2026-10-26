@@ -82,7 +82,18 @@ it('describes both readiness outcomes with the real body shape', function (): vo
     // The capacity figures were published to any anonymous caller on the one group
     // that carries no limiter, while ShedLoad withheld the same saturation figure from
     // its 503. Asserting only the three present fields would leave a later commit free
-    // to add `probe` back, so the four removed names are pinned here too.
+    // to add `probe` back, so the removed names are pinned here too.
+    //
+    // WHAT THIS DOES AND DOES NOT COVER -- R-051, recorded here rather than left to be
+    // rediscovered. These loops read the TOP level. At cb584c3 only `probe` and
+    // `freshness_budget_seconds` were top-level; `app_backends`, `app_limit` and
+    // `saturation` were nested inside `probe`, so those three assertions cannot fail
+    // while the `probe` one holds -- it is the `probe` assertion that carries this.
+    // And `postgres_up`, `redis_up` and `measured_at` are absent from the list, so a
+    // flat `redis_up` added to the body passes every case in this file. The breadth fix
+    // is an exact assertion on the property set and it belongs to Task 12 with R-051;
+    // what stops a quiet reintroduction today is `composer openapi:check`, which fails
+    // on any change to the generated document.
     foreach (['ready', 'reason', 'probe_age_seconds'] as $property) {
         expect($schema['properties'] ?? [])->toHaveKey($property);
     }
