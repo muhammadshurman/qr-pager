@@ -48,7 +48,26 @@ use Throwable;
  */
 class TenantContext
 {
-    /** @var array<string, true> */
+    /**
+     * How many scopes this object has open on each connection -- a connection name and a
+     * number, never a tenant id.
+     *
+     * It was a boolean, and one shared key per connection meant a NESTED scope's exit
+     * deleted the record of the scope still running around it. Measured: inside a live
+     * scope, three ordinary callback calls -- commit(), rollBack(), DB::purge() -- empty
+     * the transaction-local GUC with no set_config anywhere, so a nested withTenant()
+     * stops short-circuiting as re-entry, takes the transaction path, and its finally
+     * clears the key. Both halves of the bypass guard then pass, and a bypass opened
+     * inside the still-running block read 2 of 2 tenants and COMMITTED a keyed
+     * cross-tenant UPDATE (S-1, eighth security review). A depth counter that an inner
+     * scope restores rather than unsets closes all three routes at once.
+     *
+     * Still not a mirror of the GUC: it cannot say WHICH tenant is in force, only how
+     * many scopes this object opened here, so a stale entry can only make this class
+     * stricter.
+     *
+     * @var array<string, int>
+     */
     private array $openScopes = [];
 
     /** What app.tenant_id holds on $connection right now; null when nothing is in force. */
@@ -171,7 +190,7 @@ class TenantContext
             $depth = $db->transactionLevel();
 
             $this->setGuc($db, $guc, $tenantId);
-            $this->openScopes[$connection] = true;
+            $this->openScopes[$connection] = ($this->openScopes[$connection] ?? 0) + 1;
 
             try {
                 $result = $callback();
@@ -199,7 +218,15 @@ class TenantContext
 
                 return $result;
             } finally {
-                unset($this->openScopes[$connection]);
+                // Decrement, and drop the key only at zero. Unsetting unconditionally is
+                // what S-1 walked through: an inner scope erased the outer scope's record.
+                $remaining = ($this->openScopes[$connection] ?? 1) - 1;
+
+                if ($remaining > 0) {
+                    $this->openScopes[$connection] = $remaining;
+                } else {
+                    unset($this->openScopes[$connection]);
+                }
             }
         });
     }
@@ -282,7 +309,15 @@ class TenantContext
             // tenant scope, and it stays '' because run() refuses to open inside a
             // bypass. The "narrowed tenant with the bypass still open" state is
             // therefore unreachable rather than merely ordered against.
-            $this->setGuc($db, $bypass, $previousBypass);
+            //
+            // The restore reads before it writes, for the reason run()'s clear does. The
+            // depth postcondition above cannot see a callback that commits and then opens
+            // a fresh transaction: the depth matches again, while the transaction-local
+            // bypass GUC reverted at the COMMIT. Measured, the rest of the block then ran
+            // with NO bypass and read 0 rows while this method reported success -- which
+            // for a §2.10 pattern-2 backfill is H-1 exactly, a migration that does
+            // nothing and says it worked (S-6, eighth security review).
+            $this->restoreBypass($db, $bypass, DatabaseRoles::bypassValue(), $previousBypass, $connection);
 
             return $result;
         });
@@ -383,6 +418,38 @@ class TenantContext
         throw $found < $depth
             ? TenantContextException::scopeWasLostDuringCallback($connection)
             : TenantContextException::transactionLeftOpenByCallback($connection, $depth, $found);
+    }
+
+    /**
+     * Restore the bypass GUC, and prove in the same round trip that the bypass this
+     * method opened was still the one in force (S-6). Same fence and same reasoning as
+     * clearScope(); see there for why MATERIALIZED is load-bearing.
+     */
+    private function restoreBypass(
+        ConnectionInterface $db,
+        string $guc,
+        string $expected,
+        string $previous,
+        string $connection,
+    ): void {
+        try {
+            $row = $db->selectOne(
+                'with held as materialized (
+                     select coalesce(current_setting(?, true), ?) as value
+                 )
+                 select held.value as before, set_config(?, ?, true) as restored
+                 from held',
+                [$guc, '', $guc, $previous],
+            );
+        } catch (Throwable $e) {
+            throw TenantContextException::statementFailed('cleared', (string) $e->getCode());
+        }
+
+        $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
+
+        if ($before !== $expected) {
+            throw TenantContextException::bypassWasLostDuringCallback($connection);
+        }
     }
 
     /**

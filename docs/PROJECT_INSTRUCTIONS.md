@@ -206,6 +206,8 @@ Output: findings with severity. **No code changes.**
 
 **Merge rule.** The task is not done and `task-N` is not tagged until every **Critical** and **High** finding is fixed with a regression test. Medium and Low are either fixed or written into `PLAN.md §5 — Accepted Risks` with an owner and a date. "No findings" is valid only when the reviewer states what it actually checked.
 
+**Relay rule.** A review's findings reach the user **in full**. Every finding is listed — its severity, and one line saying what it is — and the count is stated and matches the list: "N findings: X Critical, Y High, Z Medium, W Low". Nothing is dropped, folded into another finding, or left out as minor, whatever its severity and whoever judges it so. **A relay that drops a finding is itself a violation of this section**, not a presentation choice: the merge rule above cannot be satisfied for a finding nobody saw, and the user cannot ask about one they were never shown, so the omission is invisible from their side and the task passes the gate without having passed it. Before any claim that a review's findings are dispositioned, check the dispositions against the full list and state the count again.
+
 **Repo wiring for Claude Code:**
 - `CLAUDE.md` at repo root — points to this file and `docs/PLAN.md`. Duplicates nothing.
 - `.claude/agents/qa-reviewer.md` and `.claude/agents/security-reviewer.md` — the two reviewers above, read-only tool sets.

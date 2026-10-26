@@ -138,6 +138,23 @@ final class TenantContextException extends RuntimeException
         );
     }
 
+    /**
+     * The bypass was in force when the block started and was not at the end, at the same
+     * transaction depth -- so the callback committed and reopened, and the transaction-local
+     * bypass GUC reverted at that COMMIT. Everything in the block after that point ran with
+     * no bypass and read zero rows, which for §2.10's pattern 2 is a backfill that does
+     * nothing and reports success (S-6, eighth security review).
+     */
+    public static function bypassWasLostDuringCallback(string $connection): self
+    {
+        return new self(
+            "The tenant bypass opened on connection [{$connection}] was no longer in force when the "
+            .'block finished, so part of the block ran without it and read nothing rather than '
+            .'everything. Whether the block\'s writes were discarded or already committed cannot be '
+            .'determined from here, so this is not safe to retry blindly.'
+        );
+    }
+
     public static function alreadyOnAnotherConnection(string $active, string $requested): self
     {
         return new self(

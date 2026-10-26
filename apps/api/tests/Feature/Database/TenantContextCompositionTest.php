@@ -366,3 +366,93 @@ it('withholds the statement when it cannot set the tenant setting', function ():
             ->and($e->getPrevious())->toBeNull();
     }
 });
+
+/*
+ * S-1 and S-6, eighth security review -- the last findings that touch the invariant
+ * Task 1 ships on.
+ */
+
+it('refuses a bypass after a nested scope exits inside a live one', function (string $derail): void {
+    // S-1. No set_config in any branch below, which is the point: the GUC does not have
+    // to be overwritten, only emptied, and three ordinary callback calls empty a
+    // transaction-local setting. The nested withTenant() then stops short-circuiting as
+    // re-entry, takes the transaction path, and -- when $openScopes was a boolean --
+    // its finally deleted the record of the outer scope still running around it. Both
+    // halves of the bypass guard then passed. Measured before the fix, identically on
+    // all three routes: the bypass read 2 of 2 tenants and its keyed cross-tenant
+    // UPDATE committed, confirmed from an independent superuser session.
+    $alpha = $this->makeTenant();
+    $beta = $this->makeTenant();
+    $owner = DB::connection(Composition::OWNER);
+    // Unique per run, deliberately. audit_log is never truncated (R-016), so a reason
+    // that repeats across runs matches rows a PREVIOUS run wrote -- and a run made
+    // while this very vulnerability was live leaves exactly the row this test looks
+    // for. Found by reverting the fix twice: the second revert "failed" on rows from
+    // the first. That is R-016's predicted shape, arriving in the test written to prove
+    // the fix for S-1.
+    $reason = 'S-1 '.$derail.' '.Str::random(10);
+
+    $bypassOpened = false;
+
+    try {
+        withTenant($alpha, function () use ($alpha, $beta, $owner, $reason, $derail, &$bypassOpened): void {
+            // The scope really is narrowed at this point, or the test proves nothing.
+            expect(Composition::probe($owner, $beta))->toBe([1, 0]);
+
+            match ($derail) {
+                'commit' => DB::connection(Composition::OWNER)->commit(),
+                'rollback' => DB::connection(Composition::OWNER)->rollBack(),
+                'purge' => DB::purge(Composition::OWNER),
+            };
+
+            withTenant($alpha, fn () => true, Composition::OWNER);
+
+            withoutTenantScope($reason, function () use (&$bypassOpened): void {
+                $bypassOpened = true;
+            }, Composition::OWNER);
+        }, Composition::OWNER);
+    } catch (TenantContextException) {
+        // Refused somewhere is a pass; what must not happen is the bypass running.
+    }
+
+    expect($bypassOpened)->toBeFalse("a bypass opened inside a live tenant scope via {$derail}");
+
+    // And nothing crossed the tenant boundary, checked from a session that can see it all.
+    expect($this->asRoot()->table('tenants')->where('id', $beta)->value('timezone'))
+        ->not->toBe('Pacific/Auckland')
+        ->and($this->asRoot()->table('audit_log')->where('context->reason', $reason)->count())->toBe(0);
+})->with(['commit', 'rollback', 'purge']);
+
+it('never reports success when a bypass callback commits and reopens', function (): void {
+    // S-6: the depth postcondition cannot see this -- commit() then beginTransaction()
+    // leaves the depth matching, while the transaction-local bypass GUC reverted at the
+    // COMMIT. Measured before the fix: the second half of the block read [0, 0] with no
+    // bypass in force and withoutTenantScope returned successfully, which is §2.10's
+    // H-1 silent no-op for a pattern-2 backfill.
+    $this->makeTenant();
+    $this->makeTenant();
+    $owner = DB::connection(Composition::OWNER);
+
+    $raised = null;
+    $returned = null;
+    $after = null;
+
+    try {
+        $returned = withoutTenantScope('S-6', function () use ($owner, &$after): string {
+            $owner->commit();
+            $owner->beginTransaction();
+
+            $after = $owner->table('tenants')->count();
+
+            return 'finished';
+        }, Composition::OWNER);
+    } catch (TenantContextException $e) {
+        $raised = $e;
+    }
+
+    expect($raised)->not->toBeNull(
+        'withoutTenantScope returned '.var_export($returned, true)." with the bypass gone (saw {$after} tenants)",
+    );
+    expect($raised->getMessage())->toContain('was no longer in force')
+        ->and($raised->getPrevious())->toBeNull();
+});
