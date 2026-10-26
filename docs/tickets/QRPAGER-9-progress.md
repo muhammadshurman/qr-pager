@@ -450,7 +450,7 @@ iteration whatever happened, and whether the key existed came down to how fast R
 always success is not a signal** -- the same shape as every unproven control on this branch, and the only
 non-deterministic thing in it.
 
-### Two §6 fresh-clone findings, both of them a pass that depended on state outside the clone
+### Three §6 fresh-clone findings — two passes that depended on state outside the clone, and no verdict at all
 
 `§6`: *"a pass that depends on something only present on the builder's machine is not a pass."* Both of
 these are that clause, and both were green on this machine for the same reason — the machine had state
@@ -552,6 +552,22 @@ runs, annotate files the test creates and deletes.
 
 **The whole suite was then re-run under CI's environment** — `GITHUB_ACTIONS=true CI=true php artisan
 test` — and is 341 passed, so nothing else in it was environment-sensitive.
+
+#### 3 · And the branch had never been given a verdict at all
+
+Found while trying to satisfy *"CI green on all three jobs, then the PR"*: **CI did not trigger on this
+branch.** The workflow ran on pushes to `main`, on `task-*` **tags**, and on pull requests — so a task
+branch produced no verdict until the moment its PR opened, and `task-2-api-core` reached **thirty
+commits** that way.
+
+That makes R-001's working rule unperformable in the only window where acting on it is cheap: *"never
+merge until both required checks are green"* cannot be followed against a verdict that does not exist,
+and a CI-only failure then surfaces publicly when the PR opens rather than on the commit that caused it.
+**Both failures above are exactly that shape** — one needed a fresh Postgres volume and the other needed
+`GITHUB_ACTIONS` to be set, and neither could have been seen on this branch before the PR.
+
+`branches: [main, 'task-*']` closes it. The tag trigger stays: it is what gives a completion tag its own
+verdict in its own concurrency group, which is how the `task-1` cancellation was diagnosed (`§4a`).
 
 ### Environment note
 

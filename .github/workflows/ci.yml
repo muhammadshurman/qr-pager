@@ -2,7 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Task branches as well as main, added 2026-10-26. Until now CI triggered on pushes
+    # to main, on task-* TAGS, and on pull requests -- so a task branch produced NO
+    # VERDICT AT ALL until the moment its PR opened. `task-2-api-core` reached thirty
+    # commits that way.
+    #
+    # That makes R-001's working rule unperformable in the only window where it is cheap
+    # to act on: "never merge until both required checks are green" cannot be followed
+    # against a verdict that does not exist yet, and discovering a CI-only failure when
+    # the PR opens means discovering it publicly, after the work is finished, instead of
+    # on the commit that caused it. This branch had two such failures (see
+    # docs/tickets/QRPAGER-9-progress.md) and neither could have been seen before the PR.
+    #
+    # The tag trigger stays: it is what gives the completion tag its own verdict in its
+    # own concurrency group, which is how the task-1 cancellation was diagnosed.
+    branches: [main, 'task-*']
     tags: ['task-*']
   pull_request:
     branches: [main]
