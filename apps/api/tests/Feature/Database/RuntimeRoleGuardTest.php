@@ -73,18 +73,32 @@ it('would reject a role that could become the owner', function (): void {
     assertSafeRuntimeRole();
 });
 
-it('would reject the app role if it were given BYPASSRLS', function (): void {
-    $root = $this->asRoot();
-    $root->unprepared('alter role qrpager_app bypassrls');
+it('would reject the runtime role if it were given BYPASSRLS', function (): void {
+    // R-018: a throwaway role instead of the live qrpager_app, which this test used to
+    // grant BYPASSRLS to cluster-wide. tenancy.roles.app is pointed at the throwaway so
+    // assertSafe() still treats it as a RUNTIME role -- otherwise it would refuse for
+    // two reasons at once and the test would pass without the attribute mattering.
+    $live = config('tenancy.roles.app');
 
-    try {
-        expect(fn () => assertSafeRuntimeRole())->toThrow(
+    $this->withThrowawayRole(['bypassrls'], function (string $connection, string $role): void {
+        config(['tenancy.roles.app' => $role]);
+
+        expect(fn () => assertSafeRuntimeRole($connection))->toThrow(
             UnsafeDatabaseRoleException::class,
             'it holds BYPASSRLS',
         );
-    } finally {
-        $root->unprepared('alter role qrpager_app nobypassrls');
-    }
 
+        expect((bool) $this->asRoot()->selectOne(
+            'select rolbypassrls from pg_roles where rolname = ?', ['qrpager_app'],
+        )->rolbypassrls)->toBeFalse('the live app role was altered after all');
+    });
+
+    // Put the runtime-role list back before the last assertion: the callback repointed
+    // tenancy.roles.app at the throwaway, so leaving it there would make this refuse
+    // qrpager_app for "not one of the runtime roles" -- a green-looking failure for
+    // entirely the wrong reason, which is what it did on the first run.
+    config(['tenancy.roles.app' => $live]);
+
+    // The real app role is still safe, and was never touched.
     assertSafeRuntimeRole();
 });

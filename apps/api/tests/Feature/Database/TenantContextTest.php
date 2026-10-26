@@ -297,21 +297,27 @@ it('refuses a bypass on a connection row level security cannot narrow either', f
         ->toThrow(UnsafeDatabaseRoleException::class, 'ignores FORCE row level security');
 });
 
-it('refuses to scope on the app connection if that role is ever granted BYPASSRLS', function (): void {
+it('refuses to scope on a runtime connection whose role holds BYPASSRLS', function (): void {
     // Proven against the real cluster rather than asserted, and it is the reachable
-    // half of H-C: the connection the application actually serves traffic on, with the
-    // one attribute that silently removes tenant isolation.
+    // half of H-C: a connection the application could serve traffic on, with the one
+    // attribute that silently removes tenant isolation.
+    //
+    // R-018: on a THROWAWAY role, not qrpager_app. This test used to grant BYPASSRLS to
+    // the live app role and revert in a finally, which leaves tenant isolation off for
+    // every process on the cluster if the run is interrupted between the two
+    // statements. What is given up is that the proof no longer names qrpager_app -- so
+    // the assertion below holds qrpager_app's own attribute false throughout, which is
+    // the trade R-018 asks for by name.
     $alpha = $this->makeTenant();
-    $root = $this->asRoot();
-    $root->unprepared('alter role qrpager_app bypassrls');
 
-    try {
-        expect(fn () => withTenant($alpha, fn () => true))
+    $this->withThrowawayRole(['bypassrls'], function (string $connection) use ($alpha): void {
+        expect(fn () => withTenant($alpha, fn () => true, $connection))
             ->toThrow(UnsafeDatabaseRoleException::class, 'it holds BYPASSRLS');
-    } finally {
-        $root->unprepared('alter role qrpager_app nobypassrls');
-        DB::purge('pgsql');
-    }
+
+        expect((bool) $this->asRoot()->selectOne(
+            'select rolbypassrls from pg_roles where rolname = ?', ['qrpager_app'],
+        )->rolbypassrls)->toBeFalse('the live app role was altered after all');
+    });
 
     // And the guard is not merely refusing everything.
     expect(withTenant($alpha, fn () => DB::table('tenants')->count()))->toBe(1);

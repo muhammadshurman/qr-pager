@@ -25,21 +25,41 @@ it('reports what it did', function (): void {
 });
 
 it('restores the role attributes if someone changes them by hand', function (): void {
+    // R-018: the convergence is proven on a THROWAWAY role, pointed at by
+    // tenancy.roles.app, instead of granting `superuser bypassrls` to the live
+    // qrpager_app and reverting in a finally. That was the worst of the three sites --
+    // an interrupted run between the two statements left a SUPERUSER application role
+    // on the cluster, and the next suite run silently repaired it, so nothing ever
+    // reported it.
     $root = $this->asRoot();
-    $root->statement('alter role qrpager_app superuser bypassrls');
 
-    try {
+    $this->withThrowawayRole(['superuser', 'bypassrls'], function (string $connection, string $role) use ($root): void {
+        // Asserted, not assumed: with the helper reverted to altering the live role,
+        // every other assertion in this test still passes -- db:bootstrap converges
+        // qrpager_app's attributes just as happily. This is the one line that can tell
+        // the two apart, and without it the revert of R-018's fix left this site green.
+        expect($role)->not->toBe('qrpager_app')
+            ->and($role)->toStartWith('qrpager_probe_');
+
+        config(['tenancy.roles.app' => $role]);
+
         $this->artisan('db:bootstrap')->assertSuccessful();
-    } finally {
-        $root->statement('alter role qrpager_app nosuperuser nobypassrls');
-    }
 
-    $attributes = $root->selectOne(
-        'select rolsuper, rolbypassrls from pg_roles where rolname = ?', ['qrpager_app'],
-    );
+        $attributes = $root->selectOne(
+            'select rolsuper, rolbypassrls from pg_roles where rolname = ?', [$role],
+        );
 
-    expect((bool) $attributes->rolsuper)->toBeFalse()
-        ->and((bool) $attributes->rolbypassrls)->toBeFalse();
+        expect((bool) $attributes->rolsuper)->toBeFalse()
+            ->and((bool) $attributes->rolbypassrls)->toBeFalse();
+
+        // And the live role, which this test no longer touches, is still as it was.
+        $live = $root->selectOne(
+            'select rolsuper, rolbypassrls from pg_roles where rolname = ?', ['qrpager_app'],
+        );
+
+        expect((bool) $live->rolsuper)->toBeFalse()
+            ->and((bool) $live->rolbypassrls)->toBeFalse();
+    });
 });
 
 it('creates the database when it does not exist yet', function (): void {

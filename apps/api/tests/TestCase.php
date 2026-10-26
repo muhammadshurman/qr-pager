@@ -40,11 +40,64 @@ abstract class TestCase extends BaseTestCase
             Artisan::call('db:bootstrap');
             Artisan::call('migrate', ['--database' => 'pgsql_owner', '--force' => true]);
 
+            self::dropStaleProbeRoles();
+
             self::$databaseReady = true;
         }
 
         DB::connection('pgsql_owner')
             ->unprepared('TRUNCATE '.implode(', ', self::RESETTABLE).' RESTART IDENTITY CASCADE');
+    }
+
+    /**
+     * Drop anything withThrowawayRole() left behind.
+     *
+     * R-018's trade, made self-healing. The helper drops its role in a finally, and a
+     * kill -9, an OOM or a CI timeout between the create and the drop leaves one
+     * behind: a role named qrpager_probe_* with no privilege on any table and nothing
+     * connecting as it -- which is a mess, not a hole, and exactly why the old
+     * `alter role qrpager_app bypassrls` approach was worse.
+     *
+     * This exists because RoleNamingTest pins the cluster's login roles as an EXACT
+     * set, so a leftover fails the gate for an unrelated reason the next time anyone
+     * runs the suite. That assertion is a control worth keeping exact, so the leftover
+     * is swept rather than the assertion loosened. Same shape as db:bootstrap
+     * re-asserting NOSUPERUSER NOBYPASSRLS on every run: converge, do not tolerate.
+     *
+     * Found by RoleNamingTest failing with eight of them, from the runs it took to
+     * discover that a new role has no CONNECT privilege on this database.
+     */
+    private static function dropStaleProbeRoles(): void
+    {
+        $root = DB::connection('pgsql_root');
+
+        foreach ($root->select("select rolname from pg_roles where rolname like 'qrpager_probe_%'") as $row) {
+            if (! is_object($row) || ! is_string($row->rolname ?? null)) {
+                continue;
+            }
+
+            self::dropRoleAndItsGrants($root, $row->rolname);
+        }
+    }
+
+    /**
+     * DROP OWNED BY before DROP ROLE, which is not optional and was not obvious.
+     *
+     * Postgres refuses `drop role` with 2BP01 "Dependent objects still exist" while any
+     * privilege is granted TO the role -- and one of these tests points
+     * tenancy.roles.app at the throwaway and runs db:bootstrap against it, so it ends up
+     * holding grants on schema public and CONNECT on the database. DROP OWNED BY revokes
+     * privileges on objects in the current database and on shared objects (the database
+     * itself included), which is exactly the set in the way.
+     *
+     * Found by the sweep failing on the leftovers from the runs before this existed.
+     */
+    private static function dropRoleAndItsGrants(Connection $root, string $role): void
+    {
+        // These names are generated here out of hex and matched by a literal pattern,
+        // so nothing in them came from outside.
+        $root->statement("drop owned by {$role}");
+        $root->statement("drop role if exists {$role}");
     }
 
     protected function tearDown(): void
@@ -184,6 +237,78 @@ abstract class TestCase extends BaseTestCase
         ]), 'pgsql_owner');
 
         return $id;
+    }
+
+    /**
+     * Run $callback with a throwaway role holding $attributes, and drop it afterwards.
+     *
+     * R-018. Three tests used to issue `alter role qrpager_app bypassrls` (one of them
+     * `superuser bypassrls`) against the live cluster and revert in a finally. Each
+     * finally is correct and none of them survives a kill -9, an OOM, a Ctrl-C or a CI
+     * timeout between the two statements -- and in that window row level security
+     * narrows nothing for EVERY process on the cluster, including php artisan serve,
+     * Filament and a plain psql, none of which go through TenantContext. Nothing
+     * reports it either, because the next `php artisan test` silently repairs it:
+     * TestCase::setUp runs db:bootstrap, which re-asserts NOSUPERUSER NOBYPASSRLS.
+     *
+     * The role here is created, granted, used and dropped, so qrpager_app is never
+     * altered at all. An interrupted run leaves behind a role named qrpager_probe_*
+     * that nothing connects as and that holds no privilege on any table -- which is a
+     * mess rather than a hole, and `drop role` is the whole cleanup.
+     *
+     * $callback receives the connection NAME, because the point is to run the real code
+     * path against a real session of that role: the role names are config
+     * (tenancy.roles.app), so a caller that needs assertSafe() to treat the throwaway
+     * as a runtime role points that config entry at the name this returns.
+     *
+     * @param  list<string>  $attributes  e.g. ['bypassrls'], ['superuser', 'bypassrls']
+     * @param  callable(string, string): void  $callback  (connection name, role name)
+     */
+    protected function withThrowawayRole(array $attributes, callable $callback): void
+    {
+        $role = 'qrpager_probe_'.bin2hex(random_bytes(6));
+        $password = bin2hex(random_bytes(16));
+        $connection = 'pgsql_probe';
+        $root = $this->asRoot();
+
+        // Quoted by Postgres, from a name this method generated out of hex -- nothing
+        // here came from outside.
+        $root->statement("create role {$role} with login noinherit password '{$password}'");
+
+        try {
+            if ($attributes !== []) {
+                $root->statement("alter role {$role} ".implode(' ', $attributes));
+            }
+
+            // CONNECT has to be granted explicitly: the bootstrap revokes it from
+            // PUBLIC (§2.1), so a new role cannot open a session at all and the
+            // connection fails 08006 "permission denied for database" -- which is how
+            // the first version of this helper failed, with the refusal under test
+            // replaced by a connection error. Nothing else is granted: these tests need
+            // a real SESSION of a role with an attribute, never access to a table.
+            $database = (string) config('database.connections.pgsql.database');
+            $root->statement("grant connect on database \"{$database}\" to {$role}");
+
+            config(["database.connections.{$connection}" => array_merge(
+                (array) config('database.connections.pgsql'),
+                ['username' => $role, 'password' => $password],
+            )]);
+
+            $callback($connection, $role);
+        } finally {
+            // Order matters: the session has to be gone before the role can be dropped,
+            // and a connection left in the manager would be reused by a later test
+            // under a role that no longer exists.
+            DB::purge($connection);
+
+            try {
+                self::dropRoleAndItsGrants($root, $role);
+            } catch (Throwable) {
+                // A role that cannot be dropped is a named leftover with no privileges,
+                // which is the trade this helper makes deliberately. Reporting it here
+                // would replace the test's own result with cleanup noise.
+            }
+        }
     }
 
     /**
