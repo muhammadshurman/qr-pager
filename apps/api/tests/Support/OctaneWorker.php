@@ -10,6 +10,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Request;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Facade;
 use Laravel\Octane\ApplicationFactory;
 use Laravel\Octane\Contracts\Client;
@@ -39,6 +40,9 @@ final class OctaneWorker
 
     private ?Application $previousFacadeApp = null;
 
+    /** @var array<string, string|false> */
+    private array $previousEnvironment = [];
+
     public function __construct(private readonly string $basePath)
     {
         $this->client = new FakeClient([]);
@@ -46,6 +50,17 @@ final class OctaneWorker
 
     public function boot(): self
     {
+        // APP_DEBUG=false for the worker's own application, and this was found by the
+        // suite rather than reasoned out. A worker is a SERVING process, so
+        // RefuseUnsafeBoot runs on WorkerStarting -- and §4 forbids APP_DEBUG outside
+        // `local`, while the suite runs as `testing` with .env shipping APP_DEBUG=true.
+        // The boot check therefore refused the worker and exited 1, which took the test
+        // process with it ("Premature end of PHP process"). The check was right; the
+        // worker this file boots has to be configured the way a serving process has to
+        // be. Set in the environment rather than in config, because the worker builds
+        // its own application and reads .env for itself.
+        $this->rememberAndSetEnvironment(['APP_DEBUG' => 'false']);
+
         $this->previousContainer = Container::getInstance();
         $facadeApp = Facade::getFacadeApplication();
         $this->previousFacadeApp = $facadeApp instanceof Application ? $facadeApp : null;
@@ -139,8 +154,55 @@ final class OctaneWorker
         return count($this->client->responses);
     }
 
+    /**
+     * @param  array<string, string>  $variables
+     *
+     * Env::enablePutenv() at the end is not optional, and finding out why cost a
+     * debugging session worth writing down. Setting the variable alone does nothing:
+     * phpdotenv's immutable writer refuses to overwrite a variable that already exists
+     * in the environment UNLESS dotenv loaded that variable itself, and
+     * Env::getRepository() is a STATIC SINGLETON -- so the writer that loaded .env for
+     * the test's own application still remembers APP_DEBUG as its own, and the worker's
+     * fresh safeLoad() puts .env's value straight back over the top. Nulling the
+     * repository gives a writer with an empty `loaded` set, after which "already in the
+     * environment" means what it says.
+     */
+    private function rememberAndSetEnvironment(array $variables): void
+    {
+        foreach ($variables as $name => $value) {
+            $this->previousEnvironment[$name] = getenv($name);
+            putenv("{$name}={$value}");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+
+        Env::enablePutenv();
+    }
+
+    private function restoreEnvironment(): void
+    {
+        foreach ($this->previousEnvironment as $name => $value) {
+            if ($value === false) {
+                putenv($name);
+                unset($_ENV[$name], $_SERVER[$name]);
+
+                continue;
+            }
+
+            putenv("{$name}={$value}");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+
+        $this->previousEnvironment = [];
+
+        Env::enablePutenv();
+    }
+
     public function shutdown(): void
     {
+        $this->restoreEnvironment();
+
         if ($this->previousContainer !== null) {
             Container::setInstance($this->previousContainer);
             Facade::clearResolvedInstances();

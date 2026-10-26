@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Platform\Boot\RefuseUnsafeBoot;
 use App\Platform\Octane\RequestBoundaryCleanup;
 use Laravel\Octane\Contracts\OperationTerminated;
 use Laravel\Octane\Events\RequestHandled;
@@ -65,7 +66,18 @@ return [
     */
 
     'listeners' => [
+        /*
+        | RefuseUnsafeBoot is FIRST, and that ordering is the gate's first clause:
+        | "boot refuses an unsafe DB role (exit 1, reason logged)". A process that must
+        | not serve traffic must not reach any other startup work first.
+        |
+        | WorkerStarting rather than a service provider, deliberately: every artisan
+        | command boots the same providers, and db:bootstrap and migrate are the two
+        | that run BEFORE the roles and schema these checks read exist. Wired into every
+        | boot, a fresh clone could not reach the command that fixes it.
+        */
         WorkerStarting::class => [
+            RefuseUnsafeBoot::class,
             EnsureUploadedFilesAreValid::class,
             EnsureUploadedFilesCanBeMoved::class,
         ],

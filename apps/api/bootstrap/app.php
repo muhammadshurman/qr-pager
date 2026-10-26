@@ -1,6 +1,7 @@
 <?php
 
 use App\Platform\Console\BootstrapDatabaseCommand;
+use App\Platform\Console\CheckBootCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
     // opposite: a liveness endpoint with nothing it can be blocked on.
     ->withCommands([
         BootstrapDatabaseCommand::class,
+        CheckBootCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
