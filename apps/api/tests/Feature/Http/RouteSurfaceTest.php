@@ -143,3 +143,31 @@ it('rate limits unknown paths on their own tighter bucket — the gate names thi
     expect($fallback)->not->toBeNull()
         ->and($fallback?->gatherMiddleware())->toContain(RateLimit::class.':unknown');
 });
+
+it('does not carry the drain proof’s slow route in the repository', function (): void {
+    // bootstrap/app.php loads routes/drain.php when it exists and the environment is not
+    // production. That is the condition the drain proof relies on, and this is the other
+    // half of the bargain: the file is mounted into the drain container by compose and
+    // must never be committed, or /drain/slow becomes a real public route that holds a
+    // worker thread for three seconds.
+    expect(is_file(base_path('routes/drain.php')))->toBeFalse(
+        'routes/drain.php is committed; it is a mount, not a route file',
+    );
+
+    // The source it is mounted FROM does exist, and lives outside routes/ so no loader
+    // can pick it up by accident.
+    expect(is_file(base_path('docker/drain/routes.php')))->toBeTrue();
+
+    // And it is not in the served surface, which is what actually matters.
+    expect(publicRouteUris())->not->toContain('/drain/slow');
+});
+
+it('loads the drain route only outside production, when it is mounted', function (): void {
+    // Read from bootstrap/app.php rather than exercised, because exercising it would
+    // mean writing routes/drain.php into the repository -- which the case above forbids.
+    // Both conditions in one expression, so neither can be dropped without the other
+    // being noticed.
+    $bootstrap = (string) file_get_contents(base_path('bootstrap/app.php'));
+
+    expect($bootstrap)->toContain("! app()->environment('production') && is_file(__DIR__.'/../routes/drain.php')");
+});

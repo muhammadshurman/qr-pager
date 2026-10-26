@@ -131,6 +131,13 @@ jobs:
       # tests/Feature/Architecture/RepoGuardTest.php against guard/fixtures/repo.
       - run: composer guard
 
+      # The OpenAPI document is GENERATED from the routes and committed, so the only way
+      # it can be wrong is by being stale -- and a stale generated file is the quietest
+      # kind of wrong, because nothing fails and the file looks plausible. This step
+      # re-exports and diffs (§6.2's third shared contract). Proven to fail on a
+      # modified spec by tests/Feature/Http/OpenApiSpecTest.php.
+      - run: composer openapi:check
+
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
 
@@ -164,8 +171,80 @@ jobs:
           diff -u /tmp/schema-before.txt /tmp/schema-after.txt
           echo "schema identical after rollback and re-apply"
 
+      # "Boot refuses an unsafe DB role (exit 1, reason logged)" as a real process with
+      # a real exit code, which is the only way an exit code can be checked. APP_DEBUG
+      # is forced false because §4 forbids it outside `local` and .env.example ships it
+      # true -- the refusal is correct and would make this step fail for the wrong reason.
+      - name: Boot checks pass for a correctly configured process
+        run: APP_DEBUG=false php artisan boot:check
+
+      - name: Boot refuses a process that can resolve owner credentials
+        run: |
+          set +e
+          APP_ENV=production APP_DEBUG=false DB_OWNER_PASSWORD=present php artisan boot:check
+          code=$?
+          set -e
+          echo "boot:check exited $code (expected 1)"
+          test "$code" = "1"
+
+      # R-009, the half the in-suite assertion cannot cover. The container-log case in
+      # BootstrapLoggingTest can only see tests that ran BEFORE it, because Pest's file
+      # order is deterministic and that file is early. Here the whole run is inside the
+      # window, so a verifier leaked by any test at all is caught.
+      #
+      # ALTER SYSTEM rather than ALTER DATABASE: the in-suite cases set and RESET the
+      # database-level value in their own finally, which would undo a database-level
+      # setting partway through the run.
+      - name: Log every statement, so the scan below cannot pass vacuously
+        run: |
+          PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
+            -c "alter system set log_statement = 'all'" -c "select pg_reload_conf()"
+
       - name: Tests against real Postgres and Redis
         run: php artisan test
 
+      - name: No role verifier reached the Postgres log, across the whole run
+        run: |
+          docker logs ${{ job.services.postgres.id }} > /tmp/pg.log 2>&1
+          found=$(grep -c 'SCRAM-SHA-256' /tmp/pg.log || true)
+          echo "SCRAM-SHA-256 occurrences in the Postgres log: $found (expected 0)"
+          if [ "$found" != "0" ]; then
+            grep -n 'SCRAM-SHA-256' /tmp/pg.log | head -5 | sed 's/SCRAM-SHA-256\$[^ ]*/SCRAM-SHA-256$[redacted]/g'
+            exit 1
+          fi
+          PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
+            -c "alter system reset log_statement" -c "select pg_reload_conf()"
+
       - name: Unit coverage on the code this branch adds
         run: php artisan test --coverage --min=90
+
+  runtime:
+    name: FrankenPHP runtime — SIGTERM drain and a Redis outage
+    runs-on: ubuntu-latest
+
+    # Q7: "the drain proof runs in CI, not only locally." It cannot run in the gates job:
+    # `php artisan test` has no FrankenPHP, no worker loop and no process to signal, so a
+    # test there could only assert that the code which WOULD drain is present. Both
+    # proofs here run against the pinned image -- which is what "proven against the
+    # compiled app" means.
+    #
+    # One job for both, so the image is built once: the second proof reuses the layers of
+    # the first.
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Postgres and Redis, from the project's own compose file
+        run: docker compose -f compose.yaml up -d --wait postgres redis
+
+      # Redis first: it leaves the cluster and Redis running, which the drain proof then
+      # reuses. The other order would have the drain proof's cleanup remove the service
+      # between them.
+      - name: Redis is taken down and the API keeps serving
+        run: apps/api/bin/redis-down-proof
+
+      - name: SIGTERM drains in-flight requests and exits 0
+        run: apps/api/bin/drain-proof
+
+      - name: The runtime's logs, on failure
+        if: failure()
+        run: docker compose -f compose.yaml --profile app logs --no-color --tail 200 || true

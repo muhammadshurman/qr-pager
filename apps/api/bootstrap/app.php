@@ -43,6 +43,23 @@ return Application::configure(basePath: dirname(__DIR__))
             // ->fallback() first and ->middleware() after: RouteRegistrar has no
             // fallback() method, so Route::middleware([...])->fallback(...) fails at boot
             // with "Method Illuminate\Routing\RouteRegistrar::fallback does not exist".
+            // The SIGTERM drain proof's slow route, and the only conditional route
+            // loading in this file. Two conditions, both visible here: the file has to
+            // exist, and the environment must not be production. It is mounted into the
+            // drain container by compose and is never committed -- RouteSurfaceTest
+            // asserts routes/drain.php is absent from the repository, so it cannot
+            // arrive by being added to the tree.
+            //
+            // Stated plainly because it is a real trade: this is production code reading
+            // the filesystem for an optional route file. The alternative was a sleep in a
+            // middleware behind a header, which is a production code path a request can
+            // trigger, and that is strictly worse. The gate asks for the drain to be
+            // proven against the compiled app, so the proof needs a request that
+            // outlives the signal.
+            if (! app()->environment('production') && is_file(__DIR__.'/../routes/drain.php')) {
+                require __DIR__.'/../routes/drain.php';
+            }
+
             Route::fallback(
                 fn (Request $request) => (new Problem(ProblemType::NotFound, $request->getPathInfo()))->toResponse(),
             )->middleware([RateLimit::class.':unknown']);

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# "Redis is taken down and the API keeps serving, with the rate limiter's
+# fail-open/fail-closed posture stated and tested" -- PLAN.md §3, row 2.
+#
+# The posture is unit-tested in tests/Feature/Http/RateLimitTest.php against real Redis.
+# What THIS proves is the clause's own words, against the pinned runtime: Redis is taken
+# away from a running server and the server keeps answering. Those are different claims,
+# and the second is the one a reader of the gate would check.
+#
+# Measured in phase 1 and the reason this exists at all: with Redis unreachable,
+# Redis::ping(), Cache::get(), RateLimiter::attempt() and tooManyAttempts() ALL threw
+# RedisException. So "keeps serving" is not a property of the framework -- it is code,
+# and this is the proof that the code is in the running image.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+
+COMPOSE="${COMPOSE:-docker compose -f compose.yaml}"
+PORT="${DRAIN_PORT:-8099}"
+
+say() { printf '\n== %s\n' "$1"; }
+fail() { printf '\nREDIS-DOWN PROOF FAILED: %s\n' "$1" >&2; $COMPOSE --profile app logs --no-color --tail 40 frankenphp >&2 || true; exit 1; }
+
+cleanup() {
+  $COMPOSE start redis >/dev/null 2>&1 || true
+  $COMPOSE --profile app rm -fsv frankenphp >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+say "starting the pinned runtime"
+$COMPOSE --profile app up -d --build --force-recreate frankenphp
+
+for i in $(seq 1 60); do
+  curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break
+  [ "$i" = 60 ] && fail "the server never answered /healthz"
+  sleep 1
+done
+
+# The roles, from a one-off container that DOES carry root credentials. The serving
+# container deliberately carries none -- D9's boot assertion refuses a process that can
+# resolve them -- so bootstrapping is its own process with its own credentials, which is
+# §2.1's model rather than a workaround for it.
+say "bootstrapping roles from a separate process (the server has no root credentials)"
+$COMPOSE --profile app run --rm \
+  -e DB_ROOT_USERNAME=qrpager_root -e DB_ROOT_PASSWORD=local_dev_only \
+  -e DB_OWNER_USERNAME=qrpager_owner -e DB_OWNER_PASSWORD=local_dev_only \
+  -e DB_WORKER_USERNAME=qrpager_worker -e DB_WORKER_PASSWORD=local_dev_only \
+  -e DB_MAINTENANCE_DATABASE=postgres \
+  frankenphp php artisan db:bootstrap
+
+say "one carrier run, so readiness has a fresh snapshot to read"
+$COMPOSE --profile app exec -T \
+  -e DB_WORKER_USERNAME=qrpager_worker -e DB_WORKER_PASSWORD=local_dev_only \
+  frankenphp php artisan readiness:refresh
+
+ready="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/readyz")"
+printf 'with Redis up:   /readyz = %s\n' "$ready"
+[ "$ready" = "200" ] || fail "/readyz answered $ready with Redis up and a fresh snapshot"
+
+say "taking Redis away"
+$COMPOSE stop redis
+sleep 1
+
+alive="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PORT}/healthz")"
+ready="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PORT}/readyz")"
+unknown="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PORT}/no-such-path")"
+
+printf 'with Redis down: /healthz = %s  /readyz = %s  unknown path = %s\n' "$alive" "$ready" "$unknown"
+
+# Liveness reads NOTHING, so it cannot be blocked on a dependency. This is the half that
+# stops a load balancer killing a task that merely cannot see its dependencies.
+[ "$alive" = "200" ] || fail "/healthz answered $alive with Redis down; it reads nothing and must answer 200"
+
+# Readiness reflects real Redis state, which is the gate's own wording -- and it fails
+# CLOSED, because it answers "should traffic come here".
+[ "$ready" = "503" ] || fail "/readyz answered $ready with Redis down; it must report not-ready"
+
+# And the API KEEPS SERVING. This request goes through the rate limiter, which cannot
+# reach Redis: 404 means it failed open and the fallback answered. 500 would mean a
+# RedisException reached the renderer, which is the default behaviour this code exists to
+# replace.
+[ "$unknown" = "404" ] || fail "an unknown path answered $unknown with Redis down; the limiter did not fail open"
+
+say "bringing Redis back"
+$COMPOSE start redis
+for i in $(seq 1 30); do
+  $COMPOSE --profile app exec -T \
+    -e DB_WORKER_USERNAME=qrpager_worker -e DB_WORKER_PASSWORD=local_dev_only \
+    frankenphp php artisan readiness:refresh >/dev/null 2>&1 && break
+  sleep 1
+done
+
+ready="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/readyz")"
+printf 'with Redis up again: /readyz = %s\n' "$ready"
+[ "$ready" = "200" ] || fail "/readyz did not recover (answered $ready)"
+
+say "PASS: liveness 200, readiness 503, the API served through the outage, and readiness recovered"

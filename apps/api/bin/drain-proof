@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# "SIGTERM drains in-flight requests and exits 0 (proven against the compiled app)"
+# -- PLAN.md §3, row 2. Q7: this runs in CI, not only locally.
+#
+# Against the real pinned image, because that is what "the compiled app" means here:
+# FrankenPHP's drain is Go-side and Octane's worker loop exits through
+# frankenphp_handle_request() returning false. Neither of those exists in `php artisan
+# test`, so a test could only have asserted that the code which would drain is present.
+#
+# The proof: hold one slow request in flight, send SIGTERM while it is running, and then
+# require BOTH of the clause's halves -- the in-flight request got its real response, and
+# the process exited 0. A container that exits 0 after dropping the request would pass
+# half of this, which is why the body is checked too.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+
+COMPOSE="${COMPOSE:-docker compose -f compose.yaml}"
+SERVICE=frankenphp
+PORT="${DRAIN_PORT:-8099}"
+
+say() { printf '\n== %s\n' "$1"; }
+fail() { printf '\nDRAIN PROOF FAILED: %s\n' "$1" >&2; $COMPOSE --profile app logs --no-color --tail 40 "$SERVICE" >&2 || true; exit 1; }
+
+cleanup() { $COMPOSE --profile app rm -fsv "$SERVICE" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+say "building and starting the pinned runtime"
+$COMPOSE --profile app up -d --build --force-recreate "$SERVICE"
+
+# Wait for the worker to answer, rather than sleeping a guessed amount.
+for i in $(seq 1 60); do
+  if curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then break; fi
+  [ "$i" = 60 ] && fail "the server never answered /healthz"
+  sleep 1
+done
+
+say "the version actually running"
+$COMPOSE --profile app exec -T "$SERVICE" frankenphp version
+$COMPOSE --profile app exec -T "$SERVICE" php -v | head -1
+# The extensions the base image does NOT ship, so a build that silently lost one is a
+# failure here rather than at the first query.
+for ext in pdo_pgsql redis pcntl intl bcmath; do
+  $COMPOSE --profile app exec -T "$SERVICE" php -m | grep -qix "$ext" || fail "extension [$ext] is missing from the image"
+done
+
+say "holding one slow request in flight"
+body="$(mktemp)"; code="$(mktemp)"
+( curl -sS --max-time 30 -o "$body" -w '%{http_code}' "http://127.0.0.1:${PORT}/drain/slow" > "$code" 2>/dev/null ) &
+curl_pid=$!
+
+# Long enough that the request is certainly inside usleep(), short enough that it is
+# certainly not finished: the route holds for 3s.
+sleep 1
+
+container="$($COMPOSE --profile app ps -q "$SERVICE")"
+[ -n "$container" ] || fail "the container is not running"
+
+say "SIGTERM, mid-request"
+docker kill --signal=TERM "$container" >/dev/null
+
+say "waiting for the in-flight request"
+wait "$curl_pid" || fail "the in-flight request did not complete"
+
+got_code="$(cat "$code")"
+got_body="$(cat "$body")"
+rm -f "$body" "$code"
+
+printf 'in-flight response: %s %s\n' "$got_code" "$got_body"
+
+[ "$got_code" = "200" ] || fail "the in-flight request answered $got_code, not 200"
+printf '%s' "$got_body" | grep -q '"completed":true' || fail "the in-flight response was not the real one: $got_body"
+
+say "waiting for the process to exit"
+exit_code="$(docker wait "$container")"
+
+printf 'exit code: %s\n' "$exit_code"
+[ "$exit_code" = "0" ] || fail "the process exited $exit_code, not 0"
+
+# New connections after SIGTERM are refused rather than served: a server that keeps
+# accepting is not draining, it is just slow to die. Not asserted as a hard clause --
+# by this point the process has already exited, so there is nothing to connect to.
+say "PASS: the in-flight request completed with its real body, and the process exited 0"

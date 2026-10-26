@@ -34,5 +34,52 @@ services:
       timeout: 3s
       retries: 20
 
+  # The pinned runtime (Q7), behind a profile so `docker compose up -d` still starts
+  # only Postgres and Redis -- the suite needs those two and nothing else, and building
+  # an image to run `php artisan test` would be a gate that depends on a Docker build.
+  #
+  # Start it with: docker compose --profile app up -d --build frankenphp
+  frankenphp:
+    profiles: ["app"]
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    environment:
+      # Octane's worker bootstrap reads this and refuses to start without it
+      # ("Cannot find application base path", exit 11).
+      APP_BASE_PATH: /app
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:-base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      LOG_CHANNEL: stderr
+      # `postgres` and `redis`, not 127.0.0.1: inside the compose network the service
+      # names are the hosts.
+      DB_HOST: postgres
+      DB_DATABASE: qrpager
+      DB_USERNAME: qrpager_app
+      DB_PASSWORD: local_dev_only
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      # The boot check refuses a serving process that can resolve owner or root
+      # credentials (D9), so this task definition carries none -- which is the shape a
+      # real one has to have. Migrations and db:bootstrap run as their own processes.
+    ports:
+      # The host port is configurable because 8080 is a popular port and a proof that
+      # cannot bind is a proof nobody runs. The container port is fixed: it is the
+      # Caddyfile's.
+      - "127.0.0.1:${DRAIN_PORT:-8099}:8080"
+    volumes:
+      # The drain proof's slow route, mounted read-only and never committed. See
+      # apps/api/docker/drain/routes.php for why it is a mount and not a route.
+      - ./apps/api/docker/drain/routes.php:/app/routes/drain.php:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # No restart policy and no healthcheck: the drain proof reads this container's EXIT
+    # CODE after SIGTERM, and a restart policy would start it again before the proof
+    # could look.
+
 volumes:
   pgdata:

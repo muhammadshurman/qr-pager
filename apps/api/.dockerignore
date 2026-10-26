@@ -1,0 +1,27 @@
+# Build from the SOURCE, not from a developer machine's state. The first build failed
+# because bootstrap/cache/packages.php came from the host -- built with the dev packages
+# installed -- and `package:discover` inside the image then looked for
+# Laravel\Pail\PailServiceProvider, which --no-dev had not installed. A fresh clone is
+# what the gates run from (§6), and an image is no different.
+vendor
+bootstrap/cache
+storage/logs
+storage/framework/cache
+storage/framework/sessions
+storage/framework/views
+node_modules
+build
+.git
+.env
+.env.*
+!.env.example
+
+# The gates' own tooling, which runs outside the runtime.
+tests
+guard
+phpstan.neon
+phpunit.xml
+deptrac.yaml
+
+# Not a secret, but not something to bake into a layer either.
+*.log
