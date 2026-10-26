@@ -10,6 +10,13 @@
 # are deliberately broken and live outside ./app, so this configuration never sees them
 # and no autoloader maps them.
 deptrac:
+  # Kept out of the repo-root default (./.deptrac.cache), which went straight into
+  # a commit the first time deptrac ran -- Task 0's bug 1 in §4a, verbatim: a new
+  # tool cache must be verified with `git status` after. build/ is already ignored
+  # for PHPStan's tmpDir, so the cache lives beside it rather than needing a second
+  # ignore rule that the next tool will also need.
+  cache_file: build/deptrac/deptrac.cache
+
   paths:
     - ./app
     - ./database
