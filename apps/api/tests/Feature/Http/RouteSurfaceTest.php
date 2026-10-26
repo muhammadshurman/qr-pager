@@ -105,7 +105,10 @@ it('answers readiness 503 with no snapshot, and opens no database connection to 
         ->assertStatus(503)
         ->assertJsonPath('ready', false)
         ->assertJsonPath('reason', 'no readiness snapshot is available')
-        ->assertJsonPath('probe', null);
+        // `probe` is gone entirely rather than null (R-031): the capacity figures were
+        // readable by anyone, on a group with no limiter.
+        ->assertJsonMissingPath('probe')
+        ->assertJsonPath('probe_age_seconds', null);
 });
 
 it('answers readiness 503 when redis is unreachable, while liveness stays 200', function (): void {

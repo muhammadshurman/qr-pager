@@ -52,7 +52,7 @@
         "/readyz": {
             "get": {
                 "operationId": "probe.readiness",
-                "description": "200 when the last probe is fresh and both dependencies were up; 503 otherwise,\nwith `reason` naming which. Opens no database connection.\n\nONE RETURN, with the body as a literal array, and that shape is for the generated\nspec rather than for taste. Scramble infers a response schema from what a\ncontroller actually returns: with the body built in a private helper the exported\ndocument described this endpoint as `{\"type\":\"string\"}` -- a generated spec that is\nwrong in the quietest possible way, since nothing fails and the file looks\nplausible. \u00a77's own caveat said as much (\"a controller must return a declared\n     * shape rather than one branch's literals\"), and this is that caveat met.",
+                "description": "200 when the last probe is fresh and both dependencies were up; 503 otherwise,\nwith `reason` naming which. Opens no database connection.\n\nONE RETURN, with the body as a literal array, and that shape is for the generated\nspec rather than for taste. Scramble infers a response schema from what a\ncontroller actually returns: with the body built in a private helper the exported\ndocument described this endpoint as `{\"type\":\"string\"}` -- a generated spec that is\nwrong in the quietest possible way, since nothing fails and the file looks\nplausible. \u00a77's own caveat said as much (\"a controller must return a declared\n     * shape rather than one branch's literals\"), and this is that caveat met.\n\nTHREE FIELDS, AND THE CAPACITY FIGURES ARE GONE (R-031, QA M-2 / security #3).\nThis used to publish the whole snapshot -- `app_backends`, `app_limit`,\n`saturation`, `postgres_up`, `redis_up`, `measured_at` -- to any anonymous caller,\non the one middleware group that carries no rate limiter, while ShedLoad withheld\nthe SAME saturation figure from its 503 on the stated grounds that it tells a\ncaller how close this task is to the edge. `ShedLoadTest` asserts that absence;\ntwo reviews found the contradiction independently. The shed threshold is\n`0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact\nonset of shedding and watch it work, and `redis_up` published the signal R-027\nsays means rate limiting is currently off.\n\nNothing operational is lost: ShedLoad logs its reason at warning, the carrier\nprints the snapshot it wrote, and `reason` still names WHICH dependency failed,\nwhich is what makes a 503 diagnosable. What is gone is diagnosing readiness from\noutside the VPC, which belongs on an operator path rather than a world-readable\none. `probe_age_seconds` stays because it discloses only carrier liveness, and it\nis the field that separates \"this task has no snapshot\" from \"its carrier died\".",
                 "summary": "Readiness probe",
                 "tags": [
                     "Readiness"
@@ -81,56 +81,17 @@
                                                 null
                                             ]
                                         },
-                                        "probe": {
-                                            "type": [
-                                                "object",
-                                                "null"
-                                            ],
-                                            "properties": {
-                                                "postgres_up": {
-                                                    "type": "boolean"
-                                                },
-                                                "redis_up": {
-                                                    "type": "boolean"
-                                                },
-                                                "app_backends": {
-                                                    "type": "integer"
-                                                },
-                                                "app_limit": {
-                                                    "type": "integer"
-                                                },
-                                                "saturation": {
-                                                    "type": "number"
-                                                },
-                                                "measured_at": {
-                                                    "type": "integer"
-                                                }
-                                            },
-                                            "required": [
-                                                "postgres_up",
-                                                "redis_up",
-                                                "app_backends",
-                                                "app_limit",
-                                                "saturation",
-                                                "measured_at"
-                                            ]
-                                        },
                                         "probe_age_seconds": {
                                             "type": [
                                                 "integer",
                                                 "null"
                                             ]
-                                        },
-                                        "freshness_budget_seconds": {
-                                            "type": "integer"
                                         }
                                     },
                                     "required": [
                                         "ready",
                                         "reason",
-                                        "probe",
-                                        "probe_age_seconds",
-                                        "freshness_budget_seconds"
+                                        "probe_age_seconds"
                                     ]
                                 }
                             }
@@ -167,56 +128,17 @@
                                                 null
                                             ]
                                         },
-                                        "probe": {
-                                            "type": [
-                                                "object",
-                                                "null"
-                                            ],
-                                            "properties": {
-                                                "postgres_up": {
-                                                    "type": "boolean"
-                                                },
-                                                "redis_up": {
-                                                    "type": "boolean"
-                                                },
-                                                "app_backends": {
-                                                    "type": "integer"
-                                                },
-                                                "app_limit": {
-                                                    "type": "integer"
-                                                },
-                                                "saturation": {
-                                                    "type": "number"
-                                                },
-                                                "measured_at": {
-                                                    "type": "integer"
-                                                }
-                                            },
-                                            "required": [
-                                                "postgres_up",
-                                                "redis_up",
-                                                "app_backends",
-                                                "app_limit",
-                                                "saturation",
-                                                "measured_at"
-                                            ]
-                                        },
                                         "probe_age_seconds": {
                                             "type": [
                                                 "integer",
                                                 "null"
                                             ]
-                                        },
-                                        "freshness_budget_seconds": {
-                                            "type": "integer"
                                         }
                                     },
                                     "required": [
                                         "ready",
                                         "reason",
-                                        "probe",
-                                        "probe_age_seconds",
-                                        "freshness_budget_seconds"
+                                        "probe_age_seconds"
                                     ]
                                 }
                             }

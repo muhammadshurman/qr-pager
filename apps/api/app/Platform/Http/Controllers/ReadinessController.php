@@ -40,6 +40,24 @@ final class ReadinessController
      * wrong in the quietest possible way, since nothing fails and the file looks
      * plausible. §7's own caveat said as much ("a controller must return a declared
      * shape rather than one branch's literals"), and this is that caveat met.
+     *
+     * THREE FIELDS, AND THE CAPACITY FIGURES ARE GONE (R-031, QA M-2 / security #3).
+     * This used to publish the whole snapshot -- `app_backends`, `app_limit`,
+     * `saturation`, `postgres_up`, `redis_up`, `measured_at` -- to any anonymous caller,
+     * on the one middleware group that carries no rate limiter, while ShedLoad withheld
+     * the SAME saturation figure from its 503 on the stated grounds that it tells a
+     * caller how close this task is to the edge. `ShedLoadTest` asserts that absence;
+     * two reviews found the contradiction independently. The shed threshold is
+     * `0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact
+     * onset of shedding and watch it work, and `redis_up` published the signal R-027
+     * says means rate limiting is currently off.
+     *
+     * Nothing operational is lost: ShedLoad logs its reason at warning, the carrier
+     * prints the snapshot it wrote, and `reason` still names WHICH dependency failed,
+     * which is what makes a 503 diagnosable. What is gone is diagnosing readiness from
+     * outside the VPC, which belongs on an operator path rather than a world-readable
+     * one. `probe_age_seconds` stays because it discloses only carrier liveness, and it
+     * is the field that separates "this task has no snapshot" from "its carrier died".
      */
     public function __invoke(): JsonResponse
     {
@@ -51,9 +69,7 @@ final class ReadinessController
         $body = [
             'ready' => $reason === null,
             'reason' => $reason,
-            'probe' => $snapshot?->toArray(),
             'probe_age_seconds' => $snapshot?->ageInSeconds($now),
-            'freshness_budget_seconds' => $budget,
         ];
 
         // Two returns with LITERAL status codes, not one with a conditional. Scramble

@@ -78,8 +78,17 @@ it('describes both readiness outcomes with the real body shape', function (): vo
     // controller has to return a declared shape.
     expect($schema['type'] ?? null)->toBe('object');
 
-    foreach (['ready', 'reason', 'probe', 'probe_age_seconds', 'freshness_budget_seconds'] as $property) {
+    // THREE FIELDS, and the absences are asserted as well as the presences (R-031).
+    // The capacity figures were published to any anonymous caller on the one group
+    // that carries no limiter, while ShedLoad withheld the same saturation figure from
+    // its 503. Asserting only the three present fields would leave a later commit free
+    // to add `probe` back, so the four removed names are pinned here too.
+    foreach (['ready', 'reason', 'probe_age_seconds'] as $property) {
         expect($schema['properties'] ?? [])->toHaveKey($property);
+    }
+
+    foreach (['probe', 'app_backends', 'app_limit', 'saturation', 'freshness_budget_seconds'] as $removed) {
+        expect($schema['properties'] ?? [])->not->toHaveKey($removed);
     }
 });
 

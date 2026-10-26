@@ -90,8 +90,12 @@ it('answers /readyz and /healthz with the app pool full — R-012', function ():
 
         $readyz = $this->getJson('/readyz');
 
+        // ANSWERING is the clause, and the body no longer carries the snapshot (R-031),
+        // so what proves it answered from a real reading is probe_age_seconds rather
+        // than the figures themselves.
         expect($readyz->status())->toBeIn([200, 503], 'readiness did not answer at all')
-            ->and($readyz->json('probe'))->not->toBeNull();
+            ->and($readyz->json('probe_age_seconds'))->not->toBeNull()
+            ->and($readyz->json())->not->toHaveKey('probe');
     } finally {
         $held = [];
         DB::purge('pgsql');
