@@ -1,11 +1,11 @@
 <?php
 
 use App\Platform\Console\BootstrapDatabaseCommand;
+use App\Platform\Http\ProblemRenderer;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -36,7 +36,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->group('probe', []);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('v1/*') || $request->expectsJson(),
-        );
+        // One RFC 7807 document for every uncaught throwable, for EVERY request and at
+        // any APP_DEBUG setting (D3, and §4 › Edge & ops as amended on 2026-10-26).
+        // Registered rather than conditional on expectsJson(): the clause is about what
+        // a body carries, and .env.example ships APP_DEBUG=true, so a renderer that
+        // steps aside in debug satisfies the words and not the property.
+        $exceptions->render(fn (Throwable $error, Request $request) => app(ProblemRenderer::class)
+            ->render($error, $request)
+            ->toResponse());
     })->create();
