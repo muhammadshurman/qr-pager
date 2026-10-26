@@ -61,10 +61,24 @@ class TenantContext
         // tenant.
         $connection ??= array_key_first($this->openScopes) ?? DatabaseRoles::connection('app');
 
+        // Provenance before format, and this is the half that was missing. run()
+        // treats a tenant setting no scope in this process opened as a hard failure
+        // (M-1); current() only checked the value's shape, so the two entry points
+        // disagreed about the same value -- measured, current() returned a
+        // session-scoped uuid that withTenant() refused in the next breath. §4 ›
+        // Realtime builds the Redis namespace from exactly this value and Task 4 will
+        // build keys from it, so on a pooled Octane connection carrying a session value
+        // that is a cross-tenant key with nothing behind it (M-1, sixth security
+        // review). No scope here, no answer -- and no round trip either.
+        if (! isset($this->openScopes[$connection])) {
+            return null;
+        }
+
         $tenant = $this->readState(DB::connection($connection))['tenant'];
 
-        // run() validates on the way in; this validates on the way out, so a GUC set
-        // by anything other than this class cannot leave here as a tenant id.
+        // run() validates on the way in; this validates on the way out, so a value
+        // written over ours inside the scope -- a raw set_config in a callback -- cannot
+        // leave here as a tenant id either.
         return Str::isUuid($tenant) ? $tenant : null;
     }
 
@@ -141,11 +155,23 @@ class TenantContext
         $guc = DatabaseRoles::guc('tenant');
 
         return $db->transaction(function () use ($db, $guc, $tenantId, $connection, $callback): mixed {
+            // The depth Laravel reports inside the transaction it has just opened.
+            // Anything else here when the callback returns means the callback moved the
+            // transaction this scope runs in, and the COMMIT about to be issued is not
+            // the one that would commit the callback's work.
+            $depth = $db->transactionLevel();
+
             $this->setGuc($db, $guc, $tenantId);
             $this->openScopes[$connection] = true;
 
             try {
                 $result = $callback();
+
+                // Before the clear, because the clear cannot see this: a callback that
+                // leaves a transaction open leaves the GUC reading correctly inside it,
+                // so the read-back below succeeds and the failure stays silent (M-2,
+                // sixth security review).
+                $this->assertScopeSurvived($db, $depth, $connection);
 
                 // Success path only. A callback that threw needs no clearing: Laravel
                 // rolls back -- the transaction, or to the savepoint it opened for a
@@ -288,6 +314,50 @@ class TenantContext
     }
 
     /**
+     * The transaction this scope opened is still the transaction the callback ran in.
+     *
+     * Measured, and this is the third route to the same failure H-B was about: a
+     * callback that leaves a transaction open -- a bare beginTransaction() it never
+     * commits -- returned normally with its write discarded, because Laravel's commit
+     * at the deeper level only decrements and issues no COMMIT, while clearScope()'s
+     * read-back still saw the right tenant inside the still-open outer transaction.
+     * Worse under Octane: the next request on the same worker and the same singleton
+     * opened a scope that nested into the first request's transaction, putting two
+     * requests' work in one transaction that `idle_in_transaction_session_timeout`
+     * then threw away.
+     *
+     * A shallower depth is the connection going away underneath -- a reconnect, or a
+     * commit from inside the callback -- which is reported as the scope being lost. A
+     * deeper one is the callback's own doing.
+     */
+    private function assertScopeSurvived(ConnectionInterface $db, int $depth, string $connection): void
+    {
+        $found = $db->transactionLevel();
+
+        if ($found === $depth) {
+            return;
+        }
+
+        // Put the connection back in a known state before reporting. Left as it is, it
+        // returns to the pool carrying an open transaction AND the tenant GUC, which is
+        // the next request's problem rather than this one's. Each rollBack() unwinds one
+        // level and the last issues the real ROLLBACK; the cap is there because a loop
+        // that depends on a driver's own counter should not be able to spin.
+        for ($i = 0; $i < 32 && $db->transactionLevel() > 0; $i++) {
+            try {
+                $db->rollBack();
+            } catch (Throwable) {
+                // Reporting the original failure matters more than tidying succeeding.
+                break;
+            }
+        }
+
+        throw $found < $depth
+            ? TenantContextException::scopeWasLostDuringCallback($connection)
+            : TenantContextException::transactionLeftOpenByCallback($connection, $depth, $found);
+    }
+
+    /**
      * @param  array{tenant: string, bypass: string, role: string, superuser: bool, bypassrls: bool}  $state
      */
     private function assertRowLevelSecurityApplies(array $state): void
@@ -336,7 +406,7 @@ class TenantContext
         $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
 
         if ($before !== $expected) {
-            throw TenantContextException::scopeWasLostDuringCallback($connection);
+            throw TenantContextException::tenantSettingChangedDuringCallback($connection);
         }
     }
 

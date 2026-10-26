@@ -444,15 +444,205 @@ it('reports the active tenant for a scope on any connection, not just the defaul
 });
 
 it('reports no tenant when the setting holds something that is not a tenant id', function (): void {
-    // run() validates on the way in; current() now validates on the way out, so a
-    // value this class never wrote cannot leave here as a tenant id.
+    // The format check, exercised on its own. It has to be set from INSIDE a live
+    // scope: with no scope open the provenance check added for the sixth review's M-1
+    // returns null first, and this test would then pass for a reason other than the one
+    // it names -- which is the defect this branch has shipped most often.
     $context = app(TenantContext::class);
+    $tenant = $this->makeTenant();
 
-    Composition::setSessionGuc('pgsql', 'app.tenant_id', 'not-a-uuid');
+    withTenant($tenant, function () use ($context, $tenant): void {
+        DB::select('select set_config(?, ?, true)', ['app.tenant_id', 'not-a-uuid']);
+
+        expect($context->current())->toBeNull();
+
+        // Put it back before the block ends, or clearScope()'s read-back refuses the
+        // whole scope -- which is the M-2 postcondition doing its job, not a problem.
+        DB::select('select set_config(?, ?, true)', ['app.tenant_id', $tenant]);
+    });
+});
+
+it('reports no tenant for a setting no scope in this process opened', function (): void {
+    // (a), sixth security review M-1: current() had a format check and no provenance
+    // check, so it answered with a session-scoped value that run() refuses as a hard
+    // failure in the same breath -- the two entry points disagreeing about one value.
+    // §4 › Realtime makes this the Redis namespace and Task 4 builds keys from it, so
+    // the answer reaching a key is a cross-tenant key with nothing behind it.
+    $context = app(TenantContext::class);
+    $beta = $this->makeTenant();
+
+    Composition::setSessionGuc('pgsql', 'app.tenant_id', $beta);
 
     try {
         expect($context->current())->toBeNull();
+
+        // And the two entry points now agree about that same value.
+        expect(fn () => withTenant($beta, fn () => true))
+            ->toThrow(TenantContextException::class, 'no tenant scope in this process opened it');
     } finally {
         DB::purge('pgsql');
+    }
+});
+
+it('reports no tenant for a connection it holds no scope on', function (): void {
+    $context = app(TenantContext::class);
+    $tenant = $this->makeTenant();
+
+    withTenant($tenant, function () use ($context): void {
+        // The scope is on pgsql. Asking about any other connection -- including one
+        // row level security does not apply to -- is answered without a round trip.
+        expect($context->current('pgsql_owner'))->toBeNull()
+            ->and($context->current('pgsql_root'))->toBeNull()
+            ->and($context->current())->not->toBeNull();
+    });
+});
+
+it('never reports success when the callback leaves a transaction open', function (): void {
+    // (b), sixth security review M-2: the third route to H-B's property failing.
+    // Measured before the fix: run() returned 'finished', the scoped write was gone,
+    // nothing was raised, transactionLevel() was left at 1 on the pooled connection,
+    // and a second withTenant on the same singleton SUCCEEDED by nesting into the
+    // first one's transaction. clearScope()'s read-back cannot see this -- the GUC
+    // still reads correctly inside the still-open transaction.
+    $alpha = $this->makeTenant();
+    $beta = $this->makeTenant();
+    $reference = 'DANGLING-'.Str::random(6);
+
+    $raised = null;
+    $returned = null;
+
+    try {
+        $returned = withTenant($alpha, function () use ($alpha, $reference): string {
+            DB::table('outbox')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $alpha,
+                'type' => 'pager.ready',
+                'dedupe_key' => $reference,
+            ]);
+
+            DB::beginTransaction();   // never committed, never rolled back
+
+            return 'finished';
+        });
+    } catch (TenantContextException $e) {
+        $raised = $e;
+    }
+
+    $persisted = withTenant($alpha, fn () => DB::table('outbox')->where('dedupe_key', $reference)->exists());
+
+    // The H-B property, stated the same way as the other two routes to it.
+    expect($persisted || $raised !== null)->toBeTrue(
+        'withTenant returned '.var_export($returned, true).' and the write is gone',
+    );
+
+    // And the connection does not go back to the pool poisoned: no open transaction,
+    // no tenant setting, and the next scope on it is a scope rather than a savepoint
+    // inside the last request's transaction.
+    expect(DB::connection('pgsql')->transactionLevel())->toBe(0)
+        ->and(Composition::tenantGuc('pgsql'))->toBe('');
+
+    withTenant($beta, function (): void {
+        expect(DB::transactionLevel())->toBe(1);
+    });
+
+    if ($raised !== null) {
+        expect($raised->getMessage())->not->toContain('set_config')
+            ->and($raised->getMessage())->not->toContain('select ')
+            ->and($raised->getPrevious())->toBeNull();
+    }
+});
+
+it('cannot have a refusal message forge a log line', function (): void {
+    // (c), sixth security review L-1. Measured: with the setting carrying an embedded
+    // newline, the message and the Monolog line built from it carried the forged
+    // content verbatim. An exception message reaches the log, so a newline in it is a
+    // log entry written by whoever set the value.
+    $vector = "injected\nFAKE LOG LINE level=emergency token=secret";
+
+    Composition::setSessionGuc('pgsql', 'app.tenant_id', $vector);
+
+    try {
+        withTenant($this->makeTenant(), fn () => true);
+        $this->fail('a tenant scope opened on a setting this process did not open');
+    } catch (TenantContextException $e) {
+        $message = $e->getMessage();
+
+        // The control characters are escaped, not the content removed: the forged text
+        // survives as inert text on one line, which is the point -- it can no longer be
+        // a log entry of its own.
+        expect(preg_split('/\R/', $message))->toHaveCount(1)
+            ->and($message)->not->toContain("\n")
+            ->and($message)->not->toContain("\r")
+            ->and($message)->toContain('no tenant scope in this process opened it');
+    } finally {
+        DB::purge('pgsql');
+    }
+});
+
+it('bounds a refusal message built from a value it did not write', function (): void {
+    Composition::setSessionGuc('pgsql', 'app.tenant_id', str_repeat('A', 8192));
+
+    try {
+        withTenant($this->makeTenant(), fn () => true);
+        $this->fail('a tenant scope opened on a setting this process did not open');
+    } catch (TenantContextException $e) {
+        expect(strlen($e->getMessage()))->toBeLessThan(600);
+    } finally {
+        DB::purge('pgsql');
+    }
+});
+
+it('never reports success when something in the block wrote over the tenant setting', function (): void {
+    // clearScope()'s read-back, on its own. Adding the depth postcondition for (b)
+    // took over both routes the read-back used to catch, so removing its comparison
+    // left 189 tests passing -- the same way the sixth round orphaned setGuc()'s
+    // catch. This is the shape only the read-back can see: the same transaction depth,
+    // with the setting overwritten underneath, so every query after that point ran
+    // under a tenant the caller never chose.
+    $alpha = $this->makeTenant();
+    $beta = $this->makeTenant();
+    $reference = 'OVERWRITTEN-'.Str::random(6);
+
+    $raised = null;
+    $returned = null;
+
+    try {
+        $returned = withTenant($alpha, function () use ($alpha, $beta, $reference): string {
+            DB::table('outbox')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $alpha,
+                'type' => 'pager.ready',
+                'dedupe_key' => $reference,
+            ]);
+
+            // What §4's repo guard is specified to reject and R-010 does not yet exist
+            // to reject: a raw set_config inside a block.
+            DB::select('select set_config(?, ?, true)', ['app.tenant_id', $beta]);
+
+            return 'finished';
+        });
+    } catch (TenantContextException $e) {
+        $raised = $e;
+    }
+
+    $persisted = withTenant($alpha, fn () => DB::table('outbox')->where('dedupe_key', $reference)->exists());
+
+    // NOT the H-B property this time, and the difference is the whole point: here the
+    // write does survive, so "either the write survives or something is raised" is
+    // satisfied trivially and asserting it proves nothing -- measured, it passes with
+    // the read-back deleted. The property that matters is the contract: a block either
+    // ran under its caller's tenant throughout, or it reports. So the refusal itself is
+    // the assertion, and the rollback is its consequence.
+    expect($raised)->not->toBeNull(
+        'withTenant returned '.var_export($returned, true).' after the block changed tenant underneath it',
+    );
+    expect($persisted)->toBeFalse('the refusal did not roll the block back');
+
+    if ($raised !== null) {
+        expect($raised->getMessage())->toContain('is not the value this tenant scope set')
+            // The value is not named: it is not the caller's tenant.
+            ->and($raised->getMessage())->not->toContain($beta)
+            ->and($raised->getMessage())->not->toContain('set_config')
+            ->and($raised->getPrevious())->toBeNull();
     }
 });
