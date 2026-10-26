@@ -100,6 +100,75 @@ final class DatabaseRoles
     }
 
     /**
+     * R-014: refuse a configured timeout that is far too high, at the moment it would
+     * be written.
+     *
+     * The firing proofs keep their lower bound only (F10), so nothing else can catch
+     * this: a far-too-high value does not fail a test, it makes the test that waits for
+     * it hang until the harness kills the run. And the SHOW-comparison test cannot
+     * catch it either, because it compares current_setting against the same config
+     * value -- it sees role-vs-config drift and nothing else.
+     *
+     * Compared as intervals, by Postgres, for the reason the SHOW test is: '60s' and
+     * '1min' are the same value and string comparison says otherwise. The ONE allowed
+     * exception is a named role/setting pair in config, not a magic value, so "no
+     * statement timeout" cannot quietly become true of the app role.
+     *
+     * @return list<string> the settings past their ceiling, empty when all are within it
+     */
+    public static function timeoutsPastCeiling(ConnectionInterface $connection): array
+    {
+        /** @var array<string, string> $ceilings */
+        $ceilings = is_array($c = config('tenancy.timeout_ceilings')) ? $c : [];
+
+        /** @var array<string, list<string>> $exemptions */
+        $exemptions = is_array($e = config('tenancy.timeout_ceiling_exemptions')) ? $e : [];
+
+        $past = [];
+
+        foreach (self::timeouts() as $roleKey => $settings) {
+            foreach ($settings as $setting => $value) {
+                $ceiling = $ceilings[$setting] ?? null;
+
+                if (! is_string($ceiling) || in_array($setting, $exemptions[$roleKey] ?? [], true)) {
+                    continue;
+                }
+
+                // Postgres decides both questions in one round trip, and the SECOND one
+                // is the trap: statement_timeout = 0 means NO timeout at all, which is
+                // the most dangerous value the app role could carry -- and an interval
+                // comparison reads it as the smallest and safest. A ceiling that only
+                // compared magnitudes would wave through exactly the value it exists to
+                // stop. `0` is therefore past every ceiling unless the role/setting pair
+                // is exempt by name, which is what makes the owner's deliberate
+                // statement_timeout = 0 (PLAN.md §2.1) an exemption rather than an
+                // accident.
+                $row = $connection->selectOne(
+                    'select ?::interval > ?::interval as too_long, ?::interval = ?::interval as unlimited',
+                    [$value, $ceiling, $value, '0'],
+                );
+
+                if (! is_object($row)) {
+                    continue;
+                }
+
+                if ((bool) ($row->unlimited ?? false)) {
+                    $past[] = self::name($roleKey).": {$setting} = {$value} disables the timeout entirely, "
+                        ."which is past any ceiling (the configured ceiling is {$ceiling})";
+
+                    continue;
+                }
+
+                if ((bool) ($row->too_long ?? false)) {
+                    $past[] = self::name($roleKey).": {$setting} = {$value} exceeds the configured ceiling of {$ceiling}";
+                }
+            }
+        }
+
+        return $past;
+    }
+
+    /**
      * Migrations grant privileges to roles and name them in policies, so a missing
      * role has to fail with the command that creates it, not with "role does not exist".
      */

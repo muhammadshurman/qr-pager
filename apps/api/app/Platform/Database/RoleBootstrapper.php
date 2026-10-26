@@ -196,6 +196,21 @@ class RoleBootstrapper
     /** @return list<string> */
     private function applyTimeouts(ConnectionInterface $bootstrap): array
     {
+        // R-014: refuse before writing anything, so a far-too-high value is one clear
+        // failure in the first test rather than a suite that hangs in the test which
+        // waits the value out. Checked here because this is the only place these values
+        // are applied, and the ceiling has to bind the WRITE and not just a test.
+        $past = DatabaseRoles::timeoutsPastCeiling($bootstrap);
+
+        if ($past !== []) {
+            throw new RuntimeException(
+                'Refusing to apply role timeouts: '.implode('; ', $past)
+                .'. The firing proofs assert a lower bound only (F10), so a value past the ceiling '
+                .'does not fail a test -- it hangs the one that waits for it. Fix the value, or raise '
+                .'the ceiling in config/tenancy.php deliberately.'
+            );
+        }
+
         $report = [];
 
         foreach (DatabaseRoles::timeouts() as $roleKey => $settings) {
