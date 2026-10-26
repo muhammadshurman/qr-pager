@@ -23,7 +23,76 @@ use Illuminate\Support\Facades\Process;
  * used on purpose: a fixture-only config would be a second copy of the ruleset, and a
  * second copy that agrees today diverges later -- which is the failure this project is
  * structured to prevent (§6.2, C7).
+ *
+ * EVERY RUN PINS --formatter=json, AND THAT IS NOT A STYLE CHOICE. deptrac chooses its
+ * formatter from the ENVIRONMENT: AnalyseCommand.php:99 reads
+ *
+ *     false !== (new Env())->get('GITHUB_ACTIONS')
+ *         ? GithubActionsOutputFormatter::getName()
+ *         : TableOutputFormatter::getName()
+ *
+ * so under GitHub Actions it emits `::error file=...` workflow commands instead of the
+ * table -- and with NO violations the github-actions formatter emits NOTHING AT ALL.
+ * Measured on this machine, same clean tree, same exit code 0:
+ *
+ *     $ vendor/bin/deptrac analyse --no-progress --no-cache
+ *       stdout 292 bytes (the Report table) · stderr 0 · exit 0
+ *     $ GITHUB_ACTIONS=true vendor/bin/deptrac analyse --no-progress --no-cache
+ *       stdout   0 bytes · stderr 0 · exit 0
+ *
+ * The first version of the case below asserted that output() contained
+ * "Violations           0", so in CI it was asserting against an EMPTY STRING while
+ * deptrac was perfectly happy -- a test that fails only in the environment the gate
+ * runs in, which is §6's fresh-clone clause inverted: a pass that depended on something
+ * only present on the builder's machine, namely the absence of GITHUB_ACTIONS.
+ *
+ * The assertions are therefore on the PROPERTY -- the exit code and a parsed violation
+ * count -- and not on rendered text. Pinning the formatter also removes the GitHub
+ * annotations deptrac would otherwise produce for these fixture runs, which is the
+ * right trade: they would be annotations about files this test creates and deletes.
  */
+
+/**
+ * Run the real deptrac and return its exit code and decoded report.
+ *
+ * BOTH STREAMS are concatenated before decoding, deliberately. Process::run captures
+ * stderr into errorOutput(), which Pest never prints, so "the report went to stderr"
+ * and "deptrac aborted before writing anything" are indistinguishable from a failure
+ * message built on output() alone -- both show an empty actual. Concatenating removes
+ * the stream as a variable, and a payload that will not decode fails with BOTH streams
+ * and the exit code in the message, which is the discrimination that was missing.
+ *
+ * @return array{int, array{Report: array<string, int>, files?: array<string, array{messages: list<array{message: string, line: int, type: string}>, violations: int}>}}
+ */
+function deptracJson(): array
+{
+    $result = Process::path(base_path())
+        ->run('vendor/bin/deptrac analyse --no-progress --no-cache --formatter=json');
+
+    $raw = $result->output().$result->errorOutput();
+    $decoded = json_decode($raw, true);
+
+    expect($decoded)->toBeArray(
+        "deptrac did not return a JSON report.\nexit: {$result->exitCode()}"
+        ."\nstdout: [{$result->output()}]\nstderr: [{$result->errorOutput()}]",
+    );
+
+    expect($decoded)->toHaveKey('Report');
+
+    /** @var array{Report: array<string, int>} $decoded */
+    return [$result->exitCode(), $decoded];
+}
+
+/** The violations deptrac reported against one file, by its path under the project root. */
+function deptracViolationsFor(array $report, string $relativePath): array
+{
+    $absolute = base_path($relativePath);
+
+    /** @var array<string, array{messages: list<array{message: string}>, violations: int}> $files */
+    $files = $report['files'] ?? [];
+
+    return $files[$absolute] ?? ['messages' => [], 'violations' => 0];
+}
 
 /**
  * @param  array<string, string>  $fixtures  fixture file => path under app/, relative to the project root
@@ -45,10 +114,7 @@ function deptracAgainst(array $fixtures): array
             $written[] = $destination;
         }
 
-        $result = Process::path(base_path())
-            ->run('vendor/bin/deptrac analyse --no-progress --no-cache');
-
-        return [$result->exitCode(), $result->output().$result->errorOutput()];
+        return deptracJson();
     } finally {
         // Loud rather than silent if this ever fails: a leaked file makes every later
         // deptrac run fail and names itself, where the assertion above refuses to run
@@ -65,51 +131,84 @@ function deptracAgainst(array $fixtures): array
 }
 
 it('passes on the real tree, so a failure below means the fixture and not the ruleset', function (): void {
-    $result = Process::path(base_path())->run('vendor/bin/deptrac analyse --no-progress --no-cache');
+    [$exit, $report] = deptracJson();
 
-    expect($result->exitCode())->toBe(0, $result->output().$result->errorOutput())
-        ->and($result->output())->toContain('Violations           0');
+    // The exit code and a NUMBER, not a rendered row. See the file docblock: the
+    // "Violations           0" needle this used to look for does not exist under the
+    // formatter deptrac picks when GITHUB_ACTIONS is set, which is every CI run.
+    expect($exit)->toBe(0, json_encode($report))
+        ->and($report['Report']['Violations'])->toBe(0)
+        ->and($report['Report']['Errors'])->toBe(0)
+        // Uncovered is 0 by configuration rather than by accident: every layer in
+        // deptrac.yaml is reachable from a ruleset entry, so a class that matches no
+        // layer is a hole in the configuration and not a neutral fact.
+        ->and($report['Report']['Uncovered'])->toBe(0)
+        // And the ruleset is doing work rather than passing vacuously: an empty layer
+        // set would also report zero violations.
+        ->and($report['Report']['Allowed'])->toBeGreaterThan(0);
 });
 
 it('guard 1 fails when domain logic imports framework or DB code', function (): void {
-    [$exit, $output] = deptracAgainst([
-        'domain-imports-framework.php.fixture' => 'app/Domain/Deliberately/BadDomainDependency.php',
+    $target = 'app/Domain/Deliberately/BadDomainDependency.php';
+
+    [$exit, $report] = deptracAgainst([
+        'domain-imports-framework.php.fixture' => $target,
     ]);
 
+    $file = deptracViolationsFor($report, $target);
+
     expect($exit)->not->toBe(0, 'deptrac accepted a Domain class that imports Illuminate')
-        ->and($output)->toContain('App\Domain\Deliberately\BadDomainDependency must not depend on')
-        ->and($output)->toContain('Illuminate\Support\Facades\DB');
+        ->and($report['Report']['Violations'])->toBeGreaterThan(0)
+        // Attributed to the fixture, so a violation somewhere else cannot satisfy this.
+        ->and($file['violations'])->toBeGreaterThan(0)
+        // The offending dependency, from the report's own message field rather than from
+        // a rendered table: the class and the token it reached for are the property,
+        // while "DependsOnDisallowedLayer" and the column alignment are presentation.
+        ->and(implode(' ', array_column($file['messages'], 'message')))
+        ->toContain('Illuminate\Support\Facades\DB');
 });
 
 it('guard 2 fails when the platform layer imports a feature module', function (): void {
-    [$exit, $output] = deptracAgainst([
+    [$exit, $report] = deptracAgainst([
         'platform-imports-feature-target.php.fixture' => 'app/Features/Deliberately/SomeFeatureService.php',
         'platform-imports-feature.php.fixture' => 'app/Platform/Deliberately/BadPlatformDependency.php',
     ]);
 
+    $file = deptracViolationsFor($report, 'app/Platform/Deliberately/BadPlatformDependency.php');
+
     expect($exit)->not->toBe(0, 'deptrac accepted a Platform class that imports a Feature')
-        ->and($output)->toContain('App\Platform\Deliberately\BadPlatformDependency must not depend on')
-        ->and($output)->toContain('App\Features\Deliberately\SomeFeatureService');
+        ->and($report['Report']['Violations'])->toBeGreaterThan(0)
+        ->and($file['violations'])->toBeGreaterThan(0)
+        ->and(implode(' ', array_column($file['messages'], 'message')))
+        ->toContain('App\Features\Deliberately\SomeFeatureService');
 });
 
 it('guard 3 fails when production code imports a test helper', function (): void {
-    [$exit, $output] = deptracAgainst([
+    [$exit, $report] = deptracAgainst([
         'production-imports-test-helper.php.fixture' => 'app/Platform/Deliberately/BadTestHelperDependency.php',
     ]);
 
+    $file = deptracViolationsFor($report, 'app/Platform/Deliberately/BadTestHelperDependency.php');
+
     expect($exit)->not->toBe(0, 'deptrac accepted production code importing Tests\\Support')
-        ->and($output)->toContain('App\Platform\Deliberately\BadTestHelperDependency must not depend on')
-        ->and($output)->toContain('Tests\Support\Composition');
+        ->and($report['Report']['Violations'])->toBeGreaterThan(0)
+        ->and($file['violations'])->toBeGreaterThan(0)
+        ->and(implode(' ', array_column($file['messages'], 'message')))
+        ->toContain('Tests\Support\Composition');
 });
 
 it('fails when a feature module is built on the pre-Task-5 auth stub — B5', function (): void {
-    [$exit, $output] = deptracAgainst([
+    [$exit, $report] = deptracAgainst([
         'feature-imports-auth-stub.php.fixture' => 'app/Features/Deliberately/FeatureBuiltOnTheAuthStub.php',
     ]);
 
+    $file = deptracViolationsFor($report, 'app/Features/Deliberately/FeatureBuiltOnTheAuthStub.php');
+
     expect($exit)->not->toBe(0, 'deptrac accepted a Feature built on the auth stub')
-        ->and($output)->toContain('App\Features\Deliberately\FeatureBuiltOnTheAuthStub must not depend on')
-        ->and($output)->toContain('App\Platform\Auth\HarnessTenantResolver');
+        ->and($report['Report']['Violations'])->toBeGreaterThan(0)
+        ->and($file['violations'])->toBeGreaterThan(0)
+        ->and(implode(' ', array_column($file['messages'], 'message')))
+        ->toContain('App\Platform\Auth\HarnessTenantResolver');
 });
 
 it('leaves no fixture behind in app/', function (): void {

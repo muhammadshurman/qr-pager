@@ -13,27 +13,26 @@
 # half of this, which is why the body is checked too.
 set -euo pipefail
 
-cd "$(dirname "$0")/../../.."
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/../../.."
 
-COMPOSE="${COMPOSE:-docker compose -f compose.yaml}"
-SERVICE=frankenphp
-PORT="${DRAIN_PORT:-8099}"
+# shellcheck source=_runtime.sh
+. "$HERE/_runtime.sh"
 
-say() { printf '\n== %s\n' "$1"; }
-fail() { printf '\nDRAIN PROOF FAILED: %s\n' "$1" >&2; $COMPOSE --profile app logs --no-color --tail 40 "$SERVICE" >&2 || true; exit 1; }
+COMPOSE="$RUNTIME_COMPOSE"
+SERVICE="$RUNTIME_SERVICE"
+PORT="$RUNTIME_PORT"
 
-cleanup() { $COMPOSE --profile app rm -fsv "$SERVICE" >/dev/null 2>&1 || true; }
-trap cleanup EXIT
+fail() { printf '\nDRAIN PROOF FAILED: %s\n' "$1" >&2; runtime_logs; exit 1; }
 
-say "building and starting the pinned runtime"
-$COMPOSE --profile app up -d --build --force-recreate "$SERVICE"
+trap runtime_remove EXIT
 
-# Wait for the worker to answer, rather than sleeping a guessed amount.
-for i in $(seq 1 60); do
-  if curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then break; fi
-  [ "$i" = 60 ] && fail "the server never answered /healthz"
-  sleep 1
-done
+# Build, create the roles, start, wait -- in that order. This script establishes its own
+# precondition and does not assume the Redis proof has run: they are separate CI steps
+# and are run individually during development. Before this it had NO bootstrap at all and
+# passed only because an earlier run had left the roles behind -- which is a pass that
+# depends on state outside the clone, the exact thing §6's fresh-clone clause forbids.
+runtime_start || fail "the runtime did not come up (the boot refusals, if any, are below)"
 
 say "the version actually running"
 $COMPOSE --profile app exec -T "$SERVICE" frankenphp version

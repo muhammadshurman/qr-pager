@@ -435,6 +435,12 @@ The container image was built from the fresh clone's own source, not from this m
 `.dockerignore` excludes it -- so the drain figure is a build from the repository and not from a
 developer's state.
 
+**Corrected 2026-10-26.** That run was a fresh *clone* and not a fresh *cluster*: the compose volume
+still carried the database roles from earlier runs, so both proof lines above were green for a reason the
+clone does not provide. Re-measured against `docker compose down -v` they both **failed**, which is
+finding 1 below. The figures stand only for the fixed scripts; the run that produced them did not
+establish its own precondition.
+
 **And the run earned its keep.** The Redis proof failed once, on the fresh clone, with *"/readyz did not
 recover"* against an application that was fine, then passed unchanged on the next run. The recovery loop
 broke on `readiness:refresh`'s exit code, and that command exits 0 even when it could not write -- by
@@ -443,6 +449,109 @@ iteration whatever happened, and whether the key existed came down to how fast R
 `5f081b7` by looping on `/readyz` itself; run three times after, PASS each time. **A signal that is
 always success is not a signal** -- the same shape as every unproven control on this branch, and the only
 non-deterministic thing in it.
+
+### Two §6 fresh-clone findings, both of them a pass that depended on state outside the clone
+
+`§6`: *"a pass that depends on something only present on the builder's machine is not a pass."* Both of
+these are that clause, and both were green on this machine for the same reason — the machine had state
+the clone does not.
+
+#### 1 · The runtime proofs never established their own precondition
+
+`bin/drain-proof` had **no** `db:bootstrap` at all, and `bin/redis-down-proof` ran it **after** the first
+`up`. Both passed here because an earlier run had left the roles in the cluster. Against a fresh Postgres
+volume — which is what CI starts from every run, and what `docker compose down -v` reproduces — both fail
+identically:
+
+```
+local.CRITICAL: boot refused: unsafe-runtime-role: the runtime role on connection [pgsql]
+                could not be verified (Illuminate\Database\QueryException)
+...
+worker script has failed on restart   failures: 1 … 5
+loading initial config: … failed to initialize workers: too many consecutive failures:
+worker /app/public/frankenphp-worker.php has not reached frankenphp_handle_request()
+
+REDIS-DOWN PROOF FAILED: the server never answered /healthz
+```
+
+**This is the boot check working, not failing.** `RefuseUnsafeBoot` runs on Octane's `WorkerStarting`, and
+`BootChecks::runtimeRoleIsSafe()` connects as `qrpager_app`: with the roles absent it cannot verify the
+role, and *"cannot tell"* must never read as *"it is fine"*, so it refuses. The worker exits 1, FrankenPHP
+restarts it, and after five consecutive failures the process dies.
+
+**The bootstrap therefore has to run before the first `up`, not merely before the health wait.** There is
+no window in which a later bootstrap could rescue the container: by the time the health wait times out,
+the process is already gone. The fix is `bin/_runtime.sh` — one source for *build → create the roles →
+start → wait* — called by each proof itself, because they are separate CI steps, are run individually
+during development, and **a proof that only passes second is not a proof**. A precondition duplicated is
+a precondition that drifts, which is exactly how one script came to have none.
+
+**And `depends_on` cannot express it.** The service already declares
+`depends_on: postgres: condition: service_healthy`, and that is not the missing piece: `pg_isready`
+answers *"the cluster accepts connections"*, while **role existence is an application precondition** that
+no container-level health check knows about. **Task 13 inherits the same constraint** — ECS container and
+task dependencies have the same gap — so the roles must be created by a separate task that completes
+before the service task starts, not by a health check on the database.
+
+Verified after the fix, each on its **own** fresh volume (`down -v` between them, so neither could
+benefit from the other):
+
+```
+drain-proof    roles created … in-flight 200 {"completed":true,"held_seconds":3.001} … exit code 0 … PASS
+redis-down     roles created … /readyz 200 → /healthz 200 /readyz 503 unknown 404 → /readyz 200 … PASS
+```
+
+#### 2 · `ArchitectureGuardTest` asserted on text that does not exist in CI
+
+**deptrac chooses its formatter from the environment.** `AnalyseCommand.php:99`:
+
+```php
+false !== (new Env())->get('GITHUB_ACTIONS')
+    ? GithubActionsOutputFormatter::getName()
+    : TableOutputFormatter::getName()
+```
+
+So every CI run gets the `github-actions` formatter — and with **no violations that formatter emits
+nothing at all.** Measured here, same clean tree, same exit code:
+
+| Command | stdout | stderr | exit |
+|---|---|---|---|
+| `deptrac analyse --no-progress --no-cache` | **292 bytes** (the Report table) | 0 | 0 |
+| `GITHUB_ACTIONS=true` + the same | **0 bytes** | 0 | 0 |
+| with a violation, no `GITHUB_ACTIONS` | the table, incl. `DependsOnDisallowedLayer` | 0 | 1 |
+| with a violation, `GITHUB_ACTIONS=true` | one `::error file=…::<message>` line | 0 | 1 |
+
+The case asserted `output()` contained `"Violations           0"`, so **in CI it was asserting against an
+empty string** while deptrac was perfectly happy. Reverting the assertion reproduces it exactly, and only
+under that one variable:
+
+```
+locally:                 6 passed
+GITHUB_ACTIONS=true:     1 failed, 5 passed
+  Failed asserting that '' [ASCII](length: 0) contains "Violations           0" [ASCII](length: 22)
+```
+
+**Why the obvious discriminator does not discriminate.** `Process::run` captures stderr into
+`errorOutput()`, which Pest never prints, so *"the report went to stderr"* and *"deptrac aborted before
+writing anything"* produce the **same** failure message — an empty actual and no Report block anywhere in
+the step output. The only decisive test is running the command on a clean tree and reading the streams and
+the exit code separately, which is the table above.
+
+**The fix is the property, not the text.** Every run now pins `--formatter=json`, so the environment
+cannot choose the formatter, and the assertions are the **exit code** plus a **parsed count** decoded from
+`output() . errorOutput()` — concatenated deliberately, to remove the stream as a variable, with a payload
+that will not decode failing loudly with both streams and the exit code in the message. The four fixture
+cases moved the same way: off `DependsOnDisallowedLayer` and the rendered table, onto the report's
+structured `files` map — the offending file's own violation count and the token it reached for. The class
+and the dependency are the property; the reason label and the column alignment are presentation.
+
+`composer deptrac` pins `--formatter=table` for the opposite reason: under CI's default that gate step
+printed **nothing**, which is the unproven-control shape — a step that passes and shows no evidence. The
+trade is deptrac's GitHub annotations, which this project has never had and which would, for the fixture
+runs, annotate files the test creates and deletes.
+
+**The whole suite was then re-run under CI's environment** — `GITHUB_ACTIONS=true CI=true php artisan
+test` — and is 341 passed, so nothing else in it was environment-sensitive.
 
 ### Environment note
 

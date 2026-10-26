@@ -13,40 +13,28 @@
 # and this is the proof that the code is in the running image.
 set -euo pipefail
 
-cd "$(dirname "$0")/../../.."
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/../../.."
 
-COMPOSE="${COMPOSE:-docker compose -f compose.yaml}"
-PORT="${DRAIN_PORT:-8099}"
+# shellcheck source=_runtime.sh
+. "$HERE/_runtime.sh"
 
-say() { printf '\n== %s\n' "$1"; }
-fail() { printf '\nREDIS-DOWN PROOF FAILED: %s\n' "$1" >&2; $COMPOSE --profile app logs --no-color --tail 40 frankenphp >&2 || true; exit 1; }
+COMPOSE="$RUNTIME_COMPOSE"
+PORT="$RUNTIME_PORT"
+
+fail() { printf '\nREDIS-DOWN PROOF FAILED: %s\n' "$1" >&2; runtime_logs; exit 1; }
 
 cleanup() {
   $COMPOSE start redis >/dev/null 2>&1 || true
-  $COMPOSE --profile app rm -fsv frankenphp >/dev/null 2>&1 || true
+  runtime_remove
 }
 trap cleanup EXIT
 
-say "starting the pinned runtime"
-$COMPOSE --profile app up -d --build --force-recreate frankenphp
-
-for i in $(seq 1 60); do
-  curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break
-  [ "$i" = 60 ] && fail "the server never answered /healthz"
-  sleep 1
-done
-
-# The roles, from a one-off container that DOES carry root credentials. The serving
-# container deliberately carries none -- D9's boot assertion refuses a process that can
-# resolve them -- so bootstrapping is its own process with its own credentials, which is
-# §2.1's model rather than a workaround for it.
-say "bootstrapping roles from a separate process (the server has no root credentials)"
-$COMPOSE --profile app run --rm \
-  -e DB_ROOT_USERNAME=qrpager_root -e DB_ROOT_PASSWORD=local_dev_only \
-  -e DB_OWNER_USERNAME=qrpager_owner -e DB_OWNER_PASSWORD=local_dev_only \
-  -e DB_WORKER_USERNAME=qrpager_worker -e DB_WORKER_PASSWORD=local_dev_only \
-  -e DB_MAINTENANCE_DATABASE=postgres \
-  frankenphp php artisan db:bootstrap
+# Build, create the roles, start, wait -- in that order, and the order is the fix. This
+# script used to bootstrap AFTER the first `up`, which cannot work: the worker's boot
+# check runs on WorkerStarting, refuses a role it cannot verify, and FrankenPHP dies
+# after five consecutive failures. See bin/_runtime.sh for the measurement.
+runtime_start || fail "the runtime did not come up (see the boot refusals below, if any)"
 
 say "one carrier run, so readiness has a fresh snapshot to read"
 $COMPOSE --profile app exec -T \
