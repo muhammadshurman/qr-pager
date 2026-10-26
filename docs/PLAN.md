@@ -83,6 +83,7 @@ Each ticket carries its own acceptance gate **copied verbatim from §3 below**, 
 | Date       | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 2026-10-26 | **Task 1 ships on its invariant, and `§11` gets a termination condition.** Eight reviews and nine rounds ran on one task. The decision, by the user: no further review of this branch. Eight reviews confirmed the invariant Task 1 exists to guarantee — no context means zero rows, cross-tenant access only on the four named paths — and S-1 was the last finding that touched it. Everything found since the fifth round is durability, message text and record accuracy: real, carried in `§5`, and not what this task ships on. | An open loop. `§11`'s merge rule capped nothing: "every Critical and High fixed with a regression test" with no limit on rounds, and each round of fixes produced the next round's findings — three of them inside the fix for the previous one. `§11` gained both on 2026-10-26: a **Relay rule** (a review's findings reach the user in full, with a matching count — a relay that drops a finding is itself a §11 violation, because the merge rule cannot be satisfied for a finding nobody saw) and a **Round limit** (a fix diff gets at most two review rounds; after that only a failure of the task's own stated invariant blocks the tag). The §3 gate audit the Round limit implies is `§3.1`.                                                                |
+| 2026-10-26 | **The Octane runtime is the container `dunglas/frankenphp:1.13.3-php8.4-bookworm`, pinned by full tag, and `pdo_pgsql`, `redis` and `pcntl` are installed into it and asserted at build time.** | The bare `1.13.3` tag is ambiguous — `1.13.3-php8.5` ships in the same release — so it can float onto a PHP `§1` does not lock. The static binary was the alternative and could not be executed in the build session, while a container is also how it runs on Fargate. Verified: the pinned image reports PHP 8.4.27 (ZTS) and FrankenPHP v1.13.3 / Caddy v2.11.7, and ships **none** of the three extensions. `pcntl` is load-bearing: `trap()` is how `SIGTERM` is handled, so the drain proof and the readiness carrier both fail silently without it. |
 | 2026-10-25 | Laravel 13 owns the entire backend. NestJS / Drizzle / tRPC / Better Auth removed.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Client decision (O1). Single language, single team.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 2026-10-25 | No persistent connection at launch. Web Push primary, short polling for live status.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Customer waits ~15 min with a locked screen; Push delivers with the page closed. A Reverb cluster for 300K would be ~25 nodes before the first paying tenant.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 2026-10-25 | Reverb is an optional later enhancement, never a dependency.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Laravel Echo on the client makes the swap a config change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -1066,6 +1067,64 @@ tests it has nothing to do with. It was caught by refusing to report a revert pr
 not be explained, and it is **R-016's predicted shape arriving inside the test written to prove the fix for
 S-1**. The reason is now unique per run, and both reverts were re-measured from a **dropped and rebuilt**
 database, one drop per revert.
+
+---
+
+### Task 2 — **in progress** on `task-2-api-core`. Ticket `QRPAGER-9`, epic E1
+
+**The measured starting point, at `7f1c8f6`, before a line of this task's code existed.** Written here
+first and deliberately, because `§4a`'s job is to carry what was measured and not what was hoped, and
+because two of the three invariants this task ships on (`§3.1` row 2) are **false today**:
+
+| Invariant this task ships on (`§3.1` row 2) | State at `7f1c8f6` | How that was measured |
+| --- | --- | --- |
+| A request without tenant context never reaches the DB | **Unenforced.** There is no HTTP surface and no guard; RLS returns 0 rows silently rather than refusing | `routes/web.php` holds one route, `/`. Nothing calls `assertSafeRuntimeRole()` |
+| Logs carry no SQL, bound parameters or secrets | **FALSE** | `Log::error($e->getMessage(), ['exception' => $e])` for a real `QueryException` wrote **22 lines** containing the statement text *and* the bound uuid interpolated into it. Laravel builds that message itself, in `Connection::run()`'s exception path |
+| Each named guard fails on a deliberately bad file | **No guard exists.** The C1/C2 repo guard is `R-010`; the three architecture guards are this task's | `composer.json` has `pint`, `stan`, `test`; CI adds gitleaks, migrate-twice, rollback-fingerprint and coverage. No step reads source files |
+
+And the clause `§3.2` finding 2 says no gate anywhere names — error response **bodies** — measured at the
+same commit, with `APP_DEBUG=true`, which `.env.example` ships:
+
+| Response | What the body carried |
+| --- | --- |
+| JSON 500 for a `QueryException` | the full SQL **and** the bound uuid |
+| JSON 500 for `UnsafeDatabaseRoleException` | **`qrpager_app`** and the attribute that made it unsafe — `R-021`, reproduced rather than inherited |
+| HTML 500 for the same | 862,104 bytes carrying all of it |
+
+That table is the baseline this task's gate evidence is measured against. A later "no SQL in logs" claim
+here means nothing unless it is the same measurement, re-run, returning nothing.
+
+**Runtime pin, and why the full tag.** The Octane server is
+**`dunglas/frankenphp:1.13.3-php8.4-bookworm`**, pinned **by full tag, never `1.13.3`**. The bare tag is
+ambiguous: `1.13.3-php8.5` and `1.13.3-php8.5.12` ship in the **same** FrankenPHP release, so the
+unqualified tag can float onto a PHP this project does not run and would silently violate
+`PROJECT_INSTRUCTIONS.md §1`, which locks PHP 8.4. Task 0 already paid for this once — a skeleton file
+instructing agents to install PHP 8.5 against `§1`, recorded above. Verified in-session:
+
+```
+$ docker run --rm dunglas/frankenphp:1.13.3-php8.4-bookworm php -v
+PHP 8.4.27 (cli) (built: Oct 21 2026 15:55:55) (ZTS)
+$ docker run --rm dunglas/frankenphp:1.13.3-php8.4-bookworm frankenphp version
+FrankenPHP v1.13.3 PHP 8.4.27 Caddy v2.11.7
+```
+
+`1.13.3` is also the floor Octane v2.22.0 requires (`$requiredFrankenPhpVersion = '1.13.0'`), and
+FrankenPHP's own 1.13.3 notes record worker mode broken for symlinked document roots in 1.13.0–1.13.2.
+The build is **ZTS**, which is correct rather than incidental: worker mode is threaded, and an extension
+compiled for NTS will not load in it.
+
+**Extensions are installed explicitly, and a missing one fails the build.** Measured inside that image:
+it ships `PDO`, `mbstring` and `posix`, and **not `pdo_pgsql`, `redis`, `pcntl`, `intl` or `bcmath`**.
+The Dockerfile installs `pdo_pgsql`, `redis` and `pcntl` with `install-php-extensions` and then
+**asserts** them, so an image that lacks one fails at build time instead of at runtime:
+
+- `pdo_pgsql` — without it the application cannot reach Postgres at all.
+- `redis` — the locked store for session, cache and queue (`§1`), and the rate limiter.
+- `pcntl` — **not optional.** Laravel's `trap()` is how a long-running command handles `SIGTERM`, so
+  **both** the gate's SIGTERM drain proof and the readiness carrier (`readiness:refresh`, run by
+  `schedule:work`) depend on it. A missing `pcntl` does not error; the signal is simply never trapped,
+  which is a drain that silently does not drain — the failure mode `§6`'s "fresh clone, not just a fresh
+  DB" clause exists to catch.
 
 ## 5. Accepted risks
 
