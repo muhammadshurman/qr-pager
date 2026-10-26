@@ -376,10 +376,17 @@ it('runs every callback inside a transaction it opened itself', function (): voi
 });
 
 it('never reports success when the connection under an open scope was replaced', function (): void {
-    // M-2, fix-agnostic and the same property as the H-B test above: either the write
-    // survives or something is raised. Replacing the connection mid-callback resets
-    // Laravel's transaction counter, so the COMMIT became a no-op; measured before the
-    // fix, run() returned 'callback-finished' with the write gone and nothing raised.
+    // M-2. Replacing the connection mid-callback resets Laravel's transaction counter,
+    // so the COMMIT became a no-op; measured before the fix, run() returned
+    // 'callback-finished' with the write gone and nothing raised.
+    //
+    // Scoped deliberately to THAT shape. This is not the general property "either the
+    // write survives or something is raised": measured, a callback that leaves a
+    // transaction open (a bare DB::beginTransaction() it never commits) still returns
+    // normally with the write discarded, because clearScope()'s postcondition reads
+    // the right tenant inside the still-open outer transaction and Laravel's commit at
+    // level 2 issues no COMMIT. That gap is open -- M-2 of the sixth security review --
+    // and the H-B test above carries the same caveat.
     $tenant = $this->makeTenant();
     $reference = 'RECONNECT-'.Str::random(6);
 

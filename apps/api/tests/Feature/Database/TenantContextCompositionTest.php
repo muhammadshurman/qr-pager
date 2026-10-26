@@ -335,3 +335,34 @@ it('scopes a block on the worker connection just as tightly as on the app one', 
         ->and(withTenant($alpha, fn () => $worker->table('tenants')->where('id', $beta)->count(), Composition::WORKER))
         ->toBe(0);
 });
+
+it('withholds the statement when it cannot set the tenant setting', function (): void {
+    // setGuc()'s catch had no discriminating test after the sixth round moved the
+    // clear into clearScope(): the H-B durability test had been the only thing
+    // reaching it, and it now reaches clearScope() instead. Measured — replacing
+    // setGuc()'s whole catch with `throw $e;` left 183 passing (M-3, sixth security
+    // review), so §6's "a regression test that fails without the fix" was not met for
+    // the one site that carries the tenant id as a binding.
+    //
+    // The vector is a GUC name Postgres will read and refuse to write:
+    // current_setting('nodot', true) returns NULL -- so readState() succeeds and
+    // coalesces to '' -- while set_config('nodot', ...) raises 42704. That lands on
+    // setGuc() and nowhere else.
+    $tenant = $this->makeTenant();
+
+    config(['tenancy.guc.tenant' => 'nodot']);
+
+    try {
+        withTenant($tenant, fn () => true);
+        $this->fail('a tenant scope opened with an unwritable GUC name');
+    } catch (TenantContextException $e) {
+        expect($e->getMessage())->toContain('could not be set')
+            ->and($e->getMessage())->toContain('42704')
+            // The leaked QueryException would carry the statement AND the tenant id,
+            // which Laravel interpolates into the message it builds.
+            ->and($e->getMessage())->not->toContain('set_config')
+            ->and($e->getMessage())->not->toContain('select ')
+            ->and($e->getMessage())->not->toContain($tenant)
+            ->and($e->getPrevious())->toBeNull();
+    }
+});
