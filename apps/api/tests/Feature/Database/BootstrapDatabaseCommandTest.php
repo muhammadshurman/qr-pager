@@ -338,11 +338,21 @@ it('stores the verifier it built, byte for byte', function (): void {
         expect($built)->toHaveCount(3);
 
         foreach ($built as $role => $verifier) {
-            $stored = $this->asRoot()->selectOne(
-                'select rolpassword = ? as intact from pg_authid where rolname = ?', [$verifier, $role],
-            );
+            // Read the stored value and compare IN PHP. The first version bound the
+            // verifier into the comparison -- `select rolpassword = ? ...` -- and the
+            // root connection logs bound parameters, so this test published three
+            // verifiers to the Postgres log per run:
+            //
+            //   DETAIL:  parameters: $1 = 'SCRAM-SHA-256$4096:A5bRy/...'
+            //
+            // Found by BootstrapLoggingTest's container-log assertion, which is exactly
+            // what that assertion is for. The role name is bound and is not a secret;
+            // the verifier never crosses the wire in either direction.
+            $stored = (string) $this->asRoot()->selectOne(
+                'select rolpassword from pg_authid where rolname = ?', [$role],
+            )->rolpassword;
 
-            expect((bool) $stored->intact)
+            expect(hash_equals($verifier, $stored))
                 ->toBeTrue("{$role}: pg_authid does not hold the verifier this run built, so Postgres did not accept it as one");
         }
     } finally {

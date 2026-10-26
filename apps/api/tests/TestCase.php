@@ -21,6 +21,8 @@ abstract class TestCase extends BaseTestCase
 
     private static ?string $runMarker = null;
 
+    private static ?string $suiteStartedAt = null;
+
     /**
      * Truncated between tests. audit_log is deliberately absent: it is append-only,
      * so the trigger refuses to truncate it. Tests scope their audit assertions
@@ -203,6 +205,27 @@ abstract class TestCase extends BaseTestCase
     protected function runMarker(): string
     {
         return self::$runMarker ??= 'run-'.bin2hex(random_bytes(6));
+    }
+
+    /**
+     * When this suite run began, for an assertion that reads an external log.
+     *
+     * Static and set on first use, which in practice is the first test that asks. A
+     * per-test window was the first version and it was not good enough: `docker compose
+     * logs --since` takes a second-resolution timestamp, so the window either missed a
+     * leak from a neighbouring test or caught one at random depending on how fast the
+     * suite happened to run that time. A window that starts at the run's start is
+     * deterministic.
+     *
+     * Its limitation, stated rather than discovered: it can only see tests that ran
+     * BEFORE the assertion. Pest's file order is deterministic and BootstrapLoggingTest
+     * is early, so a leak introduced in a later file is invisible here. What closes that
+     * is the same scan run as a CI step after the whole suite, which is where the
+     * ordering stops mattering.
+     */
+    protected function suiteStartedAt(): string
+    {
+        return self::$suiteStartedAt ??= (new \DateTimeImmutable('-1 second'))->format(\DateTimeInterface::RFC3339);
     }
 
     /** An action name no earlier run can have written. */
