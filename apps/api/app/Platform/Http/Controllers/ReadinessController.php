@@ -32,44 +32,61 @@ final class ReadinessController
      *
      * 200 when the last probe is fresh and both dependencies were up; 503 otherwise,
      * with `reason` naming which. Opens no database connection.
+     *
+     * ONE RETURN, with the body as a literal array, and that shape is for the generated
+     * spec rather than for taste. Scramble infers a response schema from what a
+     * controller actually returns: with the body built in a private helper the exported
+     * document described this endpoint as `{"type":"string"}` -- a generated spec that is
+     * wrong in the quietest possible way, since nothing fails and the file looks
+     * plausible. §7's own caveat said as much ("a controller must return a declared
+     * shape rather than one branch's literals"), and this is that caveat met.
      */
     public function __invoke(): JsonResponse
     {
         $snapshot = $this->store->read();
         $budget = (int) config('shedding.readiness.freshness');
         $now = time();
+        $reason = $this->reasonNotReady($snapshot, $now, $budget);
 
-        if ($snapshot === null) {
-            return $this->answer(null, 'no readiness snapshot is available', $now);
-        }
-
-        if (! $snapshot->isFresh($now, $budget)) {
-            return $this->answer($snapshot, 'the readiness snapshot is stale', $now);
-        }
-
-        if (! $snapshot->postgresUp) {
-            return $this->answer($snapshot, 'postgres is not reachable', $now);
-        }
-
-        if (! $snapshot->redisUp) {
-            return $this->answer($snapshot, 'redis is not reachable', $now);
-        }
-
-        return $this->answer($snapshot, null, $now);
-    }
-
-    private function answer(?ReadinessSnapshot $snapshot, ?string $reason, int $now): JsonResponse
-    {
         $body = [
             'ready' => $reason === null,
             'reason' => $reason,
             'probe' => $snapshot?->toArray(),
             'probe_age_seconds' => $snapshot?->ageInSeconds($now),
-            'freshness_budget_seconds' => (int) config('shedding.readiness.freshness'),
+            'freshness_budget_seconds' => $budget,
         ];
 
-        return new JsonResponse($body, $reason === null ? 200 : 503, [
-            'Cache-Control' => 'no-store',
-        ]);
+        // Two returns with LITERAL status codes, not one with a conditional. Scramble
+        // reads the status from the call, so a `$ready ? 200 : 503` expression gave it
+        // nothing to read and it fell back to describing the whole body as a string --
+        // measured. Written this way the document carries both outcomes, which is better
+        // documentation than the version that was easier to write.
+        if ($reason === null) {
+            return new JsonResponse($body, 200, ['Cache-Control' => 'no-store']);
+        }
+
+        return new JsonResponse($body, 503, ['Cache-Control' => 'no-store']);
+    }
+
+    /** Which dependency, or null when traffic should come here. */
+    private function reasonNotReady(?ReadinessSnapshot $snapshot, int $now, int $budget): ?string
+    {
+        if ($snapshot === null) {
+            return 'no readiness snapshot is available';
+        }
+
+        if (! $snapshot->isFresh($now, $budget)) {
+            return 'the readiness snapshot is stale';
+        }
+
+        if (! $snapshot->postgresUp) {
+            return 'postgres is not reachable';
+        }
+
+        if (! $snapshot->redisUp) {
+            return 'redis is not reachable';
+        }
+
+        return null;
     }
 }

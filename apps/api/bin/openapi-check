@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Fails when docs/openapi.json is not what the routes produce right now (§6.2).
+#
+# The spec is GENERATED FROM THE ROUTES and their return types, not hand-written, so the
+# only way it can be wrong is by being stale -- and a stale generated file is the
+# quietest kind of wrong, because nothing fails and the file looks plausible. This is the
+# step that makes it loud.
+#
+# Deliberately a diff and not a "does it parse": the committed file is the contract, and
+# what matters is that it still matches the code. Verified deterministic -- three
+# consecutive exports are byte-identical.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+committed="../../docs/openapi.json"
+fresh="$(mktemp -t qrpager-openapi-XXXXXX.json)"
+trap 'rm -f "$fresh"' EXIT
+
+if [ ! -f "$committed" ]; then
+  echo "openapi: $committed does not exist. Run: composer openapi" >&2
+  exit 1
+fi
+
+php artisan scramble:export --path="$fresh" >/dev/null
+
+if diff -u "$committed" "$fresh" > /dev/null; then
+  echo "openapi: docs/openapi.json matches the routes."
+  exit 0
+fi
+
+echo "openapi: docs/openapi.json is STALE. The routes or their return types changed." >&2
+echo "Run 'composer openapi' and commit the result. The diff (committed -> fresh):" >&2
+diff -u "$committed" "$fresh" >&2 || true
+exit 1

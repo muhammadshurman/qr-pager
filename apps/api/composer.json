@@ -3,7 +3,10 @@
     "name": "laravel/laravel",
     "type": "project",
     "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "keywords": [
+        "laravel",
+        "framework"
+    ],
     "license": "MIT",
     "require": {
         "php": "^8.3",
@@ -77,7 +80,9 @@
         "pint:fix": "pint",
         "stan": "phpstan analyse --memory-limit=1G",
         "deptrac": "deptrac analyse --no-progress",
-        "guard": "@php guard/bin/guard"
+        "guard": "@php guard/bin/guard",
+        "openapi": "@php artisan scramble:export",
+        "openapi:check": "bin/openapi-check"
     },
     "extra": {
         "laravel": {

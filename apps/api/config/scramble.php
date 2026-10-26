@@ -19,7 +19,24 @@ return [
      * Multiple includes or wildcards → server defaults to / and paths stay full (/api/users).
      * Override with `servers`, or use Scramble::registerApi() for separate bases.
      */
-    'api_path' => 'api',
+    /*
+     * The three paths this API serves, named explicitly rather than left at the vendor
+     * default of 'api' -- which matches nothing here, because every public route is
+     * under /v1 (PLAN.md §3, row 2) and the two probes are deliberately unversioned.
+     * With the default the exported document was EMPTY, which is the quietest way a
+     * generated spec can be wrong.
+     *
+     * Multiple includes, so the server defaults to / and the paths stay full: the spec
+     * has to say /v1/... and /healthz, because /v1 is the versioning contract D6 writes
+     * into §6 and a spec that stripped it would describe a different API.
+     *
+     * The fallback route is excluded. It matches paths that do NOT exist, so documenting
+     * it would publish a route for every unknown path at once.
+     */
+    'api_path' => [
+        'include' => ['v1', 'healthz', 'readyz'],
+        'exclude' => ['{fallbackPlaceholder}'],
+    ],
 
     /*
      * Your API domain. By default, app domain is used. This is also a part of the default API routes
@@ -30,7 +47,14 @@ return [
     /*
      * The path where your OpenAPI specification will be exported.
      */
-    'export_path' => 'api.json',
+    /*
+     * Repo-relative, not app-relative: the spec is documentation and docs/ is where this
+     * project's documentation lives (§8). `composer openapi` writes it and
+     * `composer openapi:check` re-exports to a temporary file and diffs -- so a route or
+     * a return type that changed without the spec being regenerated is a failing CI
+     * step rather than a stale file nobody opens.
+     */
+    'export_path' => '../../docs/openapi.json',
 
     /*
      * Cache configuration for the generated OpenAPI document.
@@ -49,6 +73,13 @@ return [
 
     'info' => [
         /*
+         * Named, rather than left to default to the framework's app name of "Laravel".
+         * The spec is a committed artefact that CI diffs, so what it calls the API is
+         * part of the diff.
+         */
+        'title' => 'QR Pager API',
+
+        /*
          * API version.
          */
         'version' => env('API_VERSION', '0.0.1'),
@@ -60,7 +91,7 @@ return [
     ],
 
     'ui' => [
-        'title' => null,
+        'title' => 'QR Pager API',
     ],
 
     /*
