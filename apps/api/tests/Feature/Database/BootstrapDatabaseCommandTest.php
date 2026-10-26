@@ -25,21 +25,41 @@ it('reports what it did', function (): void {
 });
 
 it('restores the role attributes if someone changes them by hand', function (): void {
+    // R-018: the convergence is proven on a THROWAWAY role, pointed at by
+    // tenancy.roles.app, instead of granting `superuser bypassrls` to the live
+    // qrpager_app and reverting in a finally. That was the worst of the three sites --
+    // an interrupted run between the two statements left a SUPERUSER application role
+    // on the cluster, and the next suite run silently repaired it, so nothing ever
+    // reported it.
     $root = $this->asRoot();
-    $root->statement('alter role qrpager_app superuser bypassrls');
 
-    try {
+    $this->withThrowawayRole(['superuser', 'bypassrls'], function (string $connection, string $role) use ($root): void {
+        // Asserted, not assumed: with the helper reverted to altering the live role,
+        // every other assertion in this test still passes -- db:bootstrap converges
+        // qrpager_app's attributes just as happily. This is the one line that can tell
+        // the two apart, and without it the revert of R-018's fix left this site green.
+        expect($role)->not->toBe('qrpager_app')
+            ->and($role)->toStartWith('qrpager_probe_');
+
+        config(['tenancy.roles.app' => $role]);
+
         $this->artisan('db:bootstrap')->assertSuccessful();
-    } finally {
-        $root->statement('alter role qrpager_app nosuperuser nobypassrls');
-    }
 
-    $attributes = $root->selectOne(
-        'select rolsuper, rolbypassrls from pg_roles where rolname = ?', ['qrpager_app'],
-    );
+        $attributes = $root->selectOne(
+            'select rolsuper, rolbypassrls from pg_roles where rolname = ?', [$role],
+        );
 
-    expect((bool) $attributes->rolsuper)->toBeFalse()
-        ->and((bool) $attributes->rolbypassrls)->toBeFalse();
+        expect((bool) $attributes->rolsuper)->toBeFalse()
+            ->and((bool) $attributes->rolbypassrls)->toBeFalse();
+
+        // And the live role, which this test no longer touches, is still as it was.
+        $live = $root->selectOne(
+            'select rolsuper, rolbypassrls from pg_roles where rolname = ?', ['qrpager_app'],
+        );
+
+        expect((bool) $live->rolsuper)->toBeFalse()
+            ->and((bool) $live->rolbypassrls)->toBeFalse();
+    });
 });
 
 it('creates the database when it does not exist yet', function (): void {
@@ -267,7 +287,15 @@ it('withholds the statement text when a role statement fails', function (): void
 
     expect($caught)->not->toBeNull('an invalid role statement was accepted')
         ->and($caught->getMessage())->toContain('Could not create or alter role [qrpager_app]')
-        ->and($caught->getMessage())->toContain('statement text is withheld')
+        // R-013: the message now distinguishes the two phases, and this is the
+        // EXECUTE one -- the statement was built and the cluster rejected it.
+        ->and($caught->getMessage())->toContain('The statement was sent and failed')
+        ->and($caught->getMessage())->toContain('text is withheld')
+        // ...and names the real SQLSTATE. 42601 is a syntax error, which is what an
+        // out-of-range CONNECTION LIMIT produces. Before R-013 this clause read
+        // "(SQLSTATE 42601)" too, because getCode() happens to agree with errorInfo[0]
+        // for statement errors -- it is connection failures where it prints 7.
+        ->and($caught->getMessage())->toContain('(SQLSTATE 42601)')
         ->and($caught->getMessage())->not->toContain($password)
         ->and($caught->getMessage())->not->toContain('SCRAM-SHA-256')
         ->and($caught->getMessage())->not->toContain('ALTER ROLE')
@@ -310,11 +338,21 @@ it('stores the verifier it built, byte for byte', function (): void {
         expect($built)->toHaveCount(3);
 
         foreach ($built as $role => $verifier) {
-            $stored = $this->asRoot()->selectOne(
-                'select rolpassword = ? as intact from pg_authid where rolname = ?', [$verifier, $role],
-            );
+            // Read the stored value and compare IN PHP. The first version bound the
+            // verifier into the comparison -- `select rolpassword = ? ...` -- and the
+            // root connection logs bound parameters, so this test published three
+            // verifiers to the Postgres log per run:
+            //
+            //   DETAIL:  parameters: $1 = 'SCRAM-SHA-256$4096:A5bRy/...'
+            //
+            // Found by BootstrapLoggingTest's container-log assertion, which is exactly
+            // what that assertion is for. The role name is bound and is not a secret;
+            // the verifier never crosses the wire in either direction.
+            $stored = (string) $this->asRoot()->selectOne(
+                'select rolpassword from pg_authid where rolname = ?', [$role],
+            )->rolpassword;
 
-            expect((bool) $stored->intact)
+            expect(hash_equals($verifier, $stored))
                 ->toBeTrue("{$role}: pg_authid does not hold the verifier this run built, so Postgres did not accept it as one");
         }
     } finally {

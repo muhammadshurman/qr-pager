@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Database\TenantTables;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Schema;
 
@@ -14,10 +15,16 @@ use Tests\Support\Schema;
  */
 
 /**
- * Tables with no tenant scope column. Adding one here is a deliberate act that a
- * reviewer sees in the diff, and it must be justified in PLAN.md §2.4.
+ * Tables with no tenant scope column. Adding one is a deliberate act that a reviewer
+ * sees in the diff, and it must be justified in PLAN.md §2.4.
+ *
+ * Read from App\Domain\Database\TenantTables rather than declared here, since Task 2:
+ * the runtime tenant-scope guard needs the same two lists, and a list the application
+ * cannot read is a list the guard would have had a second copy of. A table in one copy
+ * and not the other is precisely the gap this file exists to close, so there is now one
+ * registry and the tests below pin it against pg_catalog in both directions.
  */
-const GLOBAL_TABLES = ['failed_jobs', 'migrations', 'password_reset_tokens', 'users'];
+const GLOBAL_TABLES = TenantTables::GLOBAL;
 
 it('has every tenant-scoped table under ENABLE and FORCE row level security', function (): void {
     $unprotected = DB::connection('pgsql_owner')->select(<<<'SQL'
@@ -72,6 +79,19 @@ it('accounts for every table: either tenant-scoped or named in the global allowl
 it('keeps the global allowlist honest: nothing on it carries a tenant_id', function (): void {
     expect(array_values(array_intersect(GLOBAL_TABLES, Schema::tenantScopedTables())))->toBe([]);
     expect(array_values(array_diff(GLOBAL_TABLES, Schema::allTables())))->toBe([]);
+});
+
+it('pins the tenant registry against pg_catalog, in both directions', function (): void {
+    // The registry the runtime guard matches statements against, checked against the
+    // schema itself rather than against the migration that wrote it. A tenant table
+    // that arrives without being added here would be a table the guard lets through
+    // unscoped; a name here that is not a tenant table would make the guard refuse
+    // statements it has no business refusing.
+    expect(TenantTables::TENANT)->toBe(Schema::tenantScopedTables());
+
+    // And the two lists together account for every table, with nothing in both.
+    expect(TenantTables::all())->toBe(Schema::allTables())
+        ->and(array_values(array_intersect(TenantTables::TENANT, TenantTables::GLOBAL)))->toBe([]);
 });
 
 it('pins the global allowlist as an exact set, not just a consistent one', function (): void {

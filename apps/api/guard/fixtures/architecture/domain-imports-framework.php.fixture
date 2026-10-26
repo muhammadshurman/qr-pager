@@ -1,0 +1,16 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Deliberately;
+
+use Illuminate\Support\Facades\DB;
+
+/** Guard 1: domain logic imports no framework or DB code. */
+final class BadDomainDependency
+{
+    public function countTenants(): int
+    {
+        return DB::table('tenants')->count();
+    }
+}

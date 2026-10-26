@@ -52,6 +52,16 @@ composer stan
 php artisan test
 ```
 
+**Run them through `composer gate`, which also runs `guard`, `deptrac` and
+`openapi:check` and tees every line to `storage/logs/gate-<utc>.log`.** The three above
+stay correct by hand; the wrapper is the form that leaves evidence. A full suite run on
+`task-2-api-core` went red once at 363 passed and the failing test's identity was never
+captured, because what was kept was a one-line summary rather than the output — so the
+honest state of the suite was "one unexplained" until a run whose output went to a file
+identified it in one sitting (two concurrent runners and an unserialized `TRUNCATE`,
+`PLAN.md` R-049). A gate you cannot read afterwards is a gate you have to re-run to
+learn anything from.
+
 First run on a machine, or after `docker compose down -v`: the cluster's superuser is
 `qrpager_root` and the three application roles are created by
 
@@ -62,6 +72,38 @@ php artisan migrate --database=pgsql_owner    # migrations run as the owner, nev
 
 `php artisan test` runs both of those itself, so a fresh clone needs only
 `cp .env.example .env`, `php artisan key:generate` and `docker compose up -d`.
+
+**And one more, which this file used to omit:** from the repo root,
+
+```
+git config core.hooksPath .githooks
+```
+
+`core.hooksPath` is **per clone** and git does not read `.githooks/` without it, so **both**
+hooks there are **inert in every fresh clone until this is run** — the pre-commit
+`gitleaks protect` scan and the `commit-msg` conventional-commit check (which is why 8 of
+`task-2-api-core`'s 36 subjects exceed its 72-character limit) —
+`PROJECT_INSTRUCTIONS.md §10 › REPO` states "gitleaks in pre-commit and in CI" as a fact, and only
+the CI half was ever true by default. Found on 2026-10-26 with 36 commits on
+`task-2-api-core` none of which had been scanned pre-commit (history is clean —
+`gitleaks detect` over all 83 commits finds nothing — but that is luck, not the control).
+**Verify it bites, and the exact string matters.** gitleaks' `github-fine-grained-pat` rule is
+length-exact — `github_pat_` followed by **exactly 82** word characters — so a plausible-looking
+shorter token reports `no leaks found`, exits 0 and the commit LANDS, which reads as "the hook is
+still inert": the very condition this step exists to rule out. Measured on 2026-10-27 with 65 and
+71 characters after the prefix (both reported no leaks, both committed) and with 82 (`leaks found:
+1`, exit 1, nothing committed). So:
+
+```
+python3 -c "import random,string; print('github_pat_'+''.join(random.choice(string.ascii_letters+string.digits) for _ in range(82)))" > leak.txt
+git add leak.txt && .githooks/pre-commit   # must print 'leaks found: 1' and exit 1
+git reset -q HEAD leak.txt && rm leak.txt
+```
+
+Run the hook directly rather than committing, so a pass does not leave a commit to undo. The hook
+fails **closed** if gitleaks is not installed — `set -e` plus a 127 exit — which was checked rather
+than assumed.
+
 The role model and why `root` is separate from `owner` are in `docs/PLAN.md §2.1`.
 
 From the repo root, once the workspace exists (Task 8+):

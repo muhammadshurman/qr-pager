@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# "SIGTERM drains in-flight requests and exits 0 (proven against the compiled app)"
+# -- PLAN.md §3, row 2. Q7: this runs in CI, not only locally.
+#
+# Against the real pinned image, because that is what "the compiled app" means here:
+# FrankenPHP's drain is Go-side and Octane's worker loop exits through
+# frankenphp_handle_request() returning false. Neither of those exists in `php artisan
+# test`, so a test could only have asserted that the code which would drain is present.
+#
+# The proof: hold one slow request in flight, send SIGTERM while it is running, and then
+# require BOTH of the clause's halves -- the in-flight request got its real response, and
+# the process exited 0. A container that exits 0 after dropping the request would pass
+# half of this, which is why the body is checked too.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/../../.."
+
+# shellcheck source=_runtime.sh
+. "$HERE/_runtime.sh"
+
+COMPOSE="$RUNTIME_COMPOSE"
+SERVICE="$RUNTIME_SERVICE"
+PORT="$RUNTIME_PORT"
+
+fail() { printf '\nDRAIN PROOF FAILED: %s\n' "$1" >&2; runtime_logs; exit 1; }
+
+trap runtime_remove EXIT
+
+# Build, create the roles, start, wait -- in that order. This script establishes its own
+# precondition and does not assume the Redis proof has run: they are separate CI steps
+# and are run individually during development. Before this it had NO bootstrap at all and
+# passed only because an earlier run had left the roles behind -- which is a pass that
+# depends on state outside the clone, the exact thing §6's fresh-clone clause forbids.
+runtime_start || fail "the runtime did not come up (the boot refusals, if any, are below)"
+
+say "the version actually running"
+$COMPOSE --profile app exec -T "$SERVICE" frankenphp version
+$COMPOSE --profile app exec -T "$SERVICE" php -v | head -1
+# The extensions the base image does NOT ship, so a build that silently lost one is a
+# failure here rather than at the first query.
+#
+# ONE exec, asking PHP directly, with a sentinel line -- not five `php -m | grep -q`
+# pipelines, which is what this was and which could not tell "the extension is absent"
+# from "I did not manage to read the whole list". `grep -q` closes the pipe on its first
+# match, there was one exec per extension, and `pipefail` turned any producer-side
+# failure into "missing from the image". Measured: `extension_loaded("redis")` says
+# PRESENT on the same image where a short read reports MISSING, and `pdo_pgsql` is line
+# 21 of `php -m` while `redis` is line 27 -- so a stream cut short finds the first and
+# misses the second, which is exactly what CI reported.
+#
+# The MISSING= line is the part that matters. If the stream is truncated the sentinel is
+# gone, and that is reported as a failure to MEASURE rather than as a missing extension.
+# A check that cannot tell those apart should not be allowed to claim the alarming one.
+say "the extensions the base image does not ship"
+
+report="$($COMPOSE --profile app exec -T "$SERVICE" php -r '
+$want = ["pdo_pgsql", "redis", "pcntl", "intl", "bcmath"];
+$missing = [];
+foreach ($want as $e) {
+    $ok = extension_loaded($e);
+    printf("  %-10s %s\n", $e, $ok ? "present" : "MISSING");
+    if (! $ok) { $missing[] = $e; }
+}
+printf("MISSING=%s\n", implode(",", $missing));
+')" || fail "could not query the image for its extensions -- a failure to MEASURE, not a missing extension"
+
+printf '%s\n' "$report" | grep -v '^MISSING='
+
+verdict="$(printf '%s\n' "$report" | grep '^MISSING=' || true)"
+[ -n "$verdict" ] || fail "the extension query returned no verdict line -- a short read, not a missing extension"
+[ "$verdict" = "MISSING=" ] || fail "extensions genuinely missing from the image: ${verdict#MISSING=}"
+
+say "holding one slow request in flight"
+body="$(mktemp)"; code="$(mktemp)"
+( curl -sS --max-time 30 -o "$body" -w '%{http_code}' "http://127.0.0.1:${PORT}/drain/slow" > "$code" 2>/dev/null ) &
+curl_pid=$!
+
+# Long enough that the request is certainly inside usleep(), short enough that it is
+# certainly not finished: the route holds for 3s.
+sleep 1
+
+container="$($COMPOSE --profile app ps -q "$SERVICE")"
+[ -n "$container" ] || fail "the container is not running"
+
+say "SIGTERM, mid-request"
+docker kill --signal=TERM "$container" >/dev/null
+
+say "waiting for the in-flight request"
+wait "$curl_pid" || fail "the in-flight request did not complete"
+
+got_code="$(cat "$code")"
+got_body="$(cat "$body")"
+rm -f "$body" "$code"
+
+printf 'in-flight response: %s %s\n' "$got_code" "$got_body"
+
+[ "$got_code" = "200" ] || fail "the in-flight request answered $got_code, not 200"
+printf '%s' "$got_body" | grep -q '"completed":true' || fail "the in-flight response was not the real one: $got_body"
+
+say "waiting for the process to exit"
+exit_code="$(docker wait "$container")"
+
+printf 'exit code: %s\n' "$exit_code"
+[ "$exit_code" = "0" ] || fail "the process exited $exit_code, not 0"
+
+# New connections after SIGTERM are refused rather than served: a server that keeps
+# accepting is not draining, it is just slow to die. Not asserted as a hard clause --
+# by this point the process has already exited, so there is nothing to connect to.
+say "PASS: the in-flight request completed with its real body, and the process exited 0"

@@ -8,6 +8,7 @@ use App\Domain\Audit\AuditActorType;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -32,12 +33,14 @@ use Throwable;
  *
  * Five places issue a statement. Four of them -- setGuc(), readState(), clearScope()
  * and insertBypassAudit() -- convert a driver error into a TenantContextException
- * carrying no statement text and no bindings (§4 › Edge & ops). The fifth is the
- * rollBack() inside assertScopeSurvived(), which deliberately SWALLOWS: it runs while
- * already reporting a failure, and replacing that failure with this one would hide the
- * problem the caller needs to see. Nothing escapes it, so nothing leaks; what it costs
- * is that a failed reset is not reported, which is why the refusal below says what it
- * attempted rather than what it achieved (F6, seventh security review).
+ * carrying no statement text and no bindings (§4 › Edge & ops), and each reads the real
+ * SQLSTATE through DriverError rather than getCode(), which returns the integer 7 for
+ * every connection-level failure (R-013). The fifth is the rollBack() inside
+ * assertScopeSurvived(), which deliberately SWALLOWS: it runs while already reporting a
+ * failure, and replacing that failure with this one would hide the problem the caller
+ * needs to see. Nothing escapes it, so nothing leaks; what it costs is that a failed
+ * reset is not reported, which is why every one of these refusals states what it
+ * ATTEMPTED and never what it achieved (F6, seventh security review; R-023).
  *
  * Neither helper trusts the connection it was handed. readState() reads the role's
  * rolsuper and rolbypassrls in the same round trip as the GUCs, and both helpers
@@ -69,6 +72,27 @@ class TenantContext
      * @var array<string, int>
      */
     private array $openScopes = [];
+
+    /**
+     * Has a scope this object opened been left open on $connection?
+     *
+     * Read by TenantScopeGuard, and this is the one question it is sound to ask of
+     * $openScopes. It is a record of what this object DID, not a mirror of what is in
+     * force: it cannot name a tenant, so the guard can use it to refuse "no scope was
+     * ever opened here" and cannot use it to conclude anything about which tenant is
+     * in force. The failure where a scope is opened and then lost mid-callback stays
+     * owned by clearScope()'s read-back and assertScopeSurvived()'s depth check, which
+     * ask Postgres rather than PHP.
+     *
+     * A stale entry would make the guard LOOSER rather than stricter, which is the
+     * opposite direction from every other reader of this array. It is not reachable:
+     * the finally in run() decrements unconditionally, and if the process dies before
+     * it, so does this object.
+     */
+    public function hasOpenScope(string $connection): bool
+    {
+        return isset($this->openScopes[$connection]);
+    }
 
     /** What app.tenant_id holds on $connection right now; null when nothing is in force. */
     public function current(?string $connection = null): ?string
@@ -283,6 +307,67 @@ class TenantContext
         $bypass = DatabaseRoles::guc('bypass');
         $previousBypass = $active['bypass'];
 
+        // R-005, D7. The audit row below is written INSIDE the transaction on purpose,
+        // so a bypass that commits always carries it -- and the price is that a bypass
+        // which THROWS rolls that row back with the work and leaves no trace at all.
+        // A log line is the one record a rollback cannot take with it.
+        //
+        // A dedicated channel, not a second database connection: a connection that
+        // survives the rollback would be a new §2.1 surface and a new failure mode,
+        // which is what D7 rejected and what the readiness carrier rejected for R-012.
+        //
+        // Wrapped around the transaction rather than inside it, so a failure of the
+        // COMMIT itself is caught too -- a bypass whose work is discarded by a commit
+        // failure is exactly as untraceable as one whose callback threw.
+        try {
+            return $this->runBypass($db, $bypass, $previousBypass, $reason, $connection, $callback);
+        } catch (Throwable $failure) {
+            $this->reportFailedBypass($reason, $connection, $failure);
+
+            throw $failure;
+        }
+    }
+
+    /**
+     * The failed-bypass trace: the reason, and nothing that could carry tenant data.
+     *
+     * The REASON is the point -- it is the caller's own words about why a cross-tenant
+     * block was opened, it is what the audit row would have held, and §2.10 requires it
+     * to be given. Everything else here is about this process: the connection name, the
+     * throwable's class, and the SQLSTATE through DriverError rather than getCode().
+     *
+     * The throwable's MESSAGE is deliberately absent, and so is the exception object.
+     * Laravel interpolates bindings into QueryException::getMessage() and renders the
+     * statement into any trace, so passing either would put SQL in this line and leave
+     * the redaction processor as the only thing between it and the log. The processor
+     * is there and it works; this is the layer that means it does not have to.
+     */
+    private function reportFailedBypass(string $reason, string $connection, Throwable $failure): void
+    {
+        $sqlstate = DriverError::sqlStateForMessage($failure);
+
+        Log::channel('tenancy')->critical('tenant bypass failed and left no audit row', [
+            'reason' => $reason,
+            'connection' => $connection,
+            'exception' => $failure::class,
+            'sqlstate' => $sqlstate === '' ? null : $sqlstate,
+        ]);
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @return TReturn
+     */
+    private function runBypass(
+        ConnectionInterface $db,
+        string $bypass,
+        string $previousBypass,
+        string $reason,
+        string $connection,
+        Closure $callback,
+    ): mixed {
         return $db->transaction(function () use ($db, $bypass, $previousBypass, $reason, $connection, $callback): mixed {
             $depth = $db->transactionLevel();
 
@@ -348,7 +433,7 @@ class TenantContext
                 [DatabaseRoles::guc('tenant'), '', DatabaseRoles::guc('bypass'), ''],
             );
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('read', (string) $e->getCode());
+            throw TenantContextException::statementFailed('read', DriverError::sqlStateForMessage($e));
         }
 
         // current_user always has a pg_roles row, so no row is a broken connection
@@ -442,7 +527,7 @@ class TenantContext
                 [$guc, '', $guc, $previous],
             );
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('cleared', (string) $e->getCode());
+            throw TenantContextException::statementFailed('cleared', DriverError::sqlStateForMessage($e));
         }
 
         $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
@@ -495,7 +580,7 @@ class TenantContext
                 [$guc, '', $guc, ''],
             );
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('cleared', (string) $e->getCode());
+            throw TenantContextException::statementFailed('cleared', DriverError::sqlStateForMessage($e));
         }
 
         $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
@@ -511,7 +596,7 @@ class TenantContext
             $db->select('select set_config(?, ?, true)', [$name, $value]);
         } catch (Throwable $e) {
             throw TenantContextException::statementFailed(
-                $value === '' ? 'cleared' : 'set', (string) $e->getCode(),
+                $value === '' ? 'cleared' : 'set', DriverError::sqlStateForMessage($e),
             );
         }
     }
@@ -526,7 +611,7 @@ class TenantContext
                 'context' => json_encode(['reason' => $reason], JSON_THROW_ON_ERROR),
             ]);
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('audited', (string) $e->getCode());
+            throw TenantContextException::statementFailed('audited', DriverError::sqlStateForMessage($e));
         }
     }
 }

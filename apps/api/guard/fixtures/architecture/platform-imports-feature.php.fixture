@@ -1,0 +1,13 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Platform\Deliberately;
+
+use App\Features\Deliberately\SomeFeatureService;
+
+/** Guard 2: the platform layer imports no feature modules. */
+final class BadPlatformDependency
+{
+    public function __construct(private readonly SomeFeatureService $feature) {}
+}

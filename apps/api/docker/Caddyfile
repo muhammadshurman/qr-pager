@@ -1,0 +1,32 @@
+# Minimal, and deliberately not Octane's stub: that one carries Mercure directives, a
+# log filter for a Mercure query parameter and a file watcher, none of which this project
+# uses. What is here is the worker and the document root.
+{
+	# No ACME in a container that is reached over plain HTTP by a test and by a load
+	# balancer. TLS termination is Task 13's (the ALB), not this image's.
+	auto_https off
+	admin off
+
+	frankenphp {
+		worker {
+			file /app/public/frankenphp-worker.php
+			# Two, so the drain proof can hold one request in flight and still be
+			# answered on another thread -- which is what a drain has to do.
+			num 2
+		}
+	}
+}
+
+:8080 {
+	log {
+		level ERROR
+	}
+
+	root * /app/public
+	encode zstd br gzip
+
+	php_server {
+		index frankenphp-worker.php
+		try_files {path} frankenphp-worker.php
+	}
+}

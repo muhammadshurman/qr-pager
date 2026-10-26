@@ -86,6 +86,50 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Ceilings on the values above
+    |--------------------------------------------------------------------------
+    |
+    | R-014. Removing the wall-clock UPPER bound from the timeout firing proofs (F10)
+    | was right -- an upper bound on elapsed time measures the host, not Postgres, and
+    | it failed the gate at 27.6s -- but it left nothing at all to catch a timeout
+    | configured far too high. Such a value is not a failing test; it is a suite that
+    | HANGS until the harness kills it, because the firing proof waits the configured
+    | duration out. The row also records that the SHOW-comparison test cannot catch it:
+    | that test compares current_setting against the SAME config value, so it catches
+    | role-vs-config drift only.
+    |
+    | So the ceiling is asserted where the value is WRITTEN -- db:bootstrap refuses to
+    | apply one past it -- and since TestCase::setUp runs db:bootstrap, a far-too-high
+    | value fails in the first test rather than hanging the one that waits for it.
+    |
+    | The numbers are a sanity bound, not a tuning target: generous enough that any
+    | deliberate change to the values above still passes, tight enough that a unit slip
+    | (5m where 5s was meant) does not. '0' means "no timeout" and is checked against
+    | the ceiling for its own setting rather than being treated as infinite -- the owner
+    | has statement_timeout = 0 deliberately (PLAN.md §2.1), so that pair is allowed by
+    | name below.
+    |
+    */
+
+    'timeout_ceilings' => [
+        'statement_timeout' => '30s',
+        'lock_timeout' => '10s',
+        'idle_in_transaction_session_timeout' => '120s',
+    ],
+
+    /*
+    | The one pair allowed to exceed its ceiling, by role and setting, because it is
+    | the documented design rather than an oversight: a migration may legitimately
+    | build an index for minutes and the owner connection is never internet-facing.
+    | Named as a pair so "no statement timeout" cannot quietly become true of the app
+    | role.
+    */
+    'timeout_ceiling_exemptions' => [
+        'owner' => ['statement_timeout'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Per-role connection limits, applied with ALTER ROLE
     |--------------------------------------------------------------------------
     |

@@ -1,0 +1,11 @@
+<?php
+
+// Everything forbidden, in comments only. The repo has a dozen of these -- TenantContext,
+// TenantContextException and config/tenancy.php all explain C2 by spelling it out -- and a
+// text-matching guard would flag the documentation of the rule it enforces.
+//
+// select set_config('app.current_tenant_id', $x, false) and SET LOCAL app.whatever
+/* set_config(?, ?, false) */
+/** @see set_config(?, ?, false) */
+
+$harmless = 1;

@@ -1,0 +1,8 @@
+<?php
+
+// A deliberately bad statement: it reads rows from the append-only table with no
+// filter at all. Lives here, with a .fixture extension, because the scan walks
+// tests/ -- a bad shape written inline in the test file would be flagged by the
+// very scan it exists to prove, which is what the repo guard already learned.
+
+expect($this->asRoot()->table('audit_log')->count())->toBe(0);

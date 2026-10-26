@@ -2,7 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Task branches as well as main, added 2026-10-26. Until now CI triggered on pushes
+    # to main, on task-* TAGS, and on pull requests -- so a task branch produced NO
+    # VERDICT AT ALL until the moment its PR opened. `task-2-api-core` reached thirty
+    # commits that way.
+    #
+    # That makes R-001's working rule unperformable in the only window where it is cheap
+    # to act on: "never merge until both required checks are green" cannot be followed
+    # against a verdict that does not exist yet, and discovering a CI-only failure when
+    # the PR opens means discovering it publicly, after the work is finished, instead of
+    # on the commit that caused it. This branch had two such failures (see
+    # docs/tickets/QRPAGER-9-progress.md) and neither could have been seen before the PR.
+    #
+    # The tag trigger stays: it is what gives the completion tag its own verdict in its
+    # own concurrency group, which is how the task-1 cancellation was diagnosed.
+    branches: [main, 'task-*']
     tags: ['task-*']
   pull_request:
     branches: [main]
@@ -121,6 +135,23 @@ jobs:
 
       - run: composer stan
 
+      # The three named architecture guards (PLAN.md §3, row 2). Proven to fail on a
+      # deliberately bad file by tests/Feature/Architecture/ArchitectureGuardTest.php,
+      # which runs this same config against the fixtures in guard/fixtures/architecture.
+      - run: composer deptrac
+
+      # C1 and C2, enforced mechanically rather than by review (§4 › Postgres traps).
+      # Proven to fail on a deliberately bad file by
+      # tests/Feature/Architecture/RepoGuardTest.php against guard/fixtures/repo.
+      - run: composer guard
+
+      # The OpenAPI document is GENERATED from the routes and committed, so the only way
+      # it can be wrong is by being stale -- and a stale generated file is the quietest
+      # kind of wrong, because nothing fails and the file looks plausible. This step
+      # re-exports and diffs (§6.2's third shared contract). Proven to fail on a
+      # modified spec by tests/Feature/Http/OpenApiSpecTest.php.
+      - run: composer openapi:check
+
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
 
@@ -154,8 +185,90 @@ jobs:
           diff -u /tmp/schema-before.txt /tmp/schema-after.txt
           echo "schema identical after rollback and re-apply"
 
+      # "Boot refuses an unsafe DB role (exit 1, reason logged)" as a real process with
+      # a real exit code, which is the only way an exit code can be checked. APP_DEBUG
+      # is forced false because §4 forbids it outside `local` and .env.example ships it
+      # true -- the refusal is correct and would make this step fail for the wrong reason.
+      - name: Boot checks pass for a correctly configured process
+        run: APP_DEBUG=false php artisan boot:check
+
+      - name: Boot refuses a process that can resolve owner credentials
+        run: |
+          set +e
+          APP_ENV=production APP_DEBUG=false DB_OWNER_PASSWORD=present php artisan boot:check
+          code=$?
+          set -e
+          echo "boot:check exited $code (expected 1)"
+          test "$code" = "1"
+
+      # R-009, the half the in-suite assertion cannot cover. The container-log case in
+      # BootstrapLoggingTest can only see tests that ran BEFORE it, because Pest's file
+      # order is deterministic and that file is early. Here the whole run is inside the
+      # window, so a verifier leaked by any test at all is caught.
+      #
+      # ALTER SYSTEM rather than ALTER DATABASE: the in-suite cases set and RESET the
+      # database-level value in their own finally, which would undo a database-level
+      # setting partway through the run.
+      - name: Log every statement, so the scan below cannot pass vacuously
+        run: |
+          PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
+            -c "alter system set log_statement = 'all'" -c "select pg_reload_conf()"
+
       - name: Tests against real Postgres and Redis
         run: php artisan test
 
+      - name: No role verifier reached the Postgres log, across the whole run
+        run: |
+          docker logs ${{ job.services.postgres.id }} > /tmp/pg.log 2>&1
+          found=$(grep -c 'SCRAM-SHA-256' /tmp/pg.log || true)
+          echo "SCRAM-SHA-256 occurrences in the Postgres log: $found (expected 0)"
+          if [ "$found" != "0" ]; then
+            grep -n 'SCRAM-SHA-256' /tmp/pg.log | head -5 | sed 's/SCRAM-SHA-256\$[^ ]*/SCRAM-SHA-256$[redacted]/g'
+            exit 1
+          fi
+          PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
+            -c "alter system reset log_statement" -c "select pg_reload_conf()"
+
       - name: Unit coverage on the code this branch adds
         run: php artisan test --coverage --min=90
+
+  runtime:
+    name: FrankenPHP runtime — SIGTERM drain and a Redis outage
+    runs-on: ubuntu-latest
+
+    # Q7: "the drain proof runs in CI, not only locally." It cannot run in the gates job:
+    # `php artisan test` has no FrankenPHP, no worker loop and no process to signal, so a
+    # test there could only assert that the code which WOULD drain is present. Both
+    # proofs here run against the pinned image -- which is what "proven against the
+    # compiled app" means.
+    #
+    # One job for both, so the image is built once: the second proof reuses the layers of
+    # the first.
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Postgres and Redis, from the project's own compose file
+        run: docker compose -f compose.yaml up -d --wait postgres redis
+
+      # ONE place where freshness is established, and it is mechanical rather than
+      # hoped for. Each proof builds the image itself so it can be run standalone, so
+      # the job otherwise builds twice and the SECOND build is legitimately all-CACHED
+      # -- which reads exactly like a stale cache in the log and is not one. Building
+      # once here with --no-cache --pull means the proofs' own builds are cached off a
+      # build that cannot be stale, and there is a single step to look at when asking
+      # whether the image under test is the current Dockerfile.
+      - name: Build the runtime from nothing, so no proof can run against a stale layer
+        run: docker compose -f compose.yaml --profile app build --no-cache --pull frankenphp
+
+      # Redis first: it leaves the cluster and Redis running, which the drain proof then
+      # reuses. The other order would have the drain proof's cleanup remove the service
+      # between them.
+      - name: Redis is taken down and the API keeps serving
+        run: apps/api/bin/redis-down-proof
+
+      - name: SIGTERM drains in-flight requests and exits 0
+        run: apps/api/bin/drain-proof
+
+      - name: The runtime's logs, on failure
+        if: failure()
+        run: docker compose -f compose.yaml --profile app logs --no-color --tail 200 || true

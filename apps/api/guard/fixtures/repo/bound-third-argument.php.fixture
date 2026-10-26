@@ -1,0 +1,5 @@
+<?php
+
+// C2: "third arg is always true" means the LITERAL true. Bound, it can be false at
+// runtime and nothing in the source says so.
+$db->select('select set_config(?, ?, ?)', ['app.tenant_id', $tenant, $scope]);

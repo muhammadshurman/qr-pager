@@ -1,0 +1,7 @@
+<?php
+
+// The same read, filtered -- and filtered across a line break on purpose, so the
+// scan is proven to work on STATEMENTS and not on lines.
+
+expect($this->asRoot()->table('audit_log')
+    ->where('action', $this->auditAction('probe'))->count())->toBe(0);

@@ -4,6 +4,7 @@
 .env.backup
 .env.production
 .phpactor.json
+.deptrac.cache
 .phpunit.result.cache
 /.codex
 /.cursor/
@@ -25,3 +26,4 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+report.md

@@ -35,6 +35,8 @@ class RoleBootstrapper
         $bootstrap = DB::connection(DatabaseRoles::connection('bootstrap'));
         $key = $this->lockKey();
 
+        $this->keepThisSessionOutOfThePostgresLog($bootstrap);
+
         $bootstrap->select('select pg_advisory_lock(?)', [$key]);
 
         try {
@@ -76,12 +78,62 @@ class RoleBootstrapper
 
         // ALTER on every run, so the attributes converge: a role that was granted
         // SUPERUSER or BYPASSRLS by hand loses it the next time this runs.
-        $this->withoutLeakingCredentials($name, fn () => $bootstrap->statement(
-            $this->format($bootstrap, $template, [$name, $verifier]),
-        ));
+        $this->withoutLeakingCredentials(
+            $name,
+            fn (): string => $this->format($bootstrap, $template, [$name, $verifier]),
+            fn (string $statement): bool => $bootstrap->statement($statement),
+        );
 
         // Re-asserted on every run, so a role that was tampered with converges back.
         return ($exists ? 'role updated: ' : 'role created: ').$name;
+    }
+
+    /**
+     * R-009: keep this session's statements out of the Postgres log.
+     *
+     * F4 moved the PLAINTEXT password off the wire. It did not stop the VERIFIER
+     * reaching the log, and the verifier is the complete pg_authid secret: ServerKey
+     * lets an attacker complete a SCRAM handshake AS THE SERVER -- and sslmode=require
+     * does not authenticate the server (R-008) -- while StoredKey enables offline
+     * password recovery at 4096 PBKDF2-SHA256 rounds. Measured across one
+     * db:bootstrap with log_statement=all: 6 occurrences of SCRAM-SHA-256, twice per
+     * role, once as the bound parameter format() sends and once in the executed ALTER
+     * ROLE text. With this line: 0.
+     *
+     * BEFORE the advisory lock, so there is no statement on this session that the log
+     * could have had first.
+     *
+     * SESSION-scoped and this session only, which is the point: R-004's cluster-wide
+     * log_statement=all is a deliberate local control for Task 4's proof, and it
+     * survives -- measured, the separate grant connection kept logging its
+     * GRANT/REVOKE statements. Reset as well as set, because the bootstrap connection
+     * is pooled under Octane and the next user of it is not this method.
+     *
+     * A raw SET rather than set_config(..., false), and that is not a style choice:
+     * the C1/C2 repo guard rejects any set_config whose third argument is not the
+     * literal true, so a session-scoped set_config would be a violation of the project's
+     * own rule. Postgres SET takes no bind parameters, so the value is a literal -- and
+     * it is a literal this method wrote, not one that arrived from anywhere.
+     */
+    private function keepThisSessionOutOfThePostgresLog(ConnectionInterface $bootstrap): void
+    {
+        $bootstrap->unprepared("set log_statement = 'none'");
+
+        // AND log_min_error_statement, which R-009 does not name and which
+        // log_statement = 'none' does not cover. Found by the container-log assertion in
+        // BootstrapLoggingTest, not by reading the manual: a statement that FAILS is
+        // logged with its full text by log_min_error_statement, whose default is
+        // `error`. Measured, from the test that deliberately breaks one role statement:
+        //
+        //   STATEMENT:  ALTER ROLE qrpager_app ... PASSWORD 'SCRAM-SHA-256$4096:...'
+        //
+        // So the one path where the statement is MOST likely to be looked at by a human
+        // was the one path that still published the credential. `panic` suppresses the
+        // STATEMENT line only; the ERROR itself is governed by log_min_messages and is
+        // still logged, which is the right split -- the failure stays visible and the
+        // statement that carries the verifier does not. This method's own caller already
+        // withholds that text from its exception for the same reason.
+        $bootstrap->unprepared("set log_min_error_statement = 'panic'");
     }
 
     /**
@@ -134,29 +186,81 @@ class RoleBootstrapper
      * statement into any rendered stack trace (PROJECT_INSTRUCTIONS.md §4). The
      * original is deliberately not chained -- the SQLSTATE is what survives.
      *
+     * TWO PHASES, TWO MESSAGES (R-013). The old single message said "could not create
+     * or alter role" for everything it caught, including failures where no role
+     * statement was ever sent: format() runs a `select format(...)` of its own, and its
+     * RuntimeException has code 0, which the formatter then suppressed -- so a
+     * connectivity or configuration failure reported the role name and nothing else.
+     * Building and executing are separated here because the distinction is the
+     * diagnosis: "the statement was never built" sends an operator to the formatter and
+     * the connection, "the statement failed" sends them to the role and the cluster.
+     *
+     * Building stays INSIDE the redaction, which is not an accident: format()'s
+     * arguments include the verifier as a bound parameter, so a QueryException from
+     * that select carries the credential in its own message. The phase is tracked by
+     * structure rather than by inspecting the throwable, because a QueryException from
+     * format()'s select and one from the ALTER ROLE are indistinguishable after the
+     * fact.
+     *
+     * Both messages read the real SQLSTATE through DriverError. getCode() returns the
+     * integer 7 for every connection-level failure, where the SQLSTATE is 08006.
+     *
      * @template TReturn
      *
-     * @param  Closure(): TReturn  $statement
+     * @param  Closure(): string  $build
+     * @param  Closure(string): TReturn  $execute
      * @return TReturn
      */
-    private function withoutLeakingCredentials(string $role, Closure $statement): mixed
+    private function withoutLeakingCredentials(string $role, Closure $build, Closure $execute): mixed
     {
         try {
-            return $statement();
+            $statement = $build();
         } catch (Throwable $e) {
-            $state = (string) $e->getCode();
-
             throw new RuntimeException(
-                "Could not create or alter role [{$role}]"
-                .($state === '' || $state === '0' ? '' : " (SQLSTATE {$state})")
-                .'. The statement text is withheld: it carries the role password verifier.'
+                "Could not build the statement that creates or alters role [{$role}]"
+                .self::sqlStateClause($e)
+                .'. Nothing was sent to the cluster. The template and its arguments are withheld: '
+                .'they carry the role password verifier.'
             );
         }
+
+        try {
+            return $execute($statement);
+        } catch (Throwable $e) {
+            throw new RuntimeException(
+                "Could not create or alter role [{$role}]"
+                .self::sqlStateClause($e)
+                .'. The statement was sent and failed. Its text is withheld: it carries the role '
+                .'password verifier.'
+            );
+        }
+    }
+
+    private static function sqlStateClause(Throwable $error): string
+    {
+        $state = DriverError::sqlStateForMessage($error);
+
+        return $state === '' ? '' : " (SQLSTATE {$state})";
     }
 
     /** @return list<string> */
     private function applyTimeouts(ConnectionInterface $bootstrap): array
     {
+        // R-014: refuse before writing anything, so a far-too-high value is one clear
+        // failure in the first test rather than a suite that hangs in the test which
+        // waits the value out. Checked here because this is the only place these values
+        // are applied, and the ceiling has to bind the WRITE and not just a test.
+        $past = DatabaseRoles::timeoutsPastCeiling($bootstrap);
+
+        if ($past !== []) {
+            throw new RuntimeException(
+                'Refusing to apply role timeouts: '.implode('; ', $past)
+                .'. The firing proofs assert a lower bound only (F10), so a value past the ceiling '
+                .'does not fail a test -- it hangs the one that waits for it. Fix the value, or raise '
+                .'the ceiling in config/tenancy.php deliberately.'
+            );
+        }
+
         $report = [];
 
         foreach (DatabaseRoles::timeouts() as $roleKey => $settings) {

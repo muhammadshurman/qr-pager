@@ -1,0 +1,120 @@
+# The three named architecture guards from PLAN.md §3, row 2:
+#
+#   1. domain logic imports no framework or DB code  -> Domain depends on nothing
+#   2. the platform layer imports no feature modules -> Platform's list omits Features
+#   3. production code imports no test helpers       -> nothing may depend on TestHelpers
+#
+# "Proven to fail on a deliberately bad file" is not a claim made here: it is
+# tests/Feature/Architecture/ArchitectureGuardTest.php, which runs deptrac against the
+# fixtures in guard/fixtures/architecture and asserts it exits non-zero. Those fixtures
+# are deliberately broken and live outside ./app, so this configuration never sees them
+# and no autoloader maps them.
+deptrac:
+  # Kept out of the repo-root default (./.deptrac.cache), which went straight into
+  # a commit the first time deptrac ran -- Task 0's bug 1 in §4a, verbatim: a new
+  # tool cache must be verified with `git status` after. build/ is already ignored
+  # for PHPStan's tmpDir, so the cache lives beside it rather than needing a second
+  # ignore rule that the next tool will also need.
+  cache_file: build/deptrac/deptrac.cache
+
+  paths:
+    - ./app
+    - ./database
+    - ./routes
+
+  layers:
+    # No framework, no DB. The enum registry and the status enums are the whole of it
+    # today; the error-envelope type enum joins them in this task.
+    - name: Domain
+      collectors:
+        - type: directory
+          value: app/Domain/.*
+
+    # Framework and DB, and it may not import a feature module. Models, providers,
+    # controllers, factories and seeders all belong here: they are framework-coupled
+    # application code, and the rule that matters for them is the same one.
+    - name: Platform
+      collectors:
+        # Everything under app/Platform EXCEPT the auth stub, which is its own layer
+        # below. A bool collector rather than a list of subdirectories, so a new
+        # directory under app/Platform joins this layer automatically and only the one
+        # named exception has to be maintained.
+        - type: bool
+          must:
+            - type: directory
+              value: app/Platform/.*
+          must_not:
+            - type: directory
+              value: app/Platform/Auth/.*
+        - type: directory
+          value: app/Http/.*
+        - type: directory
+          value: app/Models/.*
+        - type: directory
+          value: app/Providers/.*
+        - type: directory
+          value: database/factories/.*
+        - type: directory
+          value: database/seeders/.*
+
+    - name: Features
+      collectors:
+        - type: directory
+          value: app/Features/.*
+
+    # Wiring: it may reach anything, which is why it is a layer of its own rather than
+    # being folded into Platform and widening Platform's rule.
+    - name: Bootstrapping
+      collectors:
+        - type: directory
+          value: database/migrations/.*
+        - type: directory
+          value: routes/.*
+
+    - name: Framework
+      collectors:
+        - type: classLike
+          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery)\\.*
+
+    # The pre-Task-5 auth stub (B5), a layer so that "a feature cannot be built on the
+    # stub" is a dependency rule rather than a reviewer's job. Only Platform may reach
+    # it, and only to bind it: Features may not, so a feature module built on the stub
+    # fails CI rather than breaking when Task 5 replaces it.
+    #
+    # The stub ALSO refuses to run outside local/testing, which is the half deptrac
+    # cannot express -- a dependency rule says who may import it, not what it does when
+    # deployed.
+    - name: AuthStub
+      collectors:
+        - type: directory
+          value: app/Platform/Auth/.*
+
+    # Rule 3. Test helpers are a layer so that "production code imports no test
+    # helpers" is a dependency rule rather than a convention -- and so that the
+    # pre-Task-5 auth stub cannot quietly become a production dependency (B5).
+    - name: TestHelpers
+      collectors:
+        - type: classLike
+          value: ^Tests\\.*
+
+  ruleset:
+    Domain: ~
+    Platform:
+      - Domain
+      - Framework
+      - AuthStub
+    AuthStub:
+      - Domain
+      - Platform
+      - Framework
+    Features:
+      - Domain
+      - Platform
+      - Framework
+    Bootstrapping:
+      - Domain
+      - Platform
+      - Features
+      - Framework
+    Framework: ~
+    TestHelpers: ~

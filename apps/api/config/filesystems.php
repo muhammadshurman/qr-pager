@@ -33,7 +33,15 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Turned off at Task 2. The skeleton's `true` makes
+            // FilesystemServiceProvider register TWO public routes per served disk --
+            // GET storage/{path} and PUT storage/{path} -- outside /v1, which the gate
+            // forbids. The PUT writes request content straight to this disk; it is
+            // gated by a signed relative URL, so it is not an open upload, but the
+            // signature is the app key and nothing in this project uses the route at
+            // all. S3 is the locked object storage (ADR-002) and uploads are Task 7's.
+            // Found with `php artisan route:list`, which is the only place it shows.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

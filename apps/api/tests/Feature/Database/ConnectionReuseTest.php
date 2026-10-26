@@ -50,7 +50,15 @@ it('drops tenant context when the transaction rolls back', function (): void {
 
     try {
         withTenant($tenant, function (): void {
-            DB::table('audit_log')->insert(['actor_type' => 'system', 'action' => 'rollback.probe']);
+            DB::table('audit_log')->insert([
+                'actor_type' => 'system',
+                // R-016: the action carries this run's marker, so the assertion below
+                // cannot be satisfied -- or broken -- by a row an earlier run left
+                // behind. audit_log is append-only and never truncated, and on a
+                // developer machine it carries every earlier run.
+                'action' => $this->auditAction('rollback.probe'),
+                'context' => $this->auditContext(),
+            ]);
 
             throw new RuntimeException('deliberate');
         });
@@ -61,5 +69,5 @@ it('drops tenant context when the transaction rolls back', function (): void {
     expect((string) DB::selectOne("select current_setting('app.tenant_id', true) as id")->id)->toBe('');
     expect(app(TenantContext::class)->current())->toBeNull();
     expect(DB::connection('pgsql_owner')
-        ->table('audit_log')->where('action', 'rollback.probe')->count())->toBe(0);
+        ->table('audit_log')->where('action', $this->auditAction('rollback.probe'))->count())->toBe(0);
 });

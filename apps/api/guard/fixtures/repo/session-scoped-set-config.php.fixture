@@ -1,0 +1,4 @@
+<?php
+
+// C2: a session-scoped tenant setting is a hard failure.
+$db->select('select set_config(?, ?, false)', ['app.tenant_id', $tenant]);
