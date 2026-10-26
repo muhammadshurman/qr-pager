@@ -267,7 +267,15 @@ it('withholds the statement text when a role statement fails', function (): void
 
     expect($caught)->not->toBeNull('an invalid role statement was accepted')
         ->and($caught->getMessage())->toContain('Could not create or alter role [qrpager_app]')
-        ->and($caught->getMessage())->toContain('statement text is withheld')
+        // R-013: the message now distinguishes the two phases, and this is the
+        // EXECUTE one -- the statement was built and the cluster rejected it.
+        ->and($caught->getMessage())->toContain('The statement was sent and failed')
+        ->and($caught->getMessage())->toContain('text is withheld')
+        // ...and names the real SQLSTATE. 42601 is a syntax error, which is what an
+        // out-of-range CONNECTION LIMIT produces. Before R-013 this clause read
+        // "(SQLSTATE 42601)" too, because getCode() happens to agree with errorInfo[0]
+        // for statement errors -- it is connection failures where it prints 7.
+        ->and($caught->getMessage())->toContain('(SQLSTATE 42601)')
         ->and($caught->getMessage())->not->toContain($password)
         ->and($caught->getMessage())->not->toContain('SCRAM-SHA-256')
         ->and($caught->getMessage())->not->toContain('ALTER ROLE')

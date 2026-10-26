@@ -76,9 +76,11 @@ class RoleBootstrapper
 
         // ALTER on every run, so the attributes converge: a role that was granted
         // SUPERUSER or BYPASSRLS by hand loses it the next time this runs.
-        $this->withoutLeakingCredentials($name, fn () => $bootstrap->statement(
-            $this->format($bootstrap, $template, [$name, $verifier]),
-        ));
+        $this->withoutLeakingCredentials(
+            $name,
+            fn (): string => $this->format($bootstrap, $template, [$name, $verifier]),
+            fn (string $statement): bool => $bootstrap->statement($statement),
+        );
 
         // Re-asserted on every run, so a role that was tampered with converges back.
         return ($exists ? 'role updated: ' : 'role created: ').$name;
@@ -134,24 +136,61 @@ class RoleBootstrapper
      * statement into any rendered stack trace (PROJECT_INSTRUCTIONS.md §4). The
      * original is deliberately not chained -- the SQLSTATE is what survives.
      *
+     * TWO PHASES, TWO MESSAGES (R-013). The old single message said "could not create
+     * or alter role" for everything it caught, including failures where no role
+     * statement was ever sent: format() runs a `select format(...)` of its own, and its
+     * RuntimeException has code 0, which the formatter then suppressed -- so a
+     * connectivity or configuration failure reported the role name and nothing else.
+     * Building and executing are separated here because the distinction is the
+     * diagnosis: "the statement was never built" sends an operator to the formatter and
+     * the connection, "the statement failed" sends them to the role and the cluster.
+     *
+     * Building stays INSIDE the redaction, which is not an accident: format()'s
+     * arguments include the verifier as a bound parameter, so a QueryException from
+     * that select carries the credential in its own message. The phase is tracked by
+     * structure rather than by inspecting the throwable, because a QueryException from
+     * format()'s select and one from the ALTER ROLE are indistinguishable after the
+     * fact.
+     *
+     * Both messages read the real SQLSTATE through DriverError. getCode() returns the
+     * integer 7 for every connection-level failure, where the SQLSTATE is 08006.
+     *
      * @template TReturn
      *
-     * @param  Closure(): TReturn  $statement
+     * @param  Closure(): string  $build
+     * @param  Closure(string): TReturn  $execute
      * @return TReturn
      */
-    private function withoutLeakingCredentials(string $role, Closure $statement): mixed
+    private function withoutLeakingCredentials(string $role, Closure $build, Closure $execute): mixed
     {
         try {
-            return $statement();
+            $statement = $build();
         } catch (Throwable $e) {
-            $state = (string) $e->getCode();
-
             throw new RuntimeException(
-                "Could not create or alter role [{$role}]"
-                .($state === '' || $state === '0' ? '' : " (SQLSTATE {$state})")
-                .'. The statement text is withheld: it carries the role password verifier.'
+                "Could not build the statement that creates or alters role [{$role}]"
+                .self::sqlStateClause($e)
+                .'. Nothing was sent to the cluster. The template and its arguments are withheld: '
+                .'they carry the role password verifier.'
             );
         }
+
+        try {
+            return $execute($statement);
+        } catch (Throwable $e) {
+            throw new RuntimeException(
+                "Could not create or alter role [{$role}]"
+                .self::sqlStateClause($e)
+                .'. The statement was sent and failed. Its text is withheld: it carries the role '
+                .'password verifier.'
+            );
+        }
+    }
+
+    private static function sqlStateClause(Throwable $error): string
+    {
+        $state = DriverError::sqlStateForMessage($error);
+
+        return $state === '' ? '' : " (SQLSTATE {$state})";
     }
 
     /** @return list<string> */

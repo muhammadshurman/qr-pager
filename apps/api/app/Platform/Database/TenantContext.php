@@ -32,12 +32,14 @@ use Throwable;
  *
  * Five places issue a statement. Four of them -- setGuc(), readState(), clearScope()
  * and insertBypassAudit() -- convert a driver error into a TenantContextException
- * carrying no statement text and no bindings (§4 › Edge & ops). The fifth is the
- * rollBack() inside assertScopeSurvived(), which deliberately SWALLOWS: it runs while
- * already reporting a failure, and replacing that failure with this one would hide the
- * problem the caller needs to see. Nothing escapes it, so nothing leaks; what it costs
- * is that a failed reset is not reported, which is why the refusal below says what it
- * attempted rather than what it achieved (F6, seventh security review).
+ * carrying no statement text and no bindings (§4 › Edge & ops), and each reads the real
+ * SQLSTATE through DriverError rather than getCode(), which returns the integer 7 for
+ * every connection-level failure (R-013). The fifth is the rollBack() inside
+ * assertScopeSurvived(), which deliberately SWALLOWS: it runs while already reporting a
+ * failure, and replacing that failure with this one would hide the problem the caller
+ * needs to see. Nothing escapes it, so nothing leaks; what it costs is that a failed
+ * reset is not reported, which is why every one of these refusals states what it
+ * ATTEMPTED and never what it achieved (F6, seventh security review; R-023).
  *
  * Neither helper trusts the connection it was handed. readState() reads the role's
  * rolsuper and rolbypassrls in the same round trip as the GUCs, and both helpers
@@ -369,7 +371,7 @@ class TenantContext
                 [DatabaseRoles::guc('tenant'), '', DatabaseRoles::guc('bypass'), ''],
             );
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('read', (string) $e->getCode());
+            throw TenantContextException::statementFailed('read', DriverError::sqlStateForMessage($e));
         }
 
         // current_user always has a pg_roles row, so no row is a broken connection
@@ -463,7 +465,7 @@ class TenantContext
                 [$guc, '', $guc, $previous],
             );
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('cleared', (string) $e->getCode());
+            throw TenantContextException::statementFailed('cleared', DriverError::sqlStateForMessage($e));
         }
 
         $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
@@ -516,7 +518,7 @@ class TenantContext
                 [$guc, '', $guc, ''],
             );
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('cleared', (string) $e->getCode());
+            throw TenantContextException::statementFailed('cleared', DriverError::sqlStateForMessage($e));
         }
 
         $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
@@ -532,7 +534,7 @@ class TenantContext
             $db->select('select set_config(?, ?, true)', [$name, $value]);
         } catch (Throwable $e) {
             throw TenantContextException::statementFailed(
-                $value === '' ? 'cleared' : 'set', (string) $e->getCode(),
+                $value === '' ? 'cleared' : 'set', DriverError::sqlStateForMessage($e),
             );
         }
     }
@@ -547,7 +549,7 @@ class TenantContext
                 'context' => json_encode(['reason' => $reason], JSON_THROW_ON_ERROR),
             ]);
         } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('audited', (string) $e->getCode());
+            throw TenantContextException::statementFailed('audited', DriverError::sqlStateForMessage($e));
         }
     }
 }

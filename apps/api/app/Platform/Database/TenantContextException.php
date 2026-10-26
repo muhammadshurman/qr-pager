@@ -13,11 +13,15 @@ final class TenantContextException extends RuntimeException
      * Anything interpolated into one of these messages that did not come from this
      * class, rendered so it cannot forge a log line.
      *
-     * Four of these messages carry text this class never validated: the tenant setting
-     * read from the session, the role read from current_user, the caller's own rejected
-     * value, and the SQLSTATE taken from whatever Throwable escaped a statement -- which
-     * is only five alphanumerics when it comes from PDO, and is not guaranteed to come
-     * from PDO (F8, seventh security review). Measured with the GUC set to
+     * FIVE of these messages carry text this class never validated, and the count is
+     * written out rather than summarised because the docblock said "four" while five
+     * existed (R-024, S-8): notAUuid (the caller's own rejected value),
+     * alreadyInAnotherTenant (both values), tenantContextNotOpenedHere (the tenant
+     * setting read from the session), bypassRequiresOwner (the role read from
+     * current_user) and statementFailed (the operation, and the SQLSTATE taken from
+     * whatever Throwable escaped a statement -- only five alphanumerics when it comes
+     * from PDO, and not guaranteed to come from PDO at all; F8, seventh security
+     * review). Measured with the GUC set to
      * "injected\nFAKE LOG LINE level=emergency token=secret": the message, and the
      * Monolog line built from it, carried the newline and the forged content verbatim
      * (L-1, sixth security review). An exception message reaches the log, so an
@@ -116,8 +120,11 @@ final class TenantContextException extends RuntimeException
         return new self(
             "app.tenant_id on connection [{$connection}] is not the value this tenant scope set. "
             .'Something in the block wrote over it, so part of the block ran under a tenant its '
-            .'caller did not choose. The work has been rolled back; the value is deliberately not '
-            .'named, because the point of the refusal is that it is not the caller\'s.'
+            .'caller did not choose. A rollback of this scope has been ATTEMPTED; whether the '
+            .'block\'s writes were discarded cannot be determined from here, because a callback '
+            .'that committed and reopened reaches this refusal with its work already committed -- '
+            .'measured. So this is not safe to retry blindly. The value is deliberately not named, '
+            .'because the point of the refusal is that it is not the caller\'s.'
         );
     }
 
@@ -133,8 +140,11 @@ final class TenantContextException extends RuntimeException
         return new self(
             "The callback left connection [{$connection}] at transaction depth {$found}, where this "
             ."tenant scope opened it at {$opened}. A transaction the callback opened and did not close "
-            .'swallows the commit for everything the block wrote, so the work this scope opened has been '
-            .'rolled back, back to the depth the caller was at, rather than reported as a success.'
+            .'swallows the commit for everything the block wrote, so an unwind back to the depth the '
+            .'caller was at has been ATTEMPTED rather than this being reported as a success. Whether '
+            .'it succeeded cannot be determined from here: the unwind swallows its own driver errors '
+            .'deliberately, because replacing this failure with that one would hide the problem the '
+            .'caller needs to see. Not safe to retry blindly.'
         );
     }
 
@@ -199,6 +209,11 @@ final class TenantContextException extends RuntimeException
      */
     public static function statementFailed(string $operation, string $sqlstate): self
     {
+        // $sqlstate comes from DriverError::sqlStateForMessage(), which reads
+        // errorInfo[0] and returns '' rather than a wrong code. getCode() was used
+        // here and returns the integer 7 for every connection-level failure, so this
+        // printed "SQLSTATE 7" -- not a SQLSTATE at all -- for exactly the failures an
+        // operator most needs named (R-013).
         return new self(
             'Tenant context could not be '.self::printable($operation, 16)
             .($sqlstate === '' || $sqlstate === '0' ? '' : ' (SQLSTATE '.self::printable($sqlstate, 16).')')
