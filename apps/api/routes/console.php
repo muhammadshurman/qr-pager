@@ -17,9 +17,15 @@ use Illuminate\Support\Facades\Schedule;
  * timeout: without it, a cluster that is slow to refuse would stack one run every five
  * seconds, each holding a worker connection out of the worker role's 20.
  *
- * runInBackground() is deliberately NOT used. It forks a new PHP process per run, which
- * at this cadence is twelve boots a minute, and the probe is a single query -- the fork
- * would cost more than the work.
+ * runInBackground() is deliberately NOT used, and the REASON recorded here was wrong
+ * until 2026-10-27 (QA L-7). It said the flag "forks a new PHP process per run ...
+ * twelve boots a minute", implying the default does not. It does: Schedule::command()
+ * always shells out to `php artisan`, so the fork happens either way and
+ * runInBackground() only stops `schedule:run` from WAITING for it. The decision stands
+ * and the reason is different: in the foreground the repeat loop waits, so at most one
+ * probe is ever in flight and a hung probe is visible to the scheduler rather than
+ * accumulating behind it. withoutOverlapping() guards the same property with a cache
+ * mutex; keeping both means the guard is not the only thing holding the line.
  */
 Schedule::command('readiness:refresh')
     ->everyFiveSeconds()

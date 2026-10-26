@@ -77,8 +77,22 @@ hooks there are **inert in every fresh clone until this is run** — the pre-com
 the CI half was ever true by default. Found on 2026-10-26 with 36 commits on
 `task-2-api-core` none of which had been scanned pre-commit (history is clean —
 `gitleaks detect` over all 83 commits finds nothing — but that is luck, not the control).
-Verify it bites: stage a file containing a high-entropy `github_pat_…` string and commit;
-the hook must report `leaks found: 1` and the commit must not land.
+**Verify it bites, and the exact string matters.** gitleaks' `github-fine-grained-pat` rule is
+length-exact — `github_pat_` followed by **exactly 82** word characters — so a plausible-looking
+shorter token reports `no leaks found`, exits 0 and the commit LANDS, which reads as "the hook is
+still inert": the very condition this step exists to rule out. Measured on 2026-10-27 with 65 and
+71 characters after the prefix (both reported no leaks, both committed) and with 82 (`leaks found:
+1`, exit 1, nothing committed). So:
+
+```
+python3 -c "import random,string; print('github_pat_'+''.join(random.choice(string.ascii_letters+string.digits) for _ in range(82)))" > leak.txt
+git add leak.txt && .githooks/pre-commit   # must print 'leaks found: 1' and exit 1
+git reset -q HEAD leak.txt && rm leak.txt
+```
+
+Run the hook directly rather than committing, so a pass does not leave a commit to undo. The hook
+fails **closed** if gitleaks is not installed — `set -e` plus a 127 exit — which was checked rather
+than assumed.
 
 The role model and why `root` is separate from `owner` are in `docs/PLAN.md §2.1`.
 
