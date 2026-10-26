@@ -37,6 +37,22 @@ final class Redactor
      *
      * @var list<string>
      */
+    /**
+     * Keys that contain one of the needles below and are not secrets.
+     *
+     * Checked FIRST, and it exists because of a measured collision rather than a
+     * hypothetical one: `sqlstate` contains `sql`, so a context key carrying the five
+     * alphanumerics an operator greps for came out as [redacted] -- found by R-005's
+     * failed-bypass trace, which logs exactly that key. The substring rule is not
+     * loosened to compensate: it is what makes DB_OWNER_PASSWORD and
+     * passwordConfirmation both covered, and narrowing it to word boundaries would
+     * trade a visible list for an invisible gap. A key here has to be argued for, and
+     * its VALUE is still scrubbed as a string like any other.
+     *
+     * @var list<string>
+     */
+    private const NOT_SECRET_KEYS = ['sqlstate'];
+
     private const SECRET_KEYS = [
         'password', 'secret', 'token', 'credential', 'verifier', 'authorization',
         'api_key', 'apikey', 'private_key', 'dsn', 'bindings', 'sql', 'query',
@@ -101,6 +117,10 @@ final class Redactor
     private function isSecretKey(string $key): bool
     {
         $lower = strtolower($key);
+
+        if (in_array($lower, self::NOT_SECRET_KEYS, true)) {
+            return false;
+        }
 
         foreach (self::SECRET_KEYS as $needle) {
             if (str_contains($lower, $needle)) {

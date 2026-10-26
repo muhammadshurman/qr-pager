@@ -8,6 +8,7 @@ use App\Domain\Audit\AuditActorType;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -306,6 +307,67 @@ class TenantContext
         $bypass = DatabaseRoles::guc('bypass');
         $previousBypass = $active['bypass'];
 
+        // R-005, D7. The audit row below is written INSIDE the transaction on purpose,
+        // so a bypass that commits always carries it -- and the price is that a bypass
+        // which THROWS rolls that row back with the work and leaves no trace at all.
+        // A log line is the one record a rollback cannot take with it.
+        //
+        // A dedicated channel, not a second database connection: a connection that
+        // survives the rollback would be a new §2.1 surface and a new failure mode,
+        // which is what D7 rejected and what the readiness carrier rejected for R-012.
+        //
+        // Wrapped around the transaction rather than inside it, so a failure of the
+        // COMMIT itself is caught too -- a bypass whose work is discarded by a commit
+        // failure is exactly as untraceable as one whose callback threw.
+        try {
+            return $this->runBypass($db, $bypass, $previousBypass, $reason, $connection, $callback);
+        } catch (Throwable $failure) {
+            $this->reportFailedBypass($reason, $connection, $failure);
+
+            throw $failure;
+        }
+    }
+
+    /**
+     * The failed-bypass trace: the reason, and nothing that could carry tenant data.
+     *
+     * The REASON is the point -- it is the caller's own words about why a cross-tenant
+     * block was opened, it is what the audit row would have held, and §2.10 requires it
+     * to be given. Everything else here is about this process: the connection name, the
+     * throwable's class, and the SQLSTATE through DriverError rather than getCode().
+     *
+     * The throwable's MESSAGE is deliberately absent, and so is the exception object.
+     * Laravel interpolates bindings into QueryException::getMessage() and renders the
+     * statement into any trace, so passing either would put SQL in this line and leave
+     * the redaction processor as the only thing between it and the log. The processor
+     * is there and it works; this is the layer that means it does not have to.
+     */
+    private function reportFailedBypass(string $reason, string $connection, Throwable $failure): void
+    {
+        $sqlstate = DriverError::sqlStateForMessage($failure);
+
+        Log::channel('tenancy')->critical('tenant bypass failed and left no audit row', [
+            'reason' => $reason,
+            'connection' => $connection,
+            'exception' => $failure::class,
+            'sqlstate' => $sqlstate === '' ? null : $sqlstate,
+        ]);
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @return TReturn
+     */
+    private function runBypass(
+        ConnectionInterface $db,
+        string $bypass,
+        string $previousBypass,
+        string $reason,
+        string $connection,
+        Closure $callback,
+    ): mixed {
         return $db->transaction(function () use ($db, $bypass, $previousBypass, $reason, $connection, $callback): mixed {
             $depth = $db->transactionLevel();
 

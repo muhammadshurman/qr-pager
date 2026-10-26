@@ -101,6 +101,32 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+        | D7, closing R-005. A bypass that THROWS rolls its own audit_log row back with
+        | the work, so an attacker-triggered or buggy bypass that errors leaves no trace
+        | at all -- the audit row is written inside the same transaction deliberately,
+        | so that a bypass which COMMITS always carries it.
+        |
+        | A Monolog channel and not a second database connection: a connection that
+        | survives the rollback is a new §2.1 surface and a new failure mode, which is
+        | the same shape D7 rejected and the same shape the readiness carrier rejected
+        | for R-012. A log line cannot be rolled back, which is the one property this
+        | needs.
+        |
+        | Its own channel rather than the stack, so an operator can route it separately
+        | -- a failed cross-tenant bypass is the highest-signal line this application
+        | can emit. It carries the RedactLogs tap like every other channel, and
+        | TenantContext withholds the statement and the bindings before the processor
+        | ever sees them.
+        */
+        'tenancy' => [
+            'driver' => 'single',
+            'tap' => [RedactLogs::class],
+            'path' => storage_path('logs/tenancy.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'tap' => [RedactLogs::class],
