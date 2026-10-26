@@ -75,3 +75,64 @@ the claude.ai Project instructions (Q6).
 Housekeeping, so it is recorded rather than noticed later: four untracked `*:Zone.Identifier` files
 (Windows download markers beside `docs/PLAN.md`, `docs/claude/*` and the prompt) were deleted. No tracked
 file and no document content was touched.
+
+---
+
+## Phase 2 — the build
+
+Gates are run before every commit: `composer pint`, `composer stan`, `composer deptrac`,
+`composer guard`, `php artisan test`. No commit was made on a red suite. Every commit is pushed.
+
+### ⚠ Owed to the user — **both `§4` rank-2 edits have landed** (Q6)
+
+Commit `0b59659`. Paste these into the claude.ai Project instructions or the two copies disagree —
+`§0`'s "Where everything lives" already records the `§11` copy as out of step, and this adds `§4`.
+
+1. `§4 › Postgres traps`: "A **repo guard in lint** rejects…" → "A **repo guard in CI** rejects…",
+   with the reason appended: nothing in lint can see `false` inside the SQL string
+   `'select set_config(?, ?, false)'` — Pint formats and PHPStan analyses the AST.
+2. `§4 › Edge & ops`: "No secrets in logs. Redaction tested against captured log output." →
+   "No secrets in logs, **or in an error response body, at any `APP_DEBUG` setting**. Redaction
+   tested against captured log output **and against captured response bodies**." From `§3.2`'s
+   finding 2, with the `7f1c8f6` measurement beside it.
+
+### 1 · `86ec04a` — the three named architecture guards (D1)
+
+| | |
+|---|---|
+| What | deptrac 4.7.2, layers `App\Domain` / `App\Platform` / `App\Features` / `Bootstrapping`, with `Tests\*` as a layer nothing may depend on. `composer deptrac` + a CI step. Real tree: 0 violations, 37 allowed |
+| §5 rows | none — this is a gate clause, not a ledger row |
+| Test | `tests/Feature/Architecture/ArchitectureGuardTest.php` copies a `.php.fixture` into the layer it violates and runs **the real `deptrac.yaml`**, not a second copy of the ruleset |
+| Revert | `Domain: ~`→`[Framework]`: **1 failed, 4 passed**. `Platform: +Features`: **1 failed, 4 passed**. `Platform: +TestHelpers`: **1 failed, 4 passed**. Restored: 5 passed. Each revert fails exactly the guard whose rule was widened |
+| Found on the way | The first version of the test leaked three empty `Deliberately/` directories — it unlinked files and not directories. Its own fifth test caught it, which is why that test exists |
+
+### 2 · `fb35ee9` — Task 0's bug 1, repeated by me
+
+`86ec04a` committed `apps/api/.deptrac.cache`. `§4a` records this exact failure for Task 0 ("any new
+tool cache must be verified with `git status` after") and I added a tool without doing that check.
+Fixed twice over so neither route can bring it back: `cache_file: build/deptrac/` (already ignored for
+PHPStan's `tmpDir`) and `.deptrac.cache` in `apps/api/.gitignore`.
+
+### 3 · `0b59659` — **closes R-010 and R-019**: the C1/C2 repo guard
+
+| | |
+|---|---|
+| What | `Guard\SourceGuard` scans **string literals** via `token_get_all`, never raw text — a dozen comments in this repo spell the forbidden shape out while explaining it, and a text-matching guard would flag the documentation of its own rule. Five rules: the literal `true` third argument (bound and absent both fail — Postgres defaults it to `false`); no raw `SET`/`SET LOCAL`/`SET SESSION` of an `app.*` setting; GUC names inside `current_setting`/`set_config`; whole literals of the shape `app.<name>`, which is how every name here really travels; and `config/tenancy.php`'s configured set, the only place a third name would actually be introduced |
+| §5 rows | **R-010** closed · **R-019** closed |
+| Test | `tests/Feature/Architecture/RepoGuardTest.php`, 10 cases against `guard/fixtures/repo` |
+| Revert | rule 1 never fires: **4 failed, 6 passed** · rule 2 never matches: **1 failed, 9 passed** · rules 3+4 allow anything: **1 failed, 9 passed** · rule 5 always passes: **1 failed, 9 passed** · `EXCEPTIONS` emptied: **3 failed, 7 passed** · restored: 10 passed |
+| Counts explained | Rule 1 takes **4** because the three shape tests plus the method-scoping test all depend on it firing at all. Emptying the exception takes **3**: the real tree stops being clean, `composer guard` stops exiting 0, and the method-scoping test asserts the real helper scans clean as its first assertion. Every other revert touches exactly its own test |
+| R-019's own condition | Met as stated — "by path, never by *tests are exempt*". The exception is path **and method**: moving the statement to a second method of the same file is still a violation, proven through `scanSource()` with the real path and altered source, so nothing on disk is written |
+| Found on the way | The guard flagged its own violation **message** (token scanning hides comments, not message strings), then its own **test file**'s 13 assertion literals. The second was fixed by moving every forbidden literal into `guard/fixtures/repo` and asserting against the fixture's own text — **not** by exempting the guard's test by path, which would have hidden the one thing worth knowing. `tests/Support/GuardFixtures.php` exists because the first version declared `fixture()` at file scope and Pest already ships one, taking the whole suite down: the same collision `Composition.php`'s docblock was written about |
+
+### 4 · `c8a7fac` — the `/v1` surface, the two probes, D6's policy
+
+| | |
+|---|---|
+| What | `apiPrefix: 'v1'` for `routes/v1.php` (empty at Task 2 by design — every endpoint in it belongs to a later task), `routes/probes.php` unversioned on its own **empty** middleware group, which is the mechanism behind "while health and readiness keep answering". `/healthz` reads nothing; `/readyz` reads one Redis key and is fail-closed on every unknown. `§6` gains the versioning policy |
+| §5 rows | **R-012 (Task 2 half)** — structurally closed here; the measured proof lands with the carrier |
+| Test | `tests/Feature/Http/RouteSurfaceTest.php`, 5 cases: the allowlist, the three removals, liveness with both dependencies pointed at dead ports, readiness 503 with Postgres pointed at a dead port, readiness 503 with Redis down while liveness stays 200 |
+| Three public routes removed | `/up` (duplicated liveness and runs the framework's dependency-touching checks; verified beforehand that nothing called it) · `/` (the skeleton's welcome page, which `ExampleTest` asserted returned 200 — the placeholder test and the gate clause contradicted each other) · **`GET` and `PUT storage/{path}`**, from `config/filesystems.php`'s local disk `serve => true`. The `PUT` writes request content into `storage/app/private` behind a signed relative URL. Not an open upload, but the signature is the app key, nothing uses the route, S3 is the locked storage (ADR-002) and uploads are Task 7's. Found with `php artisan route:list` — it shows nowhere else |
+
+**Suite: 198 at `7f1c8f6` → 217 passed, 646 assertions.** `pint` passed · `stan` 0 errors ·
+`deptrac` 0 violations · `guard` clean, at every commit.
