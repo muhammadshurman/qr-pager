@@ -21,6 +21,11 @@ beforeEach(function (): void {
         'tenant_id' => $this->tenant,
         'actor_type' => 'user',
         'action' => $this->probe,
+        // R-016: every row the suite writes carries the run marker, so a row from an
+        // earlier run on a developer machine is always distinguishable from this one's.
+        // The action here is already unique per TEST; the marker makes it unique per RUN
+        // as well, which is what the source scan below asks of every writer.
+        'context' => $this->auditContext(),
     ]));
 });
 
@@ -100,7 +105,8 @@ it('survives a tenant being deleted, because it carries no foreign keys', functi
     withTenant($tenant, fn () => DB::table('audit_log')->insert([
         'tenant_id' => $tenant,
         'actor_type' => 'platform',
-        'action' => 'tenant.deleted',
+        'action' => $this->auditAction('tenant.deleted'),
+        'context' => $this->auditContext(),
     ]));
 
     withoutTenantScope('task-1 test: delete a tenant', fn () => DB::connection('pgsql_owner')

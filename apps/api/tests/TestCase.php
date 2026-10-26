@@ -19,6 +19,8 @@ abstract class TestCase extends BaseTestCase
 {
     private static bool $databaseReady = false;
 
+    private static ?string $runMarker = null;
+
     /**
      * Truncated between tests. audit_log is deliberately absent: it is append-only,
      * so the trigger refuses to truncate it. Tests scope their audit assertions
@@ -182,6 +184,43 @@ abstract class TestCase extends BaseTestCase
         return (string) $row['id'];
     }
 
+    /**
+     * A token unique to this suite run, for assertions that would otherwise filter on a
+     * constant.
+     *
+     * R-016. audit_log is append-only -- the trigger refuses DELETE and TRUNCATE -- so
+     * it is deliberately absent from RESETTABLE and grows monotonically across runs on
+     * a developer machine. CI is immune by construction, because it builds from an
+     * empty database every run. That asymmetry is the whole danger: the first
+     * unfiltered audit_log count anyone adds PASSES ON CI AND FAILS LOCALLY, which is
+     * the same "correct on a clean build, wrong on a machine carrying earlier state"
+     * shape as the stale grant migration that cost a morning on 2026-10-26.
+     *
+     * Static, so every row and every assertion in one `php artisan test` agree, and
+     * random, so two runs never do. Never a DELETE -- the trigger refuses it, and that
+     * refusal is a gate clause of its own.
+     */
+    protected function runMarker(): string
+    {
+        return self::$runMarker ??= 'run-'.bin2hex(random_bytes(6));
+    }
+
+    /** An action name no earlier run can have written. */
+    protected function auditAction(string $action): string
+    {
+        return $action.'.'.$this->runMarker();
+    }
+
+    /**
+     * The context column for a row the SUITE writes, carrying the run marker.
+     *
+     * @param  array<string, string>  $extra
+     */
+    protected function auditContext(array $extra = []): string
+    {
+        return json_encode(['run' => $this->runMarker()] + $extra, JSON_THROW_ON_ERROR);
+    }
+
     /** Put one row in every tenant table, so a "no context sees nothing" claim means something. */
     protected function seedEveryTenantTable(string $tenantId): void
     {
@@ -219,7 +258,8 @@ abstract class TestCase extends BaseTestCase
                 'tenant_id' => $tenantId,
                 'actor_type' => AuditActorType::User->value,
                 'actor_user_id' => $userId,
-                'action' => 'seed.created',
+                'action' => $this->auditAction('seed.created'),
+                'context' => $this->auditContext(),
             ]);
         }, 'pgsql_owner');
     }

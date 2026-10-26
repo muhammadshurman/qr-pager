@@ -131,7 +131,17 @@ it('has no cross-tenant reach outside the outbox and the expiry job', function (
     $this->seedEveryTenantTable($tenant);
 
     foreach (['tenants', 'tenant_users', 'push_subscriptions', 'audit_log'] as $table) {
-        expect($this->asWorker()->table($table)->count())
+        // Filtered by the tenant this test seeded (R-016). The unfiltered count was
+        // bounded by row level security rather than by the filter -- the worker has no
+        // context, so it reads 0 however many rows exist -- but audit_log is
+        // append-only and never truncated, so an unfiltered count on this table is the
+        // exact shape that passes on CI's empty database and fails on a developer
+        // machine carrying earlier runs. Filtering also makes the assertion STRONGER:
+        // it now says the row this test just seeded is invisible, rather than that the
+        // table looks empty.
+        $column = $table === 'tenants' ? 'id' : 'tenant_id';
+
+        expect($this->asWorker()->table($table)->where($column, $tenant)->count())
             ->toBe(0, "the worker read {$table} across tenants, which is not a named path");
     }
 });
