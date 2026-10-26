@@ -126,6 +126,11 @@ jobs:
       # which runs this same config against the fixtures in guard/fixtures/architecture.
       - run: composer deptrac
 
+      # C1 and C2, enforced mechanically rather than by review (§4 › Postgres traps).
+      # Proven to fail on a deliberately bad file by
+      # tests/Feature/Architecture/RepoGuardTest.php against guard/fixtures/repo.
+      - run: composer guard
+
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
 

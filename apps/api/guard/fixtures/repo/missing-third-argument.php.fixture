@@ -1,0 +1,5 @@
+<?php
+
+// Postgres defaults the third argument to false, so omitting it IS the session-scoped
+// case wearing a shorter spelling.
+$db->select("select set_config('app.tenant_id', ?)", [$tenant]);

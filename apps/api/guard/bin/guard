@@ -1,0 +1,47 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * The C1/C2 repo guard (R-010), run by `composer guard` and in CI.
+ *
+ * Deliberately standalone: no Laravel boot, no container, no database. §4 requires the
+ * guard to be mechanical, and a guard that needs the application to boot cannot run
+ * when the application is what is broken.
+ */
+
+require __DIR__.'/../src/Violation.php';
+require __DIR__.'/../src/SourceGuard.php';
+
+use Guard\SourceGuard;
+
+$root = dirname(__DIR__, 2);
+$guard = new SourceGuard($root);
+
+$paths = array_slice($argv, 1);
+
+if ($paths === []) {
+    $paths = ['app', 'config', 'database', 'routes', 'tests', 'guard/src'];
+}
+
+$violations = array_merge($guard->scan($paths), $guard->scanConfiguredGucs());
+
+if ($violations === []) {
+    $count = count($paths);
+    fwrite(STDOUT, "repo guard: C1 and C2 hold across {$count} scanned path(s).\n");
+
+    exit(0);
+}
+
+fwrite(STDERR, 'repo guard: '.count($violations)." violation(s).\n\n");
+
+foreach ($violations as $violation) {
+    fwrite(STDERR, '  '.$violation."\n");
+}
+
+fwrite(STDERR, "\nC1: app.tenant_id and app.bypass_tenant are the only GUCs.\n");
+fwrite(STDERR, "C2: always select set_config(name, value, true) -- third argument a literal true.\n");
+fwrite(STDERR, "Both are locked in PROJECT_INSTRUCTIONS.md §3; a change there comes first.\n");
+
+exit(1);

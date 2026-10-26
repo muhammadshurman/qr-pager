@@ -1,0 +1,9 @@
+<?php
+
+// C1: app.current_tenant_id is the name the contradiction resolution REJECTED, and it
+// is the single most likely wrong name anyone will reach for.
+$db->selectOne("select current_setting('app.current_tenant_id', true) as tenant");
+
+// A third GUC arriving as a bound parameter, which is how every name in this codebase
+// actually reaches Postgres.
+$db->select('select set_config(?, ?, true)', ['app.locale_override', 'ar']);

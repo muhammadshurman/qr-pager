@@ -1,0 +1,6 @@
+<?php
+
+// C2: Postgres SET takes no bind parameters, so this shape is either unparameterised
+// SQL or string interpolation into a statement. Both spellings are rejected.
+$db->statement("SET LOCAL app.tenant_id = '{$tenant}'");
+$db->statement('SET app.bypass_tenant = on');

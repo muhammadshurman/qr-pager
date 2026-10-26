@@ -37,6 +37,7 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "Guard\\": "guard/src/",
             "Tests\\": "tests/"
         }
     },
@@ -75,7 +76,8 @@
         "pint": "pint --test",
         "pint:fix": "pint",
         "stan": "phpstan analyse --memory-limit=1G",
-        "deptrac": "deptrac analyse --no-progress"
+        "deptrac": "deptrac analyse --no-progress",
+        "guard": "@php guard/bin/guard"
     },
     "extra": {
         "laravel": {

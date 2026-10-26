@@ -1,0 +1,11 @@
+<?php
+
+// config/tenancy.php with a third GUC added. Nothing in the SQL would show it: the
+// names travel as bound parameters from DatabaseRoles::guc().
+return [
+    'guc' => [
+        'tenant' => 'app.tenant_id',
+        'bypass' => 'app.bypass_tenant',
+        'locale' => 'app.locale_override',
+    ],
+];
