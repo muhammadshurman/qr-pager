@@ -36,6 +36,7 @@
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rules, invariants, precedence                           | `docs/PROJECT_INSTRUCTIONS.md` — also pasted into the claude.ai Project instructions. **§11 gained a Relay rule and a Round limit on 2026-10-26; the Project-instructions copy needs the same paste or the two disagree** |
 | What each task ships on, and what each gate still needs | `docs/PLAN.md §3.1` — read it when a task starts, not at the end                                                                                                                                                          |
+| Which `§5` rows a task owns, and whether its gate can catch them | `docs/PLAN.md §3.2` — **read it when a task starts, with §3.1.** Added here on 2026-10-26, acting on §3.2's own finding 3: `§0`'s debt list exists for Task 2 and no other task, so for Tasks 3-14 `§5`'s owner column is the only record and nothing told anyone to read it. That is the gap the Task 2 surprise came out of |
 | This file — decisions, data contract, tasks, risks      | `docs/PLAN.md` in the repo is the **source**; the copy in Project knowledge is a mirror, refreshed after each `task-N`                                                                                                    |
 | Accepted stack deviations                               | `docs/adr/`                                                                                                                                                                                                               |
 | Surviving source material                               | `docs/BLUEPRINT.md` — an **archive**, not the original. Read its header before using it.                                                                                                                                  |
@@ -67,6 +68,9 @@ Each ticket carries its own acceptance gate **copied verbatim from §3 below**, 
 ### How a task runs
 
 1. Open the ticket. Read `PROJECT_INSTRUCTIONS.md`, this file, `docs/adr/`.
+   **Including `§3.1` and `§3.2` for this task's own row** — what the gate still needs, and which
+   `§5` rows the task owns with whether its gate could catch them. Task 2 began with `§0` naming 6
+   debt items while `§5`'s owner column assigned 17, and nobody noticed until both were read.
 2. Answer the seven §6 pre-coding questions **as a comment on the ticket**. Then move to In Progress.
 3. Branch `task-N-<slug>`. Build. Three gates green against real Postgres + Redis.
 4. PR. Both required checks green.
@@ -529,6 +533,30 @@ no mechanism behind it.
    not an absence of debt.
 5. R-004 and R-012 are each split across two tasks, and R-007 across two, with the halves given
    different dates. A split row is dispositioned when the _last_ half is, and nothing tracks that.
+
+**Delta, later the same day (2026-10-26). The table above is left exactly as swept; this is what has
+changed since, because a sweep that is not re-run when a row is added is stale the moment one is.**
+
+| Task | §5 row | In §0 debt list | Owning task's §3 gate catches it |
+| --- | --- | --- | --- |
+| **12** | **R-026** `dedoc/scramble` pinned pre-1.0 | n/a | **Partial, and differently** — Task 12's gate does name the spec ("the OpenAPI spec is checked against the live routes"), so a reviewer is at least looking at it; nothing in that clause would notice the generator's version or a behaviour change. What actually catches this row is **mechanical and continuous rather than gate-bound**: `composer openapi:check` diffs a fresh export on every CI run, so a change arrives as a spec diff on a deliberate upgrade. First row in this ledger whose control is a build step rather than a gate clause |
+| **12** (with 13) | **R-027** an attacker who downs Redis removes rate limiting | n/a | **No** — Task 12's gate names per-tenant and per-IP limits, a fuzz suite and SAST/DAST, and none of those takes Redis away. Its compensating control is **Task 13's** WAF rate rules, so the row's mechanism sits in a different task's gate from its owner's — a sixth instance of finding 1, created by this task rather than inherited |
+
+**Task 2's seventeen rows are all dispositioned as of `88759c6`.** Each row's own "Review by" cell in
+`§5` now names the commit that closed it and how, so the seventeen Task 2 lines above are **history, not
+live debt** — they record what the gate could and could not catch at the time, which is the only reason
+to keep them unedited. Finding 2's two wording gaps were closed the same day by the three rank-3 gate
+clauses (Q2) now in `§3` row 2: error response bodies, connection state at the pool boundary, and role
+attributes mutated by tests.
+
+**Revised count: 28 owner→task assignments. 2 caught, 6 partial, 20 not caught.** The ratio did not
+improve — nineteen became twenty — and both new rows were written by the task that had just finished
+counting the problem, which is the honest measure of how easy it is to add a row whose owner's gate
+cannot see it.
+
+**Standing rule, from this delta:** a new `§5` row is swept into this subsection **when it is written**,
+with its three answers, not at the next task's start. Writing a row and assessing it are the same act;
+splitting them is what produced nineteen unassessed assignments.
 
 ---
 
