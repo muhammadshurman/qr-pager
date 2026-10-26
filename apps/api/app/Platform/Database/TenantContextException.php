@@ -23,6 +23,44 @@ final class TenantContextException extends RuntimeException
         );
     }
 
+    /**
+     * C2: "a session-scoped tenant setting is a hard failure". A value in force that
+     * no scope in this process opened is exactly that -- set_config(..., false), an
+     * operator's SET, or a pooled connection handed over carrying one -- and adopting
+     * it ran the callback with no transaction and no clear, so a throw did not roll
+     * back and the value outlived the block (M-1, fifth security review).
+     *
+     * The value is named for diagnosis: it is a tenant id, never a secret, and the
+     * whole problem is not knowing where it came from.
+     */
+    public static function tenantContextNotOpenedHere(string $connection, string $active): self
+    {
+        return new self(
+            "app.tenant_id is already [{$active}] on connection [{$connection}], but no tenant scope "
+            .'in this process opened it. A tenant setting this process did not open is a hard '
+            .'failure (PROJECT_INSTRUCTIONS.md C2): it is not transaction-local to any block here, '
+            .'so nothing would roll it back. Clear it before opening a scope.'
+        );
+    }
+
+    /**
+     * The scope was in force when the block started and gone when it finished, which
+     * means the connection underneath was replaced -- a reconnect, or DB::purge().
+     * Laravel's transaction counter resets with it, so the COMMIT became a no-op and
+     * the block's writes were discarded. Loud, because silent was H-B
+     * (M-2, fifth security review).
+     */
+    public static function scopeWasLostDuringCallback(string $connection): self
+    {
+        return new self(
+            "The tenant scope opened on connection [{$connection}] was no longer in force when the "
+            .'block finished, so the connection underneath it was replaced and the transaction '
+            .'this method opened no longer exists. Anything the block wrote has been discarded. '
+            .'Reported rather than returned: returning here is how a rolled-back write looks '
+            .'like a success.'
+        );
+    }
+
     public static function alreadyOnAnotherConnection(string $active, string $requested): self
     {
         return new self(

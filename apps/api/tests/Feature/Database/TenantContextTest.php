@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantContextException;
+use App\Platform\Database\UnsafeDatabaseRoleException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\Composition;
 
 /*
  * The withTenant() helper itself (PLAN.md §2.2).
@@ -263,5 +265,187 @@ it('never reports success when the work was rolled back', function (): void {
         expect($raised->getMessage())->not->toContain('set_config')
             ->and($raised->getMessage())->not->toContain('select ')
             ->and($raised->getPrevious())->toBeNull();
+    }
+});
+
+/*
+ * H-C, M-1, M-2 and M-3 -- fifth security review, of the fifth round's own diff.
+ */
+
+it('refuses to open a tenant scope on a connection row level security cannot narrow', function (): void {
+    // H-C. The GUC is set correctly and means nothing: a superuser ignores ENABLE and
+    // FORCE row level security entirely, so the block reads every tenant and commits a
+    // cross-tenant write while every call site reads as correctly scoped. Measured
+    // before the fix: 2 of 2 tenants visible, keyed cross-tenant UPDATE committed.
+    $alpha = $this->makeTenant();
+    $this->makeTenant();
+    $reached = false;
+
+    expect(function () use ($alpha, &$reached): void {
+        withTenant($alpha, function () use (&$reached): void {
+            $reached = true;
+        }, 'pgsql_root');
+    })->toThrow(UnsafeDatabaseRoleException::class, 'ignores FORCE row level security');
+
+    expect($reached)->toBeFalse('the callback ran on a connection that ignores row level security');
+});
+
+it('refuses a bypass on a connection row level security cannot narrow either', function (): void {
+    // H-C on the other helper. The bypass is the named, audited cross-tenant path; a
+    // role that ignores row level security makes every other path a cross-tenant one.
+    expect(fn () => withoutTenantScope('H-C', fn () => true, 'pgsql_root'))
+        ->toThrow(UnsafeDatabaseRoleException::class, 'ignores FORCE row level security');
+});
+
+it('refuses to scope on the app connection if that role is ever granted BYPASSRLS', function (): void {
+    // Proven against the real cluster rather than asserted, and it is the reachable
+    // half of H-C: the connection the application actually serves traffic on, with the
+    // one attribute that silently removes tenant isolation.
+    $alpha = $this->makeTenant();
+    $root = $this->asRoot();
+    $root->unprepared('alter role qrpager_app bypassrls');
+
+    try {
+        expect(fn () => withTenant($alpha, fn () => true))
+            ->toThrow(UnsafeDatabaseRoleException::class, 'it holds BYPASSRLS');
+    } finally {
+        $root->unprepared('alter role qrpager_app nobypassrls');
+        DB::purge('pgsql');
+    }
+
+    // And the guard is not merely refusing everything.
+    expect(withTenant($alpha, fn () => DB::table('tenants')->count()))->toBe(1);
+});
+
+it('still lets the owner connection scope, which §2.10 depends on', function (): void {
+    // The guard that closes H-C must NOT be assertSafe()'s full set: that refuses the
+    // owner (not a runtime role, holds CREATE on schema public), and §2.10's
+    // per-tenant loop runs inside migrations, which run as the owner. This is the
+    // clause that would have broken.
+    $alpha = $this->makeTenant();
+    $this->makeTenant();
+
+    expect(withTenant($alpha, fn () => DB::connection('pgsql_owner')->table('tenants')->count(), 'pgsql_owner'))
+        ->toBe(1);
+});
+
+it('still refuses a bypass on a non-owner connection, ahead of which the H-C check sits', function (): void {
+    expect(fn () => withoutTenantScope('owner only', fn () => true, 'pgsql'))
+        ->toThrow(TenantContextException::class, 'may only run as');
+});
+
+it('refuses a tenant setting that no scope in this process opened', function (): void {
+    // M-1, and C2 verbatim: "a session-scoped tenant setting is a hard failure".
+    // Making the GUC the only source of truth made run() adopt one instead: it
+    // short-circuited as re-entry, so the callback ran with NO transaction and the
+    // value was never cleared. Measured before the fix: transactionLevel() 0 inside
+    // the callback, a write surviving a deliberate throw, and the context still in
+    // force after run() returned.
+    $alpha = $this->makeTenant();
+    $reached = false;
+
+    Composition::setSessionGuc('pgsql', 'app.tenant_id', $alpha);
+
+    try {
+        expect(function () use ($alpha, &$reached): void {
+            withTenant($alpha, function () use (&$reached): void {
+                $reached = true;
+            });
+        })->toThrow(TenantContextException::class, 'no tenant scope in this process opened it');
+
+        expect($reached)->toBeFalse('the callback ran outside any transaction this helper opened');
+
+        // Refused, not silently tidied up: clearing someone else's session value would
+        // hide the misconfiguration that produced it.
+        expect(Composition::tenantGuc('pgsql'))->toBe($alpha);
+    } finally {
+        DB::purge('pgsql');
+    }
+});
+
+it('runs every callback inside a transaction it opened itself', function (): void {
+    // The invariant M-1 broke, asserted on each connection the helper accepts rather
+    // than only the default one.
+    foreach (['pgsql', 'pgsql_owner', 'pgsql_worker'] as $connection) {
+        $tenant = $this->makeTenant();
+
+        withTenant($tenant, function () use ($connection): void {
+            expect(DB::connection($connection)->transactionLevel())->toBeGreaterThanOrEqual(1);
+        }, $connection);
+    }
+});
+
+it('never reports success when the connection under an open scope was replaced', function (): void {
+    // M-2, fix-agnostic and the same property as the H-B test above: either the write
+    // survives or something is raised. Replacing the connection mid-callback resets
+    // Laravel's transaction counter, so the COMMIT became a no-op; measured before the
+    // fix, run() returned 'callback-finished' with the write gone and nothing raised.
+    $tenant = $this->makeTenant();
+    $reference = 'RECONNECT-'.Str::random(6);
+
+    $raised = null;
+    $returned = null;
+
+    try {
+        $returned = withTenant($tenant, function () use ($tenant, $reference): string {
+            DB::table('outbox')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenant,
+                'type' => 'pager.ready',
+                'dedupe_key' => $reference,
+            ]);
+
+            // What a reconnect, or DB::purge() from anywhere else in the process, does.
+            DB::connection('pgsql')->disconnect();
+
+            return 'callback-finished';
+        });
+    } catch (TenantContextException $e) {
+        $raised = $e;
+    }
+
+    $persisted = withTenant($tenant, fn () => DB::table('outbox')->where('dedupe_key', $reference)->exists());
+
+    expect($persisted || $raised !== null)->toBeTrue(
+        'withTenant returned '.var_export($returned, true).' and the write is gone',
+    );
+
+    if ($raised !== null) {
+        expect($raised->getMessage())->not->toContain('set_config')
+            ->and($raised->getMessage())->not->toContain('select ')
+            ->and($raised->getPrevious())->toBeNull();
+    }
+});
+
+it('reports the active tenant for a scope on any connection, not just the default one', function (): void {
+    // M-3. current() read a PHP field before the mirror was removed, so it answered
+    // the same whatever connection the scope was on. Reading the app connection by
+    // default made it return null inside a perfectly good scope on another one --
+    // and §4 › Realtime builds Redis keys from exactly this value, so null means one
+    // key shared by every tenant.
+    $context = app(TenantContext::class);
+
+    foreach (['pgsql', 'pgsql_owner', 'pgsql_worker'] as $connection) {
+        $tenant = $this->makeTenant();
+
+        withTenant($tenant, function () use ($context, $tenant, $connection): void {
+            expect($context->current())->toBe($tenant, "current() inside a scope on {$connection}");
+        }, $connection);
+
+        expect($context->current())->toBeNull();
+    }
+});
+
+it('reports no tenant when the setting holds something that is not a tenant id', function (): void {
+    // run() validates on the way in; current() now validates on the way out, so a
+    // value this class never wrote cannot leave here as a tenant id.
+    $context = app(TenantContext::class);
+
+    Composition::setSessionGuc('pgsql', 'app.tenant_id', 'not-a-uuid');
+
+    try {
+        expect($context->current())->toBeNull();
+    } finally {
+        DB::purge('pgsql');
     }
 });

@@ -30,9 +30,17 @@ use Throwable;
  * affect which tenant is in force -- a stale entry can only make this class
  * stricter, never looser.
  *
- * Every statement here goes through setGuc() or readContext(), which convert a
- * driver error into a TenantContextException carrying no statement text and no
- * bindings (§4 › Edge & ops).
+ * Every statement here goes through setGuc(), readState(), clearScope() or
+ * insertBypassAudit(), each of which converts a driver error into a
+ * TenantContextException carrying no statement text and no bindings
+ * (§4 › Edge & ops).
+ *
+ * Neither helper trusts the connection it was handed. readState() reads the role's
+ * rolsuper and rolbypassrls in the same round trip as the GUCs, and both helpers
+ * refuse before doing anything else if either is set: row level security does not
+ * apply to such a role, so a scope on it is the widest path in the codebase while
+ * reading as the narrowest (H-C). RuntimeRoleGuard owns that rule; assertSafe() is
+ * the wider boot-time check and stays Task 2's.
  */
 class TenantContext
 {
@@ -42,15 +50,33 @@ class TenantContext
     /** What app.tenant_id holds on $connection right now; null when nothing is in force. */
     public function current(?string $connection = null): ?string
     {
-        $connection ??= DatabaseRoles::connection('app');
+        // Defaults to the connection this object actually opened a scope on. Before
+        // the mirror was removed this was a PHP field, so it answered the same for a
+        // scope on any connection; reading the app connection by default made it
+        // report "no tenant" inside a perfectly good scope on the owner or worker
+        // connection, which §4 › Realtime would turn into one Redis key shared by
+        // every tenant (M-3, fifth security review). run() refuses a second
+        // connection, so there is never more than one to choose from, and a stale
+        // entry can only point at a connection whose GUC is '' -- null, not a wrong
+        // tenant.
+        $connection ??= array_key_first($this->openScopes) ?? DatabaseRoles::connection('app');
 
-        $tenant = $this->readContext(DB::connection($connection))['tenant'];
+        $tenant = $this->readState(DB::connection($connection))['tenant'];
 
-        return $tenant === '' ? null : $tenant;
+        // run() validates on the way in; this validates on the way out, so a GUC set
+        // by anything other than this class cannot leave here as a tenant id.
+        return Str::isUuid($tenant) ? $tenant : null;
     }
 
     /**
      * Run $callback inside one transaction with app.tenant_id set to $tenantId.
+     *
+     * $connection narrows THAT connection and no other. A transaction-local GUC is
+     * per Postgres session, so a callback that queries a different connection is not
+     * narrowed by this scope -- measured: inside a bypass on the owner connection, a
+     * scope on the app connection is genuinely scoped on the app connection while the
+     * owner one still sees every tenant (R-015). The H-C check below means the
+     * connection at least cannot be one row level security does not apply to.
      *
      * @template TReturn
      *
@@ -66,13 +92,21 @@ class TenantContext
         $connection ??= DatabaseRoles::connection('app');
         $db = DB::connection($connection);
 
-        $active = $this->readContext($db);
+        $active = $this->readState($db);
 
-        // FIRST, above every short-circuit. Measured on 16.14: owner_bypass_* and
-        // tenant_isolation_* are both PERMISSIVE and FOR ALL, so Postgres ORs them --
-        // while a bypass is live the tenant predicate narrows nothing and this block
-        // would run completely unscoped, for reads and for writes. ANY non-empty value
-        // refuses, so no configuration value can disarm this check.
+        // FIRST, before every other check and every short-circuit: if row level
+        // security does not apply to this role, nothing below this line means
+        // anything. A SUPERUSER or BYPASSRLS connection sets app.tenant_id correctly,
+        // reads every tenant, commits a cross-tenant write and raises nothing -- the
+        // scope advertises itself as narrowed while being the widest path in the
+        // codebase (H-C, fifth security review).
+        $this->assertRowLevelSecurityApplies($active);
+
+        // Measured on 16.14: owner_bypass_* and tenant_isolation_* are both PERMISSIVE
+        // and FOR ALL, so Postgres ORs them -- while a bypass is live the tenant
+        // predicate narrows nothing and this block would run completely unscoped, for
+        // reads and for writes. ANY non-empty value refuses, so no configuration value
+        // can disarm this check.
         if ($active['bypass'] !== '') {
             throw TenantContextException::cannotScopeInsideBypass($connection);
         }
@@ -80,6 +114,17 @@ class TenantContext
         // Re-entry is decided by what is in force on this connection, never by PHP
         // state. A service calling another service with the same tenant is fine.
         if ($active['tenant'] !== '') {
+            // ... but only when a scope in this process put it there. $openScopes is
+            // the record of that, and it is not a mirror of the value: it cannot say
+            // WHICH tenant is in force, only whether this object opened one here. A
+            // value in force without one is session-scoped, and C2 makes that a hard
+            // failure -- adopting it skipped the transaction and the clear entirely,
+            // so a throw inside the block did not roll back and the context outlived
+            // it (M-1, fifth security review).
+            if (! isset($this->openScopes[$connection])) {
+                throw TenantContextException::tenantContextNotOpenedHere($connection, $active['tenant']);
+            }
+
             if ($active['tenant'] !== $tenantId) {
                 throw TenantContextException::alreadyInAnotherTenant($active['tenant'], $tenantId);
             }
@@ -104,15 +149,18 @@ class TenantContext
 
                 // Success path only. A callback that threw needs no clearing: Laravel
                 // rolls back -- the transaction, or to the savepoint it opened for a
-                // nested block -- and measured on 16.14 a full ROLLBACK leaves the
-                // setting empty while ROLLBACK TO SAVEPOINT restores the value held
-                // when the savepoint was taken.
+                // nested block -- and measured on 16.14 a full ROLLBACK leaves a
+                // transaction-local setting empty, while ROLLBACK TO SAVEPOINT restores
+                // the value held when the savepoint was taken. ("Empty" holds because
+                // no session-scoped value can be underneath it: the check above refuses
+                // one rather than adopting it. With one underneath, a full ROLLBACK
+                // leaves that session value in place -- measured.)
                 //
-                // This clear is LOUD. Swallowing it let an aborted transaction commit as
-                // a silent rollback while this method returned the callback's value:
-                // measured, a write made before a caught QueryException was gone
-                // afterwards with nothing raised anywhere.
-                $this->setGuc($db, $guc, '');
+                // This clear is LOUD, and it proves the scope was still ours. Swallowing
+                // it let an aborted transaction commit as a silent rollback while this
+                // method returned the callback's value; not checking what it cleared let
+                // the same thing happen when the connection underneath was replaced.
+                $this->clearScope($db, $guc, $tenantId, $connection);
 
                 return $result;
             } finally {
@@ -142,19 +190,26 @@ class TenantContext
         $connection ??= DatabaseRoles::connection('owner');
         $db = DB::connection($connection);
 
-        $owner = DatabaseRoles::name('owner');
-        $role = $this->currentRole($db);
+        // One read for the role, both GUCs and the role's RLS attributes, so the
+        // checks below cost nothing extra between them.
+        $active = $this->readState($db);
 
-        if ($role !== $owner) {
-            throw TenantContextException::bypassRequiresOwner($role, $owner);
+        // Same first check as run(), for the same reason: this is the named, audited
+        // cross-tenant path, and a role that ignores row level security makes every
+        // other path a cross-tenant one too, unnamed and unaudited (H-C).
+        $this->assertRowLevelSecurityApplies($active);
+
+        $owner = DatabaseRoles::name('owner');
+
+        if ($active['role'] !== $owner) {
+            throw TenantContextException::bypassRequiresOwner($active['role'], $owner);
         }
 
         // A bypass may not open inside a tenant scope: the scope's caller believes its
         // queries are narrowed, and they would stop being. Both halves fail closed --
         // what is in force on this connection, and whether this object holds a scope
-        // anywhere.
-        $active = $this->readContext($db);
-
+        // anywhere. The GUC half is not redundant: it is the only half that catches a
+        // tenant setting this process did not open (L-2).
         if ($active['tenant'] !== '') {
             throw TenantContextException::cannotBypassInsideTenantScope($connection);
         }
@@ -188,30 +243,101 @@ class TenantContext
     }
 
     /**
-     * Both GUCs in one round trip, so opening a scope costs one read and one write.
+     * Both GUCs, the role, and the two role attributes that decide whether row level
+     * security applies at all -- in one round trip, so neither helper pays for the
+     * H-C check and opening a scope still costs one read and one write (L-D).
      *
      * "Never set" and "set to empty" both read as '', which is exactly the value
      * every policy treats as no context: each tenant_isolation_* policy compares
      * against NULLIF(current_setting('app.tenant_id', true), '').
      *
-     * @return array{tenant: string, bypass: string}
+     * @return array{tenant: string, bypass: string, role: string, superuser: bool, bypassrls: bool}
      */
-    private function readContext(ConnectionInterface $db): array
+    private function readState(ConnectionInterface $db): array
     {
         try {
             $row = $db->selectOne(
                 'select coalesce(current_setting(?, true), ?) as tenant,
-                        coalesce(current_setting(?, true), ?) as bypass',
+                        coalesce(current_setting(?, true), ?) as bypass,
+                        current_user                          as role,
+                        r.rolsuper                            as superuser,
+                        r.rolbypassrls                        as bypassrls
+                 from pg_roles r
+                 where r.rolname = current_user',
                 [DatabaseRoles::guc('tenant'), '', DatabaseRoles::guc('bypass'), ''],
             );
         } catch (Throwable $e) {
             throw TenantContextException::statementFailed('read', (string) $e->getCode());
         }
 
+        // current_user always has a pg_roles row, so no row is a broken connection
+        // rather than an unprivileged one -- and "cannot tell whether row level
+        // security applies" must never read as "it does". The attribute defaults
+        // below fail closed for the same reason.
+        if (! is_object($row)) {
+            throw TenantContextException::statementFailed('read', '');
+        }
+
         return [
-            'tenant' => is_object($row) && is_string($row->tenant ?? null) ? $row->tenant : '',
-            'bypass' => is_object($row) && is_string($row->bypass ?? null) ? $row->bypass : '',
+            'tenant' => is_string($row->tenant ?? null) ? $row->tenant : '',
+            'bypass' => is_string($row->bypass ?? null) ? $row->bypass : '',
+            'role' => is_string($row->role ?? null) ? $row->role : '',
+            'superuser' => (bool) ($row->superuser ?? true),
+            'bypassrls' => (bool) ($row->bypassrls ?? true),
         ];
+    }
+
+    /**
+     * @param  array{tenant: string, bypass: string, role: string, superuser: bool, bypassrls: bool}  $state
+     */
+    private function assertRowLevelSecurityApplies(array $state): void
+    {
+        $reasons = RuntimeRoleGuard::reasonsRowLevelSecurityIsNotEnforced(
+            $state['superuser'], $state['bypassrls'],
+        );
+
+        if ($reasons !== []) {
+            throw new UnsafeDatabaseRoleException($state['role'], $reasons);
+        }
+    }
+
+    /**
+     * Clear app.tenant_id, and prove in the same round trip that the scope this
+     * method opened was still the one in force.
+     *
+     * Without the read-back the clear simply succeeded against whatever session it
+     * landed on. Measured: replacing the connection mid-callback -- a reconnect, or
+     * DB::purge() -- leaves Laravel's transaction counter at 0, so the later COMMIT
+     * is a no-op, the rest of the block runs unscoped, and run() returns the
+     * callback's value with the scoped write silently discarded. That is H-B's own
+     * failure mode reached by another route (M-2, fifth security review).
+     *
+     * MATERIALIZED is load-bearing, not decoration: Postgres does not specify the
+     * evaluation order of a target list, so reading and writing one GUC in a single
+     * unfenced select is only accidentally correct. It does return the previous value
+     * on 16.14 -- measured -- which is exactly the kind of accident that stops being
+     * true without warning.
+     */
+    private function clearScope(ConnectionInterface $db, string $guc, string $expected, string $connection): void
+    {
+        try {
+            $row = $db->selectOne(
+                'with previous as materialized (
+                     select coalesce(current_setting(?, true), ?) as value
+                 )
+                 select previous.value as before, set_config(?, ?, true) as cleared
+                 from previous',
+                [$guc, '', $guc, ''],
+            );
+        } catch (Throwable $e) {
+            throw TenantContextException::statementFailed('cleared', (string) $e->getCode());
+        }
+
+        $before = is_object($row) && is_string($row->before ?? null) ? $row->before : '';
+
+        if ($before !== $expected) {
+            throw TenantContextException::scopeWasLostDuringCallback($connection);
+        }
     }
 
     private function setGuc(ConnectionInterface $db, string $name, string $value): void
@@ -223,17 +349,6 @@ class TenantContext
                 $value === '' ? 'cleared' : 'set', (string) $e->getCode(),
             );
         }
-    }
-
-    private function currentRole(ConnectionInterface $db): string
-    {
-        try {
-            $row = $db->selectOne('select current_user as role');
-        } catch (Throwable $e) {
-            throw TenantContextException::statementFailed('read', (string) $e->getCode());
-        }
-
-        return is_object($row) && is_string($row->role ?? null) ? $row->role : '';
     }
 
     private function insertBypassAudit(ConnectionInterface $db, string $reason): void
