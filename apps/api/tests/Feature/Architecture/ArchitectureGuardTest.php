@@ -12,6 +12,12 @@ use Illuminate\Support\Facades\Process;
  *   2. the platform layer imports no feature modules
  *   3. production code imports no test helpers
  *
+ * A fourth rule rides along, from B5: a feature module may not be built on the
+ * pre-Task-5 auth stub. It is not one of §3's named three -- it is the mechanical half
+ * of "the stub surviving Task 5 is a CI failure rather than a reviewer's job" -- and it
+ * is proven the same way, because a rule nobody has seen fail is a rule nobody should
+ * trust.
+ *
  * Each case copies a fixture into the layer it violates, runs THE REAL deptrac.yaml,
  * and asserts deptrac reports the dependency and exits non-zero. The real config is
  * used on purpose: a fixture-only config would be a second copy of the ruleset, and a
@@ -94,6 +100,16 @@ it('guard 3 fails when production code imports a test helper', function (): void
     expect($exit)->not->toBe(0, 'deptrac accepted production code importing Tests\\Support')
         ->and($output)->toContain('App\Platform\Deliberately\BadTestHelperDependency must not depend on')
         ->and($output)->toContain('Tests\Support\Composition');
+});
+
+it('fails when a feature module is built on the pre-Task-5 auth stub — B5', function (): void {
+    [$exit, $output] = deptracAgainst([
+        'feature-imports-auth-stub.php.fixture' => 'app/Features/Deliberately/FeatureBuiltOnTheAuthStub.php',
+    ]);
+
+    expect($exit)->not->toBe(0, 'deptrac accepted a Feature built on the auth stub')
+        ->and($output)->toContain('App\Features\Deliberately\FeatureBuiltOnTheAuthStub must not depend on')
+        ->and($output)->toContain('App\Platform\Auth\HarnessTenantResolver');
 });
 
 it('leaves no fixture behind in app/', function (): void {

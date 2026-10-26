@@ -24,6 +24,11 @@ use Illuminate\Validation\ValidationException;
  */
 
 beforeEach(function (): void {
+    // Every /v1 route is deny-by-default behind RequireTenantScope, so a request with
+    // no resolved tenant is a 401 that never reaches the route under test. The tenant
+    // comes from the harness binding and never from the request (B5).
+    $this->actingForTenant();
+
     config(['app.debug' => true]);
 });
 

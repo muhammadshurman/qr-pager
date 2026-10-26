@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Platform\Auth\HarnessTenantResolver;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
+use App\Platform\Http\TenantResolver;
 use Dedoc\Scramble\Scramble;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\ServiceProvider;
@@ -36,6 +38,13 @@ class AppServiceProvider extends ServiceProvider
         // requests carries nothing between them -- and the request boundary disarms it
         // in both of the two ways a request can end (R-022).
         $this->app->singleton(TenantScopeGuard::class);
+
+        // The pre-Task-5 resolver (B5). One binding, replaced wholesale by Task 5 --
+        // which is why RequireTenantScope, the rate limiter's per-tenant key and
+        // everything downstream speak to the INTERFACE and not to this class. The stub
+        // reads a container binding a test sets, never an HTTP input, and refuses to run
+        // outside local/testing, so it cannot serve a production request at all.
+        $this->app->bind(TenantResolver::class, HarnessTenantResolver::class);
 
         // Scramble registers GET docs/api, GET docs/api.json and a dev-tools asset
         // route by default. The spec this project ships is a committed file generated

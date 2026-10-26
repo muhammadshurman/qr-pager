@@ -1,15 +1,20 @@
 <?php
 
+use App\Domain\Http\ProblemType;
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
 use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
+use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RequireTenantScope;
+use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -24,6 +29,22 @@ return Application::configure(basePath: dirname(__DIR__))
             // balancer's health-check path must not change because the API's major
             // version did. Approved 2026-10-26; the reason is in §6 beside the policy.
             require __DIR__.'/../routes/probes.php';
+
+            // "The rate limiter covers unknown routes (404s)" -- PLAN.md §3, row 2,
+            // which names this clause explicitly. A 404 costs almost nothing to serve
+            // and everything to scan with, so an unmatched path gets its own tighter
+            // bucket and a problem+json document rather than Laravel's HTML page.
+            //
+            // Registered LAST, after the probes and after /v1, because a fallback
+            // matches anything: declared earlier it would swallow them. It carries no
+            // tenant middleware, because an unknown path has no tenant to resolve and
+            // refusing it as unauthenticated would tell a scanner which paths exist.
+            // ->fallback() first and ->middleware() after: RouteRegistrar has no
+            // fallback() method, so Route::middleware([...])->fallback(...) fails at boot
+            // with "Method Illuminate\Routing\RouteRegistrar::fallback does not exist".
+            Route::fallback(
+                fn (Request $request) => (new Problem(ProblemType::NotFound, $request->getPathInfo()))->toResponse(),
+            )->middleware([RateLimit::class.':unknown']);
         },
     )
     // Laravel's health: '/up' was removed here. It was the only other public route, it
@@ -50,6 +71,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // The global arming above still applies, and there is nothing for it to refuse:
         // /healthz reads nothing and /readyz reads one Redis key.
         $middleware->group('probe', []);
+
+        // Every /v1 route, in this order and for a reason each. The limiter runs FIRST
+        // so an unauthenticated flood costs the limiter and not the resolver; the tenant
+        // requirement runs after it and is deny-by-default -- no tenant, no request.
+        // Neither is on the probe group, which is what "while health and readiness keep
+        // answering" means.
+        $middleware->appendToGroup('api', [
+            RateLimit::class,
+            RequireTenantScope::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Redaction at the PRODUCER as well as at the sink. The RedactLogs tap covers

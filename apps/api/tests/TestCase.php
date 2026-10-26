@@ -7,6 +7,7 @@ namespace Tests;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Tenancy\TenantRole;
+use App\Platform\Auth\HarnessTenantResolver;
 use Illuminate\Database\Connection;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -184,6 +185,28 @@ abstract class TestCase extends BaseTestCase
         ), 'pgsql_owner');
 
         return (string) $row['id'];
+    }
+
+    /**
+     * Make requests as a tenant, through the pre-Task-5 resolver (B5).
+     *
+     * This is the ONLY way a request gets a tenant before Task 5, and that is the
+     * design: HarnessTenantResolver reads a container binding and never a header, a
+     * route parameter, a query string or a cookie, so no HTTP input can choose a
+     * tenant. A stub that read a header would be an unauthenticated tenant-switching
+     * parameter -- the most dangerous shape this application could ship, looking like
+     * perfectly ordinary code.
+     *
+     * Every /v1 route is deny-by-default behind RequireTenantScope, so a feature test
+     * that does not call this gets a 401 with no detail. That is the clause working.
+     */
+    protected function actingForTenant(?string $tenantId = null): string
+    {
+        $tenantId ??= (string) Str::uuid7();
+
+        $this->app->instance(HarnessTenantResolver::BINDING, $tenantId);
+
+        return $tenantId;
     }
 
     /**

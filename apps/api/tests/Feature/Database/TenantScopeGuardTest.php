@@ -199,6 +199,7 @@ it('is armed by the GLOBAL middleware stack, which no route can be added without
 
 it('refuses an unscoped tenant query made by a real request, and the body leaks nothing', function (): void {
     config(['app.debug' => true]);
+    $this->actingForTenant();
 
     Route::middleware('api')->prefix('v1')->get('probe-unscoped', fn () => DB::table('pager_sessions')->count());
 

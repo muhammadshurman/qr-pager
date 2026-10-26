@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Features\Deliberately;
+
+use App\Platform\Auth\HarnessTenantResolver;
+
+/**
+ * B5's guard: a feature module may not be built on the pre-Task-5 auth stub.
+ *
+ * The stub resolves a tenant from a container binding a test sets. A feature that
+ * depended on it would work in the suite, refuse in production (the stub throws outside
+ * local/testing), and break outright when Task 5 replaces it -- so this is a dependency
+ * rule rather than a reviewer's job.
+ */
+final class FeatureBuiltOnTheAuthStub
+{
+    public function __construct(private readonly HarnessTenantResolver $stub) {}
+}

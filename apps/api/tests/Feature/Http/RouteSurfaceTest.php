@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Http\ProblemType;
+use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 
 /*
  * "Every public route is under /v1" (PLAN.md §3, row 2), with the two probes as the
@@ -39,7 +42,12 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // The allowlist, in full. A new route outside /v1 fails here and has to be either
     // moved under /v1 or added to this list with a reason -- which is a diff a reviewer
     // sees, rather than a route table nobody reads.
-    $allowed = ['/healthz', '/readyz'];
+    //
+    // The fallback is on it because it is not a surface: it matches paths that do not
+    // exist, and the gate names it -- "the rate limiter covers unknown routes (404s)".
+    // Without it every unmatched path would get Laravel's HTML 404 instead of a
+    // problem+json document, and nothing would count a scan.
+    $allowed = ['/healthz', '/readyz', '/{fallbackPlaceholder}'];
 
     $outside = array_values(array_filter(
         publicRouteUris(),
@@ -106,4 +114,32 @@ it('answers readiness 503 when redis is unreachable, while liveness stays 200', 
 
     $this->getJson('/readyz')->assertStatus(503)->assertJsonPath('ready', false);
     $this->getJson('/healthz')->assertOk();
+});
+
+it('answers an unknown path with a problem document and counts it', function (): void {
+    $response = $this->getJson('/no-such-path-'.Str::uuid7());
+
+    $response->assertStatus(404)->assertJsonPath('type', ProblemType::NotFound->value);
+
+    expect($response->headers->get('Content-Type'))->toContain('application/problem+json')
+        // No tenant middleware on the fallback, deliberately: an unknown path has no
+        // tenant to resolve, and answering 401 would tell a scanner which paths exist.
+        ->and($response->status())->not->toBe(401);
+});
+
+it('rate limits unknown paths on their own tighter bucket — the gate names this clause', function (): void {
+    $limit = (int) config('ratelimit.buckets.unknown.per_ip.attempts');
+
+    expect($limit)->toBeGreaterThan(0)
+        // Tighter than the API's own bucket: a 404 costs almost nothing to serve and
+        // everything to scan with.
+        ->and($limit)->toBeLessThan((int) config('ratelimit.buckets.api.per_ip.attempts'))
+        // And no per-tenant limit, because an unmatched path carries no tenant.
+        ->and(config('ratelimit.buckets.unknown.per_tenant'))->toBeNull();
+
+    $fallback = collect(Route::getRoutes()->getRoutes())
+        ->first(fn (RoutingRoute $route): bool => $route->isFallback);
+
+    expect($fallback)->not->toBeNull()
+        ->and($fallback?->gatherMiddleware())->toContain(RateLimit::class.':unknown');
 });
