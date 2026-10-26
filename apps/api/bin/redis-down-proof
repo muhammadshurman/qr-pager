@@ -83,14 +83,23 @@ printf 'with Redis down: /healthz = %s  /readyz = %s  unknown path = %s\n' "$ali
 
 say "bringing Redis back"
 $COMPOSE start redis
+
+# Loop on /readyz, NOT on the carrier's exit code. readiness:refresh exits 0 even when it
+# could not write -- deliberately, because the scheduler runs it again in five seconds and
+# a non-zero exit from a repeatable event is noise rather than signal. So `&& break` broke
+# on the FIRST iteration whatever happened, and whether the key had been written depended
+# on how fast Redis came back: this proof failed once with "did not recover" against an
+# application that was fine, and passed the next run unchanged. A signal that is always
+# success is not a signal.
+ready=000
 for i in $(seq 1 30); do
   $COMPOSE --profile app exec -T \
     -e DB_WORKER_USERNAME=qrpager_worker -e DB_WORKER_PASSWORD=local_dev_only \
-    frankenphp php artisan readiness:refresh >/dev/null 2>&1 && break
+    frankenphp php artisan readiness:refresh >/dev/null 2>&1 || true
+  ready="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PORT}/readyz")"
+  [ "$ready" = "200" ] && break
   sleep 1
 done
-
-ready="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/readyz")"
 printf 'with Redis up again: /readyz = %s\n' "$ready"
 [ "$ready" = "200" ] || fail "/readyz did not recover (answered $ready)"
 
