@@ -12,7 +12,20 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs on PR branches only -- never on main, never on a tag.
+  #
+  # With this true everywhere, a push to main cancelled the run that was about to
+  # verify the PREVIOUS push to main, so a commit followed quickly by another never
+  # got a verdict at all. That is what happened at the task-1 merge: 3fe10c2 is green
+  # on refs/tags/task-1 (a different concurrency group, so nothing cancelled it) and
+  # not green on refs/heads/main, with byte-identical code. R-001's working rule --
+  # "never merge until both required checks are green" -- is the entire reason an
+  # unenforced main was accepted, and it cannot be performed against a verdict that
+  # never arrives (PLAN.md R-001, §4a 2026-10-26).
+  #
+  # The CI-minute saving is kept where it was meant to apply: a pull_request run has
+  # github.ref = refs/pull/N/merge, so it still cancels its own superseded runs.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   gitleaks:
