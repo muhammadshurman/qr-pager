@@ -52,6 +52,18 @@ composer stan
 php artisan test
 ```
 
+First run on a machine, or after `docker compose down -v`: the cluster's superuser is
+`qrpager_root` and the three application roles are created by
+
+```
+php artisan db:bootstrap      # roles, the database, and the per-role ALTER ROLE timeouts
+php artisan migrate --database=pgsql_owner    # migrations run as the owner, never as the app role
+```
+
+`php artisan test` runs both of those itself, so a fresh clone needs only
+`cp .env.example .env`, `php artisan key:generate` and `docker compose up -d`.
+The role model and why `root` is separate from `owner` are in `docs/PLAN.md §2.1`.
+
 From the repo root, once the workspace exists (Task 8+):
 
 ```

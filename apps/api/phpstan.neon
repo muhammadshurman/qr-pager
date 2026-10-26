@@ -1,5 +1,7 @@
 includes:
     - vendor/larastan/larastan/extension.neon
+    - vendor/pestphp/pest/extension.neon
+    - vendor/pestphp/pest/phpstan-pest-extension.neon
 
 parameters:
     level: 8
@@ -8,4 +10,15 @@ parameters:
         - database
         - routes
         - tests
+    excludePaths:
+        analyse:
+            # Pest binds $this inside a test closure at runtime, so PHPStan types it
+            # as Pest\PendingCalls\TestCall and every $this->makeTenant() in a test
+            # body is an "undefined method". The test *infrastructure* -- TestCase.php
+            # and tests/Support -- stays analysed, which is where the logic lives; a
+            # typo in a closure fails the moment `php artisan test` runs, which is
+            # every gate. Reviewed again if a Pest/PHPStan integration lands.
+            - tests/Unit/*Test.php
+            - tests/Feature/*Test.php
+            - tests/Feature/Database/*Test.php
     tmpDir: build/phpstan
