@@ -35,6 +35,26 @@ final class SourceGuard
 
     public const UNEXPECTED_CONFIGURED_GUCS = 'unexpected-configured-gucs';
 
+    public const UNSCANNABLE_PATH = 'unscannable-path';
+
+    /**
+     * The paths this guard scans. ONE source, and both halves of that matter.
+     *
+     * It was spelled out twice -- in guard/bin/guard's default and again in
+     * RepoGuardTest's "passes on the real tree" assertion -- so the test could agree
+     * with a copy of the list while disagreeing with the list CI actually runs. A
+     * guard whose coverage is asserted against a duplicate of its own configuration
+     * is asserting nothing.
+     *
+     * What is NOT here is deliberate and is tracked rather than quietly widened:
+     * bootstrap/ and docker/ are outside this list, which is a Medium in PLAN.md §5
+     * (R-030) with its own owner. This const is where that row gets fixed, in one
+     * line, when it is fixed.
+     *
+     * @var list<string>
+     */
+    public const PATHS = ['app', 'config', 'database', 'routes', 'tests', 'guard/src'];
+
     /**
      * The single named exception (R-019): one method, in one file, for one rule.
      *
@@ -64,9 +84,60 @@ final class SourceGuard
     {
         $violations = [];
 
-        foreach ($this->files($relativePaths) as $relative => $absolute) {
+        foreach ($this->scannedFiles($relativePaths) as $relative => $absolute) {
             foreach ($this->scanFile($relative, (string) file_get_contents($absolute)) as $violation) {
                 $violations[] = $violation;
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * Rule 6: every configured path has to produce something to read.
+     *
+     * A GUARD THAT SCANNED NOTHING MUST NOT REPORT A PASS, and it did. `files()`
+     * skipped a path that is neither a file nor a directory, and the success line
+     * counted the paths it was GIVEN rather than the files it read -- so
+     * `guard/bin/guard src nonexistent` printed "C1 and C2 hold across 2 scanned
+     * path(s)" and exited 0 having opened nothing. Renaming app/ to src/ would have
+     * disabled the whole guard with a green CI.
+     *
+     * That is R-029's shape -- a check reporting a conclusion it had not established --
+     * in a gate R-029's own candidate list did not name. It is reported through the
+     * same channel as every other rule, so the exit code and the message need no
+     * special case: an unreadable path is a violation.
+     *
+     * A directory that contains no .php file counts as unscannable too. "I walked it
+     * and read nothing" is the same vacuous pass as "I could not find it", and only the
+     * second one has an obvious cause.
+     *
+     * @param  list<string>  $relativePaths
+     * @return list<Violation>
+     */
+    public function scanScannablePaths(array $relativePaths): array
+    {
+        $violations = [];
+
+        foreach ($relativePaths as $relative) {
+            $absolute = $this->root.'/'.$relative;
+
+            if (! is_file($absolute) && ! is_dir($absolute)) {
+                $violations[] = new Violation(
+                    self::UNSCANNABLE_PATH, $relative, 0,
+                    'does not resolve to a file or a directory under the project root, so nothing was '
+                    .'read there -- a configured path that cannot be found disables the guard silently',
+                );
+
+                continue;
+            }
+
+            if ($this->scannedFiles([$relative]) === []) {
+                $violations[] = new Violation(
+                    self::UNSCANNABLE_PATH, $relative, 0,
+                    'resolved, but produced no file to scan -- the guard would report a pass for a '
+                    .'path it never read',
+                );
             }
         }
 
@@ -571,10 +642,16 @@ final class SourceGuard
     }
 
     /**
+     * The files a path list actually produces, keyed by their path relative to the root.
+     *
+     * Public because the binary states the COUNT in its success line: "held across 6
+     * paths" was true of a run that read nothing, and the number a reader can act on is
+     * the number of files opened.
+     *
      * @param  list<string>  $relativePaths
      * @return array<string, string> relative path => absolute path
      */
-    private function files(array $relativePaths): array
+    public function scannedFiles(array $relativePaths): array
     {
         $files = [];
 

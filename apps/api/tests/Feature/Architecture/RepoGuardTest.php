@@ -23,7 +23,11 @@ use Tests\Support\GuardFixtures;
  */
 
 it('passes on the real tree, so a failure below is the fixture and not the repo', function (): void {
-    expect(GuardFixtures::guard()->scan(['app', 'config', 'database', 'routes', 'tests', 'guard/src']))->toBe([])
+    // SourceGuard::PATHS, never a copy of it. This assertion used to spell the list out
+    // again, so it could agree with its own duplicate while CI scanned a different set
+    // (QA H-1 / security #5).
+    expect(GuardFixtures::guard()->scan(SourceGuard::PATHS))->toBe([])
+        ->and(GuardFixtures::guard()->scanScannablePaths(SourceGuard::PATHS))->toBe([])
         ->and(GuardFixtures::guard()->scanConfiguredGucs())->toBe([]);
 });
 
@@ -32,6 +36,56 @@ it('is wired as a composer script and exits 0 on the real tree', function (): vo
 
     expect($result->exitCode())->toBe(0, $result->output().$result->errorOutput())
         ->and($result->output())->toContain('C1 and C2 hold');
+});
+
+/*
+ * Rule 6, and the reason it exists: the guard reported a PASS for paths it had never
+ * opened. `guard/bin/guard src nonexistent` printed "C1 and C2 hold across 2 scanned
+ * path(s)" and exited 0 -- the count was the paths it was handed, not the files it
+ * read, and a path that resolves to nothing was skipped in silence. Renaming app/ would
+ * have turned the whole guard off with a green CI.
+ *
+ * R-029's shape, which is why these assertions are about what the guard DID rather than
+ * about what it concluded.
+ */
+
+it('counts the files it read, not the paths it was given', function (): void {
+    $files = GuardFixtures::guard()->scannedFiles(SourceGuard::PATHS);
+
+    expect($files)->not->toBe([], 'the real tree must produce files to scan');
+
+    $result = Process::path(base_path())->run('composer guard');
+
+    // The number in the success line is the file count, so a run that opened nothing
+    // cannot print a plausible pass.
+    expect($result->output())->toContain(count($files).' file(s)');
+});
+
+it('refuses a configured path that does not resolve, rather than scanning nothing', function (): void {
+    $violations = GuardFixtures::guard()->scanScannablePaths(['app', 'definitely-not-a-path-in-this-repo']);
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::UNSCANNABLE_PATH)
+        ->and($violations[0]->file)->toBe('definitely-not-a-path-in-this-repo');
+});
+
+it('refuses a path that resolves but produces no file to read', function (): void {
+    // app/Features exists and holds only .gitkeep until Task 3 puts a module in it, so
+    // it is the real "walked it and read nothing" case rather than a fabricated one.
+    $violations = GuardFixtures::guard()->scanScannablePaths(['app/Features']);
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::UNSCANNABLE_PATH)
+        ->and($violations[0]->detail)->toContain('never read');
+});
+
+it('exits non-zero through the real binary when a path cannot be scanned', function (): void {
+    // Through the script, because the exit code is what CI reads and the old behaviour
+    // was exit 0 with a reassuring message.
+    $result = Process::path(base_path())->run('php guard/bin/guard definitely-not-a-path-in-this-repo');
+
+    expect($result->exitCode())->toBe(1, $result->output().$result->errorOutput())
+        ->and($result->errorOutput())->toContain(SourceGuard::UNSCANNABLE_PATH);
 });
 
 it('rejects a session-scoped tenant setting', function (): void {

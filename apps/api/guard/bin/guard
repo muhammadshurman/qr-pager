@@ -21,15 +21,27 @@ $guard = new SourceGuard($root);
 
 $paths = array_slice($argv, 1);
 
+// One source for the list -- SourceGuard::PATHS. It used to be spelled out here and
+// again in RepoGuardTest, so the test could agree with its own copy while CI ran a
+// different list.
 if ($paths === []) {
-    $paths = ['app', 'config', 'database', 'routes', 'tests', 'guard/src'];
+    $paths = SourceGuard::PATHS;
 }
 
-$violations = array_merge($guard->scan($paths), $guard->scanConfiguredGucs());
+// Rule 6 FIRST: a path that resolves to nothing is a violation, because the alternative
+// is this script reporting a pass for files it never opened (R-029's shape).
+$violations = array_merge(
+    $guard->scanScannablePaths($paths),
+    $guard->scan($paths),
+    $guard->scanConfiguredGucs(),
+);
 
 if ($violations === []) {
+    // The number of FILES READ, not the number of paths given. The old line said
+    // "across 6 scanned path(s)" for a run that opened nothing.
+    $files = count($guard->scannedFiles($paths));
     $count = count($paths);
-    fwrite(STDOUT, "repo guard: C1 and C2 hold across {$count} scanned path(s).\n");
+    fwrite(STDOUT, "repo guard: C1 and C2 hold across {$files} file(s) in {$count} path(s).\n");
 
     exit(0);
 }
