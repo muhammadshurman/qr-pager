@@ -1407,6 +1407,47 @@ is worth, and nobody checked it. That is the third distinct way this task has pr
 or red signal that meant nothing (`H-2`'s test name, `M-6`'s case body, and now a revert's
 exception), and all three were found by a reader rather than by a gate.
 
+**AND THE CLASS IS NOW MECHANICAL — 2026-10-27, on Muhammad's instruction, which is the
+only reason this delta is not just another observation.** *"The finding-1 class is the
+reason this task took four rounds: three times it produced a signal that meant nothing,
+and a reader caught all three. Make it mechanical."*
+
+`bin/_revert-proof.sh` is one pattern in one place, sourced by **all three** proofs in
+this repository that count a RED as evidence — `lease-revert-proof`, `ttl-revert-proof`
+and `vacuous-assertion-proof`. It enforces three things on every run:
+
+| Check | What it refuses |
+| --- | --- |
+| **The baseline is green** | A proof whose unmodified tree is already red is measuring something other than its revert |
+| **The controls do not move** | Cases a script declares unrelated to what it reverts must stay green in EVERY revert. **A revert that reddens an unrelated case is a BROKEN REVERT, not coverage** |
+| **A red is an assertion** | A red from a binding-arity error, malformed SQL, a parse error or a PHP fatal is the harness breaking. It is rejected as evidence and fails the run |
+
+**The controls were always written down and never checked, which is the whole lesson.**
+`lease-revert-proof`'s header had named two cases as ones that *must not move* since the
+day it was written, and under the broken revert C both moved. The declaration cost
+nothing and bought nothing until something read it. Each script now passes its controls
+to `revert_proof_init` as data rather than stating them in a comment.
+
+**PROVEN TO FAIL, three ways, because a control nobody has seen go red is this delta's own
+subject.** (1) Re-breaking revert C exactly as it was broken — placeholder dropped,
+binding kept — is caught by the script's arity guard before the suite runs: *"FATAL:
+revert C left a binding without its placeholder — the run would be HY093, not evidence"*,
+exit 1. (2) Disabling that guard as well, so the suite really runs, is caught by the
+shared check: *"✗ NOT EVIDENCE: this run contains 'Invalid parameter number'"*, exit 1,
+with the three `SQLSTATE[HY093]` lines quoted. (3) A planted revert that makes the cap
+warn for every session reddens a declared control and is caught: *"✗ A CONTROL MOVED …
+does not cap a session that is under the limit"*, exit 1. **And the first attempt at (3)
+failed to break anything** — lowering the cap from 5 to 1 left the control green, because
+the case reads the cap from config and is relative to it. A control that cannot be
+reddened by changing the number it is about is a better control than the one this delta
+set out to write, and that is recorded rather than tidied away.
+
+**What it does not fix.** The three signals this task produced that meant nothing were a
+test NAME, a case BODY and a revert's EXCEPTION. Only the third is now mechanical. The
+first two were prose disagreeing with code, and the fourteenth delta's rule — *this
+repository's prose is dense enough to be a test oracle and is not being read as one* —
+still has no enforcement and probably cannot have one.
+
 **Standing rule, from the third delta:** a new `§5` row is swept into this subsection **when it is
 written**, with its three answers, not at the next task's start. Writing a row and assessing it are the
 same act; splitting them is what produced nineteen unassessed assignments.

@@ -68,9 +68,23 @@ restore() {
 }
 trap restore EXIT INT TERM
 
+# ONE PATTERN, ONE PLACE: the shared check that a red is an assertion and not the
+# harness breaking. See its header for the round that made it necessary.
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
+
 failures=0
 
 # $1 label, $2 test file, $3 pest --filter
+#
+# ⚠ A RED IS ONLY EVIDENCE IF IT IS THE ASSERTION FAILING. This function used to count
+# ANY non-zero exit as "went red, as it must" -- so a broken world that made PHP fatal,
+# or a grant change that made the query itself invalid, would have been reported as the
+# assertion biting when the assertion had never run. That is the defect
+# bin/_revert-proof.sh exists for: the lease proof published sixteen HY093 exception-reds
+# as regression coverage. The check is shared rather than copied, because a rule enforced
+# in one proof and not the others is the duplicated-precondition shape bin/_runtime.sh
+# was written to stop.
 expect_red() {
   local label="$1" file="$2" filter="$3"
 
@@ -79,7 +93,14 @@ expect_red() {
     sed 's/\x1b\[[0-9;]*m//g' /tmp/qrpager-vacuous.$$ | tail -12 >&2
     failures=$((failures + 1))
   else
-    echo "  ✓ $label -- went red, as it must"
+    sed -i 's/\x1b\[[0-9;]*m//g' /tmp/qrpager-vacuous.$$
+
+    if revert_proof_is_evidence /tmp/qrpager-vacuous.$$; then
+      echo "  ✓ $label -- went red, as it must"
+    else
+      echo "  ✗ $label -- went red for the WRONG REASON; the assertion never ran." >&2
+      failures=$((failures + 1))
+    fi
   fi
 
   rm -f /tmp/qrpager-vacuous.$$

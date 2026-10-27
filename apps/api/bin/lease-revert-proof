@@ -38,42 +38,44 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-# PAO_DISABLE, or laravel/pao prints one JSON line inside an agent session and the
-# per-case verdicts below cannot be read at all (R-054, CLAUDE.md).
-export PAO_DISABLE=1
+# THE SHARED MACHINERY, which checks the three things this script used to assert in prose
+# and verify in none: the baseline is green, the declared controls do not move, and every
+# red is an ASSERTION rather than a driver or binding error. Its header records why it
+# exists -- this script is the one that got it wrong.
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
 
 worker="app/Features/Notifications/OutboxWorker.php"
 subs="app/Features/Pager/PushSubscriptions.php"
-suites="tests/Feature/Notifications/OutboxLeaseTest.php tests/Feature/Notifications/OutboxLeaseIdentityTest.php"
+# THE CONTROLS, DECLARED AND NOW CHECKED. These cases are unrelated to anything any
+# revert below removes -- one is the proof that the cap is not simply refusing
+# everything, and two are properties of config values and of a value object, with no code
+# path to revert. The header has named them since the script was written; under the
+# broken revert C all three moved and nothing said so.
+revert_proof_init \
+  "tests/Feature/Notifications/OutboxLeaseTest.php tests/Feature/Notifications/OutboxLeaseIdentityTest.php" \
+  "does not cap a session that is under the limit" \
+  "keeps one row" \
+  "derives the lease identity from the pre-claim value"
 
 worker_backup="$(mktemp)"
 subs_backup="$(mktemp)"
 
 cp "$worker" "$worker_backup"
 cp "$subs" "$subs_backup"
-trap 'cp "$worker_backup" "$worker"; cp "$subs_backup" "$subs"; rm -f "$worker_backup" "$subs_backup"' EXIT INT TERM
+trap 'cp "$worker_backup" "$worker"; cp "$subs_backup" "$subs"; rm -f "$worker_backup" "$subs_backup"; revert_proof_cleanup' EXIT INT TERM
 
 restore() {
   cp "$worker_backup" "$worker"
   cp "$subs_backup" "$subs"
 }
 
-run() {
-  local label="$1"
-  echo "=== $label"
-  # STRIP THE COLOUR FIRST, THEN FILTER -- bin/ttl-revert-proof's note: Pest writes the ✓
-  # and ⨯ glyphs with an SGR escape in front of them, so a grep anchored at ^\s+ matches
-  # nothing and the section prints empty.
-  php artisan test $suites 2>&1 \
-    | sed 's/\x1b\[[0-9;]*m//g' \
-    | grep -E '^\s*(✓|⨯|PASS|FAIL|Tests:)'
-  echo
-}
+run() { revert_proof_run "$@"; }
 
 echo "R-083 revert proof — OutboxLeaseTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo
 
-run "baseline — no revert, every case should pass"
+run "baseline — no revert, every case should pass" baseline
 
 # ---------------------------------------------------------------------------------
 # Revert A. The re-lease is made unreachable rather than deleted, so the method and its
@@ -140,7 +142,7 @@ run "revert C — the ownership guard removed from finish(), backOff() and aband
 # read-time LIMIT is untouched, so what this isolates is WHICH devices survive.
 # ---------------------------------------------------------------------------------
 restore
-sed -i 's|^\( *\)\$this->evictOldestBeyondCap(\$session);|\1// REVERTED BY bin/lease-revert-proof|' "$subs"
+sed -i 's|^\( *\)\$this->evictOldestBeyondCap(\$session, \$endpoint);|\1// REVERTED BY bin/lease-revert-proof|' "$subs"
 grep -q 'REVERTED BY bin/lease-revert-proof' "$subs" || { echo "FATAL: the eviction call was not found"; exit 1; }
 run "revert D — the newest-wins eviction removed (security M-1)"
 
@@ -168,3 +170,6 @@ if grep -l 'REVERTED BY bin/lease-revert-proof' "$worker" "$subs" 2>/dev/null; t
 fi
 
 echo "both files restored: no revert sentinel remains in either."
+echo
+
+revert_proof_verdict "lease-revert-proof" || exit 1

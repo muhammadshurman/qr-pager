@@ -21,34 +21,37 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-# PAO_DISABLE, or laravel/pao prints one JSON line inside an agent session and the
-# per-case verdicts below cannot be read at all (R-054, CLAUDE.md).
-export PAO_DISABLE=1
+# THE SHARED MACHINERY. One pattern, one place -- bin/_revert-proof.sh checks that the
+# baseline is green, that the declared controls do not move, and that every red is an
+# ASSERTION rather than a driver or binding error. This script did none of those three,
+# and the proof that got it wrong was the lease one; a rule enforced in one script and
+# not the others is the duplicated-precondition shape bin/_runtime.sh exists because of.
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
 
 target="app/Features/Pager/PagerSessions.php"
-suite="tests/Feature/Pager/PagerTtlTest.php"
 backup="$(mktemp)"
 
 cp "$target" "$backup"
-trap 'cp "$backup" "$target"; rm -f "$backup"' EXIT INT TERM
+trap 'cp "$backup" "$target"; rm -f "$backup"; revert_proof_cleanup' EXIT INT TERM
 
-run() {
-  local label="$1"
-  echo "=== $label"
-  # STRIP THE COLOUR FIRST, THEN FILTER. Pest writes the ✓ and ⨯ glyphs with an SGR
-  # escape in front of them, so a grep anchored at ^\s+ matches nothing at all -- which
-  # is how the first version of this script printed three empty sections and looked like
-  # a suite with no cases.
-  php artisan test "$suite" 2>&1 \
-    | sed 's/\x1b\[[0-9;]*m//g' \
-    | grep -E '^\s*(✓|⨯|PASS|FAIL|Tests:)'
-  echo
-}
+# THE CONTROLS. R-068's own measurement is that apply()-only turns six of the nine cases
+# red and renotify()-only turns one. The three that never move are the carve-outs the
+# TTL rule deliberately does not apply to -- a terminal status, a session inside its TTL,
+# and another tenant's session, none of which any revert here can touch. Declared so the
+# machinery can check them, which is the whole lesson of the lease proof.
+revert_proof_init \
+  "tests/Feature/Pager/PagerTtlTest.php" \
+  "leaves terminal statuses alone" \
+  "passes a session inside its TTL straight through" \
+  "still answers 404 and never 409 for another tenant"
+
+run() { revert_proof_run "$@"; }
 
 echo "R-068 revert proof — PagerTtlTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo
 
-run "baseline — no revert, every case should pass"
+run "baseline — no revert, every case should pass" baseline
 
 cp "$backup" "$target"
 # The apply() call site. Matched by the variable names, which differ between the two call
@@ -77,3 +80,7 @@ else
   echo "WARNING: $target does NOT match the pre-run copy. Restore it from git." >&2
   exit 1
 fi
+
+echo
+
+revert_proof_verdict "ttl-revert-proof" || exit 1
