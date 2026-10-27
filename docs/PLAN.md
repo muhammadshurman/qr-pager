@@ -2760,12 +2760,16 @@ are in tagged history, and neither tag is moved.
 #### Gate after the Security disposition
 
 **All six steps green, exit 0 — 513 passed, 2383 assertions**, measured at **`9b2cad9`'s
-tree** (504 / 2257 after the QA round; 492 / 2182 before either). The round is four commits:
-`123c9b3` the dispositions, `c8fffe7` the generator case, `9b2cad9` this record, and
-`6f8810d` which adds these commit names and nothing else — so `9b2cad9` is the last commit
-that could move the figure, which is why it is named rather than "the head". A figure that
-names the head is stale the moment anything lands after it, which is the shape `§0` keeps
-being corrected for. The gate ran with every document edit on disk, because `composer
+tree**, and **re-measured identically — 513 / 2383, six steps, exit 0 — at `fc77889`'s**
+(504 / 2257 after the QA round; 492 / 2182 before either). The round is seven commits:
+`123c9b3` the dispositions, `c8fffe7` the generator case, `9b2cad9` this record, `6f8810d`
+and `9076b88` which add and then stabilise these commit names, `fc77889` the two dispositions
+that moved within a day, and the one carrying this sentence, which edits this file alone.
+**A figure that names "the head" is stale the moment anything lands after it** — which
+happened twice while this paragraph was being written, and is the shape `§0` keeps being
+corrected for. So each figure names the TREE it was measured at, and the last two commits of
+the round are Markdown and a code comment: `composer guard` is the only gate step either can
+reach, and it is green. The gate ran with every document edit on disk, because `composer
 guard`'s rule 8 reads `docs/`, so the figure belongs to this content and not only to the
 code. `composer guard` reads 158 files,
 `deptrac` reports 0 violations and 0 uncovered, and `openapi:check` says the committed spec
