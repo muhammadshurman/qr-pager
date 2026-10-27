@@ -7,6 +7,7 @@ namespace App\Features\Pager;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerAuditAction;
 use App\Domain\Pager\PagerEvent;
+use App\Domain\Pager\PagerSessionExpired;
 use App\Domain\Pager\PagerSessionNotFound;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
@@ -136,6 +137,8 @@ final class PagerSessions
             $session = $this->lock($sessionId);
             $status = PagerStatus::from($session->status);
 
+            $this->refuseIfPastTtl($status, $session);
+
             // Renotify changes no status, so it has its own guard rather than going
             // through the transition table: the question is not "may waiting become
             // ready" but "is there a notification to repeat".
@@ -241,6 +244,14 @@ final class PagerSessions
             $reference = (string) $session->order_reference;
             $renotifies = (int) $session->renotify_count;
 
+            // BEFORE the idempotency check, deliberately. A session past its TTL that is
+            // already `ready` must not answer 200 "it is ready" to a retry -- the worker
+            // is about to move it to `expired` and that answer would be a lie staff act
+            // on. Concurrency is unaffected: two callers racing the same row see the same
+            // TTL verdict, so the gate's "one outbox row, one notification" still holds,
+            // with the count being zero.
+            $this->refuseIfPastTtl($from, $session);
+
             // IDEMPOTENCY, before the transition table. The session is already in the
             // state the caller asked for, so there is nothing to do and nothing to
             // record -- and critically no second outbox row, which is the gate's "one
@@ -279,6 +290,42 @@ final class PagerSessions
     }
 
     /**
+     * Refuse a staff transition on a session whose TTL has passed.
+     *
+     * THE TTL HAD NO ENFORCEMENT POINT AT ALL until this method existed, which is the
+     * defect QA H-1 and security S-2 both found from opposite ends. `expires_at` was
+     * selected by lock() and then never read; ResolvedPagerSession::hasExpired() had no
+     * production caller; and the expiry job that would have moved `status` is registered
+     * and scheduled nowhere (R-058). So PROJECT_INSTRUCTIONS.md §4 › Data's "TTL 2 hours"
+     * was enforced by nothing, and a leaked QR token was in practice a bearer credential
+     * with an unbounded life.
+     *
+     * THE VERDICT COMES FROM POSTGRES, not from PHP. lock() selects `expires_at <= now()`
+     * as a column, so the comparison uses the same clock as the worker's policies and the
+     * `expires_at` default -- there is no skew between the role that writes the TTL, the
+     * role that enforces it and the role that expires it.
+     *
+     * ONLY A LIVE STATUS, which is not a softening. `expires_at` recedes into the past for
+     * every session that ever existed, so an unconditional check would refuse `complete`
+     * on an order collected last week and break the idempotency the gate requires. A
+     * terminal session is finished, not expired. isLive() is the same test the expiry
+     * job's policy whitelist uses, so the two cannot drift.
+     *
+     * The customer half is deliberately NOT here: PagerTokenLookup resolves an expired
+     * session on purpose, so the PWA can tell "expired" from "invalid" (§4.1, Task 9's
+     * gate). Task 4 owns the route in front of it and ResolvedPagerSession::hasExpired()
+     * is what it calls; that obligation is written into R-058 rather than left implied.
+     *
+     * @param  object{status: string, has_expired: bool}  $session
+     */
+    private function refuseIfPastTtl(PagerStatus $from, object $session): void
+    {
+        if ($from->isLive() && $session->has_expired) {
+            throw PagerSessionExpired::pastTtl($from);
+        }
+    }
+
+    /**
      * The row, locked, or PagerSessionNotFound.
      *
      * NOT FOUND AND NEVER FORBIDDEN, which is the IDOR answer. Inside this tenant scope
@@ -297,12 +344,13 @@ final class PagerSessions
      * SQL above, which static analysis cannot read. Declaring it at the boundary means a
      * column added to or removed from that select list is one edit, not four.
      *
-     * @return object{id: string, status: string, order_reference: string, renotify_count: int, expires_at: string}
+     * @return object{id: string, status: string, order_reference: string, renotify_count: int, expires_at: string, has_expired: bool}
      */
     private function lock(string $sessionId): object
     {
         $row = DB::selectOne(
-            'select id, status, order_reference, renotify_count, expires_at
+            'select id, status, order_reference, renotify_count, expires_at,
+                    expires_at <= now() as has_expired
                from pager_sessions
               where id = ?
               for update',
@@ -313,7 +361,7 @@ final class PagerSessions
             throw PagerSessionNotFound::create();
         }
 
-        /** @var object{id: string, status: string, order_reference: string, renotify_count: int, expires_at: string} $row */
+        /** @var object{id: string, status: string, order_reference: string, renotify_count: int, expires_at: string, has_expired: bool} $row */
         return $row;
     }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Platform\Http;
 
 use App\Domain\Http\ProblemType;
+use App\Domain\Pager\PagerSessionExpired;
 use App\Domain\Pager\PagerSessionNotFound;
 use App\Domain\Pager\PagerTransitionDenied;
 use App\Platform\Database\DatabaseErrorMapper;
@@ -97,6 +98,16 @@ final class ProblemRenderer
         // which is the whole point of the envelope.
         if ($error instanceof PagerTransitionDenied) {
             return new Problem(ProblemType::Conflict, $instance);
+        }
+
+        // A session past its TTL. 409 like the clause above -- the state is what makes
+        // the request impossible -- but a DIFFERENT `type`, because the two are different
+        // states and a client has to act on them differently: an illegal transition is a
+        // mistake to correct, an expired session is one to re-issue. `type` is the
+        // envelope's contractual discriminator, so the distinction is published rather
+        // than carried in a message no body ever renders.
+        if ($error instanceof PagerSessionExpired) {
+            return new Problem(ProblemType::Expired, $instance);
         }
 
         // R-021: the message names the database role and the attribute that made it

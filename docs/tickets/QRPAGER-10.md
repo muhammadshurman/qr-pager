@@ -1,8 +1,15 @@
 # QRPAGER-10 — Task 3, Pager domain — the ticket
 
 > Branch `task-3-pager-domain`. Epic **E2**. Built by an unattended builder session on
-> 2026-10-27. The `§11` QA and Security reviews have **not** run; they are the next step
-> and they happen in their own sessions, not this one.
+> 2026-10-27.
+>
+> **Both `§11` reviews have since run (2026-10-27), each in its own session with the diff
+> and this ticket only: 18 findings — 0 Critical, 2 High, 8 Medium, 8 Low.** The fix round
+> is applied and `PLAN.md §4a` carries the dispositions. Two claims in `§6.4` below were
+> measured false by those reviews and are **corrected in place**, marked where they appear.
+> **7 of the QA review's 12 findings were never relayed to the fix session and are
+> therefore undispositioned** — see `PLAN.md §0`, `W-12`. This ticket is not the record of
+> the reviews; `§4a` is.
 
 Read with `docs/tickets/QRPAGER-10-handover.md`, which carries what is done, what is not,
 the gate figures and the commits they were measured at.
@@ -274,11 +281,24 @@ signal. Never a bulk statement: every write names the key, per `§4 › Postgres
   id exists. That is the IDOR answer and it is asserted through HTTP, which is the gate's
   own wording ("not just at the DB").
 - **input validation.** `order_reference` is validated against `§2.5`'s own column —
-  `varchar(32)`, non-empty, printable — so a value the database would refuse is refused with
-  a 422 instead of a `23514`. The four transition endpoints take **no body at all**. The
+  `varchar(32)`, `NOT NULL`, printable — so a value the database would refuse is refused with
+  a 422 instead of a `22001`. **Corrected 2026-10-27:** this said "non-empty", and the column
+  carries no non-empty `CHECK` (measured: `pager_sessions`'s only check constraint is
+  `renotify_count >= 0`). A whitespace-only reference is still a 422, but the rule that
+  produces it is Laravel's global `TrimStrings` + `ConvertEmptyStringsToNull`, not
+  `required` — measured, because `required` passes `'   '` on its own. The outcome was
+  right and the stated reason was not. The four transition endpoints take **no body at all**. The
   token, when it is presented (Task 4's surface, this task's resolver), is shape-checked
-  before it is hashed: exactly 22 base64url characters. A malformed token is rejected
-  without a database round trip, so an attacker's loop costs one regex.
+  before it is hashed: exactly 22 base64url characters, so a malformed token is rejected
+  without a database round trip. **Corrected 2026-10-27 (security S-4):** this used to end
+  "so an attacker's loop costs one regex", which is the cost of a *malformed* token only.
+  A real enumeration sends well-formed ones — 22 random base64url characters are free to
+  generate — and each then costs a sha256, a plpgsql call with two `set_config`s, an index
+  probe and a round trip. The honest answer to `§11`'s question for this path is **a
+  database round trip per attempt, bounded by nothing in this task**: no limiter (the
+  route is Task 4's), no counter, no audit row per resolution, so a sustained enumeration
+  leaves no trace in `audit_log` and no metric. The 128 bits mean guessing cannot
+  *succeed*; they do not bound the loop. Carried as **R-063**, owner Task 4.
 - **rate limit.** The five endpoints are on the `api` bucket (per IP **and** per tenant).
   Creating a session is the expensive one and gets its own tighter bucket.
 - **log redaction.** The raw token is **unloggable by construction**, which is stronger than

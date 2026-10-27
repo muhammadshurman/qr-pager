@@ -186,3 +186,54 @@ it('leaves no verifier in the container log for a bootstrap that logs everything
         DB::purge('pgsql_bootstrap');
     }
 });
+
+/*
+ * R-004's closure, as a test rather than as a diff — security S-3.
+ *
+ * The row was recorded CLOSED on the strength of removing `-c log_statement=all` from
+ * compose.yaml. That edit is correct and it changed nothing on any cluster already
+ * running: `docker compose` does not recreate a container when its command changes, so
+ * the review found the local cluster still at `all`, with 47 `resolve_pager_token`
+ * statements in the container log each followed by `DETAIL: parameters: $1 = '<sha256>'`.
+ * A control nothing asserts is a control that can be off while the ledger says it is on.
+ *
+ * WHAT THIS ASSERTS IS THE SOURCE, NOT THE VALUE, and that distinction is the whole test.
+ * Asserting `log_statement = 'none'` would be RED ON CI BY DESIGN: CI issues
+ * `alter system set log_statement = 'all'` before the suite to give R-036's verifier scan
+ * a positive control (R-059). What R-004 is about is the CLUSTER-WIDE COMMAND-LINE
+ * setting, and Postgres reports where a value came from:
+ *
+ *   compose `-c log_statement=all`  -> pg_settings.source = 'command line'
+ *   CI's `alter system`             -> 'configuration file'
+ *   neither                         -> 'default'            (measured 2026-10-27)
+ *
+ * So "never from the command line" is true locally and on CI, and goes red the moment
+ * anyone puts the flag back in compose.yaml.
+ */
+it('takes log_statement from no command-line flag, which is what R-004 removed', function (): void {
+    /** @var object{setting: string, source: string}|null $row */
+    $row = DB::connection('pgsql_root')->selectOne(
+        "select setting, source from pg_settings where name = 'log_statement'",
+    );
+
+    expect($row)->not->toBeNull()
+        ->and($row?->source)->not->toBe(
+            'command line',
+            'log_statement is set by a command-line flag again — compose.yaml carries -c log_statement=all, '
+            .'which is R-004: every token-hash binding goes to a log nobody redacts.'
+        );
+
+    // THE POSITIVE CONTROL. Without it this case also passes against a cluster that reads
+    // no command line at all, which would make it vacuous in exactly the way R-036 is
+    // about. log_connections is the flag compose.yaml deliberately KEEPS — it logs who
+    // connected, not what they ran — so its source proves the command line is being read.
+    /** @var object{source: string}|null $connections */
+    $connections = DB::connection('pgsql_root')->selectOne(
+        "select source from pg_settings where name = 'log_connections'",
+    );
+
+    expect($connections?->source)->toBe(
+        'command line',
+        'log_connections is no longer set from compose.yaml, so the assertion above proves nothing'
+    );
+});

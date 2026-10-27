@@ -4,14 +4,25 @@
 > different machine with only the repository. Nothing here depends on that session, its
 > transcript, or anything outside the repo.
 
-**Branch `task-3-pager-domain`, pushed. Last CODE commit `de3e4e4`.** Not reviewed, no PR,
-no merge, no tag — by instruction.
+**Branch `task-3-pager-domain`, pushed.** No PR, no merge, no tag.
 
-**Every figure below was measured at `de3e4e4`.** The branch head is a later docs-only
-commit — deliberately named that way rather than by hash, because a commit that records
-the head's hash changes the head, and chasing that is how a figure ends up quoted against
-a tree it was not measured on. Verify it yourself with one command: `git diff --stat
-de3e4e4 HEAD` must touch `docs/` and nothing else. That is the check `W-7` got wrong on
+> **⚠ SUPERSEDED IN PART, 2026-10-27.** This file was written before the `§11` reviews ran.
+> They have since run — **18 findings, 0 Critical, 2 High, 8 Medium, 8 Low** — and a fix
+> round is applied on top of `de3e4e4`. So **"not reviewed" is no longer true**, and
+> **the `git diff --stat de3e4e4 HEAD` check below no longer holds**: the fix commit
+> touches `apps/api/` as well as `docs/`, by design. Re-measured after the fixes:
+> **487 passed, 2149 assertions**, all six `composer gate` steps green, exit 0.
+> The live record is `PLAN.md §0` and `§4a`; where this file and `§4a` disagree, `§4a`
+> wins. **7 of the QA review's 12 findings are undispositioned** (`W-12`). Everything
+> below still describes the build accurately — it is the *status* lines that went stale,
+> which is the whole reason `§0` is the only place that states current state.
+
+**Every figure in the sections below was measured at `de3e4e4`**, the last code commit of
+the original build. The branch head at the time was a later docs-only commit — deliberately
+named that way rather than by hash, because a commit that records the head's hash changes
+the head, and chasing that is how a figure ends up quoted against a tree it was not
+measured on. That check was `git diff --stat de3e4e4 HEAD` touching `docs/` and nothing
+else; it was true until the fix round and is **not** the check to run now. That is the check `W-7` got wrong on
 Task 2, where the tag went on the docs commit *before* the merge and "resolves to a commit
 on `main`" was true of the wrong commit — the discriminating check is the **tree**, never
 the branch.

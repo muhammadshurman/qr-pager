@@ -171,25 +171,49 @@ it('never reaches a log when a session is created through the service', function
     expect($captured)->not->toContain($raw);
 });
 
-it('puts the token in the QR payload’s fragment and nowhere a server would see it', function (): void {
+it('satisfies each limb of the amended token-location clause, by name', function (): void {
+    /*
+     * §3 row 3 and §3.1 row 3, AS AMENDED on 2026-10-27 by Muhammad (security S-1):
+     *
+     *   "the raw token never reaches a log, a URL PATH OR QUERY STRING, an error body,
+     *    or anywhere a server receives or logs it"
+     *
+     * The previous wording was "never in any URL". This test used to assert "nowhere a
+     * server would see it" -- which is the amended property, asserted BEFORE anyone had
+     * amended anything. That was the real defect S-1 found: the gate said one thing, the
+     * code did another, a docblock argued the difference away, and this test pinned the
+     * argument rather than the gate. A test is not the place to settle a rank-2/rank-3
+     * conflict (§0: stop and report, never silently resolve), so now that the conflict IS
+     * settled, each limb of the settled wording is asserted separately and named.
+     */
     $token = PagerToken::issue();
     $raw = $token->reveal();
     $payload = $token->qrPayload('https://qr.example.test/p');
 
     $parts = (array) parse_url($payload);
 
-    expect($parts['fragment'] ?? null)->toBe($raw)
-        // Everything a server receives is scheme + host + path + query. None of it
-        // carries the token, and there is no query at all.
-        ->and($parts['path'] ?? '')->toBe('/p')
-        ->and($parts['query'] ?? null)->toBeNull()
+    // LIMB 1 -- not in the path.
+    expect($parts['path'] ?? '')->toBe('/p')
+        ->and($parts['path'] ?? '')->not->toContain($raw);
+
+    // LIMB 2 -- not in a query string. There is no query at all, which is stronger.
+    expect($parts['query'] ?? null)->toBeNull();
+
+    // LIMB 3 -- nowhere a server receives. Everything before the '#' is the whole of what
+    // reaches a request line, an access log, a Referer header and a CDN cache key;
+    // RFC 3986 §3.5 leaves the fragment to the client.
+    expect(explode('#', $payload)[0])->not->toContain($raw)
         ->and($parts['host'] ?? '')->not->toContain($raw)
-        // The whole of the URL before the '#' is what reaches an access log, a Referer
-        // header and a CDN cache key.
-        ->and(explode('#', $payload)[0])->not->toContain($raw)
-        // And the path is CONSTANT, which is what makes a scan burst one cache entry
-        // rather than one per scan (§4 › Edge & ops).
-        ->and(explode('#', PagerToken::issue()->qrPayload('https://qr.example.test/p'))[0])
+        ->and($parts['scheme'] ?? '')->not->toContain($raw);
+
+    // AND THE FRAGMENT IS WHERE IT IS, asserted positively rather than left as the
+    // remainder -- so this case fails if someone "fixes" it into the path later.
+    expect($parts['fragment'] ?? null)->toBe($raw);
+
+    // §4 › Edge & ops: the path is CONSTANT across tokens, so a scan burst is one CDN
+    // cache entry rather than one per scan. This is the second invariant riding on the
+    // same choice and the reason the path was never an option.
+    expect(explode('#', PagerToken::issue()->qrPayload('https://qr.example.test/p'))[0])
         ->toBe(explode('#', $payload)[0]);
 });
 

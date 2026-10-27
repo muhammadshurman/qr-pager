@@ -43,6 +43,7 @@ enum ProblemType: string
     case Unauthenticated = 'https://qrpager.dev/problems/unauthenticated';
     case Forbidden = 'https://qrpager.dev/problems/forbidden';
     case Conflict = 'https://qrpager.dev/problems/conflict';
+    case Expired = 'https://qrpager.dev/problems/expired';
     case RateLimited = 'https://qrpager.dev/problems/rate-limited';
     case Unavailable = 'https://qrpager.dev/problems/unavailable';
     case ServerError = 'https://qrpager.dev/problems/server-error';
@@ -57,6 +58,7 @@ enum ProblemType: string
             self::Unauthenticated => 401,
             self::Forbidden => 403,
             self::Conflict => 409,
+            self::Expired => 409,
             self::RateLimited => 429,
             self::Unavailable => 503,
             self::ServerError => 500,
@@ -78,6 +80,7 @@ enum ProblemType: string
             self::Unauthenticated => 'Authentication is required.',
             self::Forbidden => 'That is not permitted.',
             self::Conflict => 'The request conflicts with the current state.',
+            self::Expired => 'That resource has expired.',
             self::RateLimited => 'Too many requests.',
             self::Unavailable => 'The service is temporarily unable to handle the request.',
             self::ServerError => 'The request could not be completed.',

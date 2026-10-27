@@ -139,7 +139,7 @@
         "/v1/pager-sessions/{session}/ready": {
             "post": {
                 "operationId": "pager.sessions.ready",
-                "description": "Safe to repeat: calling this again on a session that is already ready changes\nnothing and sends no second notification.",
+                "description": "Safe to repeat: calling this again on a session that is already ready changes\nnothing and sends no second notification. A session that has passed its two-hour\nexpiry is refused; issue a new session instead.",
                 "summary": "Mark an order ready and notify the customer",
                 "tags": [
                     "PagerSession"
@@ -216,7 +216,7 @@
                         }
                     },
                     "409": {
-                        "description": "The session cannot move to that state.",
+                        "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -308,7 +308,7 @@
                         }
                     },
                     "409": {
-                        "description": "The session is not ready, or has reached its repeat limit.",
+                        "description": "The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -400,7 +400,7 @@
                         }
                     },
                     "409": {
-                        "description": "The session cannot move to that state.",
+                        "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -492,7 +492,7 @@
                         }
                     },
                     "409": {
-                        "description": "The session cannot move to that state.",
+                        "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -666,6 +666,7 @@
                     "https://qrpager.dev/problems/unauthenticated",
                     "https://qrpager.dev/problems/forbidden",
                     "https://qrpager.dev/problems/conflict",
+                    "https://qrpager.dev/problems/expired",
                     "https://qrpager.dev/problems/rate-limited",
                     "https://qrpager.dev/problems/unavailable",
                     "https://qrpager.dev/problems/server-error"

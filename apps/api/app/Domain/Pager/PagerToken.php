@@ -116,19 +116,31 @@ final class PagerToken implements JsonSerializable
     /**
      * The QR payload: the token in the URL FRAGMENT, never the path or the query.
      *
-     * Two invariants land on this one choice, which is why it is here and not in a view.
+     * THIS WAS A PRECEDENCE CONFLICT AND IT IS NOW A RULING. `§4 › Data` (rank 2) forbids
+     * the token in a URL QUERY STRING; `PLAN.md §3` row 3 (rank 3) widened that to ANY
+     * URL. A fragment is part of a URL (RFC 3986 §3.5), so the two could not both be
+     * satisfied -- and an earlier version of this docblock argued the wider wording away
+     * on its own authority, which `§0` forbids in exactly those terms: **stop and report,
+     * never silently resolve.** That was the defect, not the choice of fragment, and it
+     * is recorded as such in `PLAN.md §1` under 2026-10-27.
      *
-     * `§4 › Data` forbids the token in a URL query string and `§3` row 3 widens that to
-     * any URL. A fragment is not transmitted to a server (RFC 3986 §3.5 -- it is resolved
-     * by the client), so it reaches no access log, no `Referer` header and no CDN cache
-     * key. Putting it in the path would satisfy the narrower wording and defeat the
-     * clause's whole purpose: every scan would be a line in an access log.
+     * RESOLVED BY THE USER on 2026-10-27, in favour of the fragment, and `§3` row 3 and
+     * `§3.1` row 3 are amended to say so: "never in a log, a URL path or query string, an
+     * error body, or anywhere a server receives or logs it". The reasoning is in `§1`,
+     * not re-argued here -- a camera must open the URL the QR encodes, so the token is in
+     * a URL by construction and the only question is where, and the path or the query
+     * would also defeat `§4 › Edge & ops` by making every scan its own CDN cache entry.
      *
-     * And `§4 › Edge & ops` requires the landing page to be static and CloudFront-cached,
-     * because "a scan burst must never reach origin". A token in the path makes every
-     * scan a distinct URL and therefore a distinct cache entry -- a guaranteed miss and a
-     * guaranteed origin hit, per scan. In the fragment the path is constant, so the burst
-     * is one cache entry.
+     * WHAT THE FRAGMENT DOES AND DOES NOT BUY, stated plainly because the second half is
+     * easy to forget. It keeps the token from every SERVER: no request line, no access
+     * log, no `Referer`, no cache key. It does NOT hide it from the client -- it is in
+     * `location.hash`, in `document.URL`, in browser history (which syncs), and readable
+     * by any script the landing page loads. Those are real and they are bounded by Task 9
+     * gate clauses, not by this comment: strip the fragment with `history.replaceState`
+     * on first read, no third-party script on the landing origin, and a CSP that makes
+     * one impossible. And over `http://` the whole property is void, which is why
+     * `BootChecks::landingUrlIsSound()` refuses a non-https landing URL outside
+     * local/testing (security S-5).
      *
      * Task 9 reads it with location.hash and sends it in a request BODY; Task 4 owns the
      * endpoint that receives it. Neither exists yet, which is why this method only builds

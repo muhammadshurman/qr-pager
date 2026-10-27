@@ -71,11 +71,12 @@ final class PagerSessionController
      * Mark an order ready and notify the customer.
      *
      * Safe to repeat: calling this again on a session that is already ready changes
-     * nothing and sends no second notification.
+     * nothing and sends no second notification. A session that has passed its two-hour
+     * expiry is refused; issue a new session instead.
      */
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
-    #[DocResponse(status: 409, description: 'The session cannot move to that state.', type: ProblemDocument::class)]
+    #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function ready(Request $request, string $session): JsonResponse
     {
         return $this->state($this->sessions->markReady($this->tenant(), $session, actorIp: $request->ip()));
@@ -89,7 +90,7 @@ final class PagerSessionController
      */
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
-    #[DocResponse(status: 409, description: 'The session is not ready, or has reached its repeat limit.', type: ProblemDocument::class)]
+    #[DocResponse(status: 409, description: 'The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.', type: ProblemDocument::class)]
     public function renotify(Request $request, string $session): JsonResponse
     {
         return $this->state($this->sessions->renotify($this->tenant(), $session, actorIp: $request->ip()));
@@ -102,7 +103,7 @@ final class PagerSessionController
      */
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
-    #[DocResponse(status: 409, description: 'The session cannot move to that state.', type: ProblemDocument::class)]
+    #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function complete(Request $request, string $session): JsonResponse
     {
         return $this->state($this->sessions->complete($this->tenant(), $session, actorIp: $request->ip()));
@@ -116,7 +117,7 @@ final class PagerSessionController
      */
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
-    #[DocResponse(status: 409, description: 'The session cannot move to that state.', type: ProblemDocument::class)]
+    #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function cancel(Request $request, string $session): JsonResponse
     {
         return $this->state($this->sessions->cancel($this->tenant(), $session, actorIp: $request->ip()));

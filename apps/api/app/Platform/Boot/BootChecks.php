@@ -42,6 +42,8 @@ final class BootChecks
 
     public const UNTRUSTED_PROXY_CONFIGURATION = 'untrusted-proxy-configuration';
 
+    public const UNSAFE_LANDING_URL = 'unsafe-landing-url';
+
     /**
      * Values that make X-Forwarded-For attacker-controlled rather than trustworthy.
      *
@@ -124,6 +126,7 @@ final class BootChecks
             ...$this->privilegedCredentialsAreAbsent(),
             ...$this->sslmodeIsNotWeak(),
             ...$this->trustedProxiesAreSound(),
+            ...$this->landingUrlIsSound(),
             ...$this->connectionCarriesNoTenantSetting($connection),
             ...$this->debugIsOff(),
         ]));
@@ -245,6 +248,73 @@ final class BootChecks
         return [self::WEAK_SSLMODE.': '.implode(', ', $weak).'. [prefer] is libpq\'s own default and '
             .'silently downgrades to an unencrypted session when the server does not offer TLS, with '
             .'nothing in any log (F7). Use require or stronger; Task 13 owns verify-full.'];
+    }
+
+    /**
+     * Security S-5: the one config value that decides where a bearer credential is delivered.
+     *
+     * config('pager.landing_url') is the base of every QR payload, and PagerToken puts the
+     * raw token in that URL's FRAGMENT. The fragment's entire protection is that the
+     * CLIENT resolves it and no server receives it -- so the protection is a property of
+     * the scheme, not of the token. Over http:// the page carrying the fragment is
+     * modifiable in flight, and one injected script reading location.hash hands the token
+     * to an active network attacker. That is the §3 row 3 clause failing by a route the
+     * clause's own wording does not mention.
+     *
+     * Three refusals, each measured rather than imagined:
+     *
+     *   - NOT A URL AT ALL, or no host. The shipped default is https://localhost/p, which
+     *     is right for local and is a silent misdelivery anywhere else -- and
+     *     PAGER_LANDING_URL was absent from .env.example, so an unset variable was the
+     *     likely case rather than the unlikely one.
+     *   - NOT https. The clause above.
+     *   - ALREADY CARRIES A FRAGMENT. Measured: qrPayload() is rtrim($url, '#').'#'.$token,
+     *     so a configured 'https://h/p#x' yields 'https://h/p#x#TOKEN' and
+     *     parse_url()'s fragment is 'x#TOKEN'. A client reading location.hash gets a value
+     *     that is not the token, and the failure is silent on both sides.
+     *
+     * Exempt in local and testing, like every other clause here: the compose stack has no
+     * TLS and the suite's own payload assertions build their base URL per test.
+     *
+     * @return list<string>
+     */
+    public function landingUrlIsSound(): array
+    {
+        if ($this->isDevelopment()) {
+            return [];
+        }
+
+        $configured = config('pager.landing_url');
+
+        if (! $this->isNonEmpty($configured)) {
+            return [self::UNSAFE_LANDING_URL.': pager.landing_url is empty, so every QR payload '
+                .'would be built from nothing. Set PAGER_LANDING_URL to the absolute https URL '
+                .'of the scan landing page.'];
+        }
+
+        /** @var string $url */
+        $url = $configured;
+        $parts = parse_url($url);
+
+        if ($parts === false || ! isset($parts['host']) || ! $this->isNonEmpty($parts['host'])) {
+            return [self::UNSAFE_LANDING_URL.': pager.landing_url ['.$url.'] is not an absolute URL '
+                .'with a host, so the QR payload would not resolve anywhere.'];
+        }
+
+        if (strtolower((string) ($parts['scheme'] ?? '')) !== 'https') {
+            return [self::UNSAFE_LANDING_URL.': pager.landing_url ['.$url.'] is not https. The QR '
+                .'token travels in this URL\'s fragment, which is protected only by the client '
+                .'being the one to resolve it -- over plaintext an injected script reads '
+                .'location.hash and the token is the attacker\'s.'];
+        }
+
+        if (isset($parts['fragment'])) {
+            return [self::UNSAFE_LANDING_URL.': pager.landing_url ['.$url.'] already carries a '
+                .'fragment. The token is appended after a [#], so the client would read that '
+                .'fragment and the token together and neither would be usable.'];
+        }
+
+        return [];
     }
 
     /**

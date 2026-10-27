@@ -32,9 +32,21 @@ use SensitiveParameter;
  * recipe and the measurements.
  *
  * SHAPE FIRST, THEN HASH, THEN THE DATABASE. A malformed token is refused by PagerToken
- * before anything is hashed or any statement runs, so an attacker's loop costs one regex
- * -- which is the answer to §11's "what does an attacker's loop cost us per request".
- * With 128 bits behind the hash, guessing is the only way in and there is no cheaper one.
+ * before anything is hashed or any statement runs.
+ *
+ * THAT IS NOT THE ANSWER TO §11's "what does an attacker's loop cost us per request", and
+ * this docblock used to claim it was -- security S-4, corrected here rather than carried.
+ * One regex is the cost of a MALFORMED token. An attacker enumerating does not send
+ * malformed ones: 22 random base64url characters are free to generate, and each one then
+ * costs a sha256, a plpgsql call with two set_config statements, an index probe on
+ * token_hash's unique index and a round trip. So the honest answer for this path is A
+ * DATABASE ROUND TRIP PER ATTEMPT, bounded by nothing in this task -- there is no limiter
+ * (the route is Task 4's), no counter, and no audit row per resolution, so a sustained
+ * enumeration leaves no trace in audit_log and no metric either.
+ *
+ * What the 128 bits DO buy is that guessing cannot succeed: the risk on this path is
+ * resource consumption and unobservable enumeration, not credential compromise. Bounding
+ * it is a Task 4 gate clause (R-063), where the route that exposes it is built.
  *
  * It answers null for an unknown token and a resolved session for a known one, including
  * an expired or cancelled one. That is deliberate: §4.1 and Task 9's gate both require the
