@@ -1,16 +1,15 @@
-# bin/outbox-kill-proof — RE-RUN at 056d7a1, after R-083's fix, on Muhammad's
-# instruction: "Re-run the kill-mid-batch proof; it must still report nothing lost and
-# nothing duplicated."
+# bin/outbox-kill-proof — RE-RUN at 7c4a425, after EVERY write path in the worker
+# changed. The scoped review's finding 2: this transcript was still the 056d7a1 run
+# while PLAN.md cited it as evidence that the kill proof was "unchanged" after
+# finish(), backOff() and abandon() had all been rewritten. It is the named evidence
+# for §3 row 4's first clause, so a stale one is the wrong artifact to cite.
 #
-# IT DOES, AND THE FIGURES ARE UNCHANGED: 8 sent, 0 pending, 0 dead, max attempts 2 of 6.
+# UNCHANGED, and that is the finding: 8 sent, 0 pending, 0 dead, max attempts 2 of 6.
+# A single worker holds its own lease throughout, so every new guard passes and the
+# crash path behaves exactly as before. The guards only bite when a SECOND worker
+# exists, which is bin/outbox-lease-proof's job.
 #
-# That it is unchanged is the finding. The re-lease adds one keyed UPDATE immediately
-# before each row's send, and the single-worker crash path must not notice: a worker
-# that holds its own lease re-takes it successfully every time, so the only new
-# behaviour is on the path where a SECOND worker exists — which this proof does not
-# have and bin/outbox-lease-proof does.
-#
-outbox-kill-proof — 056d7a1, 2026-10-27T18:30:55Z
+outbox-kill-proof — 5d55ba5, 2026-10-27T19:42:58Z
   rows: 8
   database: qrpager_outbox_proof (bootstrapped and migrated)
 
@@ -21,7 +20,7 @@ seeded:
     "pending_outbox_rows": 8
 }
 
-worker pid 727286 started; waiting for it to claim the batch and block
+worker pid 752436 started; waiting for it to claim the batch and block
 worker killed -9 while blocked inside a send
 
 after the kill:

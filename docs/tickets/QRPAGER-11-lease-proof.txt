@@ -1,33 +1,29 @@
-# R-083's CLOSING GATE, and the SECOND round's — the two-process proof and the five reverts.
+# R-083's CLOSING GATE and the two review rounds' — the two-process proof, and FIVE
+# reverts whose arity is now checked.
 #
-# PART 1 — the two-process duplicate-send proof, RED before R-083's fix (measured at
-# cf4c3a9): 12 requests for 8 rows, four endpoints buzzed twice, while the table read
-# "sent 8, pending 0, dead 0". That line is why this proof counts at the EDGE: the losing
-# worker's keyed, status-guarded finish() reports 0 affected rows and writes nothing, so
-# a duplicate send leaves no trace anywhere in the database.
+# PART 1 — the two-process duplicate-send proof, RED before R-083's fix (at cf4c3a9):
+# 12 requests for 8 rows, four endpoints buzzed twice, while the table read
+# "sent 8, pending 0, dead 0". That line is why this proof counts at the EDGE: the
+# losing worker's keyed, status-guarded finish() reports 0 affected rows and writes
+# nothing, so a duplicate send leaves no trace anywhere in the database.
 #
 #   worker A — claimed 8, sent 8, retried 0, dead 0, skipped 0
 #   worker B — claimed 4, sent 4, retried 0, dead 0, skipped 0
 #   requests at the edge: 12 across 3 worker(s), 8 distinct endpoint(s)
-#   outbox-lease-proof: FAILED
-#     - nothing duplicated: 2 requests reached https://push.example.test/fa5566c707a09172…
-#     - nothing duplicated: 2 requests reached https://push.example.test/c922a5f074b5845a…
-#     - nothing duplicated: 2 requests reached https://push.example.test/87fda43ca13cc7d3…
-#     - nothing duplicated: 2 requests reached https://push.example.test/33f0aa2127a412fc…
+#   outbox-lease-proof: FAILED — four endpoints received 2 requests each
 #
 # ⚠ ONE PARAMETER DIFFERS FROM R-083's CLOSING GATE ON PURPOSE. That row specified
-# lease_seconds=1, batch_size=8 and "an edge that sleeps ~1 s per send". The first two are
-# verbatim; the send is 250 ms, because a ~1 s send against a 1 s lease is a configuration
-# in which NO per-row re-lease can hold — the fix bounds the window by one row's
-# processing, so the lease must EXCEED one row's processing. As specified, the gate's
-# parameters describe a system that cannot satisfy the gate. Written down rather than
-# quietly adjusted.
+# lease_seconds=1, batch_size=8 and "an edge that sleeps ~1 s per send". The first two
+# are verbatim; the send is 250 ms, because a ~1 s send against a 1 s lease is a
+# configuration in which NO per-row re-lease can hold — the fix bounds the window by one
+# row's processing, so the lease must EXCEED one row's processing. As specified, the
+# gate's parameters describe a system that cannot satisfy the gate.
 #
-# PART 2 — GREEN at 2dac4d4. Worker A's line reads `sent 4, skipped 4`: the lease
-# genuinely lapsed mid-batch, worker B took the four rows A had not reached, and A skipped
-# every one when it got there. Nothing sent twice, nothing lost.
+# PART 2 — GREEN at 7c4a425. Worker A reports `sent 4, skipped 4`: the lease genuinely
+# lapsed mid-batch, worker B took the four rows A had not reached, and A skipped every
+# one when it got there.
 #
-outbox-lease-proof — 2dac4d4, 2026-10-27T19:33:21Z
+outbox-lease-proof — 5d55ba5, 2026-10-27T19:43:00Z
   rows: 8 · lease_seconds: 1 · send: 250ms · second worker at +1.25s
   database: qrpager_outbox_proof (bootstrapped and migrated)
 
@@ -38,9 +34,9 @@ seeded:
     "pending_outbox_rows": 8
 }
 
-worker A (pid 749531) exited 0:
+worker A (pid 752470) exited 0:
   outbox:work — claimed 8, sent 4, retried 0, dead 0, skipped 4, pruned 0 subscription(s).
-worker B (pid 749541) exited 0:
+worker B (pid 752480) exited 0:
   outbox:work — claimed 4, sent 4, retried 0, dead 0, skipped 0, pruned 0 subscription(s).
 
 released 0 leased row(s)
@@ -52,52 +48,126 @@ outbox: sent 8, pending 0, dead 0
 outbox-lease-proof: each of the 8 endpoints received exactly one request.
 
 # ================================================================================
-# PART 3 — bin/lease-revert-proof: FIVE reverts, and the honest count
+# PART 3 — bin/lease-revert-proof: five reverts, and the number corrected TWICE
 # ================================================================================
 #
-# ⚠ THE CLAIM THIS REPLACES WAS FALSE. Three documents said "fifteen regression cases,
-# each proven red" (QA M-5). The script ran OutboxLeaseTest alone, so the eight
-# OutboxLeaseIdentityTest cases had never been reverted at all — and reverting the
-# re-lease leaves every one of them GREEN, because they are property proofs of the
-# attempt counter rather than regression tests for the re-lease.
+# ⚠⚠ THIS SECTION HAS CARRIED A FALSE NUMBER TWICE AND BOTH ARE NAMED HERE, because the
+# second was caused by trying to fix the first.
 #
-# It now runs both suites under five reverts, one per half of the two fix rounds:
+#   "fifteen, each proven red"  — false. The script ran OutboxLeaseTest alone, so the
+#                                 identity suite had never been reverted (QA M-5).
+#   "17 of 23"                  — ALSO FALSE, and worse, because it looked measured.
+#                                 Revert C stripped `and attempts = ?` from three
+#                                 statements and left $row->leaseIdentity() in their
+#                                 binding arrays, so every case that reached a worker
+#                                 write died on SQLSTATE[HY093] Invalid parameter number.
+#                                 Sixteen exception-reds were counted as coverage.
+#                                 Caught by the scoped review of the ownership fix.
+#   11 of 23                    — measured, with the binding dropped alongside the
+#                                 placeholder and an arity check in the script.
+#
+# THE CONTROL WAS THERE THE WHOLE TIME. This script's own header names two cases that
+# MUST NOT MOVE, and under the broken revert C both of them moved. A proof with a
+# declared control is worth exactly what checking the control is worth.
+#
+# The five reverts, one per half of the two fix rounds:
 #   A  the per-row re-lease                      (R-083)
 #   B  the device cap's read-time LIMIT          (R-083)
 #   C  the ownership guard on the three writes   (QA H-1 / security M-2)
 #   D  the newest-wins eviction at registration  (security M-1)
 #   E  the attempt rollback on a skip            (QA M-7 / security M-3)
 #
-# MEASURED: 17 of 23 cases go red under at least one revert. The six that never move are
-# named rather than counted, because a case that cannot go red is a control or a property
-# and not a regression test:
-#   · the lease arithmetic          — a property of three config numbers, no code path
-#   · the pre-claim identity        — arithmetic on a value object
-#   · the role grant                — information_schema, set by a migration
-#   · the smallint overflow         — a property of the column type
-#   · two inline statement copies   — pinned against the real source by a sixth case
+# THE TWELVE THAT NEVER MOVE, named rather than counted, because a case that cannot go
+# red is not a regression test:
+#   · three controls — "does not cap a session that is under the limit", the lease
+#     arithmetic, and the pre-claim identity arithmetic
+#   · five property proofs — the role grant, the smallint overflow, one-per-claim,
+#     the monotonic paths, and affected-rows-zero on a re-claim
+#   · two inline statement copies, pinned against the real source by a sixth case
+#   · two coverage cases for arms that had NO test before this round (the session-read
+#     failure and the session-gone dead-letter) and that guard no single fix
 #
 # Separately measured, not by this script: the two polling-pacing cases go red when
 # stale()/the 503 lose their pollAfter, the shed-503/429 case goes red when
-# PacedRoute::intervalFor() returns null, and the 422 case stays GREEN under both, which
-# is the control that stops "every response is paced" passing by pacing everything.
+# PacedRoute::intervalFor() returns null, and the 422 case stays GREEN under both —
+# the control that stops "every response is paced" passing by pacing everything.
 #
-R-083 revert proof — OutboxLeaseTest, 4aafde2, 2026-10-27T19:18:40Z
+R-083 revert proof — OutboxLeaseTest, 5d55ba5, 2026-10-27T19:38:28Z
 
 === baseline — no revert, every case should pass
    PASS  Tests\Feature\Notifications\OutboxLeaseTest
-  ✓ it sends each notification exactly once across two concurrent worke… 3.70s  
-  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.18s  
-  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.18s  
-  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.18s  
-  ✓ it sends to at most the configured number of devices for one sessio… 0.18s  
-  ✓ it says so in the log when the read-time cap bites, because a devic… 0.15s  
-  ✓ it does not cap a session that is under the limit, so the ordinary…  0.17s  
+  ✓ it sends each notification exactly once across two concurrent worke… 3.79s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.17s  
+  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.17s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.17s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.16s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.16s  
   ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
-  ✓ it does not finish a row another worker has claimed away mid-send    0.15s  
-  ✓ it does not back a row off after losing it, which would truncate th… 0.15s  
+  ✓ it does not finish a row another worker has claimed away mid-send    0.17s  
+  ✓ it does not back a row off after losing it, which would truncate th… 0.17s  
   ✓ it hands the attempt back when it skips, so lease contention cannot… 0.48s  
   ✓ it retries rather than losing a row whose session cannot be read     0.38s  
+  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.13s  
+   PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
+  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.13s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.15s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.13s  
+  ✓ it has exactly two statements in the application that write attempt… 0.07s  
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.08s  
+  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.09s  
+  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
+  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.06s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.09s  
+  Tests:    23 passed (168 assertions)
+
+=== revert A — the per-row re-lease removed (R-083's first half)
+   FAIL  Tests\Feature\Notifications\OutboxLeaseTest
+  ⨯ it sends each notification exactly once across two concurrent worke… 3.78s  
+  ⨯ it skips a row whose lease was stolen mid-batch instead of sending…  0.16s  
+  ⨯ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.15s  
+  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.17s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.17s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.15s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+  ✓ it does not finish a row another worker has claimed away mid-send    0.16s  
+  ✓ it does not back a row off after losing it, which would truncate th… 0.16s  
+  ⨯ it hands the attempt back when it skips, so lease contention cannot… 0.17s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.39s  
+  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.12s  
+   PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
+  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.13s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.15s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.13s  
+  ✓ it has exactly two statements in the application that write attempt… 0.07s  
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.09s  
+  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.09s  
+  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
+  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.07s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.09s  
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it sends each notif…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it hands the attemp…   
+  Tests:    4 failed, 19 passed (138 assertions)
+
+=== revert B — the device cap removed (R-083's second half)
+   FAIL  Tests\Feature\Notifications\OutboxLeaseTest
+  ✓ it sends each notification exactly once across two concurrent worke… 3.77s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.17s  
+  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.17s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.17s  
+  ⨯ it says so in the log when the read-time cap bites, because a devic… 0.15s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.16s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+  ✓ it does not finish a row another worker has claimed away mid-send    0.16s  
+  ✓ it does not back a row off after losing it, which would truncate th… 0.16s  
+  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.45s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.37s  
   ✓ it dead-letters a row whose session no longer exists, rather than r… 0.14s  
    PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
   ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
@@ -108,170 +178,99 @@ R-083 revert proof — OutboxLeaseTest, 4aafde2, 2026-10-27T19:18:40Z
   ✓ it lets no role but the worker move attempts, so there is no second… 0.07s  
   ✓ it raises rather than wrapping when attempts overflows, so no value… 0.08s  
   ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
-  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.07s  
-  ✓ it rolls an attempt back only when the row still carries this worke… 0.10s  
-  Tests:    23 passed (168 assertions)
-
-=== revert A — the per-row re-lease removed (R-083's first half)
-   FAIL  Tests\Feature\Notifications\OutboxLeaseTest
-  ⨯ it sends each notification exactly once across two concurrent worke… 3.80s  
-  ⨯ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
-  ⨯ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.17s  
-  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.19s  
-  ✓ it sends to at most the configured number of devices for one sessio… 0.16s  
-  ✓ it says so in the log when the read-time cap bites, because a devic… 0.13s  
-  ✓ it does not cap a session that is under the limit, so the ordinary…  0.14s  
-  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
-  ✓ it does not finish a row another worker has claimed away mid-send    0.15s  
-  ✓ it does not back a row off after losing it, which would truncate th… 0.15s  
-  ⨯ it hands the attempt back when it skips, so lease contention cannot… 0.15s  
-  ✓ it retries rather than losing a row whose session cannot be read     0.37s  
-  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.11s  
-   PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
-  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
-  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.12s  
-  ✓ it increments attempts by exactly one per claim, and never by any o… 0.14s  
-  ✓ it never decrements or resets attempts on any path that keeps the r… 0.13s  
-  ✓ it has exactly two statements in the application that write attempt… 0.07s  
-  ✓ it lets no role but the worker move attempts, so there is no second… 0.08s  
-  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.09s  
-  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
   ✓ it pins the three predicates in the worker’s own source, so no copy… 0.06s  
-  ✓ it rolls an attempt back only when the row still carries this worke… 0.10s  
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it sends each notif…   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it hands the attemp…   
-  Tests:    4 failed, 19 passed (138 assertions)
-
-=== revert B — the device cap removed (R-083's second half)
-   FAIL  Tests\Feature\Notifications\OutboxLeaseTest
-  ✓ it sends each notification exactly once across two concurrent worke… 3.76s  
-  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
-  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.18s  
-  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.18s  
-  ✓ it sends to at most the configured number of devices for one sessio… 0.18s  
-  ⨯ it says so in the log when the read-time cap bites, because a devic… 0.15s  
-  ✓ it does not cap a session that is under the limit, so the ordinary…  0.18s  
-  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
-  ✓ it does not finish a row another worker has claimed away mid-send    0.17s  
-  ✓ it does not back a row off after losing it, which would truncate th… 0.17s  
-  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.54s  
-  ✓ it retries rather than losing a row whose session cannot be read     0.39s  
-  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.15s  
-   PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
-  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.10s  
-  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.15s  
-  ✓ it increments attempts by exactly one per claim, and never by any o… 0.17s  
-  ✓ it never decrements or resets attempts on any path that keeps the r… 0.15s  
-  ✓ it has exactly two statements in the application that write attempt… 0.07s  
-  ✓ it lets no role but the worker move attempts, so there is no second… 0.08s  
-  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.10s  
-  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.07s  
-  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.07s  
-  ✓ it rolls an attempt back only when the row still carries this worke… 0.11s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.08s  
    FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it says so in the l…   
   Tests:    1 failed, 22 passed (163 assertions)
 
 === revert C — the ownership guard removed from finish(), backOff() and abandon()
    FAIL  Tests\Feature\Notifications\OutboxLeaseTest
-  ⨯ it sends each notification exactly once across two concurrent worke… 3.19s  
-  ⨯ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
-  ⨯ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.17s  
-  ⨯ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.19s  
-  ⨯ it sends to at most the configured number of devices for one sessio… 0.19s  
-  ⨯ it says so in the log when the read-time cap bites, because a devic… 0.17s  
-  ⨯ it does not cap a session that is under the limit, so the ordinary…  0.18s  
-  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.09s  
-  ⨯ it does not finish a row another worker has claimed away mid-send    0.18s  
-  ⨯ it does not back a row off after losing it, which would truncate th… 0.17s  
-  ⨯ it hands the attempt back when it skips, so lease contention cannot… 0.18s  
-  ⨯ it retries rather than losing a row whose session cannot be read     0.39s  
-  ⨯ it dead-letters a row whose session no longer exists, rather than r… 0.14s  
+  ✓ it sends each notification exactly once across two concurrent worke… 3.66s  
+  ⨯ it skips a row whose lease was stolen mid-batch instead of sending…  0.15s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.15s  
+  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.16s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.16s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.14s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+  ⨯ it does not finish a row another worker has claimed away mid-send    0.15s  
+  ⨯ it does not back a row off after losing it, which would truncate th… 0.15s  
+  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.44s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.37s  
+  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.11s  
    FAIL  Tests\Feature\Notifications\OutboxLeaseIdentityTest
-  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.10s  
-  ⨯ it skips silently: no send, no write, no exception, and the tally s… 0.14s  
-  ⨯ it increments attempts by exactly one per claim, and never by any o… 0.12s  
-  ⨯ it never decrements or resets attempts on any path that keeps the r… 0.12s  
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
+  ⨯ it skips silently: no send, no write, no exception, and the tally s… 0.12s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.14s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.12s  
   ✓ it has exactly two statements in the application that write attempt… 0.07s  
-  ✓ it lets no role but the worker move attempts, so there is no second… 0.08s  
-  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.10s  
-  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.07s  
-  ⨯ it pins the three predicates in the worker’s own source, so no copy… 0.07s  
-  ✓ it rolls an attempt back only when the row still carries this worke… 0.10s  
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it sends each notif…   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it…   QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTe…  QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTe…  QueryException   
-   FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTe…  QueryException   
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.07s  
+  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.08s  
+  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
+  ⨯ it pins the three predicates in the worker’s own source, so no copy… 0.06s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.08s  
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it does not finish…    
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it does not back a…    
+   FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTest > it skips si…   
    FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTest > it pins the…   
-  Tests:    16 failed, 7 passed (42 assertions)
+  Tests:    5 failed, 18 passed (144 assertions)
 
 === revert D — the newest-wins eviction removed (security M-1)
    FAIL  Tests\Feature\Notifications\OutboxLeaseTest
-  ✓ it sends each notification exactly once across two concurrent worke… 3.86s  
-  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.18s  
-  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.19s  
-  ⨯ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.16s  
-  ✓ it sends to at most the configured number of devices for one sessio… 0.19s  
-  ✓ it says so in the log when the read-time cap bites, because a devic… 0.16s  
-  ✓ it does not cap a session that is under the limit, so the ordinary…  0.17s  
-  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.07s  
-  ✓ it does not finish a row another worker has claimed away mid-send    0.19s  
-  ✓ it does not back a row off after losing it, which would truncate th… 0.19s  
-  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.56s  
-  ✓ it retries rather than losing a row whose session cannot be read     0.39s  
-  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.16s  
+  ✓ it sends each notification exactly once across two concurrent worke… 3.76s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.17s  
+  ⨯ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.13s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.16s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.15s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+  ✓ it does not finish a row another worker has claimed away mid-send    0.15s  
+  ✓ it does not back a row off after losing it, which would truncate th… 0.16s  
+  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.47s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.40s  
+  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.13s  
    PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
-  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.10s  
-  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.15s  
-  ✓ it increments attempts by exactly one per claim, and never by any o… 0.16s  
-  ✓ it never decrements or resets attempts on any path that keeps the r… 0.14s  
-  ✓ it has exactly two statements in the application that write attempt… 0.07s  
-  ✓ it lets no role but the worker move attempts, so there is no second… 0.08s  
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
+  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.13s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.15s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.13s  
+  ✓ it has exactly two statements in the application that write attempt… 0.09s  
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.07s  
   ✓ it raises rather than wrapping when attempts overflows, so no value… 0.09s  
-  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.07s  
-  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.08s  
-  ✓ it rolls an attempt back only when the row still carries this worke… 0.11s  
+  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
+  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.06s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.09s  
    FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it evicts the OLDES…   
   Tests:    1 failed, 22 passed (163 assertions)
 
 === revert E — the attempt rollback made a no-op (QA M-7)
    FAIL  Tests\Feature\Notifications\OutboxLeaseTest
-  ✓ it sends each notification exactly once across two concurrent worke… 3.86s  
-  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
-  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.16s  
+  ✓ it sends each notification exactly once across two concurrent worke… 3.78s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.19s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.17s  
   ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.17s  
-  ✓ it sends to at most the configured number of devices for one sessio… 0.17s  
-  ✓ it says so in the log when the read-time cap bites, because a devic… 0.14s  
-  ✓ it does not cap a session that is under the limit, so the ordinary…  0.19s  
-  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.07s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.18s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.15s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.16s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
   ✓ it does not finish a row another worker has claimed away mid-send    0.16s  
   ✓ it does not back a row off after losing it, which would truncate th… 0.16s  
-  ⨯ it hands the attempt back when it skips, so lease contention cannot… 0.46s  
-  ✓ it retries rather than losing a row whose session cannot be read     0.40s  
+  ⨯ it hands the attempt back when it skips, so lease contention cannot… 0.48s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.39s  
   ✓ it dead-letters a row whose session no longer exists, rather than r… 0.12s  
    FAIL  Tests\Feature\Notifications\OutboxLeaseIdentityTest
-  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
-  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.12s  
-  ✓ it increments attempts by exactly one per claim, and never by any o… 0.18s  
-  ✓ it never decrements or resets attempts on any path that keeps the r… 0.16s  
-  ⨯ it has exactly two statements in the application that write attempt… 0.07s  
-  ✓ it lets no role but the worker move attempts, so there is no second… 0.07s  
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.10s  
+  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.13s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.15s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.14s  
+  ⨯ it has exactly two statements in the application that write attempt… 0.08s  
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.08s  
   ✓ it raises rather than wrapping when attempts overflows, so no value… 0.09s  
   ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
-  ⨯ it pins the three predicates in the worker’s own source, so no copy… 0.06s  
-  ✓ it rolls an attempt back only when the row still carries this worke… 0.08s  
+  ⨯ it pins the three predicates in the worker’s own source, so no copy… 0.07s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.11s  
    FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it hands the attemp…   
    FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTest > it has exac…   
    FAILED  Tests\Feature\Notifications\OutboxLeaseIdentityTest > it pins the…   
