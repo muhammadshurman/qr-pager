@@ -4,13 +4,17 @@
 > different machine with only the repository. Nothing here depends on that session, its
 > transcript, or anything outside the repo.
 
-**Branch `task-3-pager-domain`, pushed. Head `3ec36e0`; last CODE commit `de3e4e4`.**
-Not reviewed, no PR, no merge, no tag — by instruction.
+**Branch `task-3-pager-domain`, pushed. Last CODE commit `de3e4e4`.** Not reviewed, no PR,
+no merge, no tag — by instruction.
 
-The two are different on purpose and the distinction is the one `W-7` got wrong on Task 2.
-Every figure below was measured at **`de3e4e4`**; `3ec36e0` is docs-only (`git diff
---stat de3e4e4 3ec36e0` touches `docs/` alone), so the figures carry to the head rather
-than being quoted against a tree they were not measured on.
+**Every figure below was measured at `de3e4e4`.** The branch head is a later docs-only
+commit — deliberately named that way rather than by hash, because a commit that records
+the head's hash changes the head, and chasing that is how a figure ends up quoted against
+a tree it was not measured on. Verify it yourself with one command: `git diff --stat
+de3e4e4 HEAD` must touch `docs/` and nothing else. That is the check `W-7` got wrong on
+Task 2, where the tag went on the docs commit *before* the merge and "resolves to a commit
+on `main`" was true of the wrong commit — the discriminating check is the **tree**, never
+the branch.
 
 ---
 
