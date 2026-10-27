@@ -10,7 +10,9 @@ use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 
 /*
- * §3 gate, clause 6: "raw token never appears in any log, URL or error body (asserted
+ * §3 gate, clause 6 AS AMENDED 2026-10-27 (security S-1): "raw token never appears in a
+ * log, a URL path or query string, an error body, or anywhere a server receives or logs
+ * it". The pre-amendment wording was "never appears in any log, URL or error body (asserted
  * against captured output)". §4 › Data: "128-bit CSPRNG, stored only as a hash, TTL 2
  * hours. Never logged, never in a URL query string, never in an error body."
  *
@@ -20,7 +22,8 @@ use Monolog\Logger;
  *
  * The two documents differ: §4 forbids the token in a URL QUERY STRING and §3 widens that
  * to any URL. The wider one is satisfied, and the reading is recorded in QRPAGER-10 §4 and
- * in PagerToken::qrPayload(): the token is never in any URL a server receives or logs. It
+ * in PagerToken::qrPayload(): the token is never in a URL a server receives or logs -- which
+ * is now what the clause SAYS, rather than a reading of it this file used to assume. It
  * IS in the QR payload's fragment, because a QR code is how the token reaches the customer
  * and a fragment is not transmitted to a server -- which is also what keeps the landing
  * page one CDN cache entry instead of one per scan.

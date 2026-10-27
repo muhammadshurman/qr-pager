@@ -156,7 +156,9 @@ full with a matching count** (`§11` Relay rule), then every Critical and High f
 and every Medium/Low dispositioned into `§5` with an owner and a date. *The bar they ship against is already
 written*, in `§3.1` row 3, so it was not set after reading their findings: the one-transaction invariant,
 `markReady`'s idempotency under concurrency, cross-tenant IDOR blocked through HTTP, and the raw token never
-reaching a log, URL or error body. `§4a` records how each was measured, which is what a review is for
+reaching a log, a URL path or query string, an error body, or anywhere a server receives or logs it — that
+last clause **as amended on 2026-10-27** (`§1`, security S-1), plus the TTL clause added the same day. Both
+amendments came out of the reviews and were ruled on by the user, not reworded by the builder. `§4a` records how each was measured, which is what a review is for
 falsifying.
 
 **W-10 · Open Task 3's PR.** *Why no agent:* this environment has no `gh` and no token. *Note:* R-001's
@@ -1849,10 +1851,12 @@ that look alike — the failure mode the tag correction earlier that day was an 
 `task-1` paid a day for when `3fe10c2` looked un-green on `main` because run #27 had been superseded.
 **A `Cancelled` run is not a pass; this is a pass.**
 
-### Task 3 — **built, pushed, NOT reviewed and NOT tagged** on `task-3-pager-domain` (2026-10-27). Ticket `QRPAGER-10`, epic E2
+### Task 3 — **built, pushed, REVIEWED (both `§11` reviews, 18 findings), first fix round applied, NOT tagged** on `task-3-pager-domain` (2026-10-27). Ticket `QRPAGER-10`, epic E2
 
-Built unattended in one session. The `§11` QA and Security reviews have **not** run; they are the next
-step and they happen in their own sessions. **No PR, no merge, no tag** — by instruction.
+Built unattended in one session. **Both `§11` reviews have since run (2026-10-27), each in its own session
+receiving the diff and the ticket only, and the first fix round is applied** — the round is recorded below
+under *The `§11` reviews, and the round they produced*. **No PR, no merge, no tag.** The tag is still blocked,
+and by `W-12` rather than by the reviews: 10 of the 18 findings are not dispositioned.
 
 **Branched off `main`'s tip `3fcabb5`, which contains `2e42267`.** The instruction named `2e42267`; the
 three commits between them are docs-only (`git diff --stat 2e42267 main` is `docs/PLAN.md | 108 +++---`,
@@ -1869,7 +1873,8 @@ would have reverted those corrections on merge — `R-025`'s defect, manufacture
 | **Migrations** | Apply from empty in one batch, a second apply is a no-op, rollback leaves **1 table and 0 functions**, and a re-apply returns a **byte-identical** schema fingerprint. Proven by `apps/api/bin/migration-rollback-proof` on a throwaway database |
 | **Fresh clone, not just a fresh DB** | **Green from a clean checkout: 466 passed, 2085 assertions, all six steps, exit 0** — `git clone` of the branch into a new directory, `cp .env.example .env`, `composer install`, `php artisan key:generate`, `composer gate`. Identical to the in-place run, so nothing in this task depends on state that only exists on the builder's machine, which is the clause Task 0's empty `tests/Unit/` directory exists for |
 | **R-049's proof** | `bin/concurrent-suite-proof`: both runners green. Reverted, it reproduces both of R-049's signatures in one run |
-| **`§11` reviews** | **NOT RUN.** Both are preconditions for the tag |
+| **Coverage after the fix round** | **98.38 % — 609/619 statements over 21 `app/` files**, `--min=90` passing, re-measured on the committed fix tree with `bin/coverage --task=task-2 --min=90` rather than carried from `de3e4e4` — which is the exact defect `§0` records Task 2 paying for. **The percentage went DOWN from 98.97 % and that is denominator growth, not a regression**, so it is explained rather than reported: the fix touched `app/Platform/Boot/BootChecks.php`, which was Task 2's file, so `git diff --diff-filter=ACMR task-2...HEAD` now resolves it into *this* task's set — **+222 statements and +6 uncovered in one file**. All six are **pre-existing defensive branches of Task 2's proxy and tenant-setting helpers** (lines 515, 549, 665, 690 and the 721–724 catch), named here the way the original four were. **Nothing the fix round added is uncovered**: `PagerSessionExpired` 6/6 (100 %), `landingUrlIsSound()` fully covered, `ProblemType` 24/24, `ProblemRenderer` 41/41. `PagerSessions` is 137/139 and `ExpirePagerSessionsCommand` 43/45 — the same four "unreachable while the row lock holds" throws as before |
+| **`§11` reviews** | **BOTH HAVE RUN (2026-10-27).** 18 findings — 0 Critical, 2 High, 8 Medium, 8 Low. First fix round applied and gates re-measured. **8 of 18 dispositioned; 10 are not** — see the subsection below and `W-12`. The tag stays blocked on that relay, not on the reviews |
 
 **How the coverage figure was produced, because `§0` recorded that it could not be.** Task 2's figure
 "predates the last two fix rounds" and `§0` records why: no coverage driver on this machine, `pcov` and
@@ -1896,7 +1901,7 @@ carries its own explanation of what it proves and what went wrong while it was w
 | The status change, the outbox row and the audit row commit together or not at all | A throw injected with `Connection::beforeExecuting` — which fires **before** a statement runs, so no test-only seam exists in production code — at two points: before the outbox insert (one write done) and before the audit insert (**two** writes done). All three absent in both, for `markReady`, `cancel` and `create`. **Revert-proved:** moving the audit insert to a connection of its own turns 5 of the 6 cases red |
 | `markReady` is idempotent under concurrent calls | **Two php processes racing the same row** — which is what "concurrent" means and what two connections in one process cannot give, since `FOR UPDATE` would block the only thread. Exactly one `applied`, one `idempotent`, **one** outbox row, one audit row. The unique index is asserted separately, so neither mechanism is credited for the other's work |
 | Cross-tenant IDOR blocked through HTTP, not just at the DB | All four id-taking routes, through real requests, answer **404 and never 403** — and the body is **byte-identical** (bar `instance`) to the one for an id that exists nowhere, so the two cannot be told apart. The owning tenant acting on the same session gets 200, which is the positive control. No header, query parameter or body field changes which tenant a request runs as |
-| The raw token never reaches a log, URL or error body | Unloggable **by construction** rather than by redaction: the value lives in a `Closure`, so `var_dump`, `print_r`, `json_encode` and `var_export` all yield a marker and `serialize()` is refused outright. Asserted against **captured** Monolog output. The QR payload carries it in the URL **fragment**, which no server receives |
+| The raw token never reaches a log, **a URL path or query string**, an error body, **or anywhere a server receives or logs it** (as amended 2026-10-27 — S-1) | Unloggable **by construction** rather than by redaction: the value lives in a `Closure`, so `var_dump`, `print_r`, `json_encode` and `var_export` all yield a marker and `serialize()` is refused outright. Asserted against **captured** Monolog output. The QR payload carries it in the URL **fragment**, which no server receives |
 
 #### What measurement changed — the documents corrected in place rather than carried
 

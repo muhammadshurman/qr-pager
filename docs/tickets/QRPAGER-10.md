@@ -51,6 +51,12 @@ storage, 2 h TTL, QR payload), `markReady`, `renotify`, `complete`, `cancel`, ex
 > - `markReady` is idempotent under concurrent calls
 > - cross-tenant IDOR blocked through HTTP, not just at the DB
 > - the raw token never reaches a log, URL or error body
+>
+> **`§3.1` row 3 was amended on 2026-10-27 by Muhammad** (security S-1), after this ticket
+> was written. That fourth clause now reads: *the raw token never reaches a log, a URL path
+> or query string, an error body, or anywhere a server receives or logs it* — and a fifth
+> was added: *a session past its TTL accepts no staff transition*. The quotation above is
+> the wording this task was built against; `PLAN.md §3.1` is the wording it ships against.
 
 `§3.1` row 3 records **"Done 2026-10-26 — the one-transaction clause moved into the
 gate"**, so this gate needed nothing at the start of this task. Under `§11 › Round limit`,

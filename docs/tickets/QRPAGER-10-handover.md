@@ -237,7 +237,17 @@ is where it becomes observable.
 fragment too, which would make the product impossible — the QR code *is* how the token
 reaches the customer. I took "never in a URL a server receives or logs" as the only
 coherent reading and recorded it here and in `QRPAGER-10 §4`. **If a reviewer reads it
-strictly, this is the decision to challenge**, and the answer would have to be a different
+strictly, this is the decision to challenge**
+
+> **⚠ THE REVIEWER DID, AND THIS PASSAGE IS THE FINDING (security S-1, 2026-10-27).** The
+> reading was right — the user ruled the same day that the fragment stays and amended
+> `§3` row 3 and `§3.1` row 3 to say so. **What was wrong was taking it here.** `§4 › Data`
+> (rank 2) forbids a query string and `§3` row 3 (rank 3) said any URL; that is a
+> precedence conflict, and `§0`'s rule for one is **stop and report, never silently
+> resolve** — not take the coherent reading and note it in a handover. Recording the
+> decision to challenge is not the same as escalating it, because the code shipped and the
+> test pinned the reading in the meantime. The ruling is in `PLAN.md §1`; the amended
+> wording is in `§3` row 3; `PagerTokenTest` now pins each limb of it by name., and the answer would have to be a different
 delivery mechanism rather than a different URL shape.
 
 ### 5.3 The token lookup is a `SECURITY DEFINER` function
