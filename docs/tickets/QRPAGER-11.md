@@ -934,3 +934,100 @@ bounds it is that reading it requires the preimage of a sha256 — the 128-bit C
 which is the same property that makes `public.resolve_pager_token` a legitimate
 `SECURITY DEFINER` bypass in Task 3. The invariant's actual subject, the projection, is
 namespaced `t:{tenant}:pager:{session}` with the tenant read from the pointer's value.
+
+---
+
+## 8. For the reviewers — three things that are ticket content, not the builder's commentary
+
+Added 2026-10-27 on Muhammad's instruction, so that both `§11` reviewers receive them with the
+ticket rather than from the builder. Each is stated as a thing to **check**, not as a
+conclusion to accept.
+
+### 8.1 `R-074` — a named cross-tenant path mirrored into a store with no RLS
+
+**The Security reviewer rules on this. It is settled by neither the builder's reading nor
+Muhammad's.**
+
+`PROJECT_INSTRUCTIONS.md §4 › Tenancy` names exactly four cross-tenant reads, one of them the
+QR token lookup, and requires a customer-facing route to accept nothing but that token.
+`§4 › Realtime` requires the polling endpoint to be a Redis-only read with zero Postgres
+queries, and says: *"Every key that holds tenant data is namespaced by tenant id, and every
+read derives that id from the caller's own context — never from client input. A projection key
+that is not tenant-namespaced is a cross-tenant read with none of Postgres's protection behind
+it."*
+
+This task resolves that by **mirroring the token lookup into Redis**:
+
+| key | namespaced | holds |
+| --- | --- | --- |
+| `pager:tok:{sha256_hex}` | **no** | `{tenant_id, session_id}` |
+| `t:{tenant_id}:pager:{session_id}` | yes | the status projection |
+
+What is **established by measurement** and can be checked rather than argued:
+
+- the pointer key is the **hash Postgres stores**, not the raw token — `PagerProjectionTest`
+  asserts it equals `pager:tok:` + `encode(token_hash, 'hex')` read back from
+  `pager_sessions` as the cluster superuser;
+- the projection's tenant id comes from the pointer's **value**, never from a request field;
+- both keys' TTLs are `<= ` the session's remaining life, and a past-expiry view is refused at
+  read time even while its key is present;
+- neither the key, its hash, nor the raw token reaches a log line or a response body at
+  `APP_DEBUG=true`, asserted against captured output.
+
+What is **a reading, and is what the review is for**: whether a key whose NAME is a 128-bit
+secret the caller must present satisfies `§4 › Realtime`, given that the clause says
+*namespaced by tenant id* and this key is not. The builder's argument is that the key is
+bounded by the same secret that makes `public.resolve_pager_token` a legitimate
+`SECURITY DEFINER` bypass in Task 3. **A reviewer who disagrees is making a finding, not
+rediscovering something already settled.**
+
+### 8.2 The vacuous-assertion defect, and `SourceGuard` rule 7
+
+**QA should check that the guard fails on the fixture rather than take this claim.**
+
+Pest's `toContain()` and `toContainEqual()` are its only two variadic *matchers*; 77 others
+take a real `$message`. So `expect($x)->not->toContain($needle, "message")` reads the message
+as a **second needle**, and `->not` makes the assertion *"does not contain BOTH"* — which a
+message that never appears makes trivially true.
+
+Four assertions in this repository were that shape, three of them guarding named invariants
+(`PLAN.md §1`, dated 2026-10-27, has the inventory with the commit that corrected each and the
+commit that proved each). The control is **`SourceGuard` rule 7**, run by `composer guard` and
+as its own CI step.
+
+**What to verify, rather than accept:**
+
+```
+php guard/bin/guard guard/fixtures/repo/vacuous-not-contains.php.fixture   # must exit 1, 4 violations
+php guard/bin/guard                                                        # must exit 0 on the real tree
+bin/vacuous-assertion-proof                                                # each invariant must go RED
+```
+
+The fixture carries **four bad shapes** (both matchers; one split across lines with a comment
+inside; one whose first argument is a nested call) and **three correct ones that must not be
+flagged** (a single needle; a needle containing a comma; the positive `toContain($a, $b)`,
+which legitimately means "contains both"). Rule 7 has one exception — its own positive control
+— scoped **by file and by function name**, and `RepoGuardTest` proves a second function in that
+same file is still caught and that the same function name elsewhere is not excepted.
+
+`bin/vacuous-assertion-proof` breaks the world for real: a `GRANT UPDATE (tenant_id)` on the
+test database, `PagerToken::jsonSerialize()` returning the raw token, and the capacity figure
+put back into the committed spec. Each assertion must go red and return green on restore.
+
+### 8.3 `R-073` — the iOS gate is out of Task 4 and sits in Task 9
+
+`PLAN.md §3` row 4's task column lists five deliverables, **all server-side**. `CLAUDE.md`
+says the frontend half of the repo is not created until Task 8, and
+`PROJECT_INSTRUCTIONS.md §12` forbids a customer-facing component before the Task 8 visual
+approval. On that basis the manual iOS push validation and the client backoff/jitter clause
+were **moved to `§3` row 9**, struck through in row 4 so the move is visible in that row's own
+history, and **no client harness was built**.
+
+**So a reviewer should not report the absence of an iOS validation or of client-side jitter as
+a Task 4 gap** — they are not in this task's gate. What is in scope is the **server half**:
+every polling response carries `poll_after_seconds`, every `503` and `429` carries
+`Retry-After`, and both are tested.
+
+The cost of the move is carried as **`R-073`** with owner Task 9, because `§3` row 4's own
+parenthesis argued *"Task 9 is too late to discover it"*. **`R-073`'s payload question is
+Muhammad's and is still open**; it is not a review item.
