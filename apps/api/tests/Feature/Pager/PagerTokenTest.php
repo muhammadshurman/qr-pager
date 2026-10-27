@@ -133,8 +133,7 @@ it('keeps the raw token out of captured log output, even when the object is logg
     // read as a second needle and ->not became "does not contain BOTH", trivially true.
     // Measured 2026-10-27. This is the control for a §3 row 3 gate clause -- "the raw
     // token never reaches a log" -- so it was the most expensive of the three instances to
-    // have been inert. Task 4 carries the guard rule and the positive control; here the
-    // correction stands alone.
+    // have been inert. ExpectationApiTest now forbids the shape.
     expect(str_contains($captured, $raw))->toBeFalse('the raw token reached captured log output');
     expect($captured)->toContain(PagerToken::REDACTED);
 });

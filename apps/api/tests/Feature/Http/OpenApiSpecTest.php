@@ -61,6 +61,14 @@ it('describes exactly the routes that exist, and not the fallback', function ():
         '/v1/pager-sessions/{session}/complete',
         '/v1/pager-sessions/{session}/ready',
         '/v1/pager-sessions/{session}/renotify',
+        // Task 4's customer surface. Under the same /v1 prefix -- the versioning policy is
+        // about the public path, not about which file a route lives in -- and on a
+        // different middleware group, because `api`'s last entry is RequireTenantScope and
+        // a customer has no account for a tenant to be resolved from (§4 › Tenancy, two
+        // authentication surfaces).
+        '/v1/pager/session',
+        '/v1/pager/status',
+        '/v1/pager/subscription',
     ]);
 
     // The fallback matches paths that do NOT exist. Documenting it would publish a route

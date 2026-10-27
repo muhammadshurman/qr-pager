@@ -34,8 +34,8 @@ it('grants UPDATE on no tenant_id column anywhere', function (): void {
             // it should, and expect('hello app_limit')->not->toContain('app_limit',
             // 'msg') PASSES. So this control -- no role may update a tenant key, which is
             // what makes moving a row between tenants impossible -- was green and inert.
-            // Introduced by this branch's own 122d203 at Task 1. Task 4 carries the guard
-            // rule and the positive control; here the correction stands alone.
+            // Found at Task 4; the same defect was in PagerTokenTest and in
+            // OpenApiSpecTest's R-052 sweep, and ExpectationApiTest now forbids the shape.
             expect(in_array($column, Schema::grantedColumns($role, $table, 'UPDATE'), true))
                 ->toBeFalse("{$role} can update {$table}.{$column} and move a row between tenants");
         }

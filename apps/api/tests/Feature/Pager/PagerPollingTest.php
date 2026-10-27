@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Http\ProblemType;
 use App\Domain\Pager\PagerStatus;
+use App\Domain\Pager\PagerToken;
 use App\Features\Pager\PagerProjection;
 use App\Features\Pager\PagerSessions;
 use Illuminate\Redis\Events\CommandExecuted;
@@ -96,7 +97,7 @@ it('issues exactly two Redis commands in the handler, and seven across the reque
     // And the handler's own two, in isolation from the middleware, so the design claim is
     // pinned by something that does not move when the limiter's internals do.
     $handler = redisCommandsDuring(fn () => app(PagerProjection::class)->read(
-        App\Domain\Pager\PagerToken::fromPresented($token),
+        PagerToken::fromPresented($token),
     ));
 
     expect($handler)->toBe(['get', 'get']);

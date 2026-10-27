@@ -6,6 +6,7 @@ use App\Domain\Pager\PagerDelivery;
 use App\Domain\Pager\PagerEvent;
 use App\Features\Notifications\PushMessage;
 use App\Features\Notifications\WebPushDispatcher;
+use Psr\Log\LoggerInterface;
 use Tests\Support\PushFixtures;
 use Tests\Support\RecordingPushEdge;
 
@@ -27,7 +28,7 @@ function dispatcherFor(RecordingPushEdge $edge): WebPushDispatcher
 {
     PushFixtures::configureVapid();
 
-    return new WebPushDispatcher($edge, app(Psr\Log\LoggerInterface::class));
+    return new WebPushDispatcher($edge, app(LoggerInterface::class));
 }
 
 function readyMessage(): PushMessage
