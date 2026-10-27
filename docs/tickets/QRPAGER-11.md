@@ -978,8 +978,7 @@ What is **a reading, and is what the review is for**: whether a key whose NAME i
 secret the caller must present satisfies `§4 › Realtime`, given that the clause says
 *namespaced by tenant id* and this key is not. The builder's argument is that the key is
 bounded by the same secret that makes `public.resolve_pager_token` a legitimate
-`SECURITY DEFINER` bypass in Task 3. **A reviewer who disagrees is making a finding, not
-rediscovering something already settled.**
+`SECURITY DEFINER` bypass in Task 3.
 
 ### 8.2 The vacuous-assertion defect, and `SourceGuard` rule 7
 
