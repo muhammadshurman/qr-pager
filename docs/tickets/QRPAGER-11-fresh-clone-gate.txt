@@ -1,16 +1,12 @@
-# bin/fresh-clone-proof — measured at 056d7a1, the head after the three rulings of
-# 2026-10-27.
+# bin/fresh-clone-proof — measured at 2dac4d4, after the second review round.
 #
-# GREEN IN THE CLONE: 642 passed / 3768 assertions, identical to the host.
-# That identity is the whole point of the check (§6: "a pass that depends on something
-# only present on the builder's machine is not a pass"), and it matters more than usual
-# tonight: the overnight run's figures were measured on a DIFFERENT HOST — its
-# transcripts name /home/lenovo/code/qr-pager — and these were measured on
-# /home/pixels/qr-pager. Two machines, the same counts.
+# GREEN IN THE CLONE: 652 passed / 4118 assertions, identical to the host.
+# Supersedes 642 / 3768 at 056d7a1 and 622 / 3641 at bef66a3.
 #
-# Supersedes 622 / 3641 at bef66a3, which was the last fresh-clone run.
+# Both figures at 056d7a1 and 2dac4d4 were measured on /home/pixels/qr-pager; the
+# overnight run's were on /home/lenovo/code/qr-pager. Two machines, the same counts.
 #
-fresh-clone-proof: fix(api): R-083 re-lease per row, QA M-6 pacing, security L-1 mirrored at 056d7a1
+fresh-clone-proof: docs: second round — 23 findings, R-093..R-096, the record corrected at 2dac4d4
 
 === clone through file:// so no object is shared
 
@@ -18,7 +14,7 @@ fresh-clone-proof: fix(api): R-083 re-lease per row, QA M-6 pacing, security L-1
 no vendor/, no .env, no node_modules — the clone is bare
 
 === the clone's tracked tree is byte-identical to this commit's
-tree 8ba751246cc0c5d2a6bc489f578484ee265b78c2
+tree 70369f625908d3055f017eeb6b1a59d78a658dce
 
 === composer install, from the repository's own lock file
 host composer cache: present (a cache, not a source — it costs time, not correctness)
@@ -28,9 +24,9 @@ packages installed: 155
 cp .env.example .env · php artisan key:generate · docker compose is already up
 
 === composer gate, in the clone
-gate: all six steps green. Full output: /tmp/qrpager-fresh-clone-t9DoNF/clone/apps/api/storage/logs/gate-20261027T182907Z.log
+gate: all six steps green. Full output: /tmp/qrpager-fresh-clone-HRbefO/clone/apps/api/storage/logs/gate-20261027T193126Z.log
 
-fresh-clone-proof: PASSED at 056d7a1
-  Tests:    642 passed (3768 assertions)
-  gate log: /tmp/qrpager-fresh-clone-t9DoNF/gate.log
+fresh-clone-proof: PASSED at 2dac4d4
+  Tests:    652 passed (4118 assertions)
+  gate log: /tmp/qrpager-fresh-clone-HRbefO/gate.log
   (clone removed; pass --keep to inspect it)

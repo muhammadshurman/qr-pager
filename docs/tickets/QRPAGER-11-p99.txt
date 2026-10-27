@@ -1,21 +1,17 @@
-# bin/poll-latency-proof — measured at 056d7a1, the head after the three rulings of
-# 2026-10-27.
+# bin/poll-latency-proof — measured at 2dac4d4, after the second review round.
 #
-# p99 1.398 ms against a 5 ms budget; zero Postgres statements, two Redis commands.
+# p99 1.449 ms against a 5 ms budget; zero Postgres statements, two Redis commands.
+# 1.398 ms at 056d7a1; 2.931 ms at bef66a3 on the overnight run's host.
 #
-# RE-RUN RATHER THAN CARRIED, because QA M-6's fix touches this endpoint: stale() and
-# the 503 now build a PacedProblemDocument instead of a bare one. Neither is on the 200
-# path this harness measures, so no change was expected and none was needed — but
-# "expected no change" is not a measurement, and the budget is 5 ms.
-#
-# NOT COMPARABLE WITH 2.931 ms AT bef66a3, which is why that figure is not called
-# "improved": it was measured on the overnight run's host (/home/lenovo/code/qr-pager)
-# and this one on /home/pixels/qr-pager, 12 CPUs at load 0.73. Different machines
-# produce different numbers and the budget is what either has to clear.
+# RE-RUN RATHER THAN CARRIED, because QA M-3/M-4's fix puts PacedRoute::intervalFor() on
+# the request path of every response this endpoint produces — including the 200 this
+# harness measures, which reads the route's defaults and returns without building a
+# problem document. No change was expected and none appeared; "expected no change" is not
+# a measurement and the budget is 5 ms.
 #
 poll-latency-proof
-  commit       056d7a1
-  machine      Linux 6.18.54.1-microsoft-standard-WSL2 x86_64, 12 CPU(s), load 0.73 0.91 0.83
+  commit       2dac4d4
+  machine      Linux 6.18.54.1-microsoft-standard-WSL2 x86_64, 12 CPU(s), load 3.26 1.45 0.90
   php          8.4.27
   mode         full -- properties and timing asserted
   method       20 warm-up discarded, 200 measured, best p99 of 3 batch(es);
@@ -24,10 +20,10 @@ poll-latency-proof
   Postgres statements per poll   0  (budget 0)
   Redis commands in the handler  2  [get,get]  (budget 2)
 
-  batch 1   p50  1.194 ms   p95  1.296 ms   p99  1.398 ms   max  1.504 ms   <- best
-  batch 2   p50  1.191 ms   p95  1.366 ms   p99  1.576 ms   max  2.683 ms
-  batch 3   p50  1.189 ms   p95  1.350 ms   p99  1.407 ms   max  1.685 ms
+  batch 1   p50  1.224 ms   p95  1.357 ms   p99  1.449 ms   max  1.483 ms   <- best
+  batch 2   p50  1.230 ms   p95  1.383 ms   p99  1.513 ms   max  2.682 ms
+  batch 3   p50  1.215 ms   p95  1.412 ms   p99  1.543 ms   max  1.587 ms
 
-  REPORTED p99 1.398 ms against a budget of 5.0 ms
+  REPORTED p99 1.449 ms against a budget of 5.0 ms
 
 poll-latency-proof: zero Postgres, two Redis commands, p99 under budget.
