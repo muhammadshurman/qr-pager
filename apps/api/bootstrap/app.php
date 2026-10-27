@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Http\ProblemType;
+use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
@@ -31,6 +32,22 @@ return Application::configure(basePath: dirname(__DIR__))
             // balancer's health-check path must not change because the API's major
             // version did. Approved 2026-10-26; the reason is in §6 beside the policy.
             require __DIR__.'/../routes/probes.php';
+
+            // THE CUSTOMER SURFACE (Task 4). Under the same /v1 prefix as routes/v1.php,
+            // because the versioning policy is about the public path; on a DIFFERENT
+            // middleware group, because `api`'s last entry is RequireTenantScope and a
+            // customer has no account and no tenant to resolve. §4 › Tenancy: two
+            // authentication surfaces, never confused -- the token is the customer's
+            // authentication, and these routes are the ones that consume Task 3's
+            // resolver.
+            //
+            // Registered here rather than in the `api:` slot above because withRouting's
+            // api file gets the `api` group unconditionally; there is no way to mount a
+            // second file under the same prefix with a different group except from this
+            // closure. Before the fallback below, which matches anything.
+            Route::prefix('v1')
+                ->middleware('customer')
+                ->group(__DIR__.'/../routes/customer.php');
 
             // The SIGTERM drain proof's slow route, and the only conditional route
             // loading in this file. Two conditions, both visible here: the file has to
@@ -127,6 +144,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // a termination signal (measured in the framework's own signature, not recalled), so
         // a pass longer than a minute cannot be overlapped by the next tick.
         ExpirePagerSessionsCommand::class,
+        // Task 4's outbox worker. Registered for the same reason and supervised by
+        // nothing for the same reason: a long-running worker is an orchestrator's
+        // process, not a cron entry, and the ECS service definition is Task 13's
+        // (R-077). `--once` is what the proofs and a scheduler drive.
+        WorkOutboxCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
@@ -143,6 +165,28 @@ return Application::configure(basePath: dirname(__DIR__))
         // The global arming above still applies, and there is nothing for it to refuse:
         // /healthz reads nothing and /readyz reads one Redis key.
         $middleware->group('probe', []);
+
+        // The customer group, and it is EMPTY FOR A REASON rather than unfinished.
+        //
+        // It cannot carry RequireTenantScope: a customer has no account, so no tenant
+        // resolves before the token does, and the whole surface would answer 401.
+        //
+        // It does not carry RateLimit either, because the three routes need three
+        // DIFFERENT buckets -- the Postgres-backed scan is 30/min while the Redis-only
+        // poll is 240 -- so each route names its own in routes/customer.php and a group
+        // default would silently add a fourth count to every request.
+        //
+        // And it does not carry ShedLoad, because §4 › Edge & ops requires nice-to-haves
+        // to be dropped BEFORE alerts: only the polling route sheds, and putting it here
+        // would shed the subscription route too, which is the order exactly inverted.
+        //
+        // The group exists so that the customer surface is a NAMED thing with its own
+        // line in this file -- a route added to routes/customer.php cannot silently
+        // inherit the staff stack, and a reviewer reading this file sees two surfaces.
+        // ArmTenantScopeGuard is global and still applies, which is what keeps the
+        // customer routes under the same "no tenant context, no statement" refusal as
+        // everything else.
+        $middleware->group('customer', []);
 
         // TrustProxies is already on the global stack, and what it trusts is
         // config/trustedproxy.php -- read there, not configured here, because the

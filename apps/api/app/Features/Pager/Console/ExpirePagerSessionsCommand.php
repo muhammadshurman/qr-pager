@@ -28,7 +28,11 @@ use Illuminate\Support\Facades\DB;
  * is rank 2 and is marked as such in that file. Three properties of it matter and each is a line
  * below:
  *
- *   1. SELECT id is bounded by the worker's own cross-tenant SELECT policy, which as of
+ *   1. THE POLICY-LIMITED KEYED READ is bounded by the worker's own cross-tenant SELECT
+ *      policy -- this line said "SELECT id is bounded by..." until 2026-10-27, inside the
+ *      very docblock the amendment round edited to announce the change, which is R-069.
+ *      The bound is the POLICY and is true whatever the select list; the list itself is
+ *      `id, tenant_id, status`, each column load-bearing for the reasons above. As of
  *      Task 3 is `expires_at <= now() AND status IN ('waiting','ready','expired')` --
  *      time AND a status whitelist (R-003). So the rows this job can even see are live
  *      sessions past their TTL, plus already-expired ones, and nothing else.

@@ -12,6 +12,7 @@ use App\Domain\Pager\PagerSessionNotFound;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
 use App\Domain\Pager\PagerTransitionDenied;
+use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -55,6 +56,23 @@ use Illuminate\Support\Str;
  */
 final class PagerSessions
 {
+    /**
+     * Task 4's Redis status projection, refreshed after every committed transition.
+     *
+     * WHY THE SERVICE AND NOT ONLY THE OUTBOX WORKER. The worker refreshes the projection
+     * too, but it only runs for transitions that WRITE AN OUTBOX ROW -- and `complete`
+     * deliberately writes none (the customer is at the counter), so a projection that
+     * waited for the worker would never learn that an order was collected. Refreshing
+     * here covers every transition and the worker's refresh then covers the one thing
+     * this cannot know: that the push actually went out.
+     *
+     * WHY IT CANNOT CREATE A KEY. PagerProjection::refresh() is XX -- update-only -- and
+     * this class has no token to build a pointer key with, which Task 3 arranged by never
+     * letting a token near the service. So the projection's lifetime belongs to the SCAN:
+     * a session nobody scanned gets no Redis key from any number of staff transitions.
+     */
+    public function __construct(private readonly PagerProjection $projection) {}
+
     /**
      * Two hours, per PROJECT_INSTRUCTIONS.md §4 › Data.
      *
@@ -132,8 +150,9 @@ final class PagerSessions
     public function renotify(string $tenantId, string $sessionId, ?string $actorUserId = null, ?string $actorIp = null): PagerSessionState
     {
         $limit = (int) config('pager.renotify_limit');
+        $projected = null;
 
-        return withTenant($tenantId, function () use ($tenantId, $sessionId, $actorUserId, $actorIp, $limit): PagerSessionState {
+        $state = withTenant($tenantId, function () use ($tenantId, $sessionId, $actorUserId, $actorIp, $limit, &$projected): PagerSessionState {
             $session = $this->lock($sessionId);
             $status = PagerStatus::from($session->status);
 
@@ -177,6 +196,8 @@ final class PagerSessions
                 'renotify_count' => $attempt,
             ]);
 
+            $projected = [PagerStatus::Ready, (string) $session->order_reference, (string) $session->expires_at];
+
             return new PagerSessionState(
                 $sessionId,
                 PagerStatus::Ready,
@@ -185,6 +206,10 @@ final class PagerSessions
                 true,
             );
         });
+
+        $this->project($tenantId, $sessionId, $projected);
+
+        return $state;
     }
 
     /** Collected. No outbox row: the customer is at the counter. */
@@ -236,8 +261,15 @@ final class PagerSessions
         PagerStatus $idempotentWhen,
         string $columns,
     ): PagerSessionState {
-        return withTenant($tenantId, function () use (
-            $tenantId, $sessionId, $to, $action, $event, $actorUserId, $actorIp, $idempotentWhen, $columns
+        // Captured by reference from inside the scope and read AFTER it returns, which is
+        // the whole point: withTenant() opens one transaction and rethrows on failure, so
+        // a rolled-back transition never reaches the refresh below. A projection written
+        // inside the transaction would survive a rollback -- Redis has no part in
+        // Postgres's commit -- and would then publish a state that never happened.
+        $projected = null;
+
+        $state = withTenant($tenantId, function () use (
+            $tenantId, $sessionId, $to, $action, $event, $actorUserId, $actorIp, $idempotentWhen, $columns, &$projected
         ): PagerSessionState {
             $session = $this->lock($sessionId);
             $from = PagerStatus::from($session->status);
@@ -285,8 +317,58 @@ final class PagerSessions
                 'to' => $to->value,
             ]);
 
+            $projected = [$to, $reference, (string) $session->expires_at];
+
             return new PagerSessionState($sessionId, $to, $reference, $renotifies, true);
         });
+
+        $this->project($tenantId, $sessionId, $projected);
+
+        return $state;
+    }
+
+    /**
+     * Refresh the Redis projection for a transition that has already committed.
+     *
+     * BEST EFFORT, AND IT HAS TO BE. The status change, the outbox row and the audit row
+     * are committed by the time this runs -- that is the gate's first invariant and it is
+     * satisfied -- so a Redis failure here must not fail the staff request or, worse,
+     * make a caller retry a transition that already happened. The cost of a miss is
+     * bounded and defined: the customer's next poll reports no live status, their client
+     * re-opens the session against Postgres, and the projection is rewritten from truth.
+     * That is the same path a cold Redis takes, which is why it needs no second mechanism.
+     *
+     * $projected is null when the transition wrote nothing -- the idempotent case, where
+     * the session was already in the state the caller asked for. Nothing changed, so
+     * there is nothing to publish, and republishing would move the projection's `as_of`
+     * forward for an event that did not occur.
+     *
+     * NOTHING IS DONE FOR `expired`, and that is not an omission: a projection's TTL is
+     * never longer than the session's own remaining life (PagerProjection::ttlFor), so by
+     * the moment a session is past its TTL both of its Redis keys are already gone. A
+     * poll then answers Stale, the client re-opens, and Postgres says `409 Expired` --
+     * which is the one path that can tell expired from invalid. That is why
+     * ExpirePagerSessionsCommand needs no projection write and its statement shape, which
+     * §4 › Postgres traps prescribes clause by clause, is left exactly as Task 3 proved it.
+     *
+     * @param  array{PagerStatus, string, string}|null  $projected  status, reference, expires_at
+     */
+    private function project(string $tenantId, string $sessionId, ?array $projected): void
+    {
+        if ($projected === null) {
+            return;
+        }
+
+        [$status, $reference, $expiresAt] = $projected;
+
+        $this->projection->refresh(
+            $tenantId,
+            $sessionId,
+            $status,
+            $reference,
+            new DateTimeImmutable($expiresAt),
+            new DateTimeImmutable,
+        );
     }
 
     /**

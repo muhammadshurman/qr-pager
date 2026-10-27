@@ -46,6 +46,58 @@ return [
         ],
 
         /*
+        | THE CUSTOMER SURFACE. Three buckets, and NONE of them has a per-tenant half --
+        | which is not an omission, it is the clause R-063 was written around: a token
+        | carries no tenant until it resolves, so there is nothing to key a per-tenant
+        | limit on before the lookup, and resolving one in order to rate-limit the request
+        | that asks for it is work an unauthenticated caller can make this process do.
+        | These routes are the only ones in the project where the per-IP half stands
+        | alone, and that is why each one is tighter than `api` rather than looser.
+        |
+        | Per-IP behind a NAT is weak and is still the only key available here. What
+        | carries the rest of the weight is that guessing cannot succeed at all: 128 bits
+        | behind a sha256 with one exact-match probe. The risk on this surface is resource
+        | consumption and unobservable enumeration, not credential compromise, so the job
+        | of these numbers is to bound the first and the counter in
+        | TokenResolutionFailures is what answers the second.
+        */
+
+        /*
+        | Opening a session is the expensive customer call -- the only one that reaches
+        | Postgres -- so it carries the tightest bucket in the project. 30/minute is far
+        | above a real customer (one scan, plus a re-open when the live status lapses) and
+        | far below what an enumeration needs to be worth running. This is R-063's "its
+        | own bucket, tighter than `api` and keyed per IP", and it is proven to refuse by
+        | being driven rather than by being read.
+        */
+        'pager-token' => [
+            'per_ip' => ['attempts' => 30, 'seconds' => 60],
+        ],
+
+        /*
+        | Polling is the high-frequency one and it is also the cheapest: two Redis reads,
+        | no Postgres, no writes. A waiting device polls every ~7s, so ~9/minute; 240
+        | leaves room for a table of customers behind one NAT and still bounds a loop to
+        | something that costs us two Redis GETs apiece. It is deliberately NOT generous
+        | enough to be a free status oracle: an attacker with a stolen token learns only
+        | that one session's state, which they are already entitled to.
+        */
+        'pager-poll' => [
+            'per_ip' => ['attempts' => 240, 'seconds' => 60],
+        ],
+
+        /*
+        | Registering a device is a write, and the one customer route that inserts a row.
+        | A browser calls it once per subscription and again when its keys rotate, so
+        | 20/minute is far above the real rate; the row count is separately bounded by
+        | UNIQUE (pager_session_id, endpoint), which turns a loop re-sending the same
+        | endpoint into one row however many times it is called.
+        */
+        'pager-subscribe' => [
+            'per_ip' => ['attempts' => 20, 'seconds' => 60],
+        ],
+
+        /*
         | Unknown routes get their own, much tighter bucket. A 404 costs almost nothing
         | to serve and everything to scan with, so path enumeration is the traffic this
         | one exists for -- and the gate names it: "the rate limiter covers unknown

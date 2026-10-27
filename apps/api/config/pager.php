@@ -54,8 +54,12 @@ return [
     | How many sessions one expiry pass may claim
     |--------------------------------------------------------------------------
     |
-    | The pass is `SELECT id` (policy-limited) then one keyed UPDATE per row, per
-    | §4 › Postgres traps. This bounds the SELECT so one pass cannot hold a transaction
+    | The pass is a policy-limited keyed read -- `select id, tenant_id, status` -- then
+    | one keyed UPDATE per row, per §4 › Postgres traps. (It said "`SELECT id`" until
+    | 2026-10-27; the clause was amended to the shape the mechanism needs and this
+    | sentence was left behind, which is R-069. The three columns are each load-bearing:
+    | the keyed UPDATE needs the status it expects to find, and the audit row needs a
+    | tenant to open a scope for.) This bounds the SELECT so one pass cannot hold a transaction
     | open across an unbounded row count -- which matters more here than it looks,
     | because the worker role carries idle_in_transaction_session_timeout = 60s (§2.1)
     | and a pass that outran it would be killed mid-pass rather than finishing.
@@ -67,5 +71,66 @@ return [
     */
 
     'expiry_batch' => 500,
+
+    /*
+    |--------------------------------------------------------------------------
+    | How long the Redis status projection lives
+    |--------------------------------------------------------------------------
+    |
+    | A CEILING, not the value. PagerProjection writes
+    | min(remaining session life, this), floored at one second -- so a session's own
+    | expires_at always wins and A PROJECTION CANNOT OUTLIVE THE SESSION IT DESCRIBES.
+    | That is what makes the polling endpoint's miss honest: a token stops resolving in
+    | Redis at the same moment it stops being valid, and the client is pushed back to the
+    | one path that can tell "expired" from "invalid".
+    |
+    | Two hours matches the session TTL, so in practice this ceiling only binds if the
+    | TTL is ever raised -- which is exactly when a forgotten cache TTL would start
+    | serving stale state. Set here so that raising one without the other is a visible
+    | decision rather than a silent divergence.
+    |
+    */
+
+    'projection_ttl' => 7200,
+
+    /*
+    |--------------------------------------------------------------------------
+    | How often a waiting client should poll
+    |--------------------------------------------------------------------------
+    |
+    | Advertised in every poll response as `poll_after_seconds`. The SERVER half of
+    | §4 › Realtime's "client-side jittered interval + exponential backoff": the interval
+    | is ours to publish and the jitter is the client's to apply, because jitter applied
+    | here would be identical for every device that polled in the same second.
+    |
+    | Seven seconds is the figure §6.5's budget is computed against: at the C6 design
+    | ceiling of 300 000 concurrent sessions that is ~42 900 polls per second, which is
+    | what the two-Redis-reads-and-no-Postgres shape has to survive. Task 14 sets the real
+    | number from load results (C6); moving it here moves the budget, which is why the
+    | arithmetic is written down beside it.
+    |
+    */
+
+    'poll_interval' => 7,
+
+    /*
+    |--------------------------------------------------------------------------
+    | When a run of failed token resolutions is worth a log line
+    |--------------------------------------------------------------------------
+    |
+    | R-063: failed resolutions are counted so an enumeration is observable. The counter
+    | is unconditional; this is the point in one UTC hour at which it also says so once.
+    |
+    | ONCE, not once per request, and that is R-046 -- unthrottled per-request warning
+    | logs on a high-volume failure path are themselves a defect, because an attacker's
+    | loop then costs us a log line per attempt. TokenResolutionFailures fires on the
+    | attempt that EQUALS this number and on no other.
+    |
+    | 50 in an hour is far above a customer mistyping or re-scanning a worn code, and far
+    | below what a loop produces in a second.
+    |
+    */
+
+    'token_failure_alert' => 50,
 
 ];
