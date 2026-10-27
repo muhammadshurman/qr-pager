@@ -42,8 +42,12 @@ and that `Topic`, `TTL` and `Urgency` are set. What is untested is whether it **
 1. **`PLAN.md §0`** — rewritten. Two branches are outstanding and they stack.
 2. **`PLAN.md §0.1` `W-15` and `W-16`** — Task 4's two `§11` reviews, then its PR/CI/tag.
    **Task 3's `W-10` and `W-11` come first**, because Task 4 is branched off Task 3.
-3. **`R-074` in `§5`** — the one thing in this task resolved by a *reading* rather than by a
-   rule. It wants your confirmation **before `task-4` is tagged**. `§6` below.
+3. **`R-074`** — **your blocking question is answered: the key is the HASH Postgres stores,
+   not the raw token**, proven against `encode(token_hash, 'hex')` read back as the cluster
+   superuser rather than against the function that builds the key. The three clauses you asked
+   to be stated either way — TTL, invalidation with its test, and log/body posture at any
+   `APP_DEBUG` — are in **`QRPAGER-11 §7`**, and two hardening changes came out of writing
+   them. The row keeps your wording and the Security reviewer rules on it. `§6.2` below.
 4. **`§4a` → "FOUR DEAD ASSERTIONS"** — the finding that is not about Task 4's code and
    matters most. `§7` below.
 5. `docs/tickets/QRPAGER-11.md` — the `§6` answers, including the four board-level items.
@@ -174,7 +178,15 @@ of a sha256, i.e. the 128-bit token — which is the same property that makes
 already names "QR token lookup" as a permitted cross-tenant path.
 **This is a reading of two rank-2 clauses, so it is recorded and not resolved in a docblock** —
 that is security `S-1`'s defect from Task 3 and I was not going to repeat it the week after.
-`R-074` is the row; it wants your word before the tag.
+`R-074` is the row; it keeps your wording and the Security reviewer rules on it.
+
+**ANSWERED IN YOUR REVIEW ROUND, with two hardening changes.** The key is the **hash Postgres
+stores** — `pager:tok:` + `encode(token_hash, 'hex')`, proven against the column as the cluster
+superuser, 64 hex characters, raw token absent. Then: expiry is now checked at **read** time as
+well as by the TTL, because a TTL is arithmetic done at write time against PHP's clock while the
+authority is `expires_at` in Postgres; and neither writer floors the TTL at one second any more,
+so a terminal transition on a long-expired session writes nothing instead of publishing a live
+status for a second. Full answer in `QRPAGER-11 §7`.
 
 ### 6.3 All four customer routes are POST, including the one that only reads
 
@@ -251,34 +263,78 @@ of its dependencies.
 
 ---
 
-## 7. THE FINDING THAT IS NOT TASK 4'S, AND MATTERS MOST
+## 7. THE FINDING THAT IS NOT TASK 4'S, AND MATTERS MOST — corrected after your review
 
-**Four assertions in this suite asserted nothing, and three guarded named invariants.**
+**Four assertions in this suite asserted nothing, and three guarded named invariants. Two
+tagged trees carry one.**
 
-Pest's `toContain()` takes `...$needles`, so a "message" in the second argument is read as a
-second **needle**, and under `->not` the expectation becomes *"does not contain BOTH"* —
-trivially true. Measured three ways, as real tests (`§4a`).
+Pest's `toContain()` and `toContainEqual()` are its **only two variadic matchers** — measured
+by reflection: 73 others on `Pest\Mixins\Expectation` take a real `$message`, and
+`Pest\Expectation`'s six variadic methods are all debug helpers. So a message in the second
+argument is read as a **second needle**, and under `->not->` the assertion becomes *"does not
+contain BOTH"*, which a message that never appears makes trivially true.
 
-| Where | What was unguarded | Since |
+### ⚠ MY FIRST ATTRIBUTION WAS WRONG. Here is the measured one.
+
+I told you Tasks 1, 2 and 3, and named the OpenAPI sweep as Task 2's. Re-measured with today's
+`SourceGuard` rule 7 against **each ref's own bytes**:
+
+| ref | vacuous | which |
 | --- | --- | --- |
-| `GrantMatrixTest` | "grants UPDATE on no tenant_id column anywhere" — the control behind *a row cannot be moved between tenants* | **Task 1** |
-| `PagerTokenTest` | "the raw token never reaches a log" — a **`§3` row 3 gate clause** | **Task 3** |
-| `OpenApiSpecTest` | the `R-052`/`R-056` sweep for internal rationale in published descriptions | **Task 2** |
-| `PagerCustomerSurfaceTest` | "no token in any response body" | Task 4, mine |
+| `task-0` `3057fe7` | 0 | — |
+| **`task-1` `3fe10c2`** | **1** | `GrantMatrixTest:29` — *"grants UPDATE on no tenant_id column anywhere"*, the control behind a row being unable to move between tenants |
+| **`task-2` `2e42267`** | **1** | the same one, **carried**. Task 2 introduced none of its own |
+| `task-3-pager-domain` `1695f0b` | 3 | + `PagerTokenTest:131` (*"the raw token never reaches a log"* — a **`§3` row 3 gate clause**) and `OpenApiSpecTest:283` (the `R-052`/`R-056` sweep) |
+| Task 4 | 1, mine | `PagerCustomerSurfaceTest` — introduced and fixed on this branch |
 
-**The third has a visible consequence:** `docs/openapi.json` has been publishing the shed
-threshold `0.9 x app_limit`, the field names `app_backends`/`app_limit`/`saturation`, a review
-id and the `     * ` docblock artefact — under a green test naming those exact strings as
-forbidden. `R-052` stays open and stays Task 12's; its **compensating-control cell is corrected
-in place**, because what it claimed had never worked.
+Introduced by `122d203` (**Task 1**) and `224dde9` (**Task 3**). So the two files I attributed
+to Task 2 are Task 3's, and Task 2's only exposure is inheriting Task 1's.
 
-All four are rewritten and **re-run to confirm they now bite**. `ReadinessController`'s
-rationale moved to line comments. `ExpectationApiTest` forbids the shape mechanically, with a
-positive control that goes red if a future Pest makes the second argument a message.
+**Two measurement mistakes produced the wrong answer and both are worth naming**, because each
+is the same species as the defect being investigated:
 
-**`§3.2`'s tenth delta draws the general lesson:** that subsection has been asking "does the
-owning task's gate catch this row?" while taking *"is there a control today?"* on trust. **A
-fifth question is owed — has this row's compensating control ever been seen to FAIL?**
+1. `git log -L` reports the commit that last touched a line **region**, not the one that
+   introduced a defect. It named `122d203` and `224dde9` correctly but told me nothing about
+   which *tags* carried them.
+2. My first sweep copied the guard into a worktree per ref and ran it there — which returned
+   **0 for `task-1`**, because the guard did not exist at `task-1` (`R-010`: built at Task 2),
+   so the copy failed silently and the grep counted nothing. **A vacuous pass, produced while
+   investigating vacuous passes.** The sound shape is today's class against historical bytes.
+
+### What is now in place
+
+- **The guard (your 1b).** `SourceGuard` rule 7, `VACUOUS_NEGATED_CONTAINS`. Runs under
+  `composer guard` and as its **own CI step**, which `ci.yml` already had. Proven to fail on
+  `guard/fixtures/repo/vacuous-not-contains.php.fixture` — four bad shapes (both matchers, one
+  split across lines with a comment inside, one with a nested call as its first argument) and
+  three correct ones that must **not** be flagged. Token-based, so the comments documenting the
+  rule are invisible to it. One exception, rule 7's own positive control, scoped **by file and
+  by function name** like `R-019`'s — `RepoGuardTest` proves a second function in the same file
+  is still caught, and that the same function name in a different file is not excepted.
+- **The assertions (your 1c).** All four rewritten as
+  `expect(str_contains($h, $n))->toBeFalse($message)`, and **each proven to fail without its
+  fix** by `apps/api/bin/vacuous-assertion-proof`: a real `GRANT UPDATE (tenant_id)` on the
+  test database, `PagerToken::jsonSerialize()` returning the raw token, and the capacity figure
+  put back into the committed spec. All three go red; all three return green on restore.
+  **That script found two bugs in itself first** — it granted on the *development* database
+  while the suite reads `qrpager_test`, and its `perl` replacement interpolated `$this` away,
+  a fix which then reproduced the same interpolation in PHP. It now verifies each revert
+  **landed** before trusting what the assertion says, because a revert proof whose revert did
+  nothing reports a working control as broken.
+- **The published artifact (your 1d): BOTH corrected and regenerated, not the test alone.**
+  The source fix is `ReadinessController`'s rationale and five `FormRequest` docblocks moved
+  from `/** */` to `//`, where Scramble cannot see them; `composer openapi` regenerated the
+  spec. `grep` over the committed `docs/openapi.json` returns **0** for `0.9 x app_limit`,
+  `app_limit`, `app_backends`, `saturation`, `R-031`, `ShedLoadTest`, the `     * ` artefact and
+  `§`. And `composer openapi:check` — a gate step and a CI step — reports the file **matches
+  the routes**, so the artifact is generated from source and a hand-edit would fail.
+- **The record (your 1e).** `PLAN.md §1` has the dated decision-log entry; `§0`'s cell is
+  corrected in place with the wrong attribution shown rather than silently replaced; `§4a` has
+  the full round.
+
+`§3.2`'s tenth delta asked *has this row's compensating control ever been seen to FAIL?* The
+answer for three of them was **no, for as long as they existed**. `R-052`'s cell has named that
+sweep as its compensating control since Task 2, and the sweep had never asserted anything.
 
 ---
 
@@ -348,15 +404,36 @@ row 4 on 2026-10-25 and 2026-10-27 — `PLAN.md` is what this task shipped again
 
 ---
 
+## 10a. THE p99 OF RECORD IS THE FULL HARNESS. THE SUITE RUNS A SMOKE CHECK.
+
+Stated because the review asked, and because the distinction is easy to lose:
+
+| | asserts | reports | run by |
+| --- | --- | --- | --- |
+| `bin/poll-latency-proof` | zero Postgres, two Redis commands, **and p99 < 5 ms** | p50/p95/p99 of 3 batches, with commit, machine and method | a person, on a quiet machine. **This is the figure of record** and it goes into `§4a` |
+| `bin/poll-latency-proof --quick` | zero Postgres, two Redis commands | p50/p95/p99 of 1 short batch | `PagerPollLatencyTest`, inside the gate |
+
+`PagerPollLatencyTest` is **a smoke check on the harness** — that it still runs, and still
+measures the two load-invariant properties. It asserts nothing about the clock. Its header says
+so, its name says so, and it now asserts the script printed `timing REPORTED ONLY`, so dropping
+`--quick` becomes a deliberate change rather than an accident.
+
+**A budget asserted by a cheaper path than the one measured is not a budget**, which is exactly
+what the first version did: it asserted the script's exit code, the exit code asserted the
+timing, and the gate went red at 7.640 ms where the full harness read 3.337 ms on the same
+commit. `§3.1` row 4 calls that `F10`'s class.
+
+---
+
 ## 11. THE GATE FIGURES, AND THE COMMIT EACH WAS MEASURED AT
 
 | What | Figure | Commit | How |
 | --- | --- | --- | --- |
-| `composer gate`, working tree | **all six green, exit 0 — 592 passed, 3380 assertions** | **`1488725`**, with only the docs-only `c7602b9` after it | `composer gate`; output at `docs/tickets/QRPAGER-11-gate.txt`. Measured there rather than quoted from the code commit, because `R-071` is the row for "`§6`'s fresh-clone clause has no evidence at the head it is being tagged on" |
+| `composer gate`, working tree | **all six green, exit 0 — 601 passed, 3428 assertions** (592 / 3380 before the review round) | **`1488725`**, with only the docs-only `c7602b9` after it | `composer gate`; output at `docs/tickets/QRPAGER-11-gate.txt`. Measured there rather than quoted from the code commit, because `R-071` is the row for "`§6`'s fresh-clone clause has no evidence at the head it is being tagged on" |
 | `composer gate`, **fresh clone** | **all six green — 592 passed, 3380 assertions**, the same counts as the working tree | **`a27e98b`** | clone → `cp .env.example .env` → `composer install` → `key:generate` → `composer gate`; output at `docs/tickets/QRPAGER-11-fresh-clone-gate.txt` |
 | Baseline, branch point | 492 passed, 2182 assertions | `1695f0b` | so Task 4 adds **100 tests, 1198 assertions** |
-| **Coverage, this task's code** | **96.57 % — 956/990 over 25 `app/` files**, `--min=90` passing | `a27e98b` | `bin/coverage --task=task-3-pager-domain --min=90`; output at `docs/tickets/QRPAGER-11-coverage.txt` |
-| `p99` on the polling endpoint | **3.337 ms** vs a 5 ms budget; batches 4.586 / 4.427 / 3.337 | `5dd7828` | `bin/poll-latency-proof` — 20 warm-up discarded, 200 measured, best of 3, Linux 6.18.54 WSL2 x86_64, 8 CPUs, load 0.35, PHP 8.4.27 |
+| **Coverage, this task's code** | **96.50 % — 964/999 over 25 `app/` files**, `--min=90` passing (96.57 % before the review round; the denominator grew) | `a27e98b` | `bin/coverage --task=task-3-pager-domain --min=90`; output at `docs/tickets/QRPAGER-11-coverage.txt` |
+| **`p99` of record, polling endpoint** | **2.730 ms** vs a 5 ms budget; batches **2.730** / 3.137 / 3.499 | `5d89234` + this round's working tree | **the FULL harness** — `bin/poll-latency-proof` with no arguments: 20 warm-up discarded, 200 measured, **best p99 of 3 batches**, Linux 6.18.54 WSL2 x86_64, 8 CPUs, load 1.08, PHP 8.4.27. **Not `--quick`.** Full transcript committed at `docs/tickets/QRPAGER-11-p99.txt`; the earlier 3.337 ms was also the full harness, at `5dd7828`, before the read-time expiry check |
 | Postgres statements per poll | **0** | `a27e98b` | query listener over a real request |
 | Redis commands in the handler | **2** (`get`, `get`); **7** across the whole request | `a27e98b` | `CommandExecuted` listener |
 | Kill mid-batch | **8 sent, 0 pending, 0 dead**, max attempts 2 of 6, no duplicate `(tenant_id, dedupe_key)` | `a27e98b` | `bin/outbox-kill-proof 8` — a real `kill -9` |
@@ -383,6 +460,40 @@ which cannot run in process without hanging the suite.
 
 ---
 
+## 11a. THE ORDERING, AND WHY TASK 4'S FIGURES ARE CONDITIONAL
+
+`§6`'s order is strict — *no task starts before the previous one is green and tagged* — and
+Task 4 started before Task 3 was either, on your rank-1 instruction. So, written into
+`PLAN.md §0`'s *Blocking anything?* row rather than left to be discovered at the tag:
+
+1. **Task 3's `§11` reviews run first.**
+2. **Any Critical or High there changes Task 3's code, which this branch is built on.** So
+   `task-4-notifications` is rebased onto the new Task 3 commit:
+   `git rebase --onto <new task-3 commit> task-3-pager-domain task-4-notifications`.
+3. **The FULL gate is re-run and every figure in `§4a`'s Task 4 section is RE-REPORTED at that
+   commit** — gate, fresh clone, coverage, p99, the kill proof.
+4. **Neither tag is created until then.**
+
+A gate figure measured against a parent that has since changed is not a gate figure, which is
+the same property `R-071` names one level up.
+
+---
+
+## 11b. THE §6 ITEMS YOU ASKED ME TO CONFIRM, WITH OUTPUT
+
+All six run at this head. Transcripts are committed beside this file.
+
+| Item | Result |
+| --- | --- |
+| **Rollback of this task's migrations runs clean** | `bin/migration-rollback-proof`, **all five checks**: apply from empty in one batch · second apply `Nothing to migrate` · this task's objects present · rollback leaves **1 table (the migrations table) and 0 functions** · re-apply returns a **byte-identical** schema fingerprint. This task adds no migration, so the proof is that the existing set still behaves — re-run, not assumed |
+| **Every new route in the generated spec, committed, `/v1`** | `composer openapi:check` → *"docs/openapi.json matches the routes"*. The committed spec carries `/v1/pager/session` POST, `/v1/pager/status` POST, `/v1/pager/subscription` POST+DELETE. Everything outside `/v1` is one of the two probes, asserted |
+| **TS enums/DTOs generated, CI fails when stale** | **Nothing to generate and nothing that can be stale.** `git ls-files '*.ts' '*.tsx'` → **0**; `packages/` does not exist (created at Task 8, `CLAUDE.md › Layout`). Task 4 adds no TypeScript and hand-copies nothing, because there is no other direction yet. Task 8's `§3.1` invariant already owns "the TS status mirror is generated and CI fails when it is stale" |
+| **`DELETE IN TASK 5` list** | **Task 4 added none.** Re-derived from a grep: the stub is `app/Platform/Auth/HarnessTenantResolver.php`; its one production reference is `AppServiceProvider:48`; nine test files call `actingForTenant()` plus `TestCase.php` which defines it. **Task 4's nine new test files make ZERO calls** — `PagerCustomerSurfaceTest` appears in a filename grep only because of two comments saying "deliberately NO `actingForTenant()` in this test". Full list in `§13` |
+| **gitleaks green** | `gitleaks detect` over **121 commits** → *no leaks found*. `gitleaks protect` over the working tree → *no leaks found*. The `.githooks` pre-commit hook was exercised earlier with the 82-character `github_pat_` probe: `leaks found: 1`, exit 1, nothing committed |
+| **No VAPID key in the tree or the history** | `.env.example` lines 83-85 are `VAPID_SUBJECT=`, `VAPID_PUBLIC_KEY=`, `VAPID_PRIVATE_KEY=` — **names only, no values**. `git grep -E "VAPID_(SUBJECT\|PUBLIC_KEY\|PRIVATE_KEY)=.+"` → nothing. No committed P-256-shaped literal anywhere. Every test generates its own pair at runtime (`PushFixtures::vapid()`, `VAPID::createVapidKeys()`), which is why the suite needs none set — and why the new boot check exempts local/testing |
+
+---
+
 ## 12. THE PROOF SCRIPTS — all in the repo, none in a scratchpad (R-043)
 
 | Script | Proves | Run it |
@@ -390,6 +501,7 @@ which cannot run in process without hanging the suite.
 | `apps/api/bin/outbox-kill-proof` | nothing lost, nothing duplicated, by `kill -9`ing a real worker blocked inside a send | `bin/outbox-kill-proof 8` |
 | `apps/api/bin/poll-latency-proof` | zero Postgres, two Redis commands, and the p99 figure | `bin/poll-latency-proof` (add `--quick` to report the clock instead of asserting it) |
 | `apps/api/bin/ttl-revert-proof` | `R-068`'s per-case revert claim, both halves separately | `bin/ttl-revert-proof` |
+| `apps/api/bin/vacuous-assertion-proof` | the three invariants that were unproven, each now **proven to fail without its fix** | `bin/vacuous-assertion-proof` |
 
 **`composer gate` and `bin/coverage` both already existed at the task-3 commit**, so neither
 had to be built — the amendment asked me to say so either way.

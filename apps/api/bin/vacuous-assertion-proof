@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# Item 1c: the three invariants that were unproven, each now proven to FAIL without its fix.
+#
+# WHAT THIS IS FOR. Four assertions in this repository were `->not->toContain($needle,
+# "message")`, which Pest reads as two needles -- so under `->not` they asserted "does not
+# contain BOTH" and passed trivially. Three of them guarded NAMED INVARIANTS:
+#
+#   Task 1   GrantMatrixTest    "grants UPDATE on no tenant_id column anywhere" -- the
+#                               control behind "a row cannot be moved between tenants".
+#                               Present at the task-1 AND task-2 tags.
+#   Task 3   PagerTokenTest     "the raw token never reaches a log" -- §3 row 3's clause.
+#   Task 3   OpenApiSpecTest    the R-052/R-056 sweep over published descriptions.
+#
+# Rewriting them is not evidence. §6 says "every bug found gets a regression test that
+# FAILS WITHOUT THE FIX", and a rewritten assertion that has never been seen red is the
+# same thing the old one was: a green test nobody has watched fail. So each one here is
+# driven against a deliberately broken world and must go RED.
+#
+# §3.2's tenth delta asks the fifth question this script answers: has this row's
+# compensating control ever been seen to FAIL?
+#
+# It lives in the repository because R-043 is a §5 row about exactly that -- a gate clause
+# once named a demonstration whose script was in a session scratchpad.
+#
+# Each revert is undone in a trap, including on Ctrl-C. Run it on a clean tree.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# R-054/CLAUDE.md: without this, laravel/pao prints one JSON line inside an agent session
+# and a red run leaves no frames for whoever reads it next.
+export PAO_DISABLE=1
+
+token_src="app/Domain/Pager/PagerToken.php"
+spec="../../docs/openapi.json"
+backup_dir="$(mktemp -d)"
+granted=0
+
+cp "$token_src" "$backup_dir/PagerToken.php"
+cp "$spec" "$backup_dir/openapi.json"
+
+# THE DATABASE THE SUITE READS, which is not the one .env names.
+#
+# phpunit.xml sets DB_DATABASE=qrpager_test; .env says qrpager. A GRANT is per database,
+# so the first version of this script granted on the DEVELOPMENT database and then
+# reported that the assertion "PASSED against a broken world" -- when the world the test
+# looks at had never been broken. That is the same trap bin/poll-latency-proof hit and
+# bin/migration-rollback-proof's header already records, and it is worth noticing that a
+# proof about vacuous checks was itself briefly vacuous in the other direction: it would
+# have reported a working control as broken.
+test_database="$(php -r '
+  $x = @simplexml_load_file("phpunit.xml");
+  foreach ($x->php->env as $e) { if ((string) $e["name"] === "DB_DATABASE") { echo (string) $e["value"]; return; } }
+  echo "qrpager_test";
+')"
+
+grant_sql() {
+  DB_DATABASE="$test_database" php artisan tinker --execute="DB::connection('pgsql_root')->statement('$1');" >/dev/null 2>&1
+}
+
+restore() {
+  cp "$backup_dir/PagerToken.php" "$token_src"
+  cp "$backup_dir/openapi.json" "$spec"
+  if [ "$granted" = "1" ]; then
+    grant_sql "REVOKE UPDATE (tenant_id) ON pager_sessions FROM qrpager_app"
+  fi
+  rm -rf "$backup_dir"
+}
+trap restore EXIT INT TERM
+
+failures=0
+
+# $1 label, $2 test file, $3 pest --filter
+expect_red() {
+  local label="$1" file="$2" filter="$3"
+
+  if php artisan test "$file" --filter="$filter" >/tmp/qrpager-vacuous.$$ 2>&1; then
+    echo "  ✗ $label -- the assertion PASSED against a broken world. It is still inert." >&2
+    sed 's/\x1b\[[0-9;]*m//g' /tmp/qrpager-vacuous.$$ | tail -12 >&2
+    failures=$((failures + 1))
+  else
+    echo "  ✓ $label -- went red, as it must"
+  fi
+
+  rm -f /tmp/qrpager-vacuous.$$
+}
+
+expect_green() {
+  local label="$1" file="$2" filter="$3"
+
+  if php artisan test "$file" --filter="$filter" >/tmp/qrpager-vacuous.$$ 2>&1; then
+    echo "  ✓ $label -- green on the real tree"
+  else
+    echo "  ✗ $label -- red BEFORE any revert, so this proof cannot mean anything." >&2
+    sed 's/\x1b\[[0-9;]*m//g' /tmp/qrpager-vacuous.$$ | tail -12 >&2
+    failures=$((failures + 1))
+  fi
+
+  rm -f /tmp/qrpager-vacuous.$$
+}
+
+echo "vacuous-assertion-proof — $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+# ---------------------------------------------------------------------------------
+echo "=== 1. Task 1 — 'grants UPDATE on no tenant_id column anywhere' (GrantMatrixTest)"
+echo "       the control behind: a row cannot be moved between tenants"
+# ---------------------------------------------------------------------------------
+expect_green "baseline" tests/Feature/Database/GrantMatrixTest.php "tenant_id column anywhere"
+
+# THE REAL WORLD BROKEN, not a stubbed one: the grant this invariant forbids is actually
+# issued, as the cluster superuser, against the real table. The assertion reads
+# information_schema, so nothing short of a real grant can move it.
+grant_sql "GRANT UPDATE (tenant_id) ON pager_sessions TO qrpager_app" && granted=1
+
+# VERIFY THE REVERT LANDED before trusting what the assertion then says. A revert proof
+# whose revert silently did nothing reports a working control as broken, which is how a
+# real control gets "fixed" into something worse.
+if [ "$granted" = "1" ]; then
+  applied="$(DB_DATABASE="$test_database" php artisan tinker --execute="
+    echo DB::connection('pgsql_root')->selectOne(\"select count(*) as n from information_schema.column_privileges where grantee = 'qrpager_app' and table_name = 'pager_sessions' and column_name = 'tenant_id' and privilege_type = 'UPDATE'\")->n;
+  " 2>/dev/null | tr -dc '0-9')"
+
+  if [ "${applied:-0}" = "0" ]; then
+    echo "  ✗ the GRANT did not land on [$test_database]; the revert proof cannot run" >&2
+    failures=$((failures + 1))
+    granted=0
+  else
+    echo "  · grant verified present on [$test_database] before the assertion runs"
+  fi
+fi
+
+if [ "$granted" != "1" ]; then
+  echo "  ✗ could not issue the grant, so the revert proof could not run" >&2
+  failures=$((failures + 1))
+else
+  expect_red "qrpager_app granted UPDATE (tenant_id) on pager_sessions" tests/Feature/Database/GrantMatrixTest.php "tenant_id column anywhere"
+  grant_sql "REVOKE UPDATE (tenant_id) ON pager_sessions FROM qrpager_app"
+  granted=0
+  expect_green "restored" tests/Feature/Database/GrantMatrixTest.php "tenant_id column anywhere"
+fi
+echo
+
+# ---------------------------------------------------------------------------------
+echo "=== 2. Task 3 — 'the raw token never reaches a log' (PagerTokenTest)"
+echo "       §3 row 3's clause, and the most expensive of the three to have been inert"
+# ---------------------------------------------------------------------------------
+expect_green "baseline" tests/Feature/Pager/PagerTokenTest.php "raw token out of captured log output"
+
+# Break the redaction at its source: jsonSerialize() is what stops the token reaching
+# Monolog's context, which is the path the test actually drives.
+# php and not perl, and \$this escaped in both. perl treats the replacement as a
+# double-quoted string, so the $this in $this->reveal() interpolated to nothing and the
+# first version wrote a parse error; the first fix then reproduced it in PHP, whose
+# double-quoted strings interpolate $this too. Twice in two minutes is the argument for
+# the php -l check below rather than for being more careful next time.
+php -r '
+$path = $argv[1];
+$src = file_get_contents($path);
+$broken = str_replace("        return self::REDACTED;", "        return \$this->reveal();", $src, $count);
+if ($count !== 1) { fwrite(STDERR, "expected exactly one REDACTED return, found {$count}\n"); exit(1); }
+file_put_contents($path, $broken);
+' "$token_src"
+
+if ! php -l "$token_src" >/dev/null 2>&1 || ! grep -q 'return $this->reveal();' "$token_src"; then
+  echo "  ✗ could not break the redaction, so the revert proof could not run" >&2
+  failures=$((failures + 1))
+else
+  expect_red "PagerToken::jsonSerialize() returns the raw token" tests/Feature/Pager/PagerTokenTest.php "raw token out of captured log output"
+  cp "$backup_dir/PagerToken.php" "$token_src"
+  expect_green "restored" tests/Feature/Pager/PagerTokenTest.php "raw token out of captured log output"
+fi
+echo
+
+# ---------------------------------------------------------------------------------
+echo "=== 3. Task 3 — the R-052/R-056 sweep over published descriptions (OpenApiSpecTest)"
+echo "       the one whose inertness shipped: docs/openapi.json carried 0.9 x app_limit"
+# ---------------------------------------------------------------------------------
+expect_green "baseline" tests/Feature/Http/OpenApiSpecTest.php "internal rationale"
+
+# Put the exact string back that the committed spec used to carry, into a real published
+# description. The sweep reads the committed file, so this is the artifact it guards.
+php -r '
+$path = "../../docs/openapi.json";
+$spec = json_decode(file_get_contents($path), true, 64, JSON_THROW_ON_ERROR);
+$spec["paths"]["/readyz"]["get"]["description"] .= " The shed threshold is 0.9 x app_limit.";
+file_put_contents($path, json_encode($spec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+'
+
+if ! grep -q "0.9 x app_limit" "$spec"; then
+  echo "  ✗ could not inject the forbidden string, so the revert proof could not run" >&2
+  failures=$((failures + 1))
+else
+  expect_red "docs/openapi.json republishes the capacity figure" tests/Feature/Http/OpenApiSpecTest.php "internal rationale"
+  cp "$backup_dir/openapi.json" "$spec"
+  expect_green "restored" tests/Feature/Http/OpenApiSpecTest.php "internal rationale"
+fi
+echo
+
+if [ "$failures" -ne 0 ]; then
+  echo "vacuous-assertion-proof: FAILED -- $failures check(s) did not behave as required." >&2
+  exit 1
+fi
+
+echo "vacuous-assertion-proof: all three invariants are now proven to fail without their fix."

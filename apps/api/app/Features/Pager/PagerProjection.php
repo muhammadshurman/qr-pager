@@ -113,6 +113,10 @@ final class PagerProjection
      */
     public function remember(PagerToken $token, ResolvedPagerSession $session, DateTimeImmutable $now): bool
     {
+        if ($this->hasNothingLeftToProject($session->expiresAt, $now)) {
+            return false;
+        }
+
         $ttl = $this->ttlFor($session->expiresAt, $now);
 
         $view = new PagerStatusView($session->status, $session->orderReference, $session->expiresAt, $now);
@@ -146,6 +150,10 @@ final class PagerProjection
         DateTimeImmutable $expiresAt,
         DateTimeImmutable $now,
     ): bool {
+        if ($this->hasNothingLeftToProject($expiresAt, $now)) {
+            return false;
+        }
+
         $view = new PagerStatusView($status, $orderReference, $expiresAt, $now);
 
         try {
@@ -185,8 +193,27 @@ final class PagerProjection
      *
      * A corrupt or future-versioned payload is a miss, not an error: decode() returns
      * null and the client resolves again, which is correct and costs one Postgres call.
+     *
+     * ===================================================================================
+     * EXPIRY IS CHECKED AT READ TIME, NOT ONLY BY THE TTL
+     * ===================================================================================
+     *
+     * The TTL is the primary mechanism and it is derived, never longer than the session
+     * (ttlFor). But a TTL is arithmetic done at WRITE time against PHP's clock, and the
+     * authority on when a session expires is `expires_at` in Postgres. If those clocks
+     * ever disagree -- PHP behind Postgres, a drifting container, a rounded SETEX -- a key
+     * can outlive the session it describes, and this endpoint would serve a live status
+     * for a session the expiry job is about to move to `expired`.
+     *
+     * So the view's own `expiresAt` is compared against the clock on EVERY read, and a
+     * past-expiry view is a MISS. That makes "a session expired in Postgres stops
+     * resolving from Redis" true by COMPUTATION rather than by trusting arithmetic that
+     * happened earlier -- the same discipline ResolvedPagerSession::hasExpired() applies,
+     * for the same reason: compute from expires_at against the clock, never trust a
+     * lagging indicator. The client then re-opens against Postgres, which is the only
+     * path that can tell it `expired` from `invalid` (gate clause (a)).
      */
-    public function read(PagerToken $token): PagerStatusView|null|false
+    public function read(PagerToken $token, DateTimeImmutable $now): PagerStatusView|null|false
     {
         try {
             $connection = $this->redis->connection();
@@ -212,7 +239,13 @@ final class PagerProjection
             return false;
         }
 
-        return is_string($payload) ? PagerStatusView::decode($payload) : null;
+        if (! is_string($payload)) {
+            return null;
+        }
+
+        $view = PagerStatusView::decode($payload);
+
+        return $view === null || $view->expiresAt <= $now ? null : $view;
     }
 
     /** Drop both keys. Not on any request path; tooling and tests. */
@@ -258,15 +291,31 @@ final class PagerProjection
     /**
      * Never longer than the session has left, never longer than config, never below 1.
      *
-     * The floor exists because setex refuses a non-positive TTL: a session that expired
-     * a second ago would otherwise raise instead of writing a short-lived key, and the
-     * endpoint that is about to answer 409 Expired would answer 503.
+     * THERE IS NO LONGER A FLOOR, and that is a correction rather than a simplification.
+     * It used to be `max(1, ...)`, because setex refuses a non-positive TTL -- which meant
+     * a terminal transition on a long-expired session (`complete` on an order collected
+     * last week, which refuseIfPastTtl deliberately allows, because a terminal session is
+     * finished rather than expired) wrote a live status for one second. One second is
+     * small and is still the wrong answer, and "small enough" is not a property anyone can
+     * test. Both writers now refuse outright instead -- see hasNothingLeftToProject().
      */
+    /**
+     * True when there is no session left to project, so neither key is written.
+     *
+     * Refusing to write is better than writing briefly: the caller's next poll misses, the
+     * client re-opens, and Postgres answers authoritatively. Nothing is lost and there is
+     * no window to reason about.
+     */
+    private function hasNothingLeftToProject(DateTimeImmutable $expiresAt, DateTimeImmutable $now): bool
+    {
+        return $expiresAt <= $now;
+    }
+
     private function ttlFor(DateTimeImmutable $expiresAt, DateTimeImmutable $now): int
     {
         $remaining = $expiresAt->getTimestamp() - $now->getTimestamp();
         $configured = (int) config('pager.projection_ttl');
 
-        return max(1, min($remaining, $configured));
+        return min($remaining, $configured);
     }
 }

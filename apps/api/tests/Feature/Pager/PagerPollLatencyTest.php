@@ -3,7 +3,27 @@
 declare(strict_types=1);
 
 /*
- * The p99 clause, driven from the suite so the harness cannot rot.
+ * A SMOKE CHECK ON THE LATENCY HARNESS. It is not the p99 of record and must never be
+ * read as one.
+ *
+ * WHAT THIS FILE IS. It runs bin/poll-latency-proof in `--quick` mode -- 1 batch of 30
+ * after 20 warm-up -- and asserts only the two LOAD-INVARIANT properties: zero Postgres
+ * statements and exactly two Redis commands in the handler. It REPORTS the clock and
+ * asserts nothing about it.
+ *
+ * WHAT THE p99 OF RECORD IS. The FULL harness: `bin/poll-latency-proof` with no
+ * arguments, 20 warm-up discarded, 200 measured, best p99 of 3 batches, run on a quiet
+ * machine and reported with its commit, its machine and its method into PLAN.md §4a. A
+ * budget asserted by a cheaper path than the one measured is not a budget, which is why
+ * the two modes are named differently in the script's own output ("QUICK -- properties
+ * asserted, timing REPORTED ONLY" against "full -- properties and timing asserted").
+ *
+ * WHY THE SPLIT EXISTS. Measured on one commit: 3.337 ms run alone, 7.640 ms inside the
+ * full suite (load 1.06, Postgres and Redis busy). The endpoint was identical. §3.1 row 4
+ * calls that F10's class and says a misleading red costs a round under the round limit.
+ * An earlier version of THIS FILE asserted the script's exit code, which asserted the
+ * timing, and turned the whole gate red on a host being busy -- in a file whose own header
+ * said it was avoiding exactly that. A header is not a mechanism; the mode flag is.
  *
  * §3.1 row 4 says this gate owes "a stated measurement method", and §3.1's reason is
  * `F10`'s class: "on this branch a loaded host turned a passing timeout proof into a red
@@ -21,7 +41,7 @@ declare(strict_types=1);
  * failure message.
  */
 
-it('keeps a runnable latency harness that measures zero Postgres and two Redis commands', function (): void {
+it('smoke-checks the latency harness: it runs, and still measures zero Postgres and two Redis commands', function (): void {
     $script = base_path('bin/poll-latency-proof');
 
     expect(is_executable($script))->toBeTrue('bin/poll-latency-proof is missing or not executable');
@@ -54,4 +74,11 @@ it('keeps a runnable latency harness that measures zero Postgres and two Redis c
         ->and($transcript)->toMatch('/REPORTED p99 \d+\.\d+ ms/');
 
     expect($status)->toBe(0, "the latency harness failed:\n".$transcript);
+
+    // AND THE MODE IS ASSERTED, so this case cannot silently become the timing gate again:
+    // if someone drops --quick, the script starts asserting the clock and this smoke check
+    // starts failing on a busy host. The line below is what makes that a deliberate change
+    // rather than an accident.
+    expect($transcript)->toContain('timing REPORTED ONLY')
+        ->and($transcript)->not->toContain('full -- properties and timing asserted');
 })->group('slow');

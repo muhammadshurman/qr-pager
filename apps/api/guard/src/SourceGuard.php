@@ -38,6 +38,53 @@ final class SourceGuard
     public const UNSCANNABLE_PATH = 'unscannable-path';
 
     /**
+     * Rule 7: a negated variadic matcher given more than one argument asserts nothing.
+     *
+     * WHAT THIS IS FOR, and it is not a style rule. Pest's `toContain` and
+     * `toContainEqual` are the ONLY TWO assertion matchers that are variadic --
+     * measured by reflection over Pest\Expectation on 2026-10-27: eight variadic
+     * methods in all, of which six are debug helpers (dd, dump, ray, ddWhen, ddUnless)
+     * and `sequence`, while 77 OTHER matchers take a real `$message` as their last
+     * parameter. So an author who writes a message after the needle is right 77 times
+     * out of 79, and the two exceptions fail silently.
+     *
+     * Under `->not->`, a second argument turns the assertion into "does not contain
+     * BOTH", which a message that never appears in the subject makes TRIVIALLY TRUE.
+     * Measured, as three real tests:
+     *
+     *   expect('hello app_limit')->not->toContain('app_limit')          -> FAILS (correct)
+     *   expect('hello app_limit')->not->toContain('app_limit', 'msg')   -> PASSES (inert)
+     *   expect('hello app_limit')->toContain('app_limit', 'msg')        -> FAILS (on 'msg')
+     *
+     * THIS WAS NOT HYPOTHETICAL. Four assertions in this repository were the middle
+     * shape and three of them guarded NAMED GATE INVARIANTS of tasks that are already
+     * tagged: "no role may update a tenant key" (Task 1), "the raw token never reaches a
+     * log" (Task 3's §3 row 3), and the R-052/R-056 sweep over published OpenAPI
+     * descriptions (Task 2) -- which is why docs/openapi.json shipped the capacity
+     * figure R-031 removed, under a green test naming that exact string as forbidden.
+     *
+     * THE POSITIVE FORM IS NOT FLAGGED. `toContain($a, $b)` means "contains both", which
+     * is legitimate -- and when it IS misused as a message it fails loudly on the
+     * message, so it corrects itself. Only `->not->` is silent, so only `->not->` is a
+     * violation. A guard that flagged the safe form too would be loosened by the first
+     * person who had to read its output.
+     */
+    public const VACUOUS_NEGATED_CONTAINS = 'vacuous-negated-contains';
+
+    /**
+     * The variadic MATCHERS. Not the variadic debug helpers, which assert nothing anyway.
+     *
+     * Hard-coded from reflection rather than discovered at run time, for the same reason
+     * GUCS is: this guard is standalone by design (`guard/bin/guard` boots no framework
+     * and loads no autoloader beyond its own two files), so it cannot ask Pest what its
+     * signatures are. ExpectationApiTest carries the reflection that keeps this list
+     * honest, and goes red if Pest adds a third.
+     *
+     * @var list<string>
+     */
+    public const VARIADIC_MATCHERS = ['toContain', 'toContainEqual'];
+
+    /**
      * The paths this guard scans. ONE source, and both halves of that matter.
      *
      * It was spelled out twice -- in guard/bin/guard's default and again in
@@ -71,6 +118,18 @@ final class SourceGuard
     private const EXCEPTIONS = [
         'tests/Support/Composition.php' => [
             'setSessionGuc' => [self::SESSION_SCOPED_SET_CONFIG],
+        ],
+
+        // Rule 7's positive control: the one place in this repository that writes the
+        // broken shape ON PURPOSE, to prove it really is inert. Without this exception
+        // the guard flags its own proof, and a guard that reports its own proof as the
+        // defect is one somebody switches off.
+        //
+        // By file AND by function name, like the row above and for the same reason
+        // (R-019): moving it, renaming it, or adding a second anywhere — including
+        // elsewhere in that same file — fails the guard.
+        'tests/Feature/Architecture/ExpectationApiTest.php' => [
+            'pestReadsASecondArgumentAsANeedle' => [self::VACUOUS_NEGATED_CONTAINS],
         ],
     ];
 
@@ -368,6 +427,133 @@ final class SourceGuard
      *
      * @return list<Violation>
      */
+    /**
+     * Rule 7: `->not->toContain(...)` and `->not->toContainEqual(...)` take exactly one argument.
+     *
+     * TOKENS, NOT TEXT, for the same reason every other rule here scans tokens: this
+     * repository documents the rule in a dozen comments, and a text-matching guard would
+     * flag the documentation of the thing it enforces. `token_get_all()` makes comments
+     * and doc comments invisible, so an explanation of the defect is not the defect --
+     * which is the property RepoGuardTest already has a case for on rule 1.
+     *
+     * The shape being matched is three consecutive significant tokens --
+     * `-> not -> <matcher> (` -- with whitespace and comments skipped between them, so
+     * a call broken across lines is caught too. The argument list is then walked for a
+     * comma at depth zero, outside every string, bracket and paren: a comma INSIDE a
+     * needle is one argument, and `not->toContain('rolled back, to the depth')` is
+     * perfectly correct. A guard that cried wolf on that would be switched off.
+     *
+     * @return list<Violation>
+     */
+    private function scanVacuousAssertions(string $relative, string $source): array
+    {
+        $violations = [];
+        $tokens = token_get_all($source);
+
+        // Significant tokens only, keeping each one's line, so "->not->toContain" spread
+        // over three lines with a comment between reads the same as one written inline.
+        $significant = [];
+
+        foreach ($tokens as $token) {
+            if (is_array($token)) {
+                if (in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+
+                $significant[] = [$token[1], $token[2]];
+
+                continue;
+            }
+
+            $significant[] = [$token, $significant === [] ? 1 : $significant[count($significant) - 1][1]];
+        }
+
+        $count = count($significant);
+
+        for ($i = 0; $i + 4 < $count; $i++) {
+            if ($significant[$i][0] !== '->' || $significant[$i + 1][0] !== 'not') {
+                continue;
+            }
+
+            if ($significant[$i + 2][0] !== '->') {
+                continue;
+            }
+
+            $matcher = $significant[$i + 3][0];
+
+            if (! in_array($matcher, self::VARIADIC_MATCHERS, true) || $significant[$i + 4][0] !== '(') {
+                continue;
+            }
+
+            $arity = $this->arityFrom($significant, $i + 4);
+            $line = $significant[$i + 3][1];
+
+            // THE SAME EXCEPTION CHANNEL EVERY OTHER RULE USES, and wiring it was not
+            // optional: the first version of this method built its violations directly
+            // and never consulted EXCEPTIONS, so rule 7's own positive control was
+            // reported as a violation and the guard flagged its own proof.
+            if ($arity > 1 && ! $this->isExcepted($relative, $line, self::VACUOUS_NEGATED_CONTAINS, $source)) {
+                $violations[] = new Violation(
+                    self::VACUOUS_NEGATED_CONTAINS,
+                    $relative,
+                    $line,
+                    "not->{$matcher}() is given {$arity} arguments; it is VARIADIC, so the second is read as another "
+                    .'needle and the assertion becomes "does not contain BOTH" -- which a message that never appears '
+                    .'makes trivially true. Use one needle, or expect(str_contains($h, $n))->toBeFalse($message)',
+                );
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * How many top-level arguments the call opening at $open takes.
+     *
+     * Depth counting over significant tokens, so a nested call, an array literal or a
+     * closure in the argument list contributes no commas of its own. Zero for `()`.
+     *
+     * @param  list<array{string, int}>  $tokens
+     */
+    private function arityFrom(array $tokens, int $open): int
+    {
+        $depth = 0;
+        $arguments = 0;
+        $count = count($tokens);
+
+        for ($i = $open; $i < $count; $i++) {
+            $text = $tokens[$i][0];
+
+            if (in_array($text, ['(', '[', '{'], true)) {
+                $depth++;
+
+                if ($depth === 1) {
+                    // The first token inside the call: there is at least one argument
+                    // unless the very next token closes it.
+                    $arguments = ($i + 1 < $count && $tokens[$i + 1][0] === ')') ? 0 : 1;
+                }
+
+                continue;
+            }
+
+            if (in_array($text, [')', ']', '}'], true)) {
+                $depth--;
+
+                if ($depth === 0) {
+                    return $arguments;
+                }
+
+                continue;
+            }
+
+            if ($text === ',' && $depth === 1) {
+                $arguments++;
+            }
+        }
+
+        return $arguments;
+    }
+
     public function scanSource(string $relative, string $source): array
     {
         return $this->scanFile($relative, $source);
@@ -378,7 +564,7 @@ final class SourceGuard
      */
     private function scanFile(string $relative, string $source): array
     {
-        $violations = [];
+        $violations = $this->scanVacuousAssertions($relative, $source);
         $allowed = array_merge(self::GUCS, $this->frameworkAppConfigKeys());
 
         foreach ($this->stringLiterals($source) as [$text, $line]) {
