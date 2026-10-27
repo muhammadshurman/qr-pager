@@ -1,0 +1,834 @@
+# Task 5 baseline gate — the suite Task 5 INHERITS, before any Task 5 work
+#
+# Commit:  f44085b0267ae1447d0f5223953eb603bf7a9f5c  (tip of task-4-notifications,
+#          one commit after the task-4 tag at 55a4f98 — see QRPAGER-12 §0)
+# Machine: /home/pixels/qr-pager, WSL2
+# Run at:  2026-10-27T20:34:10Z   (via composer gate, PAO_DISABLE=1)
+#
+# WHY THIS FILE EXISTS. R-092's review-by trigger is "Before Task 5 branches, because
+# Task 5 inherits this suite". This is the answer to that trigger: the baseline was
+# measured BEFORE any Task 5 commit, so a red later in this task can be attributed to
+# this task rather than argued about. The figures match the task-4 tag's own exactly.
+#
+# Neither of R-092's two faults is fixed and neither is claimed to be.
+
+=== composer pint
+{"tool":"pint","result":"passed"}
+=== composer stan
+Note: Using configuration file /home/pixels/qr-pager/apps/api/phpstan.neon.
+   0/113 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%
+ 113/113 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+
+ [OK] No errors                                                                 
+
+
+=== composer guard
+repo guard: C1 and C2 hold across 195 file(s) in 6 path(s).
+
+=== composer deptrac
+
+ -------------------------- 
+  Report                    
+ -------------------- ----- 
+  Violations           0    
+  Skipped violations   0    
+  Uncovered            0    
+  Allowed              422  
+  Warnings             0    
+  Errors               0    
+ -------------------- ----- 
+
+
+=== composer openapi:check
+openapi: 26 problem response(s) published as application/problem+json
+openapi: docs/openapi.json matches the routes.
+
+=== php artisan test
+
+   PASS  Tests\Unit\EnvironmentTest
+  ✓ it runs on the locked PHP major and minor
+  ✓ it has every database and cache extension the stack requires
+
+   PASS  Tests\Feature\Architecture\ArchitectureGuardTest
+  ✓ it passes on the real tree, so a failure below means the fixture an… 0.85s  
+  ✓ it guard 1 fails when domain logic imports framework or DB code      0.41s  
+  ✓ it guard 2 fails when the platform layer imports a feature module    0.41s  
+  ✓ it guard 3 fails when production code imports a test helper          0.40s  
+  ✓ it fails when a feature module is built on the pre-Task-5 auth stub… 0.41s  
+  ✓ it leaves no fixture behind in app/                                  0.06s  
+
+   PASS  Tests\Feature\Architecture\AuditLogAssertionTest
+  ✓ it has no audit_log assertion in the suite that reads rows without…  0.08s  
+  ✓ it does not flag the documentation of its own rule                   0.06s  
+  ✓ it fails on a deliberately bad fixture, so the scan above is worth…  0.06s  
+  ✓ it gives every row the suite writes a run marker to filter on        0.06s  
+  ✓ it writes the marker into audit_log.context where the suite seeds a… 0.08s  
+
+   PASS  Tests\Feature\Architecture\ExpectationApiTest
+  ✓ it finds exactly the variadic matchers rule 7 names, and no others   0.06s  
+  ✓ it confirms that 77 other matchers really do take a message, so the… 0.06s  
+  ✓ it proves the broken shape really is inert, so rule 7 is not cargo…  0.06s  
+
+   PASS  Tests\Feature\Architecture\RepoGuardTest
+  ✓ it passes on the real tree, so a failure below is the fixture and n… 0.12s  
+  ✓ it is wired as a composer script and exits 0 on the real tree        0.24s  
+  ✓ it counts the files it read, not the paths it was given              0.24s  
+  ✓ it refuses a configured path that does not resolve, rather than sca… 0.06s  
+  ✓ it refuses a path that resolves but produces no file to read         0.06s  
+  ✓ it exits non-zero through the real binary when a path cannot be sca… 0.09s  
+  ✓ it rejects a session-scoped tenant setting                           0.06s  
+  ✓ it rejects a bound third argument, which the source cannot prove is… 0.06s  
+  ✓ it rejects an absent third argument, which Postgres defaults to ses… 0.06s  
+  ✓ it rejects a raw SET of an app GUC, in both of its spellings         0.06s  
+  ✓ it rejects every app GUC name that is not one of C1 two              0.06s  
+  ✓ it rejects a third configured GUC, which no SQL would reveal         0.06s  
+  ✓ it passes rule 8 on the real tree, so a failure below is the fixtur… 0.06s  
+  ✓ it rejects a second document carrying a task-table heading — rule 8… 0.06s  
+  ✓ it rejects a byte-identical copy of the Blueprint — rule 8, clause…  0.06s  
+  ✓ it does not flag prose that merely mentions a task table, only a he… 0.06s  
+  ✓ it does not flag its own fixtures, which deliberately contain both…  0.06s  
+  ✓ it exits non-zero through the real binary when a canonical document… 0.16s  
+  ✓ it rejects a negated variadic matcher given a message, which assert… 0.06s  
+  ✓ it leaves the correct forms alone, so rule 7 is not something anyon… 0.06s  
+  ✓ it scopes rule 7 exception to one function, so the guard cannot be…  0.06s  
+  ✓ it does not read comments, so the prose explaining C2 is not a viol… 0.06s  
+  ✓ it scopes its one exception to a method, not to a file and not to t… 0.06s  
+
+   PASS  Tests\Feature\Architecture\SuiteSerializationTest
+  ✓ it holds a process-lifetime advisory lock, so a second runner queue… 0.07s  
+  ✓ it keeps holding it after a connection purge, which is the half tha… 0.06s  
+  ✓ it does not collide with the key RoleTimeoutTest draws, because thi… 0.06s  
+  ✓ it keeps its behavioural proof in the repository, not in a session…  0.06s  
+  ✓ it keeps the gate log readable for every runner, which is one expor… 0.06s  
+
+   PASS  Tests\Feature\Boot\BootChecksTest
+  ✓ it passes on a correctly configured process, so the refusals below…  0.07s  
+  ✓ it refuses an unsafe runtime role, which is H-C’s boot-time clause   0.06s  
+  ✓ it names an unverifiable role as unsafe rather than passing it       0.06s  
+  ✓ it refuses a process that can resolve owner or root credentials — D… 0.06s  
+  ✓ it sees credentials baked into cached config, not only in the envir… 0.06s  
+  ✓ it refuses an sslmode that can silently downgrade to plaintext — D8  0.06s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.06s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.06s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.06s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.06s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.06s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.05s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.06s  
+  ✓ it accepts the shape a deployment is supposed to carry               0.06s  
+  ✓ it proves the fragment case is real and not a guess about parse_url  0.06s  
+  ✓ it exempts local and testing, where the landing URL is whatever the… 0.06s  
+  ✓ it exempts local and testing, where the landing URL is whatever the… 0.06s  
+  ✓ it refuses to serve without a VAPID keypair the push library can us… 0.06s  
+  ✓ it refuses to serve without a VAPID keypair the push library can us… 0.06s  
+  ✓ it refuses to serve without a VAPID keypair the push library can us… 0.06s  
+  ✓ it refuses a VAPID pair that is present and not usable, which a pre… 0.06s  
+  ✓ it names no key material in the refusal, at any debug setting        0.06s  
+  ✓ it accepts a real generated pair, which is the positive control      0.06s  
+  ✓ it exempts local and testing, so the suite boots with no push keys…  0.06s  
+  ✓ it exempts local and testing, so the suite boots with no push keys…  0.06s  
+  ✓ it refuses to serve with no trusted proxy configured, outside local… 0.06s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.05s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.06s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.06s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.06s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.06s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.05s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.06s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.06s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.06s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.06s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.06s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.06s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.06s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.06s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.06s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.06s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.06s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.06s  
+  ✓ it sees a catch-all set through trustProxies(at:), which is not in…  0.06s  
+  ✓ it refuses an entry that does not parse, because Symfony would leav… 0.06s  
+  ✓ it accepts a CIDR and a bare address, in both families               0.06s  
+  ✓ it exempts local and testing, where the peer is the client with ('l… 0.06s  
+  ✓ it exempts local and testing, where the peer is the client with ('t… 0.06s  
+  ✓ it refuses to serve on a connection carrying a session-scoped tenan… 0.06s  
+  ✓ it does not mistake a live transaction-local scope for a session-sc… 0.07s  
+  ✓ it refuses APP_DEBUG outside local                                   0.06s  
+  ✓ it logs every reason at critical and then stops, which is the gate’… 0.08s  
+  ✓ it does not stop a healthy boot                                      0.07s  
+  ✓ it exits 1 as a real process, because an exit code cannot be assert… 0.32s  
+  ✓ it is wired to WorkerStarting first, and to no service provider      0.06s  
+
+   PASS  Tests\Feature\Database\AuditLogImmutabilityTest
+  ✓ it accepts an append from the app role                               0.09s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.08s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.09s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.08s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.08s  
+  ✓ it refuses a statement that would match zero rows                    0.08s  
+  ✓ it refuses a superuser that disables triggers with session_replicat… 0.08s  
+  ✓ it keeps both triggers marked ENABLE ALWAYS, which is the whole mec… 0.07s  
+  ✓ it grants no role the privilege to mutate the log in the first plac… 0.07s  
+  ✓ it survives a tenant being deleted, because it carries no foreign k… 0.09s  
+
+   PASS  Tests\Feature\Database\BootstrapDatabaseCommandTest
+  ✓ it is idempotent, so a second run converges instead of failing       0.16s  
+  ✓ it reports what it did                                               0.12s  
+  ✓ it restores the role attributes if someone changes them by hand      0.15s  
+  ✓ it creates the database when it does not exist yet                   0.40s  
+  ✓ it refuses to apply a role setting that is not a timeout             0.09s  
+  ✓ it refuses to create a role with no password configured              0.08s  
+  ✓ it refuses to run with no target database configured                 0.10s  
+  ✓ it releases the advisory lock it serialises on, even when it fails   0.09s  
+  ✓ it never sends a role password to the server, in a statement or in…  0.16s  
+  ✓ it refuses a password SASLprep would rewrite, without echoing it     0.08s  
+  ✓ it gives every role a connection limit, and leaves the cluster head… 0.07s  
+  ✓ it refuses to create a role with no connection limit configured      0.07s  
+  ✓ it withholds the statement text when a role statement fails          0.09s  
+  ✓ it stores the verifier it built, byte for byte                       0.12s  
+
+   PASS  Tests\Feature\Database\BootstrapLoggingTest
+  ✓ it runs the bootstrap session with log_statement off, over an inher… 0.12s  
+  ✓ it suppresses the log for its own session only, not for the databas… 0.13s  
+  ✓ it sets it before anything else runs on that session                 0.12s  
+  ✓ it leaves no verifier in the container log for a bootstrap that log… 1.29s  
+  ✓ it takes log_statement from no command-line flag, which is what R-0… 0.07s  
+
+   PASS  Tests\Feature\Database\ConnectionHygieneTest
+  ✓ it closes every database connection between tests                    0.08s  
+  ✓ it holds only a handful of backends open at any point in the suite   0.07s  
+  ✓ it fails closed on transport encryption rather than silently downgr… 0.06s  
+
+   PASS  Tests\Feature\Database\ConnectionReuseTest
+  ✓ it does not carry tenant context from one transaction to the next o… 0.09s  
+  ✓ it sets the guc transaction-locally, never for the session           0.07s  
+  ✓ it drops tenant context when the transaction rolls back              0.08s  
+
+   PASS  Tests\Feature\Database\CrossTenantForeignKeyTest
+  ✓ it refuses a subscription pointing at another tenant session         0.08s  
+  ✓ it accepts a subscription pointing at its own tenant session         0.09s  
+  ✓ it refuses an outbox row pointing at another tenant session          0.10s  
+  ✓ it cascades subscriptions when their session goes, without crossing… 0.08s  
+  ✓ it enforces one outbox row per logical event, which is Task 3 idemp… 0.08s  
+  ✓ it scopes the dedupe key per tenant, so two tenants never collide    0.09s  
+
+   PASS  Tests\Feature\Database\DataMigrationPatternTest
+  ✓ it characterises the data-migration trap and its corrected pattern,… 0.08s  
+  ✓ it survives at transaction level 1, which is where every migration…  0.07s  
+
+   PASS  Tests\Feature\Database\DatabaseRolesTest
+  ✓ it refuses an unknown role, connection or guc rather than returning… 0.06s  
+  ✓ it refuses a role name that was blanked out in config                0.06s  
+  ✓ it falls back to a usable bypass value if config is malformed        0.05s  
+  ✓ it returns an empty set of timeouts rather than failing when config… 0.06s  
+  ✓ it passes when all three roles exist                                 0.06s  
+  ✓ it tells the operator which command creates a missing role           0.06s  
+
+   PASS  Tests\Feature\Database\DriverErrorTest
+  ✓ it agrees with getCode() for ordinary statement errors with dataset… 0.06s  
+  ✓ it agrees with getCode() for ordinary statement errors with dataset… 0.06s  
+  ✓ it agrees with getCode() for ordinary statement errors with dataset… 0.06s  
+  ✓ it disagrees with getCode() for a connection failure, which is the…  0.06s  
+  ✓ it reports nothing rather than a wrong code when there is no driver… 0.06s  
+  ✓ it finds the SQLSTATE through a wrapping exception                   0.06s  
+
+   PASS  Tests\Feature\Database\EnumContractTest
+  ✓ it mirrors every PHP enum exactly, in order with ('pager_status', '… 0.06s  
+  ✓ it mirrors every PHP enum exactly, in order with ('outbox_status',…  0.06s  
+  ✓ it mirrors every PHP enum exactly, in order with ('tenant_status',…  0.06s  
+  ✓ it mirrors every PHP enum exactly, in order with ('tenant_role', 'A… 0.06s  
+  ✓ it mirrors every PHP enum exactly, in order with ('audit_actor_type… 0.06s  
+  ✓ it registers every enum type that exists in the database             0.06s  
+  ✓ it refuses a value outside the enum at the database level            0.07s  
+  ✓ it keeps every database-backed enum value a bare identifier, so one… 0.05s  
+  ✓ it throws rather than interpolating a case value it cannot prove sa… 0.06s  
+
+   PASS  Tests\Feature\Database\FailedBypassTraceTest
+  ✓ it writes one line naming the reason when a bypass throws — R-005    0.07s  
+  ✓ it still leaves zero audit rows, which is the half that was already… 0.07s  
+  ✓ it carries no SQL, no bound parameter and no GUC name                0.07s  
+  ✓ it reports a refusal from the bypass itself, not only a failure ins… 0.07s  
+  ✓ it reports a commit that fails, not just a callback that throws      0.07s  
+  ✓ it keeps the channel on the redaction tap, like every other channel  0.06s  
+
+   PASS  Tests\Feature\Database\GrantMatrixTest
+  ✓ it keeps token_hash write-only for the app role and unreadable for…  0.06s  
+  ✓ it grants UPDATE on no tenant_id column anywhere                     0.08s  
+  ✓ it grants the app exactly the pager_sessions updates the state mach… 0.06s  
+  ✓ it grants the worker only the expiry columns on pager_sessions       0.06s  
+  ✓ it lets the app insert an outbox row only as pending                 0.06s  
+  ✓ it gives the worker no insert or delete on the outbox                0.06s  
+  ✓ it gives the app no delete on sessions or the outbox                 0.06s  
+  ✓ it lets the worker prune dead push subscriptions                     0.06s  
+  ✓ it keeps failed_jobs away from the app role                          0.06s  
+  ✓ it keeps the migrations table away from both runtime roles           0.06s  
+  ✓ it reaches exactly the tables in the matrix and no others            0.06s  
+  ✓ it states the app grants on users as exact column sets               0.06s  
+  ✓ it keeps user credentials away from the worker role entirely         0.06s  
+  ✓ it states the password_reset_tokens grants as exact column sets      0.06s  
+
+   PASS  Tests\Feature\Database\OwnerAndBypassTest
+  ✓ it binds the owner to force rls like any other role                  0.08s  
+  ✓ it is not a superuser and holds no bypassrls, which is what makes f… 0.07s  
+  ✓ it lets the owner read one tenant at a time with context set         0.07s  
+  ✓ it lets the owner cross tenants only through the audited bypass      0.07s  
+  ✓ it writes an audit row for every bypass, in the same transaction     0.07s  
+  ✓ it rolls the audit row back with the work when a bypass fails        0.07s  
+  ✓ it refuses a bypass without a reason                                 0.06s  
+  ✓ it refuses a bypass on any connection that is not the owner          0.07s  
+  ✓ it gains the app role nothing when it sets the bypass guc itself     0.08s  
+  ✓ it does not leave the bypass set after the transaction               0.06s  
+
+   PASS  Tests\Feature\Database\RefusalDiagnosticsTest
+  ✓ it names 08006 for a connectivity failure, where getCode() prints 7… 0.07s  
+  ✓ it reports nothing rather than a wrong code when there is no SQLSTA… 0.06s  
+  ✓ it tells "the statement was never built" from "the statement failed… 0.07s  
+  ✓ it does not claim a rollback it cannot know about on the commit-the… 0.08s  
+  ✓ it reaches the one catch that swallows, and says so rather than cla… 0.08s  
+  ✓ it states what the depth unwind attempted even when it succeeds — R… 0.07s  
+  ✓ it escapes an invalid-UTF-8 value through a real refusal path — R-0… 0.06s  
+  ✓ it counts the messages carrying unvalidated text, or does not count… 0.06s  
+
+   PASS  Tests\Feature\Database\RlsCoverageTest
+  ✓ it has every tenant-scoped table under ENABLE and FORCE row level s… 0.06s  
+  ✓ it fails on a deliberately bad table, so the check above is worth s… 0.07s  
+  ✓ it accounts for every table: either tenant-scoped or named in the g… 0.06s  
+  ✓ it keeps the global allowlist honest: nothing on it carries a tenan… 0.07s  
+  ✓ it pins the tenant registry against pg_catalog, in both directions   0.06s  
+  ✓ it pins the global allowlist as an exact set, not just a consistent… 0.06s  
+  ✓ it gives every tenant table both an isolation policy and an owner b… 0.07s  
+  ✓ it guards every isolation policy with NULLIF, which is what makes a… 0.07s  
+  ✓ it reads no app.* setting other than the two locked by C1            0.06s  
+  ✓ it targets every bypass policy at the owner alone                    0.07s  
+  ✓ it has exactly the four named cross-tenant policies and no others    0.06s  
+  ✓ it gives the app role no cross-tenant policy anywhere                0.06s  
+  ✓ it keeps every table owned by the owner role, so FORCE RLS has some… 0.06s  
+
+   PASS  Tests\Feature\Database\RoleNamingTest
+  ✓ it names in config exactly the roles the database was built for      0.06s  
+  ✓ it connects the application as the role config calls the app role    0.06s  
+  ✓ it grants privileges to exactly the two roles config calls runtime…  0.06s  
+  ✓ it has no login role in the cluster beyond the four in the contract  0.07s  
+  ✓ it names in config the two GUCs the policies actually read           0.07s  
+
+   PASS  Tests\Feature\Database\RoleTimeoutTest
+  ✓ it has the configured timeouts in effect on a fresh connection of e… 0.06s  
+  ✓ it has the configured timeouts in effect on a fresh connection of e… 0.06s  
+  ✓ it has the configured timeouts in effect on a fresh connection of e… 0.06s  
+  ✓ it fires lock_timeout for each role, which proves ALTER ROLE took e… 2.08s  
+  ✓ it fires lock_timeout for each role, which proves ALTER ROLE took e… 3.08s  
+  ✓ it fires lock_timeout for each role, which proves ALTER ROLE took e… 3.07s  
+  ✓ it fires statement_timeout for the app role, which is what load she… 5.06s  
+  ✓ it leaves the owner without a statement timeout, deliberately        0.06s  
+  ✓ it records the timeouts against the role itself, not one database    0.07s  
+  ✓ it refuses a timeout configured far too high, before it can hang th… 0.10s  
+  ✓ it treats a disabled timeout as past the ceiling, which an interval… 0.10s  
+  ✓ it allows the owner its deliberate absence of a statement timeout,…  0.07s  
+
+   PASS  Tests\Feature\Database\RuntimeRoleGuardTest
+  ✓ it accepts the app role, which is what the application connects as   0.07s  
+  ✓ it accepts the worker role                                           0.06s  
+  ✓ it rejects the owner role                                            0.06s  
+  ✓ it says why it rejected the owner                                    0.06s  
+  ✓ it rejects a superuser, and names the reason that actually matters   0.07s  
+  ✓ it would reject a role that could become the owner                   0.07s  
+  ✓ it would reject the runtime role if it were given BYPASSRLS          0.09s  
+
+   PASS  Tests\Feature\Database\TenantContextCompositionTest
+  ✓ it allows re-entry with the same tenant on the same connection, and… 0.07s  
+  ✓ it refuses a different tenant on the same connection                 0.07s  
+  ✓ it refuses to reuse an open scope on another connection              0.07s  
+  ✓ it refuses a bypass opened inside a tenant scope on the same connec… 0.07s  
+  ✓ it refuses a bypass opened inside a tenant scope on another connect… 0.07s  
+  ✓ it refuses a tenant scope opened inside a bypass on the same connec… 0.06s  
+  ✓ it allows a tenant scope inside a bypass on another connection, and… 0.08s  
+  ✓ it allows a bypass inside a bypass and restores the outer value      0.07s  
+  ✓ it refuses the H-A shape: scope, then bypass, then scope on one con… 0.06s  
+  ✓ it checks the bypass before the re-entry short-circuit, not after    0.07s  
+  ✓ it never yields an unscoped block from any nesting of the two helpe… 0.08s  
+  ✓ it holds every refusal inside an outer transaction too, and leaves…  0.08s  
+  ✓ it scopes correctly inside an outer transaction, and clears on the…  0.07s  
+  ✓ it withholds the statement when it cannot even read the context      0.07s  
+  ✓ it withholds the statement when a bypass cannot read the session st… 0.06s  
+  ✓ it pins the configured bypass value to the literal every policy com… 0.06s  
+  ✓ it refuses a bypass when a tenant setting is in force that it did n… 0.06s  
+  ✓ it refuses to reuse a scope on the worker connection, the other run… 0.08s  
+  ✓ it scopes a block on the worker connection just as tightly as on th… 0.08s  
+  ✓ it withholds the statement when it cannot set the tenant setting     0.07s  
+  ✓ it refuses a bypass after a nested scope exits inside a live one wi… 0.08s  
+  ✓ it refuses a bypass after a nested scope exits inside a live one wi… 0.08s  
+  ✓ it refuses a bypass after a nested scope exits inside a live one wi… 0.08s  
+  ✓ it never reports success when a bypass callback commits and reopens  0.07s  
+
+   PASS  Tests\Feature\Database\TenantContextTest
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.06s  
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.06s  
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.06s  
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.06s  
+  ✓ it returns whatever the callback returns                             0.07s  
+  ✓ it reports the active tenant inside the callback and nothing outsid… 0.07s  
+  ✓ it allows re-entry with the same tenant, for a service that calls a… 0.07s  
+  ✓ it refuses to switch tenant inside an open context                   0.08s  
+  ✓ it refuses to reuse an open context on another connection            0.08s  
+  ✓ it runs the callback inside one transaction                          0.07s  
+  ✓ it rolls the work back when the callback throws                      0.08s  
+  ✓ it passes the tenant id as a bound parameter, never as SQL           0.07s  
+  ✓ it works inside a transaction it did not start, and leaves no resid… 0.07s  
+  ✓ it never leaves app.tenant_id set behind inside a transaction it do… 0.07s  
+  ✓ it never leaves app.bypass_tenant set behind inside a transaction i… 0.07s  
+  ✓ it refuses to open a tenant context while a bypass is active         0.07s  
+  ✓ it never runs an unscoped query inside a bypass block                0.08s  
+  ✓ it never reports success when the work was rolled back               0.08s  
+  ✓ it refuses to open a tenant scope on a connection row level securit… 0.07s  
+  ✓ it refuses a bypass on a connection row level security cannot narro… 0.07s  
+  ✓ it refuses to scope on a runtime connection whose role holds BYPASS… 0.10s  
+  ✓ it still lets the owner connection scope, which §2.10 depends on     0.07s  
+  ✓ it still refuses a bypass on a non-owner connection, ahead of which… 0.07s  
+  ✓ it refuses a tenant setting that no scope in this process opened     0.07s  
+  ✓ it runs every callback inside a transaction it opened itself         0.08s  
+  ✓ it never reports success when the connection under an open scope wa… 0.08s  
+  ✓ it reports the active tenant for a scope on any connection, not jus… 0.09s  
+  ✓ it reports no tenant when the setting holds something that is not a… 0.07s  
+  ✓ it reports no tenant for a setting no scope in this process opened   0.07s  
+  ✓ it reports no tenant for a connection it holds no scope on           0.09s  
+  ✓ it never reports success when the callback leaves a transaction ope… 0.08s  
+  ✓ it cannot have a refusal message forge a log line                    0.07s  
+  ✓ it bounds a refusal message built from a value it did not write      0.07s  
+  ✓ it never reports success when something in the block wrote over the… 0.08s  
+  ✓ it never unwinds past the depth the caller was already at            0.08s  
+  ✓ it never reports success when a bypass callback leaves a transactio… 0.07s  
+  ✓ it keeps a driver code from forging a log line on its way into a me… 0.05s  
+  ✓ it tells the two depth failures apart, because the remedies differ   0.08s  
+
+   PASS  Tests\Feature\Database\TenantIsolationTest
+  ✓ it returns zero rows and raises no error on every tenant table with… 0.10s  
+  ✓ it still returns zero rows and no error once the connection has car… 0.09s  
+  ✓ it shows a tenant only its own rows                                  0.09s  
+  ✓ it blocks a cross-tenant read even when the other tenant id is name… 0.08s  
+  ✓ it blocks a cross-tenant update                                      0.09s  
+  ✓ it blocks a cross-tenant delete                                      0.08s  
+  ✓ it blocks an insert made for another tenant                          0.07s  
+  ✓ it cannot move one of its own rows to another tenant                 0.08s  
+  ✓ it cannot read the token hash it is allowed to write                 0.08s  
+  ✓ it cannot create objects, so it cannot turn a policy off             0.06s  
+
+   PASS  Tests\Feature\Database\TenantScopeGuardTest
+  ✓ it refuses before Postgres executes the statement, where DB::listen… 0.09s  
+  ✓ it covers every way a statement can be issued, not just the query b… 0.06s  
+  ✓ it reattaches to a connection created after a purge                  0.06s  
+  ✓ it lets a statement that touches no tenant table through, armed or…  0.07s  
+  ✓ it allows the same statement inside a tenant scope                   0.07s  
+  ✓ it guards the runtime connections only, so the audited owner bypass… 0.08s  
+  ✓ it is armed by the GLOBAL middleware stack, which no route can be a… 0.06s  
+  ✓ it refuses an unscoped tenant query made by a real request, and the… 0.07s  
+  ✓ it arms a path that matches no route, because routing happens after… 0.06s  
+  ✓ it is not armed outside a request, so the RLS backstop stays provab… 0.07s  
+
+   PASS  Tests\Feature\Database\UserModelTest
+  ✓ it gives a new user a uuid key rather than an integer                0.08s  
+  ✓ it stores the email lower-cased, which the column constraint requir… 0.07s  
+  ✓ it refuses a mixed-case email at the database level                  0.07s  
+  ✓ it hides the password and remember token from serialisation          0.07s  
+
+   PASS  Tests\Feature\Database\WorkerScopeTest
+  ✓ it lets the worker drain the outbox across tenants with no context   0.08s  
+  ✓ it does not let the app see another tenant outbox row                0.08s  
+  ✓ it lets the worker claim outbox rows with for update skip locked     0.08s  
+  ✓ it does not let the worker insert or delete an outbox row            0.07s  
+  ✓ it runs the prescribed expiry pattern: select id, then update with…  0.09s  
+  ✓ it is why the worker select policy is bounded by time and not by st… 0.08s  
+  ✓ it does not let the worker make any other cross-tenant transition    0.08s  
+  ✓ it does not let the worker read a live session of another tenant     0.07s  
+  ✓ it does not let the worker read the token hash                       0.08s  
+  ✓ it has no cross-tenant reach outside the outbox and the expiry job   0.09s  
+openapi: 26 problem response(s) published as application/problem+json
+
+   PASS  Tests\Feature\Http\OpenApiSpecTest
+  ✓ it is committed, is OpenAPI 3.1 and names this API                   0.06s  
+  ✓ it describes exactly the routes that exist, and not the fallback     0.06s  
+  ✓ it describes both readiness outcomes with the real body shape        0.06s  
+  ✓ it fails loudly when the committed spec is stale                     0.82s  
+  ✓ it has no test that writes to a committed artefact — R-018 generali… 0.06s  
+  ✓ it exports the same bytes every time, so the diff means something    0.84s  
+  ✓ it publishes the error envelope’s type vocabulary, with every case…  0.06s  
+  ✓ it describes the problem body with the keys a real body actually ha… 0.06s  
+  ✓ it keeps internal rationale out of every published description — R-… 0.06s  
+  ✓ it publishes a security requirement on EVERY operation, and the sta… 0.06s  
+  ✓ it publishes the 401 that every unauthenticated request actually re… 0.06s  
+  ✓ it publishes every problem document under the media type the API re… 0.06s  
+  ✓ it leaves a body that is not a problem document as application/json… 0.06s  
+  ✓ it produces the security and media-type decisions in the GENERATOR,… 0.20s  
+
+   PASS  Tests\Feature\Http\ProblemEnvelopeTest
+  ✓ it renders a problem document, not Laravel debug output, for an une… 0.06s  
+  ✓ it leaks no SQL and no bound parameter from a real driver failure    0.07s  
+  ✓ it maps 23514 without returning the constraint name or the SQL — R-… 0.07s  
+  ✓ it maps 42501 to a forbidden problem that reveals nothing about the… 0.09s  
+  ✓ it renders a generic 500 for UnsafeDatabaseRoleException and names…  0.06s  
+  ✓ it renders validation failures with our own messages and nothing el… 0.07s  
+  ✓ it renders 404 and 405 as problem documents                          0.07s  
+  ✓ it renders the same document for a browser request, not an HTML deb… 0.07s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.05s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.06s  
+  ✓ it never answers Forbidden for a status that is not about authoriza… 0.06s  
+  ✓ it renders the two pager domain refusals as 404 and 409, never as a… 0.06s  
+  ✓ it maps the three framework exceptions it matches by class, not by…  0.06s  
+
+   PASS  Tests\Feature\Http\ProblemRetryAfterTest
+  ✓ it gives every mapped 503 a Retry-After, chosen per SQLSTATE         0.06s  
+  ✓ it advises no retry on an answer that repeating cannot fix           0.06s  
+  ✓ it maps a throwable with no driver error to nothing, so the mapper…  0.06s  
+  ✓ it still carries no SQLSTATE, SQL, role or table name in the body    0.06s  
+
+   PASS  Tests\Feature\Http\RateLimitTest
+  ✓ it lets a request through and refuses the one past the per-IP limit  0.07s  
+  ✓ it limits per tenant as well as per IP, keyed by the resolver and n… 0.07s  
+  ✓ it takes the tenant from the resolver, so no request input can buy…  0.07s  
+  ✓ it keeps serving with Redis down, and says so in the log — B7 fail-… 0.06s  
+  ✓ it fails closed instead when the posture is configured closed        0.06s  
+  ✓ it keeps both probes answering while the limiter is refusing everyt… 0.06s  
+  ✓ it counts unknown paths on their own bucket, and not against /v1’s   0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.07s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.06s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.07s  
+  ✓ it no longer answers an unauthenticated 200 to OPTIONS on any path   0.06s  
+  ✓ it answers a wrong verb on a real route as 404 rather than 405       0.06s  
+  ✓ it keys the per-IP bucket on the forwarded client when the peer is…  0.06s  
+  ✓ it keys it on the peer when nothing is trusted, which is the defaul… 0.06s  
+  ✓ it hashes the address in the key the middleware actually writes      0.06s  
+  ✓ it configures every rate-limit bucket that a route actually referen… 0.06s  
+  ✓ it refuses past the pager-create bucket, which is the route-level o… 0.09s  
+
+   PASS  Tests\Feature\Http\RouteSurfaceTest
+  ✓ it serves exactly the two unversioned probes and nothing else outsi… 0.07s  
+  ✓ it has removed Laravel /up, the welcome page and both storage route… 0.06s  
+  ✓ it answers liveness without reading any dependency                   0.06s  
+  ✓ it answers readiness 503 with no snapshot, and opens no database co… 0.06s  
+  ✓ it answers readiness 503 when redis is unreachable, while liveness…  0.06s  
+  ✓ it answers an unknown path with a problem document and counts it     0.06s  
+  ✓ it rate limits unknown paths on their own tighter bucket — the gate… 0.06s  
+  ✓ it does not carry the drain proof’s slow route in the repository     0.06s  
+  ✓ it loads the drain route only outside production, when it is mounte… 0.06s  
+
+   PASS  Tests\Feature\Http\ShedLoadTest
+  ✓ it returns a fast 503 when the pool is saturated, and touches no da… 0.06s  
+  ✓ it keeps both probes answering while /v1 is being shed               0.06s  
+  ✓ it serves normally below the threshold                               0.06s  
+  ✓ it sheds exactly at the configured threshold and not before it       0.07s  
+  ✓ it does not shed on a missing or stale snapshot — it fails OPEN whe… 0.06s  
+  ✓ it returns 503 under memory pressure, read from cgroup v2            0.06s  
+  ✓ it measures this process against the ceiling when the cgroup has no… 0.06s  
+  ✓ it reports 503 when the task is being throttled, and not merely whe… 0.06s  
+  ✓ it does not report throttling for a task that is merely busy         0.06s  
+  ✓ it measures nothing rather than guessing when cgroup v2 is not ther… 0.06s  
+  ✓ it logs the reason it shed, where the body carries none              0.06s  
+  ✓ it runs before the rate limiter, so the cheapest refusal is the fir… 0.06s  
+  ✓ it sheds a real saturated pool end to end                            0.44s  
+
+   PASS  Tests\Feature\Http\TenantResolutionTest
+  ✓ it refuses a /v1 request with no resolvable tenant, and says nothin… 0.07s  
+  ✓ it publishes the resolved tenant for the request and forgets it aft… 0.06s  
+  ✓ it opens no tenant scope, because a scope belongs to a unit of work… 0.07s  
+  ✓ it reads no HTTP input at all — B5                                   0.06s  
+  ✓ it refuses a bound value that is not a uuid                          0.06s  
+  ✓ it cannot run outside local or testing, so it cannot survive to pro… 0.06s  
+  ✓ it is the whole of the pre-Task-5 auth surface                       0.07s  
+  ✓ it answers 401 and not 500 when the resolver itself refuses — secur… 0.06s  
+  ✓ it answers 401 for every staff route when the resolver refuses, not… 0.07s  
+
+   PASS  Tests\Feature\Logging\LogRedactionTest
+  ✓ it taps every configured channel, so a new channel cannot log unred… 0.06s  
+  ✓ it strips the statement and the bound parameter from a real query f… 0.06s  
+  ✓ it strips the DETAIL line, which carries every column of the failin… 0.06s  
+  ✓ it drops the stack trace rather than rendering the statement inside… 0.06s  
+  ✓ it logs the role and the reasons for R-021, which the response body… 0.06s  
+  ✓ it redacts on the emergency logger too, which no tap can reach       0.06s  
+  ✓ it redacts a secret passed in context, by key name                   0.06s  
+  ✓ it redacts a SCRAM verifier wherever it appears — R-009 backstop     0.06s  
+  ✓ it keeps redacting when the request goes through HTTP                0.07s  
+
+   PASS  Tests\Feature\Notifications\OutboxCrashTest
+  ✓ it loses nothing and duplicates nothing when the worker is killed -… 1.43s  
+  ✓ it never lets two workers hold the same outbox row, which is SKIP L… 0.35s  
+  ✓ it leases a claimed row into the future, so a dead worker’s rows co… 0.14s  
+
+   PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.09s  
+  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.14s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.16s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.12s  
+  ✓ it has exactly two statements in the application that write attempt… 0.07s  
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.07s  
+  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.09s  
+  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.06s  
+  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.06s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.09s  
+  ✓ it returns from every abandon(), because the identity proof rests o… 0.06s  
+
+   PASS  Tests\Feature\Notifications\OutboxLeaseTest
+  ✓ it sends each notification exactly once across two concurrent worke… 3.51s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.14s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.16s  
+  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.16s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.16s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.15s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+  ✓ it does not finish a row another worker has claimed away mid-send    0.15s  
+  ✓ it does not back a row off after losing it, which would truncate th… 0.15s  
+  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.43s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.38s  
+  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.11s  
+  ✓ it does not let a re-subscribing device evict itself, which a brows… 0.16s  
+
+   PASS  Tests\Feature\Notifications\OutboxWorkerTest
+  ✓ it claims a pending row, sends it, and marks it sent exactly once    0.13s  
+  ✓ it sends across tenants in one pass, which is the named cross-tenan… 0.14s  
+  ✓ it sends to every device a session has, not just the first           0.13s  
+  ✓ it prunes a subscription on 404 and on 410, on the first occurrence  0.15s  
+  ✓ it keeps a subscription on a 500, because a transient edge is not a… 0.13s  
+  ✓ it backs off with a future available_at rather than spinning on a f… 0.12s  
+  ✓ it dead-letters after max_attempts, with a category and never a dri… 0.19s  
+  ✓ it dead-letters a 400 immediately, because no retry fixes a request… 0.12s  
+  ✓ it still records a row as sent when one device took it and another…  0.13s  
+  ✓ it finishes a row whose session has no subscription, rather than re… 0.10s  
+  ✓ it dead-letters an outbox type this build cannot route, instead of…  0.10s  
+  ✓ it refreshes the projection after a send, so a poll agrees with the… 0.15s  
+  ✓ it does not revive a projection that has gone, because refresh is u… 0.12s  
+  ✓ it never reads a subscription without a tenant scope, which is meas… 0.10s  
+
+   PASS  Tests\Feature\Notifications\WebPushDispatcherTest
+  ✓ it treats exactly 404 and 410 as a dead subscription, and nothing e… 0.07s  
+  ✓ it sends aes128gcm and never the library default, which is the lega… 0.06s  
+  ✓ it carries a Topic, a TTL and high urgency, which is what bounds th… 0.06s  
+  ✓ it gives two different topics to a renotify and the ready it repeat… 0.06s  
+  ✓ it encrypts the payload, so the order reference never crosses the w… 0.06s  
+  ✓ it treats an edge that cannot be reached as retryable rather than t… 0.06s  
+  ✓ it treats a key the encrypter cannot use as retryable, and leaks no… 0.06s  
+  ✓ it posts to exactly the endpoint the subscription named and follows… 0.06s  
+
+   PASS  Tests\Feature\Notifications\WorkOutboxCommandTest
+  ✓ it is registered, so php artisan is the record of what exists        0.07s  
+  ✓ it runs one pass and exits with --once                               0.12s  
+  ✓ it says nothing when there is nothing to do, so an idle worker is q… 0.07s  
+  ✓ it honours --limit, so one pass cannot take the whole queue          0.19s  
+  ✓ it floors a nonsensical --limit at one rather than claiming nothing  0.12s  
+  ✓ it ignores a non-numeric --limit and falls back to the configured b… 0.12s  
+  ✓ it reports pruning in the tally, so an operator sees subscriptions…  0.12s  
+  ✓ it reports a retry without failing the pass, because one bad edge i… 0.12s  
+  ✓ it knows which dispositions are worth another attempt                0.06s  
+  ✓ it reports skipped rows on the tally line, which is the only signal… 0.15s  
+{"type":"throwable","class":"Tests\\Support\\DeliberateWorkerFailure","code":0,"file":"\/home\/pixels\/qr-pager\/apps\/api\/tests\/Support\/OctaneWorker.php","line":140,"message":"deliberate, after responding","trace":[{"file":"\/home\/pixels\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":209,"function":"{closure:Tests\\Support\\OctaneWorker::throwAfterResponding():139}","class":"Tests\\Support\\OctaneWorker","type":"->"},{"file":"\/home\/pixels\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":102,"function":"invokeRequestHandledCallbacks","class":"Laravel\\Octane\\Worker","type":"->"}]}
+{"type":"throwable","class":"Tests\\Support\\DeliberateWorkerFailure","code":0,"file":"\/home\/pixels\/qr-pager\/apps\/api\/tests\/Support\/OctaneWorker.php","line":140,"message":"deliberate, after responding","trace":[{"file":"\/home\/pixels\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":209,"function":"{closure:Tests\\Support\\OctaneWorker::throwAfterResponding():139}","class":"Tests\\Support\\OctaneWorker","type":"->"},{"file":"\/home\/pixels\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":102,"function":"invokeRequestHandledCallbacks","class":"Laravel\\Octane\\Worker","type":"->"}]}
+
+   PASS  Tests\Feature\Octane\RequestBoundaryTest
+  ✓ it rolls back a transaction a completed request abandoned, and does… 0.08s  
+  ✓ it cleans up after a request that throws, where RequestTerminated n… 0.10s  
+  ✓ it leaves a clean connection alone, so the cleanup is not a reconne… 0.07s  
+  ✓ it registers the cleanup on both keys, and first on each             0.07s  
+  ✓ it forgets tenant context at the request boundary even when the roo… 0.08s  
+  ✓ it disarms the tenant scope guard at the boundary, including after…  0.07s  
+
+   PASS  Tests\Feature\Pager\PagerCustomerRateLimitTest
+  ✓ it refuses the token endpoint once its own bucket is spent, proven…  0.13s  
+  ✓ it is tighter than the api bucket, which is the clause’s own compar… 0.06s  
+  ✓ it has no per-tenant half on any customer bucket, because a token c… 0.06s  
+  ✓ it refuses the poll bucket too, so the cheapest route is still boun… 0.41s  
+  ✓ it refuses the subscription bucket, which is the one customer route… 0.21s  
+  ✓ it counts a refused request against the bucket and not against the…  0.12s  
+
+   PASS  Tests\Feature\Pager\PagerCustomerSurfaceTest
+  ✓ it needs no tenant context at all, which is the whole point of the…  0.09s  
+  ✓ it accepts no tenant from the request, on any route or any field     0.09s  
+  ✓ it tells an expired session apart from an unknown one, which is gat… 0.08s  
+  ✓ it decides expiry from the clock and not from status, because statu… 0.09s  
+  ✓ it writes no projection for an expired session, so a poll cannot re… 0.08s  
+  ✓ it registers a device once and updates it thereafter, so repeating…  0.09s  
+  ✓ it removes a device, and removing one that is not there still succe… 0.09s  
+  ✓ it refuses to register a device against an expired session           0.08s  
+  ✓ it validates the subscription body against the database’s own bound… 0.08s  
+  ✓ it says nothing about the shape of the secret when a token fails va… 0.06s  
+  ✓ it counts a failed resolution so an enumeration is observable — R-0… 0.08s  
+  ✓ it writes no audit_log row for a failed resolution, which is the de… 0.09s  
+  ✓ it sheds the live timer and never the alert path, which is the stat… 0.10s  
+  ✓ it puts no token in any response body, on any answer                 0.08s  
+  ✓ it logs a failed-resolution run once per window, not once per attem… 0.06s  
+  ✓ it keeps counting when Redis is gone, by not counting and not faili… 0.06s  
+  ✓ it counts into an hourly window, so the key is bounded and comparab… 0.06s  
+  ✓ it refuses a token in the query string on every customer route — se… 0.08s  
+
+   PASS  Tests\Feature\Pager\PagerExpiryTest
+  ✓ it expires both live statuses and leaves everything else alone       0.12s  
+  ✓ it writes an audit row per expiry and no outbox row at all           0.10s  
+  ✓ it is re-runnable: a second pass expires nothing and audits nothing  0.10s  
+  ✓ it issues the prescribed statement shape, with no RETURNING anywher… 0.08s  
+  ✓ it bounds one pass, so a pass cannot hold a transaction over an unb… 0.14s  
+  ✓ it narrows the worker’s cross-tenant SELECT to live and expired ses… 0.08s  
+  ✓ it stops the worker expiring another tenant’s completed or cancelle… 0.09s  
+  ✓ it binds the worker INSIDE a tenant scope by isolation alone, not b… 0.09s  
+  ✓ it still refuses any transition other than expiring, which WITH CHE… 0.11s  
+  ✓ it carries the status whitelist in the policies themselves, read fr… 0.07s  
+  ✓ it commits the expiry and its audit row together or not at all — QA… 0.10s  
+  ✓ it expires nothing and audits nothing when a staff member wins the…  0.11s  
+  ✓ it derives its live-status list from the enum; the SELECT policy wh… 0.09s  
+  ✓ it is scheduled, so the TTL is enforced without anyone typing a com… 0.06s  
+
+   PASS  Tests\Feature\Pager\PagerIdempotencyTest
+  ✓ it is idempotent on a repeat call: one outbox row, one audit row, a… 0.09s  
+  ✓ it writes one outbox row when two processes mark the same session r… 0.21s  
+  ✓ it lets renotify through repeatedly, with a distinct outbox row eac… 0.09s  
+  ✓ it refuses a renotify past the configured cap, as a conflict rather… 0.11s  
+  ✓ it refuses a renotify on a session that was never marked ready       0.09s  
+  ✓ it has the unique index as the backstop, independent of the row loc… 0.09s  
+  ✓ it lets two concurrent renotifies both through, with distinct dedup… 0.22s  
+
+   PASS  Tests\Feature\Pager\PagerIdorTest
+  ✓ it answers 404 on every id-taking route when the session belongs to… 0.09s  
+  ✓ it answers the same 404 for an id that exists nowhere, so the two a… 0.10s  
+  ✓ it leaves the other tenant’s session completely untouched            0.10s  
+  ✓ it lets the owning tenant act on the very same session, so the 404…  0.09s  
+  ✓ it does not let a tenant id be chosen by anything the caller sends   0.09s  
+
+   PASS  Tests\Feature\Pager\PagerPollLatencyTest
+  ✓ it smoke-checks the latency harness: it runs, and still measures ze… 0.37s  
+
+   PASS  Tests\Feature\Pager\PagerPollingTest
+  ✓ it issues ZERO Postgres statements on a poll, proven by a query lis… 0.09s  
+  ✓ it issues exactly two Redis commands in the handler, and seven acro… 0.08s  
+  ✓ it answers 404 Stale when Redis holds no pointer, and never falls b… 0.07s  
+  ✓ it tells Stale apart from NotFound, so a client knows whether to re… 0.08s  
+  ✓ it spends nothing on a malformed token beyond the middleware that g… 0.06s  
+  ✓ it answers 503 with a Retry-After when Redis is unreachable, not 40… 0.09s  
+  ✓ it serves the live status with the pacing a client needs, and no-st… 0.08s  
+  ✓ it tells the customer nothing about the tenant or the session        0.10s  
+  ✓ it follows a transition within a poll, without the worker having ru… 0.09s  
+  ✓ it follows a completion too, which writes no outbox row and so no w… 0.10s  
+  ✓ it creates no projection for a session nobody scanned                0.09s  
+  ✓ it treats a corrupt projection as a miss rather than a 500           0.09s  
+  ✓ it carries poll_after_seconds on every polling response, 404 and 50… 0.10s  
+  ✓ it carries both the body pacing and the Retry-After header on a 503  0.09s  
+  ✓ it carries the pacing on a shed 503 and a throttled 429 too, which…  0.49s  
+  ✓ it paces nothing on a 422, because a malformed request is not a req… 0.09s  
+
+   PASS  Tests\Feature\Pager\PagerProjectionTest
+  ✓ it namespaces the projection by tenant id, in the exact shape the g… 0.07s  
+  ✓ it cannot be read through another tenant’s context, even with the r… 0.09s  
+  ✓ it takes the tenant from the pointer the server wrote, never from t… 0.09s  
+  ✓ it keys the pointer by the token’s own hash, which is the one deriv… 0.06s  
+  ✓ it never writes a projection that outlives the session it describes  0.06s  
+  ✓ it refreshes only what already exists, so an unscanned session gets… 0.06s  
+  ✓ it round-trips a view and refuses one it cannot read, rather than g… 0.06s  
+  ✓ it stores the status enum’s own value and keeps no vocabulary of it… 0.06s  
+  ✓ it answers false rather than null when Redis cannot be reached, so…  0.06s  
+  ✓ it forgets both keys together, so a pointer never outlives its proj… 0.08s  
+  ✓ it swallows every Redis failure rather than taking a request down w… 0.08s  
+  ✓ it refuses a pointer it cannot read, rather than building a key fro… 0.09s  
+  ✓ it keys the pointer on the SAME hash Postgres stores, not on the ra… 0.09s  
+  ✓ it stops resolving from Redis once the clock passes the session exp… 3.10s  
+  ✓ it refuses a projection whose expiry has passed even while its key…  0.09s  
+  ✓ it writes no key at all for a session that has already expired       0.06s  
+  ✓ it puts neither the key nor the token in any log line, at APP_DEBUG… 0.09s  
+  ✓ it puts neither the key nor the token in any response body, at APP_… 0.08s  
+
+   PASS  Tests\Feature\Pager\PagerRouteSurfaceTest
+  ✓ it serves every pager route under /v1 and by POST only               0.07s  
+  ✓ it denies every pager route when no tenant resolves, with no detail… 0.08s  
+  ✓ it creates a session and returns a QR payload carrying the token in… 0.08s  
+  ✓ it validates the order reference against the column it is stored in  0.09s  
+  ✓ it answers a malformed JSON body as a 422 naming the field, not an…  0.08s  
+  ✓ it runs the four transitions end to end through HTTP                 0.11s  
+  ✓ it keeps the refusal body free of status values, driver text and SQ… 0.09s  
+  ✓ it answers 404 for a session id that is not a uuid, through the unk… 0.06s  
+  ✓ it refuses to run a pager action with no tenant bound, so a route o… 0.06s  
+  ✓ it answers 503 and not 500 when the row lock times out — QA L-7      2.19s  
+  ✓ it mounts the customer surface off RequireTenantScope, and the staf… 0.06s  
+  ✓ it sheds the live timer and nothing else on the customer surface     0.06s  
+  ✓ it gives each customer route its own rate-limit bucket, and never t… 0.06s  
+  ✓ it takes no route parameter anywhere on the customer surface, which… 0.06s  
+
+   PASS  Tests\Feature\Pager\PagerTokenLookupTest
+  ✓ it resolves a presented token to exactly one session in exactly one… 0.09s  
+  ✓ it answers null for an unknown token, and for a malformed one        0.07s  
+  ✓ it does not leak the bypass GUC back to the caller                   0.09s  
+  ✓ it leaves the caller’s own queries tenant-bound, so the bypass is t… 0.08s  
+  ✓ it cannot be used to read the token hash, because the function does… 0.08s  
+  ✓ it is executable by the app role and by nothing else                 0.07s  
+  ✓ it is a SECURITY DEFINER function owned by the owner, with a pinned… 0.06s  
+  ✓ it resolves an expired session rather than hiding it, so the PWA ca… 0.08s  
+  ✓ it is permitted by the scope guard, while a bare pager_sessions sta… 0.08s  
+
+   PASS  Tests\Feature\Pager\PagerTokenTest
+  ✓ it is 128 bits of CSPRNG, 22 base64url characters, and stored only…  0.06s  
+  ✓ it draws a different token every time                                0.06s  
+  ✓ it cannot be leaked by any of the six ways a value escapes a PHP ob… 0.05s  
+  ✓ it has no __toString, so interpolating it is an error rather than a… 0.06s  
+  ✓ it keeps the raw token out of captured log output, even when the ob… 0.06s  
+  ✓ it never reaches the database: only the hash is stored               0.09s  
+  ✓ it never reaches a log when a session is created through the servic… 0.09s  
+  ✓ it satisfies each limb of the amended token-location clause, by nam… 0.06s  
+  ✓ it refuses a malformed presented token without touching the databas… 0.06s  
+
+   PASS  Tests\Feature\Pager\PagerTransactionTest
+  ✓ it commits the status change, the outbox row and the audit row toge… 0.09s  
+  ✓ it rolls back the status change when the OUTBOX insert fails — all…  0.09s  
+  ✓ it rolls back the status change AND the outbox row when the AUDIT i… 0.09s  
+  ✓ it holds for cancel as well, which is the other operation writing a… 0.11s  
+  ✓ it rolls back the session row itself when create fails after the in… 0.08s  
+  ✓ it writes exactly the outbox type and audit action the domain names… 0.08s  
+
+   PASS  Tests\Feature\Pager\PagerTransitionTest
+  ✓ it agrees with the enum about every from/to pair — 5 statuses x 3 o… 0.18s  
+  ✓ it lets nothing out of a terminal status, which is what isTerminal…  0.06s  
+  ✓ it allows waiting straight to completed, which is the one judgement… 0.08s  
+  ✓ it lets both live statuses expire, which the partial index and the…  0.06s  
+  ✓ it refuses a renotify from every status except ready                 0.10s  
+
+   PASS  Tests\Feature\Pager\PagerTtlTest
+  ✓ it refuses every staff transition on a session past its TTL, as an…  0.09s  
+  ✓ it refuses ready and renotify on a past-TTL session that is already… 0.09s  
+  ✓ it writes nothing at all when it refuses                             0.08s  
+  ✓ it is distinguishable from an illegal transition, which is the whol… 0.09s  
+  ✓ it leaves terminal statuses alone, so idempotency survives the fix   0.08s  
+  ✓ it still answers 404 and never 409 for another tenant’s expired ses… 0.08s  
+  ✓ it passes a session inside its TTL straight through, which is the p… 0.08s  
+  ✓ it refuses at the service too, so the rule is not a property of the… 0.08s  
+  ✓ it compares against the database clock, not PHP’s                    0.09s  
+
+   PASS  Tests\Feature\Readiness\ReadinessCarrierTest
+  ✓ it answers /readyz and /healthz with the app pool full — R-012       0.44s  
+  ✓ it measures saturation on the worker connection, which the app pool… 0.42s  
+  ✓ it opens no database connection on either probe’s request path — B6  0.08s  
+  ✓ it reports Postgres down when the worker role cannot reach it eithe… 0.06s  
+  ✓ it reports Redis down, and readiness refuses rather than guessing    0.07s  
+  ✓ it treats a stale snapshot as not ready, because the carrier shares… 0.07s  
+  ✓ it is scheduled sub-minute, without overlapping, and needs no tick   0.06s  
+
+   PASS  Tests\Feature\RealDatabaseTest
+  ✓ it runs the suite against the real composed postgres, never sqlite   0.06s  
+
+  Tests:    654 passed (4132 assertions)
+  Duration: 81.27s
+
+
+gate: all six steps green. Full output: /home/pixels/qr-pager/apps/api/storage/logs/gate-20261027T203410Z.log
