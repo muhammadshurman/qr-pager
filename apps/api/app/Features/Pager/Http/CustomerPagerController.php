@@ -10,6 +10,7 @@ use App\Features\Pager\PagerTokenLookup;
 use App\Features\Pager\PushSubscriptions;
 use App\Features\Pager\ResolvedPagerSession;
 use App\Features\Pager\TokenResolutionFailures;
+use App\Platform\Http\PacedProblemDocument;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemDocument;
 use App\Platform\Http\ValidationProblemDocument;
@@ -127,8 +128,8 @@ final class CustomerPagerController
      * will say whether it is still valid.
      */
     #[DocResponse(status: 200, description: 'The live state of the session.')]
-    #[DocResponse(status: 404, description: 'No live status is held for that code. Open the session again.', type: ProblemDocument::class)]
-    #[DocResponse(status: 503, description: 'The live status is temporarily unavailable. Retry after the interval in the Retry-After header; notifications are unaffected.', type: ProblemDocument::class)]
+    #[DocResponse(status: 404, description: 'No live status is held for that code. Open the session again after poll_after_seconds.', type: PacedProblemDocument::class)]
+    #[DocResponse(status: 503, description: 'The live status is temporarily unavailable. Retry after the interval in the Retry-After header; notifications are unaffected.', type: PacedProblemDocument::class)]
     public function poll(PollPagerStatusRequest $request): JsonResponse
     {
         $now = new DateTimeImmutable;
@@ -161,6 +162,7 @@ final class CustomerPagerController
                 ProblemType::Unavailable,
                 $request->getPathInfo(),
                 retryAfter: $this->pollInterval(),
+                pollAfter: $this->pollInterval(),
             ))->toResponse();
         }
 
@@ -272,10 +274,22 @@ final class CustomerPagerController
         return (new Problem(ProblemType::NotFound, $path))->toResponse();
     }
 
-    /** 404, with the type that means "re-open the session" rather than "no such thing". */
+    /**
+     * 404, with the type that means "re-open the session" rather than "no such thing".
+     *
+     * AND WITH THE PACING, like every other answer this endpoint gives. `§3` row 4 says
+     * "every polling response carries `poll_after_seconds`" and until 2026-10-27 this one
+     * did not, which QA finding M-6 measured. The two ways to close that are to carry the
+     * value or to narrow the clause to the statuses that already had it; Muhammad ruled
+     * the first the same day, and the reason is on the record: a client that just got a
+     * 404 is the one that most needs pacing -- it is about to re-open the session, and
+     * during a Redis restart every waiting device in every restaurant gets this answer at
+     * once -- while amending a §3 gate clause to match the code is precisely the defect
+     * Task 3's security S-1 already named.
+     */
     private function stale(string $path): JsonResponse
     {
-        return (new Problem(ProblemType::Stale, $path))->toResponse();
+        return (new Problem(ProblemType::Stale, $path, pollAfter: $this->pollInterval()))->toResponse();
     }
 
     private function ok(ResolvedPagerSession $session, DateTimeImmutable $now): JsonResponse

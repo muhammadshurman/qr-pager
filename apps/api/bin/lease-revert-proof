@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# R-083: prove every case in OutboxLeaseTest goes RED without the fix it guards.
+#
+# WHY THIS IS A SCRIPT AND NOT A SENTENCE IN A HANDOVER. R-043: a proof that does not live
+# in the repository is a proof nobody can re-run, and "each proven red without the fix" is
+# §6's clause rather than a courtesy. The two halves of R-083's fix are independent --
+# OutboxWorker::reLease() and PushSubscriptions::forSession()'s LIMIT -- so they are
+# reverted SEPARATELY here, because a single combined revert cannot show which case guards
+# which half, and a case that is red for the other half's reason is not revert-proved.
+#
+# WHAT EACH REVERT SHOULD DO, as the claim this script exists to check:
+#
+#   revert A -- the per-row re-lease removed
+#       RED : the two-process proof (12 requests for 8 rows), the stolen-row case, the
+#             lapsed-lease case
+#       GREEN: the three device-cap cases and the arithmetic case -- they are the other half
+#
+#   revert B -- the device cap's LIMIT removed
+#       RED : "sends to at most the configured number", "says so in the log when the cap
+#             bites"
+#       GREEN: everything else, including "does not cap a session that is under the limit",
+#              which is the case that must NOT move -- it is the control proving the cap is
+#              not simply refusing everything
+#
+# It edits two tracked files and restores them in a trap, including on Ctrl-C. Run it on a
+# clean tree: if it is interrupted hard enough to skip the trap, `git checkout` both files.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# PAO_DISABLE, or laravel/pao prints one JSON line inside an agent session and the
+# per-case verdicts below cannot be read at all (R-054, CLAUDE.md).
+export PAO_DISABLE=1
+
+worker="app/Features/Notifications/OutboxWorker.php"
+subs="app/Features/Pager/PushSubscriptions.php"
+suite="tests/Feature/Notifications/OutboxLeaseTest.php"
+
+worker_backup="$(mktemp)"
+subs_backup="$(mktemp)"
+
+cp "$worker" "$worker_backup"
+cp "$subs" "$subs_backup"
+trap 'cp "$worker_backup" "$worker"; cp "$subs_backup" "$subs"; rm -f "$worker_backup" "$subs_backup"' EXIT INT TERM
+
+restore() {
+  cp "$worker_backup" "$worker"
+  cp "$subs_backup" "$subs"
+}
+
+run() {
+  local label="$1"
+  echo "=== $label"
+  # STRIP THE COLOUR FIRST, THEN FILTER -- bin/ttl-revert-proof's note: Pest writes the ✓
+  # and ⨯ glyphs with an SGR escape in front of them, so a grep anchored at ^\s+ matches
+  # nothing and the section prints empty.
+  php artisan test "$suite" 2>&1 \
+    | sed 's/\x1b\[[0-9;]*m//g' \
+    | grep -E '^\s*(✓|⨯|PASS|FAIL|Tests:)'
+  echo
+}
+
+echo "R-083 revert proof — OutboxLeaseTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+run "baseline — no revert, every case should pass"
+
+# ---------------------------------------------------------------------------------
+# Revert A. The re-lease is made unreachable rather than deleted, so the method and its
+# docblock stay in the file and the diff this script makes is one line -- which keeps the
+# revert honest: nothing else about the worker changes.
+# ---------------------------------------------------------------------------------
+restore
+sed -i 's|^\( *\)if (! \$this->reLease(\$row)) {|\1if (false \&\& ! $this->reLease($row)) { // REVERTED BY bin/lease-revert-proof|' "$worker"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$worker" || { echo "FATAL: the reLease() call site was not found"; exit 1; }
+run "revert A — the per-row re-lease removed (R-083's first half)"
+
+# ---------------------------------------------------------------------------------
+# Revert B. The LIMIT is widened past any plausible device count rather than removed from
+# the SQL, because deleting the clause would leave `{$probe}` unused and PHPStan would
+# fail the file before the suite ever ran -- which would prove the linter works, not the
+# cap.
+# ---------------------------------------------------------------------------------
+restore
+sed -i 's|^\( *\)\$probe = \$cap + 1;|\1$probe = 1000; // REVERTED BY bin/lease-revert-proof|' "$subs"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$subs" || { echo "FATAL: the cap probe was not found"; exit 1; }
+sed -i 's|^\( *\)if (count(\$devices) <= \$cap) {|\1if (true) { // REVERTED BY bin/lease-revert-proof|' "$subs"
+run "revert B — the device cap removed (R-083's second half)"
+
+# ---------------------------------------------------------------------------------
+# THE RESTORE IS CHECKED, and it is checked for the SENTINEL rather than with
+# `git status`: both files are legitimately modified relative to HEAD while R-083's fix
+# is uncommitted, so a porcelain line here means nothing. What must be true is that no
+# revert this script made is still in the tree.
+# ---------------------------------------------------------------------------------
+restore
+
+if grep -l 'REVERTED BY bin/lease-revert-proof' "$worker" "$subs" 2>/dev/null; then
+  echo "FATAL: a revert survived the restore — git checkout the files named above" >&2
+  exit 1
+fi
+
+echo "both files restored: no revert sentinel remains in either."

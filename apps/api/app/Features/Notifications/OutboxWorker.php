@@ -69,6 +69,45 @@ use Throwable;
  * UNIQUE (tenant_id, dedupe_key) is what Task 3 built so that one logical event is one
  * row at all.
  *
+ * ===================================================================================
+ * AND THE LEASE IS RE-TAKEN PER ROW, WHICH IS WHAT MAKES THE ABOVE TRUE -- R-083
+ * ===================================================================================
+ *
+ * THE DEFECT, found independently by this task's QA and Security reviews on 2026-10-27:
+ * the paragraph above was true of the CLAIM and false of the BATCH. claim() leases every
+ * row to `now() + lease_seconds` in one transaction and COMMITS; pass() then walks the
+ * batch one row at a time, each row costing up to one HTTP send per device. After that
+ * commit SKIP LOCKED protects nothing -- only `available_at` does -- so any row this
+ * worker had not reached by `claim_time + lease_seconds` was `pending AND available_at <=
+ * now()` again, a second worker claimed it, and BOTH sent. The first worker's keyed,
+ * status-guarded finish() then reported 0 and wrote nothing, so the duplicate left no
+ * trace in the table at all. No attacker was needed: at batch_size 100 and lease_seconds
+ * 60, ~0.7 s per send already exceeded the lease.
+ *
+ * THE FIX IS ONE STATEMENT PER ROW, immediately before that row's send: re-take the lease
+ * on THAT ROW ALONE and check the affected-row count. Zero means somebody else owns it --
+ * skip it silently, send nothing, record nothing, count it as `skipped`. See reLease().
+ *
+ * WHY THIS AND NOT THE OTHER FOUR CANDIDATES R-083 lists (renew during a long row, bound
+ * lease_seconds by batch_size x worst case x devices, a per-device cursor, send
+ * concurrently under one budget): it makes correctness INDEPENDENT OF BATCH SIZE, device
+ * count and network latency, instead of resting on an estimate that a larger batch_size or
+ * a slower network silently invalidates. No heartbeat, no concurrency, no change to this
+ * class's shape. Muhammad's ruling, 2026-10-27.
+ *
+ * WHAT IS LEFT, AND WHAT BOUNDS IT. The re-lease moves the window from "the whole batch"
+ * to "one row's processing", which is the bound config/webpush.php states in terms. That
+ * bound is only true if one row's processing fits inside the lease, and the thing that
+ * could make it not fit is an unbounded device count -- so the second half of the same
+ * ruling is a cap on devices per session (PushSubscriptions::forSession, and the
+ * arithmetic relating it to the lease is in config/webpush.php beside both numbers).
+ *
+ * THE ARMS BEFORE THE RE-LEASE SEND NOTHING, which is why it sits where it does rather
+ * than at the top of process(): an unroutable row, a session read that failed, a session
+ * that is gone and a session with no device all finish or back off through a keyed,
+ * status-guarded UPDATE and open no second send. The re-lease guards the only statement
+ * in this class that reaches somebody else's infrastructure.
+ *
  * THE ONE WINDOW NO OUTBOX CLOSES, stated rather than claimed away: a crash after the
  * edge accepted a message and before TX 2 commits re-sends that one message. It is one
  * HTTP call wide. It is bounded by the `Topic` header -- a push service replaces an
@@ -112,14 +151,14 @@ final class OutboxWorker
     /**
      * One pass: claim up to $limit rows, then process each. Returns what happened.
      *
-     * @return array{claimed: int, sent: int, retried: int, dead: int, pruned: int}
+     * @return array{claimed: int, sent: int, retried: int, dead: int, skipped: int, pruned: int}
      */
     public function pass(?int $limit = null): array
     {
         $limit = $limit ?? (int) config('webpush.worker.batch_size');
         $claimed = $this->claim(max(1, $limit));
 
-        $tally = ['claimed' => count($claimed), 'sent' => 0, 'retried' => 0, 'dead' => 0, 'pruned' => 0];
+        $tally = ['claimed' => count($claimed), 'sent' => 0, 'retried' => 0, 'dead' => 0, 'skipped' => 0, 'pruned' => 0];
 
         foreach ($claimed as $row) {
             $outcome = $this->process($row);
@@ -213,7 +252,7 @@ final class OutboxWorker
     /**
      * One row: build the message, send to every device, then finish the row.
      *
-     * @return array{result: 'sent'|'retried'|'dead', pruned: int}
+     * @return array{result: 'sent'|'retried'|'dead'|'skipped', pruned: int}
      */
     private function process(ClaimedOutboxRow $row): array
     {
@@ -262,6 +301,12 @@ final class OutboxWorker
             $this->refreshProjection($row, $session);
 
             return ['result' => 'sent', 'pruned' => 0];
+        }
+
+        // R-083. THE LAST THING BEFORE THE SEND, and the only thing standing between a
+        // batch that outlived its lease and a customer's phone buzzing twice.
+        if (! $this->reLease($row)) {
+            return ['result' => 'skipped', 'pruned' => 0];
         }
 
         $message = new PushMessage($row->event, (string) $session->order_reference, $row->dedupeKey);
@@ -345,6 +390,72 @@ final class OutboxWorker
         ]);
 
         return ['result' => 'sent', 'pruned' => $pruned];
+    }
+
+    /**
+     * Re-take the lease on ONE row, immediately before its send. R-083.
+     *
+     * THE PREDICATE IS THE WHOLE POINT, so each clause is named:
+     *
+     *   id = ?                    the key. Never a bulk statement -- `§4 › Postgres traps`
+     *                             is explicit that an UPDATE referencing no column of the
+     *                             table escapes RLS row filtering entirely, and the rule it
+     *                             ends on is "reference the key and check the affected-row
+     *                             count", which is exactly what this does.
+     *   status = 'pending'        the row has not been finished under us.
+     *   attempts = ?              THE LEASE OWNER. `outbox` has no lease_owner column; the
+     *                             claim's own `attempts = attempts + 1` is what tells one
+     *                             claim of a row from the next, so the attempt number this
+     *                             worker wrote is its ownership token. A second worker that
+     *                             re-claimed the row moved it, and this match fails.
+     *                             ClaimedOutboxRow::leaseIdentity() carries the proof that
+     *                             the value cannot come back.
+     *   available_at > now()      THE LEASE HAS NOT EXPIRED. A lapsed lease is not a theft
+     *                             yet, but it is the state in which one can happen at any
+     *                             instant -- so sending on it is precisely the duplicate.
+     *
+     * ZERO ROWS MEANS SKIP, SILENTLY. Not an error and not a retry: another worker owns the
+     * row and will send it, or the lease lapsed and the next pass will claim it. Writing
+     * anything here -- a back-off, a last_error -- would be this worker editing a row it no
+     * longer holds, and a back-off in particular would move somebody else's `available_at`
+     * and shorten THEIR lease. Doing nothing is the only safe action, and the row is
+     * counted as `skipped` so that doing nothing is still observable in the tally.
+     *
+     * NO RETURNING, like every other write in this class and in the expiry job: the
+     * affected-row count IS the signal (`§4 › Postgres traps`).
+     *
+     * `attempts` IS NOT INCREMENTED HERE. A re-lease is not a new attempt -- the row is
+     * still being processed by the worker that claimed it, and incrementing would both
+     * burn the retry budget on a healthy row and invalidate this worker's own token for
+     * the next row.
+     */
+    private function reLease(ClaimedOutboxRow $row): bool
+    {
+        $lease = max(1, (int) config('webpush.worker.lease_seconds'));
+
+        $held = $this->connection()->update(
+            "update outbox
+                set available_at = now() + (interval '1 second' * ?),
+                    updated_at = now()
+              where id = ?
+                and status = 'pending'
+                and attempts = ?
+                and available_at > now()",
+            [$lease, $row->id, $row->leaseIdentity()],
+        );
+
+        if ($held !== 1) {
+            // DEBUG, not warning. On a correctly sized lease this never fires; when it
+            // does it is the mechanism working, not a fault, and the row is about to be
+            // sent by whoever does hold it. A warning here would page somebody for a
+            // duplicate that DIDN'T happen.
+            $this->log->debug('outbox row skipped: the lease was no longer ours', [
+                'outbox_id' => $row->id,
+                'attempt' => $row->leaseIdentity(),
+            ]);
+        }
+
+        return $held === 1;
     }
 
     /**

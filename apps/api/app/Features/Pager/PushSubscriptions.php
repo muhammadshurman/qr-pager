@@ -6,6 +6,7 @@ namespace App\Features\Pager;
 
 use App\Platform\Database\DatabaseRoles;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -85,7 +86,7 @@ final class PushSubscriptions
     }
 
     /**
-     * Every device for one session, read AS THE WORKER inside its tenant scope.
+     * Every device for one session -- up to the cap -- read AS THE WORKER inside its scope.
      *
      * The connection is named because the worker role is not interchangeable with the app
      * role here: the worker holds SELECT and DELETE on this table and no UPDATE, which is
@@ -95,20 +96,61 @@ final class PushSubscriptions
      * -- push_subscriptions has no cross-tenant worker policy, only the four §4 names --
      * so this scope is load-bearing and not decoration.
      *
+     * ⚠ IT IS CAPPED, AND THE CAP IS A LEASE BOUND BEFORE IT IS A PRODUCT RULE -- R-083's
+     * second half, 2026-10-27. This returned EVERY row until then, and OutboxWorker sends
+     * to each one sequentially, so the number of devices one session carried was the
+     * number of HTTP round trips one outbox row cost. Nothing bounded it: a token holder
+     * could register endpoints until a single row's processing exceeded its own lease,
+     * at which point a second worker claims the row and the customer is buzzed twice.
+     * That is the SAME duplicate-send window QA found from the batch-wide lease, reached
+     * from the device side; this task's two §11 reviews found the two ends independently.
+     *
+     * `config/webpush.php` carries the number and the arithmetic that picks it: it is
+     * sized so that `cap x (connect + request)` fits inside `lease_seconds`. The final
+     * product figure -- and whether the OLDEST or the NEWEST devices survive the cap --
+     * is `PLAN.md §5 R-091`, owner Muhammad. Today it is the oldest, because the ORDER BY
+     * predates the cap.
+     *
+     * ONE ROW OVER THE CAP IS READ ON PURPOSE, so that the cap biting is OBSERVABLE
+     * rather than silent: a LIMIT of exactly the cap cannot tell "five devices" from
+     * "five of nine", and a customer whose newest phone is quietly never buzzed is
+     * exactly the complaint nobody can reproduce. The extra row is discarded.
+     *
      * @return list<object{id: string, endpoint: string, p256dh: string, auth: string}>
      */
     public function forSession(string $tenantId, string $sessionId): array
     {
         $connection = DatabaseRoles::connection('worker');
+        $cap = max(1, (int) config('webpush.worker.max_devices_per_session'));
 
-        /** @var list<object{id: string, endpoint: string, p256dh: string, auth: string}> */
-        return withTenant($tenantId, fn (): array => DB::connection($connection)->select(
-            'select id, endpoint, p256dh, auth
+        // THE LIMIT IS INTERPOLATED AND THE REST IS BOUND, which is OutboxWorker::claim()'s
+        // split and the expiry job's, for the same reason: it is an integer this class
+        // produced from config, never caller text, and casting it here pins it at the one
+        // place it is decided.
+        $probe = $cap + 1;
+
+        /** @var list<object{id: string, endpoint: string, p256dh: string, auth: string}> $devices */
+        $devices = withTenant($tenantId, fn (): array => DB::connection($connection)->select(
+            "select id, endpoint, p256dh, auth
                from push_subscriptions
               where pager_session_id = ?
-              order by created_at',
+              order by created_at
+              limit {$probe}",
             [$sessionId],
         ), $connection);
+
+        if (count($devices) <= $cap) {
+            return $devices;
+        }
+
+        // The session id and a count, never an endpoint: an endpoint is a bearer
+        // capability for one device and this class's own docblock keeps it out of logs.
+        Log::warning('push subscriptions for one session exceed the cap; the newest are not being sent to', [
+            'pager_session_id' => $sessionId,
+            'cap' => $cap,
+        ]);
+
+        return array_slice($devices, 0, $cap);
     }
 
     /**

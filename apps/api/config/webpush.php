@@ -99,11 +99,34 @@ return [
     | long a transaction is held.
     |
     | 'lease_seconds' is how long a claimed row is invisible to another worker. It
-    | has to exceed the worst case of one row's processing -- a tenant scope, two
-    | reads, up to a few sends at 'request' seconds each -- or two workers could
-    | hold the same row. It also sets how long a killed worker's rows wait before
-    | another pass picks them up, which is the "nothing lost" property's recovery
-    | time, so it is a trade between that and double-claim safety.
+    | has to exceed the worst case of ONE ROW'S processing -- a tenant scope, two
+    | reads, and up to 'max_devices_per_session' sends at ('connect' + 'request')
+    | seconds each -- or two workers could hold the same row. It also sets how long a
+    | killed worker's rows wait before another pass picks them up, which is the
+    | "nothing lost" property's recovery time, so it is a trade between that and
+    | double-claim safety.
+    |
+    | ⚠ THAT SENTENCE WAS THE RIGHT BOUND FOR THE WRONG STATEMENT UNTIL 2026-10-27
+    | (R-083). It said "one row's processing" while the lease was taken for the WHOLE
+    | BATCH at claim time and the rows were then processed one at a time, so the bound
+    | the sentence stated was never the bound the code had: the real precondition was
+    | batch_size x one row's worst case, which at 100 x 11 s against a 60 s lease was
+    | false by two orders of magnitude. The sentence is now true because the CODE
+    | changed to match it -- OutboxWorker::reLease() re-takes the lease on each row
+    | immediately before that row's send -- and not because the sentence was softened
+    | to match the code, which is the defect this project named once already and did
+    | not want twice.
+    |
+    | THE ARITHMETIC, so that moving any of the four numbers shows its own cost:
+    |
+    |     one row's worst case = max_devices_per_session x (connect + request)
+    |                          = 5 x (3 + 8) = 55 s   <   lease_seconds = 60 s
+    |
+    | Raise 'max_devices_per_session' or either timeout without raising
+    | 'lease_seconds' and a single row can outlive its own lease again -- which the
+    | re-lease turns into a SKIPPED row rather than a duplicate send, so the failure
+    | mode is a delayed notification instead of a double buzz. That is the degradation
+    | this shape buys.
     |
     | 'max_attempts' is where a row stops being retried and becomes 'dead'. The
     | backoff below is exponential, so attempt 6 is already ~32 x base away; past
@@ -120,6 +143,27 @@ return [
     'worker' => [
         'batch_size' => 100,
         'lease_seconds' => 60,
+        /*
+         | HOW MANY DEVICES ONE SESSION MAY BE BUZZED ON -- a SAFETY BOUND, not the
+         | product rule, and R-091 carries the difference with an owner.
+         |
+         | The second half of R-083's ruling. Nothing capped this before 2026-10-27:
+         | PushSubscriptions::forSession() returned every row and the worker sent to all
+         | of them sequentially, so one token holder could register devices until a
+         | single row's processing exceeded its own lease -- the same duplicate-send
+         | window as the batch-wide lease, reached from the device side, which is how
+         | the Security review found it while QA found the other.
+         |
+         | 5 IS CHOSEN FROM THE LEASE AND THE TIMEOUTS, not from a guess about phones:
+         | 5 x (3 + 8) = 55 s fits inside the 60 s lease with margin, and it is above
+         | any plausible real session -- a customer with a phone, a tablet and a watch
+         | is three, and the suite's own largest case is three. Task 14 sets the real
+         | figure from load results and the product rule is Muhammad's (R-091), which
+         | is also where "which devices are kept when the cap bites" is decided: the
+         | query orders by created_at, so today it is the OLDEST, and that is a
+         | consequence of a pre-existing ORDER BY rather than a decision anybody made.
+         */
+        'max_devices_per_session' => 5,
         'max_attempts' => 6,
         'backoff' => [
             'base_seconds' => 5,

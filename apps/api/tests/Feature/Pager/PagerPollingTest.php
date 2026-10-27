@@ -342,3 +342,96 @@ function redisCommandsDuring(Closure $work): array
 
     return $commands;
 }
+
+/*
+ * QA M-6 (2026-10-27) — "EVERY POLLING RESPONSE CARRIES `poll_after_seconds`", LITERALLY.
+ *
+ * `PLAN.md §3` row 4 carries that clause in those words, and the 404 `Stale` answer did
+ * not meet it: it was a bare problem document with no pacing of any kind. There were two
+ * ways to close the gap -- carry the value, or narrow the clause to the status that
+ * already had it -- and Muhammad ruled the first the same day: a client that just got a
+ * 404 is the one that most needs pacing, and amending a §3 gate clause to match the code
+ * is the defect Task 3's security S-1 already named once.
+ *
+ * SO THE CASE BELOW ENUMERATES THE ENDPOINT'S WHOLE RESPONSE SURFACE rather than the two
+ * statuses that were easy, because the clause says "every" and a test that checked the
+ * 200 and the 404 would leave the 503 to be found by the next reviewer.
+ */
+
+it('carries poll_after_seconds on every polling response, 404 and 503 included', function (): void {
+    $tenant = $this->makeTenant();
+    $token = scannedSession($tenant, $sessionId);
+    $interval = (int) config('pager.poll_interval');
+
+    // 200 — the live status.
+    $ok = $this->postJson('/v1/pager/status', ['token' => $token]);
+    $ok->assertOk()->assertJsonPath('poll_after_seconds', $interval);
+
+    // 404 Stale, ARM ONE: a token of the right length and the wrong alphabet, refused
+    // before anything is hashed.
+    $malformed = $this->postJson('/v1/pager/status', ['token' => str_repeat('!', PagerToken::LENGTH)]);
+    $malformed->assertStatus(404)
+        ->assertJsonPath('type', ProblemType::Stale->value)
+        ->assertJsonPath('poll_after_seconds', $interval);
+
+    // 404 Stale, ARM TWO: Redis answered and holds nothing. BOTH arms, because they are
+    // different statements in the controller and one of them could keep the old shape.
+    // A real, live, valid token that was never scanned -- the same fixture the
+    // cache-miss case above uses, rather than reaching into Redis to delete a key.
+    $unscanned = app(PagerSessions::class)->create($tenant, 'A-704')->token->reveal();
+
+    $miss = $this->postJson('/v1/pager/status', ['token' => $unscanned]);
+    $miss->assertStatus(404)
+        ->assertJsonPath('type', ProblemType::Stale->value)
+        ->assertJsonPath('poll_after_seconds', $interval);
+
+    // AND THE MEDIA TYPE IS STILL THE PROBLEM DOCUMENT'S on both. Adding a member must
+    // not have turned a problem document into something else.
+    expect($miss->headers->get('Content-Type'))->toContain('application/problem+json');
+});
+
+it('carries both the body pacing and the Retry-After header on a 503', function (): void {
+    // THE 503 IS A POLLING RESPONSE TOO, and it owes BOTH halves of the gate clause:
+    // "every polling response carries `poll_after_seconds`" AND "every 503 and 429
+    // carries `Retry-After`". It had only the header. They are not redundant -- a generic
+    // HTTP client obeys the header, and the pager client reads one key whatever the
+    // status, which is the whole reason the member is named the same everywhere.
+    $tenant = $this->makeTenant();
+    $token = scannedSession($tenant);
+    $interval = (int) config('pager.poll_interval');
+
+    // forgetInstance('redis'), NOT purge() -- the manager takes its config as a
+    // constructor argument, so a purged connection reconnects to the live server. The
+    // case above this one records the measurement.
+    config(['database.redis.default.port' => 1]);
+    app()->forgetInstance('redis');
+
+    $response = $this->postJson('/v1/pager/status', ['token' => $token]);
+
+    $response->assertStatus(503)
+        ->assertJsonPath('type', ProblemType::Unavailable->value)
+        ->assertJsonPath('poll_after_seconds', $interval)
+        ->assertHeader('Retry-After', (string) $interval);
+});
+
+it('paces nothing on a 422, because a malformed request is not a request to retry', function (): void {
+    // THE ONE STATUS THIS ENDPOINT CAN RETURN THAT DELIBERATELY CARRIES NO PACING, stated
+    // here rather than left as an omission a reviewer has to rediscover. A 422 says the
+    // request itself is wrong -- a missing token, or one sent in the query string, which
+    // PresentedTokenRequest refuses outright (security M-2). Coming back in seven seconds
+    // with the same request produces the same 422 for ever, so advising it would be
+    // advice to loop. The client must change the request, and that is what `errors` tells
+    // it. Validation also runs BEFORE the polling handler, so there is no live status to
+    // pace against at all.
+    $tenant = $this->makeTenant();
+    $token = scannedSession($tenant);
+
+    $missing = $this->postJson('/v1/pager/status', []);
+    $missing->assertStatus(422)->assertJsonMissingPath('poll_after_seconds');
+
+    $inQuery = $this->postJson('/v1/pager/status?token='.$token, ['token' => $token]);
+    $inQuery->assertStatus(422)->assertJsonMissingPath('poll_after_seconds');
+
+    expect($missing->json())->toHaveKey('errors')
+        ->and($inQuery->json())->toHaveKey('errors');
+});

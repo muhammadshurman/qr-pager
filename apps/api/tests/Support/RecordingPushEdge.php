@@ -41,16 +41,35 @@ final class RecordingPushEdge implements ClientInterface
     private int $calls = 0;
 
     /**
+     * `$onSend` RUNS INSIDE THE SEND, which is the only place some properties are
+     * reachable. R-083 is about what a SECOND worker does while the first is part-way
+     * through a batch it has already claimed, and "part-way through" is a window that
+     * exists nowhere a test can otherwise stand: pass() claims and then walks the rows
+     * with nothing in between for a test to hook. A callback here puts the test inside
+     * that window -- it receives the request that is being sent and the 0-based call
+     * index, so it can act between row 1 and row 2 exactly as a competing worker would.
+     *
+     * It is NOT a way to make production code branch: the edge is somebody else's HTTP
+     * server and this object already stands in for it entirely.
+     *
      * @param  list<int>|int  $statuses  one status per call, or one status for every call
+     * @param  (callable(RequestInterface, int): void)|null  $onSend
      */
-    public function __construct(array|int $statuses = 201, private readonly bool $throwInstead = false)
-    {
+    public function __construct(
+        array|int $statuses = 201,
+        private readonly bool $throwInstead = false,
+        private $onSend = null,
+    ) {
         $this->script = is_int($statuses) ? [$statuses] : $statuses;
     }
 
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
         $this->requests[] = $request;
+
+        if ($this->onSend !== null) {
+            ($this->onSend)($request, $this->calls);
+        }
 
         if ($this->throwInstead) {
             throw new class('the edge is unreachable') extends RuntimeException implements ClientExceptionInterface {};

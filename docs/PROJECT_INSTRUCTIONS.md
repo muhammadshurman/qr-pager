@@ -91,6 +91,7 @@ Break any of these and the task is not done.
 - `markReady` is **idempotent**. A retry never double-notifies.
 - Polling endpoint: **Redis-only read, zero Postgres queries**, p99 under 5 ms, client-side jittered interval + exponential backoff, short-TTL cache headers. A polling endpoint that touches Postgres is a rejected design.
 - **Redis carries no RLS.** Every key that holds tenant data is namespaced by tenant id, and every read derives that id from the caller's own context — never from client input. A projection key that is not tenant-namespaced is a cross-tenant read with none of Postgres's protection behind it.
+- Exactly one Redis key may be keyed by a secret the caller must present rather than by tenant id: the QR token pointer, whose key name is the stored token hash and whose value carries the tenant. Added 2026-10-27 after R-074 and the Task 4 Security review. No second such key may be introduced without editing this line.
 - Web Push dispatcher prunes subscriptions on 404 / 410.
 - Outbox worker: `FOR UPDATE SKIP LOCKED`, backoff, dead-letter. Killing it mid-batch loses nothing and duplicates nothing.
 - iOS: Web Push only works from a Home Screen install. The install guidance is a required product path, not a nice-to-have.

@@ -291,29 +291,40 @@ it('describes the problem body with the keys a real body actually has — R-033'
     // which is the whole point: the spec and the body cannot both be wrong in the same way.
     $plain = array_keys((new Problem(ProblemType::NotFound, '/v1/x'))->toArray());
     $validation = array_keys((new Problem(ProblemType::Validation, '/v1/x', ['field' => ['bad']]))->toArray());
+    $paced = array_keys((new Problem(ProblemType::Stale, '/v1/x', pollAfter: 7))->toArray());
 
     sort($plain);
     sort($validation);
+    sort($paced);
 
     $documentedPlain = array_keys((array) ($schemas['ProblemDocument']['properties'] ?? []));
     $documentedValidation = array_keys((array) ($schemas['ValidationProblemDocument']['properties'] ?? []));
+    $documentedPaced = array_keys((array) ($schemas['PacedProblemDocument']['properties'] ?? []));
 
     sort($documentedPlain);
     sort($documentedValidation);
+    sort($documentedPaced);
 
     expect($documentedPlain)->toBe($plain)
         ->and($documentedValidation)->toBe($validation)
-        // retryAfter is a header and must not be published as a body member.
+        ->and($documentedPaced)->toBe($paced)
+        // retryAfter is a header and must not be published as a body member -- and
+        // `poll_after_seconds` IS one, which is the distinction PacedProblemDocument
+        // exists to keep (QA M-6, 2026-10-27). The polling endpoint's 503 sends both, so
+        // this is the one place the two could be confused.
         ->and($documentedPlain)->not->toContain('retryAfter')
-        ->and($documentedValidation)->not->toContain('retryAfter');
+        ->and($documentedValidation)->not->toContain('retryAfter')
+        ->and($documentedPaced)->not->toContain('retryAfter');
 
-    // Every documented property is required, and the two schemas differ only by `errors`
-    // -- which is why there are two rather than one with an optional member: Scramble
-    // marks every property required, measured both as a promoted constructor parameter
-    // with a default and as a plain property with an initialiser.
-    expect(array_values(array_diff($documentedValidation, $documentedPlain)))->toBe(['errors']);
+    // Every documented property is required, and each specialised schema differs from the
+    // plain one by exactly its own member -- which is why there are three rather than one
+    // with two optional members: Scramble marks every property required, measured both as
+    // a promoted constructor parameter with a default and as a plain property with an
+    // initialiser.
+    expect(array_values(array_diff($documentedValidation, $documentedPlain)))->toBe(['errors'])
+        ->and(array_values(array_diff($documentedPaced, $documentedPlain)))->toBe(['poll_after_seconds']);
 
-    foreach (['ProblemDocument', 'ValidationProblemDocument'] as $name) {
+    foreach (['ProblemDocument', 'ValidationProblemDocument', 'PacedProblemDocument'] as $name) {
         $required = (array) ($schemas[$name]['required'] ?? []);
         sort($required);
         $properties = array_keys((array) ($schemas[$name]['properties'] ?? []));
@@ -530,7 +541,11 @@ it('publishes every problem document under the media type the API really sends, 
     // adds its own, so the operation published BOTH `application/json` (Laravel's default
     // validation body, a shape this API never sends) and the problem document. Two
     // alternatives, one of them fictional, is worse than one wrong one.
-    $problemSchemas = ['#/components/schemas/ProblemDocument', '#/components/schemas/ValidationProblemDocument'];
+    $problemSchemas = [
+        '#/components/schemas/ProblemDocument',
+        '#/components/schemas/ValidationProblemDocument',
+        '#/components/schemas/PacedProblemDocument',
+    ];
     $wrongType = [];
     $alternatives = [];
     $seen = 0;

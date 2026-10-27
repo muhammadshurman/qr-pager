@@ -950,6 +950,34 @@ conclusion to accept.
 
 ### 8.1 `R-074` — a named cross-tenant path mirrored into a store with no RLS
 
+> ## ✅ RULED ON AND CLOSED — 2026-10-27
+>
+> **The Security review ruled the key acceptable on the merits and the RECORD wanting**
+> (finding `L-1`). Its point was not the key: it was that `PROJECT_INSTRUCTIONS.md` (rank 2)
+> had never been amended, so the only text permitting a non-tenant-namespaced key lived in
+> rank-3 `PLAN.md` — **and a rank-3 file cannot qualify a rank-2 clause.** `§0` also forbids
+> a session from editing rank 2, so the reviewer could not close its own finding and
+> neither could the builder.
+>
+> **Muhammad wrote the sentence himself the same day.** It is now the fourth bullet of
+> `PROJECT_INSTRUCTIONS.md §4 › Realtime`, directly under *"Redis carries no RLS"*:
+>
+> > Exactly one Redis key may be keyed by a secret the caller must present rather than by
+> > tenant id: the QR token pointer, whose key name is the stored token hash and whose
+> > value carries the tenant. Added 2026-10-27 after R-074 and the Task 4 Security review.
+> > No second such key may be introduced without editing this line.
+>
+> **Read it as a bound, not a blessing.** It permits exactly ONE key, says which one, and
+> closes the door behind it: a second key of this shape is a rank-2 amendment, not a
+> judgement call anybody gets to make in a docblock. The two keys this task ships are
+> exactly the two in the table below, and the projection is tenant-namespaced.
+>
+> **No code changed.** The reading was confirmed, not implemented — `PagerProjection` is
+> byte-for-byte what the reviewer read. `PLAN.md R-074` carries the same citation and is
+> closed.
+>
+> The section below is kept as it was written, because it is what the reviewer was given.
+
 **The Security reviewer rules on this. It is settled by neither the builder's reading nor
 Muhammad's.**
 

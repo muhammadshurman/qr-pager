@@ -37,6 +37,13 @@ final class Problem
     public const string CONTENT_TYPE = 'application/problem+json';
 
     /**
+     * `retryAfter` is a HEADER and `pollAfter` is a BODY MEMBER, and the difference is not
+     * cosmetic: `Retry-After` is what a 503 or a 429 owes any HTTP client, while
+     * `poll_after_seconds` is what this API owes a polling client at EVERY status -- the
+     * two halves of `§3` row 4's backoff clause. A 503 from the polling endpoint carries
+     * both, which is not redundant: a generic client obeys the header and the pager client
+     * reads one key whatever answer it got.
+     *
      * @param  array<string, list<string>>  $errors
      */
     public function __construct(
@@ -44,6 +51,7 @@ final class Problem
         public readonly ?string $instance = null,
         public readonly array $errors = [],
         public readonly ?int $retryAfter = null,
+        public readonly ?int $pollAfter = null,
     ) {}
 
     /**
@@ -83,6 +91,22 @@ final class Problem
             );
         }
 
+        // THREE SCHEMAS, AND THE ORDER IS THE CONTRACT. `errors` wins because a 422 is the
+        // only status that carries per-field messages and it is never a polling answer:
+        // validation runs before the polling handler, and a request whose shape is wrong
+        // is not a request to pace -- the client must fix it, not come back in seven
+        // seconds. So no body carries both members, and PagerPollingTest asserts the whole
+        // enumeration of this endpoint's statuses rather than the two that were easy.
+        if ($this->pollAfter !== null) {
+            return new PacedProblemDocument(
+                $this->type,
+                $this->type->title(),
+                $this->type->status(),
+                $this->instance,
+                $this->pollAfter,
+            );
+        }
+
         return new ProblemDocument(
             $this->type,
             $this->type->title(),
@@ -92,7 +116,7 @@ final class Problem
     }
 
     /**
-     * @return array{type: string, title: string, status: int, instance: string|null, errors?: array<string, list<string>>}
+     * @return array{type: string, title: string, status: int, instance: string|null, errors?: array<string, list<string>>, poll_after_seconds?: int}
      */
     public function toArray(): array
     {
@@ -109,6 +133,12 @@ final class Problem
         // 422 response is documented with.
         if ($document instanceof ValidationProblemDocument) {
             $body['errors'] = $document->errors;
+        }
+
+        // Same rule, same reason: present only on the responses whose published schema
+        // says it is there, so the body and the document cannot disagree.
+        if ($document instanceof PacedProblemDocument) {
+            $body['poll_after_seconds'] = $document->poll_after_seconds;
         }
 
         return $body;

@@ -72,7 +72,12 @@ final class WorkOutboxCommand extends Command
     }
 
     /**
-     * @return array{claimed: int, sent: int, retried: int, dead: int, pruned: int}
+     * `skipped` is R-083's counter and it belongs on this line rather than only in a log:
+     * it is the number of rows this pass claimed and then did NOT send because the lease
+     * was no longer its own. Zero is the expected reading, so a non-zero one is the signal
+     * that `lease_seconds` is too short for what a row now costs.
+     *
+     * @return array{claimed: int, sent: int, retried: int, dead: int, skipped: int, pruned: int}
      */
     private function runPass(?int $limit): array
     {
@@ -80,8 +85,9 @@ final class WorkOutboxCommand extends Command
 
         if ($tally['claimed'] > 0) {
             $this->info(sprintf(
-                'outbox:work — claimed %d, sent %d, retried %d, dead %d, pruned %d subscription(s).',
-                $tally['claimed'], $tally['sent'], $tally['retried'], $tally['dead'], $tally['pruned'],
+                'outbox:work — claimed %d, sent %d, retried %d, dead %d, skipped %d, pruned %d subscription(s).',
+                $tally['claimed'], $tally['sent'], $tally['retried'], $tally['dead'],
+                $tally['skipped'], $tally['pruned'],
             ));
         }
 

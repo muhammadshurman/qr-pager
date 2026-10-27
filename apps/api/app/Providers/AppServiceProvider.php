@@ -6,6 +6,7 @@ use App\Platform\Auth\HarnessTenantResolver;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
+use App\Platform\Http\PacedProblemDocument;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemDocument;
 use App\Platform\Http\TenantResolver;
@@ -181,8 +182,11 @@ class AppServiceProvider extends ServiceProvider
                         // A response can be a Reference into `components.responses` rather
                         // than an inline object. None of this API's is -- that map is empty
                         // -- and OpenApiSpecTest pins the number of published problem
-                        // responses at 14, so a response that became a shared reference
+                        // responses at 26, so a response that became a shared reference
                         // turns this skip into a RED TEST rather than a silent miss.
+                        // (It read 14 until 2026-10-27: the number moved to 26 when Task
+                        // 3's validation extension and media-type step reached Task 4's
+                        // routes, and this sentence was left behind.)
                         if (! $response instanceof GeneratedResponse) {
                             continue;
                         }
@@ -268,9 +272,19 @@ class AppServiceProvider extends ServiceProvider
             return false;
         }
 
+        // ALL THREE, and a new one has to be added here or it publishes as
+        // application/json while the API sends application/problem+json.
+        // PacedProblemDocument arrived on 2026-10-27 with QA M-6 (the polling endpoint's
+        // 404 and 503 carry `poll_after_seconds`), and the first export after it reported
+        // 24 rather than 26 moved responses -- which is exactly the signal this counter
+        // and OpenApiSpecTest's pinned number exist to give.
         return in_array(
             class_basename((string) $reference->fullName),
-            [class_basename(ProblemDocument::class), class_basename(ValidationProblemDocument::class)],
+            [
+                class_basename(ProblemDocument::class),
+                class_basename(ValidationProblemDocument::class),
+                class_basename(PacedProblemDocument::class),
+            ],
             true,
         );
     }

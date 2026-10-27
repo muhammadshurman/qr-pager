@@ -205,11 +205,11 @@
                         }
                     },
                     "404": {
-                        "description": "No live status is held for that code. Open the session again.",
+                        "description": "No live status is held for that code. Open the session again after poll_after_seconds.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ProblemDocument"
+                                    "$ref": "#/components/schemas/PacedProblemDocument"
                                 }
                             }
                         }
@@ -219,7 +219,7 @@
                         "content": {
                             "application/problem+json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/ProblemDocument"
+                                    "$ref": "#/components/schemas/PacedProblemDocument"
                                 }
                             }
                         }
@@ -1085,6 +1085,37 @@
                     "order_reference"
                 ],
                 "title": "CreatePagerSessionRequest"
+            },
+            "PacedProblemDocument": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/ProblemType"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "instance": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "poll_after_seconds": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "instance",
+                    "poll_after_seconds"
+                ],
+                "title": "PacedProblemDocument"
             },
             "PollPagerStatusRequest": {
                 "type": "object",
