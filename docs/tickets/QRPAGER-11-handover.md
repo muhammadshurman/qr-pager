@@ -352,7 +352,7 @@ row 4 on 2026-10-25 and 2026-10-27 — `PLAN.md` is what this task shipped again
 
 | What | Figure | Commit | How |
 | --- | --- | --- | --- |
-| `composer gate`, working tree | **all six green, exit 0 — 592 passed, 3380 assertions** | **`a27e98b`** | `composer gate`; output at `docs/tickets/QRPAGER-11-gate.txt` |
+| `composer gate`, working tree | **all six green, exit 0 — 592 passed, 3380 assertions** | **`1488725`, the pushed head** | `composer gate`; output at `docs/tickets/QRPAGER-11-gate.txt`. Re-run at the head rather than quoted from the code commit, because `R-071` is the row for "`§6`'s fresh-clone clause has no evidence at the head it is being tagged on" |
 | `composer gate`, **fresh clone** | **all six green — 592 passed, 3380 assertions**, the same counts as the working tree | **`a27e98b`** | clone → `cp .env.example .env` → `composer install` → `key:generate` → `composer gate`; output at `docs/tickets/QRPAGER-11-fresh-clone-gate.txt` |
 | Baseline, branch point | 492 passed, 2182 assertions | `1695f0b` | so Task 4 adds **100 tests, 1198 assertions** |
 | **Coverage, this task's code** | **96.57 % — 956/990 over 25 `app/` files**, `--min=90` passing | `a27e98b` | `bin/coverage --task=task-3-pager-domain --min=90`; output at `docs/tickets/QRPAGER-11-coverage.txt` |
