@@ -492,3 +492,94 @@ sees a row whose status is no longer the one it read. The superuser is the only 
 and it produces exactly the state a staff member would.
 
 Stated here and in the test's own header so a reviewer rules on it.
+
+---
+
+## 10. The `§11` Security disposition (added 2026-10-27)
+
+Nine findings — **0 Critical, 0 High, 3 Medium, 6 Low**. Seven fixed, one corrected in place
+with the row ruled against, one already covered by an existing `§5` row. Applied at
+`123c9b3`. Three new `§5` rows: **R-080**, **R-081**, **R-082** — the numbering skips
+`R-073`…`R-079`, which are Task 4's on `task-4-notifications`, because the two branches share
+one ledger.
+
+### 10.1 The dispositions
+
+| # | Finding | Ruling |
+| --- | --- | --- |
+| **M-1** | No `securitySchemes`, no `security` member — five state-changing staff endpoints published as needing no authentication | **FIXED.** A `bearer` scheme plus an **explicit** `security` member on every operation; the probes carry `[{}]` from the same `PUBLIC_PATHS` constant the generator reads. Explicit everywhere, so the test can *require* the member rather than accept inheritance |
+| **M-2** | `pager:expire` scheduled nowhere | **FIXED.** `->everyMinute()->withoutOverlapping()`, asserted against the scheduler's own collection. `R-058` is **narrowed, not closed**: nothing runs `schedule:run` in a deployed environment (Task 13, with `R-047`) |
+| **M-3** | Token resolution unmetered, uncounted, unaudited | **ALREADY COVERED** by `R-063` — owner Task 4, closing gate names the bucket, the counter and the threshold. Confirmed, not re-raised |
+| **L-1** | The resolver bypass writes no audit row, so `§2.10`'s claim is false | **CLAIM CORRECTED, ROW RULED AGAINST.** Auditing every resolution would make an unauthenticated caller an unbounded writer into an append-only table with no `DELETE` grant; `§2.8` rule 2 already names the function's narrowness as the control |
+| **L-2** | `§2.6`'s claim about terminal rows is false | **CORRECTED IN PLACE; residual is `R-080`.** Measured: in a tenant scope, `qrpager_worker` moves a `completed` row to `expired` with **`UPDATE 1`** — the same statement the cross-tenant tests pin at `UPDATE 0`, because permissive policies are OR-ed and `tenant_isolation` satisfies both halves alone |
+| **L-3** | The routes answer 500, not 401, when the resolver throws | **FIXED.** `try/catch (Throwable)` + `report()` → 401, with two tests: the body leaks nothing, and all five routes behave the same |
+| **L-4** | CI's `log_statement = 'all'` writes every token hash to the runner's log | **FIXED, and it CLOSES `R-059`** ahead of Task 12. `'ddl'`: an `ALTER ROLE … PASSWORD 'SCRAM-…'` still appears (1 line — the whole of `R-036`'s verifier scan's subject) and a prepared `SELECT` with its bound parameter appears **0** times |
+| **L-5** | `bin/migration-rollback-proof`: fixed `/tmp` paths, fallback superuser password | **FIXED.** `mktemp` for all three, one merged `trap cleanup EXIT INT TERM` (a second `trap` had silently overridden the first), `DB_ROOT_PASSWORD` now required |
+| **L-6** | `tenants.status = 'suspended'` enforced nowhere | **ACCEPTED as `R-081`**, owner Task 5. A third measurement was added while dispositioning it: `§2.7` grants `qrpager_app` `UPDATE` on `tenants.status` and an in-scope write reports `UPDATE 1`, so the enforcement point cannot be the data — it is the resolver, at Task 5 |
+
+**QA `L-5` from the previous round is completed by M-1's change:** every authenticated
+operation publishes a `401` carrying this project's problem document, and the probes publish
+none — they have no tenant middleware and cannot answer one.
+
+### 10.2 Three defects the new assertions found while being written
+
+Each surfaced because a new assertion **failed loudly on its first run**.
+
+1. **`toHaveKey($key, $message)` asserts the value EQUALS the message.** The signature is
+   `($key, $value, $message)` — the message is **third**. Reflection over Pest's expectation
+   classes then gave the whole picture, measured inside Pest: **five** matchers absorb a
+   second-argument message — `toContain`/`toContainEqual` (variadic, rule 7's subject) plus
+   `toHaveKey`, `toHaveProperty`, `toThrow` — and **every negated form cannot fail**:
+   `expect(['a' => 1])->not->toHaveKey('a', 'a message')` **PASSES** while the key is present.
+   All 59 test files were tokenised, comment-blind: **0** negated instances of the three new
+   ones, so nothing in the suite is inert because of them. `R-082` owns extending rule 7,
+   which today names two of the five.
+2. **The spec published every error under `application/json`** while `Problem::toResponse()`
+   has always sent `application/problem+json` and six test files assert that against real
+   responses. `§6`'s clause was satisfied — the endpoints were in the spec, described wrongly.
+   `Problem::CONTENT_TYPE` is now the single source and one post-processing step moves every
+   problem-document response onto it, keyed off the **schema** rather than the status code,
+   because `/readyz` answers 503 with a readiness body that must stay `application/json`.
+   Measured limit: Scramble's `#[Response(mediaType: …)]` **cannot** do this — it looks the
+   schema up under its own media-type key in the response built from `type:`, which the
+   transformer stores under `application/json`, so a non-default value publishes
+   `{"type": "string"}` and loses the document. A first attempt did exactly that.
+3. **The R-052 sweep had never worked on this branch either, and it hid two leaks.** Fixing it
+   turned the suite red: `/readyz`'s published description carried `R-0`, a test name and
+   `Scramble`; `CreatePagerSessionRequest`'s carried `§2.5`, `varchar(32)` and two SQLSTATEs.
+   Both docblocks moved to `//` comments with every word kept, and the spec regenerated.
+
+### 10.3 What makes these assertions evidence
+
+**Six artefact mutations and two source mutations, eight intended failures.** Every case added
+this round was run against a deliberately broken input before being trusted: an operation with
+its `security` deleted, with its `401` deleted, with the `401` moved back to
+`application/json`, with two media types, with `/readyz`'s 503 moved onto
+`application/problem+json`, with a staff route marked public — and, against the source, the
+media-type step disabled and the per-operation `security` call removed. Each failed in the case
+written for it.
+
+**And one case reads the GENERATOR, not the committed file.** The two post-processing steps
+live in `AppServiceProvider`, and every other case here reads `docs/openapi.json` — their
+output. A test that only reads the output passes whether the steps ran today or shipped once
+and broke afterwards; coverage measured `AppServiceProvider` at **17.6 %** of lines while the
+document itself was fully asserted. One case now generates the document in process, the way
+`scramble:export` does, and asserts the decisions as decisions. It also met a shape the
+committed file cannot show: in process an empty security requirement is a `stdClass`, while
+the file's `{}` decodes to an empty array.
+
+**Gate and coverage.** `composer gate`: all six steps green, exit 0, **513 passed / 2383
+assertions** (504 / 2257 after the QA round). `bin/coverage --task=task-2 --min=90`:
+**97.47 % (733/752) over 27 files**, passing, from 98.46 % (641/651) over 23.
+`AppServiceProvider` itself went **17.6 % → 96.1 %**, the two remaining lines being the
+defensive `continue`s for shapes this document does not contain.
+
+### 10.4 The three vacuous assertions, fixed on this branch too
+
+**Ruled: a new commit is neither a re-tag nor a rewrite.** `GrantMatrixTest:29`,
+`PagerTokenTest:131` and `OpenApiSpecTest`'s R-052 sweep are corrected here at `123c9b3`.
+**This branch's control is the rebase, not a guard** — `SourceGuard` rule 7 and
+`ExpectationApiTest` land with Task 4, so the two comments that would otherwise name them say
+so instead of claiming a control that is not present. `task-1` and `task-2` still carry the
+original shape; `122d203` introduced one instance and `224dde9` the other two, both are in
+tagged history, and neither tag moves.
