@@ -254,7 +254,18 @@ $bestBatch = $batches[array_search($best, array_column($batches, 'p99'), true)];
 // ---------------------------------------------------------------------------------
 // The report. With its commit, its machine and its method, never a bare number.
 // ---------------------------------------------------------------------------------
-$commit = trim((string) shell_exec('git rev-parse --short HEAD'));
+/*
+ * The commit, or an honest admission that it could not be read.
+ *
+ * -c safe.directory, because this script runs inside bin/coverage's throwaway container
+ * too, where the repository is mounted at a path owned by another uid and plain
+ * `git rev-parse` refuses with "detected dubious ownership". Measured 2026-10-27: that
+ * refusal left the field EMPTY, and an empty provenance field on a report whose entire
+ * purpose is provenance is worse than a stated unknown -- a figure pasted from it would
+ * have looked machine-generated and named no commit.
+ */
+$commit = trim((string) shell_exec('git -c safe.directory=\'*\' rev-parse --short HEAD 2>/dev/null'));
+$commit = $commit !== '' ? $commit : 'unknown (git could not read this working tree)';
 $uname = php_uname('s').' '.php_uname('r').' '.php_uname('m');
 $cpus = trim((string) shell_exec('nproc 2>/dev/null')) ?: 'unknown';
 $load = function_exists('sys_getloadavg') ? implode(' ', array_map(fn ($l) => sprintf('%.2f', $l), sys_getloadavg())) : 'unknown';

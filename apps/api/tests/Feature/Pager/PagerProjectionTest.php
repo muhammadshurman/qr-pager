@@ -203,3 +203,71 @@ it('answers false rather than null when Redis cannot be reached, so 503 is disti
 
     expect(app(PagerProjection::class)->read($token))->toBeFalse();
 });
+
+it('forgets both keys together, so a pointer never outlives its projection', function (): void {
+    // Not on any request path -- tooling and tests -- but it has to drop both or the next
+    // poll resolves a token to a projection that is gone, which costs two Redis reads to
+    // reach the same Stale the pointer's own absence gives in one.
+    $tenant = $this->makeTenant();
+    $issued = app(PagerSessions::class)->create($tenant, 'F-1');
+
+    $this->postJson('/v1/pager/session', ['token' => $issued->token->reveal()])->assertOk();
+
+    $token = PagerToken::fromPresented($issued->token->reveal());
+    $redis = app('redis')->connection();
+
+    expect($redis->exists(PagerProjection::pointerKey($token)))->toBe(1)
+        ->and($redis->exists(PagerProjection::projectionKey($tenant, $issued->session->id)))->toBe(1);
+
+    app(PagerProjection::class)->forget($token, $tenant, $issued->session->id);
+
+    expect($redis->exists(PagerProjection::pointerKey($token)))->toBe(0)
+        ->and($redis->exists(PagerProjection::projectionKey($tenant, $issued->session->id)))->toBe(0);
+});
+
+it('swallows every Redis failure rather than taking a request down with it', function (): void {
+    // THE WHOLE POSTURE OF THIS CLASS, driven with the socket dead. A cache that throws is
+    // a cache that turns an outage into a 500 on a screen a customer is watching, so every
+    // method answers rather than raising -- read() false, the writes false, forget()
+    // silent. §4 › Realtime's fail-open posture for the limiter is the same decision one
+    // dependency over, and B7 is the precedent.
+    $token = PagerToken::issue();
+    $tenant = (string) Str::uuid7();
+    $session = (string) Str::uuid7();
+    $now = new DateTimeImmutable;
+
+    config(['database.redis.default.port' => 1]);
+    app()->forgetInstance('redis');
+
+    $projection = app(PagerProjection::class);
+
+    $resolved = new ResolvedPagerSession($session, $tenant, PagerStatus::Waiting, 'A-1', $now->modify('+1 hour'), null, null);
+
+    expect($projection->read($token))->toBeFalse()
+        ->and($projection->remember($token, $resolved, $now))->toBeFalse()
+        ->and($projection->refresh($tenant, $session, PagerStatus::Ready, 'A-1', $now->modify('+1 hour'), $now))->toBeFalse();
+
+    // And forget() does not raise either, which is the one that returns nothing and so
+    // could only be proved by the absence of an exception.
+    $projection->forget($token, $tenant, $session);
+
+    expect(true)->toBeTrue('forget() raised with Redis unreachable');
+});
+
+it('refuses a pointer it cannot read, rather than building a key from rubbish', function (): void {
+    // The pointer's value is server-written, so a malformed one means Redis is holding
+    // something this build did not write -- a rolling deploy, a manual edit, a collision.
+    // Treated as a miss: the client re-opens and Postgres is the authority.
+    $tenant = $this->makeTenant();
+    $issued = app(PagerSessions::class)->create($tenant, 'P-9');
+
+    $this->postJson('/v1/pager/session', ['token' => $issued->token->reveal()])->assertOk();
+
+    $token = PagerToken::fromPresented($issued->token->reveal());
+
+    foreach (['not json', '[]', '{"t":"only-a-tenant"}', '{"s":"only-a-session"}', '{"t":1,"s":2}'] as $rubbish) {
+        app('redis')->connection()->setex(PagerProjection::pointerKey($token), 60, $rubbish);
+
+        expect(app(PagerProjection::class)->read($token))->toBeNull("read() accepted the pointer: {$rubbish}");
+    }
+});
