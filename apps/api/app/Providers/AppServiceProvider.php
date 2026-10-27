@@ -178,7 +178,10 @@ class AppServiceProvider extends ServiceProvider
 
             // Nothing in the spec would show a post-processing step that silently stopped
             // matching, so the export says what it did. R-029's shape: a pass reported for
-            // files never opened.
+            // files never opened. STDERR and not STDOUT, deliberately: `laravel/pao` prints
+            // the whole test run as a single JSON line inside an agent session (CLAUDE.md),
+            // that line goes to stdout, and the generator runs during the suite as well as
+            // during `scramble:export` — so this cannot corrupt it either way.
             fwrite(STDERR, "openapi: {$moved} problem response(s) published as ".Problem::CONTENT_TYPE."\n");
         });
     }

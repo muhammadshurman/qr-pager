@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\Http\ProblemType;
 use App\Platform\Http\Problem;
 use App\Providers\AppServiceProvider;
+use Dedoc\Scramble\Contracts\RouteProvider;
+use Dedoc\Scramble\Generator;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\OperationBuilder;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Route;
@@ -562,4 +566,74 @@ it('leaves a body that is not a problem document as application/json — /readyz
 
     expect(array_keys($spec['paths']['/readyz']['get']['responses']['503']['content']))->toBe(['application/json'])
         ->and(array_keys($spec['paths']['/readyz']['get']['responses']['200']['content']))->toBe(['application/json']);
+});
+
+it('produces the security and media-type decisions in the GENERATOR, not only in the committed file', function (): void {
+    // Everything above reads docs/openapi.json, which is the right subject for a staleness
+    // check and the wrong one for the two post-processing steps in AppServiceProvider: the
+    // committed file is their OUTPUT, so a test that only reads it passes whether the steps
+    // ran today or shipped once and broke later. `composer openapi:check` does regenerate
+    // and diff, but it is a separate process, so nothing in the suite ever EXECUTED those
+    // closures: AppServiceProvider measured **17.6%** of lines before this case and **96.1%**
+    // with it, the remaining two being the defensive `continue`s for a Reference response and
+    // a response with no `application/json` content, neither of which this document contains.
+    //
+    // So this generates the document in process, the way `scramble:export` does, and asserts
+    // the decisions as decisions. Proven able to fail by mutating the SOURCE rather than the
+    // artefact: with the media-type step disabled it names all 14 offenders, and with the
+    // per-operation security call removed the public/authenticated split collapses.
+    $generator = new Generator(app(OperationBuilder::class), app(RouteProvider::class));
+    $config = Scramble::getGeneratorConfig('default');   // the same api name scramble:export defaults to
+
+    $spec = $generator->generate($config)->spec($config->openApiVersion());
+
+    expect($spec['components']['securitySchemes'] ?? [])->toHaveKey(AppServiceProvider::STAFF_SECURITY_SCHEME);
+
+    $public = [];
+    $authenticated = [];
+    $problemResponses = [];
+    $jsonProblems = [];
+
+    foreach ($spec['paths'] as $path => $operations) {
+        foreach ($operations as $verb => $operation) {
+            if (! in_array($verb, ['get', 'post', 'put', 'patch', 'delete'], true)) {
+                continue;
+            }
+
+            expect($operation)->toHaveKey('security');
+
+            // ONE EMPTY REQUIREMENT means "no authentication required". Its PHP shape
+            // differs between the two readings, which is itself a reason this case exists:
+            // in process an empty requirement is a `stdClass`, and the committed file's
+            // `{}` decodes to an empty ARRAY. A test that only ever reads the file would
+            // never meet the first shape.
+            $requirements = $operation['security'];
+
+            if (count($requirements) === 1 && (array) $requirements[0] === []) {
+                $public[] = $path;
+            } else {
+                $authenticated[] = strtoupper($verb).' '.$path;
+            }
+
+            foreach ($operation['responses'] ?? [] as $code => $response) {
+                foreach ($response['content'] ?? [] as $mediaType => $media) {
+                    $isProblem = str_contains($media['schema']['$ref'] ?? '', 'ProblemDocument');
+
+                    if ($isProblem && $mediaType === Problem::CONTENT_TYPE) {
+                        $problemResponses[] = $path.' '.$code;
+                    }
+
+                    // The step moved nothing, or moved it and left the original behind.
+                    if ($isProblem && $mediaType === 'application/json') {
+                        $jsonProblems[] = $path.' '.$code;
+                    }
+                }
+            }
+        }
+    }
+
+    expect(array_values(array_unique($public)))->toBe(AppServiceProvider::PUBLIC_PATHS)
+        ->and($authenticated)->toHaveCount(5)
+        ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
+        ->and($problemResponses)->toHaveCount(14);
 });
