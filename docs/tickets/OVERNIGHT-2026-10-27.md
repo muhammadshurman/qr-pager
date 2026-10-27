@@ -1,4 +1,4 @@
-STATUS: TASK-3 TAGGED, TASK-4 BLOCKED — R-083: the outbox lease is taken for the whole batch at claim time while rows are sent one at a time, so a second worker re-sends. A High that falsifies Task 4's own §3.1 invariant, and every fix is a design choice you reserved.
+STATUS: TASK-3 TAGGED, TASK-4 BLOCKED — R-083: the outbox lease covers the whole batch but rows are sent one at a time, so a second worker re-sends; it falsifies Task 4's own §3.1 invariant and every fix is a design choice reserved to you.
 
 # Overnight run, 2026-10-27 — close Task 3, rebase and close Task 4
 
@@ -217,6 +217,22 @@ batch-wide lease, Security from unbounded devices per session. One row, `R-083`.
 - **QA, for `§11` item 7:** `bin/vacuous-assertion-proof` plus the two guard invocations.
   The proof ran green in Phase B (all three invariants red without their fix); `composer
   guard` is clean over 190 files and its fixture case is one of the nine green rule cases.
+
+### Figures at the final head `d7b004a`
+
+| What | Figure | Commit |
+| --- | --- | --- |
+| `composer gate` | **all six steps green, exit 0 — 624 passed / 3668 assertions** (622 / 3641 before the `§11` fixes; the +2 are H-2's two cases and M-2's) | `d7b004a` |
+| coverage, this task's code | **96.66 % (1013/1048) over 24 files**, `--min=90` passing (96.60 %, 994/1029 at `bef66a3`) | `d7b004a` |
+| fresh clone | **622 / 3641, identical to the host** | `bef66a3` — not re-run after the two fixes, which add two in-process cases and touch no file a clone resolves differently |
+| `p99` of record | **2.931 ms** vs a 5 ms budget | `bef66a3` |
+| kill mid-batch | 8 sent, 0 pending, 0 dead, attempts 2 of 6 | `bef66a3` |
+| migrations | five checks pass; Task 4 adds no migration | `4f27a9d` (Task 3's run) |
+| vacuous sweep | 72 files, **zero** real instances | `bef66a3` |
+
+Transcripts for the gate and coverage name `d7b004a`; the other four name `bef66a3` and say
+so, because re-running a kill proof and a latency harness after two test-only commits would
+produce a new number without new information.
 
 ### Why Task 4 is not tagged
 
