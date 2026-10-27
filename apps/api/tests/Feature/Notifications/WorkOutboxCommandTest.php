@@ -166,3 +166,53 @@ it('knows which dispositions are worth another attempt', function (): void {
         ->and(PagerDelivery::Gone->isRetryable())->toBeFalse()
         ->and(PagerDelivery::Permanent->isRetryable())->toBeFalse();
 });
+
+it('reports skipped rows on the tally line, which is the only signal an operator gets', function (): void {
+    // QA L-7, 2026-10-27. `skipped` is R-083's counter — the number of rows this pass
+    // claimed and did NOT send because the lease had moved — and a non-zero reading is
+    // the signal that `lease_seconds` is too short for what a row now costs. The
+    // worker-level key was asserted; the OPERATOR-level one was not, and the skip's own
+    // log line is `debug`, so this line is all an operator sees.
+    $tenant = $this->makeTenant();
+    $victim = queuedNotification($tenant);
+    $decoy = queuedNotification($tenant);
+
+    $victimRow = withTenant($tenant, fn () => DB::connection('pgsql_owner')->selectOne(
+        'select id from outbox where pager_session_id = ?', [$victim],
+    ), 'pgsql_owner');
+    $decoyRow = withTenant($tenant, fn () => DB::connection('pgsql_owner')->selectOne(
+        'select id from outbox where pager_session_id = ?', [$decoy],
+    ), 'pgsql_owner');
+
+    // claim() orders by `available_at, id`, so the decoy is made to sort first and the
+    // victim is stolen inside the decoy's send.
+    DB::connection('pgsql_root')->update(
+        "update outbox set available_at = now() - interval '10 seconds' where id = ?", [(string) $decoyRow->id],
+    );
+    DB::connection('pgsql_root')->update(
+        "update outbox set available_at = now() - interval '1 second' where id = ?", [(string) $victimRow->id],
+    );
+
+    // configureVapid() first: without it the dispatcher cannot be built, every row backs
+    // off, no send happens and the hook below never fires -- which is how this case
+    // failed the first time it was run.
+    PushFixtures::configureVapid();
+
+    $edge = new RecordingPushEdge(201, false, function ($request, int $call) use ($victimRow): void {
+        if ($call === 0) {
+            DB::connection('pgsql_worker')->update(
+                "update outbox
+                    set attempts = attempts + 1, available_at = now() + interval '60 seconds', updated_at = now()
+                  where id = ? and status = 'pending'",
+                [(string) $victimRow->id],
+            );
+        }
+    });
+
+    app()->instance(WebPushDispatcher::EDGE, $edge);
+    app()->forgetInstance(WebPushDispatcher::class);
+
+    $this->artisan('outbox:work', ['--once' => true])
+        ->expectsOutputToContain('skipped 1')
+        ->assertExitCode(0);
+});

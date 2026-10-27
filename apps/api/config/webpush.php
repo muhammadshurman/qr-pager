@@ -119,14 +119,22 @@ return [
     |
     | THE ARITHMETIC, so that moving any of the four numbers shows its own cost:
     |
-    |     one row's worst case = max_devices_per_session x (connect + request)
-    |                          = 5 x (3 + 8) = 55 s   <   lease_seconds = 60 s
+    |     one row's worst case = max_devices_per_session x request
+    |                          = 5 x 8 = 40 s   <   lease_seconds = 60 s
     |
-    | Raise 'max_devices_per_session' or either timeout without raising
-    | 'lease_seconds' and a single row can outlive its own lease again -- which the
-    | re-lease turns into a SKIPPED row rather than a duplicate send, so the failure
-    | mode is a delayed notification instead of a double buzz. That is the degradation
-    | this shape buys.
+    | ⚠ IT READ `x (connect + request)` = 55 s UNTIL 2026-10-27 (QA L-4), AND THAT WAS
+    | DOUBLE-COUNTING. Guzzle's 'timeout' is the TOTAL transfer time and already
+    | contains the connect phase, so 'connect' is a sub-bound of 'request' and not a
+    | term to add to it. The old figure erred in the safe direction -- it over-stated
+    | the cost, so the margin was real -- and it was still not true, which is the only
+    | thing that matters about a sentence. OutboxLeaseTest asserts the corrected form
+    | AND that connect <= request, so the sub-bound relationship cannot silently invert.
+    |
+    | Raise 'max_devices_per_session' or 'request' without raising 'lease_seconds' and
+    | a single row can outlive its own lease again -- which the re-lease turns into a
+    | SKIPPED row rather than a duplicate send, and the skip now hands its attempt back
+    | (QA M-7), so the failure mode is a delayed notification rather than a double buzz
+    | or a lost one. That is the degradation this shape buys.
     |
     | 'max_attempts' is where a row stops being retried and becomes 'dead'. The
     | backoff below is exponential, so attempt 6 is already ~32 x base away; past

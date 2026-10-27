@@ -6,6 +6,8 @@ use App\Features\Notifications\ClaimedOutboxRow;
 use App\Features\Notifications\OutboxWorker;
 use App\Features\Notifications\WebPushDispatcher;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Tests\Support\PushFixtures;
 use Tests\Support\RecordingPushEdge;
 
 /*
@@ -55,10 +57,14 @@ function identityRow(string $tenantId, string $outboxId): object
 it('reads affected rows = 0 when another worker has re-claimed the row', function (): void {
     // THE PREDICATE ITSELF, driven directly rather than through a pass, so that what is
     // measured is the statement's affected-row count and not a tally derived from it.
-    // OutboxWorker::reLease() is private because nothing outside the worker may re-lease
-    // a row; the statement it runs is reproduced here against the same connection, the
-    // same role and the same row, which is what makes this a measurement of the
-    // mechanism rather than of a copy.
+    //
+    // ⚠ IT IS A COPY, AND THAT IS STATED RATHER THAN DENIED -- QA L-2, 2026-10-27. This
+    // case said it was "a measurement of the mechanism rather than of a copy", which was
+    // false: OutboxWorker::reLease() is private, this reproduces its statement, and the
+    // production predicate could change while this case went on passing. What makes the
+    // copy honest is the assertion at the end of this file, which reads reLease()'s real
+    // SQL out of the source and requires the four clauses to be in it -- so a divergence
+    // fails a test rather than hiding here.
     $tenant = $this->makeTenant();
     $session = $this->makeSession($tenant);
     $outboxId = $this->makeOutboxRow($tenant, $session);
@@ -98,36 +104,76 @@ it('reads affected rows = 0 when another worker has re-claimed the row', functio
 });
 
 it('skips silently: no send, no write, no exception, and the tally says so', function (): void {
-    // THE SAME EVENT THROUGH THE WORKER, because "skips silently" is a property of the
-    // worker and not of the statement. The row is claimed by a pass, then taken away
-    // before the pass reaches it.
+    // ⚠ THIS CASE USED TO LIE, and it is the same defect as QA H-2 earlier in this task:
+    // a name that states a contract over a body that never reaches it (QA M-6,
+    // 2026-10-27). It leased the row into the FUTURE before the pass, so `claim()` found
+    // nothing, `claimed` was 0, reLease() was never called and the skip path never ran --
+    // while its comments described a theft "the statement below" performs and there was
+    // no such statement. It passed with the fix reverted.
+    //
+    // IT NOW REACHES THE SKIP, through the same door OutboxLeaseTest uses: a decoy row is
+    // processed first and the victim is stolen inside the decoy's send, so the victim is
+    // claimed, leased, and taken away before the worker gets to it.
     $tenant = $this->makeTenant();
-    $session = $this->makeSession($tenant);
-    $outboxId = $this->makeOutboxRow($tenant, $session);
 
-    // Taken away the instant after the claim: attempts moves to 2 and the lease is reset,
-    // so the pass's own token (1) is stale by the time it tries to send.
-    DB::connection('pgsql_worker')->update(
-        "update outbox set attempts = 7, available_at = now() + interval '60 seconds' where id = ?",
-        [$outboxId],
+    $victimSession = $this->makeSession($tenant);
+    $victimId = $this->makeOutboxRow($tenant, $victimSession);
+
+    $decoySession = $this->makeSession($tenant);
+    $decoyId = $this->makeOutboxRow($tenant, $decoySession);
+
+    PushFixtures::configureVapid();
+
+    $device = PushFixtures::subscription();
+    withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('push_subscriptions')->insert([
+        'id' => (string) Str::uuid7(),
+        'tenant_id' => $tenant,
+        'pager_session_id' => $decoySession,
+        'endpoint' => $device['endpoint'],
+        'p256dh' => $device['p256dh'],
+        'auth' => $device['auth'],
+    ]), 'pgsql_owner');
+
+    // claim() orders by `available_at, id`, so the decoy is made to sort first.
+    DB::connection('pgsql_root')->update(
+        "update outbox set available_at = now() - interval '10 seconds' where id = ?", [$decoyId],
+    );
+    DB::connection('pgsql_root')->update(
+        "update outbox set available_at = now() - interval '1 second' where id = ?", [$victimId],
     );
 
-    $before = identityRow($tenant, $outboxId);
+    $before = identityRow($tenant, $victimId);
+    $stolen = 0;
 
-    $edge = new RecordingPushEdge(201);
+    $edge = new RecordingPushEdge(201, false, function ($request, int $call) use ($victimId, &$stolen): void {
+        if ($call === 0) {
+            $stolen = DB::connection('pgsql_worker')->update(
+                "update outbox
+                    set attempts = attempts + 1, available_at = now() + interval '60 seconds', updated_at = now()
+                  where id = ? and status = 'pending'",
+                [$victimId],
+            );
+        }
+    });
+
     app()->instance(WebPushDispatcher::EDGE, $edge);
     app()->forgetInstance(WebPushDispatcher::class);
 
-    // The claim will take it (status is pending) and set attempts to 8, then the row is
-    // stolen underneath by the statement below running as a competing worker would.
     $tally = app(OutboxWorker::class)->pass();
 
-    expect($tally['claimed'])->toBe(0, 'the row was leased into the future and should not have been claimable at all')
-        ->and($edge->sentCount())->toBe(0);
+    expect($stolen)->toBe(1, 'the competing claim did not take the victim row')
+        ->and($tally)->toMatchArray(['claimed' => 2, 'sent' => 1, 'skipped' => 1])
+        // ONE send, the decoy's. The victim has no device, so a send on its behalf would
+        // be impossible anyway -- what is asserted is that the worker wrote nothing.
+        ->and($edge->sentCount())->toBe(1);
 
-    $after = identityRow($tenant, $outboxId);
+    $after = identityRow($tenant, $victimId);
 
-    expect((int) $after->attempts)->toBe((int) $before->attempts, 'an unclaimable row had its attempt count moved');
+    // TWO increments and no rollback: ours when we claimed it, the thief's when it was
+    // taken away. Our rollback is guarded by OUR token, which the thief's claim has
+    // already moved past, so it matched nothing -- which is exactly what it is for.
+    expect($after->status)->toBe('pending', 'a worker finished a row it no longer held')
+        ->and((int) $after->attempts)->toBe((int) $before->attempts + 2, 'the thief’s attempt was rolled back');
 });
 
 // =====================================================================================
@@ -160,7 +206,13 @@ it('increments attempts by exactly one per claim, and never by any other amount'
     expect($seen)->toBe([1, 2, 3, 4], 'the attempt counter is not one-per-claim: '.implode(',', $seen));
 });
 
-it('never decrements or resets attempts on any worker path', function (): void {
+it('never decrements or resets attempts on any path that keeps the row', function (): void {
+    // ⚠ THE NAME IS NARROWER THAN IT WAS, because the behaviour is -- QA M-7's fix,
+    // 2026-10-27. There is now exactly ONE path that decrements: abandon(), which hands
+    // back the attempt its own claim charged for a row it turned out not to hold, and
+    // which is guarded by that worker's own token so it can never touch a thief's count.
+    // Every path that KEEPS the row is still monotonic, and that is what this drives.
+    //
     // EVERY OUTCOME A ROW CAN HAVE, driven in one file, with the counter read after each:
     // sent, retried (backOff), dead (retries exhausted), and skipped (the re-lease). None
     // of them may move `attempts` down, and none of them may reset it.
@@ -209,11 +261,12 @@ it('never decrements or resets attempts on any worker path', function (): void {
     expect($values)->toBe($sorted, 'attempts went DOWN on some path: '.json_encode($readings));
 });
 
-it('has exactly one statement in the application that writes attempts, and it increments', function (): void {
+it('has exactly two statements in the application that write attempts, and both are keyed', function (): void {
     // THE SOURCE-LEVEL HALF, because the behavioural cases above can only cover the paths
-    // they drive. If a second writer is ever added, the ownership token stops being one
+    // they drive. If a THIRD writer is ever added, the ownership token stops being one
     // and this case is what says so -- the same posture SourceGuard takes for §4's GUC
-    // rules: enforced mechanically, not by review.
+    // rules: enforced mechanically, not by review. (It asserted ONE writer until
+    // 2026-10-27; QA M-7's fix added the guarded rollback and the number moved with it.)
     //
     // IT READS STRING LITERALS AND NOTHING ELSE, through token_get_all(), which is
     // SourceGuard's own mechanism and is load-bearing twice over: the first version of
@@ -262,9 +315,18 @@ it('has exactly one statement in the application that writes attempts, and it in
         }
     }
 
-    expect($writes)->toHaveCount(1, 'more than one place in app/ writes outbox.attempts: '.json_encode($writes))
-        ->and($writes[0]['file'])->toBe('Features/Notifications/OutboxWorker.php')
-        ->and($writes[0]['value'])->toBe('attempts + 1', 'the single writer is no longer a plain increment')
+    // TWO WRITERS, AND THE SECOND IS THE GUARDED ROLLBACK -- QA M-7 / security M-3's fix,
+    // 2026-10-27. This case asserted ONE until then, and the number moved because
+    // abandon() hands back the attempt its own claim charged for work it never did.
+    // Both are in the worker, both are keyed, and the DECREMENT is the one that has to
+    // be guarded by the token or the identity stops being sound -- which is why the
+    // statement itself is read back below rather than only counted.
+    $values = array_column($writes, 'value');
+    sort($values);
+
+    expect($writes)->toHaveCount(2, 'app/ no longer has exactly two writers of outbox.attempts: '.json_encode($writes))
+        ->and(array_unique(array_column($writes, 'file')))->toBe(['Features/Notifications/OutboxWorker.php'])
+        ->and($values)->toBe(['attempts + 1', 'attempts - 1'])
         ->and($inserts)->toBe([], 'an INSERT into outbox names attempts: '.json_encode($inserts));
 });
 
@@ -321,4 +383,91 @@ it('derives the lease identity from the pre-claim value, which is what the worke
     // pinned rather than left to the reader.
     expect((new ClaimedOutboxRow('id', 'tenant', 'session', null, 'pager.ready', 'k', 0))->leaseIdentity())->toBe(1)
         ->and((new ClaimedOutboxRow('id', 'tenant', 'session', null, 'pager.ready', 'k', 5))->leaseIdentity())->toBe(6);
+});
+
+it('pins the three predicates in the worker’s own source, so no copy here can drift from it', function (): void {
+    // WHAT MAKES THE COPIES IN THIS FILE HONEST — QA L-2, 2026-10-27. Two cases above
+    // reproduce statements that live in OutboxWorker, and a reproduction can go on
+    // passing after the original changes. This reads the real source and requires each
+    // of the three statements the lease identity rests on to carry its guard, so a
+    // divergence fails here rather than hiding there.
+    //
+    // It is a source scan for the same reason SourceGuard is one: the property is about
+    // what the SQL says, and no amount of driving the worker proves the clause is in the
+    // statement rather than the behaviour merely coinciding.
+    $source = (string) file_get_contents(app_path('Features/Notifications/OutboxWorker.php'));
+
+    $statement = function (string $after) use ($source): string {
+        $at = strpos($source, $after);
+
+        expect($at)->not->toBeFalse("OutboxWorker no longer contains {$after}");
+
+        return (string) substr($source, (int) $at, 420);
+    };
+
+    // reLease(): keyed, status-guarded, owner-guarded, lease-guarded, no RETURNING.
+    $reLease = $statement('set available_at = now() + (interval \'1 second\' * ?),
+                    updated_at = now()');
+
+    expect($reLease)->toContain('where id = ?')
+        ->and($reLease)->toContain("and status = 'pending'")
+        ->and($reLease)->toContain('and attempts = ?')
+        ->and($reLease)->toContain('and available_at > now()')
+        ->and($reLease)->not->toContain('returning');
+
+    // finish(): keyed, status-guarded, owner-guarded. NOT lease-guarded — finishing a
+    // row whose lease expired while we still held it is correct and must keep working.
+    $finish = $statement('set status = ?::outbox_status');
+
+    expect($finish)->toContain('where id = ?')
+        ->and($finish)->toContain("and status = 'pending'")
+        ->and($finish)->toContain('and attempts = ?')
+        ->and($finish)->not->toContain('returning');
+
+    // abandon(): the decrement, and the guard is what keeps the identity sound. Without
+    // `and attempts = ?` this statement would hand back an attempt the thief had charged.
+    $abandon = $statement('set attempts = attempts - 1');
+
+    expect($abandon)->toContain('where id = ?')
+        ->and($abandon)->toContain("and status = 'pending'")
+        ->and($abandon)->toContain('and attempts = ?')
+        ->and($abandon)->not->toContain('returning');
+});
+
+it('rolls an attempt back only when the row still carries this worker’s token', function (): void {
+    // THE GUARD ON THE DECREMENT, driven rather than read. The identity's soundness no
+    // longer rests on "the counter never decreases" — abandon() decrements — but on
+    // NO TWO WORKERS EVER HOLDING THE SAME TOKEN FOR ONE ROW AT ONCE. A rollback that
+    // fires only against its own token, and retires that token in the same breath,
+    // cannot break it; one that fired against a thief's count would.
+    $tenant = $this->makeTenant();
+    $outboxId = $this->makeOutboxRow($tenant, $this->makeSession($tenant));
+    $worker = DB::connection('pgsql_worker');
+
+    $rollback = fn (int $identity): int => $worker->update(
+        "update outbox set attempts = attempts - 1, updated_at = now()
+          where id = ? and status = 'pending' and attempts = ?",
+        [$outboxId, $identity],
+    );
+
+    $worker->update(
+        "update outbox set attempts = attempts + 1 where id = ? and status = 'pending'",
+        [$outboxId],
+    );
+
+    expect((int) identityRow($tenant, $outboxId)->attempts)->toBe(1);
+
+    // A STALE TOKEN MATCHES NOTHING. Another worker claims it first.
+    $worker->update(
+        "update outbox set attempts = attempts + 1 where id = ? and status = 'pending'",
+        [$outboxId],
+    );
+
+    expect($rollback(1))->toBe(0, 'a worker handed back an attempt the current holder had charged')
+        ->and((int) identityRow($tenant, $outboxId)->attempts)->toBe(2, 'the thief’s count was altered');
+
+    // AND THE CURRENT HOLDER'S OWN TOKEN DOES MATCH, so the zero above is about identity
+    // and not about the statement being broken.
+    expect($rollback(2))->toBe(1)
+        ->and((int) identityRow($tenant, $outboxId)->attempts)->toBe(1);
 });

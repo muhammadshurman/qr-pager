@@ -7,6 +7,8 @@ use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
 use App\Features\Pager\PagerProjection;
 use App\Features\Pager\PagerSessions;
+use App\Platform\Readiness\ReadinessSnapshot;
+use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Redis\Events\CommandExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -353,9 +355,12 @@ function redisCommandsDuring(Closure $work): array
  * 404 is the one that most needs pacing, and amending a §3 gate clause to match the code
  * is the defect Task 3's security S-1 already named once.
  *
- * SO THE CASE BELOW ENUMERATES THE ENDPOINT'S WHOLE RESPONSE SURFACE rather than the two
- * statuses that were easy, because the clause says "every" and a test that checked the
- * 200 and the 404 would leave the 503 to be found by the next reviewer.
+ * SO THE CASES BELOW ENUMERATE ALL FIVE OF THE ENDPOINT'S RESPONSE SHAPES -- 200, 404
+ * Stale, the handler's 503, ShedLoad's 503 and RateLimit's 429 -- and the 422 that
+ * deliberately carries nothing. ⚠ THE FIRST ROUND COVERED TWO OF THE FIVE while this
+ * header claimed the whole surface (QA L-3/L-6, 2026-10-27): the shed 503 and the 429 are
+ * produced by middleware before the handler runs, and both were sending a bare problem
+ * document. The count is written down now instead of the word "whole".
  */
 
 it('carries poll_after_seconds on every polling response, 404 and 503 included', function (): void {
@@ -412,6 +417,53 @@ it('carries both the body pacing and the Retry-After header on a 503', function 
         ->assertJsonPath('type', ProblemType::Unavailable->value)
         ->assertJsonPath('poll_after_seconds', $interval)
         ->assertHeader('Retry-After', (string) $interval);
+});
+
+it('carries the pacing on a shed 503 and a throttled 429 too, which are not the handler’s', function (): void {
+    // QA M-3 and M-4, 2026-10-27. The first round of the M-6 fix carried the value on
+    // two of this route's FIVE response shapes; the other three are produced before the
+    // handler runs. ShedLoad's 503 and RateLimit's 429 are both "come back later"
+    // answers, and a client that is shed or throttled is the one that most needs telling
+    // when — so Muhammad's ruling applies to them too.
+    //
+    // M-4 is the sharper half: `docs/openapi.json` publishes `PacedProblemDocument` for
+    // this route's 503 with `poll_after_seconds` REQUIRED, while ShedLoad's 503 was
+    // sending a plain document under the same media type. That is R-033's "one producer,
+    // two readers" broken for one status — the spec promising a member a real response
+    // did not carry.
+    $tenant = $this->makeTenant();
+    $token = scannedSession($tenant);
+    $interval = (int) config('pager.poll_interval');
+
+    // THE SHED 503. Published as saturated through the store the middleware reads, which
+    // is the instrument ShedLoadTest uses — not a mocked middleware.
+    app(ReadinessStore::class)->write(
+        new ReadinessSnapshot(true, true, 40, 40, time()),
+        60,
+    );
+
+    $shed = $this->postJson('/v1/pager/status', ['token' => $token]);
+
+    $shed->assertStatus(503)
+        ->assertJsonPath('type', ProblemType::Unavailable->value)
+        ->assertJsonPath('poll_after_seconds', $interval)
+        ->assertHeader('Retry-After');
+
+    app(ReadinessStore::class)->forget();
+
+    // THE 429. Driven by exhausting the bucket rather than by reading the config.
+    $allowed = (int) config('ratelimit.buckets.pager-poll.per_ip.attempts');
+
+    for ($i = 0; $i < $allowed; $i++) {
+        $this->postJson('/v1/pager/status', ['token' => $token])->assertOk();
+    }
+
+    $throttled = $this->postJson('/v1/pager/status', ['token' => $token]);
+
+    $throttled->assertStatus(429)
+        ->assertJsonPath('type', ProblemType::RateLimited->value)
+        ->assertJsonPath('poll_after_seconds', $interval)
+        ->assertHeader('Retry-After');
 });
 
 it('paces nothing on a 422, because a malformed request is not a request to retry', function (): void {

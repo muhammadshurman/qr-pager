@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Features\Pager\Http\CustomerPagerController;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\Middleware\ShedLoad;
+use App\Platform\Http\PacedRoute;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -64,6 +65,14 @@ Route::prefix('pager')->group(function (): void {
      */
     Route::post('status', [CustomerPagerController::class, 'poll'])
         ->middleware([ShedLoad::class, RateLimit::class.':pager-poll'])
+        // IT DECLARES ITS OWN PACING, and the two middlewares in front of it read the
+        // declaration rather than the route's name (QA M-3/M-4, 2026-10-27). §3 row 4
+        // says EVERY polling response carries `poll_after_seconds`, and three of this
+        // route's five response shapes are produced before the handler runs: ShedLoad's
+        // 503, RateLimit's 429, and validation's 422. The first two are "come back
+        // later" answers and now carry the interval; the 422 deliberately does not,
+        // because a malformed request is not a request to retry.
+        ->defaults(PacedRoute::KEY, true)
         ->name('pager.customer.status');
 
     /*

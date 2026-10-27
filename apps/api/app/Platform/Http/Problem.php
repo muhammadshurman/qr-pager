@@ -95,8 +95,13 @@ final class Problem
         // only status that carries per-field messages and it is never a polling answer:
         // validation runs before the polling handler, and a request whose shape is wrong
         // is not a request to pace -- the client must fix it, not come back in seven
-        // seconds. So no body carries both members, and PagerPollingTest asserts the whole
-        // enumeration of this endpoint's statuses rather than the two that were easy.
+        // seconds. So no body carries both members.
+        //
+        // PagerPollingTest drives ALL FIVE of the polling endpoint's response shapes --
+        // 200, 404 Stale, 503 from the handler, 503 from ShedLoad and 429 from RateLimit
+        // all carry the pacing; 422 deliberately does not. This comment claimed the whole
+        // enumeration while the tests covered two of the five (QA L-6, 2026-10-27), which
+        // is why the count is now written down instead of the word "whole".
         if ($this->pollAfter !== null) {
             return new PacedProblemDocument(
                 $this->type,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Platform\Http\Middleware;
 
 use App\Domain\Http\ProblemType;
+use App\Platform\Http\PacedRoute;
 use App\Platform\Http\Problem;
 use App\Platform\Readiness\PressureGauge;
 use App\Platform\Readiness\ReadinessStore;
@@ -56,10 +57,14 @@ final class ShedLoad
         // somebody else's infrastructure. The envelope is the fixed Unavailable title.
         $this->log->warning('shedding load', ['reason' => $reason]);
 
+        // QA M-3/M-4: a shed poll is a polling response and owes the same pacing the
+        // handler's own 503 carries. PacedRoute reads the route's own declaration, so
+        // this middleware stays ignorant of what a pager poll is.
         return (new Problem(
             ProblemType::Unavailable,
             $request->getPathInfo(),
             retryAfter: max(1, (int) config('shedding.readiness.cadence')),
+            pollAfter: PacedRoute::intervalFor($request),
         ))->toResponse();
     }
 

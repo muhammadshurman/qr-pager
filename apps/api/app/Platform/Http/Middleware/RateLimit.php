@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Platform\Http\Middleware;
 
 use App\Domain\Http\ProblemType;
+use App\Platform\Http\PacedRoute;
 use App\Platform\Http\Problem;
 use App\Platform\Http\RequestLimiter;
 use App\Platform\Http\TenantResolver;
@@ -43,10 +44,13 @@ final class RateLimit
     {
         foreach ($this->keysFor($request, $bucket) as [$key, $attempts, $seconds]) {
             if ($this->limiter->tooManyAttempts($key, $attempts, $seconds)) {
+                // QA M-3: the 429 keeps Retry-After, which is what §3 row 4 asks of
+                // it, and gains the body pacing where the route publishes one.
                 return (new Problem(
                     ProblemType::RateLimited,
                     $request->getPathInfo(),
                     retryAfter: $this->limiter->availableIn($key),
+                    pollAfter: PacedRoute::intervalFor($request),
                 ))->toResponse();
             }
         }

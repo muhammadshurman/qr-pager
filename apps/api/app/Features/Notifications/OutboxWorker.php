@@ -261,7 +261,9 @@ final class OutboxWorker
         // leave it to be re-claimed by every pass forever -- and record the raw type, so
         // whoever reads the dead letter knows what arrived.
         if ($row->event === null || $row->sessionId === null) {
-            $this->finish($row, OutboxStatus::Dead, 'unroutable outbox type');
+            if (! $this->finish($row, OutboxStatus::Dead, 'unroutable outbox type')) {
+                return $this->abandon($row);
+            }
 
             $this->log->warning('outbox row is unroutable and was dead-lettered', [
                 'outbox_id' => $row->id,
@@ -283,7 +285,9 @@ final class OutboxWorker
         // The session is gone -- the FK cascade removed it, or it never existed. There is
         // nobody to notify and no retry that changes that.
         if ($session === null) {
-            $this->finish($row, OutboxStatus::Dead, 'session no longer exists');
+            if (! $this->finish($row, OutboxStatus::Dead, 'session no longer exists')) {
+                return $this->abandon($row);
+            }
 
             return ['result' => 'dead', 'pruned' => 0];
         }
@@ -297,7 +301,10 @@ final class OutboxWorker
         // retried forever -- and the customer still sees the change by polling, which is
         // precisely what O2 made the fallback for.
         if ($devices === []) {
-            $this->finish($row, OutboxStatus::Sent, null);
+            if (! $this->finish($row, OutboxStatus::Sent, null)) {
+                return $this->abandon($row);
+            }
+
             $this->refreshProjection($row, $session);
 
             return ['result' => 'sent', 'pruned' => 0];
@@ -306,7 +313,7 @@ final class OutboxWorker
         // R-083. THE LAST THING BEFORE THE SEND, and the only thing standing between a
         // batch that outlived its lease and a customer's phone buzzing twice.
         if (! $this->reLease($row)) {
-            return ['result' => 'skipped', 'pruned' => 0];
+            return $this->abandon($row);
         }
 
         $message = new PushMessage($row->event, (string) $session->order_reference, $row->dedupeKey);
@@ -366,11 +373,13 @@ final class OutboxWorker
         // failure -- all-pruned stays `sent` for the same reason no-devices does, since
         // there is nobody left to tell. Both halves are driven by their own case.
         if ($delivered === 0 && $pruned === 0 && $permanent > 0) {
-            $this->finish(
-                $row,
-                OutboxStatus::Dead,
-                'edge refused permanently for all '.$permanent.' device(s)',
-            );
+            // NOT abandon() ON FAILURE HERE, and the difference matters: we have already
+            // sent to every device by this point, so the attempt was really spent. A
+            // worker that loses the row between the send and the write has done the work
+            // and must not hand the attempt back; it simply writes nothing.
+            if (! $this->finish($row, OutboxStatus::Dead, 'edge refused permanently for all '.$permanent.' device(s)')) {
+                return ['result' => 'skipped', 'pruned' => $pruned];
+            }
 
             $this->log->warning('outbox notification dead-lettered', [
                 'outbox_id' => $row->id,
@@ -380,7 +389,12 @@ final class OutboxWorker
             return ['result' => 'dead', 'pruned' => 0];
         }
 
-        $this->finish($row, OutboxStatus::Sent, null);
+        // Same reasoning as the dead-letter arm above: the sends happened, so a lost
+        // lease here costs the record and not the attempt.
+        if (! $this->finish($row, OutboxStatus::Sent, null)) {
+            return ['result' => 'skipped', 'pruned' => $pruned];
+        }
+
         $this->refreshProjection($row, $session);
 
         $this->log->info('outbox notification sent', [
@@ -485,21 +499,43 @@ final class OutboxWorker
      * finish a row that is already finished reports 0 and writes nothing, which is what
      * makes the whole pass re-runnable after a kill.
      *
+     * AND `attempts = ?`, WHICH IS THE OWNERSHIP GUARD -- QA `H-1` / security `M-2`, found
+     * independently by both reviewers of R-083's fix, 2026-10-27. The re-lease closed the
+     * window before the SEND and left it open on the two statements that WRITE: a worker
+     * whose lease had lapsed could still mark a row `sent` that another worker was in the
+     * middle of sending, and the record would say one notification where two went out.
+     * The predicate is the same shape reLease() uses, for the same reason, and it is
+     * `attempts` and not `available_at > now()` here: finishing a row whose lease expired
+     * while WE held it is correct and must keep working, because that is the ordinary
+     * end of a slow-but-unstolen row. What must not happen is finishing a row somebody
+     * else has claimed, and only the attempt number can tell those two apart.
+     *
      * NO TENANT SCOPE, because this is the outbox and the outbox is the named cross-tenant
      * path -- the worker's UPDATE policy on it is USING (true). Scoping it would be
      * harmless and would also be the only statement in the worker that pretends the
      * outbox is tenant-scoped when the whole claim above says it is not.
+     *
+     * @return bool whether this worker still owned the row and wrote it
      */
-    private function finish(ClaimedOutboxRow $row, OutboxStatus $status, ?string $error): void
+    private function finish(ClaimedOutboxRow $row, OutboxStatus $status, ?string $error): bool
     {
         $column = $status === OutboxStatus::Sent ? 'sent_at' : 'dead_at';
 
-        $this->connection()->update(
+        $written = $this->connection()->update(
             "update outbox
                 set status = ?::outbox_status, {$column} = now(), last_error = ?, updated_at = now()
-              where id = ? and status = 'pending'",
-            [$status->value, $error, $row->id],
+              where id = ? and status = 'pending' and attempts = ?",
+            [$status->value, $error, $row->id, $row->leaseIdentity()],
         );
+
+        if ($written !== 1) {
+            $this->log->debug('outbox row not finished: the lease was no longer ours', [
+                'outbox_id' => $row->id,
+                'attempt' => $row->leaseIdentity(),
+            ]);
+        }
+
+        return $written === 1;
     }
 
     /**
@@ -514,7 +550,19 @@ final class OutboxWorker
      * is readable by anyone who can read the row, and §4 › Edge & ops keeps SQL, bound
      * parameters and secrets out of anything a caller can reach.
      *
-     * @return array{result: 'retried'|'dead', pruned: int}
+     * ⚠ AND IT CARRIES THE OWNERSHIP GUARD, WHICH IS THE HALF THAT WAS MISSING -- QA
+     * `H-1`, 2026-10-27, and the most reachable duplicate this task had left. This method
+     * is called from a path that runs BEFORE the re-lease (the session read, below), so a
+     * worker whose lease had already lapsed could land `available_at = now() + 5 s` on top
+     * of the CURRENT holder's sixty-second lease, truncate it, and let a third claim
+     * arrive while that holder was still sending. reLease()'s own docblock forbids exactly
+     * that action -- *"a back-off in particular would move somebody else's `available_at`
+     * and shorten THEIR lease"* -- and it was forbidden at the one statement where it
+     * could not happen and permitted at the one where it could. It is not theoretical:
+     * `qrpager_worker` carries `statement_timeout = 15s` and `lock_timeout = 3s`, so a
+     * failing session read is ordinary under exactly the load that makes a lease lapse.
+     *
+     * @return array{result: 'retried'|'dead'|'skipped', pruned: int}
      */
     private function backOff(ClaimedOutboxRow $row, string $reason): array
     {
@@ -523,7 +571,9 @@ final class OutboxWorker
         // attempts was already incremented by the claim, so it is the number of attempts
         // INCLUDING this one. At the cap the row has had its tries.
         if ($row->attempts + 1 >= $max) {
-            $this->finish($row, OutboxStatus::Dead, 'retries exhausted: '.$reason);
+            if (! $this->finish($row, OutboxStatus::Dead, 'retries exhausted: '.$reason)) {
+                return $this->abandon($row);
+            }
 
             $this->log->warning('outbox row dead-lettered after exhausting retries', [
                 'outbox_id' => $row->id,
@@ -533,14 +583,56 @@ final class OutboxWorker
             return ['result' => 'dead', 'pruned' => 0];
         }
 
-        $this->connection()->update(
+        $written = $this->connection()->update(
             "update outbox
                 set available_at = now() + (interval '1 second' * ?), last_error = ?, updated_at = now()
-              where id = ? and status = 'pending'",
-            [$this->backoffSeconds($row->attempts + 1), $reason, $row->id],
+              where id = ? and status = 'pending' and attempts = ?",
+            [$this->backoffSeconds($row->attempts + 1), $reason, $row->id, $row->leaseIdentity()],
         );
 
+        if ($written !== 1) {
+            return $this->abandon($row);
+        }
+
         return ['result' => 'retried', 'pruned' => 0];
+    }
+
+    /**
+     * Give the row up: we do not hold it, so we write nothing -- except to hand back the
+     * attempt our own claim charged for work we never did.
+     *
+     * ⚠ THE ROLLBACK IS QA `M-7` / SECURITY `M-3`, 2026-10-27, and it is a correctness fix
+     * rather than tidiness. `claim()` charges an attempt unconditionally and `backOff()`
+     * dead-letters at `max_attempts`, so a row that is claimed and skipped five times --
+     * which the re-lease makes the EXPECTED steady state under a slow edge, since
+     * `config/webpush.php` says ~0.7 s per send already outruns the lease at
+     * `batch_size` 100 -- arrives at the cap having never been sent to, and the first
+     * genuine transient failure dead-letters it as "retries exhausted". That is a lost
+     * notification, which is the other half of the invariant this task ships on.
+     *
+     * IT IS A DECREMENT, AND THE LEASE IDENTITY SURVIVES IT, which needs saying because
+     * the identity's soundness proof turns on `attempts` never going backwards. The
+     * statement is guarded by `attempts = ?` -- OUR token -- so it fires only when no
+     * other claim has intervened, and the worker abandons the row in the same breath. The
+     * invariant that actually matters is NOT "the counter never decreases": it is
+     * **no two workers ever hold the same token for the same row at the same time**, and
+     * a guarded rollback that retires its own token the instant it undoes its own
+     * increment cannot break that. If the row HAS been claimed away, the predicate matches
+     * nothing, the thief's count stands, and we leave without writing -- which is the
+     * whole point. `OutboxLeaseIdentityTest` proves both halves.
+     *
+     * @return array{result: 'skipped', pruned: int}
+     */
+    private function abandon(ClaimedOutboxRow $row): array
+    {
+        $this->connection()->update(
+            "update outbox
+                set attempts = attempts - 1, updated_at = now()
+              where id = ? and status = 'pending' and attempts = ?",
+            [$row->id, $row->leaseIdentity()],
+        );
+
+        return ['result' => 'skipped', 'pruned' => 0];
     }
 
     private function backoffSeconds(int $attempt): int
