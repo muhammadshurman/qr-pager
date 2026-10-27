@@ -15,9 +15,17 @@ use Illuminate\Support\Facades\DB;
  * Expire sessions whose TTL has passed. The fourth of §4's named cross-tenant paths.
  *
  * THE STATEMENT PATTERN IS PRESCRIBED, not chosen, and the gate names it clause by clause:
- * "expiry job uses `SELECT id` -> `UPDATE ... WHERE id = ? AND status = ?` with no
- * `RETURNING`". PROJECT_INSTRUCTIONS.md §4 › Postgres traps is where that comes from and
- * §2.12 is the measurement behind it. Three properties of it matter and each is a line
+ * "expiry job uses a policy-limited SELECT of id, tenant_id and status -> UPDATE ...
+ * WHERE id = ? AND status = ? with no RETURNING, and never a bulk statement".
+ * PROJECT_INSTRUCTIONS.md §4 › Postgres traps is where that comes from and §2.12 is the
+ * measurement behind it.
+ *
+ * BOTH CLAUSES WERE AMENDED ON 2026-10-27 and this code did not change. They said
+ * "SELECT id", QA L-2 read that against this file and found them disagreeing (PLAN.md
+ * R-065), and the user ruled that the wording was wrong rather than the code: the trap's
+ * point was never the column count -- it is SELECT-then-keyed-UPDATE instead of a bulk
+ * UPDATE that references no column and so escapes RLS row filtering entirely. The §4 edit
+ * is rank 2 and is marked as such in that file. Three properties of it matter and each is a line
  * below:
  *
  *   1. SELECT id is bounded by the worker's own cross-tenant SELECT policy, which as of
@@ -71,14 +79,16 @@ final class ExpirePagerSessionsCommand extends Command
         // rather than arbitrarily, and the partial index on (expires_at) WHERE status IN
         // ('waiting','ready') is exactly this query's index.
         //
-        // `id, tenant_id, status` AND NOT ONLY `id`, which is a deliberate reading of the
-        // gate's "SELECT id" rather than a drift from it. The clause's mechanism is a
-        // policy-limited read to find the KEYS, as opposed to a bulk UPDATE -- and the
-        // keyed UPDATE below needs the status it expects to find (that guard IS the
-        // idempotency signal) and the tenant to open a scope for the audit row. Both
-        // columns are already readable by this role: `status` is in the worker's SELECT
-        // grant and in its policy whitelist, and `tenant_id` likewise. Widening the
-        // select list by two already-granted columns costs no reach; guessing the status
+        // `id, tenant_id, status`, which is now what the gate ASKS FOR rather than a
+        // reading of it. Until 2026-10-27 the clause said "SELECT id" and this comment
+        // argued the difference away; QA L-2 found that, and the user amended the clause
+        // (R-065). The mechanism is a policy-limited read to find the KEYS, as opposed to
+        // a bulk UPDATE -- and the keyed UPDATE below needs the status it expects to find
+        // (that guard IS the idempotency signal) and the tenant to open a scope for the
+        // audit row, because audit_log carries the same isolation policy and the insert
+        // is refused with 42501 outside one. Both columns are already readable by this
+        // role: `status` is in the worker's SELECT grant and in its policy whitelist, and
+        // `tenant_id` likewise, so the select list costs no reach; guessing the status
         // instead would mean a WHERE that cannot be written.
         $due = $worker->select(
             "select id, tenant_id, status

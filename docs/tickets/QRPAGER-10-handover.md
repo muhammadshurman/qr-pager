@@ -14,10 +14,11 @@
 > **492 passed, 2180 assertions**, all six `composer gate` steps green, exit 0,
 > and coverage on this task's code re-measured at **98.29 % — 633/644 over 23 `app/` files**.
 > The live record is `PLAN.md §0` and `§4a`; where this file and `§4a` disagree, `§4a`
-> wins. **All 18 findings are dispositioned** (`W-12` closed); one is held for a decision
-> before the tag — `R-065` / `W-13`, which is **this file's own `§5.9` flag**: the expiry
-> job reads `select id, tenant_id, status` where `§3` row 3 says `SELECT id`. QA found it
-> independently as L-2. Everything
+> wins. **All 18 findings are dispositioned** (`W-12` closed), **including `R-065` /
+> `W-13`, which is this file's own `§5.9` flag** — the expiry job reads `select id,
+> tenant_id, status` where `§3` row 3 said `SELECT id`. QA found it independently as L-2,
+> and the user amended the clause rather than the code: `§5.9`'s reading was right, and
+> flagging it here was not the same as raising it. Everything
 > below still describes the build accurately — it is the *status* lines that went stale,
 > which is the whole reason `§0` is the only place that states current state.
 
@@ -331,6 +332,16 @@ for the audit row. Both columns are already readable by that role, in its `SELEC
 and in its policy whitelist, so widening the select list by two granted columns costs no
 reach. Guessing the status instead would mean a `WHERE` that cannot be written.
 **Flagged here because a reviewer handed the gate alone will read "SELECT id" literally.**
+
+> **⚠ RESOLVED 2026-10-27, and this section was right.** QA found it as L-2 (`PLAN.md
+> R-065`) and the user amended the clause: `§3` row 3 and `PROJECT_INSTRUCTIONS.md §4 ›
+> Postgres traps` now prescribe a policy-limited `SELECT` of the three columns, because
+> the trap's point was never the column count. **No code changed.** But note what this
+> section did and did not do: it recorded the discrepancy where a reviewer would find it,
+> which is better than silence and is **not** the same as escalating it — the code shipped
+> against a clause it did not literally meet, and a review had to find that. The same
+> shape, with the same outcome, is security `S-1`; the difference is only that `R-065` was
+> escalated and settled in hours. See `PLAN.md §1` and `§3.2`'s eighth delta.
 
 ### 5.10 Two problem-document schemas instead of one
 

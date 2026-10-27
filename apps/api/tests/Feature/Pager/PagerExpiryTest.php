@@ -10,8 +10,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /*
- * §3 gate, clause 5: "expiry job uses `SELECT id` -> `UPDATE ... WHERE id = ? AND
- * status = ?` with no `RETURNING`".
+ * §3 gate, clause 5, AS AMENDED 2026-10-27 by Muhammad (QA L-2 / R-065): "expiry job uses
+ * a policy-limited `SELECT` of `id`, `tenant_id` and `status` -> `UPDATE ... WHERE id = ?
+ * AND status = ?` with no `RETURNING`, and never a bulk statement". It read "uses
+ * `SELECT id`", which taken literally forbade the two columns the pattern itself needs.
+ * No code changed -- the clause did, and `PROJECT_INSTRUCTIONS.md §4 › Postgres traps`
+ * with it, as a rank-2 edit marked in that file.
  *
  * And R-003, which this task owns: the worker's two cross-tenant pager_sessions policies
  * were bounded by TIME ALONE, so the worker held a permanent context-free cross-tenant
