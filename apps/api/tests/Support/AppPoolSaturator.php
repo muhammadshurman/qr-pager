@@ -70,6 +70,12 @@ final class AppPoolSaturator
     private const int STAGGER_MICROSECONDS = 3000;
 
     /**
+     * How many times a connect BELOW the role's limit is retried before it is believed.
+     * Only below the limit: at it, a refusal is the thing being measured.
+     */
+    private const int TRANSIENT_RETRIES = 4;
+
+    /**
      * Open one more connection than the app role is allowed, so the last is refused.
      *
      * @return list<PDO> the handles that were accepted; dropping them closes the pool
@@ -82,23 +88,58 @@ final class AppPoolSaturator
         $dsn = "pgsql:host={$config['host']};port={$config['port']};"
             ."dbname={$config['database']};sslmode={$config['sslmode']}";
 
+        $limit = DatabaseRoles::connectionLimit('app');
         $held = [];
 
-        // Up to the limit PLUS ONE: the one past it is expected to be refused, and that
-        // refusal is the condition R-012 is about.
-        for ($i = 0; $i < DatabaseRoles::connectionLimit('app') + 1; $i++) {
-            try {
-                $held[] = new PDO($dsn, (string) $config['username'], (string) $config['password'], [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_TIMEOUT => 2,
-                ]);
-            } catch (PDOException) {
+        // ⚠ A FAILURE BELOW THE LIMIT IS RETRIED; A FAILURE AT IT IS THE ANSWER — R-092,
+        // and the distinction is the whole of this method's correctness.
+        //
+        // The two are indistinguishable by SQLSTATE: `DatabaseErrorMapper` records that
+        // `08006` is how a saturated role CONNECTION LIMIT reaches the client, and it is
+        // also what the loopback forward returns when it drops a SYN. So they are told
+        // apart by WHERE THEY HAPPEN instead. Below the limit the role cannot be refusing
+        // us, so a failure is transient and is retried; at the limit it is the refusal
+        // R-012 exists to observe, and the loop stops.
+        //
+        // WITHOUT THE RETRY THIS METHOD SILENTLY UNDER-DELIVERS. Measured 2026-10-27: a
+        // run held 31 of 40 and `ReadinessCarrierTest` failed on `saturation() >= 0.9`
+        // with 0.775 — not because readiness was wrong but because the pool was never
+        // filled. The old code broke out of the loop on the first exception, so one
+        // dropped connect anywhere in the ramp truncated the set and the test reported a
+        // readiness defect that did not exist.
+        for ($i = 0; $i < $limit + 1; $i++) {
+            $connection = self::connect($dsn, $config, count($held) < $limit ? self::TRANSIENT_RETRIES : 0);
+
+            if ($connection === null) {
                 break;
             }
+
+            $held[] = $connection;
 
             usleep(self::STAGGER_MICROSECONDS);
         }
 
         return $held;
+    }
+
+    /**
+     * One handle, retried while a failure cannot yet be the role's refusal.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private static function connect(string $dsn, array $config, int $retries): ?PDO
+    {
+        for ($attempt = 0; $attempt <= $retries; $attempt++) {
+            try {
+                return new PDO($dsn, (string) $config['username'], (string) $config['password'], [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_TIMEOUT => 2,
+                ]);
+            } catch (PDOException) {
+                usleep(self::STAGGER_MICROSECONDS * 4);
+            }
+        }
+
+        return null;
     }
 }
