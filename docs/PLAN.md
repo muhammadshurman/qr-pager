@@ -2747,8 +2747,12 @@ are in tagged history, and neither tag is moved.
 
 #### Gate after the Security disposition
 
-**All six steps green, exit 0 — 513 passed, 2383 assertions** at the Security round's head
-(504 / 2257 after the QA round; 492 / 2182 before either). `composer guard` reads 158 files,
+**All six steps green, exit 0 — 513 passed, 2383 assertions**, measured at the tree that is
+now the pushed head **`9b2cad9`** (504 / 2257 after the QA round; 492 / 2182 before either).
+The round is three commits: `123c9b3` the dispositions, `c8fffe7` the generator case,
+`9b2cad9` this record. The gate ran with every document edit on disk, because `composer
+guard`'s rule 8 reads `docs/`, so the figure belongs to this content and not only to the
+code. `composer guard` reads 158 files,
 `deptrac` reports 0 violations and 0 uncovered, and `openapi:check` says the committed spec
 matches the routes. The **+9 cases are this round's, counted from the diff rather than
 recalled**: four on the published contract (the `security` member on every operation, the

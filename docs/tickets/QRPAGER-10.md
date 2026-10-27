@@ -568,8 +568,9 @@ document itself was fully asserted. One case now generates the document in proce
 committed file cannot show: in process an empty security requirement is a `stdClass`, while
 the file's `{}` decodes to an empty array.
 
-**Gate and coverage.** `composer gate`: all six steps green, exit 0, **513 passed / 2383
-assertions** (504 / 2257 after the QA round). `bin/coverage --task=task-2 --min=90`:
+**Gate and coverage, at the pushed head `9b2cad9`** — the round is `123c9b3` (the
+dispositions), `c8fffe7` (the generator case) and `9b2cad9` (the record). `composer gate`:
+all six steps green, exit 0, **513 passed / 2383 assertions** (504 / 2257 after the QA round). `bin/coverage --task=task-2 --min=90`:
 **97.47 % (733/752) over 27 files**, passing, from 98.46 % (641/651) over 23.
 `AppServiceProvider` itself went **17.6 % → 96.1 %**, the two remaining lines being the
 defensive `continue`s for shapes this document does not contain.
