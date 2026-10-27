@@ -2822,8 +2822,10 @@ the `DELETE IN TASK 5` list re-derived from a grep, with **Task 4's nine new tes
 zero calls** to the stub; and gitleaks clean over 121 commits and the working tree, with the
 three VAPID names present and empty in `.env.example` and no key material anywhere in the tree.
 
-**Gate after this round: all six steps green, exit 0 — 601 passed, 3428 assertions.** Coverage
-on this task's code **96.50 % (964/999 over 25 files)**, `--min=90` passing.
+**Gate after this round, measured at the pushed head `5f1bdbf`: all six steps green, exit 0 —
+601 passed, 3428 assertions. Fresh clone of that same commit: identical, 601 / 3428.** Coverage
+on this task's code **96.50 % (964/999 over 25 files)**, `--min=90` passing. Transcripts committed
+at `docs/tickets/QRPAGER-11-{gate,fresh-clone-gate,coverage,p99,rollback-proof,vacuous-assertion-proof}.txt`.
 
 ---
 
