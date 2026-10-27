@@ -42,6 +42,18 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+        | The KDS/device surface, added at Task 5. Two guards and not one, because
+        | config/sanctum.php leaves `stateful` empty on purpose -- a stateful domain is a
+        | mechanism for letting one surface answer as the other, and §4 › Tenancy requires
+        | the two never to be confused. ResolvePrincipal tries them in a fixed order, web
+        | first, and that order is a decision with a reason rather than an accident.
+        */
+        'sanctum' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
     ],
 
     /*

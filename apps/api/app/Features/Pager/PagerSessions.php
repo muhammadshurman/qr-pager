@@ -472,6 +472,55 @@ final class PagerSessions
     }
 
     /**
+     * The sessions a staff member or a kitchen screen needs to see: everything not yet
+     * finished, newest first.
+     *
+     * ADDED AT TASK 5, and the reason is the device token rather than the board. A KDS
+     * device token's one ability is `pager:read`, and until this existed there was nothing
+     * for it to read -- which would have made "device token scope cannot escalate" a claim
+     * about a credential that can reach nothing, and a credential that can reach nothing
+     * cannot be shown not to escalate. Task 10 builds the screen; this is the data behind it.
+     *
+     * Bounded by `expiry_batch`'s sibling rather than unbounded: a board with no limit is a
+     * transaction whose size is set by how busy a restaurant is. The partial index
+     * `(tenant_id, status, created_at DESC)` from §2.5 is what serves it.
+     *
+     * @return list<array{id: string, order_reference: string, status: string, created_at: string, ready_at: string|null}>
+     */
+    public function board(string $tenantId, int $limit = 100): array
+    {
+        $rows = withTenant($tenantId, fn () => DB::select(
+            'select id, order_reference, status, created_at, ready_at
+               from pager_sessions
+              where status in (?::pager_status, ?::pager_status)
+              order by created_at desc
+              limit ?',
+            [PagerStatus::Waiting->value, PagerStatus::Ready->value, $limit],
+        ));
+
+        $board = [];
+
+        foreach ($rows as $row) {
+            // isset-guarded rather than mapped blind: DB::select() answers a list of plain
+            // objects, so a column renamed underneath this method would otherwise be a
+            // property error at runtime in a loop. Same shape as Memberships::for().
+            if (! is_object($row) || ! isset($row->id, $row->order_reference, $row->status, $row->created_at)) {
+                continue;
+            }
+
+            $board[] = [
+                'id' => (string) $row->id,
+                'order_reference' => (string) $row->order_reference,
+                'status' => (string) $row->status,
+                'created_at' => (string) $row->created_at,
+                'ready_at' => isset($row->ready_at) ? (string) $row->ready_at : null,
+            ];
+        }
+
+        return $board;
+    }
+
+    /**
      * One audit row, inside the caller's transaction.
      *
      * actor_type is `user` with a NULL actor_user_id until Task 5 exists, and that is the

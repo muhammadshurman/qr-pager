@@ -56,6 +56,21 @@ it('describes exactly the routes that exist, and not the fallback', function ():
     expect($documented)->toBe([
         '/healthz',
         '/readyz',
+        // Task 5's AUTH surface -- the third route set and the third middleware group. It
+        // cannot be on `api`, whose last entry is RequireTenantScope: the tenant is derived
+        // from the credential a login is about to establish, so requiring one in order to
+        // authenticate is a loop with no entry point (routes/auth.php).
+        '/v1/auth/login',
+        '/v1/auth/logout',
+        '/v1/auth/me',
+        '/v1/auth/tenant',
+        // Task 5's own staff routes. Device tokens are credentials for a kitchen screen and
+        // the member routes are R-007's half -- the only surface where the role matrix
+        // gives staff and manager different answers to the same request.
+        '/v1/devices',
+        '/v1/devices/{device}',
+        '/v1/members',
+        '/v1/members/{member}',
         '/v1/pager-sessions',
         '/v1/pager-sessions/{session}/cancel',
         '/v1/pager-sessions/{session}/complete',
@@ -448,13 +463,34 @@ it('publishes a security requirement on EVERY operation, and the staff routes ar
     $probes = AppServiceProvider::PUBLIC_PATHS;
     $customer = ['/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription'];
 
-    expect(array_values(array_unique($public)))->toBe([...$customer, ...$probes]);
+    // THE THIRD TOKENLESS SURFACE, added at Task 5. Tokenless in the OpenAPI sense even
+    // though `auth.me` needs a session: a session COOKIE is no more expressible as a
+    // security scheme than the customer's QR-token-in-the-body, and declaring the bearer
+    // scheme on a login would name a credential that login has not issued yet. The
+    // generator reads the `auth-surface` middleware group rather than a second list, for
+    // the same reason it reads `customer` -- the failure mode of forgetting to edit a list
+    // is a route published as needing a credential it does not use, which is exactly what
+    // happened here before this set existed.
+    // In ROUTER order, which is the order the spec's paths come out in, not alphabetical:
+    // login, logout, tenant, me, as routes/auth.php declares them.
+    $auth = ['/v1/auth/login', '/v1/auth/logout', '/v1/auth/tenant', '/v1/auth/me'];
 
-    // ...and every staff route is in the other set. Five, named, so a route that quietly
-    // became public -- or a customer route that quietly claimed a staff credential -- is a
-    // failure here rather than a reading of the diff.
-    expect($authenticated)->toHaveCount(5)
-        ->and($authenticated)->toContain('POST /v1/pager-sessions');
+    expect(array_values(array_unique($public)))->toBe([...$auth, ...$customer, ...$probes]);
+
+    // ...and every staff route is in the other set. TWELVE as of Task 5 -- it was five
+    // until this task added the board read, four member routes and two device-token routes
+    // -- counted and named, so a route that quietly became public, or a customer route that
+    // quietly claimed a staff credential, is a failure here rather than a reading of the
+    // diff.
+    expect($authenticated)->toHaveCount(12)
+        ->and($authenticated)->toContain('POST /v1/pager-sessions')
+        ->and($authenticated)->toContain('GET /v1/pager-sessions')
+        ->and($authenticated)->toContain('GET /v1/members')
+        ->and($authenticated)->toContain('POST /v1/members')
+        ->and($authenticated)->toContain('PATCH /v1/members/{member}')
+        ->and($authenticated)->toContain('DELETE /v1/members/{member}')
+        ->and($authenticated)->toContain('POST /v1/devices')
+        ->and($authenticated)->toContain('DELETE /v1/devices/{device}');
 });
 
 it('publishes the 401 that every unauthenticated request actually receives — QA L-5', function (): void {
@@ -477,6 +513,7 @@ it('publishes the 401 that every unauthenticated request actually receives — Q
     $missing = [];
     $wrongShape = [];
     $spurious = [];
+    $authSurface = [];
 
     foreach ($spec['paths'] as $path => $operations) {
         foreach ($operations as $verb => $operation) {
@@ -488,6 +525,27 @@ it('publishes the 401 that every unauthenticated request actually receives — Q
             $responses = $operation['responses'] ?? [];
 
             if (($operation['security'] ?? null) === [[]]) {
+                // THE AUTH SURFACE IS TOKENLESS AND CAN STILL ANSWER 401, which this case's
+                // original premise did not allow for -- and the premise, not the surface,
+                // is what was wrong.
+                //
+                // When this assertion was written, "tokenless" meant two things that never
+                // refuse for want of a credential: the probes, and the customer surface,
+                // whose refusals are 404 Stale and 409 rather than 401. Task 5 added a
+                // third, where 401 is the WHOLE POINT of the endpoint: a login refuses bad
+                // credentials with it, and `auth.me` and the tenant selection refuse an
+                // absent session with it.
+                //
+                // So the auth surface is carved out and held to a STRONGER rule instead,
+                // asserted below: the three routes that can refuse must document a 401, and
+                // `logout` -- which answers 204 whether or not there was a session, so that
+                // it is neither an oracle nor exhaustible -- must not.
+                if (str_starts_with($path, '/v1/auth/')) {
+                    $authSurface[$label] = array_key_exists('401', $responses);
+
+                    continue;
+                }
+
                 if (array_key_exists('401', $responses)) {
                     $spurious[] = $label;
                 }
@@ -513,6 +571,15 @@ it('publishes the 401 that every unauthenticated request actually receives — Q
     expect($missing)->toBe([], 'authenticated, and documents no 401: '.implode(', ', $missing))
         ->and($wrongShape)->toBe([], 'a 401 that is not the problem document: '.implode(', ', $wrongShape))
         ->and($spurious)->toBe([], 'public, and documents a 401 it can never give: '.implode(', ', $spurious));
+
+    // The auth surface, named operation by operation rather than counted, so that adding a
+    // route to routes/auth.php without deciding whether it can refuse fails here.
+    expect($authSurface)->toBe([
+        'POST /v1/auth/login' => true,
+        'POST /v1/auth/logout' => false,
+        'POST /v1/auth/tenant' => true,
+        'GET /v1/auth/me' => true,
+    ]);
 });
 
 it('publishes every problem document under the media type the API really sends, and under one only', function (): void {
@@ -584,10 +651,16 @@ it('publishes every problem document under the media type the API really sends, 
 
     // The count is asserted so that a document which stopped publishing problem documents
     // altogether cannot pass this by having nothing left to check -- R-029's shape.
-    // 26 = the five staff routes' 14, plus the customer surface's 12 (three each on
-    // session, subscription POST and subscription DELETE, and three on status, whose 503 is
-    // the Redis-unavailable problem document rather than a readiness body).
-    expect($seen)->toBe(26, 'the spec publishes '.$seen.' problem responses, not the 26 the nine routes declare')
+    // 54 as of Task 5, over twenty routes. It was 26 = the five staff routes' 14, plus the customer surface's 12
+    // (three each on session, subscription POST and subscription DELETE, and three on
+    // status, whose 503 is the Redis-unavailable problem document rather than a readiness
+    // body). Task 5 adds 21: the board read, four member routes and two device-token
+    // routes, each declaring the 401 that RequireTenantScope answers and the 403 that
+    // RequireAbility answers, plus 404s on the three keyed routes and 422s on the two that
+    // take a body; and 7 more for the auth surface -- login's 401/422/429, the tenant
+    // selection's 401/404/422, and `me`'s 401. The 403 is new to this project's published
+    // contract: before Task 5 nothing could answer it, because nothing authorised anything.
+    expect($seen)->toBe(54, 'the spec publishes '.$seen.' problem responses, not the 54 the twenty routes declare')
         ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
         ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
 });
@@ -667,10 +740,16 @@ it('produces the security and media-type decisions in the GENERATOR, not only in
     }
 
     expect(array_values(array_unique($public)))->toBe([
+        // The auth surface first, in router order -- the third tokenless surface, added at
+        // Task 5. See the committed-spec case above for why a login publishes no scheme.
+        '/v1/auth/login', '/v1/auth/logout', '/v1/auth/tenant', '/v1/auth/me',
         '/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription',
         ...AppServiceProvider::PUBLIC_PATHS,
     ])
-        ->and($authenticated)->toHaveCount(5)
+        // Twelve and 54 as of Task 5 -- the in-process generator and the committed artifact
+        // must agree, which is this case's whole purpose, so both numbers move together
+        // with the ones in the committed-spec cases above.
+        ->and($authenticated)->toHaveCount(12)
         ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
-        ->and($problemResponses)->toHaveCount(26);
+        ->and($problemResponses)->toHaveCount(54);
 });

@@ -70,6 +70,38 @@ return [
         | own bucket, tighter than `api` and keyed per IP", and it is proven to refuse by
         | being driven rather than by being read.
         */
+        /*
+        | Issuing a KDS device token is a credential-minting write, and the tightest
+        | per-tenant bucket in the project for that reason: a legitimate restaurant adds a
+        | screen occasionally, not ten times a minute, and a loop here would fill
+        | personal_access_tokens -- a GLOBAL table with no RLS behind it (§2.4), so the
+        | rows are shared with every other tenant's.
+        |
+        | Per-IP AND per-tenant, which the customer surface's buckets cannot be: by the
+        | time this route runs the tenant is resolved, so §4 › Edge & ops's "per IP and per
+        | tenant" applies in full rather than in half.
+        */
+        'devices-issue' => [
+            'per_ip' => ['attempts' => 10, 'seconds' => 60],
+            'per_tenant' => ['attempts' => 20, 'seconds' => 60],
+        ],
+
+        /*
+        | THE AUTH SURFACE. Per-IP only, and for the same reason the customer token route
+        | is (R-063): there is no tenant until the credential resolves, so the per-tenant
+        | half cannot apply before the lookup -- and resolving one in order to rate-limit
+        | the request that asks for it is work an unauthenticated caller can make this
+        | process do.
+        |
+        | The tightest bucket in the project. A password check is a bcrypt verification,
+        | which is deliberately expensive, so an unbounded loop here is a CPU denial of
+        | service as well as a guessing attempt. 10/minute is far above a real person
+        | (one attempt, maybe three on a bad day) and far below what guessing needs.
+        */
+        'auth-login' => [
+            'per_ip' => ['attempts' => 10, 'seconds' => 60],
+        ],
+
         'pager-token' => [
             'per_ip' => ['attempts' => 30, 'seconds' => 60],
         ],

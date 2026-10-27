@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Models\Passkey;
+use App\Models\PersonalAccessToken;
 use App\Platform\Auth\ActiveTenant;
 use App\Platform\Auth\AuthenticatedTenantResolver;
 use App\Platform\Auth\Memberships;
+use App\Platform\Auth\RequestPrincipal;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
@@ -27,6 +29,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Fortify\Fortify;
 use Laravel\Passkeys\Passkeys;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -106,6 +109,15 @@ class AppServiceProvider extends ServiceProvider
         // than merely recorded.
         $this->app->scoped(ActiveTenant::class);
 
+        // Scoped too, although it holds no state of its OWN: it holds the membership
+        // reader, which does. Binding it scoped keeps one uniform rule for the auth layer
+        // -- every piece of per-request auth state is forgotten at the boundary -- rather
+        // than a rule with an exception a reader has to check each time.
+        // AuthOctaneIsolationTest asserts all three together, and it found this one
+        // missing: it was being rebuilt on every resolve, which was harmless and was also
+        // not the rule.
+        $this->app->scoped(RequestPrincipal::class);
+
         // laravel/passkeys' own seam for swapping its model. App\Models\Passkey is the
         // vendor model plus HasUuids: every id in this schema is a uuid (PLAN.md §2.5) and
         // the vendor migration -- which this project does not publish -- declares
@@ -120,6 +132,13 @@ class AppServiceProvider extends ServiceProvider
         // justified, so this task mounts the ones it wants by hand in routes/v1.php.
         // Fortify stays as the actions and the pipeline behind them.
         Fortify::$registersRoutes = false;
+
+        // THE SAME MISMATCH AS THE PASSKEY MODEL ABOVE, and the second instance of it.
+        // Sanctum's migration declares $table->id(); this project's ids are uuids and its
+        // migration is its own, so the vendor model inserts no id into a column with no
+        // default. Measured: the first device-token issue answered 500 with a 23502 null
+        // violation on `id`.
+        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
 
         // One gauge for the worker's life, because CPU throttling is a cumulative
         // counter and the signal is its DELTA over a window: a per-request instance
@@ -174,6 +193,7 @@ class AppServiceProvider extends ServiceProvider
             // asks for: a load balancer's health check must not need a credential.
             $moved = 0;
             $customerPaths = self::customerSurfacePaths();
+            $authPaths = self::authSurfacePaths();
 
             foreach ($openApi->paths as $path) {
                 foreach ($path->operations as $operation) {
@@ -198,7 +218,9 @@ class AppServiceProvider extends ServiceProvider
                     $uri = '/'.ltrim($path->path, '/');
 
                     $operation->addSecurity(
-                        in_array($uri, self::PUBLIC_PATHS, true) || in_array($uri, $customerPaths, true)
+                        in_array($uri, self::PUBLIC_PATHS, true)
+                        || in_array($uri, $customerPaths, true)
+                        || in_array($uri, $authPaths, true)
                             ? []
                             : new SecurityRequirement([self::STAFF_SECURITY_SCHEME => []])
                     );
@@ -274,6 +296,42 @@ class AppServiceProvider extends ServiceProvider
      */
     private static function customerSurfacePaths(): array
     {
+        return self::pathsOnGroup('customer');
+    }
+
+    /**
+     * The published paths of the AUTH surface, read from the router (Task 5).
+     *
+     * THE FOURTH SURFACE, and it needed adding for the same reason the customer set did:
+     * the generator classified all four `/v1/auth/*` routes as requiring a **staff bearer
+     * token**, which is a contract telling a client to present the credential that the
+     * login it is calling has not issued yet. `OpenApiSpecTest` caught it -- and the catch
+     * is the same shape as the one at Task 4's rebase, where the customer routes were
+     * published as needing a staff credential.
+     *
+     * These routes are tokenless in the OpenAPI sense even though `auth.me` genuinely needs
+     * a session: a SESSION COOKIE is not expressible as a security scheme here any more
+     * than the customer's QR-token-in-the-body is, and declaring the bearer scheme on them
+     * would be worse than declaring nothing, because it names a credential that does not
+     * apply.
+     *
+     * @return list<string>
+     */
+    private static function authSurfacePaths(): array
+    {
+        return self::pathsOnGroup('auth-surface');
+    }
+
+    /**
+     * Published paths whose route is on a named middleware group.
+     *
+     * One helper for both tokenless surfaces, so that adding a third cannot accidentally
+     * get a different reading of "is this route on that group".
+     *
+     * @return list<string>
+     */
+    private static function pathsOnGroup(string $group): array
+    {
         $paths = [];
 
         // ->getRoutes()->getRoutes(): the collection's ARRAY accessor, not the collection
@@ -285,7 +343,7 @@ class AppServiceProvider extends ServiceProvider
         $routes = Route::getRoutes()->getRoutes();
 
         foreach ($routes as $route) {
-            if (in_array('customer', $route->gatherMiddleware(), true)) {
+            if (in_array($group, $route->gatherMiddleware(), true)) {
                 $paths[] = '/'.ltrim($route->uri(), '/');
             }
         }

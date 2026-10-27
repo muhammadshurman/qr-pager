@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Platform\Auth;
 
 use App\Domain\Auth\Ability;
+use App\Domain\Auth\TenantPin;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -46,9 +47,6 @@ use Laravel\Sanctum\Contracts\HasAbilities;
  */
 final class DeviceToken
 {
-    /** The ability prefix that pins a token to one tenant. */
-    public const TENANT_PREFIX = 'tenant:';
-
     /**
      * The tenant this request's token is pinned to, or null when it is not pinned.
      *
@@ -66,11 +64,11 @@ final class DeviceToken
         }
 
         foreach (self::abilitiesOf($token) as $ability) {
-            if (! str_starts_with($ability, self::TENANT_PREFIX)) {
+            $tenantId = TenantPin::tenantFrom($ability);
+
+            if ($tenantId === null) {
                 continue;
             }
-
-            $tenantId = substr($ability, strlen(self::TENANT_PREFIX));
 
             // A malformed pin is a refusal, not an unpinned token. Returning null here
             // would turn "tenant:garbage" into "narrows nothing", which is the failure

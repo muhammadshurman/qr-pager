@@ -56,6 +56,21 @@ final class PagerSessionController
      * Issues a single-use token for one order and returns the payload to encode in a QR
      * code. The token is returned by this call only and cannot be retrieved afterwards.
      */
+    /**
+     * List the restaurant's active pagers.
+     *
+     * Everything still waiting or ready, newest first. This is what a kitchen display reads.
+     */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
+    #[DocResponse(status: 200, description: 'The active pagers for this restaurant.')]
+    #[DocResponse(status: 403, description: 'That is not permitted.', type: ProblemDocument::class)]
+    public function index(): JsonResponse
+    {
+        return response()->json([
+            'sessions' => $this->sessions->board($this->tenant()),
+        ]);
+    }
+
     #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
     #[DocResponse(status: 201, description: 'The session, and the QR payload to encode.')]
     #[DocResponse(status: 422, description: 'The order reference did not pass validation.', type: ValidationProblemDocument::class)]

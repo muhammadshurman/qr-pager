@@ -9,14 +9,19 @@ use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\Middleware\RequireTenantScope;
+use App\Platform\Http\Middleware\ResolvePrincipal;
 use App\Platform\Http\Middleware\ShedLoad;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -48,6 +53,15 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::prefix('v1')
                 ->middleware('customer')
                 ->group(__DIR__.'/../routes/customer.php');
+
+            // THE AUTH SURFACE (Task 5). Same /v1 prefix, own group, and the reason it
+            // cannot be on `api` is circularity: `api`'s last entry is RequireTenantScope,
+            // and the tenant is derived from the credential a login is about to establish.
+            // Requiring a resolved tenant in order to authenticate is a loop with no entry
+            // point. routes/auth.php carries the rest of the reasoning.
+            Route::prefix('v1')
+                ->middleware('auth-surface')
+                ->group(__DIR__.'/../routes/auth.php');
 
             // The SIGTERM drain proof's slow route, and the only conditional route
             // loading in this file. Two conditions, both visible here: the file has to
@@ -188,6 +202,30 @@ return Application::configure(basePath: dirname(__DIR__))
         // everything else.
         $middleware->group('customer', []);
 
+        // THE AUTH SURFACE'S GROUP (Task 5). It carries the session stack and CSRF -- a
+        // login establishes a session, so the middleware that reads and writes one has to
+        // be present -- and deliberately NOT RequireTenantScope or RequireAbility:
+        //
+        //   - RequireTenantScope would be circular, as routes/auth.php explains;
+        //   - RequireAbility authorises a principal inside a tenant, and on this surface
+        //     there is not yet a principal, let alone a tenant.
+        //
+        // ResolvePrincipal IS here, because `auth.me` and the tenant selection both need to
+        // know who is asking. It refuses nothing, so a request with no credential reaches
+        // the controller and gets the 401 the controller itself returns.
+        //
+        // Shedding and the limiter are NOT on the group: each route in routes/auth.php
+        // names its own bucket, because a login and a tenant selection do not deserve the
+        // same allowance and `api`'s shared bucket would give them one. That is the same
+        // decision the customer group records for its three routes.
+        $middleware->group('auth-surface', [
+            EncryptCookies::class,
+            AddQueuedCookiesToResponse::class,
+            StartSession::class,
+            ValidateCsrfToken::class,
+            ResolvePrincipal::class,
+        ]);
+
         // TrustProxies is already on the global stack, and what it trusts is
         // config/trustedproxy.php -- read there, not configured here, because the
         // Middleware closure runs before LoadConfiguration and config() is not
@@ -208,6 +246,49 @@ return Application::configure(basePath: dirname(__DIR__))
             // resolver. Then the tenant requirement, which is deny-by-default.
             ShedLoad::class,
             RateLimit::class,
+
+            // ======================================================================
+            // THE SESSION STACK, ADDED AT TASK 5 -- and it was a measured gap, not a
+            // preference
+            // ======================================================================
+            //
+            // The staff surface is a FIRST-PARTY BROWSER CLIENT authenticated by cookie:
+            // §1 locks Redis as the session store, Fortify's login is a session login,
+            // and apps/web (Task 8) is served from the same origin. None of that works on
+            // a group with no session middleware.
+            //
+            // MEASURED, because the first version of Task 5 assumed it was already there:
+            // AuthenticatedTenantResolver reads the selected tenant from the server-side
+            // session, and $request->hasSession() is FALSE on this group, so the selection
+            // silently never applied. Every single-membership test still passed, because
+            // the resolver falls back to Memberships::sole() -- so the feature looked
+            // fine and only a user with TWO memberships exposed it, answering 401 with a
+            // correctly-written session key sitting unread. A fallback that hides a broken
+            // primary path is worse than no fallback.
+            //
+            // CSRF IS IN THE LIST and it is the other half of §3 row 5's "session fixation
+            // and CSRF tests". Laravel's ValidateCsrfToken returns early for a read verb
+            // and while running tests, so a test that wants to prove it bites has to say
+            // so explicitly -- SessionPolicyTest does.
+            //
+            // NOT on the customer group, which has its own (empty) group and authenticates
+            // by QR token, and not on the probe group, which must keep answering: a health
+            // check does not carry a cookie and must never be made to.
+            EncryptCookies::class,
+            AddQueuedCookiesToResponse::class,
+            StartSession::class,
+            ValidateCsrfToken::class,
+            // Authentication BEFORE the tenant requirement, because the tenant is derived
+            // from the principal: the resolver reads the authenticated user's own
+            // memberships, so a request with no user resolves no tenant. It refuses
+            // nothing itself -- RequireTenantScope stays the one place an unauthenticated
+            // caller is told no, which is what makes its "every refusal is the same
+            // answer" property checkable.
+            //
+            // AFTER the limiter, deliberately and for the same reason the limiter is after
+            // shedding: an unauthenticated flood should cost the limiter rather than two
+            // guard lookups and a membership query.
+            ResolvePrincipal::class,
             RequireTenantScope::class,
         ]);
     })

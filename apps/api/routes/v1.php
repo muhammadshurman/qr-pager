@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Features\Devices\Http\DeviceController;
+use App\Features\Members\Http\MemberController;
 use App\Features\Pager\Http\PagerSessionController;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RequireAbility;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,8 +18,8 @@ use Illuminate\Support\Facades\Route;
  * detail about why.
  *
  * STAFF ROUTES ONLY, which is the §4 › Tenancy split rather than an accident of ordering.
- * Staff authenticate as users -- the real resolver is Task 5's and until then these sit
- * behind Task 2's test-only stub. A customer has no account and authenticates ONLY by
+ * Staff authenticate as users -- the real resolver arrived at Task 5 and the test-only stub
+ * that stood in for it is deleted (R-035). A customer has no account and authenticates ONLY by
  * presenting the QR token, which resolves to exactly one session in exactly one tenant;
  * that resolver is built in this task (App\Features\Pager\PagerTokenLookup) and the
  * endpoints that consume it -- polling, subscriptions -- are Task 4's. So there is
@@ -36,30 +39,98 @@ use Illuminate\Support\Facades\Route;
  * changed in place.
  */
 
-Route::prefix('pager-sessions')->group(function (): void {
+/*
+ * AUTHORISATION, ADDED AT TASK 5, AND IT IS ON THE GROUP RATHER THAN PER ROUTE.
+ *
+ * RequireTenantScope answers "is there a tenant for this request". RequireAbility answers
+ * "may this actor do THIS", and until Task 5 nothing did -- every route below had been
+ * behind the deny-by-default tenant guard since it was written, which is not the same
+ * question.
+ *
+ * It takes NO PARAMETER. The ability is looked up by route NAME in
+ * App\Platform\Auth\RouteAbilities, and a route that is not in that map is refused with
+ * 403 rather than served. That is why the middleware is on the group: a per-route
+ * `ability:...` parameter would make "every staff route is covered" unobservable, because a
+ * route missing the parameter is indistinguishable from one that was meant to be open.
+ * RoleMatrixTest iterates this router and fails if any /v1 route is in neither the staff
+ * map nor the named customer or auth sets, so the three sets are closed-world over the
+ * whole surface.
+ */
+Route::middleware([RequireAbility::class])->group(function (): void {
+
+    Route::prefix('pager-sessions')->group(function (): void {
+        /*
+         * The board. A kitchen display's only read, and the one ability a KDS device token may
+         * carry -- which is why it exists here rather than at Task 10 with the screen that
+         * consumes it.
+         */
+        Route::get('/', [PagerSessionController::class, 'index'])
+            ->name('pager.sessions.index');
+
+        /*
+         * Creating a session is the expensive one -- a CSPRNG draw, an insert and an audit row
+         * -- and it is the only route here that takes a body, so it gets its own tighter
+         * bucket on top of the api group's. The four transition routes act on a session that
+         * already exists and stay on the api bucket.
+         */
+        Route::post('/', [PagerSessionController::class, 'store'])
+            ->middleware([RateLimit::class.':pager-create'])
+            ->name('pager.sessions.store');
+
+        Route::post('/{session}/ready', [PagerSessionController::class, 'ready'])
+            ->whereUuid('session')
+            ->name('pager.sessions.ready');
+
+        Route::post('/{session}/renotify', [PagerSessionController::class, 'renotify'])
+            ->whereUuid('session')
+            ->name('pager.sessions.renotify');
+
+        Route::post('/{session}/complete', [PagerSessionController::class, 'complete'])
+            ->whereUuid('session')
+            ->name('pager.sessions.complete');
+
+        Route::post('/{session}/cancel', [PagerSessionController::class, 'cancel'])
+            ->whereUuid('session')
+            ->name('pager.sessions.cancel');
+    });
+
     /*
-     * Creating a session is the expensive one -- a CSPRNG draw, an insert and an audit row
-     * -- and it is the only route here that takes a body, so it gets its own tighter
-     * bucket on top of the api group's. The four transition routes act on a session that
-     * already exists and stay on the api bucket.
+     * STAFF MANAGEMENT -- R-007's Task 5 half.
+     *
+     * `members:write` is held by owner and manager and by neither staff nor a device token, so
+     * this is the surface where the role matrix stops being a formality: it is the only place
+     * where staff and manager give different answers to the same request. The member id is a
+     * uuid in the path and the tenant is not -- the membership is looked up inside the resolved
+     * tenant's scope, where another tenant's row is invisible and the answer is 404.
      */
-    Route::post('/', [PagerSessionController::class, 'store'])
-        ->middleware([RateLimit::class.':pager-create'])
-        ->name('pager.sessions.store');
+    Route::prefix('members')->group(function (): void {
+        Route::get('/', [MemberController::class, 'index'])->name('members.index');
 
-    Route::post('/{session}/ready', [PagerSessionController::class, 'ready'])
-        ->whereUuid('session')
-        ->name('pager.sessions.ready');
+        Route::post('/', [MemberController::class, 'store'])->name('members.store');
 
-    Route::post('/{session}/renotify', [PagerSessionController::class, 'renotify'])
-        ->whereUuid('session')
-        ->name('pager.sessions.renotify');
+        Route::patch('/{member}', [MemberController::class, 'update'])
+            ->whereUuid('member')
+            ->name('members.update');
 
-    Route::post('/{session}/complete', [PagerSessionController::class, 'complete'])
-        ->whereUuid('session')
-        ->name('pager.sessions.complete');
+        Route::delete('/{member}', [MemberController::class, 'destroy'])
+            ->whereUuid('member')
+            ->name('members.destroy');
+    });
 
-    Route::post('/{session}/cancel', [PagerSessionController::class, 'cancel'])
-        ->whereUuid('session')
-        ->name('pager.sessions.cancel');
+    /*
+     * KDS DEVICE TOKENS. Issuing one is a credential-minting act, so it carries its own tighter
+     * bucket on top of the api group's and is audited inside the tenant's scope. Revoking is
+     * keyed and answers 404 for a token pinned to another tenant, which is §11.2's IDOR rule
+     * applied to a credential rather than to a row.
+     */
+    Route::prefix('devices')->group(function (): void {
+        Route::post('/', [DeviceController::class, 'store'])
+            ->middleware([RateLimit::class.':devices-issue'])
+            ->name('devices.store');
+
+        Route::delete('/{device}', [DeviceController::class, 'destroy'])
+            ->whereUuid('device')
+            ->name('devices.destroy');
+    });
+
 });

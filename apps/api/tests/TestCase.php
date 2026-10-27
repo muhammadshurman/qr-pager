@@ -8,6 +8,7 @@ use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Tenancy\TenantRole;
 use App\Models\User;
+use App\Platform\Auth\ActiveTenant;
 use App\Platform\Auth\Memberships;
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Readiness\ReadinessStore;
@@ -465,6 +466,17 @@ abstract class TestCase extends BaseTestCase
         // answered for this user id, and it memoises per user (QRPAGER-12 §10.5). A test
         // that authenticates twice would otherwise read the first answer back.
         $this->app->forgetInstance(Memberships::class);
+
+        // SELECTED EXPLICITLY, in the session, which is what a real staff client does.
+        //
+        // One membership would resolve through Memberships::sole() with nothing selected,
+        // and most tests have exactly one -- but a test that gives its user a SECOND
+        // membership then resolves no tenant at all, because sole() refuses to pick. That
+        // is correct behaviour and it made DeviceTokenScopeTest's two-tenant case answer
+        // 401 from the helper rather than from the thing it was testing. Setting the
+        // selection makes the helper say which tenant it means, and leaves the sole()
+        // fallback to TenantResolutionTest, which tests it deliberately.
+        session()->put(ActiveTenant::SESSION_KEY, $tenantId);
 
         return $tenantId;
     }
