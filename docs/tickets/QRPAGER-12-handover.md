@@ -48,8 +48,18 @@ unsatisfiable at once. `f44085b` **contains** `55a4f98`, so nothing tagged is lo
 
 ### 3.1 Phase 0 — the ledger sweep (`d691892`)
 
-`§5` read against every owner, in one pass. **Before: 99 rows, 26 closed, 69 open. After the
-sweep: 30 closed, 69 open. After Task 5's own closures: 32 closed, 67 open.**
+`§5` read against every owner, in one pass.
+
+| | Rows | Fully closed | Open |
+| --- | --- | --- | --- |
+| Before the sweep | 99 | 26 | 73 |
+| After the sweep | 99 | 30 | 69 |
+| **At the end of Task 5** | **103** | **34** | **69** |
+
+Four of the open 69 are *part*-closed (`R-045`, `R-059`, `R-088`, `R-091`) — one half done, the
+row still owned. **Every figure above is measured by re-reading the table, not derived**, and the
+reason is in `§8` finding 11: the first version of this section said "32 closed, 67 open" from
+arithmetic, and it was wrong in both columns.
 
 - **Six rows were owned by a task that is already tagged and still open.** Four were already
   done and the ledger had never been told — `R-063`, `R-068`, `R-069`, `R-070` — all closed
@@ -158,13 +168,24 @@ carries the argument for each. **A reviewer should push hardest here.**
 
 | Clause | Result | Commit |
 | --- | --- | --- |
-| `composer gate`, all six steps | *(filled in below)* | |
-| Baseline, before any Task 5 work | **654 passed / 4132 assertions**, six steps green | `f44085b` |
-| Coverage ≥ 90 % on this task's code | *(filled in below)* | |
-| Fresh clone | *(filled in below)* | |
-| Migrations apply twice, rollback clean | *(filled in below)* | |
-| Three consecutive green full-suite runs | *(filled in below)* | |
-| Every new route in the generated OpenAPI spec, `/v1`, committed | **28 routes, 64 problem responses**, `openapi:check` green | at head |
+| Baseline, **before any Task 5 work** | **654 passed / 4132 assertions**, six steps green — identical to the `task-4` tag's own | `f44085b` |
+| `composer gate`, all six steps | **green, exit 0 — 722 passed / 6136 assertions** | `7c76079` |
+| Coverage ≥ 90 % on this task's code | **92.52 % — 928/1003 statements over 36 `app/` files** | `7c76079` |
+| Migrations apply from empty twice · rollback clean · re-apply identical | **all five checks passed** — 1 table and 0 functions left after rollback | `7c76079` |
+| Every new route in the generated OpenAPI spec, `/v1`, committed | **26 paths, 30 operations, 65 problem responses**, `openapi:check` matches the routes | `7c76079` |
+| Fresh clone | **PASSED — 722 / 6136, identical to the host**; clone arrived bare (no `vendor/`, no `.env`, no `node_modules/`) and its tracked tree byte-identical | `7c76079` |
+| Three consecutive green full-suite runs | **PASSED on the first attempt — 722 / 6136 three times, no red of any class** | `7c76079` |
+
+**The gate grew by 68 tests and 2004 assertions over the baseline** (654 → 722, 4132 → 6136),
+and the assertion count grew faster than the test count because the role matrix drives a
+cross-product: 5 principals × 12 staff routes × 2 tenants in four cases.
+
+**Coverage was 78.27 % on the first complete build and the gap is recorded rather than quietly
+closed** — `QRPAGER-12-coverage.txt`'s header carries it, because what the number found is worth
+more than the number: `MemberDirectory` was **27/94**, so the member surface had no happy-path
+test at all, while `R-007`'s closure record pointed at the role matrix as the thing covering it.
+The matrix tests who is *refused*. It says nothing about whether a permitted action does the
+right thing to the database.
 
 Transcripts: `QRPAGER-12-baseline-gate.txt`, `QRPAGER-12-gate-2a.txt`,
 `QRPAGER-12-gate-2b.txt`, `QRPAGER-12-gate-final.txt`, `QRPAGER-12-coverage.txt`,
@@ -262,7 +283,7 @@ own.
 
 ## 8. WHAT THE SUITE FOUND THAT I HAD WRONG
 
-Eight, listed because each is a defect a reviewer would otherwise have to find:
+Eleven, listed because each is a defect a reviewer would otherwise have to find — and because every one was found by a test or a measurement rather than by reading:
 
 1. **deptrac refused `App\Features\Devices` → `App\Platform\Auth`** — the rule Task 5 had just
    repurposed, biting its own author. The tenant-pin encoding moved to
@@ -282,22 +303,54 @@ Eight, listed because each is a defect a reviewer would otherwise have to find:
    That is what `public.user_two_factor(uuid)` is for.
 8. **A test of mine asserted a tri-state the code did not have** — a session selection that is
    *present but unusable* must refuse, not fall back. The test was right; the code changed.
+9. **`RequireAbility`'s fail-closed claim covered a subset of the surface, not the surface.**
+   It is on a group inside `routes/v1.php`, so a staff route added outside that group would
+   have had no authorisation check; an ad-hoc `/v1` route answered **200**. Moving it to the
+   `api` group was tried and reverted — it also catches nine test files' unnamed probe routes,
+   and letting unnamed routes through is the fail-open it exists to prevent. The property is
+   now stated as two layers: runtime fail-closed inside the group, and `RoleMatrixTest`'s
+   closed-world check over the whole router for anything outside it.
+11. **I claimed `R-006` and `R-035` were closed and had written no closure record for
+   either.** `§4a` and this handover both said "four rows closed"; the ledger said two. Caught by
+   re-measuring `§5` rather than by trusting either document — **which is exactly the defect
+   `R-003` and `R-004` were caught for by QA M-2 at Task 3**, repeated by me on this branch. Both
+   rows now carry their closure with the measurement behind it. The same re-measurement corrected
+   this section's own counts, which were arithmetic rather than a reading.
+10. **The member surface had no happy-path test at all**, which the coverage number found
+   rather than a review: `MemberDirectory` was **27/94 statements** while `R-007`'s closure
+   record pointed at the role matrix as the thing covering it. The matrix tests who is
+   *refused*; it says nothing about whether the permitted action does the right thing. Nine
+   cases added, including the last-owner rule — the one bound in that class with no RLS or
+   middleware layer underneath it.
 
 ---
 
 ## 9. THE PROOF SCRIPTS, all in the repository (`R-043`)
 
-| Script | Proves |
-| --- | --- |
-| `bin/gate` | the six steps, with the output kept |
-| `bin/coverage` | coverage on this task's own files |
-| `bin/fresh-clone-proof` | the gate from a clean checkout |
-| `bin/migration-rollback-proof` | apply twice, roll back clean, re-apply identical |
+| Script | Proves | New? |
+| --- | --- | --- |
+| `bin/gate` | the six steps, with the output kept | existed |
+| `bin/coverage` | coverage on this task's own files | existed; gained `memory_limit=1G` |
+| `bin/fresh-clone-proof` | the gate from a clean checkout | existed |
+| `bin/migration-rollback-proof` | apply twice, roll back clean, re-apply identical | existed |
+| **`bin/three-green-runs`** | **three CONSECUTIVE green full-suite runs, with every red named** | **added at Task 5** |
 
-Task 5 adds **no new proof script**, and that is worth stating: every clause it has to
-demonstrate is demonstrated by a test in the suite or by one of the four above. The one
-clause that would need a new harness is the browser proof in `§6`, and that harness is
-Playwright, which Task 9 owns.
+**`bin/three-green-runs` is the one addition, and it is committed rather than run by hand on
+purpose.** `R-043` is the `§5` row about a gate clause whose demonstration lives in a session
+scratchpad, and Task 4 met this same bar with three manual `composer gate` invocations written
+up afterwards. The script encodes Muhammad's rule — any red named with its SQLSTATE, `R-092`'s
+`08006` and claim-shortfall family non-blocking, any other red stopping the run — and adds the
+part that was implicit: **a red of any kind RESETS the consecutive counter**, because "three
+greens somewhere in a sequence" is what a flaky suite reaches by chance and is not the property
+being asserted.
+
+Two things needed changing before coverage could be measured at all, both recorded where they
+are rather than only here: `phpunit.xml` and `bin/coverage` each set `memory_limit=1G`, because
+two *different* processes hit the container's 128M default — Scramble's class map in the parent
+and pcov's driver in the child — and `php -d` reaches only the parent.
+
+**No script was needed for the browser proof in `§6`**, because that harness is Playwright and
+Task 9 owns it.
 
 ---
 
@@ -311,5 +364,7 @@ Playwright, which Task 9 owns.
   delivered email, whose first gate clause is Task 6's; `/register` does not exist at any
   tier.
 - **Staff invites** — Task 6's wizard. `members.store` adds an **existing** account.
-- **`R-006` is closed; `R-007`, `R-035` and `R-081` are closed.** Task 5 owned exactly those
-  four.
+- **All four rows Task 5 owned are closed** — `R-006`, `R-007` (both halves), `R-035`, `R-081` —
+  **and two of those closures were claimed in `§4a` and here before they were written into
+  `§5`.** Caught by re-measuring the ledger, not by trusting either document; see `§8` finding
+  11. `§5` ends the task at **103 rows, 34 closed, 69 open**.

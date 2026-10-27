@@ -229,19 +229,30 @@ rewrite the column. So the check belongs **where the credential is exchanged**. 
 
 ## 8. Definition of Done — `§6` and `§11`
 
-* \[ ] `composer pint`, `composer stan`, `php artisan test` green against **real** Postgres + Redis
-* \[ ] Fresh **clone**, not just a fresh DB: migrations apply from empty; second apply is a no-op; **rollback of this task's migrations runs clean**
-* \[ ] Unit coverage **≥ 90%** on the code this task adds, measured with `bin/coverage`, number reported
-* \[ ] Every REST endpoint added is in the **generated OpenAPI spec**, committed, versioned `/v1/`
-* \[ ] Every shared contract (role enum, DTO) generated from its single source; **CI fails when it is stale**
-* \[ ] Every bug found has a regression test that **fails without the fix** — proven by reverting it
-* \[ ] All previous tasks' suites still pass
-* \[ ] `PLAN.md` updated
-* \[ ] Branch `task-5-auth-rbac`, pushed, CI green
-* \[ ] **QA review** in a separate agent session — findings posted here **in full**, with the count (`§11` relay rule)
-* \[ ] **Security review** in a separate agent session — findings posted here **in full**, with the count
-* \[ ] Every Critical and High fixed with a regression test; Medium / Low fixed or written into `PLAN.md §5` with an owner and a date
+* \[x] `composer pint`, `composer stan`, `php artisan test` green against **real** Postgres + Redis — via `composer gate`, all six steps, transcripts committed
+* \[x] Fresh **clone**, not just a fresh DB — `bin/fresh-clone-proof`; and migrations apply from empty twice, roll back clean and re-apply byte-identically (`bin/migration-rollback-proof`, all five checks)
+* \[x] Unit coverage **≥ 90%** on the code this task adds — **92.52 %, 928/1003 statements over 36 `app/` files**, by `bin/coverage`. **It was 78.27 % on the first complete build, and that is recorded rather than quietly fixed:** the member surface had no happy-path test at all, which the number found and which the role matrix had been credited with covering
+* \[x] Every REST endpoint added is in the **generated OpenAPI spec**, committed, versioned `/v1/` — 26 paths, 30 operations, 65 problem responses, `openapi:check` green
+* \[x] Every shared contract generated from its single source — `TenantRole`, and the new `Ability` / `Principal` / `RoleMatrix`, are PHP-side single sources read by both the code and the tests. **The TypeScript mirror is Task 8's**, because `packages/contracts` does not exist until then (ADR-003), so there is nothing yet that could go stale. Stated in `§10.2(e)` rather than left as an omission
+* \[x] Every bug found has a regression test that **fails without the fix** — **ten, listed in the handover's `§8`**, and every one was found by a test rather than by reading
+* \[x] All previous tasks' suites still pass
+* \[x] `PLAN.md` updated — `§0`, `§1` (five decisions), `§2.3` / `§2.4` / `§2.7` / `§2.8`, `§3` row 5's gate, `§3.1` row 5, `§3.2`'s sixteenth delta, `§4a`, and `§5` (four rows closed, four written)
+* \[x] Branch `task-5-auth-rbac`, pushed · ⛔ **CI green is NOT verified from here** — a CI conclusion is not readable from a session, which is `R-044` and `R-072` and has been a standing item since Task 2
+* \[ ] **QA review** in a separate agent session — findings posted here **in full**, with the count (`§11` relay rule) · **the user's next prompt; `W-17`**
+* \[ ] **Security review** in a separate agent session — findings posted here **in full**, with the count · **the user's next prompt; `W-17`**
+* \[ ] Every Critical and High fixed with a regression test; Medium / Low fixed or written into `PLAN.md §5` with an owner and a date · **nothing to disposition yet, because no review has run**
 * \[ ] ~~**Tag** `task-5` **created and pushed.**~~ **No PR, no merge and NO TAG** — the rank-1 prompt of 2026-10-27 overrides this clause and `§11`'s PR step for this task. The reviews are the user's next prompt, not this session's.
+
+### 8.1 ⛔ AND ONE GATE CLAUSE IS NOT MET — read this before the ticks above
+
+**Passkey registration and login are not proven end to end through the browser.** `§3` row 5
+requires it; the credential ceremony lives in `navigator.credentials` and this machine has no
+node, no Chromium and no Playwright — measured, not assumed. The harness page is built and
+mounted outside `production`, and every server-side half is tested. **No attestation was
+fabricated to make it look proven.** Carried as **`R-100`**, owned by Task 9, whose own gate
+already requires a Playwright harness. `QRPAGER-12-handover.md §6.1` has the recipe that closes
+it.
+
 
 ## 9. Working rules
 
