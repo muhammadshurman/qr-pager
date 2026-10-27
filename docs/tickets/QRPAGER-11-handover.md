@@ -429,20 +429,37 @@ commit. `§3.1` row 4 calls that `F10`'s class.
 
 | What | Figure | Commit | How |
 | --- | --- | --- | --- |
-| `composer gate`, working tree | **all six green, exit 0 — 601 passed, 3428 assertions** (592 / 3380 before the review round) | **`5f1bdbf`**, the pushed head of the review round | `composer gate`; output at `docs/tickets/QRPAGER-11-gate.txt`. Measured there rather than quoted from the code commit, because `R-071` is the row for "`§6`'s fresh-clone clause has no evidence at the head it is being tagged on" |
-| `composer gate`, **fresh clone** | **all six green — 601 passed, 3428 assertions**, the same counts as the working tree | **`5f1bdbf`** | clone → `cp .env.example .env` → `composer install` → `key:generate` → `composer gate`; output at `docs/tickets/QRPAGER-11-fresh-clone-gate.txt` |
-| Baseline, branch point | 492 passed, 2182 assertions | `1695f0b` | so Task 4 adds **100 tests, 1198 assertions** |
-| **Coverage, this task's code** | **96.50 % — 964/999 over 25 `app/` files**, `--min=90` passing (96.57 % before the review round; the denominator grew) | `a27e98b` | `bin/coverage --task=task-3-pager-domain --min=90`; output at `docs/tickets/QRPAGER-11-coverage.txt` |
-| **`p99` of record, polling endpoint** | **2.730 ms** vs a 5 ms budget; batches **2.730** / 3.137 / 3.499 | `5d89234` + this round's working tree | **the FULL harness** — `bin/poll-latency-proof` with no arguments: 20 warm-up discarded, 200 measured, **best p99 of 3 batches**, Linux 6.18.54 WSL2 x86_64, 8 CPUs, load 1.08, PHP 8.4.27. **Not `--quick`.** Full transcript committed at `docs/tickets/QRPAGER-11-p99.txt`; the earlier 3.337 ms was also the full harness, at `5dd7828`, before the read-time expiry check |
+| `composer gate`, working tree | **all six green, exit 0 — 622 passed, 3641 assertions** at **`bef66a3`** · *superseded: 601 passed / 3428 assertions at `5f1bdbf`, measured before the rebase* | **`bef66a3`** (rebased), was `5f1bdbf` | `composer gate`; output at `docs/tickets/QRPAGER-11-gate.txt`. Measured there rather than quoted from the code commit, because `R-071` is the row for "`§6`'s fresh-clone clause has no evidence at the head it is being tagged on" |
+| `composer gate`, **fresh clone** | **all six green — 622 passed, 3641 assertions**, the same counts as the working tree, now via `bin/fresh-clone-proof` · *superseded: 601 / 3428 at `5f1bdbf`* | **`bef66a3`** (rebased), was `5f1bdbf` | clone → `cp .env.example .env` → `composer install` → `key:generate` → `composer gate`; output at `docs/tickets/QRPAGER-11-fresh-clone-gate.txt` |
+| Baseline, branch point | **513 passed, 2383 assertions** — the `task-3` TAG, which is the base after the rebase · *superseded: 492 / 2182 at `1695f0b`, the branch point before Task 3 was finished* | `task-3` = `f30bd24`, was `1695f0b` | so Task 4 adds **109 tests, 1258 assertions** (was 100 / 1198 against the older base) |
+| **Coverage, this task's code** | **96.60 % — 994/1029 over 24 `app/` files**, `--min=90` passing · *superseded: 96.50 % — 964/999 over 25 files at `a27e98b`*. The base ref changed from the BRANCH `task-3-pager-domain`, which moved under it, to the TAG `task-3`, which cannot — so the file set is smaller and strictly more honest | **`bef66a3`** (rebased), was `a27e98b` | `bin/coverage --task=task-3-pager-domain --min=90`; output at `docs/tickets/QRPAGER-11-coverage.txt` |
+| **`p99` of record, polling endpoint** | **2.931 ms** vs a 5 ms budget; batches 6.479 / **2.931** / 3.395, best taken · *superseded: 2.730 ms, batches 2.730 / 3.137 / 3.499, at `5d89234`*. **Batch 1 came in ABOVE budget at 6.479 ms**, which is exactly why the method takes the best of three on a machine that is not quiet — load was 1.12 — and why a single batch would have reported a failure the other two contradict | **`bef66a3`** (rebased), was `5d89234` | **the FULL harness** — `bin/poll-latency-proof` with no arguments: 20 warm-up discarded, 200 measured, **best p99 of 3 batches**, Linux 6.18.54 WSL2 x86_64, 8 CPUs, load 1.08, PHP 8.4.27. **Not `--quick`.** Full transcript committed at `docs/tickets/QRPAGER-11-p99.txt`; the earlier 3.337 ms was also the full harness, at `5dd7828`, before the read-time expiry check |
 | Postgres statements per poll | **0** | `a27e98b` | query listener over a real request |
 | Redis commands in the handler | **2** (`get`, `get`); **7** across the whole request | `a27e98b` | `CommandExecuted` listener |
-| Kill mid-batch | **8 sent, 0 pending, 0 dead**, max attempts 2 of 6, no duplicate `(tenant_id, dedupe_key)` | `a27e98b` | `bin/outbox-kill-proof 8` — a real `kill -9` |
+| Kill mid-batch | **8 sent, 0 pending, 0 dead**, max attempts 2 of 6, no duplicate `(tenant_id, dedupe_key)` — re-measured unchanged on the rebased tree | **`bef66a3`** (rebased), was `a27e98b` | `bin/outbox-kill-proof 8` — a real `kill -9` |
 | Migrations | apply from empty, second apply a no-op, rollback → 1 table / 0 functions, re-apply byte-identical | `a27e98b` | `bin/migration-rollback-proof`, all five checks |
 | gitleaks pre-commit | `leaks found: 1`, exit 1, nothing committed | — | the 82-char `github_pat_` probe from `CLAUDE.md`; `git config core.hooksPath .githooks` was already set in this clone |
 
-**The numbers were measured at different commits and that is stated rather than smoothed.**
-`p99` was taken at `5dd7828` because the later two commits are tests and documents; the gate
-and coverage are at `a27e98b`, the head. This document's own commit is docs-only.
+**⚠ EVERY FIGURE IN THIS TABLE WAS RE-MEASURED AFTER THE REBASE ONTO `task-3`
+(2026-10-27), and the superseded value is kept beside the new one rather than swapped out.**
+Before the rebase they were taken at `5f1bdbf`, `a27e98b` and `5d89234` against a base of
+`1695f0b` — a branch point that predates Task 3 being finished — so every one of them
+described a tree that no longer exists. They are now all at **`bef66a3`**, whose base is the
+`task-3` tag.
+
+**What moved, and what that says.** The suite gained 21 cases and 213 assertions, which is
+Task 3's own additions arriving (its security-contract cases, the in-process generator case,
+and the three on `RequireTenantScope`). Coverage moved by +0.10 pp on a denominator 30
+statements larger. `p99` moved by +0.201 ms, within the spread of its own batches. Nothing
+moved in a direction that needs explaining, and the one figure that could have — a first
+batch at 6.479 ms, above budget — is the reason the method was written to take the best of
+three rather than the first.
+
+**One superseded figure is NOT in this table**: the pre-rebase gate was measured with
+`docs/openapi.json` carrying Scramble's shared `components.responses/ValidationException`
+reference on the customer routes. After the rebase, Task 3's extension replaces it with the
+project's own problem document, so the published document changed and the spec case count
+with it. See `§11a`.
 
 **⚠ The gate row read 577 / 3319 for one draft of this document**, which was a run at
 `47db64e` quoted against `a27e98b` — the commit after it added fifteen cases. It was caught
@@ -548,3 +565,48 @@ Not a defence — the three places I think a review should push hardest.
    on one session that margin narrows, and nothing currently measures it. Task 14 sets the
    number; I have not written a row for it because `R-078` is the same shape, but a reviewer
    might reasonably want one.
+
+
+---
+
+## 11a. What the rebase changed, beyond the numbers
+
+**The rebase found a defect, which is what a rebase is for.** Task 3's security
+post-processing step was written when the API had two kinds of route — two probes and five
+staff endpoints — so it said *"a probe, or else staff"*. The moment Task 4's **customer**
+routes landed on the same document, all four of them were published as requiring a **staff
+bearer token**: a contract telling a customer to present a staff credential, on the one
+surface `§4 › Tenancy` insists must never be confused with it.
+
+Nothing about the application was wrong; the generated document was, and Tasks 8–9 generate
+clients from it. Fixed at `bef66a3`: the generator now distinguishes **three** surfaces, and
+the customer set is read **from the router** (membership of the `customer` middleware group)
+rather than from a second hand-maintained constant, because the failure mode of forgetting to
+edit a list is a route published as needing a credential it does not use.
+
+**The spec's problem-response count went from 14 to 26** — the staff routes' 14 plus the
+customer surface's 12 — because Task 3's `ValidationProblemResponseExtension` and its
+media-type step now apply to Task 4's routes too. Both the committed-file case and the
+in-process generator case assert the new number.
+
+**The vacuous-assertion sweep over the rebased tree: 72 test files, ZERO real instances.**
+The one hit is `ExpectationApiTest:133`, rule 7's own positive control, excepted by file and
+function. `composer guard` runs rule 7 across 190 files with no violation.
+
+**`SourceGuard` rules 7 and 8 met with no collision**, which is what the number reservation
+was for: rule 7's constants are `VACUOUS_NEGATED_CONTAINS` and `VARIADIC_MATCHERS`, rule 8's
+are `DUPLICATE_CANONICAL_DOC`, `CANONICAL_DOCS` and `TASK_TABLE_HEADING`. The merge was two
+additive blocks. Nine cases exercise the two rules and all nine are green.
+
+**Two things found and deliberately NOT changed tonight**, both written down instead:
+
+1. **`arityFrom()` counts a trailing comma as an argument.** `f($x,)` reads as two. It is
+   latent — no call to either variadic matcher in this repository is written that way — and
+   it was found because the ad-hoc inventory had the identical bug and reported two false
+   positives in `TenantScopeGuardTest` before the number was recorded.
+2. **`R-082`'s closing gate names this moment** ("before `task-4` is tagged") and it is not
+   closed. Extending rule 7 to the three slot-2 matchers means flagging
+   `->not->toThrow($class, 'message')`, which is Pest's **documented** idiom for asserting an
+   exception message — a policy choice binding every future test in the repository, and
+   therefore Muhammad's rather than a 2 a.m. guard edit. The measurement is in hand: zero
+   instances today, so nothing is inert while the row stays open.

@@ -1,4 +1,26 @@
-vacuous-assertion-proof — 5d89234, 2026-10-27T11:50:02Z
+# bin/vacuous-assertion-proof
+#
+# Measured on the REBASED branch at bef66a3 — task-4-notifications rebased onto the
+# task-3 tag (f30bd24). Every figure here supersedes one taken before the rebase;
+# PLAN.md §4a and QRPAGER-11-handover.md §11 annotate the old value in place.
+#
+# All three invariants proven to FAIL without their fix, on the rebased tree.
+#
+# AND THE SWEEP'S COUNT (B5). A comment-blind inventory of the five matchers that absorb
+# a second-argument message — toContain and toContainEqual (variadic, rule 7's subject)
+# plus toHaveKey, toHaveProperty and toThrow (message in slot 2, R-082) — over all 72
+# test files found ONE negated multi-argument call: ExpectationApiTest:133, which is rule
+# 7's own positive control and is excepted by file AND function name. So ZERO real
+# instances remain.
+#
+# The first run of that inventory reported THREE, and the two extra were
+# TenantScopeGuardTest:155 and :160 — single-argument calls with a TRAILING COMMA, which
+# the counter read as a second argument. Corrected before the number was recorded. Rule
+# 7's own arityFrom() has the same trailing-comma behaviour; it is latent today because
+# no call to either variadic matcher is written that way, and it is written down here
+# rather than fixed unasked at this hour.
+#
+vacuous-assertion-proof — bef66a3, 2026-10-27T14:24:34Z
 
 === 1. Task 1 — 'grants UPDATE on no tenant_id column anywhere' (GrantMatrixTest)
        the control behind: a row cannot be moved between tenants

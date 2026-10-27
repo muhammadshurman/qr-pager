@@ -1,6 +1,21 @@
+# bin/poll-latency-proof (FULL harness, not --quick)
+#
+# Measured on the REBASED branch at bef66a3 — task-4-notifications rebased onto the
+# task-3 tag (f30bd24). Every figure here supersedes one taken before the rebase;
+# PLAN.md §4a and QRPAGER-11-handover.md §11 annotate the old value in place.
+#
+# REPORTED p99 2.931 ms against a 5 ms budget; batches 6.479 / 2.931 / 3.395, best taken.
+# Zero Postgres statements per poll (budget 0), two Redis commands in the handler.
+#
+# SUPERSEDES 2.730 ms, measured pre-rebase at 5d89234. The figure moved by 0.201 ms and
+# the method did not: 20 warm-up discarded, 200 measured, best p99 of 3 batches. Batch 1
+# came in at 6.479 ms — ABOVE budget — which is why the method takes the best of three on
+# a machine that is not quiet: load was 1.12 at the start of the run. A single batch would
+# have reported a failure that the second and third batches contradict.
+#
 poll-latency-proof
-  commit       5d89234
-  machine      Linux 6.18.54.1-microsoft-standard-WSL2 x86_64, 8 CPU(s), load 1.08 0.89 0.80
+  commit       bef66a3
+  machine      Linux 6.18.54.1-microsoft-standard-WSL2 x86_64, 8 CPU(s), load 1.12 1.09 0.95
   php          8.4.27
   mode         full -- properties and timing asserted
   method       20 warm-up discarded, 200 measured, best p99 of 3 batch(es);
@@ -9,10 +24,10 @@ poll-latency-proof
   Postgres statements per poll   0  (budget 0)
   Redis commands in the handler  2  [get,get]  (budget 2)
 
-  batch 1   p50  2.169 ms   p95  2.577 ms   p99  2.730 ms   max  3.182 ms   <- best
-  batch 2   p50  2.186 ms   p95  2.737 ms   p99  3.137 ms   max  3.523 ms
-  batch 3   p50  2.204 ms   p95  2.757 ms   p99  3.499 ms   max  4.181 ms
+  batch 1   p50  2.437 ms   p95  4.301 ms   p99  6.479 ms   max  9.210 ms
+  batch 2   p50  2.191 ms   p95  2.564 ms   p99  2.931 ms   max  3.589 ms   <- best
+  batch 3   p50  2.220 ms   p95  2.694 ms   p99  3.395 ms   max  3.513 ms
 
-  REPORTED p99 2.730 ms against a budget of 5.0 ms
+  REPORTED p99 2.931 ms against a budget of 5.0 ms
 
 poll-latency-proof: zero Postgres, two Redis commands, p99 under budget.

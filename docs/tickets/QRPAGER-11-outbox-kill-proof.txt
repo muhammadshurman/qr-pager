@@ -1,0 +1,32 @@
+# bin/outbox-kill-proof
+#
+# Measured on the REBASED branch at bef66a3 — task-4-notifications rebased onto the
+# task-3 tag (f30bd24). Every figure here supersedes one taken before the rebase;
+# PLAN.md §4a and QRPAGER-11-handover.md §11 annotate the old value in place.
+#
+# 8 sent, 0 pending, 0 dead; max attempts 2 of 6 allowed; no duplicate (tenant_id,
+# dedupe_key). A real worker, kill -9 while blocked inside a send, lease released, a
+# second worker finishing the batch.
+#
+outbox-kill-proof — bef66a3, 2026-10-27T14:24:32Z
+  rows: 8
+  database: qrpager_outbox_proof (bootstrapped and migrated)
+
+seeded:
+{
+    "tenants": 2,
+    "sessions": 8,
+    "pending_outbox_rows": 8
+}
+
+worker pid 188945 started; waiting for it to claim the batch and block
+worker killed -9 while blocked inside a send
+
+after the kill:
+  pending    8 row(s), max attempts 1
+
+released 8 leased row(s)
+lease released; running a second worker to completion
+
+assertions: 8 sent, 0 pending, 0 dead; max attempts 2 of 6 allowed
+outbox-kill-proof: nothing lost, nothing duplicated.
