@@ -352,7 +352,9 @@ final class OutboxWorker
         // drops the notification for a customer's second device, and a customer with a
         // phone and a tablet is not exotic.
         if ($retryable > 0) {
-            return $this->backOff($row, 'edge refused for '.$retryable.' of '.count($devices).' device(s)');
+            // workDone: every device has been attempted by here, so a lost lease costs
+            // the record and not the attempt.
+            return $this->backOff($row, 'edge refused for '.$retryable.' of '.count($devices).' device(s)', true);
         }
 
         // EVERY DEVICE REFUSED PERMANENTLY AND NOBODY TOOK IT: the row is DEAD, not sent.
@@ -562,9 +564,20 @@ final class OutboxWorker
      * `qrpager_worker` carries `statement_timeout = 15s` and `lock_timeout = 3s`, so a
      * failing session read is ordinary under exactly the load that makes a lease lapse.
      *
+     * ⚠ `$workDone` DECIDES WHETHER A LOST ROW GETS ITS ATTEMPT BACK, and the two callers
+     * differ. The session-read failure happens BEFORE any send, so a worker that turns
+     * out not to hold the row has done nothing and hands the attempt back (QA `M-7`).
+     * The `retryable > 0` arm happens AFTER the sends, and there the attempt was really
+     * spent -- handing it back would let a row that lapses its lease on every pass be
+     * re-sent for ever, which is the property `ATTEMPTS ARE INCREMENTED AT CLAIM TIME`
+     * exists to prevent: a poison row must cost attempts. The bound that stops that arm
+     * being reachable in the ordinary case is the cap arithmetic in config/webpush.php
+     * (5 x 8 = 40 s inside a 60 s lease), and this parameter is what keeps it honest when
+     * the bound is exceeded anyway.
+     *
      * @return array{result: 'retried'|'dead'|'skipped', pruned: int}
      */
-    private function backOff(ClaimedOutboxRow $row, string $reason): array
+    private function backOff(ClaimedOutboxRow $row, string $reason, bool $workDone = false): array
     {
         $max = max(1, (int) config('webpush.worker.max_attempts'));
 
@@ -572,7 +585,7 @@ final class OutboxWorker
         // INCLUDING this one. At the cap the row has had its tries.
         if ($row->attempts + 1 >= $max) {
             if (! $this->finish($row, OutboxStatus::Dead, 'retries exhausted: '.$reason)) {
-                return $this->abandon($row);
+                return $workDone ? ['result' => 'skipped', 'pruned' => 0] : $this->abandon($row);
             }
 
             $this->log->warning('outbox row dead-lettered after exhausting retries', [
@@ -591,7 +604,7 @@ final class OutboxWorker
         );
 
         if ($written !== 1) {
-            return $this->abandon($row);
+            return $workDone ? ['result' => 'skipped', 'pruned' => 0] : $this->abandon($row);
         }
 
         return ['result' => 'retried', 'pruned' => 0];

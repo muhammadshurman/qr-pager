@@ -103,9 +103,36 @@ run "revert B — the device cap removed (R-083's second half)"
 # security M-2): the first round put the token on the statement before the SEND and left
 # it off the ones that write.
 # ---------------------------------------------------------------------------------
+# ⚠ THE BINDING GOES WITH THE PLACEHOLDER, and the first version of this revert forgot.
+# It stripped `and attempts = ?` from the SQL and left `$row->leaseIdentity()` in the
+# binding array, so every statement raised `SQLSTATE[HY093] Invalid parameter number`
+# instead of running the pre-fix query -- and since nothing in pass(), process() or the
+# command catches, EVERY case that reaches a worker write went red with an exception.
+# That is not evidence that the guard works; it is evidence that a broken query fails.
+# The scoped review of this fix caught it, and the tell was in the arithmetic: the
+# control case "does not cap a session that is under the limit", which this script's own
+# header calls one that MUST NOT MOVE, moved.
 restore
 sed -i "s|^\( *\)where id = ? and status = 'pending' and attempts = ?|\1where id = ? and status = 'pending' -- REVERTED BY bin/lease-revert-proof|" "$worker"
+sed -i 's|\[\$status->value, \$error, \$row->id, \$row->leaseIdentity()\],|[$status->value, $error, $row->id],|' "$worker"
+sed -i 's|\[\$this->backoffSeconds(\$row->attempts + 1), \$reason, \$row->id, \$row->leaseIdentity()\],|[$this->backoffSeconds($row->attempts + 1), $reason, $row->id],|' "$worker"
+sed -i 's|^\( *\)\[\$row->id, \$row->leaseIdentity()\],|\1[$row->id],|' "$worker"
 grep -q 'REVERTED BY bin/lease-revert-proof' "$worker" || { echo "FATAL: the write predicates were not found"; exit 1; }
+# THE ARITY IS CHECKED, because php -l cannot see it and HY093 looks exactly like a
+# regression when it reaches the suite. Each of the three binding arrays must have lost
+# its leaseIdentity() argument; reLease()'s keeps its own, which this revert does not
+# touch.
+for leftover in \
+  '\[\$status->value, \$error, \$row->id, \$row->leaseIdentity()\]' \
+  '\[\$this->backoffSeconds(\$row->attempts + 1), \$reason, \$row->id, \$row->leaseIdentity()\]' \
+  '^ *\[\$row->id, \$row->leaseIdentity()\]'
+do
+  if grep -q "$leftover" "$worker"; then
+    echo "FATAL: revert C left a binding without its placeholder — the run would be HY093, not evidence" >&2
+    exit 1
+  fi
+done
+php -l "$worker" >/dev/null || { echo "FATAL: revert C produced invalid PHP"; exit 1; }
 run "revert C — the ownership guard removed from finish(), backOff() and abandon()"
 
 # ---------------------------------------------------------------------------------

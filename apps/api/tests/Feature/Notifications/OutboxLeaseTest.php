@@ -686,3 +686,58 @@ it('dead-letters a row whose session no longer exists, rather than retrying fore
     expect($after->status)->toBe(OutboxStatus::Dead->value)
         ->and($after->last_error)->toBe('unroutable outbox type');
 });
+
+it('does not let a re-subscribing device evict itself, which a browser does on every load', function (): void {
+    // THE SELF-DELETE. `ON CONFLICT DO UPDATE` sets p256dh, auth and updated_at and
+    // deliberately NOT created_at, so a device that re-subscribes keeps its position in
+    // the ordering — and the first version of the eviction let the OLDEST of more than
+    // `cap` devices delete its own row inside its own registration call, then answer
+    // `200 already registered`. The subscription endpoint's own docblock invites a
+    // browser to call it on every page load, so this is the ordinary path and not an
+    // edge. Found by the scoped review of the ownership fix, 2026-10-27.
+    //
+    // RED BEFORE THE FIX: the oldest device's row is gone after it re-registers.
+    $tenant = $this->makeTenant();
+    $cap = (int) config('webpush.worker.max_devices_per_session');
+
+    PushFixtures::configureVapid();
+    $issued = app(PagerSessions::class)->create($tenant, 'S-'.random_int(100, 999));
+    $this->postJson('/v1/pager/session', ['token' => $issued->token->reveal()])->assertOk();
+
+    $devices = [];
+
+    for ($i = 0; $i < $cap; $i++) {
+        $device = PushFixtures::subscription();
+        $devices[] = $device;
+
+        $this->postJson('/v1/pager/subscription', [
+            'token' => $issued->token->reveal(),
+            'endpoint' => $device['endpoint'],
+            'p256dh' => $device['p256dh'],
+            'auth' => $device['auth'],
+        ])->assertStatus(201);
+    }
+
+    // The session is exactly at the cap. Now the OLDEST device re-subscribes, which is
+    // what a browser does when its page reloads.
+    $oldest = $devices[0];
+
+    $this->postJson('/v1/pager/subscription', [
+        'token' => $issued->token->reveal(),
+        'endpoint' => $oldest['endpoint'],
+        'p256dh' => $oldest['p256dh'],
+        'auth' => $oldest['auth'],
+    ])->assertStatus(200);
+
+    $stored = storedEndpoints($tenant, (string) $issued->session->id);
+
+    expect($stored)->toHaveCount($cap, 'a re-subscribe changed how many devices are stored')
+        ->and($stored)->toContain($oldest['endpoint']);
+
+    // AND IT IS STILL NOTIFIED, which is the property the row count is a proxy for.
+    app(PagerSessions::class)->markReady($tenant, $issued->session->id);
+    $edge = leaseEdge(201);
+    app(OutboxWorker::class)->pass();
+
+    expect($edge->endpointsCalled())->toContain($oldest['endpoint']);
+});

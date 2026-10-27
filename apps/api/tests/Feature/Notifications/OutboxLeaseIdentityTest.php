@@ -471,3 +471,46 @@ it('rolls an attempt back only when the row still carries this worker’s token'
     expect($rollback(2))->toBe(1)
         ->and((int) identityRow($tenant, $outboxId)->attempts)->toBe(1);
 });
+
+it('returns from every abandon(), because the identity proof rests on the worker retiring its token', function (): void {
+    // THE ONE LOAD-BEARING PREMISE THAT HAD NO CONTROL — found by the scoped review of
+    // the ownership fix, 2026-10-27.
+    //
+    // The lease identity survives a decrement only because `abandon()` RETIRES the token
+    // in the same breath as it hands the attempt back: the statement is guarded by the
+    // worker's own token, so it fires only when no other claim has intervened, and the
+    // worker then stops touching the row. The guard is in the SQL and is pinned by the
+    // source scan above. The RETIRING half is a property of every call site being
+    // `return $this->abandon(...)` — and a future call site that abandoned and then kept
+    // processing would break the identity silently, with nothing going red.
+    //
+    // So it is enforced the way SourceGuard enforces §4's GUC rules: mechanically, on the
+    // text, with a deliberately bad shape proven to fail.
+    $source = (string) file_get_contents(app_path('Features/Notifications/OutboxWorker.php'));
+
+    $offenders = [];
+    $calls = 0;
+
+    foreach (explode("\n", $source) as $number => $line) {
+        if (! str_contains($line, '$this->abandon(')) {
+            continue;
+        }
+
+        $calls++;
+
+        // Either `return $this->abandon(...)` or a ternary whose arms both return, which
+        // is the one other shape in the file: `return $cond ? [...] : $this->abandon(...)`.
+        if (preg_match('/^\s*return\b/', $line) !== 1) {
+            $offenders[] = ($number + 1).': '.trim($line);
+        }
+    }
+
+    expect($calls)->toBeGreaterThanOrEqual(5, 'abandon() has fewer call sites than expected — has it been renamed?')
+        ->and($offenders)->toBe([], 'an abandon() call does not return immediately: '.implode(' | ', $offenders));
+
+    // THE POSITIVE CONTROL, so a pass here means the scan can fail. The same check over a
+    // line that calls abandon() without returning must flag it.
+    $planted = '        $this->abandon($row);';
+
+    expect(preg_match('/^\s*return\b/', $planted))->toBe(0, 'the scan would not flag a bare abandon() call');
+});

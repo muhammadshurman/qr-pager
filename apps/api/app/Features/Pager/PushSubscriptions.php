@@ -88,7 +88,7 @@ final class PushSubscriptions
             // Keyed by id from a policy-limited read inside this scope, never a bulk
             // DELETE -- `§4 › Postgres traps` applies to DELETE exactly as it does to
             // UPDATE, and the app role holds DELETE on this table for `forget()`.
-            $this->evictOldestBeyondCap($session);
+            $this->evictOldestBeyondCap($session, $endpoint);
 
             return $existing === null;
         });
@@ -100,19 +100,33 @@ final class PushSubscriptions
      * Runs INSIDE register()'s tenant scope, which is why it takes no tenant argument and
      * why it must never be called from anywhere else: outside a scope the SELECT below
      * sees nothing and the DELETE would be a no-op that looked like success.
+     *
+     * ⚠ THE DEVICE THAT IS REGISTERING RIGHT NOW IS EXCLUDED, and that is not a detail.
+     * `ON CONFLICT DO UPDATE` sets `p256dh`, `auth` and `updated_at` and deliberately NOT
+     * `created_at`, so a device that re-subscribes keeps its original position in the
+     * ordering -- and the first version of this method therefore let the OLDEST of more
+     * than `cap` devices DELETE ITS OWN ROW inside its own registration call, and then
+     * answer `200 already registered`. A browser that re-subscribes on every page load,
+     * which is exactly what this endpoint's docblock invites, would unregister itself
+     * every time. Found by the scoped review of the ownership fix, 2026-10-27.
+     *
+     * Excluding it and taking `cap - 1` of the rest is the same rule stated correctly:
+     * the caller keeps its place and the oldest of the others go.
      */
-    private function evictOldestBeyondCap(ResolvedPagerSession $session): void
+    private function evictOldestBeyondCap(ResolvedPagerSession $session, string $keep): void
     {
         $cap = max(1, (int) config('webpush.worker.max_devices_per_session'));
+        $others = $cap - 1;
 
         /** @var list<object{id: string}> $stale */
         $stale = DB::select(
             "select id
                from push_subscriptions
               where pager_session_id = ?
+                and endpoint <> ?
               order by created_at desc, id desc
-             offset {$cap}",
-            [$session->id],
+             offset {$others}",
+            [$session->id, $keep],
         );
 
         foreach ($stale as $row) {
