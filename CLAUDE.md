@@ -62,6 +62,21 @@ identified it in one sitting (two concurrent runners and an unserialized `TRUNCA
 `PLAN.md` R-049). A gate you cannot read afterwards is a gate you have to re-run to
 learn anything from.
 
+**And `composer gate` is the form that leaves a *readable* one, which running the three by
+hand is not guaranteed to be.** `laravel/pao` swaps the console output style whenever
+`Laravel\AgentDetector\AgentDetector::detect()->isAgent` — a detector over ~40 vendor
+environment variables, `AI_AGENT` and `CLAUDECODE` among them — so inside **any** agent
+session `php artisan test` prints a single JSON line, and on an assertion failure that line
+carries `failures[].test`, `.file`, `.line` and `.message` with **no frame list at all**.
+In an ordinary terminal the same command prints Pest's normal output, frames included. So
+the three commands produce different evidence for a human and for a tool, which is how
+`R-054` came to be measured as a defect in `bin/gate` when it was never a property of the
+script. `bin/gate` exports **`PAO_DISABLE=1`** (that package's own off switch, checked
+before every other condition), so its log is the same artifact for every runner. **Running
+`php artisan test` by hand from a session: set `PAO_DISABLE=1` too, or the failure you are
+reading has had its frames removed before you saw it.** Measured 2026-10-27: unsetting
+`AI_AGENT` alone still gave JSON, `CLAUDECODE` alone still gave JSON, both gave frames.
+
 First run on a machine, or after `docker compose down -v`: the cluster's superuser is
 `qrpager_root` and the three application roles are created by
 

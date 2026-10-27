@@ -11,7 +11,8 @@
 #
 # So: every step's full output is tee'd to one file under storage/logs (git-ignored),
 # the path is printed before the first step and again at the end, and the file survives
-# the run. A red run leaves the test name, the SQLSTATE and the stack on disk.
+# the run. A red run leaves the test name, the exception class, the SQLSTATE, the source
+# excerpt and the frame list on disk.
 #
 # NOT A REPLACEMENT FOR THE THREE COMMANDS in PROJECT_INSTRUCTIONS.md §6 -- it runs
 # them, in the gate's own order, plus the three this task added (guard, deptrac,
@@ -23,6 +24,32 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
+
+# R-054, and the reason that row existed: WHAT THIS LOG CONTAINS DEPENDED ON WHO RAN IT.
+#
+# laravel/pao replaces the console output style whenever
+# Laravel\AgentDetector\AgentDetector::detect()->isAgent -- a detector over ~40 vendor
+# environment variables (AI_AGENT, CLAUDECODE, CURSOR_AGENT, CODEX_*, GEMINI_CLI and the
+# rest), plus some compound conditions and a filesystem probe. Inside an agent session
+# `php artisan test` therefore prints ONE JSON LINE; in an ordinary terminal it prints
+# Pest's normal output. Measured 2026-10-27: unsetting AI_AGENT alone still gave JSON,
+# unsetting CLAUDECODE alone still gave JSON, unsetting both gave the normal output --
+# any one indicator is enough.
+#
+# That is what made R-054 true: the JSON path carries failures[].test/.file/.line/
+# .message and no frame list at all for an assertion failure, so the gate's own promise
+# of "the stack" was false for whoever happened to run it from a tool. It was never a
+# property of this script, which is why the row read as unfixable without narrowing the
+# claim.
+#
+# PAO_DISABLE is that package's own off switch and it is checked before every other
+# condition (vendor/laravel/pao/src/Laravel/ServiceProvider.php:22). Exported here rather
+# than unsetting the detector's variables one by one: that list belongs to the package and
+# would go stale the next time an agent vendor is added, which is the duplicated-list
+# shape QA H-1 already cost this project once.
+#
+# So the claim above is KEPT rather than narrowed, and it is now true for every runner.
+export PAO_DISABLE=1
 
 log="storage/logs/gate-$(date -u +%Y%m%dT%H%M%SZ).log"
 : >"$log"

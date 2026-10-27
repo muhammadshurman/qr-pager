@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# R-049: two concurrent suite invocations on two different files, both green.
+#
+# THE FAILURE THIS PROVES IS GONE. TestCase::setUp() truncates six tables before every
+# test. Concurrency was handled for db:bootstrap (pg_advisory_lock) and NOWHERE ELSE, so a
+# second `php artisan test` wiped the first run's rows between its statements. Reproduced
+# deterministically at `ae43e12` from exactly the two files below: OwnerAndBypassTest took
+# SQLSTATE[23503] on tenant_users_tenant_id_fkey ("Key is not present in table tenants",
+# TestCase.php:305) and RefusalDiagnosticsTest reported "the premise of this test is gone:
+# the write did not survive". Foreign-key checks bypass row level security, so the row was
+# genuinely gone -- which is why it read as a tenancy bug for a week and is recorded in
+# §4a as the identified cause of the one red run at 363 passed.
+#
+# IT LIVES IN THE REPOSITORY, which is the point. R-043 is a §5 row for exactly one
+# reason: a gate clause named a demonstration whose script was in a session scratchpad, so
+# the proof could not be re-run by anyone. This is that clause's shape done the other way.
+#
+# The two files are the two from the reproduction, not an arbitrary pair: one writes
+# tenant_users (the FK victim) and the other asserts a write survives (the lost-write
+# victim), so between them they cover both faces the failure presented.
+#
+# WHAT GREEN MEANS HERE. The second runner QUEUES on the suite lock rather than running
+# beside the first, so the wall-clock time is the sum of the two and not the longer of
+# them. That is the fix working, not the proof being slow: there is no interleaving left
+# to observe. A run where both exit 0 is the assertion.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# The same determinism bin/gate pins, for the same reason (R-054): a red run here has to
+# leave frames on disk whoever is running it.
+export PAO_DISABLE=1
+
+a="tests/Feature/Database/OwnerAndBypassTest.php"
+b="tests/Feature/Database/RefusalDiagnosticsTest.php"
+
+for file in "$a" "$b"; do
+  if [ ! -f "$file" ]; then
+    echo "concurrent-suite-proof: $file does not exist -- the proof cannot run" >&2
+    exit 1
+  fi
+done
+
+out_a="$(mktemp -t qrpager-concurrent-a-XXXXXX.log)"
+out_b="$(mktemp -t qrpager-concurrent-b-XXXXXX.log)"
+trap 'rm -f "$out_a" "$out_b"' EXIT
+
+echo "concurrent-suite-proof: launching two runners at once"
+echo "  A: $a"
+echo "  B: $b"
+echo
+
+php artisan test "$a" >"$out_a" 2>&1 &
+pid_a=$!
+php artisan test "$b" >"$out_b" 2>&1 &
+pid_b=$!
+
+wait "$pid_a"; status_a=$?
+wait "$pid_b"; status_b=$?
+
+echo "=== A (exit $status_a) ==="
+tail -n 20 "$out_a"
+echo
+echo "=== B (exit $status_b) ==="
+tail -n 20 "$out_b"
+echo
+
+# The shapes the unserialised TRUNCATE produced. Checked by name as well as by exit code,
+# so a future failure that happens to exit 0 cannot read as a pass -- and so that a red
+# run says WHICH failure it was rather than only that there was one.
+for log in "$out_a" "$out_b"; do
+  if grep -q '23503\|the premise of this test is gone' "$log"; then
+    echo "concurrent-suite-proof: FAILED -- R-049's own signature is in the output:" >&2
+    grep -n '23503\|the premise of this test is gone' "$log" >&2
+    exit 1
+  fi
+done
+
+if [ "$status_a" -ne 0 ] || [ "$status_b" -ne 0 ]; then
+  echo "concurrent-suite-proof: FAILED -- A exited $status_a, B exited $status_b (both must be 0)" >&2
+  exit 1
+fi
+
+echo "concurrent-suite-proof: both runners green. The per-test TRUNCATE is serialised (R-049)."
