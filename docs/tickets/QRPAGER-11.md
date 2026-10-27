@@ -969,7 +969,23 @@ conclusion to accept.
 >
 > **Read it as a bound, not a blessing.** It permits exactly ONE key, says which one, and
 > closes the door behind it: a second key of this shape is a rank-2 amendment, not a
-> judgement call anybody gets to make in a docblock. The two keys this task ships are
+> judgement call anybody gets to make in a docblock.
+>
+> **⚠ AND THE SECOND SECURITY REVIEW RULED ON THE SENTENCE ITSELF (2026-10-27), which is
+> the half this ticket could not ask for in advance.** Its verdict: right file, right
+> rank, and the code matches it in substance — exactly two keys exist in `app/`, the
+> projection is tenant-namespaced, the pointer's tenant comes from a server-written value
+> and never from client input, and `pager:tok:fail:{YmdH}` shares the prefix but cannot
+> collide because the pointer's suffix is 64 hex characters. It found **three
+> imprecisions**: the key name is `pager:tok:` + the hash rather than "the stored token
+> hash"; "exactly one Redis key" means one key SHAPE, of which there is one instance per
+> live session; and the carve-out names the key but not **the property that makes it
+> safe** — a 128-bit CSPRNG secret behind a preimage-resistant hash with a TTL bounded by
+> the session's — so as written it would also admit a short, guessable "secret the caller
+> must present", which would be an unprotected cross-tenant oracle. It also noted that
+> nothing enforces the sentence mechanically: `composer guard` scans GUC names, not Redis
+> key shapes. **All three are `PLAN.md §5 R-093`, owner Muhammad, because the sentence is
+> rank 2 and `§0` forbids a session from editing it.** The two keys this task ships are
 > exactly the two in the table below, and the projection is tenant-namespaced.
 >
 > **No code changed.** The reading was confirmed, not implemented — `PagerProjection` is
