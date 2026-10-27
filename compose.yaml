@@ -24,10 +24,22 @@ services:
     # minutes -- among them `insert into pager_sessions` with the token sha256 as $3.
     # The other half is `docker compose up -d --force-recreate postgres`, and because an
     # unrun recreate is invisible, the control is now asserted rather than assumed:
-    # BootstrapLoggingTest checks `pg_settings.source` for log_statement is never
-    # 'command line' (the value is not asserted -- CI sets `all` deliberately for R-036's
-    # positive control, R-059), with log_connections asserted AS 'command line' so the
-    # case cannot pass against a cluster that reads no command line at all. The two places that need statement logging turn it on themselves and scope
+    # BootstrapLoggingTest requires log_statement's `pg_settings.source` to be one of the
+    # four provenances this project produces -- default, session, database, configuration
+    # file -- so 'command line' fails and so does anything new. The VALUE is deliberately
+    # not asserted: CI sets `all` through `alter system` for R-036's positive control
+    # (R-059).
+    #
+    # THAT TEST'S OWN POSITIVE CONTROL USED TO READ THIS FILE'S log_connections FLAG, and
+    # it was red on CI from the commit that added it (2026-10-27 -- four of this branch's
+    # five red checks). Not because the flag went away: it is below, and it has been at
+    # every commit on this branch. Because CI DOES NOT USE THIS FILE. CI's Postgres is a
+    # GitHub Actions service container with `image:` and `options:` and no `command:`, so
+    # it reads no command line and log_connections is 'default' there. The control now
+    # manufactures its own provenance instead -- a session SET, read back as
+    # source=session -- which no launcher can take away. Do not reintroduce a test
+    # assertion that depends on a flag in this file: the two environments start Postgres
+    # differently and always will. The two places that need statement logging turn it on themselves and scope
     # it: BootstrapLoggingTest issues `alter database ... set log_statement = 'all'` and
     # resets it in a finally, and CI has its own `alter system set log_statement = 'all'`
     # step before the suite ("Log every statement, so the scan below cannot pass

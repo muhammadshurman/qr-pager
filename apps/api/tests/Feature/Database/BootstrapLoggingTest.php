@@ -209,31 +209,86 @@ it('leaves no verifier in the container log for a bootstrap that logs everything
  *
  * So "never from the command line" is true locally and on CI, and goes red the moment
  * anyone puts the flag back in compose.yaml.
+ *
+ * THE POSITIVE CONTROL WAS WRONG ONCE AND THE WAY IT WAS WRONG IS THE LESSON. It read
+ * `log_connections`'s source and required it to be `'command line'`, on the reasoning that
+ * compose.yaml deliberately keeps that flag — so if the command line is being read at all,
+ * that is where the proof would show. It passes locally and it was RED ON CI from the
+ * commit that introduced it, which is why five pushes on this branch carried a red check.
+ *
+ * The flag was never removed: `-c log_connections=on` is in compose.yaml at every commit on
+ * this branch, measured one by one. **CI does not use compose.yaml.** Its Postgres is a
+ * GitHub Actions SERVICE CONTAINER declared with `image:` and `options:` and no `command:`
+ * at all, so that cluster reads NO command line and `log_connections` is `'default'` there.
+ * Reproduced locally rather than inferred from the failure text: a bare
+ * `docker run postgres:16-alpine` with the same three env vars and no command reports
+ * `log_connections | off | default` (2026-10-27).
+ *
+ * So the old control did not prove "the source column works". It proved "this cluster was
+ * started by compose", which is a property of the LAUNCHER, and the two environments this
+ * suite must pass in launch Postgres differently and always will. A control that depends on
+ * how the server was started can be taken away by a flag, by a `command:` key, by a CI
+ * provider's defaults or by a `docker compose down -v` — none of which is the thing under
+ * test.
+ *
+ * WHAT THE CONTROL IS NOW: the test MANUFACTURES a known provenance and reads it back. It
+ * issues a session `SET` on an inert GUC and requires `pg_settings.source` to report
+ * `'session'` for it. That proves the two things the assertion above actually depends on --
+ * `pg_settings` is readable, and `source` tracks provenance rather than answering `'default'`
+ * to everything -- and it proves them from a condition this test creates inside its own
+ * connection. No flag, no compose file, no container age and no CI runner can remove it, and
+ * it is untouched by R-004's fix because it names none of R-004's settings.
+ *
+ * `vacuum_cost_delay` is the GUC, chosen because nothing in this project reads it: a control
+ * must not be able to perturb the thing it is controlling for. `statement_timeout` was the
+ * first choice and was rejected -- the runtime roles carry one from `ALTER ROLE` (§2.1) and
+ * `RoleTimeoutTest` proves it fires, so setting it here would have a test reaching into
+ * another test's subject.
+ *
+ * AND THE PROPERTY IS NOW CLOSED-WORLD rather than a single `!=`. Every provenance this
+ * project can legitimately produce was measured (2026-10-27): untouched -> `'default'`,
+ * `SET`/`SET LOCAL` -> `'session'`, `ALTER DATABASE ... SET` -> `'database'` (which is what
+ * `logEveryStatementOnThisDatabase()` above produces), `ALTER SYSTEM ... SET` + reload ->
+ * `'configuration file'` (CI's), compose `-c` -> `'command line'`. Asserting membership of
+ * the first four fails closed on `'command line'` AND on anything new, where `!=` would have
+ * admitted a provenance nobody has thought about yet.
  */
 it('takes log_statement from no command-line flag, which is what R-004 removed', function (): void {
+    $root = DB::connection('pgsql_root');
+
+    // THE POSITIVE CONTROL, FIRST, because the assertion below is only worth reading if
+    // this one holds. A provenance this test creates itself, read back through the same
+    // view and the same column the property depends on.
+    $root->statement("set vacuum_cost_delay = '7ms'");
+
+    /** @var object{setting: string, source: string}|null $control */
+    $control = $root->selectOne(
+        "select setting, source from pg_settings where name = 'vacuum_cost_delay'",
+    );
+
+    expect($control)->not->toBeNull('pg_settings is not readable, so nothing below proves anything')
+        ->and($control?->source)->toBe(
+            'session',
+            'a session SET did not show as source=session, so pg_settings.source is not tracking '
+            .'provenance on this cluster and the assertion below would pass for the wrong reason'
+        )
+        ->and($control?->setting)->toBe('7', 'the SET did not take effect at all');
+
+    $root->statement('reset vacuum_cost_delay');
+
+    // THE PROPERTY. R-004 is about the CLUSTER-WIDE COMMAND-LINE setting specifically, so
+    // the value is deliberately not asserted: CI sets `all` through `alter system` on
+    // purpose, to give R-036's verifier scan a positive control (R-059).
     /** @var object{setting: string, source: string}|null $row */
-    $row = DB::connection('pgsql_root')->selectOne(
+    $row = $root->selectOne(
         "select setting, source from pg_settings where name = 'log_statement'",
     );
 
     expect($row)->not->toBeNull()
-        ->and($row?->source)->not->toBe(
-            'command line',
-            'log_statement is set by a command-line flag again — compose.yaml carries -c log_statement=all, '
-            .'which is R-004: every token-hash binding goes to a log nobody redacts.'
+        ->and($row?->source)->toBeIn(
+            ['default', 'session', 'database', 'configuration file'],
+            'log_statement has a provenance this project does not produce. If it is '
+            .'[command line], compose.yaml carries -c log_statement=all again, which is R-004: '
+            .'every token-hash binding goes to a log nobody redacts.'
         );
-
-    // THE POSITIVE CONTROL. Without it this case also passes against a cluster that reads
-    // no command line at all, which would make it vacuous in exactly the way R-036 is
-    // about. log_connections is the flag compose.yaml deliberately KEEPS — it logs who
-    // connected, not what they ran — so its source proves the command line is being read.
-    /** @var object{source: string}|null $connections */
-    $connections = DB::connection('pgsql_root')->selectOne(
-        "select source from pg_settings where name = 'log_connections'",
-    );
-
-    expect($connections?->source)->toBe(
-        'command line',
-        'log_connections is no longer set from compose.yaml, so the assertion above proves nothing'
-    );
 });
