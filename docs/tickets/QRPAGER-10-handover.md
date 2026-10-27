@@ -11,9 +11,13 @@
 > round is applied on top of `de3e4e4`. So **"not reviewed" is no longer true**, and
 > **the `git diff --stat de3e4e4 HEAD` check below no longer holds**: the fix commit
 > touches `apps/api/` as well as `docs/`, by design. Re-measured after the fixes:
-> **487 passed, 2149 assertions**, all six `composer gate` steps green, exit 0.
+> **492 passed, 2180 assertions**, all six `composer gate` steps green, exit 0,
+> and coverage on this task's code re-measured at **98.29 % — 633/644 over 23 `app/` files**.
 > The live record is `PLAN.md §0` and `§4a`; where this file and `§4a` disagree, `§4a`
-> wins. **7 of the QA review's 12 findings are undispositioned** (`W-12`). Everything
+> wins. **All 18 findings are dispositioned** (`W-12` closed); one is held for a decision
+> before the tag — `R-065` / `W-13`, which is **this file's own `§5.9` flag**: the expiry
+> job reads `select id, tenant_id, status` where `§3` row 3 says `SELECT id`. QA found it
+> independently as L-2. Everything
 > below still describes the build accurately — it is the *status* lines that went stale,
 > which is the whole reason `§0` is the only place that states current state.
 

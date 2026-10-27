@@ -7,8 +7,9 @@
 > and this ticket only: 18 findings — 0 Critical, 2 High, 8 Medium, 8 Low.** The fix round
 > is applied and `PLAN.md §4a` carries the dispositions. Two claims in `§6.4` below were
 > measured false by those reviews and are **corrected in place**, marked where they appear.
-> **7 of the QA review's 12 findings were never relayed to the fix session and are
-> therefore undispositioned** — see `PLAN.md §0`, `W-12`. This ticket is not the record of
+> **All 18 are dispositioned** — `PLAN.md §4a` shows the arithmetic finding by finding.
+> One is held for a decision before the tag: **`R-065`** (`W-13`), the expiry job's
+> `select id, tenant_id, status` against `§3` row 3's `SELECT id`. This ticket is not the record of
 > the reviews; `§4a` is.
 
 Read with `docs/tickets/QRPAGER-10-handover.md`, which carries what is done, what is not,
