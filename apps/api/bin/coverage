@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Unit coverage on the code a task adds (PROJECT_INSTRUCTIONS.md §6: "Unit coverage >= 90%
+# on code this task added. Report the number").
+#
+# WHY THIS SCRIPT EXISTS. The §6 clause needs a coverage DRIVER, and this machine has
+# neither pcov nor xdebug -- PLAN.md §0 records that, and records the consequence: Task 2's
+# coverage figure was measured once at `ae43e12` and then could not be re-measured after
+# two further fix rounds, so the number in the delivery record predates the code it
+# describes. Deferring the measurement to CI cost Task 2 a round.
+#
+# Installing a driver on the host needs root, which an unattended session does not have.
+# So the driver is brought to the code instead of the other way round: a throwaway
+# container with pcov, on the compose network, with the repository mounted. Nothing is
+# installed on the host and nothing is left behind.
+#
+# IT IS IN THE REPOSITORY, which is the point. R-043 is a §5 row because a gate clause
+# named a demonstration whose script lived in a session scratchpad, so nobody could re-run
+# it. A coverage number nobody else can reproduce is the same defect applied to a figure
+# in the delivery record.
+#
+# Usage:
+#   bin/coverage                     the whole app/ tree
+#   bin/coverage --min=90            fail under a threshold
+#   bin/coverage --task=task-2       only files this branch added or changed since a ref
+#
+# The --task form is what §6 actually asks for: coverage on the code THIS TASK ADDED, not
+# on the whole tree. It resolves the added-or-modified set with git and passes it to
+# PHPUnit as an explicit filter, so the denominator is the task's own code.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+export PAO_DISABLE=1
+
+min=""
+since=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --min=*) min="${arg#*=}" ;;
+    --task=*) since="${arg#*=}" ;;
+    *) echo "coverage: unknown argument [$arg]" >&2; exit 2 ;;
+  esac
+done
+
+image="qrpager-coverage:php8.4-pcov"
+network="$(docker network ls --format '{{.Name}}' | grep -E '^qr-pager_default$' || true)"
+
+if [ -z "$network" ]; then
+  echo "coverage: the compose network is not up. Run: docker compose up -d" >&2
+  exit 1
+fi
+
+# Built once and cached. pcov rather than xdebug: it is a coverage-only driver and is
+# roughly an order of magnitude cheaper, which matters for a 400-test suite.
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  echo "coverage: building $image (first run only)"
+  docker build -t "$image" -f - . >/dev/null <<'DOCKERFILE'
+FROM php:8.4-cli
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libpq-dev libzip-dev libicu-dev \
+ && docker-php-ext-install -j"$(nproc)" pdo_pgsql intl bcmath \
+ && pecl install pcov redis \
+ && docker-php-ext-enable pcov redis \
+ && apt-get purge -y --auto-remove \
+ && rm -rf /var/lib/apt/lists/*
+DOCKERFILE
+fi
+
+# The file set. --task resolves what this branch added or changed under app/, which is the
+# denominator §6 names; without it, the whole tree.
+filter_args=()
+scope="the whole app/ tree"
+
+if [ -n "$since" ]; then
+  mapfile -t changed < <(git -C ../.. diff --name-only --diff-filter=ACMR "$since"...HEAD -- 'apps/api/app/**.php' \
+    | sed 's|^apps/api/||')
+
+  if [ "${#changed[@]}" -eq 0 ]; then
+    echo "coverage: no files under app/ changed since $since" >&2
+    exit 1
+  fi
+
+  for file in "${changed[@]}"; do
+    filter_args+=("--coverage-filter" "$file")
+  done
+
+  scope="${#changed[@]} file(s) added or changed since $since"
+fi
+
+echo "coverage: measuring $scope"
+echo
+
+# The suite needs the real Postgres and Redis (§6: no DB mocks for DB behaviour), so the
+# container joins the compose network and addresses them by service name. DB_DATABASE is
+# the suite's own, which phpunit.xml also sets.
+docker run --rm \
+  --network "$network" \
+  -v "$(pwd)":/app \
+  -w /app \
+  -e APP_ENV=testing \
+  -e PAO_DISABLE=1 \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  -e DB_DATABASE=qrpager_coverage \
+  -e DB_SSLMODE=disable \
+  -e REDIS_HOST=redis \
+  -e REDIS_PORT=6379 \
+  "$image" \
+  php artisan test --coverage ${min:+--min="$min"} "${filter_args[@]}"
+
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo >&2
+  echo "coverage: FAILED (exit $status)" >&2
+  exit "$status"
+fi

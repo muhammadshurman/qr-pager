@@ -28,6 +28,24 @@ return [
         ],
 
         /*
+        | Creating a pager session is the one route in Task 3 that takes a body and the
+        | one that does real work per call -- a CSPRNG draw, an insert and an audit row --
+        | so it carries its own limit on top of the api group's. Sized well above a busy
+        | counter's real rate (a session per order) and well below what a script could
+        | use to fill `outbox` and `audit_log`, neither of which any grant in §2.7
+        | deletes. Per tenant as well as per IP, because the per-IP half is no protection
+        | at all when a tenant's staff are behind one NAT.
+        |
+        | The four transition routes stay on the api bucket: they act on a session that
+        | already exists, and the renotify cap in config/pager.php is what bounds the
+        | only one of them that can write repeatedly.
+        */
+        'pager-create' => [
+            'per_ip' => ['attempts' => 60, 'seconds' => 60],
+            'per_tenant' => ['attempts' => 240, 'seconds' => 60],
+        ],
+
+        /*
         | Unknown routes get their own, much tighter bucket. A 404 costs almost nothing
         | to serve and everything to scan with, so path enumeration is the traffic this
         | one exists for -- and the gate names it: "the rate limiter covers unknown

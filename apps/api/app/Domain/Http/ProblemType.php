@@ -4,24 +4,39 @@ declare(strict_types=1);
 
 namespace App\Domain\Http;
 
+// INTERNAL NOTES -- LINE COMMENTS ON PURPOSE, SO THEY ARE NOT PUBLISHED.
+//
+// Scramble ships this enum's DOCBLOCK verbatim as the `description` of
+// `#/components/schemas/ProblemType` in docs/openapi.json. Line comments are invisible to
+// it; a /** */ block is not. That distinction is the whole of why this text is up here and
+// the docblock below says only what a client developer needs.
+//
+// Measured 2026-10-27 while closing R-033, and it is worth recording because the obvious
+// fix does not work: separating the published half from the internal half INSIDE one
+// docblock with a horizontal rule published both halves, rule included. The generated
+// description carried "THIS DOCBLOCK IS PUBLISHED ... R-052 and R-056 are both this
+// shape", which is R-052's defect committed by the comment warning about R-052 -- and it
+// reproduced the asterisk artefact it was describing, shipping the literal text
+// `one  * source` a second time.
+//
+// What belongs in the docblock: the contract. What belongs here: why the file looks like
+// this. The task rationale -- the single-source argument, the deptrac placement, the
+// BadRequest case's history -- is in QRPAGER-10 §4 and in ProblemRenderer::fromStatus(),
+// which is a private method of a class Scramble does not document.
+//
+// BadRequest (R-042) was added at Task 3, after R-033 made this vocabulary a committed and
+// asserted artefact, which is the order R-042 asks for: the new case lands as a visible
+// diff in something CI checks rather than as a silent change to a contract nothing reads.
+
 /**
- * The single source for the error envelope's `type` (D3, §6.2).
+ * The vocabulary of `type` values this API can return in an RFC 7807 problem document.
  *
- * RFC 7807 `application/problem+json`. One case per outcome the API can report, and
- * the only producer of a `type` value: the mapper takes this enum, never a string, so
- * a new outcome without a case here does not compile.
- *
- * In App\Domain on purpose -- no framework, no DB, which deptrac enforces. The HTTP
- * status lives beside the type because they are one decision, and the title is a fixed
- * phrase rather than a message: nothing here is ever built from a driver error, a
- * constraint name or a role name. That is the whole point of the envelope.
- *
- * Scramble generates `#/components/schemas/ProblemType` from this enum with every case
- * as an OpenAPI `enum`, verified in the phase-1 research, which is what makes "one
- * source" mechanical rather than a convention.
+ * Each case is a stable URI, the HTTP status beside it, and a fixed human-readable title.
+ * A client may switch on `type`; it is the part of an error response that is contractual.
  */
 enum ProblemType: string
 {
+    case BadRequest = 'https://qrpager.dev/problems/bad-request';
     case Validation = 'https://qrpager.dev/problems/validation';
     case NotFound = 'https://qrpager.dev/problems/not-found';
     case MethodNotAllowed = 'https://qrpager.dev/problems/method-not-allowed';
@@ -35,6 +50,7 @@ enum ProblemType: string
     public function status(): int
     {
         return match ($this) {
+            self::BadRequest => 400,
             self::Validation => 422,
             self::NotFound => 404,
             self::MethodNotAllowed => 405,
@@ -55,6 +71,7 @@ enum ProblemType: string
     public function title(): string
     {
         return match ($this) {
+            self::BadRequest => 'The request could not be understood.',
             self::Validation => 'The request did not pass validation.',
             self::NotFound => 'No such resource.',
             self::MethodNotAllowed => 'That method is not allowed on this resource.',

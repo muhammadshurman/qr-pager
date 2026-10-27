@@ -18,11 +18,18 @@ use Illuminate\Support\Facades\DB;
 /**
  * log_statement = 'all' for new sessions on this database, as root.
  *
- * Without this the test PASSES FOR THE WRONG REASON in CI, whose Postgres service
- * defaults to log_statement = 'none' -- the session would report 'none' because nothing
- * ever asked for anything else. Locally compose already runs the cluster with
- * log_statement=all (R-004), so the local run would be honest and CI's would not; the
- * two have to agree.
+ * Without this the test PASSES FOR THE WRONG REASON: the session would report 'none'
+ * because nothing ever asked for anything else, so the assertion would hold whether or
+ * not the bootstrapper did its job.
+ *
+ * It used to say "locally compose already runs the cluster with log_statement=all
+ * (R-004), so the local run would be honest and CI's would not". That is no longer true
+ * and the reason is this same R-004: Task 3 removed the cluster-wide setting from
+ * compose.yaml, because from Task 3 on every token lookup binds a hash and a cluster that
+ * logs everything writes tenant data into an unredacted log. Local and CI now agree
+ * BECAUSE NEITHER has it on by default and this helper is what turns it on -- which was
+ * always the stronger arrangement, and is why removing the compose flag cost this file
+ * nothing but a comment.
  *
  * ALTER DATABASE rather than ALTER SYSTEM: it is inherited by every new session on this
  * database, which is what the session-level SET has to override, and it does not write
@@ -63,7 +70,7 @@ it('runs the bootstrap session with log_statement off, over an inherited all —
     }
 });
 
-it('leaves every other session logging, so R-004’s local control survives', function (): void {
+it('suppresses the log for its own session only, not for the database', function (): void {
     $database = logEveryStatementOnThisDatabase();
 
     try {
@@ -73,9 +80,16 @@ it('leaves every other session logging, so R-004’s local control survives', fu
         app(RoleBootstrapper::class)->run();
 
         // The measurement behind R-009's fix: the bootstrap session is quiet and the
-        // grant connection is not. If this suppressed logging cluster-wide it would
-        // take R-004's deliberate local control with it, and Task 4's proof depends on
-        // that control existing.
+        // grant connection is not. The point is that the suppression is SESSION-scoped --
+        // if it reached the database or the cluster it would silence every other session
+        // too, and an assertion that the bootstrap session is quiet would then be
+        // trivially true of everything.
+        //
+        // This comment used to add "it would take R-004's deliberate local control with
+        // it, and Task 4's proof depends on that control existing". Both halves are gone:
+        // Task 3 removed the cluster-wide log_statement (R-004) and Task 4's zero-queries
+        // proof has a query listener, which is the instrument Task 2 already used for the
+        // same claim. The scoping assertion below is worth keeping on its own terms.
         expect((string) DB::connection('pgsql_bootstrap')->selectOne(
             "select current_setting('log_statement') as value",
         )->value)->toBe('none');

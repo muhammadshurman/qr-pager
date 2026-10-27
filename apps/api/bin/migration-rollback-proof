@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# PROJECT_INSTRUCTIONS.md §6: "Migrations apply from empty; a second apply is a no-op; a
+# rollback of this task's migrations runs clean." Proven here, locally, on a database
+# created for the purpose and dropped afterwards.
+#
+# WHY A THROWAWAY DATABASE AND NOT qrpager_test. `migrate:rollback` rolls back the last
+# BATCH. On a developer machine the suite has usually already migrated, so a new task's
+# migrations land in a batch of their own and one rollback takes the schema back to the
+# PREVIOUS TASK rather than to empty -- which proves the new migrations reverse and says
+# nothing about the clause. CI gets the stronger version for free because it migrates a
+# fresh service container in one batch. This script buys the same thing locally.
+#
+# IT ALSO EXISTS BECAUSE THE AD-HOC VERSION LIED. Run by hand on 2026-10-27, `php artisan
+# migrate` picked up DB_DATABASE from .env (qrpager) while the fingerprint was read from
+# qrpager_test -- so the before/after fingerprints were two snapshots of a database
+# nothing had touched, and they were identical for that reason. "Identical" was true and
+# meaningless. Everything here names ONE database explicitly, which is the only reason
+# that cannot happen again.
+#
+# What it asserts, in order:
+#   1. migrations apply from EMPTY, in one batch
+#   2. a second apply is a no-op ("Nothing to migrate")
+#   3. the task's objects are really there (the resolver function, the narrowed policies)
+#   4. migrate:rollback leaves ONE table -- the migrations table -- and no functions
+#   5. a re-apply returns a BYTE-IDENTICAL schema fingerprint
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+export PAO_DISABLE=1
+
+probe="${ROLLBACK_PROOF_DATABASE:-qrpager_rollback_proof}"
+export DB_DATABASE="$probe"
+
+host="$(php -r 'echo getenv("DB_HOST") ?: "127.0.0.1";')"
+root="$(php -r 'echo getenv("DB_ROOT_USERNAME") ?: "qrpager_root";')"
+maintenance="$(php -r 'echo getenv("DB_MAINTENANCE_DATABASE") ?: "postgres";')"
+
+# psql, wherever it is. CI's runner has a client on PATH; a developer machine often has
+# only the one inside the Postgres container, which is where `docker compose up` put it.
+# Detected rather than required, because a proof nobody can run is R-043's defect and
+# "install a Postgres client first" is how a script stops being run.
+compose="../../compose.yaml"
+
+if command -v psql >/dev/null 2>&1; then
+  psql_as_root() { PGPASSWORD="${DB_ROOT_PASSWORD:-local_dev_only}" psql -h "$host" -U "$root" "$@"; }
+  echo "migration-rollback-proof: using the psql on PATH"
+elif docker compose -f "$compose" ps postgres >/dev/null 2>&1; then
+  # -T, so stdin is not a TTY and `-f -` works. The password is already in the
+  # container's environment, so none is passed on the command line.
+  psql_as_root() { docker compose -f "$compose" exec -T postgres psql -U "$root" "$@"; }
+  echo "migration-rollback-proof: using the psql inside the compose postgres service"
+else
+  echo "migration-rollback-proof: no psql on PATH and no compose postgres service" >&2
+  echo "  start the cluster with: docker compose up -d" >&2
+  exit 1
+fi
+
+# `-f -` rather than `-f <path>`: with the container client the file is on the HOST, so it
+# has to arrive on stdin. Works identically for the client on PATH.
+fingerprint() { psql_as_root -d "$probe" -q -f - < database/schema-fingerprint.sql; }
+
+cleanup() {
+  psql_as_root -d "$maintenance" -q \
+    -c "drop database if exists \"$probe\" with (force)" >/dev/null 2>&1 || true
+  rm -f /tmp/qrpager-rollback-*.txt
+}
+trap cleanup EXIT
+
+echo "migration-rollback-proof: database [$probe] on $host"
+cleanup
+echo
+
+# db:bootstrap creates the roles, the database named by DB_DATABASE, and the per-role
+# timeouts. Migrations then run as the owner, never as the app role.
+php artisan db:bootstrap >/dev/null || { echo "db:bootstrap failed" >&2; exit 1; }
+
+echo "=== 1. apply from empty, one batch ==="
+php artisan migrate --database=pgsql_owner --force || exit 1
+batches=$(psql_as_root -d "$probe" -tAc 'select count(distinct batch) from migrations')
+echo "distinct batches: $batches (expected 1)"
+[ "$batches" = "1" ] || { echo "not a single batch, so the rollback below would be partial" >&2; exit 1; }
+echo
+
+echo "=== 2. a second apply is a no-op ==="
+php artisan migrate --database=pgsql_owner --force | tee /tmp/qrpager-rollback-second.txt
+grep -q "Nothing to migrate" /tmp/qrpager-rollback-second.txt \
+  || { echo "the second apply was not a no-op" >&2; exit 1; }
+echo
+
+echo "=== 3. this task's objects are present ==="
+fingerprint > /tmp/qrpager-rollback-before.txt
+echo "fingerprint lines: $(wc -l < /tmp/qrpager-rollback-before.txt)"
+for needle in \
+  'function resolve_pager_token secdef=t' \
+  "policy pager_sessions.worker_reads_expired_sessions" \
+  "policy pager_sessions.worker_expires_sessions"
+do
+  grep -q "$needle" /tmp/qrpager-rollback-before.txt \
+    || { echo "missing from the schema: $needle" >&2; exit 1; }
+done
+# The narrowing itself, not just the policy's existence: R-003 is about the USING clause.
+grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' /tmp/qrpager-rollback-before.txt \
+  | grep -q "ARRAY\['waiting'" \
+  || { echo "the worker policies are not status-bounded -- R-003 is not applied" >&2; exit 1; }
+grep -E 'policy pager_sessions.worker_' /tmp/qrpager-rollback-before.txt
+echo
+
+echo "=== 4. rollback runs clean ==="
+php artisan migrate:rollback --database=pgsql_owner --force || exit 1
+tables=$(psql_as_root -d "$probe" -tAc \
+  "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'")
+functions=$(psql_as_root -d "$probe" -tAc \
+  "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'")
+echo "tables left: $tables (expected 1, the migrations table)"
+echo "functions left: $functions (expected 0 -- the resolver and the audit trigger are both dropped)"
+[ "$tables" = "1" ] || { echo "rollback left $tables tables" >&2; exit 1; }
+[ "$functions" = "0" ] || { echo "rollback left $functions functions" >&2; exit 1; }
+echo
+
+echo "=== 5. a re-apply returns the identical schema ==="
+php artisan migrate --database=pgsql_owner --force >/dev/null || exit 1
+fingerprint > /tmp/qrpager-rollback-after.txt
+if diff -u /tmp/qrpager-rollback-before.txt /tmp/qrpager-rollback-after.txt; then
+  echo "schema identical after rollback and re-apply"
+else
+  echo "migration-rollback-proof: FAILED -- the re-applied schema differs" >&2
+  exit 1
+fi
+echo
+
+echo "migration-rollback-proof: all five checks passed on [$probe]."

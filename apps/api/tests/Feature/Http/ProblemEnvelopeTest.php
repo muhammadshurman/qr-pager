@@ -3,11 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\Http\ProblemType;
+use App\Domain\Pager\PagerSessionNotFound;
+use App\Domain\Pager\PagerStatus;
+use App\Domain\Pager\PagerTransitionDenied;
 use App\Platform\Database\UnsafeDatabaseRoleException;
+use App\Platform\Http\ProblemRenderer;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
 /*
@@ -179,4 +185,86 @@ it('renders the same document for a browser request, not an HTML debug page', fu
         ->and(strlen($body))->toBeLessThan(500)
         ->and($body)->not->toContain('no_such_table_html')
         ->and($body)->not->toContain('bound-value');
+});
+
+/*
+ * R-042: "every unmapped 4xx renders as 403 Forbidden, so a request-format error is
+ * answered with an authorization verdict."
+ *
+ * Asserted the way QA found it -- by throwing each status through the real renderer and
+ * reading the rendered `status`, which is the review-by's own wording. Not through a
+ * route: R-042's claim that Laravel throws 400 for a malformed JSON body is FALSE on
+ * Laravel 13 (measured: Request::json() returns an empty array and throws nothing), so a
+ * route-level case would test the FormRequest rather than the renderer. The defect the
+ * row names is in the renderer and that is where it is pinned.
+ */
+
+it('maps every status it is given to a type that renders that same status — R-042', function (int $thrown, ProblemType $expected): void {
+    $problem = app(ProblemRenderer::class)->render(
+        new HttpException($thrown, 'deliberate'),
+        Request::create('/v1/probe-status', 'POST'),
+    );
+
+    expect($problem->type)->toBe($expected, "a thrown {$thrown} rendered as {$problem->type->value}");
+
+    // The rendered STATUS, which is what a client sees and the half R-042 is about: before
+    // the fix a thrown 400, 402, 406, 410, 415 and 418 all came out as 403.
+    expect($problem->toResponse()->getStatusCode())->toBe($expected->status());
+})->with([
+    // Mapped exactly: the status the client sees is the status that was thrown.
+    'bad request' => [400, ProblemType::BadRequest],
+    'unauthenticated' => [401, ProblemType::Unauthenticated],
+    'forbidden' => [403, ProblemType::Forbidden],
+    'not found' => [404, ProblemType::NotFound],
+    'method not allowed' => [405, ProblemType::MethodNotAllowed],
+    'conflict' => [409, ProblemType::Conflict],
+    'unprocessable' => [422, ProblemType::Validation],
+    'rate limited' => [429, ProblemType::RateLimited],
+    'unavailable' => [503, ProblemType::Unavailable],
+
+    // Deliberately collapsed, as R-042 allows ("mapped or deliberately collapsed").
+    'not acceptable -> bad request' => [406, ProblemType::BadRequest],
+    'unsupported media -> bad request' => [415, ProblemType::BadRequest],
+    'gone -> not found' => [410, ProblemType::NotFound],
+
+    // Not modelled, so they take the default -- which is now ServerError and NOT
+    // Forbidden. Answering "that is not permitted" to these asserted something about
+    // authorization the renderer cannot know.
+    'payment required -> server error' => [402, ProblemType::ServerError],
+    'teapot -> server error' => [418, ProblemType::ServerError],
+    'too early -> server error' => [425, ProblemType::ServerError],
+
+    // 5xx was already right and must stay right.
+    'internal -> server error' => [500, ProblemType::ServerError],
+    'bad gateway -> server error' => [502, ProblemType::ServerError],
+]);
+
+it('never answers Forbidden for a status that is not about authorization — R-042', function (): void {
+    $renderer = app(ProblemRenderer::class);
+    $request = Request::create('/v1/probe-status', 'POST');
+
+    // The property behind the data set above, stated once: across every 4xx and 5xx there
+    // is exactly ONE status that may render as Forbidden, and it is 403.
+    for ($status = 400; $status <= 599; $status++) {
+        $type = $renderer->render(new HttpException($status, 'deliberate'), $request)->type;
+
+        if ($type === ProblemType::Forbidden) {
+            expect($status)->toBe(403, "a thrown {$status} rendered as Forbidden");
+        }
+    }
+});
+
+it('renders the two pager domain refusals as 404 and 409, never as a 500', function (): void {
+    $renderer = app(ProblemRenderer::class);
+    $request = Request::create('/v1/pager-sessions/x/ready', 'POST');
+
+    // Both exceptions live in App\Domain rather than App\Features precisely so they can be
+    // mapped here: deptrac forbids Platform from importing Features, so a feature-layer
+    // exception could not be reached by this renderer and would fall through to a 500.
+    expect($renderer->render(PagerSessionNotFound::create(), $request)->type)
+        ->toBe(ProblemType::NotFound)
+        ->and($renderer->render(
+            PagerTransitionDenied::between(PagerStatus::Completed, PagerStatus::Ready),
+            $request,
+        )->type)->toBe(ProblemType::Conflict);
 });

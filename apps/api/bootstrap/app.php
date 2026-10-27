@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Http\ProblemType;
+use App\Features\Pager\Console\ExpirePagerSessionsCommand;
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
 use App\Platform\Console\RefreshReadinessCommand;
@@ -104,6 +105,13 @@ return Application::configure(basePath: dirname(__DIR__))
         BootstrapDatabaseCommand::class,
         CheckBootCommand::class,
         RefreshReadinessCommand::class,
+        // Task 3's expiry job. Registered rather than auto-discovered because it lives in
+        // app/Features, which withCommands' directory scan does not cover -- and because
+        // the list being explicit is what makes `php artisan` the record of what exists.
+        // Scheduling it is Task 13/14's: a command that is registered and never run is a
+        // visible gap, whereas one scheduled against infrastructure that does not exist
+        // yet is R-047's shape.
+        ExpirePagerSessionsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
