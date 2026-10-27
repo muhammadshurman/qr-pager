@@ -91,12 +91,19 @@
                         }
                     },
                     "422": {
-                        "$ref": "#/components/responses/ValidationException"
+                        "description": "The request did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
                     },
                     "404": {
                         "description": "No such pager session.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -106,14 +113,17 @@
                     "409": {
                         "description": "The session has passed its expiry. Ask the restaurant for a new code.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
             }
         },
         "/v1/pager/status": {
@@ -185,12 +195,19 @@
                         }
                     },
                     "422": {
-                        "$ref": "#/components/responses/ValidationException"
+                        "description": "The request did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
                     },
                     "404": {
                         "description": "No live status is held for that code. Open the session again.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -200,14 +217,17 @@
                     "503": {
                         "description": "The live status is temporarily unavailable. Retry after the interval in the Retry-After header; notifications are unaffected.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
             }
         },
         "/v1/pager/subscription": {
@@ -242,7 +262,7 @@
                     "422": {
                         "description": "The endpoint or keys did not pass validation.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ValidationProblemDocument"
                                 }
@@ -262,7 +282,7 @@
                     "404": {
                         "description": "No such pager session.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -272,14 +292,17 @@
                     "409": {
                         "description": "The session has passed its expiry.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
             },
             "delete": {
                 "operationId": "pager.customer.unsubscribe",
@@ -322,12 +345,19 @@
                         }
                     },
                     "422": {
-                        "$ref": "#/components/responses/ValidationException"
+                        "description": "The request did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
                     },
                     "404": {
                         "description": "No such pager session.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -337,14 +367,17 @@
                     "409": {
                         "description": "The session has passed its expiry.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
             }
         },
         "/healthz": {
@@ -1198,38 +1231,6 @@
                     "errors"
                 ],
                 "title": "ValidationProblemDocument"
-            }
-        },
-        "responses": {
-            "ValidationException": {
-                "description": "Validation error",
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "message": {
-                                    "type": "string",
-                                    "description": "Errors overview."
-                                },
-                                "errors": {
-                                    "type": "object",
-                                    "description": "A detailed description of each field that failed validation.",
-                                    "additionalProperties": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string"
-                                        }
-                                    }
-                                }
-                            },
-                            "required": [
-                                "message",
-                                "errors"
-                            ]
-                        }
-                    }
-                }
             }
         }
     }

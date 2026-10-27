@@ -19,6 +19,7 @@ use Dedoc\Scramble\Support\Generator\Schema;
 use Dedoc\Scramble\Support\Generator\SecurityRequirement;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -27,8 +28,14 @@ class AppServiceProvider extends ServiceProvider
     public const STAFF_SECURITY_SCHEME = 'staffBearer';
 
     /**
-     * The only operations published as needing no authentication, and they are the two
-     * unversioned probes.
+     * The operations published as needing no authentication BECAUSE THEY ARE PUBLIC, and
+     * they are the two unversioned probes.
+     *
+     * Not the only operations that publish an empty security requirement: the customer
+     * surface publishes one too, for an entirely different reason — see
+     * `customerSurfacePaths()` below. `§4 › Tenancy` calls them "two authentication
+     * surfaces, never confused", and a reader of the document has to be able to tell which
+     * is which, so the two sets are built separately and the reason is attached to each.
      *
      * A LIST AND NOT A PREFIX RULE. `§11.3` requires public routes to be "explicitly marked
      * and justified", and a rule like "anything outside /v1" would mark a future route
@@ -125,13 +132,32 @@ class AppServiceProvider extends ServiceProvider
             // deliberately public, and `routes/probes.php` carries the justification §11.3
             // asks for: a load balancer's health check must not need a credential.
             $moved = 0;
+            $customerPaths = self::customerSurfacePaths();
 
             foreach ($openApi->paths as $path) {
                 foreach ($path->operations as $operation) {
                     $operation->security = [];
 
+                    // THREE SURFACES, NOT TWO, and the rebase onto `task-3` is what made
+                    // that necessary (2026-10-27). This step was written when only the
+                    // probes and the five staff routes existed, so it said "a probe, or
+                    // else staff" -- and the moment Task 4's CUSTOMER routes arrived it
+                    // published all four of them as requiring a STAFF BEARER TOKEN. That is
+                    // a contract saying a customer needs a staff credential, on the one
+                    // surface `§4 › Tenancy` insists must never be confused with it: a
+                    // customer authenticates by presenting the QR token in the request
+                    // BODY, has no account, and resolves no tenant.
+                    //
+                    // An empty requirement for both of the tokenless surfaces, because
+                    // OpenAPI has no way to say "the credential is in the body" -- `apiKey`
+                    // covers header, query and cookie only. So the DOCUMENT cannot
+                    // distinguish them and the generator must: the probes come from
+                    // PUBLIC_PATHS with `routes/probes.php`'s justification, the customer
+                    // routes from the router itself.
+                    $uri = '/'.ltrim($path->path, '/');
+
                     $operation->addSecurity(
-                        in_array('/'.ltrim($path->path, '/'), self::PUBLIC_PATHS, true)
+                        in_array($uri, self::PUBLIC_PATHS, true) || in_array($uri, $customerPaths, true)
                             ? []
                             : new SecurityRequirement([self::STAFF_SECURITY_SCHEME => []])
                     );
@@ -184,6 +210,43 @@ class AppServiceProvider extends ServiceProvider
             // during `scramble:export` — so this cannot corrupt it either way.
             fwrite(STDERR, "openapi: {$moved} problem response(s) published as ".Problem::CONTENT_TYPE."\n");
         });
+    }
+
+    /**
+     * The published paths of the customer surface, read from the router.
+     *
+     * FROM THE ROUTER AND NOT FROM A SECOND CONSTANT, which is the whole point: a list
+     * would have to be edited by whoever adds a customer route, and the failure mode of
+     * forgetting is a route published as requiring a staff credential it does not use.
+     * The `customer` middleware group IS the surface -- `bootstrap/app.php` mounts
+     * `routes/customer.php` under it precisely so a route "cannot drift onto the wrong one
+     * by being added in the wrong file" -- so membership of that group is the question, and
+     * `gatherMiddleware()` answers it after the group has been expanded.
+     *
+     * Measured 2026-10-27: `yes` for the four `/v1/pager/*` routes, `no` for the five
+     * `/v1/pager-sessions*` ones.
+     *
+     * @return list<string>
+     */
+    private static function customerSurfacePaths(): array
+    {
+        $paths = [];
+
+        // ->getRoutes()->getRoutes(): the collection's ARRAY accessor, not the collection
+        // itself. RouteCollectionInterface does not extend Traversable, so iterating it
+        // directly is only valid for the concrete class -- true today and not stated by
+        // the type, which is exactly the kind of thing this project's static analysis is
+        // configured to refuse.
+        /** @var list<\Illuminate\Routing\Route> $routes */
+        $routes = Route::getRoutes()->getRoutes();
+
+        foreach ($routes as $route) {
+            if (in_array('customer', $route->gatherMiddleware(), true)) {
+                $paths[] = '/'.ltrim($route->uri(), '/');
+            }
+        }
+
+        return array_values(array_unique($paths));
     }
 
     /**

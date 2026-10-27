@@ -428,12 +428,20 @@ it('publishes a security requirement on EVERY operation, and the staff routes ar
 
     expect($missing)->toBe([], 'these operations publish no security member at all: '.implode(', ', $missing));
 
-    // The public set is EXACTLY the two probes, from the same constant the generator reads,
-    // so adding a third public route means editing that constant deliberately.
-    expect(array_values(array_unique($public)))->toBe(AppServiceProvider::PUBLIC_PATHS);
+    // THE TOKENLESS SET IS TWO SURFACES, and this assertion is why the generator builds them
+    // separately. Until Task 4 arrived it was "exactly the two probes"; the customer routes
+    // are tokenless for a different reason -- the QR token is in the request BODY, which
+    // OpenAPI cannot express as a scheme -- so they publish an empty requirement too. When
+    // this case said PUBLIC_PATHS alone, the rebase published all four customer routes as
+    // needing a STAFF BEARER TOKEN and this assertion was what caught it.
+    $probes = AppServiceProvider::PUBLIC_PATHS;
+    $customer = ['/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription'];
+
+    expect(array_values(array_unique($public)))->toBe([...$customer, ...$probes]);
 
     // ...and every staff route is in the other set. Five, named, so a route that quietly
-    // became public is a failure here rather than a reading of the diff.
+    // became public -- or a customer route that quietly claimed a staff credential -- is a
+    // failure here rather than a reading of the diff.
     expect($authenticated)->toHaveCount(5)
         ->and($authenticated)->toContain('POST /v1/pager-sessions');
 });
@@ -561,7 +569,10 @@ it('publishes every problem document under the media type the API really sends, 
 
     // The count is asserted so that a document which stopped publishing problem documents
     // altogether cannot pass this by having nothing left to check -- R-029's shape.
-    expect($seen)->toBe(14, 'the spec publishes '.$seen.' problem responses, not the 14 the five staff routes declare')
+    // 26 = the five staff routes' 14, plus the customer surface's 12 (three each on
+    // session, subscription POST and subscription DELETE, and three on status, whose 503 is
+    // the Redis-unavailable problem document rather than a readiness body).
+    expect($seen)->toBe(26, 'the spec publishes '.$seen.' problem responses, not the 26 the nine routes declare')
         ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
         ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
 });
@@ -640,8 +651,11 @@ it('produces the security and media-type decisions in the GENERATOR, not only in
         }
     }
 
-    expect(array_values(array_unique($public)))->toBe(AppServiceProvider::PUBLIC_PATHS)
+    expect(array_values(array_unique($public)))->toBe([
+        '/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription',
+        ...AppServiceProvider::PUBLIC_PATHS,
+    ])
         ->and($authenticated)->toHaveCount(5)
         ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
-        ->and($problemResponses)->toHaveCount(14);
+        ->and($problemResponses)->toHaveCount(26);
 });
