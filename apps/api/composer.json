@@ -13,7 +13,8 @@
         "dedoc/scramble": "0.13.50",
         "laravel/framework": "^13.17",
         "laravel/octane": "^2.22",
-        "laravel/tinker": "^3.0"
+        "laravel/tinker": "^3.0",
+        "minishlink/web-push": "^11.0"
     },
     "require-dev": {
         "deptrac/deptrac": "^4.7",
