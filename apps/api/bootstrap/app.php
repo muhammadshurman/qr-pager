@@ -80,6 +80,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 require __DIR__.'/../routes/drain.php';
             }
 
+            // THE WEBAUTHN HARNESS PAGE (Task 5), and the second conditional load. Same
+            // environment condition and for a related reason: PLAN.md §3 row 5 asks for a
+            // minimal unstyled page to exercise navigator.credentials, because the
+            // credential ceremony cannot be driven from HTTP -- and a test fixture with a
+            // URL has no business being reachable in production.
+            //
+            // No is_file() check, unlike the drain route: this file IS committed, because
+            // the gate names the page as a deliverable rather than as something mounted by
+            // compose. So the condition is the environment alone.
+            if (! app()->environment('production')) {
+                require __DIR__.'/../routes/harness.php';
+            }
+
             // "The rate limiter covers unknown routes (404s)" -- PLAN.md §3, row 2,
             // which names this clause explicitly. A 404 costs almost nothing to serve
             // and everything to scan with, so an unmatched path gets its own tighter

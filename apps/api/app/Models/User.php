@@ -11,8 +11,10 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Passkeys\Contracts\PasskeyUser;
 use Laravel\Passkeys\PasskeyAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
@@ -60,7 +62,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable implements PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasUuids, Notifiable, PasskeyAuthenticatable;
+    use HasApiTokens, HasFactory, HasUuids, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Every column `qrpager_app` holds `SELECT` on, and therefore every column this model
@@ -102,6 +104,74 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
+     * Re-read this user from the database.
+     *
+     * ================================================================================
+     * OVERRIDDEN BECAUSE `refresh()` BYPASSES GLOBAL SCOPES, AND THAT WAS A MEASURED HOLE
+     * ================================================================================
+     *
+     * `Model::refresh()` and `Model::fresh()` build their query with
+     * `newQueryWithoutScopes()`, which is correct for their purpose and fatal for this
+     * model: the global scope above is the only thing keeping `select *` out of a table
+     * where four columns are ungranted, so both methods went straight to
+     *
+     *     SQLSTATE[42501] permission denied for table users
+     *
+     * Found by `TwoFactorTest`, not by reading: `TwoFactorController::enable()` called
+     * `$user->refresh()` after enrolling, and the whole suite answered 403 on a request
+     * that had nothing to do with authorisation. The caller was changed too, but a caller
+     * fix alone would have left the next `refresh()` anywhere in the application to find
+     * this again — so the model is where it is closed.
+     *
+     * The column list is applied explicitly rather than by re-adding the scope, because the
+     * point of `withoutScopes` is that scopes do not apply; what this needs is not a scope
+     * but a fact about which columns exist for this role.
+     */
+    public function refresh(): static
+    {
+        if (! $this->exists) {
+            return $this;
+        }
+
+        // where()->firstOrFail() and not findOrFail(): find() accepts an array of keys and
+        // is therefore typed as model-or-collection, which is not what a refresh returns.
+        $fresh = static::query()
+            ->select(array_map(static fn (string $c): string => 'users.'.$c, self::READABLE))
+            ->where($this->getKeyName(), $this->getKey())
+            ->firstOrFail();
+
+        $this->setRawAttributes($fresh->getAttributes(), true);
+
+        $this->load(collect($this->relations)->reject(
+            fn ($relation) => $relation instanceof Pivot,
+        )->keys()->all());
+
+        $this->syncOriginal();
+
+        return $this;
+    }
+
+    /**
+     * A fresh instance of this user, read with the readable column list.
+     *
+     * Same reason as `refresh()` above: the inherited one uses `newQueryWithoutScopes()`.
+     *
+     * @param  array<int, string>|string  $with
+     */
+    public function fresh($with = []): ?static
+    {
+        if (! $this->exists) {
+            return null;
+        }
+
+        return static::query()
+            ->with(is_string($with) ? func_get_args() : $with)
+            ->select(array_map(static fn (string $c): string => 'users.'.$c, self::READABLE))
+            ->where($this->getKeyName(), $this->getKey())
+            ->first();
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -113,10 +183,22 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'is_platform_admin' => 'boolean',
             'password' => 'hashed',
-            // Fortify encrypts both at rest. Declared here rather than left to Fortify's
-            // own defaults so that the cast travels with the column list above.
-            'two_factor_secret' => 'encrypted',
-            'two_factor_recovery_codes' => 'encrypted',
+            // NO CAST ON EITHER 2FA COLUMN, and that is the correction rather than an
+            // omission. Fortify encrypts and decrypts both ITSELF --
+            // EnableTwoFactorAuthentication writes Fortify::currentEncrypter()->encrypt(...)
+            // and TwoFactorAuthenticatable reads it back with ->decrypt(...) -- so an
+            // `encrypted` cast here encrypts a second time on write and hands Fortify
+            // ciphertext to decrypt on read.
+            //
+            // Measured: the first draft declared both casts and 2FA enrolment answered 500
+            // with `DecryptException: The payload is invalid.` from inside
+            // twoFactorQrCodeSvg(). Found by TwoFactorTest rather than by reading, which is
+            // the useful direction for a defect whose symptom is three layers from its
+            // cause.
+            //
+            // The columns are still kept out of serialisation by the #[Hidden] attribute on
+            // this class, and out of the app role's SELECT grant entirely (§2.7, R-006), so
+            // dropping the cast costs nothing in exposure.
         ];
     }
 

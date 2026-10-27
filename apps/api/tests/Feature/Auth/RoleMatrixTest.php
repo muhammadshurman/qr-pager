@@ -170,6 +170,18 @@ it('covers every /v1 route in exactly one named set, so "full" is enforced and n
         'auth.logout',
         'auth.tenant',
         'auth.me',
+        // Two-factor. `challenge` is the only one reachable without a session, because it
+        // is the step that completes one.
+        'auth.two-factor.enable',
+        'auth.two-factor.confirm',
+        'auth.two-factor.disable',
+        'auth.two-factor.challenge',
+        // Passkeys. Each ceremony is options-out then credential-back, and the challenge
+        // between them is held server-side.
+        'auth.passkeys.options',
+        'auth.passkeys.register',
+        'auth.passkeys.login-options',
+        'auth.passkeys.login',
     ];
 
     $accounted = [...$staff, ...$customer, ...$auth];

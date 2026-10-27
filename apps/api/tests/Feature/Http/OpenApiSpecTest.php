@@ -63,7 +63,15 @@ it('describes exactly the routes that exist, and not the fallback', function ():
         '/v1/auth/login',
         '/v1/auth/logout',
         '/v1/auth/me',
+        '/v1/auth/passkeys',
+        '/v1/auth/passkeys/login',
+        '/v1/auth/passkeys/login/options',
+        '/v1/auth/passkeys/options',
         '/v1/auth/tenant',
+        '/v1/auth/two-factor',
+        '/v1/auth/two-factor/challenge',
+        '/v1/auth/two-factor/confirm',
+        '/v1/auth/two-factor/enable',
         // Task 5's own staff routes. Device tokens are credentials for a kitchen screen and
         // the member routes are R-007's half -- the only surface where the role matrix
         // gives staff and manager different answers to the same request.
@@ -473,9 +481,25 @@ it('publishes a security requirement on EVERY operation, and the staff routes ar
     // happened here before this set existed.
     // In ROUTER order, which is the order the spec's paths come out in, not alphabetical:
     // login, logout, tenant, me, as routes/auth.php declares them.
-    $auth = ['/v1/auth/login', '/v1/auth/logout', '/v1/auth/tenant', '/v1/auth/me'];
+    $auth = [
+        '/v1/auth/login', '/v1/auth/logout', '/v1/auth/tenant', '/v1/auth/me',
+        '/v1/auth/two-factor/enable', '/v1/auth/two-factor/confirm', '/v1/auth/two-factor',
+        '/v1/auth/two-factor/challenge',
+        '/v1/auth/passkeys/options', '/v1/auth/passkeys',
+        '/v1/auth/passkeys/login/options', '/v1/auth/passkeys/login',
+    ];
 
-    expect(array_values(array_unique($public)))->toBe([...$auth, ...$customer, ...$probes]);
+    // ORDER IS NOT PINNED, and that is a deliberate change made at Task 5 rather than a
+    // weakening. The spec's `paths` ordering is Scramble's own insertion order, and with
+    // three tokenless surfaces it interleaves them -- the committed artifact lists
+    // `/healthz` between the passkey routes and `/readyz`. Pinning that order asserts a
+    // property of the GENERATOR's internals; what this case is for is WHICH paths are
+    // tokenless, which is a property of this application. So the set is compared as a set.
+    // The failure this assertion exists to catch -- a customer or auth route published as
+    // needing a staff bearer token, which is what the Task 4 rebase did -- is a membership
+    // failure and is caught either way.
+    expect(array_values(array_unique($public)))
+        ->toEqualCanonicalizing([...$auth, ...$customer, ...$probes]);
 
     // ...and every staff route is in the other set. TWELVE as of Task 5 -- it was five
     // until this task added the board read, four member routes and two device-token routes
@@ -574,11 +598,30 @@ it('publishes the 401 that every unauthenticated request actually receives — Q
 
     // The auth surface, named operation by operation rather than counted, so that adding a
     // route to routes/auth.php without deciding whether it can refuse fails here.
-    expect($authSurface)->toBe([
+    // Keyed by operation, so order is irrelevant and the KEY SET is part of the assertion:
+    // an auth route added without deciding whether it can answer 401 fails here, which is
+    // the point. (toEqual rather than toBe for the same reason the set above is
+    // canonicalized -- the spec's path order is Scramble's, not ours.)
+    expect($authSurface)->toEqual([
         'POST /v1/auth/login' => true,
         'POST /v1/auth/logout' => false,
         'POST /v1/auth/tenant' => true,
         'GET /v1/auth/me' => true,
+        // Two-factor: everything but the CHALLENGE needs a session, so each documents the
+        // 401 it can give. The challenge documents one too -- "there is no sign-in waiting
+        // for a second factor" -- which is a different 401 from "no session" and is the one
+        // answer this surface has that a client must be able to tell apart from a 422.
+        'POST /v1/auth/two-factor/enable' => true,
+        'POST /v1/auth/two-factor/confirm' => true,
+        'DELETE /v1/auth/two-factor' => true,
+        'POST /v1/auth/two-factor/challenge' => true,
+        // Passkeys: registration needs a session and documents a 401; the LOGIN ceremony
+        // does not, because it is what establishes one. A 401 on either login route would be
+        // a documented answer it can never give.
+        'GET /v1/auth/passkeys/options' => true,
+        'POST /v1/auth/passkeys' => true,
+        'GET /v1/auth/passkeys/login/options' => false,
+        'POST /v1/auth/passkeys/login' => false,
     ]);
 });
 
@@ -651,16 +694,18 @@ it('publishes every problem document under the media type the API really sends, 
 
     // The count is asserted so that a document which stopped publishing problem documents
     // altogether cannot pass this by having nothing left to check -- R-029's shape.
-    // 54 as of Task 5, over twenty routes. It was 26 = the five staff routes' 14, plus the customer surface's 12
+    // 65 as of Task 5, over twenty-eight routes. It was 26 = the five staff routes' 14, plus the customer surface's 12
     // (three each on session, subscription POST and subscription DELETE, and three on
     // status, whose 503 is the Redis-unavailable problem document rather than a readiness
     // body). Task 5 adds 21: the board read, four member routes and two device-token
     // routes, each declaring the 401 that RequireTenantScope answers and the 403 that
     // RequireAbility answers, plus 404s on the three keyed routes and 422s on the two that
-    // take a body; and 7 more for the auth surface -- login's 401/422/429, the tenant
-    // selection's 401/404/422, and `me`'s 401. The 403 is new to this project's published
+    // take a body; then the auth surface's -- login's 401/422/429, the tenant selection's
+    // 401/404/422, `me`'s 401, the four two-factor routes' 401s and 422s (enable also
+    // declares a 500, for the case where the secret it just wrote cannot be read back), and
+    // the passkey ceremony's 401s and 422s. The 403 is new to this project's published
     // contract: before Task 5 nothing could answer it, because nothing authorised anything.
-    expect($seen)->toBe(54, 'the spec publishes '.$seen.' problem responses, not the 54 the twenty routes declare')
+    expect($seen)->toBe(65, 'the spec publishes '.$seen.' problem responses, not the 65 the twenty-eight routes declare')
         ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
         ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
 });
@@ -739,17 +784,22 @@ it('produces the security and media-type decisions in the GENERATOR, not only in
         }
     }
 
-    expect(array_values(array_unique($public)))->toBe([
-        // The auth surface first, in router order -- the third tokenless surface, added at
-        // Task 5. See the committed-spec case above for why a login publishes no scheme.
+    // As a SET, for the reason the committed-spec case above gives.
+    expect(array_values(array_unique($public)))->toEqualCanonicalizing([
+        // The auth surface -- the third tokenless surface, added at Task 5. See the
+        // committed-spec case above for why a login publishes no scheme.
         '/v1/auth/login', '/v1/auth/logout', '/v1/auth/tenant', '/v1/auth/me',
+        '/v1/auth/two-factor/enable', '/v1/auth/two-factor/confirm', '/v1/auth/two-factor',
+        '/v1/auth/two-factor/challenge',
+        '/v1/auth/passkeys/options', '/v1/auth/passkeys',
+        '/v1/auth/passkeys/login/options', '/v1/auth/passkeys/login',
         '/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription',
         ...AppServiceProvider::PUBLIC_PATHS,
     ])
-        // Twelve and 54 as of Task 5 -- the in-process generator and the committed artifact
+        // Twelve and 65 as of Task 5 -- the in-process generator and the committed artifact
         // must agree, which is this case's whole purpose, so both numbers move together
         // with the ones in the committed-spec cases above.
         ->and($authenticated)->toHaveCount(12)
         ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
-        ->and($problemResponses)->toHaveCount(54);
+        ->and($problemResponses)->toHaveCount(65);
 });

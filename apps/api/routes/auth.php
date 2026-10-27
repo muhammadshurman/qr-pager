@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Platform\Auth\Http\AuthController;
+use App\Platform\Auth\Http\PasskeyController;
+use App\Platform\Auth\Http\TwoFactorController;
 use App\Platform\Http\Middleware\RateLimit;
 use Illuminate\Support\Facades\Route;
 
@@ -80,4 +82,71 @@ Route::prefix('auth')->group(function (): void {
      * several has to be shown the choice.
      */
     Route::get('me', [AuthController::class, 'me'])->name('auth.me');
+
+    /*
+     * TWO-FACTOR AUTHENTICATION.
+     *
+     * Enrolment is two steps and the second one is what arms it: `config/fortify.php` sets
+     * `confirm: true`, so a secret exists from the moment `enable` is called and is not in
+     * force until a code from it has been shown to work. Gating login on the secret alone
+     * would lock somebody out of their own account between those two steps.
+     *
+     * The challenge is the only one of these that is reachable WITHOUT a session, because it
+     * is the step that completes one. It reads the pending user id from the server-side
+     * session, so a caller cannot nominate whose challenge they are completing.
+     */
+    Route::prefix('two-factor')->group(function (): void {
+        Route::post('enable', [TwoFactorController::class, 'enable'])
+            ->middleware([RateLimit::class.':auth-login'])
+            ->name('auth.two-factor.enable');
+
+        Route::post('confirm', [TwoFactorController::class, 'confirm'])
+            ->middleware([RateLimit::class.':auth-2fa'])
+            ->name('auth.two-factor.confirm');
+
+        Route::delete('/', [TwoFactorController::class, 'disable'])
+            ->middleware([RateLimit::class.':auth-login'])
+            ->name('auth.two-factor.disable');
+
+        /*
+         * The tightest bucket of the three: this one is guessable. Six digits is a million
+         * possibilities and a thirty-second window, so an unbounded loop is a real attack
+         * rather than a theoretical one -- and a recovery code is longer but equally worth
+         * bounding.
+         */
+        Route::post('challenge', [TwoFactorController::class, 'challenge'])
+            ->middleware([RateLimit::class.':auth-2fa'])
+            ->name('auth.two-factor.challenge');
+    });
+
+    /*
+     * PASSKEYS -- WebAuthn, through laravel/passkeys over web-auth/webauthn-lib.
+     *
+     * Each ceremony is two round trips: options out, credential back. The challenge issued
+     * by the first is kept SERVER-SIDE and pulled (single use) by the second, which is why
+     * these routes are on this group and could not be on `api` -- a challenge the client
+     * hands back to us is not a challenge.
+     *
+     * The two `options` routes are GETs that WRITE to the session, which is unusual enough
+     * to say out loud: they are not cacheable and they are not idempotent in the session's
+     * terms, because each one replaces the pending challenge. That is the ceremony's shape
+     * rather than a choice.
+     */
+    Route::prefix('passkeys')->group(function (): void {
+        Route::get('options', [PasskeyController::class, 'registrationOptions'])
+            ->middleware([RateLimit::class.':auth-login'])
+            ->name('auth.passkeys.options');
+
+        Route::post('/', [PasskeyController::class, 'register'])
+            ->middleware([RateLimit::class.':auth-login'])
+            ->name('auth.passkeys.register');
+
+        Route::get('login/options', [PasskeyController::class, 'loginOptions'])
+            ->middleware([RateLimit::class.':auth-login'])
+            ->name('auth.passkeys.login-options');
+
+        Route::post('login', [PasskeyController::class, 'login'])
+            ->middleware([RateLimit::class.':auth-login'])
+            ->name('auth.passkeys.login');
+    });
 });

@@ -102,6 +102,16 @@ return [
             'per_ip' => ['attempts' => 10, 'seconds' => 60],
         ],
 
+        /*
+        | THE SECOND FACTOR, and the tightest bucket in the project. Six digits is a
+        | million possibilities inside a thirty-second window, so an unbounded loop here is
+        | a real attack rather than a theoretical one. 5/minute leaves room for a mistyped
+        | code and a retry and nothing else.
+        */
+        'auth-2fa' => [
+            'per_ip' => ['attempts' => 5, 'seconds' => 60],
+        ],
+
         'pager-token' => [
             'per_ip' => ['attempts' => 30, 'seconds' => 60],
         ],

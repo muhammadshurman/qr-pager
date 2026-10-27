@@ -8,6 +8,7 @@ use App\Platform\Auth\ActiveTenant;
 use App\Platform\Auth\AuthenticatedTenantResolver;
 use App\Platform\Auth\Memberships;
 use App\Platform\Auth\RequestPrincipal;
+use App\Platform\Auth\TwoFactorSecrets;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
@@ -117,6 +118,12 @@ class AppServiceProvider extends ServiceProvider
         // missing: it was being rebuilt on every resolve, which was harmless and was also
         // not the rule.
         $this->app->scoped(RequestPrincipal::class);
+
+        // The second-factor reader. Scoped like the rest of the auth layer; it caches
+        // nothing, but the rule is uniform rather than a rule with an exception.
+        $this->app->scoped(TwoFactorSecrets::class, static fn ($app): TwoFactorSecrets => new TwoFactorSecrets(
+            $app->make('db')->connection(),
+        ));
 
         // laravel/passkeys' own seam for swapping its model. App\Models\Passkey is the
         // vendor model plus HasUuids: every id in this schema is a uuid (PLAN.md §2.5) and

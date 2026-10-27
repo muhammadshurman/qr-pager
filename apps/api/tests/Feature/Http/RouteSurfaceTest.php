@@ -47,7 +47,18 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // exist, and the gate names it -- "the rate limiter covers unknown routes (404s)".
     // Without it every unmatched path would get Laravel's HTML 404 instead of a
     // problem+json document, and nothing would count a scan.
-    $allowed = ['/healthz', '/readyz', '/{fallbackPlaceholder}'];
+    //
+    // `/passkey-harness` joined it at Task 5, and it is the one entry that is NOT a
+    // surface and not a 404 catcher. PLAN.md §3 row 5 asks for "a minimal unstyled harness
+    // page ... purely to exercise the WebAuthn browser API", because the credential
+    // ceremony lives in navigator.credentials and cannot be driven from HTTP. It is a test
+    // fixture that happens to need a URL.
+    //
+    // It is NOT under /v1 deliberately: putting it there would publish it into the
+    // versioned public contract, which is worse than an unversioned fixture. And it is not
+    // served in production at all -- the case below drives that, which is what makes this
+    // allowlist entry acceptable rather than a hole.
+    $allowed = ['/healthz', '/readyz', '/passkey-harness', '/{fallbackPlaceholder}'];
 
     $outside = array_values(array_filter(
         publicRouteUris(),
@@ -59,6 +70,28 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // form asserted that the allowlist contained the failure text -- which is how this
     // test first failed.)
     expect($outside)->toBe([], 'public routes outside /v1: '.implode(', ', $outside));
+});
+
+it('loads the passkey harness page only outside production', function (): void {
+    // The other half of the allowlist entry above: a test fixture with a URL must be
+    // unreachable where it matters.
+    //
+    // Read from bootstrap/app.php, the same way the drain route's condition is read two
+    // cases down, and for the same reason: the environment is global state that a running
+    // test cannot change for a route table that was built at boot. Re-booting a second
+    // application inside the suite to prove one `if` is a worse test than reading the `if`,
+    // and the first version of this case did something worse still -- it asserted the
+    // PREDICATE (`! app()->environment('production')` is false under production), which is
+    // a tautology about PHP rather than a fact about this application.
+    //
+    // The route IS present here, which is the positive control: the suite runs as `testing`,
+    // so a condition that excluded everything would fail the line below rather than pass
+    // quietly.
+    expect(publicRouteUris())->toContain('/passkey-harness');
+
+    $bootstrap = (string) file_get_contents(base_path('bootstrap/app.php'));
+
+    expect($bootstrap)->toContain("if (! app()->environment('production')) {\n                require __DIR__.'/../routes/harness.php';");
 });
 
 it('has removed Laravel /up, the welcome page and both storage routes', function (): void {

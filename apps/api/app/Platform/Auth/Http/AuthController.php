@@ -63,6 +63,28 @@ final class AuthController
             return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
         }
 
+        // A CONFIRMED SECOND FACTOR STOPS HERE, and the credentials being correct is not
+        // enough to establish a session.
+        //
+        // `two_factor_confirmed_at` and not `two_factor_secret`: config/fortify.php sets
+        // `confirm: true`, so a secret exists from the moment enrolment begins and is NOT
+        // in force until the user has proven they can read a code from it. Gating on the
+        // secret would lock somebody out of their own account between those two steps,
+        // which is QRPAGER-12 §10.6(b)'s failure case.
+        if ($user->getAttribute('two_factor_confirmed_at') !== null) {
+            // The pending user id goes in the SERVER-SIDE session, so the challenge cannot
+            // be completed for somebody else: TwoFactorController reads the id from here
+            // and never from the request.
+            $request->session()->put(TwoFactorController::PENDING_KEY, $userId);
+
+            // Regenerated even though no session has been established yet: an attacker who
+            // fixed the id before the password step must not hold the id that is now
+            // one code away from being authenticated.
+            $request->session()->regenerate();
+
+            return response()->json(['two_factor_required' => true], 200);
+        }
+
         // SESSION FIXATION. Auth::login() migrates the session, and the explicit
         // regenerate() here is belt and braces on the one event that matters most: a
         // pre-login id must not carry post-login authority. SessionPolicyTest asserts the

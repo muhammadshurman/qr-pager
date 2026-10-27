@@ -117,6 +117,17 @@
                                             ]
                                         },
                                         {
+                                            "type": "object",
+                                            "properties": {
+                                                "two_factor_required": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "two_factor_required"
+                                            ]
+                                        },
+                                        {
                                             "type": "string"
                                         }
                                     ]
@@ -1929,6 +1940,243 @@
                 ]
             }
         },
+        "/v1/auth/passkeys/options": {
+            "get": {
+                "operationId": "auth.passkeys.options",
+                "description": "Pass the returned options to the browser's credential API.",
+                "summary": "Begin registering a passkey for the signed-in account",
+                "tags": [
+                    "Passkey"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "WebAuthn creation options for the browser.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "options": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                }
+                                            },
+                                            "required": [
+                                                "options"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/passkeys": {
+            "post": {
+                "operationId": "auth.passkeys.register",
+                "description": "Send the credential the browser produced, with a name for the device.",
+                "summary": "Finish registering a passkey",
+                "tags": [
+                    "Passkey"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PasskeyRegistrationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The passkey that now exists.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "passkey": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "passkey"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That credential was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/passkeys/login/options": {
+            "get": {
+                "operationId": "auth.passkeys.login-options",
+                "description": "Pass the returned options to the browser's credential API. No account is named, so\nthe response is the same whether or not any passkey exists.",
+                "summary": "Begin signing in with a passkey",
+                "tags": [
+                    "Passkey"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "WebAuthn request options for the browser.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "options": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "options"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/passkeys/login": {
+            "post": {
+                "operationId": "auth.passkeys.login",
+                "summary": "Finish signing in with a passkey",
+                "tags": [
+                    "Passkey"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PasskeyVerificationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Signed in.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That credential was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
         "/readyz": {
             "get": {
                 "operationId": "probe.readiness",
@@ -2028,6 +2276,274 @@
                                 "schema": {
                                     "type": "string",
                                     "const": "no-store"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor/enable": {
+            "post": {
+                "operationId": "auth.two-factor.enable",
+                "description": "Returns the shared secret and a QR code to scan. Two-factor is not in force until it\nis confirmed with a code from the authenticator.",
+                "summary": "Begin enrolment",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The secret, an otpauth URL to render as a QR code, and the recovery codes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "two_factor": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "secret": {
+                                                            "type": "string"
+                                                        },
+                                                        "qr_code_url": {
+                                                            "type": "string",
+                                                            "description": "The otpauth: URL rather than Fortify's SVG, for the same reason: the SVG\nhelper reads the column off the model. A client renders the QR from this,\nand the harness page does not need one at all."
+                                                        },
+                                                        "recovery_codes": {
+                                                            "type": "string"
+                                                        },
+                                                        "confirmed": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "secret",
+                                                        "qr_code_url",
+                                                        "recovery_codes",
+                                                        "confirmed"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "two_factor"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "The secret could not be read back.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor/confirm": {
+            "post": {
+                "operationId": "auth.two-factor.confirm",
+                "description": "Two-factor is in force only after this succeeds.",
+                "summary": "Confirm enrolment with a code from the authenticator",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TwoFactorCodeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Confirmed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That code was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor": {
+            "delete": {
+                "operationId": "auth.two-factor.disable",
+                "description": "The secret and the recovery codes are discarded.",
+                "summary": "Turn two-factor off",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor/challenge": {
+            "post": {
+                "operationId": "auth.two-factor.challenge",
+                "description": "Accepts either a code from the authenticator or one unused recovery code. A recovery\ncode works once.",
+                "summary": "Complete a sign-in that is waiting for a second factor",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TwoFactorChallengeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Signed in.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That code was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "There is no sign-in waiting for a second factor.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
@@ -2146,6 +2662,92 @@
                     "poll_after_seconds"
                 ],
                 "title": "PacedProblemDocument"
+            },
+            "PasskeyRegistrationRequest": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 255
+                    },
+                    "credential": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "rawId": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "public-key"
+                                ]
+                            },
+                            "response": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "minItems": 1
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "rawId",
+                            "type",
+                            "response"
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "credential"
+                ],
+                "title": "PasskeyRegistrationRequest"
+            },
+            "PasskeyVerificationRequest": {
+                "type": "object",
+                "properties": {
+                    "credential": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "rawId": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "public-key"
+                                ]
+                            },
+                            "response": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "minItems": 1
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "rawId",
+                            "type",
+                            "response"
+                        ]
+                    },
+                    "remember": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "credential"
+                ],
+                "title": "PasskeyVerificationRequest"
             },
             "PollPagerStatusRequest": {
                 "type": "object",
@@ -2296,6 +2898,46 @@
                     "auth"
                 ],
                 "title": "StorePushSubscriptionRequest"
+            },
+            "TwoFactorChallengeRequest": {
+                "type": "object",
+                "description": "A second factor: an authenticator code, or one recovery code.",
+                "properties": {
+                    "code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The six digits shown by the authenticator app.",
+                        "minLength": 6,
+                        "maxLength": 8
+                    },
+                    "recovery_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "One of the recovery codes issued when two-factor was enabled. Each works once.",
+                        "maxLength": 64
+                    }
+                },
+                "title": "TwoFactorChallengeRequest"
+            },
+            "TwoFactorCodeRequest": {
+                "type": "object",
+                "description": "A code from the authenticator.",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "The six digits shown by the authenticator app.",
+                        "minLength": 6,
+                        "maxLength": 8
+                    }
+                },
+                "required": [
+                    "code"
+                ],
+                "title": "TwoFactorCodeRequest"
             },
             "UpdateMemberRoleRequest": {
                 "type": "object",

@@ -144,7 +144,7 @@ docker run --rm \
   -e REDIS_HOST=redis \
   -e REDIS_PORT=6379 \
   "$image" \
-  php artisan test --coverage ${min:+--min="$min"} --coverage-clover="$clover" "${filter_args[@]}"
+  php -d memory_limit=1G artisan test --coverage ${min:+--min="$min"} --coverage-clover="$clover" "${filter_args[@]}"
 
 status=$?
 
