@@ -9,6 +9,7 @@ use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\AppPoolSaturator;
 
 /*
  * R-012's Task 2 half, and the measured proof the structural half (c8a7fac) left owed:
@@ -28,32 +29,19 @@ beforeEach(function (): void {
 /**
  * Hold the app role at its CONNECTION LIMIT with raw PDO handles.
  *
- * Raw PDO rather than Laravel connections, so the manager is not holding them and
- * closing them is one unset rather than a purge of something the suite still needs.
+ * MOVED TO Tests\Support\AppPoolSaturator on 2026-10-27 (R-092), because the loop that
+ * used to live here opened forty-one connections as fast as it could and that made OTHER
+ * roles' connections fail in other files, minutes later in the run. The saturator holds
+ * the identical state and opens it three milliseconds apart; its docblock carries the
+ * reconstruction and the two numbers that decide it (slowest concurrent connect 32.430 s
+ * tight, 0.024 s staggered). Three call sites share it now — these two and ShedLoadTest,
+ * which also carried the limit as a hardcoded 41.
  *
  * @return list<PDO>
  */
 function holdTheAppPoolAtItsLimit(): array
 {
-    /** @var array<string, mixed> $config */
-    $config = (array) config('database.connections.pgsql');
-    $dsn = "pgsql:host={$config['host']};port={$config['port']};dbname={$config['database']};sslmode={$config['sslmode']}";
-    $held = [];
-
-    // Up to the limit plus one: the one past it is expected to be refused, and that
-    // refusal is the condition this whole row is about.
-    for ($i = 0; $i < DatabaseRoles::connectionLimit('app') + 1; $i++) {
-        try {
-            $held[] = new PDO($dsn, (string) $config['username'], (string) $config['password'], [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_TIMEOUT => 2,
-            ]);
-        } catch (PDOException) {
-            break;
-        }
-    }
-
-    return $held;
+    return AppPoolSaturator::hold();
 }
 
 it('answers /readyz and /healthz with the app pool full — R-012', function (): void {

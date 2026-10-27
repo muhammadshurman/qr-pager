@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Tests\Support\AppPoolSaturator;
 
 /*
  * "A saturated DB pool returns a fast 503, and memory/CPU pressure returns 503 -- while
@@ -276,19 +277,13 @@ it('sheds a real saturated pool end to end', function (): void {
     // app role held at its limit, and the middleware reads what it wrote.
     DB::purge('pgsql');
 
-    $held = [];
-    $config = (array) config('database.connections.pgsql');
-    $dsn = "pgsql:host={$config['host']};port={$config['port']};dbname={$config['database']};sslmode={$config['sslmode']}";
-
-    for ($i = 0; $i < 41; $i++) {
-        try {
-            $held[] = new PDO($dsn, (string) $config['username'], (string) $config['password'], [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            ]);
-        } catch (PDOException) {
-            break;
-        }
-    }
+    // THE SHARED SATURATOR, not a second copy of the loop (R-092, 2026-10-27). The copy
+    // that used to be here opened its connections as fast as it could, which is the burst
+    // that made other roles' connects fail elsewhere in the run, and it carried the limit
+    // as a hardcoded 41 that would have gone stale the first time the role's
+    // CONNECTION LIMIT moved. Tests\Support\AppPoolSaturator reads the limit and paces
+    // the opens; its docblock has the measurement.
+    $held = AppPoolSaturator::hold();
 
     try {
         $probe = app(SaturationProbe::class);
