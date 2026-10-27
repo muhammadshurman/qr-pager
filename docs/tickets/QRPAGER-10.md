@@ -204,11 +204,20 @@ contract, and was written into `PLAN.md §2` **before** the migrations:
   `public.resolve_pager_token(bytea)`: `SECURITY DEFINER`, owned by `qrpager_owner`,
   `SET search_path = pg_catalog, pg_temp`, a narrow `RETURNS TABLE` naming seven columns and
   **not** `token_hash`, `EXECUTE` revoked from `PUBLIC` and granted to `qrpager_app` alone.
+  **⚠ THIS EDIT WAS NOT MADE UNTIL 2026-10-27 (QA M-3).** `§2.8` described the recipe and
+  named no function; the sentence above asserted it did. Corrected in place rather than
+  carried as a risk: `§2.8` now names the function, its argument, its seven returned
+  columns and its owner.
 - **`§2.2`** — `app.bypass_tenant` has a **second setter**. It was `withoutTenantScope()`
   alone; the resolver function's body now also sets it, for the duration of its own body,
   restoring the previous value before returning. That is what `§2.8` prescribes, and the
   "Set by" cell said otherwise, so it is corrected rather than left to a reviewer to notice.
 - **`§2.7`** — gains the one `EXECUTE` grant above. No column grant changes.
+  **⚠ THIS EDIT WAS NOT MADE UNTIL 2026-10-27 (QA M-3) EITHER.** `§2.7`'s grant table and
+  its four bullets carried no `EXECUTE` row at all. Two of this section's five claimed
+  data-contract edits did not exist, against a `§2` preamble that requires the record
+  **first** — "Any task that needs a new table, column, enum value, role, GUC **or grant**
+  updates this section first". Both are in `PLAN.md` now.
 - **`§2.3`** — "Transitions of `pager_status` are defined in the PHP enum by Task 3" is
   now true and points at the enum.
 - **`§2.12`** — its closing paragraph carried `R-003` as live. Corrected in place.
@@ -221,7 +230,13 @@ Neither gains an attribute. **No new `app.*` GUC name**, so C1 is unchanged and
 
 - `App\Domain\Pager\PagerStatus` — **gains the transition table**, which `§2.3` already
   assigned here. One source for "which transition is legal", read by the service, the
-  expiry job and the tests. The Postgres `pager_status` type is unchanged, so
+  expiry job and the tests. **⚠ "THE EXPIRY JOB" WAS FALSE UNTIL 2026-10-27 (QA M-2):** the
+  job carried `where status in ('waiting','ready')` as a SQL literal, so the live-status set
+  lived in the enum, in that string and in the two worker policies — a duplicated enum that
+  static analysis cannot see, against `§6.2`'s "One source only. Never a duplicated enum."
+  Corrected in place rather than carried: the enum gained `live()` and `liveSqlList()`,
+  both derived from `allows()`, and `PagerExpiryTest` now asserts the enum, the interpolated
+  list, the statement actually issued and the policy whitelist are the same set. The Postgres `pager_status` type is unchanged, so
   `EnumContractTest` keeps passing without an edit.
 - `App\Domain\Http\ProblemType` — **gains `BadRequest`** (`R-042`). Still the only producer
   of a `type` value, and now **mechanically published**: `docs/openapi.json` carries

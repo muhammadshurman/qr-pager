@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Http\ProblemType;
 use App\Platform\Http\Problem;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Route;
 
@@ -116,27 +117,89 @@ it('describes both readiness outcomes with the real body shape', function (): vo
 });
 
 it('fails loudly when the committed spec is stale', function (): void {
-    $path = base_path('../../docs/openapi.json');
-    $original = (string) file_get_contents($path);
+    // THE MODIFIED SPEC IS A COPY. NOTHING HERE WRITES docs/openapi.json (QA L-2).
+    //
+    // This case used to overwrite the committed contract and restore it in a `finally` --
+    // and R-018 is the §5 row that says exactly why that is not good enough: "each finally
+    // is correct and none of them survives a kill -9", an OOM or a CI timeout. The answer
+    // there was to stop touching the shared object; this is the same answer. bin/openapi-check
+    // takes OPENAPI_SPEC_PATH, so the check runs against a scratch file and the repository's
+    // own contract is never opened for writing by any test.
+    $scratch = tempnam(sys_get_temp_dir(), 'qrpager-spec-').'.json';
+    $committed = (string) file_get_contents(base_path('../../docs/openapi.json'));
 
     try {
         // A single changed byte, which is the realistic failure: a route or a return type
         // changes and nobody regenerates.
-        file_put_contents($path, str_replace('QR Pager API', 'QR Pager API (stale)', $original));
+        file_put_contents($scratch, str_replace('QR Pager API', 'QR Pager API (stale)', $committed));
 
-        $result = Process::path(base_path())->run('composer openapi:check');
+        $result = Process::path(base_path())
+            ->env(['OPENAPI_SPEC_PATH' => $scratch])
+            ->run('composer openapi:check');
 
         expect($result->exitCode())->not->toBe(0, 'the staleness check accepted a modified spec')
             ->and($result->output().$result->errorOutput())->toContain('STALE');
+
+        // ...and the SAME mechanism passes on an unmodified copy, so the failure above is
+        // the modification and not the override path being broken.
+        file_put_contents($scratch, $committed);
+
+        $restored = Process::path(base_path())
+            ->env(['OPENAPI_SPEC_PATH' => $scratch])
+            ->run('composer openapi:check');
+
+        expect($restored->exitCode())->toBe(0, $restored->output().$restored->errorOutput());
     } finally {
-        file_put_contents($path, $original);
+        @unlink($scratch);
     }
 
-    // ...and passes again once it is restored, so the failure above is the modification
-    // and not the check being broken.
-    $restored = Process::path(base_path())->run('composer openapi:check');
+    // And the committed contract is byte-for-byte what it was when this case started --
+    // asserted rather than assumed, because that is the property R-018 is about.
+    expect(file_get_contents(base_path('../../docs/openapi.json')))->toBe($committed);
+});
 
-    expect($restored->exitCode())->toBe(0, $restored->output().$restored->errorOutput());
+it('has no test that writes to a committed artefact — R-018 generalised, QA L-2', function (): void {
+    // THE GUARD, not just the fix. §7: "Never fix the same bug twice. If it recurs, the
+    // regression test was missing." R-018 was one test mutating a shared ROLE; L-2 was
+    // another mutating a shared FILE. The shape is "a test modifies something the
+    // repository owns and relies on a finally", and it has now appeared twice.
+    //
+    // Scanned: every test file, for a write call whose target is a path under the
+    // repository's own docs/ or a committed spec. A test that needs a modified artefact
+    // makes a copy -- which is what the case above now does.
+    $writers = ['file_put_contents', 'fwrite', 'unlink', 'rename', 'copy'];
+    $offenders = [];
+
+    foreach (File::allFiles(base_path('tests')) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        foreach (explode("\n", (string) file_get_contents($file->getPathname())) as $number => $line) {
+            $trimmed = ltrim($line);
+
+            if (str_starts_with($trimmed, '//') || str_starts_with($trimmed, '*')) {
+                continue;
+            }
+
+            foreach ($writers as $writer) {
+                // The target has to be a committed path: base_path('../../docs/...') or a
+                // literal docs/ path. A scratch file from tempnam/sys_get_temp_dir is fine
+                // and is what this rule is steering people towards.
+                if (str_contains($line, $writer.'(')
+                    && (str_contains($line, '../../docs/') || str_contains($line, "base_path('../../docs"))) {
+                    $offenders[] = str_replace(base_path().'/', '', $file->getPathname()).':'.($number + 1).'  '.trim($line);
+                }
+            }
+        }
+    }
+
+    expect($offenders)->toBe([], implode(PHP_EOL, array_merge(
+        ['a test writes to a committed artefact. R-018: every finally is correct and none of'],
+        ['them survives a kill -9. Export to a scratch path and point the check at it instead.'],
+        [''],
+        $offenders,
+    )));
 });
 
 it('exports the same bytes every time, so the diff means something', function (): void {

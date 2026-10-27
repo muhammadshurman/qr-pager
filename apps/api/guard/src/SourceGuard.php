@@ -715,84 +715,66 @@ final class SourceGuard
     /**
      * Rule 8: the canonical documents exist exactly once, and only PLAN.md has a task table.
      *
-     * Scans the repository's TRACKED markdown, via `git ls-files`, rather than walking the
-     * filesystem. Three reasons, and the first is the one that matters: an untracked scratch
-     * copy in a working tree is nobody's business and flagging it would make the guard
-     * something people work around. The second is that `git ls-files` is already the
-     * boundary every other control in this project uses. The third is speed -- no
-     * `vendor/`, no `node_modules/`, no `storage/`.
+     * WALKS THE FILESYSTEM, NOT `git ls-files`, and that is a correction. The first version
+     * listed tracked markdown, which read well and broke in the one environment that
+     * matters most for a guard: `bin/coverage` runs this repository inside a container
+     * where git refuses the mount for dubious ownership, so the rule degraded to "could not
+     * run" and three of its own tests failed there while passing on the host. A guard whose
+     * result depends on who is running it is `R-054`'s shape, and this project has paid for
+     * that once already.
      *
-     * It degrades to a PASS, not a failure, when git is unavailable -- and says so through
-     * the normal channel rather than silently, because `bin/coverage` runs this repository
-     * inside a container where `git` refuses the mounted tree for dubious ownership, and a
-     * guard that goes red there would be switched off rather than fixed.
+     * Walking also catches the defect EARLIER. H-1's two files were committed, but the
+     * class is "a download landed in docs/ and nobody noticed" -- and an untracked one is
+     * the same hazard one step before the commit.
+     *
+     * PRUNED, so "anywhere in the tree" stays honest without being slow: `.git`, `vendor`,
+     * `node_modules`, `storage`, `build`, and this guard's own fixture directory -- which is
+     * excluded because it deliberately CONTAINS a stale plan and a duplicate Blueprint, and
+     * a rule that reported its own proof is one somebody switches off.
      *
      * @return list<Violation>
      */
     public function scanCanonicalDocs(): array
     {
         $root = $this->repositoryRoot();
-        $tracked = $this->trackedMarkdown($root);
-
-        if ($tracked === null) {
-            return [new Violation(
-                self::DUPLICATE_CANONICAL_DOC,
-                'docs/',
-                0,
-                'could not list tracked files with git, so the canonical-document rule did not run. '
-                .'This is reported rather than passed silently: a rule that cannot run is not a rule that holds',
-            )];
-        }
-
-        $violations = [];
         $planPath = self::CANONICAL_DOCS['plan'];
         $blueprintPath = self::CANONICAL_DOCS['blueprint'];
 
-        // (a) Only docs/PLAN.md may carry a task-table heading. C7.
-        foreach ($tracked as $relative) {
-            if ($relative === $planPath) {
-                continue;
-            }
-
-            $contents = @file_get_contents($root.'/'.$relative);
-
-            if (! is_string($contents) || preg_match(self::TASK_TABLE_HEADING, $contents, $match, PREG_OFFSET_CAPTURE) !== 1) {
-                continue;
-            }
-
-            $violations[] = new Violation(
-                self::DUPLICATE_CANONICAL_DOC,
-                $relative,
-                1 + substr_count(substr($contents, 0, (int) $match[0][1]), "\n"),
-                'carries a task-table heading, and C1-C7\'s C7 allows exactly one task table, in '
-                .$planPath.'. A second one is a second claimant to rank 3 of §0: the next session to '
-                .'read this repository may act on the stale one',
-            );
-        }
-
-        // (b) docs/BLUEPRINT.md's content must appear at no other tracked path.
         $blueprint = @file_get_contents($root.'/'.$blueprintPath);
+        $fingerprint = is_string($blueprint) ? hash('sha256', $blueprint) : null;
 
-        if (is_string($blueprint)) {
-            $fingerprint = hash('sha256', $blueprint);
+        $violations = [];
 
-            foreach ($tracked as $relative) {
-                if ($relative === $blueprintPath) {
-                    continue;
-                }
+        foreach ($this->markdownFiles($root) as $relative => $absolute) {
+            $contents = @file_get_contents($absolute);
 
-                $contents = @file_get_contents($root.'/'.$relative);
+            if (! is_string($contents)) {
+                continue;
+            }
 
-                if (is_string($contents) && hash('sha256', $contents) === $fingerprint) {
-                    $violations[] = new Violation(
-                        self::DUPLICATE_CANONICAL_DOC,
-                        $relative,
-                        1,
-                        'is byte-identical to '.$blueprintPath.'. The Blueprint is an ARCHIVE and a binding '
-                        .'baseline (§0), so a second copy is a second thing to keep in step with the first -- '
-                        .'and the one that drifts is the one somebody reads',
-                    );
-                }
+            // (a) C7: exactly one task table, in docs/PLAN.md.
+            if ($relative !== $planPath
+                && preg_match(self::TASK_TABLE_HEADING, $contents, $match, PREG_OFFSET_CAPTURE) === 1) {
+                $violations[] = new Violation(
+                    self::DUPLICATE_CANONICAL_DOC,
+                    $relative,
+                    1 + substr_count(substr($contents, 0, (int) $match[0][1]), "\n"),
+                    'carries a task-table heading, and C7 allows exactly one task table, in '.$planPath
+                    .'. A second one is a second claimant to rank 3 of §0: the next session to read this '
+                    .'repository may act on the stale one',
+                );
+            }
+
+            // (b) one Blueprint. It is an ARCHIVE and a binding baseline (§0), so a second
+            // copy is a second thing to keep in step -- and the one that drifts is the one
+            // somebody reads.
+            if ($relative !== $blueprintPath && $fingerprint !== null && hash('sha256', $contents) === $fingerprint) {
+                $violations[] = new Violation(
+                    self::DUPLICATE_CANONICAL_DOC,
+                    $relative,
+                    1,
+                    'is byte-identical to '.$blueprintPath.', which must exist exactly once',
+                );
             }
         }
 
@@ -802,8 +784,7 @@ final class SourceGuard
     /**
      * The repository root: two levels above `apps/api`, which is this guard's own root.
      *
-     * Resolved rather than assumed, so running the guard from a worktree or a copied tree
-     * still reaches the right `docs/`.
+     * Resolved rather than assumed, so a worktree or a copied tree still reaches its `docs/`.
      */
     public function repositoryRoot(): string
     {
@@ -811,26 +792,49 @@ final class SourceGuard
     }
 
     /**
-     * Every tracked `.md` path, relative to the repository root. Null when git cannot answer.
+     * Every `.md` under the repository root, keyed by path relative to it.
      *
-     * @return list<string>|null
+     * @return array<string, string>
      */
-    private function trackedMarkdown(string $root): ?array
+    private function markdownFiles(string $root): array
     {
-        // -c safe.directory, because bin/coverage runs this tree inside a container where
-        // the mount is owned by another uid and plain git refuses with "dubious ownership".
-        $command = 'git -C '.escapeshellarg($root).' -c safe.directory='.escapeshellarg($root)
-            .' ls-files -z -- "*.md" 2>/dev/null';
-
-        $output = shell_exec($command);
-
-        if (! is_string($output) || $output === '') {
-            return null;
+        if (! is_dir($root)) {
+            return [];
         }
 
-        $paths = array_values(array_filter(explode("\0", $output), static fn (string $p): bool => $p !== ''));
+        $pruned = ['.git', 'vendor', 'node_modules', 'storage', 'build', 'guard/fixtures'];
+        $files = [];
 
-        return $paths === [] ? null : $paths;
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveCallbackFilterIterator(
+                new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+                static function (\SplFileInfo $file) use ($root, $pruned): bool {
+                    if (! $file->isDir()) {
+                        return true;
+                    }
+
+                    $relative = str_replace($root.'/', '', $file->getPathname());
+
+                    foreach ($pruned as $skip) {
+                        if ($relative === $skip || str_ends_with($relative, '/'.$skip)) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                },
+            ),
+        );
+
+        foreach ($iterator as $file) {
+            if ($file instanceof \SplFileInfo && $file->getExtension() === 'md') {
+                $files[str_replace($root.'/', '', $file->getPathname())] = $file->getPathname();
+            }
+        }
+
+        ksort($files);
+
+        return $files;
     }
 
     public function scannedFiles(array $relativePaths): array

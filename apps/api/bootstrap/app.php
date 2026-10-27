@@ -108,9 +108,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // Task 3's expiry job. Registered rather than auto-discovered because it lives in
         // app/Features, which withCommands' directory scan does not cover -- and because
         // the list being explicit is what makes `php artisan` the record of what exists.
-        // Scheduling it is Task 13/14's: a command that is registered and never run is a
-        // visible gap, whereas one scheduled against infrastructure that does not exist
-        // yet is R-047's shape.
+        // Scheduling it is TASK 13's, with R-047 and R-058 -- one gap, one owner. This
+        // comment said "Task 13/14's" until 2026-10-27, while §5's R-058 owner cell said
+        // "Task 13 (infrastructure), with R-047 -- the same gap, the same owner". Two
+        // artefacts naming different owners is a false record rather than a risk, so it is
+        // corrected here rather than carried (QA L-4).
+        //
+        // A command that is registered and never run is a visible gap; one scheduled
+        // against infrastructure that does not exist yet is R-047's shape, which is why it
+        // is registered and not scheduled.
         ExpirePagerSessionsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {

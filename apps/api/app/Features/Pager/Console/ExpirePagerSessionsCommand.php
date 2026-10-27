@@ -90,10 +90,18 @@ final class ExpirePagerSessionsCommand extends Command
         // role: `status` is in the worker's SELECT grant and in its policy whitelist, and
         // `tenant_id` likewise, so the select list costs no reach; guessing the status
         // instead would mean a WHERE that cannot be written.
+        // THE LIVE-STATUS LIST COMES FROM THE ENUM (QA M-2). It was the SQL literal
+        // `('waiting', 'ready')` until 2026-10-27, while PagerStatus's own docblock claimed
+        // "the service, the expiry job and the tests all read allows()" -- so the set lived
+        // in the enum, in this string, and in the two worker policies, and only two of the
+        // three were pinned by anything. liveSqlList() derives it from allows(), and
+        // PagerExpiryTest asserts the policy whitelist and this list are the same set.
+        $live = PagerStatus::liveSqlList();
+
         $due = $worker->select(
             "select id, tenant_id, status
                from pager_sessions
-              where status in ('waiting', 'ready')
+              where status in ({$live})
                 and expires_at <= now()
               order by expires_at
               limit {$limit}",

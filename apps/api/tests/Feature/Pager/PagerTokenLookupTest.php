@@ -196,13 +196,17 @@ it('is permitted by the scope guard, while a bare pager_sessions statement is st
     // left to be discovered by Task 4, which is the task that will call this inside a
     // request for the first time.
     app(TenantScopeGuard::class)->armedFor(function () use ($hash, $tenant): void {
-        $resolved = app(PagerTokenLookup::class)->resolve(
-            // the token, recovered from the issuing side rather than re-derived
-            PagerToken::fromPresented(str_repeat('A', 22))?->reveal() ?? ''
-        );
+        // A WELL-FORMED BUT UNKNOWN TOKEN, and the distinction is the point of this
+        // correction (QA L-6). `str_repeat('A', 22)` is 22 base64url characters, so
+        // PagerToken::fromPresented() accepts it, it IS hashed, and the call DOES make a
+        // real resolve_pager_token round trip -- which is exactly what this case needs,
+        // because the guard can only be shown to permit a statement that is actually
+        // issued. The comment here used to call it "the malformed probe", which would have
+        // meant no statement ran at all and the case proved nothing.
+        $resolved = app(PagerTokenLookup::class)->resolve(str_repeat('A', 22));
 
-        // The malformed probe above resolves nothing; the real assertion is the two
-        // statements below.
+        // It resolves nothing because no session has that hash; the real assertion is the
+        // two statements below.
         expect($resolved)->toBeNull();
 
         // 1. The named cross-tenant path is permitted with no scope open.

@@ -320,3 +320,173 @@ it('commits the expiry and its audit row together or not at all — QA L-4', fun
         'the expiry survived a transaction whose audit row was rolled back'
     )->and($audit)->toBe(0);
 });
+
+it('expires nothing and audits nothing when a staff member wins the race — QA M-1', function (): void {
+    // THE BRANCH THE RE-RUNNABILITY CLAIM RESTS ON, and the one the suite never reached.
+    // Measured by QA M-1 at `1695f0b`: `if ($affected !== 1) { return 0; }` in
+    // ExpirePagerSessionsCommand::expire() was **0 times covered**, while the ticket's §6.6
+    // and the command's own docblock both lean on it -- "a second attempt on an
+    // already-expired row is a 0, not an error and not a duplicate".
+    //
+    // The existing "is re-runnable" case cannot reach it: the SELECT filters on
+    // `status in ('waiting','ready')`, so a second pass finds NO ROWS and never issues a
+    // second UPDATE. The branch only executes when the row changes BETWEEN the SELECT and
+    // the keyed UPDATE -- which is a staff member completing or cancelling a session while
+    // a pass is in flight, the exact interleaving §4 › Postgres traps makes the keyed,
+    // status-guarded UPDATE the answer to.
+    //
+    // So the race is forced rather than waited for: beforeExecuting fires BEFORE the
+    // statement, so the row is moved on ANOTHER connection in the instant between the
+    // worker's SELECT and its UPDATE. No production seam exists for this; the instrument is
+    // the same one PagerTransactionTest and the QA L-4 case above already use.
+    $tenant = $this->makeTenant();
+    $session = expiredSessionIn($tenant, PagerStatus::Waiting);
+
+    $raced = false;
+
+    DB::connection('pgsql_worker')->beforeExecuting(function (string $query) use (&$raced, $session): void {
+        if ($raced || ! str_contains($query, 'update pager_sessions')) {
+            return;
+        }
+
+        $raced = true;
+
+        // The staff member wins. A DIFFERENT CONNECTION, committing in its own transaction
+        // while the worker's is open -- which is what makes this a race rather than the
+        // worker's own transaction moving its own row, a thing that would prove nothing.
+        //
+        // AS ROOT, AND DELIBERATELY NOT THROUGH withTenant(). TenantContext refuses to open
+        // a scope on a second connection while one is live -- R-015's guard, and it fires
+        // here exactly as it should, because this closure runs INSIDE the worker's scope.
+        // The superuser bypasses row level security and needs no scope, so the racing write
+        // is a precondition placed from outside rather than a second tenant context. Which
+        // actor wins is irrelevant to the mechanism under test: what the keyed,
+        // status-guarded UPDATE has to survive is that the row CHANGED between the read and
+        // the write, whoever changed it.
+        //
+        // READ COMMITTED is what makes the worker see it: its UPDATE re-reads the row at
+        // statement start, and the worker holds no lock on it yet -- the pass's SELECT runs
+        // outside the per-session transaction and takes none.
+        DB::connection('pgsql_root')->update(
+            'update pager_sessions set status = ?::pager_status, completed_at = now() where id = ?',
+            [PagerStatus::Completed->value, $session],
+        );
+    });
+
+    Artisan::call('pager:expire');
+
+    expect($raced)->toBeTrue('the race never fired, so this case proved nothing');
+
+    $status = withTenant($tenant, fn () => DB::table('pager_sessions')->where('id', $session)->value('status'));
+
+    $audit = withTenant($tenant, fn (): int => DB::table('audit_log')
+        ->where('subject_id', $session)
+        ->where('action', PagerAuditAction::Expired->value)
+        ->count());
+
+    $expiredAt = withTenant($tenant, fn () => DB::table('pager_sessions')->where('id', $session)->value('expired_at'));
+
+    // Three assertions, because the branch owes three things.
+    expect($status)->toBe(
+        PagerStatus::Completed->value,
+        'the expiry overwrote a status a staff member had just written'
+    )
+        // NOTHING TO AUDIT, BECAUSE NOTHING HAPPENED. An audit row here would be a record
+        // of work that did not occur, which the command's docblock calls out as worse than
+        // a failed pass.
+        ->and($audit)->toBe(0, 'an audit row was written for an expiry that did not happen')
+        // And the worker did not half-write: expired_at stays null on a row it did not move.
+        ->and($expiredAt)->toBeNull('expired_at was set on a row the UPDATE did not match');
+
+    // The pass itself reports success and expires zero: it is a no-op, not a failure.
+    expect(Artisan::output())->toContain('0 of 1 due session(s) expired');
+});
+
+it('derives its live-status list from the enum, and it matches the policy whitelist — QA M-2', function (): void {
+    // ONE SOURCE, ASSERTED ACROSS ALL THREE PLACES THE SET LIVES. Until 2026-10-27 the job
+    // carried `where status in ('waiting','ready')` as a SQL literal while PagerStatus's own
+    // docblock claimed "the service, the expiry job and the tests all read allows()". §6.2
+    // is "One source only. Never a duplicated enum", and a string literal is a duplicated
+    // enum static analysis cannot see.
+    //
+    // THE CONSTRAINT THIS MUST NOT BREAK, which is why the test is a set comparison and not
+    // a string check: §4 › Postgres traps requires the worker's cross-tenant SELECT policy
+    // to be bounded by TIME PLUS A STATUS WHITELIST THAT CONTAINS THE STATUS THE UPDATE
+    // WRITES. An UPDATE that references a column re-checks the NEW row against the SELECT
+    // policies (§2.12), so `expired` has to be in the read whitelist or every expiry raises
+    // 42501 -- and it must NOT be in the UPDATE policy's USING, or an already-expired row
+    // could be rewritten cross-tenant.
+    $live = array_map(fn (PagerStatus $s): string => $s->value, PagerStatus::live());
+    sort($live);
+
+    // (1) the enum's own derivation
+    expect($live)->toBe(['ready', 'waiting'], 'the live set changed; every assertion below depends on it');
+
+    // (2) the SQL list the job interpolates, parsed back out of the string
+    preg_match_all("/'([a-z_]+)'/", PagerStatus::liveSqlList(), $matches);
+    $fromSql = $matches[1];
+    sort($fromSql);
+
+    expect($fromSql)->toBe($live, 'liveSqlList() and live() disagree');
+
+    // (3) the statement the job actually issues, captured off a real pass
+    $tenant = $this->makeTenant();
+    expiredSessionIn($tenant, PagerStatus::Waiting);
+
+    $selects = [];
+    DB::listen(function ($query) use (&$selects): void {
+        if (str_contains($query->sql, 'from pager_sessions') && str_starts_with(trim($query->sql), 'select')) {
+            $selects[] = $query->sql;
+        }
+    });
+
+    Artisan::call('pager:expire');
+
+    $claim = collect($selects)->first(fn (string $sql): bool => str_contains($sql, 'expires_at <= now()'));
+
+    expect($claim)->not->toBeNull('the expiry pass issued no claiming SELECT');
+
+    preg_match_all("/'([a-z_]+)'/", (string) $claim, $matches);
+    $fromStatement = $matches[1];
+    sort($fromStatement);
+
+    expect($fromStatement)->toBe($live, 'the issued statement does not use the enum-derived list');
+
+    // (4) the POLICY whitelist, read from pg_catalog, against the same set
+    $read = (string) $this->asRoot()->selectOne(
+        "select pg_get_expr(p.polqual, p.polrelid) as using_expr
+           from pg_policy p join pg_class c on c.oid = p.polrelid
+          where c.relname = 'pager_sessions' and p.polname = 'worker_reads_expired_sessions'",
+    )->using_expr;
+
+    preg_match_all("/'([a-z_]+)'/", $read, $matches);
+    $policyWhitelist = array_values(array_unique($matches[1]));
+    sort($policyWhitelist);
+
+    // The policy's whitelist is the live set PLUS the status the update writes. That is the
+    // §4 clause, stated as an equation rather than as prose: a reader can see at a glance
+    // that the extra member is exactly `expired` and nothing else.
+    $expected = $live;
+    $expected[] = PagerStatus::Expired->value;
+    sort($expected);
+
+    expect($policyWhitelist)->toBe($expected,
+        'the SELECT policy whitelist is not the live set plus exactly the written status');
+
+    // (5) and the written status is in it, which is the half that makes the expiry possible
+    expect($policyWhitelist)->toContain(PagerStatus::Expired->value);
+
+    // (6) while the UPDATE policy's USING is the live set and NOT the written status --
+    // otherwise an already-expired row could be rewritten cross-tenant, which is R-003.
+    $update = (string) $this->asRoot()->selectOne(
+        "select pg_get_expr(p.polqual, p.polrelid) as using_expr
+           from pg_policy p join pg_class c on c.oid = p.polrelid
+          where c.relname = 'pager_sessions' and p.polname = 'worker_expires_sessions'",
+    )->using_expr;
+
+    preg_match_all("/'([a-z_]+)'/", $update, $matches);
+    $updateUsing = array_values(array_unique($matches[1]));
+    sort($updateUsing);
+
+    expect($updateUsing)->toBe($live, 'the UPDATE policy USING is not exactly the live set');
+});

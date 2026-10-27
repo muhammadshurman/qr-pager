@@ -221,3 +221,90 @@ it('has the unique index as the backstop, independent of the row lock', function
 
     expect($state)->toBe('23505');
 });
+
+it('lets two concurrent renotifies both through, with distinct dedupe keys — QA L-3', function (): void {
+    // THE CLAIM THIS EXISTS FOR, which had no test behind it (QA L-3). PagerSessions and
+    // PagerEvent::dedupeKey both assert that "two concurrent renotifies cannot compute the
+    // same attempt number -- which is what keeps the dedupe keys distinct and lets both
+    // notifications through", and the two-process harness was pointed only at markReady.
+    //
+    // IT MATTERS MORE THAN markReady's, and in the opposite direction. markReady's failure
+    // mode is a duplicate buzz; this one's is a 23505 on `UNIQUE (tenant_id, dedupe_key)`
+    // rendered as a 409 -- a LOST notification, on a buzz staff deliberately asked for,
+    // which is the one failure this product exists to prevent.
+    //
+    // A renotify is NOT idempotent by design: it is a new notification every time, so the
+    // right outcome here is TWO outbox rows, not one. That is the asymmetry with the case
+    // above, and it is why the dedupe key carries the attempt number while ready's does not.
+    $tenant = $this->makeTenant();
+    $session = $this->makeSession($tenant, ['status' => PagerStatus::Ready->value]);
+    $script = base_path('tests/Support/renotify-in-another-process.php');
+    $database = (string) config('database.connections.pgsql.database');
+
+    expect(is_file($script))->toBeTrue('the renotify race harness is missing');
+
+    // Merged, not replaced -- proc_open's $env REPLACES the environment, so a bare array
+    // loses PATH and `php` is then not found. Measured on the markReady case first: the
+    // child produced no output and the failure read as a concurrency result.
+    $env = array_merge(getenv(), [
+        'APP_ENV' => 'testing',
+        'DB_DATABASE' => $database,
+        'PAO_DISABLE' => '1',
+    ]);
+
+    $children = [];
+
+    // Both started before either is read, so they contend for real rather than running in
+    // sequence behind a blocking read.
+    foreach ([0, 1] as $i) {
+        $children[$i] = ['handle' => proc_open(
+            ['php', $script, $tenant, $session],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $children[$i]['pipes'],
+            base_path(),
+            $env,
+        ), 'pipes' => $children[$i]['pipes'] ?? []];
+
+        expect($children[$i]['handle'])->not->toBeFalse("could not start process {$i}");
+    }
+
+    $outcomes = [];
+
+    foreach ($children as $child) {
+        $outcomes[] = trim((string) stream_get_contents($child['pipes'][1]));
+        $stderr = trim((string) stream_get_contents($child['pipes'][2]));
+        fclose($child['pipes'][1]);
+        fclose($child['pipes'][2]);
+        proc_close($child['handle']);
+
+        expect($stderr)->toBe('', "a child process wrote to stderr: {$stderr}");
+    }
+
+    sort($outcomes);
+
+    // BOTH SUCCEED, with DIFFERENT attempt numbers. A 23505 or a 409 here is the bug the
+    // claim denies: the row lock serialises the read-and-write of renotify_count, so the
+    // second caller reads 1 and writes 2 rather than both reading 0 and writing 1.
+    expect($outcomes)->toBe(['renotified:1', 'renotified:2'],
+        'two concurrent renotifies did not both succeed with distinct attempt numbers: '.implode(' | ', $outcomes));
+
+    // Two outbox rows, with two DISTINCT dedupe keys — the property the attempt number
+    // exists for, asserted on the rows rather than on the return values.
+    $keys = withTenant($tenant, fn (): array => DB::table('outbox')
+        ->where('pager_session_id', $session)
+        ->where('type', PagerEvent::Renotify->value)
+        ->orderBy('dedupe_key')
+        ->pluck('dedupe_key')
+        ->all());
+
+    expect($keys)->toHaveCount(2, 'a renotify was swallowed: one of the two wrote no outbox row')
+        ->and($keys)->toBe([
+            PagerEvent::Renotify->dedupeKey($session, 1),
+            PagerEvent::Renotify->dedupeKey($session, 2),
+        ]);
+
+    // And the row itself carries the higher count, so the two writes did not race into one.
+    $count = withTenant($tenant, fn () => DB::table('pager_sessions')->where('id', $session)->value('renotify_count'));
+
+    expect((int) $count)->toBe(2);
+});

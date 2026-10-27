@@ -172,15 +172,14 @@ it('rejects a third configured GUC, which no SQL would reveal', function (): voi
 /**
  * Copy a rule 8 fixture into the repository under a real .md name, run the rule, remove it.
  *
- * TRACKED, because rule 8 lists `git ls-files -- "*.md"` rather than walking the filesystem
- * — an untracked scratch copy is nobody's business and flagging one would make the guard
- * something people work around. So the fixture has to be staged to be seen, and the `finally`
- * unstages and deletes it.
+ * NO GIT STAGING. The first version staged the planted file with `git add -N`, because the
+ * rule listed tracked markdown -- and that broke inside bin/coverage's container, where git
+ * refuses the mount for dubious ownership, so three of these cases failed there while
+ * passing on the host. The rule walks the filesystem now, and so does this.
  *
- * A crash between the two leaves a stray `.md` in `docs/` — which the guard itself then
- * reports on the next run, so the failure mode of this helper is the guard working.
- *
- * @return list<Violation>
+ * A crash between the copy and the unlink leaves a stray `.md` in `docs/` -- which the guard
+ * itself then reports on the next run, so this helper's own failure mode is the guard
+ * working.
  */
 function withPlantedDoc(string $fixture, string $planted, Closure $assert): void
 {
@@ -192,12 +191,10 @@ function withPlantedDoc(string $fixture, string $planted, Closure $assert): void
     expect(is_file($target))->toBeFalse("{$planted} already exists; refusing to overwrite it");
 
     copy($source, $target);
-    exec('git -C '.escapeshellarg($root).' add -N '.escapeshellarg($planted).' 2>/dev/null');
 
     try {
         $assert((new SourceGuard(base_path()))->scanCanonicalDocs());
     } finally {
-        exec('git -C '.escapeshellarg($root).' reset -q -- '.escapeshellarg($planted).' 2>/dev/null');
         @unlink($target);
     }
 }
@@ -248,17 +245,22 @@ it('does not flag prose that merely mentions a task table, only a heading', func
         ->and(preg_match(SourceGuard::TASK_TABLE_HEADING, '#### the task Table'))->toBe(1);
 });
 
-it('reports rather than passes when git cannot list the tree', function (): void {
-    // A rule that cannot run is not a rule that holds. bin/coverage runs this repository
-    // inside a container where git refuses the mount for dubious ownership, so the failure
-    // mode is real rather than theoretical — and it must be visible, not a silent pass.
-    $guard = new SourceGuard('/nonexistent/apps/api');
+it('does not flag its own fixtures, which deliberately contain both defects', function (): void {
+    // guard/fixtures/docs holds a stale plan WITH a task table and a byte-identical copy of
+    // the Blueprint, on purpose. A rule that reported its own proof is one somebody switches
+    // off, so that directory is pruned -- and this pins the pruning, because the real-tree
+    // case passing could also mean the walk is finding nothing at all.
+    $guard = new SourceGuard(base_path());
 
-    $violations = $guard->scanCanonicalDocs();
+    expect($guard->scanCanonicalDocs())->toBe([]);
 
-    expect($violations)->toHaveCount(1)
-        ->and($violations[0]->rule)->toBe(SourceGuard::DUPLICATE_CANONICAL_DOC)
-        ->and($violations[0]->detail)->toContain('did not run');
+    // The fixtures really are there and really would be violations if they were seen.
+    $stale = base_path('guard/fixtures/docs/stale-plan.md.fixture');
+    $copy = base_path('guard/fixtures/docs/duplicate-blueprint.md.fixture');
+
+    expect(preg_match(SourceGuard::TASK_TABLE_HEADING, (string) file_get_contents($stale)))->toBe(1)
+        ->and(hash_file('sha256', $copy))
+        ->toBe(hash_file('sha256', $guard->repositoryRoot().'/'.SourceGuard::CANONICAL_DOCS['blueprint']));
 });
 
 it('exits non-zero through the real binary when a canonical document is duplicated', function (): void {

@@ -11,7 +11,10 @@ use App\Domain\DatabaseEnum;
  * Mirrored by the Postgres enum type [pager_status] (PLAN.md §2.3).
  *
  * THE TRANSITION TABLE LIVES HERE, which §2.3 assigned to this enum rather than to the
- * data contract. One source: the service, the expiry job and the tests all read allows(),
+ * data contract. One source: the service, the expiry job and the tests all read allows()
+ * -- the expiry job through live()/liveSqlList(), which derive from it. That clause was FALSE
+ * until 2026-10-27 (QA M-2): the job carried its live-status list as a SQL literal, so the
+ * set lived in three places. Corrected in place rather than carried as a risk,
  * so "invalid state transitions rejected" is one table and not a condition repeated at
  * five call sites that can disagree with each other.
  *
@@ -76,5 +79,44 @@ enum PagerStatus: string implements DatabaseEnum
     public function isLive(): bool
     {
         return ! $this->isTerminal();
+    }
+
+    /**
+     * Every live status, as a list. The expiry job's `IN` list and the policies' whitelist.
+     *
+     * DERIVED FROM allows(), like isTerminal() and isLive(), so a case added to the
+     * transition table cannot leave this disagreeing with it.
+     *
+     * IT EXISTS BECAUSE THE CLAIM ABOVE WAS FALSE (QA M-2). This file's own docblock said
+     * "One source: the service, THE EXPIRY JOB and the tests all read allows()", and the
+     * expiry job did not: it carried `where status in ('waiting','ready')` as a SQL literal,
+     * so the live set lived in the enum, in that string, and in the two worker policies.
+     * §6.2 is "One source only. Never a duplicated enum", and a string literal is a
+     * duplicated enum that static analysis cannot see.
+     *
+     * @return list<self>
+     */
+    public static function live(): array
+    {
+        return array_values(array_filter(self::cases(), static fn (self $status): bool => $status->isLive()));
+    }
+
+    /**
+     * The live statuses as a quoted, comma-separated SQL list: `'waiting', 'ready'`.
+     *
+     * BUILT FROM THE ENUM'S OWN CASE VALUES AND NOTHING ELSE, which is what makes
+     * interpolating it safe: `pager_status`'s values are `[a-z]+` literals declared in a
+     * migration, never caller input, and the one assembly point is here rather than at the
+     * call site. The alternative -- binding a parameter per case -- would put a variable
+     * number of placeholders into a statement whose shape §4 › Postgres traps prescribes
+     * clause by clause, and a prescribed statement that changes shape with the enum's size
+     * is worse than a literal built from it.
+     */
+    public static function liveSqlList(): string
+    {
+        return implode(', ', array_map(
+            static fn (self $status): string => "'".$status->value."'",
+            self::live(),
+        ));
     }
 }

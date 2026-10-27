@@ -13,7 +13,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-committed="../../docs/openapi.json"
+# The file under test. Defaults to the committed contract; overridable so that a TEST OF
+# THIS CHECK can point it at a copy instead of modifying the real one.
+#
+# QA L-2: OpenApiSpecTest used to prove this check bites by writing a modified spec over
+# `docs/openapi.json` and restoring it in a `finally` -- and R-018 is the §5 row that says
+# every finally is correct and none of them survives a kill -9, an OOM or a CI timeout. The
+# answer there was to stop touching the shared object at all, and this is the same answer:
+# the test exports to a scratch path, modifies the COPY, and points the check at it.
+committed="${OPENAPI_SPEC_PATH:-../../docs/openapi.json}"
 fresh="$(mktemp -t qrpager-openapi-XXXXXX.json)"
 trap 'rm -f "$fresh"' EXIT
 

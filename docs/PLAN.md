@@ -496,6 +496,26 @@ The point of column grants is that over-broad SQL cannot leak what the role was 
 - **No role has `UPDATE`, `DELETE` or `TRUNCATE` on `audit_log`**; the trigger in §2.9 is the backstop behind that.
 - `app` has no `DELETE` on `pager_sessions` or `outbox`: sessions are cancelled or expire, they are not deleted.
 
+**The one `EXECUTE` grant, added at Task 3 and recorded here on 2026-10-27 (QA M-3).**
+Column grants are not the whole of §2.7 any more: the token lookup is a function, and a
+function has an ACL of its own.
+
+| Function | `qrpager_app` | everyone else |
+| --- | --- | --- |
+| `public.resolve_pager_token(bytea)` | `EXECUTE` | **none** — `REVOKE ALL … FROM PUBLIC` runs first, so the grant is additive to nothing |
+
+Owned by `qrpager_owner`, `SECURITY DEFINER`, `SET search_path = pg_catalog, pg_temp`. The
+`REVOKE` before the `GRANT` is load-bearing: a `SECURITY DEFINER` function is executable by
+`PUBLIC` by default, so without it every role on the cluster could resolve a token hash.
+`PagerTokenLookupTest` reads `pg_proc.proacl` back as an exact two-entry set, so a third
+grantee fails the suite.
+
+**This row did not exist until 2026-10-27.** `QRPAGER-10 §6.1` asserted that §2.7 "gains the
+one `EXECUTE` grant above" and that §2.8 names the function, and neither edit had been made —
+two of that section's five claimed data-contract edits. §2's own preamble requires the record
+first ("Any task that needs a new table, column, enum value, role, GUC **or grant** updates
+this section **first**"), so this is a correction in place, not a new decision.
+
 ### 2.8 Cross-tenant reads — the only mechanism
 
 A named path in `§4 › Tenancy` that genuinely has no tenant context is implemented as a
@@ -512,6 +532,29 @@ to the caller and that the caller's own direct queries stay tenant-bound.
    the caller needs.
 2. The function body is the audit boundary. It takes one exact-match argument (a token hash, a user id), so
    it answers one question and cannot be used to enumerate.
+
+**The one such function that exists, recorded on 2026-10-27 (QA M-3).** Until then §2.8
+described the recipe and named nothing, while `QRPAGER-10 §6.1` asserted it had been named.
+
+```sql
+public.resolve_pager_token(token_hash bytea)
+  RETURNS TABLE (session_id uuid, tenant_id uuid, status pager_status,
+                 order_reference varchar, expires_at timestamptz,
+                 ready_at timestamptz, last_notified_at timestamptz)
+  SECURITY DEFINER, owned by qrpager_owner, SET search_path = pg_catalog, pg_temp
+```
+
+- **Seven columns, and `token_hash` is not one of them** — rule 1 above, which is why it is
+  `RETURNS TABLE` and never `RETURNS SETOF pager_sessions`.
+- **One exact-match argument**, which is rule 2: it answers one question and cannot enumerate.
+- **`EXECUTE` to `qrpager_app` alone**, after `REVOKE ALL … FROM PUBLIC` — §2.7's new row.
+- It is the implementation of `§4 › Tenancy`'s **QR token lookup**, the first of the four
+  named cross-tenant paths to be built. The expiry job is the second and uses policies rather
+  than a function, because it writes.
+- **It writes no `audit_log` row**, and §2.10's "a bypass that commits always carries its own
+  audit row" is a property of `withoutTenantScope()` rather than of every bypass in the
+  system. Carried as a finding against the record, not against the design: a per-resolution
+  audit row would make an unauthenticated loop an unbounded writer into an append-only table.
 
 ### 2.9 `audit_log` immutability
 
@@ -2420,6 +2463,104 @@ can read a CI conclusion. `§4a` already records a `Cancelled` run being mistake
 `task-1` at a cost of a day; this is the same blind spot from the other side, a real red nobody
 could see. Carried as **`R-072`**.
 
+
+### Task 3 — the `§11` reviews, and the QA disposition of 2026-10-27
+
+Both reviews ran in their own sessions with `git diff task-2...task-3-pager-domain` and
+`docs/tickets/QRPAGER-10.md` only — not the handover, which is the builder's reasoning
+written down, and not `§4a`'s own Task 3 narrative.
+
+**19 findings in all: 0 Critical, 1 High, 6 Medium, 12 Low.** QA reported 10 (0/1/3/6),
+Security 9 (0/0/3/6). Both relayed in full with matching counts (`§11 › Relay rule`).
+Security's are **not yet dispositioned** — Muhammad ruled on QA's first, deliberately.
+
+#### `H-1` — ruled FIXED, not accepted
+
+A second, stale `docs/claude/PLAN.md` (1079 lines, Task-1-era, *"Last completed: Task 1 /
+Next up: Task 2"*, with its own `## 3. Task table` at line 406) and a byte-identical
+duplicate `docs/claude/BLUEPRINT.md`, both added by `e5ebc9a` on this branch in a commit
+whose message says "Record only; no behaviour" and does not mention them.
+
+**The ruling, and the reasoning is worth keeping because it bounds the Round limit:**
+
+> The round limit's scope is **fix diffs** — "the fixes they produce are code nobody has
+> read, so a fix diff is reviewed too". It bounds a loop where each round of fixes is new
+> code that can carry a new finding. `H-1` is not a finding against a fix diff: it is a
+> defect in the task's own content at `e5ebc9a`, surfaced by a first-pass review of the
+> branch. **The cap does not reach it.** Independently: the fix is a deletion of two files.
+> It adds no code, creates no review surface, and cannot restart the loop the cap exists to
+> terminate.
+>
+> And `§5` cannot hold it. An accepted risk is one the project runs with. A second file
+> named `PLAN.md`, carrying its own task table and reading "Next up: Task 2", is a second
+> claimant to rank 3 of `§0` — the next session that reads the repo may act on the stale
+> one. C7 forbids exactly this.
+
+Done at `789aef7` (the deletion, on its own) and `eeb5fbe` (the control). **A deletion takes
+no regression test, so the control is mechanical instead: `SourceGuard` rule 8**, under
+`composer guard` and therefore already its own CI step —
+
+- **(a)** no file but `docs/PLAN.md` carries a task-table **heading** (a heading, not the
+  words: `§3`'s C7 row and `§7` both mention "task table" in prose, and a word-matching
+  rule would flag the documentation of the rule it enforces);
+- **(b)** `docs/BLUEPRINT.md`'s content appears at no other path.
+
+Proven to fail on two committed fixtures. **Numbered 8, skipping 7** — rule 7 is the
+vacuous-assertion rule landing with `task-4-notifications`, and reserving the number keeps
+both branches' constants stable across the rebase.
+
+**It walks the filesystem rather than `git ls-files`, and that is a correction made during
+the work.** The first version listed tracked markdown and broke in the one environment that
+matters most for a guard: `bin/coverage` runs this repository inside a container where git
+refuses the mount for dubious ownership, so the rule degraded to "could not run" and three
+of its own tests failed there while passing on the host. A guard whose result depends on who
+runs it is `R-054`'s shape, which this project has paid for once already.
+
+**`task-4-notifications` carries both files too** — it was cut off this branch — and they go
+on the rebase. Reported rather than fixed there, on instruction.
+
+#### The six QA findings ruled FIXED, with a regression test each
+
+| # | What was done | The test |
+| --- | --- | --- |
+| **M-1** | The raced-row branch was **0 times covered** while the re-runnability claim rested on it. The race is now **forced**: `beforeExecuting` on `pgsql_worker` fires before the keyed `UPDATE`, and the superuser moves the row to `completed` on another connection in that instant. | `PagerExpiryTest` › *expires nothing and audits nothing when a staff member wins the race*. Asserts the status survives, **no audit row** (a record of work that did not happen), `expired_at` still null, and the pass reports `0 of 1 due`. The file went 43/45 → **46/47**. |
+| **M-2** | The live-status list is now **derived from the enum**: `PagerStatus::live()` and `liveSqlList()`, both from `allows()`. It was the SQL literal `('waiting','ready')` while the enum's own docblock claimed the job read `allows()` — a duplicated enum static analysis cannot see. **The §4 constraint held:** the SELECT policy whitelist must be time **plus** a status whitelist containing the status the update writes. | `PagerExpiryTest` › *derives its live-status list from the enum…*. Six assertions: the enum's set; `liveSqlList()`; the statement **actually issued**, captured off `DB::listen`; the policy whitelist read from `pg_policy` equals the live set **plus exactly `expired`**; that `expired` is in it; and that the UPDATE policy's `USING` is the live set **without** it. |
+| **M-3** | `§2.7` gains the `EXECUTE` grant row for `public.resolve_pager_token(bytea)` with its `REVOKE ALL … FROM PUBLIC`, and `§2.8` names the function, its argument, its seven returned columns and its owner. **Two of `QRPAGER-10 §6.1`'s five claimed data-contract edits did not exist**; the ticket is corrected in place, against a `§2` preamble that requires the record *first*. | Doc edit. `PagerTokenLookupTest` already reads `pg_proc.proacl` back as an exact two-entry set, so a third grantee fails the suite. |
+| **L-2** | A test overwrote the committed `docs/openapi.json` and restored it in a `finally` — `R-018`'s shape, whose own lesson is that *"each finally is correct and none of them survives a kill -9"*. `bin/openapi-check` now takes `OPENAPI_SPEC_PATH`, so the test exports to a scratch file and modifies the **copy**. | `OpenApiSpecTest` › the staleness case now asserts the committed contract is byte-for-byte unchanged when it finishes — **plus a new guard**, *has no test that writes to a committed artefact*, because `§7` says a bug that recurs means the regression test was missing, and this shape has now appeared twice. |
+| **L-1** | The committed gate transcript was from an earlier commit (466 / 2085) than the head (492). Re-run at head and recommitted, **with a header naming the commit it was measured at**, so a later docs-only commit does not invalidate it. | `docs/tickets/QRPAGER-10-gate.txt`. |
+| **L-6** | `PagerTokenLookupTest` called `str_repeat('A', 22)` "the malformed probe" when it is **well-formed** — hashed, and a real round trip. The comment claimed no statement ran, which would have meant the case proved nothing. | Comment corrected in place; the call simplified to pass the string directly. |
+
+#### The two ruled into `§5`, or decided
+
+- **`L-4`** — `pager:expire` registered and scheduled nowhere: **the gap is accepted and it
+  is already `R-058`**, owner Task 13 with `R-047`. But *"two artefacts naming different
+  owners is a false record, not a risk"*, so the disagreement was corrected **first**:
+  `bootstrap/app.php` said "Scheduling it is Task 13/14's" while `R-058`'s owner cell said
+  "Task 13 (infrastructure), with `R-047` — the same gap, the same owner". The docblock now
+  says Task 13 and names both rows.
+- **`L-3`** — the renotify concurrency claim had no concurrent test. **Decided: write the
+  test, not delete the claim** — and the reason is the direction of the failure. `markReady`'s
+  failure mode is a duplicate buzz; this one's is a `23505` on
+  `UNIQUE (tenant_id, dedupe_key)` rendered as a 409, which is a **lost** notification on a
+  buzz staff deliberately asked for — the one failure this product exists to prevent.
+  `tests/Support/renotify-in-another-process.php` is the sibling harness, and
+  `PagerIdempotencyTest` › *lets two concurrent renotifies both through…* asserts both
+  succeed with **distinct** attempt numbers, two outbox rows with the two dedupe keys
+  `PagerEvent` computes, and `renotify_count = 2`.
+
+#### Held
+
+**`L-5`** — the 401 is undocumented in the generated spec. Held until Security `M-1` (the
+spec publishes the staff endpoints as needing no authentication) is ruled on: same artefact,
+regenerate once, together.
+
+#### Gate after the disposition round
+
+**All six steps green, exit 0 — 502 passed, 2231 assertions** (492 / 2182 before it).
+Coverage on this task's 23 files **98.46 % (641/651)**, `--min=90` passing, up from
+98.29 % (633/644). Transcripts at `docs/tickets/QRPAGER-10-{gate,coverage}.txt`.
+
+---
 
 ## 5. Accepted risks
 
