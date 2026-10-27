@@ -40,21 +40,40 @@ use Illuminate\Support\Facades\Route;
  */
 
 /*
- * AUTHORISATION, ADDED AT TASK 5, AND IT IS ON THE GROUP RATHER THAN PER ROUTE.
+ * AUTHORISATION, ADDED AT TASK 5. ON A GROUP IN THIS FILE, AND IN TWO LAYERS -- and the
+ * second layer exists because the first one alone does NOT cover what the first draft of
+ * this comment claimed it did.
  *
  * RequireTenantScope answers "is there a tenant for this request". RequireAbility answers
  * "may this actor do THIS", and until Task 5 nothing did -- every route below had been
  * behind the deny-by-default tenant guard since it was written, which is not the same
  * question.
  *
- * It takes NO PARAMETER. The ability is looked up by route NAME in
- * App\Platform\Auth\RouteAbilities, and a route that is not in that map is refused with
- * 403 rather than served. That is why the middleware is on the group: a per-route
- * `ability:...` parameter would make "every staff route is covered" unobservable, because a
- * route missing the parameter is indistinguishable from one that was meant to be open.
- * RoleMatrixTest iterates this router and fails if any /v1 route is in neither the staff
- * map nor the named customer or auth sets, so the three sets are closed-world over the
- * whole surface.
+ * It takes NO PARAMETER: the ability is looked up by route NAME in
+ * App\Platform\Auth\RouteAbilities, and a route inside this group that is not in that map
+ * is refused with 403 rather than served. A per-route `ability:...` parameter would make
+ * "every staff route is covered" unobservable, because a route missing the parameter is
+ * indistinguishable from one that was meant to be open.
+ *
+ * ⚠ LAYER ONE'S LIMIT, measured rather than reasoned about. A group wrapper only reaches
+ * routes somebody remembered to nest in it, so a staff route added to this file OUTSIDE the
+ * group gets no authorisation check at all. That is a real hole and it is closed by layer
+ * two rather than by this group:
+ *
+ *   LAYER 1, runtime: RequireAbility fails CLOSED inside this group -- an unmapped route
+ *            here is a 403, so forgetting the map entry is a loud refusal.
+ *   LAYER 2, build:   RoleMatrixTest iterates the WHOLE router and fails if any /v1 route
+ *            is in neither the staff map nor the named customer or auth sets. A route added
+ *            outside this group is in no set, so the suite goes red.
+ *
+ * The obvious fix -- move RequireAbility onto the `api` middleware group so it reaches every
+ * /v1 route -- WAS TRIED AND REVERTED, and the reason is worth recording: the group is the
+ * whole of routes/v1.php, but it is also what nine test files mount their own ad-hoc `/v1`
+ * probe routes on. Those probes are unnamed and unmappable by construction, so they all
+ * became 403 and twenty-odd tests went red on infrastructure rather than on behaviour. The
+ * alternative -- letting an UNNAMED route through -- is precisely the fail-open this is
+ * written to prevent. So the runtime check keeps the narrower scope, the build check carries
+ * the totality, and the limit is written down here instead of being claimed away.
  */
 Route::middleware([RequireAbility::class])->group(function (): void {
 
@@ -132,5 +151,4 @@ Route::middleware([RequireAbility::class])->group(function (): void {
             ->whereUuid('device')
             ->name('devices.destroy');
     });
-
 });

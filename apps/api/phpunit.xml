@@ -18,6 +18,29 @@
         </include>
     </source>
     <php>
+        <!--
+            memory_limit, added at Task 5 and measured twice.
+
+            bin/coverage runs the suite with pcov in a throwaway container whose php.ini
+            default is 128M, and two DIFFERENT processes hit it. The parent died in
+            Scramble's ServiceProvider at line 156, unserializing its class map; the child
+            died in php-code-coverage's PcovDriver at line 64. Both said "Allowed memory
+            size of 134217728 bytes exhausted".
+
+            Passing the flag to the parent fixes only the parent: `artisan test` spawns
+            Pest as a subprocess, which does not inherit it. This directive is what reaches
+            the child, because PHPUnit applies ini settings before the driver starts. Both
+            are set, deliberately, for the two processes.
+
+            It is the same 1G `composer stan` already passes rather than a new number, and
+            it is headroom the suite outgrew as it got bigger. Nothing about Task 5
+            allocates more.
+
+            (And this comment contains no double hyphen, which is not a style choice: XML
+            forbids one inside a comment, and the first draft of it made phpunit.xml
+            unparseable with "Double hyphen within comment".)
+        -->
+        <ini name="memory_limit" value="1G"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
