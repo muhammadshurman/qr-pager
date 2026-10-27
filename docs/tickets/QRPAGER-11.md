@@ -601,11 +601,11 @@ to survive the ceiling, so 42 900 rps is the figure every bound below is measure
 
 | Thing | Cost | Bounded by |
 | --- | --- | --- |
-| One poll | **2 Redis `GET`s, 0 Postgres statements, 0 writes.** No `set`, no counter, no log line on the success path | `pager-poll` (240/IP/min), `ShedLoad`, and the absence of any write |
-| One poll, token malformed | **0 Redis, 0 Postgres** — refused by a regex before any I/O | the same bucket |
+| One poll | **7 Redis commands, 0 Postgres statements, 0 Postgres writes.** The *handler* is 2 (`GET` the pointer, `GET` the projection); the request is 7, because the middleware in front of it is on Redis too — see the correction below | `pager-poll` (240/IP/min), `ShedLoad`, and the absence of any Postgres |
+| One poll, token malformed | **5 Redis, 0 Postgres** — the handler spends one regex and no I/O; the five are the shedder and the limiter, which run in front of every request by design | the same bucket |
 | One resolve | 1 Postgres round trip (one `plpgsql` call, two `set_config`s, one unique-index probe) + 2 Redis `SETEX` | `pager-token` (30/IP/min). This is the expensive path and it is the tightest bucket |
 | One subscribe | 1 resolve + 1 upsert inside one transaction | `pager-subscribe` (20/IP/min) |
-| One active session in Redis | **2 keys**, both `SETEX` with a TTL ≤ the session's remaining life. At 300 K sessions and ~300 B a pair, **≈ 90 MB** — and it **cannot grow past the session population**, because nothing writes a key with a TTL longer than the session that owns it | the TTL, which is derived rather than configured |
+| One active session in Redis | **2 keys**, both `SETEX` with a TTL ≤ the session's remaining life. At 300 K sessions and ~300 B a pair, **≈ 90 MB** — and it **cannot grow past the WAITING population**, because `refresh()` is `XX` so a session nobody scanned gets no key at all, and nothing writes a key with a TTL longer than the session that owns it | the TTL, which is derived rather than configured; and `XX`, which ties the keyspace to scans rather than to orders |
 | One notification | 1 outbox row (already written by Task 3), 1 claim share, 1 tenant scope, ≤ `max_attempts` HTTP sends | `max_attempts` then dead-letter |
 | One expired subscription | **Deleted on the first 404/410**, so it is paid for at most once more | the pruning clause |
 
@@ -617,6 +617,29 @@ forever — no grant in `§2.7` deletes one — which is already `§2.11`'s "unb
 one to watch", and a retention job is Task 13's with `R-047`'s family. This task adds rows
 to that table at the same rate Task 3 already does and does not make it worse; it is named
 here because `§6.5` asks what is bounded and the honest answer includes what is not.
+
+**⚠ CORRECTED AFTER MEASUREMENT, 2026-10-27.** The two rows above first read "2 Redis
+`GET`s" and "0 Redis", counting only the controller. `PagerPollingTest` then measured the
+real request and found **seven**, in this order:
+
+```
+get            ShedLoad, reading the readiness snapshot
+get            RateLimiter::tooManyAttempts, reading the attempt count
+eval, eval     RateLimiter::hit, adding the timer key and the counter key
+incrby         RateLimiter::hit, incrementing it
+get, get       THE HANDLER: the pointer, then the projection
+```
+
+So **four of the seven are rate limiting** and one is load shedding. At the C6 ceiling of
+300 000 concurrent sessions on a 7-second interval that is ~42 900 polls per second and
+therefore **~300 000 Redis operations per second**, of which ~171 600 are the limiter.
+That is the figure Task 14 has to size ElastiCache against, and it is 3.5x what the
+uncorrected note implied. Both numbers are asserted by `PagerPollingTest` — the handler's
+two, so the design claim is pinned by something that does not move when the limiter's
+internals do, and the request's seven, so the real cost is pinned at all.
+
+Recorded here as a correction rather than quietly edited, because a cost nobody measured
+is `§4a`'s most frequent defect and this ticket asserted one before the code existed.
 
 **The `p99 < 5 ms` measurement method is `§2.1` above**, stated before the number was
 taken, with `bin/poll-latency-proof` in the repo.

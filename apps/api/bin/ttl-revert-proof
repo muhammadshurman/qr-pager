@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# R-068: re-measure PagerTtlTest's revert proof, per case, both halves separately.
+#
+# WHAT R-068 FOUND. PagerTtlTest's header claimed "delete the refuseIfPastTtl() call in
+# apply() and the first four cases go green-to-red at 200 instead of 409; delete it in
+# renotify() and the fifth does". The second review ran both reverts and measured
+# something else: apply()-only turns SIX cases red and renotify()-only turns ONE, and it
+# is case 2 rather than case 5. The aggregate figure quoted in §0, §4a and R-058 -- "6 of
+# 9 revert-proved, the 3 that stay green are exactly the carve-outs" -- was right, so the
+# number anyone acted on was correct and only one file's header was wrong.
+#
+# WHY THIS IS A SCRIPT AND NOT TWO seds IN A HANDOVER. R-043: a proof that does not live
+# in the repository is a proof nobody can re-run. R-068's own "review by" cell says
+# "re-running both reverts is two seds and two test runs, recorded in §4a" -- this is
+# those two seds, with the per-case verdict printed, so the header's claim can be checked
+# against a run rather than against a memory of one.
+#
+# It edits a tracked file and restores it in a trap, including on Ctrl-C. Run it on a
+# clean tree: if it is interrupted hard enough to skip the trap, `git checkout` the file.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# PAO_DISABLE, or laravel/pao prints one JSON line inside an agent session and the
+# per-case verdicts below cannot be read at all (R-054, CLAUDE.md).
+export PAO_DISABLE=1
+
+target="app/Features/Pager/PagerSessions.php"
+suite="tests/Feature/Pager/PagerTtlTest.php"
+backup="$(mktemp)"
+
+cp "$target" "$backup"
+trap 'cp "$backup" "$target"; rm -f "$backup"' EXIT INT TERM
+
+run() {
+  local label="$1"
+  echo "=== $label"
+  # STRIP THE COLOUR FIRST, THEN FILTER. Pest writes the ✓ and ⨯ glyphs with an SGR
+  # escape in front of them, so a grep anchored at ^\s+ matches nothing at all -- which
+  # is how the first version of this script printed three empty sections and looked like
+  # a suite with no cases.
+  php artisan test "$suite" 2>&1 \
+    | sed 's/\x1b\[[0-9;]*m//g' \
+    | grep -E '^\s*(✓|⨯|PASS|FAIL|Tests:)'
+  echo
+}
+
+echo "R-068 revert proof — PagerTtlTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+run "baseline — no revert, every case should pass"
+
+cp "$backup" "$target"
+# The apply() call site. Matched by the variable names, which differ between the two call
+# sites ($from/$session in apply, $status/$session in renotify), so each sed hits one.
+sed -i 's|^\( *\)\$this->refuseIfPastTtl(\$from, \$session);|\1// REVERTED BY bin/ttl-revert-proof|' "$target"
+grep -q 'REVERTED BY' "$target" || { echo "FATAL: the apply() call site was not found"; exit 1; }
+run "revert A — refuseIfPastTtl() removed from apply() ONLY"
+
+cp "$backup" "$target"
+sed -i 's|^\( *\)\$this->refuseIfPastTtl(\$status, \$session);|\1// REVERTED BY bin/ttl-revert-proof|' "$target"
+grep -q 'REVERTED BY' "$target" || { echo "FATAL: the renotify() call site was not found"; exit 1; }
+run "revert B — refuseIfPastTtl() removed from renotify() ONLY"
+
+# RESTORE HERE, EXPLICITLY, AND NOT ONLY IN THE TRAP. The first version of this script
+# checked the file against the backup while revert B was still applied, because the trap
+# had not fired yet -- so a clean run ended with "does NOT match the pre-run copy" and a
+# non-zero exit. The trap stays, because it is what covers a crash or a Ctrl-C; this
+# restores for the normal path so the check below has something true to check.
+cp "$backup" "$target"
+
+# Against the BACKUP, not against HEAD: the file legitimately differs from HEAD while
+# this task is in progress, so a git diff here would report the work as damage.
+if cmp -s "$backup" "$target"; then
+  echo "restored: $target is byte-identical to the copy taken before the first revert"
+else
+  echo "WARNING: $target does NOT match the pre-run copy. Restore it from git." >&2
+  exit 1
+fi

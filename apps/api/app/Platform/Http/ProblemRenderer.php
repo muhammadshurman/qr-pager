@@ -123,7 +123,12 @@ final class ProblemRenderer
         $database = $this->databaseErrors->map($error);
 
         if ($database !== null) {
-            return new Problem($database, $instance);
+            // R-070: the retry hint, chosen per SQLSTATE rather than per status code. A
+            // lock timeout and a saturated connection pool are both 503 and deserve
+            // different numbers, so the mapper decides -- it is the only thing here that
+            // has read the driver code. Null for the mapped 4xx and 5xx, so a 409 or a
+            // 422 still carries no Retry-After.
+            return new Problem($database, $instance, [], $this->databaseErrors->retryAfter($error));
         }
 
         if ($error instanceof HttpExceptionInterface) {

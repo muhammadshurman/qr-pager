@@ -71,10 +71,17 @@ deptrac:
         - type: directory
           value: routes/.*
 
+    # Third-party code. Named "Framework" for the rule it exists to express -- that our
+    # own layers may depend on vendor code and vendor code depends on nothing of ours --
+    # rather than for Laravel specifically. A vendor namespace missing from this list is
+    # reported as an UNCOVERED dependency rather than as a violation, which is a quieter
+    # failure: `Uncovered: 0` is the figure §4a records, so a new library has to be added
+    # here or that figure moves. Minishlink (web-push) and GuzzleHttp (the PSR-18 client
+    # behind it) joined at Task 4.
     - name: Framework
       collectors:
         - type: classLike
-          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery)\\.*
+          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery|Minishlink|GuzzleHttp)\\.*
 
     # The pre-Task-5 auth stub (B5), a layer so that "a feature cannot be built on the
     # stub" is a dependency rule rather than a reviewer's job. Only Platform may reach
