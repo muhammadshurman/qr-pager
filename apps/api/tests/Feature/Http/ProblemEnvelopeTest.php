@@ -8,6 +8,9 @@ use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerTransitionDenied;
 use App\Platform\Database\UnsafeDatabaseRoleException;
 use App\Platform\Http\ProblemRenderer;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -267,4 +270,20 @@ it('renders the two pager domain refusals as 404 and 409, never as a 500', funct
             PagerTransitionDenied::between(PagerStatus::Completed, PagerStatus::Ready),
             $request,
         )->type)->toBe(ProblemType::Conflict);
+});
+
+it('maps the three framework exceptions it matches by class, not by status', function (): void {
+    $renderer = app(ProblemRenderer::class);
+    $request = Request::create('/v1/x', 'GET');
+
+    // Matched by CLASS rather than by status, which the renderer does deliberately
+    // ("these two ARE HttpExceptions, and matching them by class rather than by status
+    // keeps the mapping readable"). Covered here because a branch nothing exercises is a
+    // branch nobody notices breaking.
+    expect($renderer->render(new ModelNotFoundException, $request)->type)
+        ->toBe(ProblemType::NotFound)
+        ->and($renderer->render(new AuthenticationException, $request)->type)
+        ->toBe(ProblemType::Unauthenticated)
+        ->and($renderer->render(new AuthorizationException('nope'), $request)->type)
+        ->toBe(ProblemType::Forbidden);
 });

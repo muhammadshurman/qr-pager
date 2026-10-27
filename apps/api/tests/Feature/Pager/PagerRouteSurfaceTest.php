@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Http\ProblemType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
+use App\Features\Pager\Http\PagerSessionController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
@@ -246,4 +248,19 @@ it('answers 404 for a session id that is not a uuid, through the unknown-path fa
 
     expect($response->status())->toBe(404);
     $response->assertJsonPath('type', ProblemType::NotFound->value);
+});
+
+it('refuses to run a pager action with no tenant bound, so a route off the api group fails loudly', function (): void {
+    // UNREACHABLE THROUGH ROUTING, which is the point of asserting it rather than
+    // trusting it: RequireTenantScope answers 401 before any route runs when no tenant
+    // resolves, so this guard exists for a FUTURE route mounted without that middleware.
+    // §4 asks for that direction -- fail loudly rather than run unscoped -- and a guard
+    // nothing exercises is a guard nobody notices breaking.
+    //
+    // The controller is resolved and called directly, with nothing bound, which is
+    // exactly the state such a route would produce.
+    $controller = app(PagerSessionController::class);
+
+    expect(fn () => $controller->ready(Request::create('/v1/pager-sessions/x/ready', 'POST'), 'x'))
+        ->toThrow(RuntimeException::class, 'No tenant is bound for this request');
 });
