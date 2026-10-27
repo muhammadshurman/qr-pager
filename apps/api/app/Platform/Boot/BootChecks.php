@@ -10,6 +10,7 @@ use App\Platform\Database\UnsafeDatabaseRoleException;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Env;
+use Minishlink\WebPush\VAPID;
 use Throwable;
 
 /**
@@ -43,6 +44,25 @@ final class BootChecks
     public const UNTRUSTED_PROXY_CONFIGURATION = 'untrusted-proxy-configuration';
 
     public const UNSAFE_LANDING_URL = 'unsafe-landing-url';
+
+    /**
+     * No usable VAPID keypair, so every Web Push notification would fail (Task 4).
+     *
+     * FOUND BY A PROOF RATHER THAN BY REVIEW, which is worth recording: bin/outbox-kill-proof
+     * ran with no VAPID configured and every row came back `retried` with the edge never
+     * contacted at all. The failure is INSIDE the dispatcher -- VAPID::validate() raises
+     * on an empty key -- so it is caught, logged at warning, and retried to the
+     * max_attempts cap, after which the row dead-letters. A deployment that forgot
+     * VAPID_PRIVATE_KEY would therefore serve every customer-facing request perfectly,
+     * accept every subscription, and silently fail to deliver a single notification,
+     * discovering it six attempts later in a log nobody is reading.
+     *
+     * §4 › Edge & ops: "Every dependency has a declared fail-open or fail-closed posture,
+     * chosen deliberately and tested by taking the dependency down." The push edge's
+     * posture is FAIL CLOSED AT BOOT, because the alternative is a pager that looks
+     * healthy and never buzzes -- and this product is the pager.
+     */
+    public const UNUSABLE_VAPID_KEYS = 'unusable-vapid-keys';
 
     /**
      * Values that make X-Forwarded-For attacker-controlled rather than trustworthy.
@@ -127,6 +147,7 @@ final class BootChecks
             ...$this->sslmodeIsNotWeak(),
             ...$this->trustedProxiesAreSound(),
             ...$this->landingUrlIsSound(),
+            ...$this->vapidKeysAreUsable(),
             ...$this->connectionCarriesNoTenantSetting($connection),
             ...$this->debugIsOff(),
         ]));
@@ -312,6 +333,72 @@ final class BootChecks
             return [self::UNSAFE_LANDING_URL.': pager.landing_url ['.$url.'] already carries a '
                 .'fragment. The token is appended after a [#], so the client would read that '
                 .'fragment and the token together and neither would be usable.'];
+        }
+
+        return [];
+    }
+
+    /**
+     * Refuse to serve without a VAPID keypair the push library can actually use.
+     *
+     * WHY THIS IS A BOOT CHECK AND NOT A LOG LINE. Measured 2026-10-27 while building
+     * bin/outbox-kill-proof: with the three VAPID values empty, `outbox:work` claimed every
+     * row, contacted no edge at all, and reported `retried` for all of them --
+     * VAPID::validate() raises inside WebPush's constructor, the dispatcher catches it
+     * (correctly: it must not abandon a batch), and the row backs off. Six attempts later
+     * it dead-letters. So the whole product fails SILENTLY and LATE: every page works,
+     * every subscription is accepted, and no customer is ever paged.
+     *
+     * THE CHECK IS A REAL VALIDATION, NOT A PRESENCE TEST. A non-empty string that is not
+     * a P-256 key fails exactly the same way at send time as an empty one, and "the
+     * variable is set" is the kind of control that passes while the thing it stands for is
+     * broken. So this hands the values to the library's own validator -- the same code the
+     * dispatcher will call -- and refuses on whatever it refuses. One source for what
+     * "usable" means.
+     *
+     * THE KEYS NEVER REACH THE MESSAGE. The refusal names the config path and nothing
+     * else: this string is logged at critical and printed by `boot:check`, and §4 › Edge &
+     * ops keeps secrets out of logs at any APP_DEBUG setting. The library's own exception
+     * message can carry key material, so it is deliberately not included -- only the fact
+     * that validation refused.
+     *
+     * Skipped in local/testing, like every other check here, because a developer who has
+     * not set up push should still be able to boot the application and run the suite --
+     * and the suite generates its own keypair per process, which is how no key reaches the
+     * repository.
+     *
+     * @return list<string>
+     */
+    public function vapidKeysAreUsable(): array
+    {
+        if ($this->isDevelopment()) {
+            return [];
+        }
+
+        $vapid = [
+            'subject' => config('webpush.vapid.subject'),
+            'publicKey' => config('webpush.vapid.public_key'),
+            'privateKey' => config('webpush.vapid.private_key'),
+        ];
+
+        foreach ($vapid as $name => $value) {
+            if (! $this->isNonEmpty($value)) {
+                return [self::UNUSABLE_VAPID_KEYS.": webpush.vapid.{$name} is empty, so every Web "
+                    .'Push notification would fail inside the dispatcher and dead-letter after '
+                    .'its retries. Set VAPID_SUBJECT, VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY.'];
+            }
+        }
+
+        try {
+            /** @var array{subject: string, publicKey: string, privateKey: string} $vapid */
+            VAPID::validate($vapid);
+        } catch (Throwable) {
+            // The class and the message are both dropped: a validation failure raises with
+            // the key in hand, and this string is logged at critical.
+            return [self::UNUSABLE_VAPID_KEYS.': the configured VAPID keypair was refused by the '
+                .'push library, so every notification would fail at send time. Check '
+                .'VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are a matching P-256 pair and that '
+                .'VAPID_SUBJECT is a mailto: or https: URI.'];
         }
 
         return [];

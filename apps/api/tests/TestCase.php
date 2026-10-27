@@ -98,10 +98,91 @@ abstract class TestCase extends BaseTestCase
         // leaves /v1 served and /readyz refusing, which is each one's own posture.
         try {
             $this->app->make(ReadinessStore::class)->forget();
+            self::clearRateLimitBuckets();
+            self::clearPagerProjection();
         } catch (Throwable) {
             // A Redis that cannot be reached has no key to clear, and the tests that
             // care about Redis being down say so themselves.
         }
+    }
+
+    /**
+     * Drop every rate-limit bucket, for the same reason the readiness key is dropped.
+     *
+     * THE FAILURE THIS EXISTS FOR, found at Task 4. The limiter keys on sha1($request->ip()),
+     * which is 127.0.0.1 for every feature test in the suite, and nothing cleared them --
+     * so the counts accumulated ACROSS TESTS and across files. The symptom is the worst
+     * kind: a test that passes alone and fails in the suite, with a 429 where its own
+     * subject should have answered, and the failure lands on whichever test happens to run
+     * after the twentieth request rather than on the one that made them. Measured:
+     * OutboxWorkerTest's eleventh case received 429 from the `pager-subscribe` bucket
+     * (20/minute) because the ten before it had each registered a device.
+     *
+     * It did not bite before this task because Task 2 and Task 3's buckets are 60-120 per
+     * minute and their suites are small; Task 4 adds three tighter customer buckets and a
+     * file that registers a device per case. The coupling was always there.
+     *
+     * RateLimitTest still clears its own keys at the top of each case, which is right: it
+     * is the suite that DRIVES the limiter, so it needs a known starting point within a
+     * test rather than merely between tests.
+     *
+     * ON THE `cache` CONNECTION AND WITH A DOUBLE PREFIX, which is where the first version
+     * of this method went wrong and found nothing. RequestLimiter deliberately runs on the
+     * CACHE STORE rather than the raw connection -- its own docblock says why -- so the
+     * keys carry two prefixes, not one: `database.redis.options.prefix` from the client
+     * ("laravel-database-") and `cache.prefix` from the store ("laravel-cache-"), on the
+     * connection `cache.stores.redis.connection` names. Measured:
+     *
+     *   default connection, keys("*ratelimit*")  -> nothing
+     *   cache connection,   keys("*ratelimit*")  -> laravel-database-laravel-cache-ratelimit:...
+     *
+     * So a sweep of `ratelimit:*` on the default connection matches nothing and passes
+     * quietly, which is exactly how a clean-up that does not clean up survives review.
+     */
+    private static function clearRateLimitBuckets(): void
+    {
+        $store = (string) config('cache.stores.redis.connection', 'cache');
+        $cachePrefix = (string) config('cache.prefix', '');
+
+        self::forgetKeysMatching($cachePrefix.'ratelimit:*', $store);
+    }
+
+    /**
+     * Drop Task 4's Redis status projection and its token pointers.
+     *
+     * Same argument as the readiness key and the six tables: a projection one test warmed
+     * is a live status the next test did not create. These keys carry a TTL of up to the
+     * session TTL (two hours), so without this a polling test could read a projection
+     * written by a test that ran before it -- and because the pointer is keyed by a token
+     * hash, the two would have to collide by token to interfere, which is a bug that
+     * appears once in a very long while and is unreproducible when it does.
+     */
+    private static function clearPagerProjection(): void
+    {
+        self::forgetKeysMatching('t:*:pager:*');
+        self::forgetKeysMatching('pager:tok:*');
+    }
+
+    private static function forgetKeysMatching(string $pattern, ?string $connection = null): void
+    {
+        $connection = app('redis')->connection($connection);
+        $prefix = (string) config('database.redis.options.prefix', '');
+
+        /** @var mixed $found */
+        $found = $connection->keys($pattern);
+
+        if (! is_array($found) || $found === []) {
+            return;
+        }
+
+        $bare = array_map(
+            fn (mixed $key): string => $prefix !== '' && str_starts_with((string) $key, $prefix)
+                ? substr((string) $key, strlen($prefix))
+                : (string) $key,
+            $found,
+        );
+
+        $connection->del(...$bare);
     }
 
     /**

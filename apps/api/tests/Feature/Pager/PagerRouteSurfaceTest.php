@@ -6,6 +6,10 @@ use App\Domain\Http\ProblemType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
 use App\Features\Pager\Http\PagerSessionController;
+use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RequireTenantScope;
+use App\Platform\Http\Middleware\ShedLoad;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -325,5 +329,157 @@ it('answers 503 and not 500 when the row lock times out — QA L-7', function ()
             proc_terminate($holder);
             proc_close($holder);
         }
+    }
+});
+
+/**
+ * Every middleware class that will actually run for a route, with groups expanded.
+ *
+ * Route::gatherMiddleware() returns the route's OWN middleware plus the NAMES of the
+ * groups it is in -- so `RequireTenantScope::class` is not in that list for a staff route
+ * at all: the string `api` is, and the class is inside it. The first version of the case
+ * below compared against the unexpanded list and reported that `pager.sessions.store` was
+ * NOT behind RequireTenantScope, which is the opposite of true. A test that reads the
+ * route table has to resolve the table the way the kernel does.
+ *
+ * One level of expansion is enough and is asserted as such: bootstrap/app.php's two groups
+ * (`api`, `customer`) contain classes only, never another group name.
+ *
+ * @return list<string>
+ */
+function effectiveMiddleware(Illuminate\Routing\Route $route): array
+{
+    // RESOLVE THE HTTP KERNEL FIRST, or the groups are not there yet. bootstrap/app.php
+    // registers them inside withMiddleware(), which runs when the HTTP kernel is built --
+    // so in a test that has made no request, getMiddlewareGroups() returns the framework's
+    // defaults and `api` is absent. Measured: without this line the expansion below found
+    // no group named `api`, returned the literal string, and reported that
+    // pager.sessions.store was NOT behind RequireTenantScope. Worse, the two cases after
+    // it still PASSED -- for the wrong reason, because the middleware they look for
+    // happens to sit on the route rather than in the group. A vacuous pass is the failure
+    // mode to design against here, so the assertion below makes an empty expansion fatal.
+    app()->make(Kernel::class);
+
+    $groups = app('router')->getMiddlewareGroups();
+
+    expect($groups)->toHaveKeys(['api', 'customer', 'probe'],
+        'the application middleware groups are not registered, so this expansion proves nothing');
+
+    $resolved = [];
+
+    foreach ($route->gatherMiddleware() as $entry) {
+        if (is_string($entry) && isset($groups[$entry])) {
+            foreach ($groups[$entry] as $inner) {
+                expect(isset($groups[$inner]))->toBeFalse("the group [{$entry}] nests the group [{$inner}]");
+
+                $resolved[] = (string) $inner;
+            }
+
+            continue;
+        }
+
+        $resolved[] = (string) $entry;
+    }
+
+    return $resolved;
+}
+
+it('mounts the customer surface off RequireTenantScope, and the staff surface on it', function (): void {
+    // §4 › Tenancy, "two authentication surfaces, never confused", as a property of the
+    // ROUTE TABLE rather than of a request. A feature test can show that a customer route
+    // answers 200 without a tenant; this shows WHY, and it is the thing that would catch
+    // somebody moving routes/customer.php into the api group -- after which every customer
+    // request would be a 401 and this project's most important journey would be dead.
+    $customer = [
+        'pager.customer.session',
+        'pager.customer.status',
+        'pager.customer.subscribe',
+        'pager.customer.unsubscribe',
+    ];
+
+    $staff = [
+        'pager.sessions.store',
+        'pager.sessions.ready',
+        'pager.sessions.renotify',
+        'pager.sessions.complete',
+        'pager.sessions.cancel',
+    ];
+
+    foreach ($customer as $name) {
+        $route = Route::getRoutes()->getByName($name);
+
+        expect($route)->not->toBeNull("the route {$name} does not exist");
+        expect(in_array(RequireTenantScope::class, effectiveMiddleware($route), true))
+            ->toBeFalse("{$name} is behind RequireTenantScope, so every real customer would get a 401");
+    }
+
+    foreach ($staff as $name) {
+        $route = Route::getRoutes()->getByName($name);
+
+        expect($route)->not->toBeNull("the route {$name} does not exist");
+        expect(in_array(RequireTenantScope::class, effectiveMiddleware($route), true))
+            ->toBeTrue("{$name} is NOT behind RequireTenantScope, so a staff route is unauthenticated");
+    }
+});
+
+it('sheds the live timer and nothing else on the customer surface', function (): void {
+    // §4 › Edge & ops: "Load shedding drops nice-to-haves (live timer, analytics) BEFORE
+    // alerts." The polling endpoint IS the live timer, by that clause's own words, and the
+    // other three are how a customer comes to receive an alert at all -- so shedding them
+    // would drop the alert first and the nice-to-have never.
+    //
+    // Asserted on the route table because it is an ASYMMETRY, and an asymmetry nobody
+    // asserts is a line somebody tidies into consistency.
+    $expected = [
+        'pager.customer.status' => true,
+        'pager.customer.session' => false,
+        'pager.customer.subscribe' => false,
+        'pager.customer.unsubscribe' => false,
+    ];
+
+    foreach ($expected as $name => $shouldShed) {
+        $middleware = effectiveMiddleware(Route::getRoutes()->getByName($name));
+
+        expect(in_array(ShedLoad::class, $middleware, true))->toBe(
+            $shouldShed,
+            $shouldShed
+                ? "{$name} is the live timer and must shed first"
+                : "{$name} is on the alert path and must not shed",
+        );
+    }
+});
+
+it('gives each customer route its own rate-limit bucket, and never the api default', function (): void {
+    // Three routes, three buckets, three different sizes -- the Postgres-backed scan is
+    // 30/minute while the Redis-only poll is 240. A group-level default would silently add
+    // a fourth count to every request and make the three indistinguishable.
+    $expected = [
+        'pager.customer.session' => 'pager-token',
+        'pager.customer.status' => 'pager-poll',
+        'pager.customer.subscribe' => 'pager-subscribe',
+        'pager.customer.unsubscribe' => 'pager-subscribe',
+    ];
+
+    foreach ($expected as $name => $bucket) {
+        $middleware = effectiveMiddleware(Route::getRoutes()->getByName($name));
+
+        expect($middleware)->toContain(RateLimit::class.':'.$bucket)
+            ->and($middleware)->not->toContain(RateLimit::class);
+    }
+});
+
+it('takes no route parameter anywhere on the customer surface, which is the IDOR answer', function (): void {
+    // The session is whatever the token resolves to, so the parameter somebody would
+    // tamper with does not exist. There is nothing to prove inaccessible across tenants
+    // because there is nothing to ask for.
+    foreach (Route::getRoutes()->getRoutes() as $route) {
+        if (! str_starts_with((string) $route->getName(), 'pager.customer.')) {
+            continue;
+        }
+
+        expect($route->parameterNames())->toBe(
+            [],
+            $route->getName().' takes a route parameter, which is an id an attacker can vary',
+        );
     }
 });

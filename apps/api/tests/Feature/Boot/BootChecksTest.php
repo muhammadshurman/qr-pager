@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Laravel\Octane\Events\WorkerStarting;
+use Minishlink\WebPush\VAPID;
 use Tests\Support\Composition;
 
 /*
@@ -205,6 +206,103 @@ it('exempts local and testing, where the landing URL is whatever the suite build
     config(['pager.landing_url' => 'http://localhost/p']);
 
     expect(app(BootChecks::class)->landingUrlIsSound())->toBe([]);
+})->with(['local', 'testing']);
+
+it('refuses to serve without a VAPID keypair the push library can use', function (string $missing): void {
+    // FOUND BY A PROOF, NOT BY REVIEW, which is why this check exists at all.
+    // bin/outbox-kill-proof ran with no VAPID configured and every outbox row came back
+    // `retried` with the push edge never contacted: VAPID::validate() raises inside
+    // WebPush's constructor, the dispatcher catches it -- correctly, it must not abandon a
+    // batch -- and the row backs off. Six attempts later it dead-letters.
+    //
+    // So a deployment that forgot VAPID_PRIVATE_KEY would serve every page, accept every
+    // subscription, and never page a single customer, discovering it in a warning log
+    // nobody reads. §4 › Edge & ops requires every dependency to have "a declared
+    // fail-open or fail-closed posture, chosen deliberately": the push edge's is FAIL
+    // CLOSED AT BOOT, because a pager that looks healthy and never buzzes is the one
+    // failure this product cannot have.
+    app()->detectEnvironment(fn () => 'production');
+
+    $vapid = VAPID::createVapidKeys();
+
+    config([
+        'webpush.vapid.subject' => 'mailto:ops@qrpager.test',
+        'webpush.vapid.public_key' => $vapid['publicKey'],
+        'webpush.vapid.private_key' => $vapid['privateKey'],
+        $missing => '',
+    ]);
+
+    $failures = app(BootChecks::class)->vapidKeysAreUsable();
+
+    expect($failures)->toHaveCount(1)
+        ->and($failures[0])->toStartWith(BootChecks::UNUSABLE_VAPID_KEYS.':');
+})->with([
+    'webpush.vapid.subject',
+    'webpush.vapid.public_key',
+    'webpush.vapid.private_key',
+]);
+
+it('refuses a VAPID pair that is present and not usable, which a presence test would pass', function (): void {
+    // "The variable is set" is the kind of control that passes while the thing it stands
+    // for is broken: a non-empty string that is not a P-256 key fails at send time exactly
+    // as an empty one does. So the check hands the values to the library's OWN validator
+    // -- the same code the dispatcher will call -- and one source decides what usable
+    // means.
+    app()->detectEnvironment(fn () => 'production');
+
+    config([
+        'webpush.vapid.subject' => 'mailto:ops@qrpager.test',
+        'webpush.vapid.public_key' => 'this-is-not-a-p256-public-key',
+        'webpush.vapid.private_key' => 'nor-is-this-a-private-one',
+    ]);
+
+    expect(app(BootChecks::class)->vapidKeysAreUsable())->toHaveCount(1);
+});
+
+it('names no key material in the refusal, at any debug setting', function (): void {
+    // This string is logged at critical and printed by `boot:check`. The library's own
+    // exception message can carry key material, so it is deliberately dropped and only
+    // the fact of the refusal is reported (§4 › Edge & ops, amended 2026-10-26 to cover
+    // response bodies too).
+    app()->detectEnvironment(fn () => 'production');
+    config(['app.debug' => true]);
+
+    $vapid = VAPID::createVapidKeys();
+
+    config([
+        'webpush.vapid.subject' => 'mailto:ops@qrpager.test',
+        'webpush.vapid.public_key' => $vapid['publicKey'],
+        'webpush.vapid.private_key' => 'broken-'.$vapid['privateKey'],
+    ]);
+
+    $failures = app(BootChecks::class)->vapidKeysAreUsable();
+
+    expect($failures)->toHaveCount(1);
+    expect(str_contains($failures[0], $vapid['privateKey']))->toBeFalse('the refusal carries the private key');
+    expect(str_contains($failures[0], $vapid['publicKey']))->toBeFalse('the refusal carries the public key');
+});
+
+it('accepts a real generated pair, which is the positive control', function (): void {
+    app()->detectEnvironment(fn () => 'production');
+
+    $vapid = VAPID::createVapidKeys();
+
+    config([
+        'webpush.vapid.subject' => 'mailto:ops@qrpager.test',
+        'webpush.vapid.public_key' => $vapid['publicKey'],
+        'webpush.vapid.private_key' => $vapid['privateKey'],
+    ]);
+
+    expect(app(BootChecks::class)->vapidKeysAreUsable())->toBe([]);
+});
+
+it('exempts local and testing, so the suite boots with no push keys at all', function (string $environment): void {
+    // And it must: no VAPID key is committed, not even a test one, so in `testing` the
+    // three values are empty by design. Every push test generates its own pair at runtime.
+    app()->detectEnvironment(fn () => $environment);
+    config(['webpush.vapid.subject' => '', 'webpush.vapid.public_key' => '', 'webpush.vapid.private_key' => '']);
+
+    expect(app(BootChecks::class)->vapidKeysAreUsable())->toBe([]);
 })->with(['local', 'testing']);
 
 it('refuses to serve with no trusted proxy configured, outside local and testing', function (): void {
@@ -478,13 +576,16 @@ it('logs every reason at critical and then stops, which is the gate’s own word
 
     expect($stopped)->toBe(1);
 
-    // Four reasons, each its own line: credentials, sslmode, trusted proxies, debug.
-    // One line carrying all of them is one line an operator has to parse.
+    // FIVE reasons, each its own line: credentials, sslmode, trusted proxies, debug and
+    // the VAPID keypair. One line carrying all of them is one line an operator has to
+    // parse.
     //
-    // Trusted proxies joined the list with security finding #2: the suite's
-    // TRUSTED_PROXIES is empty, which is correct for local and refused for production,
-    // so this production scenario reports it too.
-    Log::shouldHaveReceived('critical')->times(4);
+    // Trusted proxies joined the list with security finding #2, and VAPID at Task 4: the
+    // suite sets none of TRUSTED_PROXIES, VAPID_SUBJECT, VAPID_PUBLIC_KEY or
+    // VAPID_PRIVATE_KEY, which is correct for local -- every push test generates its own
+    // keypair at runtime so that none reaches the repository -- and refused for
+    // production, so this production scenario reports both.
+    Log::shouldHaveReceived('critical')->times(5);
 });
 
 it('does not stop a healthy boot', function (): void {

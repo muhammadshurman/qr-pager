@@ -55,6 +55,14 @@ it('describes exactly the routes that exist, and not the fallback', function ():
         '/v1/pager-sessions/{session}/complete',
         '/v1/pager-sessions/{session}/ready',
         '/v1/pager-sessions/{session}/renotify',
+        // Task 4's customer surface. Under the same /v1 prefix -- the versioning policy is
+        // about the public path, not about which file a route lives in -- and on a
+        // different middleware group, because `api`'s last entry is RequireTenantScope and
+        // a customer has no account for a tenant to be resolved from (§4 › Tenancy, two
+        // authentication surfaces).
+        '/v1/pager/session',
+        '/v1/pager/status',
+        '/v1/pager/subscription',
     ]);
 
     // The fallback matches paths that do NOT exist. Documenting it would publish a route
@@ -280,8 +288,15 @@ it('keeps internal rationale out of every published description — R-052, R-056
             // database and framework internals
             'SQLSTATE', 'pg_', 'deptrac', 'Scramble',
         ] as $forbidden) {
-            expect($description)->not->toContain(
-                $forbidden,
+            // str_contains() AND NOT `->not->toContain($forbidden, "message")`, which is
+            // what this was -- and it is why `0.9 x app_limit` is in the committed spec
+            // today with a test that claims to forbid it. Pest's toContain takes
+            // ...$needles, so the message was read as a second needle and ->not became
+            // "does not contain BOTH", which a message that never appears makes trivially
+            // true. Measured 2026-10-27, found at Task 4. R-052 is an accepted row owned
+            // by Task 12; what was NOT known is that its compensating control had never
+            // worked.
+            expect(str_contains($description, $forbidden))->toBeFalse(
                 "a published description carries [{$forbidden}]: ".substr($description, 0, 120),
             );
         }

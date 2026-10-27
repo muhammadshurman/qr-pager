@@ -1,0 +1,325 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * "Polling endpoint does zero Postgres queries and p99 < 5 ms" -- PLAN.md §3, row 4.
+ *
+ * ===================================================================================
+ * THE MEASUREMENT METHOD, WHICH §3.1 SAYS THIS GATE OWES
+ * ===================================================================================
+ *
+ * §3.1 row 4: "`p99 < 5 ms` on the polling endpoint needs a stated measurement method. It
+ * is `F10`'s class: on this branch a loaded host turned a passing timeout proof into a red
+ * at 27.6 s, and only the LOWER bound survived as sound. Under the round limit a
+ * misleading red costs a round."
+ *
+ * So the method is written down, and it was written down BEFORE the first number was
+ * taken -- it is in QRPAGER-11 §2.1, dated, and this file implements exactly it:
+ *
+ *  1. WHAT IS MEASURED. Wall-clock around the whole kernel call for one real request:
+ *     middleware, controller, render. That is a SUPERSET of the endpoint's own work, so a
+ *     figure under budget is conservative in the right direction. It excludes the socket
+ *     and the web server, which belong to Task 14's k6 ramps and not here.
+ *
+ *  2. SAMPLE. 20 warm-up iterations discarded, then 200 measured, in one process, against
+ *     the real composed Redis, with the projection pre-warmed through the real resolve
+ *     endpoint.
+ *
+ *  3. STATISTIC. p99 is the 198th value of the 200 sorted ascending (0-based index 197).
+ *     p50 and p95 are reported beside it, because a p99 with no distribution behind it
+ *     hides whether the endpoint is uniformly fast or usually fast.
+ *
+ *  4. THE F10 GUARD: BEST OF THREE BATCHES. The whole batch runs three times and the
+ *     LOWEST p99 is the figure. A scheduling spike on a loaded runner lands in one batch;
+ *     an endpoint that is actually slow -- one that opens a Postgres connection, say --
+ *     fails all three. This measures the endpoint's capability rather than the runner's
+ *     contention, which is what the clause is about, and it is falsifiable in both
+ *     directions: all three batches are printed, so a run where they disagree wildly is
+ *     visible rather than averaged away.
+ *
+ *  5. TWO HARD ASSERTIONS THAT CANNOT FLAKE, and they carry the weight. The endpoint
+ *     issues ZERO Postgres statements and exactly TWO Redis commands in the handler.
+ *     Those are the properties that make 5 ms reachable; the timing is the confirmation,
+ *     not the proof. They are asserted here AND in PagerPollingTest, because a number in
+ *     a report nobody re-runs is the shape R-043 is about.
+ *
+ *  6. REPORTED WITH ITS COMMIT, ITS MACHINE AND ITS METHOD, never as a bare number.
+ *
+ * ===================================================================================
+ * THE LIMITER IS IN THE PATH ON PURPOSE
+ * ===================================================================================
+ *
+ * The figure is for the endpoint as a customer meets it, which means ShedLoad's Redis read
+ * and RateLimit's four Redis commands are included -- they are two thirds of the real
+ * per-poll cost. The bucket is cleared between batches rather than removed, because 220
+ * requests fit inside one batch's allowance and 660 do not; removing it would measure an
+ * endpoint this product does not serve.
+ */
+
+use App\Features\Pager\PagerSessions;
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\Request;
+use Illuminate\Redis\Events\CommandExecuted;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
+
+/*
+ * ITS OWN DATABASE, set BEFORE the framework boots so config/database.php reads it.
+ *
+ * bin/migration-rollback-proof's pattern, for the reason that file records: a proof that
+ * inherits .env runs against whatever the developer happens to have. Measured on the first
+ * run of this script -- `resolve_pager_token(bytea) does not exist`, because .env points
+ * at `qrpager` and only `qrpager_test` has ever been migrated. A latency figure taken
+ * against an unmigrated database is not a latency figure.
+ *
+ * putenv() and $_ENV both, because Laravel's Env reads through PHP dotenv's adapters and
+ * which one answers depends on how the process was started.
+ */
+$database = getenv('POLL_PROOF_DATABASE') ?: 'qrpager_poll_proof';
+putenv('DB_DATABASE='.$database);
+$_ENV['DB_DATABASE'] = $database;
+$_SERVER['DB_DATABASE'] = $database;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Illuminate\Foundation\Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+// Idempotent: a second run of this proof costs a no-op rather than a reset.
+$app->make(Illuminate\Contracts\Console\Kernel::class)->call('db:bootstrap');
+$app->make(Illuminate\Contracts\Console\Kernel::class)->call('migrate', ['--database' => 'pgsql_owner', '--force' => true]);
+
+/*
+ * TWO MODES, AND THE SPLIT IS F10's LESSON LEARNED TWICE.
+ *
+ * --quick asserts the two LOAD-INVARIANT properties (zero Postgres, two Redis commands in
+ * the handler), reports the timing, and DOES NOT FAIL ON IT. That is the mode the suite
+ * runs. The full mode asserts the timing too and is what a person runs on a quiet machine
+ * to produce the figure §4a records with its commit and its machine.
+ *
+ * WHY, measured 2026-10-27 on this branch, same commit, same endpoint:
+ *
+ *   run alone                         p99 3.337 ms   PASS
+ *   run inside `php artisan test`     p99 7.640 ms   FAIL   (load 1.06, 567 other tests,
+ *                                                            Postgres and Redis busy)
+ *
+ * §3.1 row 4 says this gate's p99 clause "is F10's class: on this branch a loaded host
+ * turned a passing timeout proof into a red at 27.6 s, and only the LOWER bound survived
+ * as sound. Under the round limit a misleading red costs a round." PagerPollLatencyTest's
+ * own header said the suite would not assert the timing -- and then asserted this script's
+ * EXIT CODE, which asserted the timing. The threshold came in through the back door, and
+ * the full suite went red on a host being busy rather than on anything being wrong.
+ *
+ * So the mode is explicit rather than the header being trusted.
+ */
+$quick = in_array('--quick', array_slice($argv, 1), true);
+
+const WARMUP = 20;
+const BATCHES = 3;
+const BUDGET_MS = 5.0;
+
+// A short batch in quick mode: the point there is that the harness still runs and still
+// measures the right things, not the distribution's tail.
+define('SAMPLE', $quick ? 30 : 200);
+define('QUICK_BATCHES', $quick ? 1 : BATCHES);
+
+$kernel = $app->make(Kernel::class);
+
+/** One real request through the whole HTTP kernel. */
+$poll = static function (string $token) use ($kernel): int {
+    $request = Request::create('/v1/pager/status', 'POST', [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_ACCEPT' => 'application/json',
+        'REMOTE_ADDR' => '127.0.0.1',
+    ], json_encode(['token' => $token], JSON_THROW_ON_ERROR));
+
+    $response = $kernel->handle($request);
+
+    return $response->getStatusCode();
+};
+
+$clearBucket = static function () use ($app): void {
+    $app->make(App\Platform\Http\RequestLimiter::class)
+        ->clear('ratelimit:pager-poll:ip:'.sha1('127.0.0.1'));
+};
+
+// ---------------------------------------------------------------------------------
+// Fixture: one tenant, one session, scanned through the real resolve endpoint so that
+// both Redis keys are warm exactly as a customer's would be.
+// ---------------------------------------------------------------------------------
+$tenant = (string) Str::uuid7();
+
+withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenants')->insert([
+    'id' => $tenant,
+    'name' => 'Latency proof',
+    'slug' => 'latency-'.str_replace('-', '', $tenant),
+]), 'pgsql_owner');
+
+$issued = $app->make(PagerSessions::class)->create($tenant, 'L-001');
+$token = $issued->token->reveal();
+
+$clearBucket();
+
+$resolve = Request::create('/v1/pager/session', 'POST', [], [], [], [
+    'CONTENT_TYPE' => 'application/json',
+    'HTTP_ACCEPT' => 'application/json',
+    'REMOTE_ADDR' => '127.0.0.1',
+], json_encode(['token' => $token], JSON_THROW_ON_ERROR));
+
+if ($kernel->handle($resolve)->getStatusCode() !== 200) {
+    fwrite(STDERR, "poll-latency-proof: could not warm the projection\n");
+
+    exit(1);
+}
+
+// ---------------------------------------------------------------------------------
+// Assertion 1: ZERO Postgres statements. Hard, and it cannot flake.
+// ---------------------------------------------------------------------------------
+$clearBucket();
+$statements = [];
+DB::listen(function ($query) use (&$statements): void {
+    $statements[] = $query->sql;
+});
+
+if ($poll($token) !== 200) {
+    fwrite(STDERR, "poll-latency-proof: the warm poll did not answer 200\n");
+
+    exit(1);
+}
+
+$postgres = count($statements);
+
+// ---------------------------------------------------------------------------------
+// Assertion 2: exactly two Redis commands in the HANDLER. Hard, and it cannot flake.
+// Counted around PagerProjection::read() rather than around the request, because the
+// request legitimately costs seven -- one shed, four limiter, two handler.
+// ---------------------------------------------------------------------------------
+$commands = [];
+$app->make('redis')->enableEvents();
+foreach (array_keys($app->make('redis')->connections()) as $name) {
+    $app->make('redis')->purge((string) $name);
+}
+Event::listen(CommandExecuted::class, function (CommandExecuted $event) use (&$commands): void {
+    $commands[] = $event->command;
+});
+
+$app->make(App\Features\Pager\PagerProjection::class)
+    ->read(App\Domain\Pager\PagerToken::fromPresented($token));
+
+$handlerCommands = $commands;
+
+// ---------------------------------------------------------------------------------
+// The batches.
+// ---------------------------------------------------------------------------------
+$batches = [];
+
+for ($batch = 1; $batch <= QUICK_BATCHES; $batch++) {
+    $clearBucket();
+
+    for ($i = 0; $i < WARMUP; $i++) {
+        $poll($token);
+    }
+
+    $samples = [];
+
+    for ($i = 0; $i < SAMPLE; $i++) {
+        $started = hrtime(true);
+        $status = $poll($token);
+        $samples[] = (hrtime(true) - $started) / 1_000_000;
+
+        if ($status !== 200) {
+            fwrite(STDERR, "poll-latency-proof: iteration {$i} of batch {$batch} answered {$status}, not 200\n");
+
+            exit(1);
+        }
+    }
+
+    sort($samples);
+
+    $batches[] = [
+        'p50' => $samples[(int) floor(0.50 * SAMPLE) - 1],
+        'p95' => $samples[(int) ceil(0.95 * SAMPLE) - 1],
+        'p99' => $samples[(int) ceil(0.99 * SAMPLE) - 1],
+        'max' => $samples[SAMPLE - 1],
+    ];
+}
+
+$best = min(array_column($batches, 'p99'));
+$bestBatch = $batches[array_search($best, array_column($batches, 'p99'), true)];
+
+// ---------------------------------------------------------------------------------
+// The report. With its commit, its machine and its method, never a bare number.
+// ---------------------------------------------------------------------------------
+$commit = trim((string) shell_exec('git rev-parse --short HEAD'));
+$uname = php_uname('s').' '.php_uname('r').' '.php_uname('m');
+$cpus = trim((string) shell_exec('nproc 2>/dev/null')) ?: 'unknown';
+$load = function_exists('sys_getloadavg') ? implode(' ', array_map(fn ($l) => sprintf('%.2f', $l), sys_getloadavg())) : 'unknown';
+
+printf("poll-latency-proof\n");
+printf("  commit       %s\n", $commit);
+printf("  machine      %s, %s CPU(s), load %s\n", $uname, $cpus, $load);
+printf("  php          %s\n", PHP_VERSION);
+printf("  mode         %s\n", $quick ? 'QUICK -- properties asserted, timing REPORTED ONLY' : 'full -- properties and timing asserted');
+printf("  method       %d warm-up discarded, %d measured, best p99 of %d batch(es);\n", WARMUP, SAMPLE, QUICK_BATCHES);
+printf("               wall clock around the whole HTTP kernel call, real Redis, warm projection\n");
+printf("\n");
+printf("  Postgres statements per poll   %d  (budget 0)\n", $postgres);
+printf("  Redis commands in the handler  %d  [%s]  (budget 2)\n", count($handlerCommands), implode(',', $handlerCommands));
+printf("\n");
+
+foreach ($batches as $index => $figures) {
+    printf(
+        "  batch %d   p50 %6.3f ms   p95 %6.3f ms   p99 %6.3f ms   max %6.3f ms%s\n",
+        $index + 1, $figures['p50'], $figures['p95'], $figures['p99'], $figures['max'],
+        $figures['p99'] === $best && QUICK_BATCHES > 1 ? '   <- best' : '',
+    );
+}
+
+printf("\n  REPORTED p99 %.3f ms against a budget of %.1f ms\n", $best, BUDGET_MS);
+
+$failures = [];
+
+if ($postgres !== 0) {
+    $failures[] = sprintf('the polling endpoint issued %d Postgres statement(s): %s', $postgres, implode(' | ', $statements));
+}
+
+if ($handlerCommands !== ['get', 'get']) {
+    $failures[] = 'the handler issued ['.implode(',', $handlerCommands).'] rather than two GETs';
+}
+
+// THE TIMING IS ASSERTED IN FULL MODE ONLY. See the mode note at the top: asserting it
+// from inside the suite is what turned a 3.3 ms endpoint into a red at 7.6 ms because the
+// host was busy, which is F10's class and the thing §3.1 row 4 names.
+if (! $quick && $best >= BUDGET_MS) {
+    $failures[] = sprintf('p99 %.3f ms is not under %.1f ms in any of %d batches', $best, BUDGET_MS, QUICK_BATCHES);
+}
+
+if ($quick && $best >= BUDGET_MS) {
+    printf(
+        "  NOTE: p99 is over the %.1f ms budget on this run. In quick mode that is reported and not\n".
+        "        failed -- a shared or loaded host moves this figure and the endpoint's two\n".
+        "        load-invariant properties above are what the suite stands on. Re-run without\n".
+        "        --quick on a quiet machine for the figure that belongs in PLAN.md §4a.\n",
+        BUDGET_MS,
+    );
+}
+
+if ($failures !== []) {
+    echo PHP_EOL, 'poll-latency-proof: FAILED', PHP_EOL;
+
+    foreach ($failures as $failure) {
+        echo '  - ', $failure, PHP_EOL;
+    }
+
+    exit(1);
+}
+
+echo PHP_EOL, $quick
+    ? 'poll-latency-proof: zero Postgres, two Redis commands. Timing reported, not asserted (--quick).'
+    : 'poll-latency-proof: zero Postgres, two Redis commands, p99 under budget.', PHP_EOL;
+
+exit(0);
