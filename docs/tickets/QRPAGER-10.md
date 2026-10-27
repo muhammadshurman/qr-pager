@@ -585,3 +585,23 @@ defensive `continue`s for shapes this document does not contain.
 so instead of claiming a control that is not present. `task-1` and `task-2` still carry the
 original shape; `122d203` introduced one instance and `224dde9` the other two, both are in
 tagged history, and neither tag moves.
+
+
+---
+
+## 11. Delivery — the evidence `task-3` is tagged on (2026-10-27)
+
+Measured at **`4f27a9d`**, the tagged commit. Transcripts are committed beside this file.
+
+| `§6` clause | Transcript | Result |
+| --- | --- | --- |
+| the six gate steps | `QRPAGER-10-gate.txt` | all six green, exit 0 — **513 passed / 2383 assertions** |
+| coverage ≥ 90 % on this task's code | `QRPAGER-10-coverage.txt` | **97.47 % (733/752)** over 27 files |
+| a fresh **clone**, not just a fresh database | `QRPAGER-10-fresh-clone.txt` | green in the clone — **513 / 2383, identical to the host** |
+| apply from empty · second apply a no-op · clean rollback | `QRPAGER-10-rollback.txt` | **all five checks passed** |
+
+**No PR and no merge.** Tagging is the delivery record (`§10`) and is the whole of what was
+authorised for this branch tonight. The branch stays pushed; `main` is untouched.
+
+**`R-071` closes its mechanism half here**: the fresh-clone clause now has a script in the
+repository (`bin/fresh-clone-proof`) and a transcript, where before it had a sentence.

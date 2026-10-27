@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# PROJECT_INSTRUCTIONS.md §6 / CLAUDE.md: "Gates run from a FRESH CLONE, not just a fresh
+# database — a pass that depends on something only present on the builder's machine is not a
+# pass." This is that clause's mechanism, and until 2026-10-27 the clause had none: `R-071`
+# is the §5 row recording that it was claimed at a head where nothing had measured it.
+#
+# WHY A SCRIPT AND NOT A PROCEDURE. R-043 is a row because a gate clause named a
+# demonstration whose steps lived in a session scratchpad, so nobody could re-run it. A
+# fresh-clone pass is exactly the kind of claim that is cheap to assert and expensive to
+# verify later, so the verification is committed.
+#
+# WHAT MAKES IT A CLONE AND NOT A COPY. `git clone file://…` goes through the transport
+# rather than hardlinking the object store, so the result shares nothing with this working
+# tree. The script then REFUSES to continue unless the clone arrived without `vendor/`,
+# without `.env` and without `node_modules/` -- the three things a copy would bring with it
+# and the three that would make the pass meaningless.
+#
+# WHAT IT DOES NOT PROVE. The compose cluster is the host's: §6 requires tests to run
+# against Postgres 16 and Redis 7 from `compose.yaml`, not against a second pair, so the
+# clone talks to the same containers this repository starts. What is proven is that the
+# REPOSITORY is sufficient -- every file the gate needs is tracked -- not that the machine
+# is. `composer install` also reads the host's composer cache; it is a cache and not a
+# source, so a cold cache costs time rather than correctness, and the script says which it
+# got.
+#
+# Usage:
+#   bin/fresh-clone-proof              prove HEAD
+#   bin/fresh-clone-proof <sha>        prove a named commit
+#   bin/fresh-clone-proof --keep       leave the clone in place and print its path
+set -uo pipefail
+
+cd "$(dirname "$0")/../../.."
+
+repo="$(pwd)"
+keep=0
+sha=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --keep) keep=1 ;;
+        -*) echo "fresh-clone-proof: unknown option [$arg]" >&2; exit 2 ;;
+        *) sha="$arg" ;;
+    esac
+done
+
+[ -n "$sha" ] || sha="$(git rev-parse HEAD)"
+sha="$(git rev-parse --verify "$sha^{commit}")" || { echo "fresh-clone-proof: no such commit" >&2; exit 2; }
+
+# mktemp, never a fixed path: security L-5 on the sibling proof was exactly this, and a
+# predictable directory under /tmp is a symlink target on a shared host.
+work="$(mktemp -d -t qrpager-fresh-clone-XXXXXX)"
+clone="$work/clone"
+
+cleanup() {
+    if [ "$keep" = "1" ]; then
+        echo "fresh-clone-proof: clone left at $clone"
+        return
+    fi
+    rm -rf "$work"
+}
+trap cleanup EXIT INT TERM
+
+step() { printf '\n=== %s\n' "$1"; }
+
+fail() {
+    printf '\nfresh-clone-proof: FAILED — %s\n' "$1" >&2
+    exit 1
+}
+
+printf 'fresh-clone-proof: %s at %s\n' "$(git log -1 --format=%s "$sha" | cut -c1-72)" "${sha:0:7}"
+
+step "clone through file:// so no object is shared"
+git clone --quiet "file://$repo" "$clone" || fail "clone did not complete"
+git -C "$clone" -c advice.detachedHead=false checkout --quiet "$sha" || fail "the commit is not in the clone"
+
+step "the clone arrived with nothing the gate needs pre-installed"
+for forbidden in apps/api/vendor apps/api/.env node_modules apps/api/node_modules; do
+    [ -e "$clone/$forbidden" ] && fail "the clone contains [$forbidden], so this is a copy and not a clone"
+done
+echo "no vendor/, no .env, no node_modules — the clone is bare"
+
+# Every tracked path must be identical to this repository's at that commit. A clone makes
+# that true by construction; asserting it is what turns "by construction" into a measurement,
+# and it is the one check that would catch a clone of the WRONG commit.
+step "the clone's tracked tree is byte-identical to this commit's"
+here="$(git rev-parse "$sha^{tree}")"
+there="$(git -C "$clone" rev-parse HEAD^{tree})"
+[ "$here" = "$there" ] || fail "tree $there is not $here"
+echo "tree $here"
+
+cd "$clone/apps/api" || fail "the clone has no apps/api"
+
+step "composer install, from the repository's own lock file"
+if [ -d "${COMPOSER_HOME:-$HOME/.cache/composer}" ] || [ -d "$HOME/.composer/cache" ]; then
+    echo "host composer cache: present (a cache, not a source — it costs time, not correctness)"
+else
+    echo "host composer cache: absent"
+fi
+composer install --no-interaction --no-progress --prefer-dist >"$work/composer.log" 2>&1 \
+    || { tail -30 "$work/composer.log" >&2; fail "composer install did not complete (see $work/composer.log)"; }
+grep -cE "^  - (Installing|Downloading)" "$work/composer.log" | sed 's/^/packages installed: /'
+
+step "the three commands CLAUDE.md says a fresh clone needs, and nothing else"
+cp .env.example .env || fail ".env.example is not in the repository"
+php artisan key:generate --quiet || fail "key:generate failed"
+echo "cp .env.example .env · php artisan key:generate · docker compose is already up"
+
+step "composer gate, in the clone"
+if bin/gate >"$work/gate.log" 2>&1; then
+    tail -1 "$work/gate.log"
+else
+    tail -40 "$work/gate.log" >&2
+    fail "the gate is not green in a fresh clone (full output: $work/gate.log)"
+fi
+
+# The figures, so the caller can compare them with the host's run rather than trust that
+# both were green. A different count between the two is itself a finding: it means the
+# suite's behaviour depends on something the clone does not have.
+tests="$(grep -oE "Tests: +[0-9]+ passed \([0-9]+ assertions\)" "$work/gate.log" | tail -1)"
+[ -n "$tests" ] || tests="$(sed 's/\x1b\[[0-9;]*m//g' "$work/gate.log" | grep -oE "Tests:.*" | tail -1)"
+
+printf '\nfresh-clone-proof: PASSED at %s\n' "${sha:0:7}"
+printf '  %s\n' "${tests:-no test summary line found}"
+printf '  gate log: %s\n' "$work/gate.log"
+
+if [ "$keep" = "0" ]; then
+    printf '  (clone removed; pass --keep to inspect it)\n'
+fi

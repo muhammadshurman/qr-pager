@@ -49,11 +49,35 @@ host="$(php -r 'echo getenv("DB_HOST") ?: "127.0.0.1";')"
 root="$(php -r 'echo getenv("DB_ROOT_USERNAME") ?: "qrpager_root";')"
 maintenance="$(php -r 'echo getenv("DB_MAINTENANCE_DATABASE") ?: "postgres";')"
 
+# READ .env WHEN THE SHELL DID NOT CARRY IT, and only then. Added 2026-10-27 after this
+# proof failed in an unattended run for no reason but a bare shell: "load .env first" is
+# exactly how a script stops being run, which is R-043's clause and the reason this file
+# exists. An EXPORTED value still wins, so CI can pass a different root password and a
+# developer can override one; the file is consulted for these four names and nothing else.
+#
+# No `eval` and no `source`: .env is read line by line and only the four names below are
+# taken, because sourcing an environment file executes whatever is in it.
+if [ -f .env ]; then
+  for name in DB_ROOT_PASSWORD DB_ROOT_USERNAME DB_HOST DB_MAINTENANCE_DATABASE; do
+    eval "current=\${$name:-}"
+    [ -n "$current" ] && continue
+
+    line="$(grep -m1 -E "^${name}=" .env || true)"
+    [ -n "$line" ] || continue
+
+    value="${line#*=}"
+    value="${value%\"}"; value="${value#\"}"
+    value="${value%\'}"; value="${value#\'}"
+
+    [ -n "$value" ] && export "$name=$value"
+  done
+fi
+
 # Required, not defaulted -- see psql_as_root() below. `.env` carries it and `.env.example`
-# ships the name, so an unset value means the environment was never loaded, which is worth
-# failing on rather than guessing past.
+# ships the name, so an unset value after the read above means there is no environment to
+# load at all, which is worth failing on rather than guessing past.
 if [ -z "${DB_ROOT_PASSWORD:-}" ]; then
-  echo "migration-rollback-proof: DB_ROOT_PASSWORD is unset. Load .env, or export it." >&2
+  echo "migration-rollback-proof: DB_ROOT_PASSWORD is unset and .env does not carry it." >&2
   exit 1
 fi
 

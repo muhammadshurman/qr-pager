@@ -2790,6 +2790,42 @@ problem-response count at 14. `AppServiceProvider` itself went from **17.6 %** t
 because of the generator case: before it, nothing in the suite executed either post-processing
 step, and the whole-`app/` figure rose from 92.9 % to **96.1 %** with it.
 
+#### The delivery evidence `task-3` is tagged on, 2026-10-27
+
+Four transcripts in `docs/tickets/`, each naming the commit it was measured at — `4f27a9d`,
+the commit the tag is placed on.
+
+| Clause (`§6`) | Evidence | Result |
+| --- | --- | --- |
+| the three gate commands, plus `guard`, `deptrac` and `openapi:check` | `QRPAGER-10-gate.txt` | **all six green, exit 0 — 513 passed / 2383 assertions** |
+| "unit coverage ≥ 90 % on code this task added. Report the number" | `QRPAGER-10-coverage.txt` | **97.47 % (733/752) over 27 files**, `--min=90` passing |
+| "gates run from a **fresh clone**, not just a fresh database" | `QRPAGER-10-fresh-clone.txt` | **green in the clone — 513 / 2383, identical to the host** |
+| "migrations apply from empty; a second apply is a no-op; a rollback of this task's migrations runs clean" | `QRPAGER-10-rollback.txt` | **all five checks passed** |
+
+**`R-071` now has its mechanism, and that is the point of this row.** That row says `§6`'s
+fresh-clone clause had been *claimed* at a head where nothing had measured it. The claim is
+now a script in the repository — `bin/fresh-clone-proof` — which clones through `file://` so
+no object is shared with this working tree, and **refuses to continue** unless the clone
+arrived with no `vendor/`, no `.env` and no `node_modules`: the three things a copy would
+bring and the three that would make the pass meaningless. It then runs the whole gate inside
+the clone and prints the test counts, so the two runs can be **compared** rather than both
+reported green. They are identical, which is what says the repository is sufficient and the
+builder's machine is not load-bearing.
+
+**What the fresh clone does not prove, stated because the script says it too.** The compose
+cluster is the host's: `§6` requires Postgres 16 and Redis 7 from `compose.yaml`, not a second
+pair, so the clone talks to the same containers. And `composer install` reads the host's
+composer cache — a cache is not a source, so a cold one costs time rather than correctness,
+and the transcript records which it got (present, 147 packages installed).
+
+**The rollback proof's first unattended run FAILED, and the reason is worth more than the
+pass.** Security `L-5` had just removed its fallback superuser password — correctly — so the
+script required `DB_ROOT_PASSWORD` from the environment, and a background shell carried none.
+The script now reads those four names from `.env` when they are not exported, with an
+exported value still winning, because *"load `.env` first"* is precisely how a script stops
+being run, which is `R-043`'s clause rather than a convenience. The fix is in the same commit
+as the transcript.
+
 #### ⚠ CLOSED — the branch-split consequence, and what the rebase still owes
 
 **The three originally-vacuous assertions were fixed on `task-4-notifications` and not on
