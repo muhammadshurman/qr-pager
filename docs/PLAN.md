@@ -2556,9 +2556,53 @@ regenerate once, together.
 
 #### Gate after the disposition round
 
-**All six steps green, exit 0 — 502 passed, 2231 assertions** (492 / 2182 before it).
-Coverage on this task's 23 files **98.46 % (641/651)**, `--min=90` passing, up from
-98.29 % (633/644). Transcripts at `docs/tickets/QRPAGER-10-{gate,coverage}.txt`.
+**All six steps green, exit 0 — 504 passed, 2257 assertions** (492 / 2182 before the
+disposition round; 502 / 2231 before the three clarifications below). Coverage on this task's
+23 files **98.46 % (641/651)**, `--min=90` passing, up from 98.29 % (633/644). Transcripts at
+`docs/tickets/QRPAGER-10-{gate,coverage}.txt`, each naming the commit it was measured at.
+
+#### Three clarifications, 2026-10-27, and one defect they surfaced
+
+Muhammad's review of the disposition asked three things be named rather than redesigned.
+`QRPAGER-10 §9` carries the full answers; what belongs in the record is this:
+
+- **`M-2`'s policies, by name and by `polcmd`.** There was **no gap**: the assertion did
+  cover `worker_reads_expired_sessions`, which `pg_policy.polcmd` confirms is the **SELECT**
+  policy (`'r'`), for the whitelist-contains-`expired` half, and `worker_expires_sessions`
+  (`'w'`, UPDATE) for the live-set-without-it half. What was imprecise was the summary of the
+  work, not the test. **`polcmd` is now asserted** rather than the policy name alone, because
+  a name is a convention and a renamed policy would leave every string assertion passing
+  while the clause was inverted.
+- **⚠ AND THE QUESTION SURFACED A REAL DEFECT IN THE NEW ASSERTIONS.** Two of them used
+  `toContain($needle, $message)` — Pest's **variadic** matcher, where the message is read as a
+  second needle. The positive form **failed loudly** while the case was being written, which
+  is how it was found; the negated one would have **passed vacuously**. Both are `in_array()`
+  with a real message now. That is `SourceGuard` rule 7's defect, and **this branch does not
+  carry rule 7** — it lands with `task-4-notifications` — so these were caught by the positive
+  form's own failure rather than by a guard. The design held; the guard was not there.
+- **The interpolated SQL list is now proven, not documented.** `liveSqlList()` **throws** a
+  `LogicException` rather than interpolating a case value that fails `/^[a-z_]+$/`, and
+  `EnumContractTest` asserts the property across **every** database-backed enum rather than
+  only the one interpolated today. A quoted case value would be injection from inside our own
+  code, which no input validation would catch.
+- **`M-1`'s racer is the superuser, and that is now a stated limit of the proof.** In
+  production the actor is a staff member on `qrpager_app`; the test cannot use that role
+  because the racing write happens inside the worker's own scope and `TenantContext` refuses
+  a second connection's scope while one is live — `R-015`'s guard working. What the case
+  proves belongs entirely to the worker's statement (zero affected rows because the status
+  changed, which is the idempotency signal) and is invisible to the role that changed it. In
+  the test's own header and in the ticket, so a reviewer rules on it.
+
+#### ⚠ Still open on this branch, and it is a consequence of the branch split
+
+**The three originally-vacuous assertions are fixed on `task-4-notifications` and NOT on
+`task-3-pager-domain`:** `GrantMatrixTest:29`, `PagerTokenTest:131` and `OpenApiSpecTest:346`.
+Swept at this commit and confirmed still present. `§1`'s decision-log entry names `47db64e`
+as the commit that corrected them and `5f1bdbf` as the commit that proved them, both on the
+Task 4 branch — which is accurate, and which also means **the `task-3` tag would carry them**.
+Muhammad's ruling was that `task-3-pager-domain` is "not re-tagged and not rewritten", so
+this is raised for a decision rather than acted on: fixing them here would be a new commit
+(not a rewrite) but would make `§1`'s commit attribution incomplete.
 
 ---
 

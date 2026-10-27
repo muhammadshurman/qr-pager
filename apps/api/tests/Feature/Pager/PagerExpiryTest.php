@@ -339,6 +339,37 @@ it('expires nothing and audits nothing when a staff member wins the race — QA 
     // statement, so the row is moved on ANOTHER connection in the instant between the
     // worker's SELECT and its UPDATE. No production seam exists for this; the instrument is
     // the same one PagerTransactionTest and the QA L-4 case above already use.
+    //
+    // ============================================================================
+    // THE RACER IS THE SUPERUSER, AND THAT IS A LIMIT OF THIS PROOF -- STATED, NOT HIDDEN
+    // ============================================================================
+    //
+    // In production the actor that wins this race is a STAFF MEMBER on `qrpager_app`,
+    // inside a `withTenant()` scope, going through PagerSessions::complete(). This test
+    // cannot use that role, and the reason is a control working correctly rather than a
+    // shortcut: the racing write happens INSIDE the worker's own scope (beforeExecuting
+    // fires within it), and TenantContext refuses to open a scope on a second connection
+    // while one is live -- R-015's guard, which exists so that a callback cannot quietly
+    // run unscoped on a different connection. Attempting it raises
+    // "Tenant context is already open on connection [pgsql_worker]; it cannot be reused on
+    // [pgsql_owner]", which is the right answer to the wrong question.
+    //
+    // WHAT IS THEREFORE NOT PROVEN HERE: that `qrpager_app`'s own policies and column grants
+    // permit the racing write. They do -- PagerTransitionTest and PagerIdorTest drive
+    // complete() as the app role through HTTP -- but not in this case, and not in this
+    // interleaving.
+    //
+    // WHAT IS PROVEN, and why the role does not weaken it: the mechanism under test belongs
+    // entirely to the WORKER's statement. `update ... where id = ? and status = ?` matches
+    // zero rows because the row's status changed, and the affected-row count is the
+    // idempotency signal. Which role committed that change, and under which policy, is
+    // invisible to the worker -- it sees a row whose status is no longer the one it read.
+    // The superuser is the only role that can make the change from inside the worker's
+    // scope, so it is the only instrument available, and it produces exactly the state a
+    // staff member would.
+    //
+    // Recorded so a reviewer rules on it rather than discovering it (QA M-1, Muhammad's
+    // clarification of 2026-10-27).
     $tenant = $this->makeTenant();
     $session = expiredSessionIn($tenant, PagerStatus::Waiting);
 
@@ -355,14 +386,9 @@ it('expires nothing and audits nothing when a staff member wins the race — QA 
         // while the worker's is open -- which is what makes this a race rather than the
         // worker's own transaction moving its own row, a thing that would prove nothing.
         //
-        // AS ROOT, AND DELIBERATELY NOT THROUGH withTenant(). TenantContext refuses to open
-        // a scope on a second connection while one is live -- R-015's guard, and it fires
-        // here exactly as it should, because this closure runs INSIDE the worker's scope.
-        // The superuser bypasses row level security and needs no scope, so the racing write
-        // is a precondition placed from outside rather than a second tenant context. Which
-        // actor wins is irrelevant to the mechanism under test: what the keyed,
-        // status-guarded UPDATE has to survive is that the row CHANGED between the read and
-        // the write, whoever changed it.
+        // AS ROOT, NOT AS qrpager_app -- see the limit stated in this case's header. The
+        // superuser bypasses row level security and needs no scope, so the racing write is a
+        // precondition placed from outside rather than a second tenant context.
         //
         // READ COMMITTED is what makes the worker see it: its UPDATE re-reads the row at
         // statement start, and the worker holds no lock on it yet -- the pass's SELECT runs
@@ -402,7 +428,7 @@ it('expires nothing and audits nothing when a staff member wins the race — QA 
     expect(Artisan::output())->toContain('0 of 1 due session(s) expired');
 });
 
-it('derives its live-status list from the enum, and it matches the policy whitelist — QA M-2', function (): void {
+it('derives its live-status list from the enum; the SELECT policy whitelist carries the written status and the UPDATE policy USING does not — QA M-2', function (): void {
     // ONE SOURCE, ASSERTED ACROSS ALL THREE PLACES THE SET LIVES. Until 2026-10-27 the job
     // carried `where status in ('waiting','ready')` as a SQL literal while PagerStatus's own
     // docblock claimed "the service, the expiry job and the tests all read allows()". §6.2
@@ -452,12 +478,30 @@ it('derives its live-status list from the enum, and it matches the policy whitel
 
     expect($fromStatement)->toBe($live, 'the issued statement does not use the enum-derived list');
 
-    // (4) the POLICY whitelist, read from pg_catalog, against the same set
-    $read = (string) $this->asRoot()->selectOne(
-        "select pg_get_expr(p.polqual, p.polrelid) as using_expr
+    // (4) THE SELECT POLICY, by name AND by polcmd, against the same set.
+    //
+    // §4 › Postgres traps' mechanism is about the SELECT POLICIES, applied TWICE: once to
+    // the rows the statement may find, and once to the NEW row -- 42501 if the update would
+    // hide it. So the whitelist that must contain the written status is the SELECT policy's,
+    // and the policy that must NOT contain it is the UPDATE policy's USING. Getting those
+    // two the wrong way round would leave every expiry failing 42501, or would leave an
+    // already-expired row rewritable cross-tenant (R-003).
+    //
+    // polcmd IS ASSERTED, not just the name. A policy name is a convention -- somebody could
+    // rename or recreate `worker_reads_expired_sessions` as an UPDATE policy and every
+    // string assertion below would still pass while the clause it stands for was inverted.
+    // `pg_policy.polcmd` is the fact: 'r' is SELECT, 'w' is UPDATE.
+    $select = $this->asRoot()->selectOne(
+        "select p.polcmd, pg_get_expr(p.polqual, p.polrelid) as using_expr
            from pg_policy p join pg_class c on c.oid = p.polrelid
           where c.relname = 'pager_sessions' and p.polname = 'worker_reads_expired_sessions'",
-    )->using_expr;
+    );
+
+    expect($select)->not->toBeNull('worker_reads_expired_sessions does not exist')
+        ->and((string) $select->polcmd)->toBe('r',
+            'worker_reads_expired_sessions is not a SELECT policy, so §4\'s two-pass mechanism does not apply to it');
+
+    $read = (string) $select->using_expr;
 
     preg_match_all("/'([a-z_]+)'/", $read, $matches);
     $policyWhitelist = array_values(array_unique($matches[1]));
@@ -471,22 +515,49 @@ it('derives its live-status list from the enum, and it matches the policy whitel
     sort($expected);
 
     expect($policyWhitelist)->toBe($expected,
-        'the SELECT policy whitelist is not the live set plus exactly the written status');
+        'worker_reads_expired_sessions (SELECT) is not the live set plus exactly the written status');
 
-    // (5) and the written status is in it, which is the half that makes the expiry possible
-    expect($policyWhitelist)->toContain(PagerStatus::Expired->value);
+    // (5) THE WRITTEN STATUS IS IN THE SELECT POLICY. This is the half that makes the expiry
+    // possible at all: the UPDATE references columns, so the NEW row is re-checked against
+    // the SELECT policies, and measured with 'expired' removed the prescribed statement
+    // raises 42501 and EVERY expiry fails (§2.12).
+    //
+    // in_array() AND NOT `toContain($needle, $message)`: toContain is VARIADIC, so a message
+    // is read as a second needle. The positive form fails loudly when misused that way --
+    // it did, right here, while this case was being written -- and the NEGATED form below
+    // would have passed vacuously instead. That is the defect `SourceGuard` rule 7 exists
+    // for on `task-4-notifications`; this branch does not carry rule 7 yet, so these two
+    // were caught by the positive form's own failure rather than by the guard.
+    expect(in_array(PagerStatus::Expired->value, $policyWhitelist, true))->toBeTrue(
+        'worker_reads_expired_sessions (SELECT) omits the status the UPDATE writes, so every expiry would fail 42501');
 
-    // (6) while the UPDATE policy's USING is the live set and NOT the written status --
-    // otherwise an already-expired row could be rewritten cross-tenant, which is R-003.
-    $update = (string) $this->asRoot()->selectOne(
-        "select pg_get_expr(p.polqual, p.polrelid) as using_expr
+    // (6) THE UPDATE POLICY, again by name and by polcmd: its USING is the live set and NOT
+    // the written status -- otherwise an already-expired row could be rewritten
+    // cross-tenant, which is R-003.
+    $updatePolicy = $this->asRoot()->selectOne(
+        "select p.polcmd, pg_get_expr(p.polqual, p.polrelid) as using_expr,
+                coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') as check_expr
            from pg_policy p join pg_class c on c.oid = p.polrelid
           where c.relname = 'pager_sessions' and p.polname = 'worker_expires_sessions'",
-    )->using_expr;
+    );
+
+    expect($updatePolicy)->not->toBeNull('worker_expires_sessions does not exist')
+        ->and((string) $updatePolicy->polcmd)->toBe('w',
+            'worker_expires_sessions is not an UPDATE policy');
+
+    $update = (string) $updatePolicy->using_expr;
 
     preg_match_all("/'([a-z_]+)'/", $update, $matches);
     $updateUsing = array_values(array_unique($matches[1]));
     sort($updateUsing);
 
-    expect($updateUsing)->toBe($live, 'the UPDATE policy USING is not exactly the live set');
+    expect($updateUsing)->toBe($live,
+        'worker_expires_sessions (UPDATE) USING is not exactly the live set');
+
+    expect(in_array(PagerStatus::Expired->value, $updateUsing, true))->toBeFalse(
+        'worker_expires_sessions (UPDATE) USING admits an already-expired row, which is R-003');
+
+    // And its WITH CHECK pins the only status the worker may write without context, which is
+    // the third limb and the one that keeps the SELECT whitelist from being a widening.
+    expect((string) $updatePolicy->check_expr)->toContain("'".PagerStatus::Expired->value."'");
 });
