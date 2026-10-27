@@ -1,0 +1,18 @@
+poll-latency-proof
+  commit       5d89234
+  machine      Linux 6.18.54.1-microsoft-standard-WSL2 x86_64, 8 CPU(s), load 1.08 0.89 0.80
+  php          8.4.27
+  mode         full -- properties and timing asserted
+  method       20 warm-up discarded, 200 measured, best p99 of 3 batch(es);
+               wall clock around the whole HTTP kernel call, real Redis, warm projection
+
+  Postgres statements per poll   0  (budget 0)
+  Redis commands in the handler  2  [get,get]  (budget 2)
+
+  batch 1   p50  2.169 ms   p95  2.577 ms   p99  2.730 ms   max  3.182 ms   <- best
+  batch 2   p50  2.186 ms   p95  2.737 ms   p99  3.137 ms   max  3.523 ms
+  batch 3   p50  2.204 ms   p95  2.757 ms   p99  3.499 ms   max  4.181 ms
+
+  REPORTED p99 2.730 ms against a budget of 5.0 ms
+
+poll-latency-proof: zero Postgres, two Redis commands, p99 under budget.

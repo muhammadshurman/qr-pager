@@ -1,0 +1,22 @@
+vacuous-assertion-proof — 5d89234, 2026-10-27T11:50:02Z
+
+=== 1. Task 1 — 'grants UPDATE on no tenant_id column anywhere' (GrantMatrixTest)
+       the control behind: a row cannot be moved between tenants
+  ✓ baseline -- green on the real tree
+  · grant verified present on [qrpager_test] before the assertion runs
+  ✓ qrpager_app granted UPDATE (tenant_id) on pager_sessions -- went red, as it must
+  ✓ restored -- green on the real tree
+
+=== 2. Task 3 — 'the raw token never reaches a log' (PagerTokenTest)
+       §3 row 3's clause, and the most expensive of the three to have been inert
+  ✓ baseline -- green on the real tree
+  ✓ PagerToken::jsonSerialize() returns the raw token -- went red, as it must
+  ✓ restored -- green on the real tree
+
+=== 3. Task 3 — the R-052/R-056 sweep over published descriptions (OpenApiSpecTest)
+       the one whose inertness shipped: docs/openapi.json carried 0.9 x app_limit
+  ✓ baseline -- green on the real tree
+  ✓ docs/openapi.json republishes the capacity figure -- went red, as it must
+  ✓ restored -- green on the real tree
+
+vacuous-assertion-proof: all three invariants are now proven to fail without their fix.

@@ -208,7 +208,7 @@ Event::listen(CommandExecuted::class, function (CommandExecuted $event) use (&$c
 });
 
 $app->make(App\Features\Pager\PagerProjection::class)
-    ->read(App\Domain\Pager\PagerToken::fromPresented($token));
+    ->read(App\Domain\Pager\PagerToken::fromPresented($token), new DateTimeImmutable);
 
 $handlerCommands = $commands;
 

@@ -819,3 +819,118 @@ Recorded here before the work, so the end state can be checked against it:
   this gate), `R-075` (the duplicate-after-delivery residual, owner Task 9) added.
 - **`§3.2`** — a tenth delta sweeping every new row the same day it is written, which is
   that subsection's standing rule.
+
+---
+
+## 7. `R-074` — the pointer key, answered (added 2026-10-27, from Muhammad's review)
+
+The review asked one question first and three to be stated either way. All four are below,
+each against a measurement rather than against the code.
+
+### 7.1 Is the key the raw token, or the hash Postgres stores? **The hash.**
+
+```
+pager:tok:{sha256_hex_of_the_presented_token}
+```
+
+`PagerProjection::pointerKey()` is `'pager:tok:'.$token->hashHex()`, and `hashHex()` is
+`hash('sha256', $this->reveal())` — the same derivation that produces
+`pager_sessions.token_hash`, which the insert stores as `decode(?, 'hex')`.
+
+**Proven against Postgres, not against `hashHex()`.** Comparing the key to the function
+that built it proves only that the function is deterministic.
+`PagerProjectionTest` → *"it keys the pointer on the SAME hash Postgres stores, not on the
+raw token"* reads `encode(token_hash, 'hex')` back from `pager_sessions` **as the cluster
+superuser** — no runtime role may read that column at all — and asserts the key is
+`pager:tok:` + exactly that value, 64 hex characters, matching `/^pager:tok:[0-9a-f]{64}$/`,
+with the raw 22-character token absent from it.
+
+So the Critical the review described does not apply: there is no raw token in Redis, and
+therefore none recoverable from the slowlog, from `MONITOR`, from a connection error, or
+from any RDB or AOF artifact. `§4 › Data`'s "stored only as a hash" holds on both sides.
+
+### 7.2 The key's TTL, and that it cannot exceed the token's 2-hour TTL
+
+`min(session's remaining life, pager.projection_ttl)`, written with `SETEX` on **both** keys
+in the same call from the same clock reading, so they expire together.
+
+- The session's own `expires_at` is the hard ceiling, and `expires_at` is set to
+  `now() + interval '2 hours'` at creation (`PagerSessions::TTL_HOURS`, a constant and not
+  config, so a deployment cannot lengthen it).
+- `pager.projection_ttl` is 7200 — equal to the session TTL, so in practice it binds only if
+  the session TTL is ever raised, which is exactly when a forgotten cache TTL starts serving
+  stale state.
+- **There is no floor.** It was `max(1, ...)` until this round, because `setex` refuses a
+  non-positive TTL — which meant a terminal transition on a long-expired session published a
+  live status for one second. Both writers now refuse outright
+  (`hasNothingLeftToProject()`), and a test asserts no key is written for an expired session.
+
+Pinned by *"it never writes a projection that outlives the session it describes"*, which
+drives four remaining-life values and asserts both keys' TTLs are `<= remaining` and
+`<= projection_ttl`.
+
+### 7.3 What invalidates it, and the test that a session expired in Postgres stops resolving
+
+**Two mechanisms, and the second was added in this round because the first is not sufficient
+on its own.**
+
+1. **The TTL**, above: both keys lapse no later than `expires_at`.
+2. **A read-time check**: `PagerProjection::read()` now takes a clock and treats a view whose
+   own `expiresAt` has passed as a **miss**, even while the key is physically present. A TTL
+   is arithmetic done at write time against PHP's clock; the authority is Postgres. If the
+   two ever disagree — PHP behind Postgres, a drifting container, a rounded `SETEX` — the
+   first mechanism alone would serve a live status for a session the expiry job is about to
+   move to `expired`.
+
+**And one thing that cannot happen, which the first version of this test assumed could:**
+`expires_at` is in **no UPDATE grant** for either runtime role — the app role may write
+`(status, ready_at, completed_at, cancelled_at, last_notified_at, renotify_count, updated_at)`
+and the worker `(status, expired_at, updated_at)`. So a session's expiry is **immutable after
+creation** through every application path, and "`expires_at` moved in Postgres" is a state no
+code can produce. The projection's copy can therefore never disagree with Postgres about
+*when*; only about whether that moment has passed, which is what (2) decides.
+
+**The tests:**
+
+- *"it stops resolving from Redis once the clock passes the session expiry, end to end"* —
+  a session given two seconds of life, scanned through the real endpoint, asserted to have a
+  TTL of at most two seconds, then a real wait, then `404 Stale` on the poll and `409 Expired`
+  on the re-open. Nothing is planted and nothing is mocked.
+- *"it refuses a projection whose expiry has passed even while its key is still present"* —
+  isolates mechanism (2), because after the wait above mechanism (1) has fired too. A view
+  with a past `expiresAt` is planted under a key with **600 seconds** of TTL left, so only the
+  read-time check can refuse it. Without it, that is a 200 carrying a live status for a
+  session that is over.
+
+**The expiry job and a status change** need no Redis write at all, and that is the point of
+deriving the TTL: by the time `pager:expire` moves a row to `expired`, the keys are already
+gone or already refused. A status change refreshes the projection with `XX` after its
+transaction commits, so a live projection follows the session and a dead one is not revived.
+
+### 7.4 Can the key, or its input, reach a log line or an error body?
+
+**No, verified against captured output at `APP_DEBUG=true`, not assumed.**
+
+Two cases, both driving every customer path including the ones that fail — a resolve, a poll,
+an unknown token, a malformed token and a rejected subscription:
+
+- *"it puts neither the key nor the token in any log line, at APP_DEBUG=true"* swaps in a real
+  Monolog `TestHandler` and asserts the captured records contain neither the raw token, nor
+  the full key, nor the 64-character hash.
+- *"it puts neither the key nor the token in any response body, at APP_DEBUG=true"* asserts
+  the same three absences across five real response bodies, plus the absence of the literal
+  key prefix `pager:tok:` so the key's **shape** is not disclosed either.
+
+Behind them: the token is `#[SensitiveParameter]` on `PagerTokenLookup::resolve()`,
+`PagerToken` has no `__toString` and returns a redaction marker from `jsonSerialize()` and
+`__debugInfo()`, and `TokenResolutionFailures` deliberately stores **no token and no hash** —
+only a count per UTC hour.
+
+### 7.5 The framing stays, and the Security reviewer rules on it
+
+`R-074` keeps its wording: **a named cross-tenant path mirrored into a store with no RLS.**
+The pointer cannot be tenant-namespaced because resolving the tenant is its purpose; what
+bounds it is that reading it requires the preimage of a sha256 — the 128-bit CSPRNG token —
+which is the same property that makes `public.resolve_pager_token` a legitimate
+`SECURITY DEFINER` bypass in Task 3. The invariant's actual subject, the projection, is
+namespaced `t:{tenant}:pager:{session}` with the tenant read from the pointer's value.

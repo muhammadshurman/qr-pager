@@ -1,0 +1,50 @@
+migration-rollback-proof: using the psql inside the compose postgres service
+migration-rollback-proof: database [qrpager_rollback_proof] on 127.0.0.1
+
+=== 1. apply from empty, one batch ===
+
+   INFO  Preparing database.  
+
+  Creating migration table ...................................... 13.57ms DONE
+
+   INFO  Running migrations.  
+
+  2026_10_25_150000_create_global_tables ........................ 31.26ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 88.64ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 12.67ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 9.37ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 4.27ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 3.58ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 2.26ms DONE
+
+distinct batches: 1 (expected 1)
+
+=== 2. a second apply is a no-op ===
+
+   INFO  Nothing to migrate.  
+
+
+=== 3. this task's objects are present ===
+fingerprint lines: 415
+policy pager_sessions.worker_expires_sessions cmd=w roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status]))) check=(status = 'expired'::pager_status)
+policy pager_sessions.worker_reads_expired_sessions cmd=r roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status, 'expired'::pager_status]))) check=-
+
+=== 4. rollback runs clean ===
+
+   INFO  Rolling back migrations.  
+
+  2026_10_27_120100_create_pager_token_resolver .................. 4.79ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 5.49ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 3.30ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 6.30ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 24.08ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 29.53ms DONE
+  2026_10_25_150000_create_global_tables ......................... 8.81ms DONE
+
+tables left: 1 (expected 1, the migrations table)
+functions left: 0 (expected 0 -- the resolver and the audit trigger are both dropped)
+
+=== 5. a re-apply returns the identical schema ===
+schema identical after rollback and re-apply
+
+migration-rollback-proof: all five checks passed on [qrpager_rollback_proof].

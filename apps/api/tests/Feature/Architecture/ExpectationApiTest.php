@@ -2,224 +2,139 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\File;
+use Guard\SourceGuard;
+use Pest\Expectation;
+use Pest\Mixins\Expectation as MixinExpectation;
 
 /*
- * A GUARD AGAINST ONE EXPECTATION THAT LOOKS LIKE AN ASSERTION AND IS NOT.
+ * THE LIBRARY FACT THE GUARD ENCODES, kept where it can go red if the fact changes.
+ *
+ * The CONTROL for vacuous assertions is `SourceGuard`'s rule 7, run by `composer guard`
+ * and as its own CI step, and proven to fail on `guard/fixtures/repo/vacuous-not-contains.php.fixture`
+ * by `RepoGuardTest`. A second scanner living here would be a copy of that rule that can
+ * drift from it, which is the duplicated-configuration shape `SourceGuard::PATHS` already
+ * carries a comment about. So this file does not scan anything.
+ *
+ * What it does is pin the two facts rule 7 rests on, both of which belong to Pest and
+ * neither of which the guard can check for itself — `guard/bin/guard` boots no framework
+ * and loads no autoloader beyond its own two files, by design.
  *
  * ===================================================================================
- * WHAT WAS FOUND, AT TASK 4
+ * THE DEFECT, for whoever reads this first
  * ===================================================================================
  *
- * Pest's `toContain()` takes `...$needles` -- every argument is a needle. So a message
- * passed as a second argument, which is the shape almost every other expectation in Pest
- * accepts, is read as a SECOND NEEDLE. Under `->not` the whole expectation becomes "does
- * not contain BOTH of these", and a message string that never appears in the subject makes
- * that trivially true.
+ * Pest's `toContain()` takes `...$needles`, so a message in the second argument is read
+ * as a SECOND NEEDLE. Under `->not->` the assertion becomes "does not contain BOTH",
+ * which a message that never appears in the subject makes trivially true:
  *
- * Measured 2026-10-27, three cases, run as real tests:
+ *   expect('hello app_limit')->not->toContain('app_limit')          -> FAILS  (correct)
+ *   expect('hello app_limit')->not->toContain('app_limit', 'msg')   -> PASSES (inert)
+ *   expect('hello app_limit')->toContain('app_limit', 'msg')        -> FAILS  (on 'msg')
  *
- *   expect('hello app_limit')->not->toContain('app_limit')          -> FAILS   (correct)
- *   expect('hello app_limit')->not->toContain('app_limit', 'msg')   -> PASSES  (inert)
- *   expect('hello app_limit')->toContain('app_limit', 'msg')        -> FAILS   (on 'msg')
- *
- * FOUR ASSERTIONS IN THIS SUITE WERE THE MIDDLE SHAPE, and three of them were controls
- * for named invariants that had therefore never been tested:
- *
- *   GrantMatrixTest     "grants UPDATE on no tenant_id column anywhere" -- the control
- *                       behind "a row cannot be moved between tenants" (Task 1).
- *   PagerTokenTest      "the raw token never reaches a log" -- a §3 row 3 gate clause
- *                       (Task 3).
- *   OpenApiSpecTest     the R-052/R-056 sweep for internal rationale in published
- *                       descriptions -- which is why `0.9 x app_limit` was in the
- *                       committed spec with a green test claiming to forbid it (Task 2).
- *   PagerCustomerSurfaceTest  "no token in any response body" (Task 4, this task's own).
- *
- * All four are fixed to `expect(str_contains(...))->toBeFalse("message")`, which takes a
- * real message, and all four were re-run to confirm they now bite.
- *
- * ===================================================================================
- * WHY A SOURCE SCAN AND NOT A CODE REVIEW
- * ===================================================================================
- *
- * The same reason the C1/C2 repo guard is a source scan (§4 › Postgres traps): nothing in
- * lint can see this. Pint formats, PHPStan analyses types -- and both arguments here are
- * strings, so the call is perfectly well typed and perfectly wrong. The only thing that
- * distinguishes a message from a needle is intent, and intent is what a convention
- * mechanises. A reviewer found this one by accident, which is not a control.
- *
- * It is scoped to `->not->toContain(` with more than one argument, which is the shape that
- * silently passes. A POSITIVE `toContain($a, $b)` is a legitimate "contains both" and is
- * left alone -- it also fails loudly when misused as a message, which is how it stays
- * honest.
+ * Four assertions in this repository were the middle shape and three guarded NAMED GATE
+ * INVARIANTS of tasks that are already tagged. `PLAN.md §4a` has the list and `§1` has
+ * the decision log entry.
  */
 
-it('has no ->not->toContain() call carrying a message as a second needle', function (): void {
-    $offenders = [];
+it('finds exactly the variadic matchers rule 7 names, and no others', function (): void {
+    // WHAT KEEPS SourceGuard::VARIADIC_MATCHERS HONEST. The guard hard-codes the list
+    // because it cannot ask Pest; this is the reflection that makes the hard-coding safe,
+    // and it goes red if Pest adds a third variadic matcher or removes one.
+    //
+    // Debug helpers are excluded deliberately: dd, dump, ray, ddWhen, ddUnless and
+    // sequence are variadic too and assert nothing, so a message passed to one of them
+    // silences nothing that was ever asserted.
+    //
+    // BOTH CLASSES, and that is not belt and braces. Measured 2026-10-27:
+    //
+    //   Pest\Expectation          variadic = dump, dd, ddWhen, ddUnless, ray, sequence
+    //   Pest\Mixins\Expectation   variadic = toContain, toContainEqual
+    //
+    // The MATCHERS are on the mixin and the DEBUG HELPERS are on the facade. The first
+    // version of this case read only Pest\Expectation, found none of the two that matter,
+    // and reported that "Pest's variadic matchers have changed" -- a false alarm that
+    // would have had someone empty SourceGuard::VARIADIC_MATCHERS and switch rule 7 off.
+    $debugHelpers = ['dd', 'dump', 'ray', 'ddWhen', 'ddUnless', 'sequence'];
+    $variadic = [];
 
-    foreach (File::allFiles(base_path('tests')) as $file) {
-        if ($file->getExtension() !== 'php') {
-            continue;
-        }
-
-        // THIS FILE IS EXCLUDED, and the exclusion is load-bearing rather than
-        // convenient: the second case below WRITES THE BROKEN SHAPE ON PURPOSE as a
-        // positive control, so a scan that included it would report its own proof as the
-        // defect. Named by basename and nothing wider, so a second file cannot hide
-        // behind it -- which is the mistake the C1/C2 guard's own path list made (QA H-1,
-        // a duplicated list that went stale).
-        if ($file->getFilename() === 'ExpectationApiTest.php') {
-            continue;
-        }
-
-        $contents = (string) file_get_contents($file->getPathname());
-
-        foreach (explode("\n", $contents) as $number => $line) {
-            if (! str_contains($line, '->not->toContain(')) {
-                continue;
-            }
-
-            // A COMMENT THAT QUOTES THE RULE IS NOT A BREACH OF IT. Every one of the four
-            // rewritten assertions carries a line explaining what it used to be, and the
-            // first version of this scan reported all four -- the guard flagging its own
-            // documentation, which is the property RepoGuardTest already has a case for
-            // ("it does not flag the documentation of its own rule"). Same answer here.
-            $trimmed = ltrim($line);
-
-            if (str_starts_with($trimmed, '//') || str_starts_with($trimmed, '*') || str_starts_with($trimmed, '/*')) {
-                continue;
-            }
-
-            // Everything from the opening paren to the matching close, on this line. A
-            // call split across lines is not matched and does not need to be: the
-            // dangerous shape is short by nature, because the message follows the needle.
-            $arguments = argumentsOf($line, '->not->toContain(');
-
-            if ($arguments === null) {
-                continue;
-            }
-
-            if (commaAtTopLevel($arguments)) {
-                $offenders[] = sprintf(
-                    '%s:%d  %s',
-                    str_replace(base_path().'/', '', $file->getPathname()),
-                    $number + 1,
-                    trim($line),
-                );
+    foreach ([Expectation::class, MixinExpectation::class] as $class) {
+        foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            foreach ($method->getParameters() as $parameter) {
+                if ($parameter->isVariadic()) {
+                    $variadic[] = $method->getName();
+                    break;
+                }
             }
         }
     }
 
-    expect($offenders)->toBe([], implode(PHP_EOL, array_merge(
-        ['->not->toContain() with a second argument asserts NOTHING -- Pest reads it as another'],
-        ['needle and ->not then means "not both". Use expect(str_contains($h, $n))->toBeFalse($m).'],
-        [''],
-        $offenders,
-    )));
+    $matchers = array_values(array_unique(array_diff($variadic, $debugHelpers)));
+    sort($matchers);
+
+    expect($matchers)->toBe(SourceGuard::VARIADIC_MATCHERS,
+        'Pest\'s variadic matchers have changed. SourceGuard::VARIADIC_MATCHERS must be updated to match: '
+        .implode(', ', $matchers));
 });
 
-it('does not flag a comment that documents the rule, only a call that breaks it', function (): void {
-    // The companion to the skip above: a scan that reported every explanation of itself
-    // would be loosened by the first person who had to read its output, and then it would
-    // stop reporting the real thing too.
-    $line = "            // str_contains() AND NOT `->not->toContain(\$raw, 'message')`, which was wrong";
+it('confirms that 77 other matchers really do take a message, so the mistake is reasonable', function (): void {
+    // The reason this defect is worth a mechanical guard rather than a convention: an
+    // author who writes a message after the first argument is RIGHT almost everywhere.
+    // Measured 2026-10-27 — 77 matchers whose last parameter is literally named $message.
+    // Two exceptions out of seventy-nine is not something review catches reliably.
+    $withMessage = 0;
 
-    expect(str_contains($line, '->not->toContain('))->toBeTrue('the fixture no longer contains the shape')
-        ->and(str_starts_with(ltrim($line), '//'))->toBeTrue('the fixture is no longer a comment');
+    foreach ([Expectation::class, MixinExpectation::class] as $class) {
+        foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            $parameters = $method->getParameters();
+
+            if ($parameters !== [] && $parameters[count($parameters) - 1]->getName() === 'message') {
+                $withMessage++;
+            }
+        }
+    }
+
+    expect($withMessage)->toBeGreaterThan(50)
+        ->and(count(SourceGuard::VARIADIC_MATCHERS))->toBeLessThan(5);
 });
 
-it('proves the broken shape really is inert, so this guard is not cargo cult', function (): void {
-    // The positive control. If a future Pest release made the second argument a message,
-    // this case would go red and the guard above could be retired -- which is the
-    // difference between a rule with a reason and a rule with a history.
+it('proves the broken shape really is inert, so rule 7 is not cargo cult', function (): void {
+    // THE POSITIVE CONTROL. If a future Pest release made the second argument a message,
+    // this case goes red and rule 7 can be retired — which is the difference between a
+    // rule with a reason and a rule with a history.
+    //
+    // The broken call itself is in a NAMED FUNCTION below, because the guard excepts it
+    // by file AND by function name (R-019's pattern: never "tests are exempt"). A guard
+    // that flagged its own proof would be switched off by the first person who read its
+    // output; one that excepted a whole file would stop guarding that file.
+    expect(pestReadsASecondArgumentAsANeedle())->toBeTrue(
+        'Pest now treats the second argument to toContain() as a message. SourceGuard rule 7 '
+        .'can be retired and the rewritten assertions in GrantMatrixTest, PagerTokenTest, '
+        .'OpenApiSpecTest and PagerCustomerSurfaceTest simplified.'
+    );
+});
+
+/**
+ * True when `->not->toContain($needle, $message)` passes although $needle IS present.
+ *
+ * The one place in this repository that writes the broken shape on purpose, excepted in
+ * `SourceGuard::EXCEPTIONS` by this file and this function name. Moving it, renaming it,
+ * or adding a second one anywhere — including elsewhere in this file — fails the guard.
+ */
+function pestReadsASecondArgumentAsANeedle(): bool
+{
     $subject = 'hello app_limit world';
 
-    // The correct form: it finds the needle.
-    expect(str_contains($subject, 'app_limit'))->toBeTrue();
-
-    // The broken form: Pest does NOT raise, which is the whole problem.
-    $raised = false;
+    // Sanity first: the needle really is present, so a pass below cannot mean "absent".
+    if (! str_contains($subject, 'app_limit')) {
+        return false;
+    }
 
     try {
         expect($subject)->not->toContain('app_limit', 'this message is not in the subject');
     } catch (Throwable) {
-        $raised = true;
+        // It raised, which means Pest read the second argument as a message after all.
+        return false;
     }
 
-    expect($raised)->toBeFalse(
-        'Pest now treats the second argument to toContain() as a message. '
-        .'The guard above can be retired and the four rewritten assertions simplified.'
-    );
-});
-
-/** The text between a call's parentheses, or null when they are not balanced on one line. */
-function argumentsOf(string $line, string $needle): ?string
-{
-    $start = strpos($line, $needle);
-
-    if ($start === false) {
-        return null;
-    }
-
-    $cursor = $start + strlen($needle);
-    $depth = 1;
-    $out = '';
-
-    for ($i = $cursor; $i < strlen($line); $i++) {
-        $char = $line[$i];
-
-        if ($char === '(') {
-            $depth++;
-        } elseif ($char === ')') {
-            $depth--;
-
-            if ($depth === 0) {
-                return $out;
-            }
-        }
-
-        $out .= $char;
-    }
-
-    return null;
-}
-
-/**
- * True when the argument list has a comma outside every string, bracket and paren.
- *
- * A comma INSIDE a needle is not a second argument -- RefusalDiagnosticsTest has
- * `not->toContain('has been rolled back, back to the depth')`, which is one needle and
- * perfectly correct. A naive `str_contains($line, ',')` would have reported it, and a
- * guard that cries wolf is one somebody loosens.
- */
-function commaAtTopLevel(string $arguments): bool
-{
-    $depth = 0;
-    $quote = null;
-
-    for ($i = 0; $i < strlen($arguments); $i++) {
-        $char = $arguments[$i];
-
-        if ($quote !== null) {
-            if ($char === '\\') {
-                $i++;
-            } elseif ($char === $quote) {
-                $quote = null;
-            }
-
-            continue;
-        }
-
-        if ($char === "'" || $char === '"') {
-            $quote = $char;
-        } elseif ($char === '(' || $char === '[' || $char === '{') {
-            $depth++;
-        } elseif ($char === ')' || $char === ']' || $char === '}') {
-            $depth--;
-        } elseif ($char === ',' && $depth === 0) {
-            return true;
-        }
-    }
-
-    return false;
+    return true;
 }

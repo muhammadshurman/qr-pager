@@ -1,0 +1,46 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+ * DELIBERATELY BAD. Rule 7's fixture: `->not->` on a variadic matcher with a second
+ * argument, which asserts nothing.
+ *
+ * `§4 › Postgres traps` requires the guard to be "proven to fail on a deliberately bad
+ * file", and that clause is why this file exists rather than a reviewer's attention.
+ * RepoGuardTest points the guard at it and asserts a violation; the guard's real scan
+ * never sees it, because guard/fixtures is not in SourceGuard::PATHS and no autoloader
+ * maps it.
+ *
+ * Four shapes, so the fixture exercises the rule rather than one spelling of it.
+ */
+
+it('is the shape that silenced three gate invariants', function (): void {
+    // 1. the canonical defect: a needle and a message
+    expect('hello app_limit world')->not->toContain('app_limit', 'the spec leaked the capacity figure');
+
+    // 2. the same thing on the other variadic matcher
+    expect(['a', 'b'])->not->toContainEqual('a', 'the array carried a forbidden entry');
+
+    // 3. broken across lines, with a comment in the middle, so the guard cannot be
+    //    fooled by formatting
+    expect($body)
+        ->not
+        // this comment must not hide the call from the scan
+        ->toContain($token, 'the response echoed the token');
+
+    // 4. a nested call in the first argument, so the arity count has to be depth-aware
+    expect($subject)->not->toContain(trim($needle), 'still two arguments');
+});
+
+it('is NOT flagged when it is correct', function (): void {
+    // One needle: correct, and the guard must leave it alone.
+    expect('hello world')->not->toContain('app_limit');
+
+    // A comma INSIDE the needle is one argument, not two.
+    expect($message)->not->toContain('has been rolled back, back to the depth');
+
+    // The positive form means "contains both" and is legitimate -- and when it is
+    // misused as a message it fails loudly on the message, so it corrects itself.
+    expect($haystack)->toContain('first', 'second');
+});

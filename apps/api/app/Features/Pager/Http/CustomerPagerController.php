@@ -131,6 +131,7 @@ final class CustomerPagerController
     #[DocResponse(status: 503, description: 'The live status is temporarily unavailable. Retry after the interval in the Retry-After header; notifications are unaffected.', type: ProblemDocument::class)]
     public function poll(PollPagerStatusRequest $request): JsonResponse
     {
+        $now = new DateTimeImmutable;
         $token = $request->token();
 
         // A malformed token costs ZERO round trips -- no Redis, no Postgres -- because
@@ -140,7 +141,7 @@ final class CustomerPagerController
             return $this->stale($request->getPathInfo());
         }
 
-        $view = $this->projection->read($token);
+        $view = $this->projection->read($token, $now);
 
         // FALSE AND NULL ARE DIFFERENT ANSWERS and the customer feels the difference.
         // false: Redis could not be reached, so we do not know -- 503 and come back,

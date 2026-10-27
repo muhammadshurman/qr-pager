@@ -275,6 +275,84 @@ it('exits non-zero through the real binary when a canonical document is duplicat
     });
 });
 
+it('rejects a negated variadic matcher given a message, which asserts nothing — rule 7', function (): void {
+    // §4 › Postgres traps: "The guard must be proven to fail on a deliberately bad file."
+    // This is rule 7's bad file, and it carries FOUR bad shapes rather than one, so the
+    // rule is exercised rather than one spelling of it: both variadic matchers, a call
+    // broken across lines with a comment in the middle, and one whose first argument is a
+    // nested call (so the arity count has to be depth-aware).
+    //
+    // What rule 7 is for: Pest's toContain and toContainEqual are the only two assertion
+    // matchers that are variadic -- 77 others take a real $message -- so under ->not-> a
+    // message is read as a second needle and the assertion becomes "does not contain
+    // BOTH", trivially true. Three assertions in this repository were that shape and each
+    // guarded a named invariant; PLAN.md §4a has the inventory and §1 the decision log.
+    $violations = GuardFixtures::violations('vacuous-not-contains', SourceGuard::VACUOUS_NEGATED_CONTAINS);
+
+    expect($violations)->toHaveCount(4)
+        ->and($violations[0]->detail)->toContain('VARIADIC');
+});
+
+it('leaves the correct forms alone, so rule 7 is not something anyone has to work around', function (): void {
+    // The same fixture carries three CORRECT shapes below its bad ones, and none may be
+    // flagged: one needle; a needle with a comma INSIDE it (RefusalDiagnosticsTest has a
+    // real one); and the positive `toContain($a, $b)`, which legitimately means "contains
+    // both" and which fails loudly when it IS misused as a message, so it self-corrects.
+    //
+    // A guard that cried wolf on any of these would be switched off by the first person
+    // who had to read its output, and then it would stop catching the real thing too.
+    $violations = GuardFixtures::violations('vacuous-not-contains', SourceGuard::VACUOUS_NEGATED_CONTAINS);
+    $lines = array_map(fn ($violation): int => $violation->line, $violations);
+
+    // The four bad shapes are all in the first `it`, the three good ones in the second.
+    $source = GuardFixtures::text('vacuous-not-contains');
+    $secondBlock = (int) array_search(true, array_map(
+        fn (string $line): bool => str_contains($line, 'is NOT flagged when it is correct'),
+        explode("\n", $source),
+    ), true) + 1;
+
+    foreach ($lines as $line) {
+        expect($line)->toBeLessThan($secondBlock,
+            "rule 7 flagged line {$line}, which is one of the CORRECT forms below line {$secondBlock}");
+    }
+});
+
+it('scopes rule 7 exception to one function, so the guard cannot be switched off by a file', function (): void {
+    // Rule 7's positive control writes the broken shape on purpose, so it is excepted --
+    // by file AND by function name, the same way R-019's set_config helper is. A whole-file
+    // exception would stop guarding the file that documents the rule, which is the file
+    // most likely to grow a second copy of the mistake.
+    $guard = new SourceGuard(base_path());
+
+    $excepted = <<<'PHP'
+        <?php
+        function pestReadsASecondArgumentAsANeedle(): bool {
+            expect('x')->not->toContain('x', 'message');
+            return true;
+        }
+        function somethingElse(): void {
+            expect('x')->not->toContain('x', 'message');
+        }
+        PHP;
+
+    $violations = array_values(array_filter(
+        $guard->scanSource('tests/Feature/Architecture/ExpectationApiTest.php', $excepted),
+        fn ($violation): bool => $violation->rule === SourceGuard::VACUOUS_NEGATED_CONTAINS,
+    ));
+
+    // Exactly one: the excepted function is skipped, the other function in the same file
+    // is not.
+    expect($violations)->toHaveCount(1);
+
+    // And in a DIFFERENT file, even the excepted name is not excepted.
+    $elsewhere = array_values(array_filter(
+        $guard->scanSource('tests/Feature/Pager/SomeOtherTest.php', $excepted),
+        fn ($violation): bool => $violation->rule === SourceGuard::VACUOUS_NEGATED_CONTAINS,
+    ));
+
+    expect($elsewhere)->toHaveCount(2);
+});
+
 it('does not read comments, so the prose explaining C2 is not a violation', function (): void {
     expect(GuardFixtures::text('comment-only'))->toContain('@see')
         ->and(GuardFixtures::guard()->scan([GuardFixtures::path('comment-only')]))->toBe([]);

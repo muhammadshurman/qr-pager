@@ -98,6 +98,7 @@ it('issues exactly two Redis commands in the handler, and seven across the reque
     // pinned by something that does not move when the limiter's internals do.
     $handler = redisCommandsDuring(fn () => app(PagerProjection::class)->read(
         PagerToken::fromPresented($token),
+        new DateTimeImmutable,
     ));
 
     expect($handler)->toBe(['get', 'get']);
