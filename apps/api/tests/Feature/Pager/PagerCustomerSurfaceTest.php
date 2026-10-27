@@ -9,6 +9,8 @@ use App\Features\Pager\TokenResolutionFailures;
 use App\Platform\Readiness\ReadinessSnapshot;
 use App\Platform\Readiness\SaturationProbe;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Monolog\Handler\TestHandler;
 use Tests\Support\PushFixtures;
 
 /*
@@ -299,4 +301,59 @@ it('puts no token in any response body, on any answer', function (): void {
         // as a second needle and ->not then means "not both", which is trivially true.
         expect(str_contains((string) $body, $token))->toBeFalse("response {$index} echoed the token");
     }
+});
+
+it('logs a failed-resolution run once per window, not once per attempt — R-046', function (): void {
+    // R-046 is the finding that unthrottled per-request warning logs on a high-volume
+    // failure path are themselves a defect: an attacker's loop then costs us a log line per
+    // attempt, which is the same amplification as the audit row the counter replaces. So
+    // the counter is unconditional and the WARNING fires on the crossing attempt alone.
+    $handler = new TestHandler;
+    Log::pushHandler($handler);
+
+    config(['pager.token_failure_alert' => 3]);
+
+    $failures = app(TokenResolutionFailures::class);
+    $now = new DateTimeImmutable;
+
+    // Start from a known point: the suite clears Redis between tests, so this window is
+    // empty, and the threshold is crossed on the third call.
+    for ($i = 0; $i < 6; $i++) {
+        $failures->record($now);
+    }
+
+    $crossed = array_filter(
+        $handler->getRecords(),
+        fn ($record) => str_contains((string) $record->message, 'crossed the alert threshold'),
+    );
+
+    expect($failures->count($now))->toBe(6)
+        ->and($crossed)->toHaveCount(1, 'the threshold warning fired '.count($crossed).' times for six attempts');
+});
+
+it('keeps counting when Redis is gone, by not counting and not failing', function (): void {
+    // A counter that took the endpoint down when Redis was unavailable would be worse than
+    // no counter: the request it is observing is already being refused. So record() is
+    // silent and count() answers zero.
+    config(['database.redis.default.port' => 1]);
+    app()->forgetInstance('redis');
+
+    $failures = app(TokenResolutionFailures::class);
+    $now = new DateTimeImmutable;
+
+    $failures->record($now);
+
+    expect($failures->count($now))->toBe(0);
+});
+
+it('counts into an hourly window, so the key is bounded and comparable', function (): void {
+    $morning = new DateTimeImmutable('2026-10-27T09:30:00+00:00');
+    $noon = new DateTimeImmutable('2026-10-27T12:05:00+00:00');
+
+    expect(TokenResolutionFailures::keyFor($morning))->toBe('pager:tok:fail:2026102709')
+        ->and(TokenResolutionFailures::keyFor($noon))->toBe('pager:tok:fail:2026102712')
+        // No IP and no token, not even a hash of one: a per-IP breakdown is the rate
+        // limiter's job and it already hashes the address. A second, longer-lived per-IP
+        // structure here would be personal data this feature does not need.
+        ->and(TokenResolutionFailures::keyFor($noon))->not->toContain('127.0.0.1');
 });
