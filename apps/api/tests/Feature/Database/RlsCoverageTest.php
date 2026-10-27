@@ -102,7 +102,34 @@ it('pins the global allowlist as an exact set, not just a consistent one', funct
     // are the realistic candidates -- would be classified global, would need one line
     // added here, and neither check could tell. Pinning the set exactly means a new
     // arrival cannot join the allowlist without showing up in a diff.
-    expect(GLOBAL_TABLES)->toBe(['failed_jobs', 'migrations', 'password_reset_tokens', 'users']);
+    //
+    // THREE JOINED AT TASK 5 and each one is argued for in PLAN.md §2.4 rather than
+    // merely listed. This is the largest single widening of the RLS-free surface since
+    // Task 1, which is stated here because the diff is where it is supposed to be noticed:
+    //
+    //   passkeys                a passkey belongs to a USER, not a tenant, and the
+    //                           WebAuthn ceremony identifies the user before any tenant
+    //                           is selected. `credential` holds a public key, so a
+    //                           disclosure yields nothing to authenticate with.
+    //   personal_access_tokens  must be resolvable from a bearer token ALONE, which is
+    //                           the one property a tenant-scoped table cannot have. A
+    //                           tenant_id would make it a tenant table, C4 would force
+    //                           RLS on it, and the row would be invisible to the lookup
+    //                           that has to happen before any tenant is known -- whose
+    //                           only escape is a fifth named cross-tenant path, which
+    //                           §4 › Tenancy forbids without a rank-2 edit first.
+    //
+    // The common sentence is "it must be readable before a tenant is known", which is
+    // true of all three and is exactly the sentence an attacker would also like to be
+    // true, so a reviewer should push on it rather than take it from here.
+    expect(GLOBAL_TABLES)->toBe([
+        'failed_jobs',
+        'migrations',
+        'passkeys',
+        'password_reset_tokens',
+        'personal_access_tokens',
+        'users',
+    ]);
 });
 
 it('gives every tenant table both an isolation policy and an owner bypass policy', function (): void {

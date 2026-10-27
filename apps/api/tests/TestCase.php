@@ -7,7 +7,8 @@ namespace Tests;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Tenancy\TenantRole;
-use App\Platform\Auth\HarnessTenantResolver;
+use App\Models\User;
+use App\Platform\Auth\Memberships;
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Database\Connection;
@@ -340,9 +341,9 @@ abstract class TestCase extends BaseTestCase
         return DB::connection('pgsql_root');
     }
 
-    protected function makeTenant(?string $slug = null): string
+    protected function makeTenant(?string $slug = null, ?string $id = null): string
     {
-        $id = (string) Str::uuid7();
+        $id ??= (string) Str::uuid7();
 
         // The real tenant-creation path: context is set to the id about to be inserted,
         // so even this needs no bypass (PLAN.md §2.7).
@@ -388,23 +389,82 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Make requests as a tenant, through the pre-Task-5 resolver (B5).
+     * Make requests as a real staff member of a real tenant.
      *
-     * This is the ONLY way a request gets a tenant before Task 5, and that is the
-     * design: HarnessTenantResolver reads a container binding and never a header, a
-     * route parameter, a query string or a cookie, so no HTTP input can choose a
-     * tenant. A stub that read a header would be an unauthenticated tenant-switching
-     * parameter -- the most dangerous shape this application could ship, looking like
-     * perfectly ordinary code.
+     * REWRITTEN AT TASK 5, when the pre-Task-5 stub was deleted (R-035). It used to bind a
+     * bare uuid into the container; it now creates a user, gives that user ONE membership
+     * in the tenant, and authenticates as them. So a feature test exercises the same
+     * resolution path a real request does -- the guard, the §2.8 membership function, and
+     * the suspended-tenant check -- rather than a harness that short-circuited all three.
      *
-     * Every /v1 route is deny-by-default behind RequireTenantScope, so a feature test
-     * that does not call this gets a 401 with no detail. That is the clause working.
+     * The resolver still reads NO HTTP input: a tenant comes from the server-side session
+     * or from a token's own abilities, never from a header, a route parameter, a query
+     * string, a cookie or a body field. A resolver that read a header would be an
+     * unauthenticated tenant-switching parameter -- the most dangerous shape this
+     * application could ship, looking like perfectly ordinary code -- and `PagerIdorTest`
+     * drives five such shapes and requires 404 from each. This helper needs none of them,
+     * because one user with one membership resolves through `Memberships::sole()`.
+     *
+     * TWO CONSEQUENCES WORTH KNOWING BEFORE A TEST SURPRISES YOU:
+     *
+     *   - Calling it twice in one test makes TWO users, each in their own tenant. That is
+     *     deliberate and it is what `PagerIdorTest`'s tenant switch means: alpha's request
+     *     really is a different principal from beta's, which is the thing being tested.
+     *   - It writes rows. A `users` row always, a `tenant_users` row always, and a
+     *     `tenants` row when the id it is given has none. Counting rows in those tables
+     *     after calling it has to account for them.
+     *
+     * Every /v1 route is deny-by-default behind RequireTenantScope, so a feature test that
+     * does not call this gets a 401 with no detail. That is the clause working.
      */
-    protected function actingForTenant(?string $tenantId = null): string
+    protected function actingForTenant(?string $tenantId = null, TenantRole $role = TenantRole::Owner): string
     {
-        $tenantId ??= (string) Str::uuid7();
+        $tenantId ??= $this->makeTenant();
 
-        $this->app->instance(HarnessTenantResolver::BINDING, $tenantId);
+        // A tenants ROW is now required, where the pre-Task-5 harness needed none: that
+        // stub bound a bare uuid into the container, so every call before Task 5 returned
+        // a tenant id with no row behind it. tenant_users carries an FK to tenants, so the
+        // membership this method creates cannot exist without one. Inserted here when it
+        // is missing, so that a caller passing an arbitrary uuid keeps working.
+        $exists = withoutTenantScope(
+            'tests: does this tenant exist, for actingForTenant',
+            fn (): bool => DB::connection('pgsql_owner')->table('tenants')->where('id', $tenantId)->exists(),
+        );
+
+        if (! $exists) {
+            $this->makeTenant(slug: 'tenant-'.str_replace('-', '', $tenantId), id: $tenantId);
+        }
+
+        $userId = (string) Str::uuid7();
+
+        DB::connection('pgsql_owner')->table('users')->insert([
+            'id' => $userId,
+            'name' => 'Acting Staff',
+            // Lower-cased: users_email_is_lowercase is a CHECK constraint, and a 23514
+            // from a test helper is the least useful place to discover it (R-007).
+            'email' => 'acting-'.substr(str_replace('-', '', $userId), 0, 12).'@example.test',
+        ]);
+
+        withTenant($tenantId, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
+            'id' => (string) Str::uuid7(),
+            'tenant_id' => $tenantId,
+            'user_id' => $userId,
+            'role' => $role->value,
+        ]), 'pgsql_owner');
+
+        // ONE membership per user, which is what makes this work with no header and no
+        // session key: AuthenticatedTenantResolver falls back to Memberships::sole() when
+        // nothing is selected. A second call in the same test makes a SECOND user, in the
+        // second tenant, which is exactly the semantics PagerIdorTest's tenant switch
+        // wants -- alpha's request really is a different principal from beta's.
+        $user = User::query()->findOrFail($userId);
+
+        $this->actingAs($user);
+
+        // The membership was created after this request-scoped reader may already have
+        // answered for this user id, and it memoises per user (QRPAGER-12 §10.5). A test
+        // that authenticates twice would otherwise read the first answer back.
+        $this->app->forgetInstance(Memberships::class);
 
         return $tenantId;
     }

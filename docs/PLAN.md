@@ -439,8 +439,20 @@ agree. Task 8 generates `packages/contracts` from the same registry (ADR-003) �
 | `tenant_role`      | `App\Domain\Tenancy\TenantRole`   | `owner` · `manager` · `staff`                               |
 | `audit_actor_type` | `App\Domain\Audit\AuditActorType` | `user` · `system` · `platform`                              |
 
-`tenant_role` holds **tenant-scoped** roles only. The platform-admin flag is Task 5's and is not in this
-contract yet. Transitions of `pager_status` are defined in the PHP enum by Task 3, not here.
+`tenant_role` holds **tenant-scoped** roles only. Transitions of `pager_status` are defined in the PHP enum
+by Task 3, not here.
+
+**The platform-admin flag landed at Task 5 and it is NOT a fourth `tenant_role` value** — this paragraph
+used to say "is Task 5's and is not in this contract yet", and the resolution is that it never belongs in
+this table. It is `users.is_platform_admin boolean NOT NULL DEFAULT false` (`§2.4`). A `platform_admin`
+member of `tenant_role` could only ever be stored in `tenant_users.role`, which requires a `tenant_id`, so
+the value would exist only attached to a tenant — which is exactly what a platform admin is not (`§2.4`:
+"platform staff belong to none"). **Task 5 also adds two enum-shaped contracts that are deliberately NOT
+Postgres types:** `App\Domain\Auth\Principal` (`platform_admin · owner · manager · staff · device`), the
+authorisation subject, which exists only in PHP because two of its five cases are not roles at all — one is
+the boolean above and one is a credential shape (a KDS device token) — and `App\Domain\Auth\Ability`, a
+capability vocabulary rather than a stored value. Keeping the five principals in one PHP enum is what lets
+the role matrix be one array over all of them without putting either case in the data contract.
 
 ### 2.4 Global tables — no `tenant_id`, no RLS
 
@@ -451,13 +463,50 @@ table from quietly escaping tenant isolation.
 | Table                   | Columns                                                                                                                                                                                                                                                            | Grants                                     |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | `migrations`            | framework                                                                                                                                                                                                                                                          | `owner` only                               |
-| `users`                 | `id` uuid PK · `name` varchar(120) · `email` varchar(255) **unique**, stored lower-cased · `email_verified_at` timestamptz NULL · `password` varchar(255) NULL _(passkey-only users have none)_ · `remember_token` varchar(100) NULL · `created_at` · `updated_at` | app: SELECT/INSERT/UPDATE · worker: SELECT |
+| `users`                 | `id` uuid PK · `name` varchar(120) · `email` varchar(255) **unique**, stored lower-cased · `email_verified_at` timestamptz NULL · `password` varchar(255) NULL _(passkey-only users have none)_ · `remember_token` varchar(100) NULL · `created_at` · `updated_at` · **`is_platform_admin` boolean NOT NULL DEFAULT false** _(Task 5)_ · **`two_factor_secret` text NULL** _(Task 5)_ · **`two_factor_recovery_codes` text NULL** _(Task 5)_ · **`two_factor_confirmed_at` timestamptz NULL** _(Task 5)_ | app: SELECT/INSERT/UPDATE, **minus the four credential columns on SELECT — `§2.7`, R-006** · worker: SELECT |
+| `passkeys` _(Task 5)_ | `id` uuid PK · `user_id` uuid → `users.id` **CASCADE** · `name` varchar(120) · `credential_id` text **unique** · `credential` jsonb default `{}` · `last_used_at` timestamptz NULL · `created_at` · `updated_at` · INDEX `(user_id)` | app: SELECT/INSERT/UPDATE `(name, last_used_at, updated_at)`/DELETE · worker: none |
+| `personal_access_tokens` _(Task 5)_ | `id` uuid PK · `tokenable_type` varchar(255) · `tokenable_id` uuid · `name` text · `token` varchar(64) **unique** _(the sha256 OF the plaintext)_ · `abilities` text NULL · `last_used_at` timestamptz NULL · `expires_at` timestamptz NULL · `created_at` · `updated_at` · INDEX `(tokenable_type, tokenable_id)` · INDEX `(expires_at)` | app: SELECT/INSERT/UPDATE `(last_used_at, updated_at)`/DELETE · worker: none |
 | `password_reset_tokens` | `email` varchar(255) PK · `token` varchar(255) · `created_at`                                                                                                                                                                                                      | app: SELECT/INSERT/DELETE                  |
 | `failed_jobs`           | Laravel standard (`id` bigint identity · `uuid` unique · `connection` · `queue` · `payload` · `exception` · `failed_at`)                                                                                                                                           | **worker only**: INSERT/SELECT/DELETE      |
 
 `users` is global because a user may hold memberships in several tenants and platform staff belong to none.
 `failed_jobs` is granted to the worker **only**: a serialized job payload can contain tenant data, and a
 global table has no RLS behind it.
+
+**Two tables joined this list at Task 5, and it is the largest single widening of the RLS-free surface since
+Task 1.** Stated here rather than implied, because the common justification — *it has to be readable before a
+tenant is known* — is true of both and is also exactly the sentence an attacker would like to be true, so it
+is the thing a reviewer should push on rather than accept.
+
+- **`passkeys`** — a passkey belongs to a **user**, not to a tenant, and the WebAuthn ceremony identifies the
+  user before any tenant is selected. `credential` holds a **public key** and metadata, which is the property
+  that makes WebAuthn worth having on this surface: a full database disclosure yields nothing an attacker can
+  authenticate with. It is still credential material, so the model marks it `#[Hidden]`.
+- **`personal_access_tokens`** — must be resolvable from a bearer token **alone**. Giving it a `tenant_id`
+  would make it a tenant table; C4 would then force RLS `ENABLE` + `FORCE` on it; and the row would be
+  invisible to the very lookup that has to happen *before* any tenant is known. The only escape is a
+  **fifth** named cross-tenant path, which `PROJECT_INSTRUCTIONS.md §4 › Tenancy` forbids without editing
+  that file first. **So the tenant a KDS device token is good for travels in `abilities` as `tenant:<uuid>`,
+  and it is a CLAIM rather than an authority:** the resolver resolves the tenant from the holder's own
+  memberships first and then requires the token's tenant to equal it, so a token naming a tenant its holder
+  is not a member of resolves nothing. `token` is the **sha256 of** the plaintext — measured in
+  `vendor/laravel/sanctum/src/HasApiTokens.php:66` — so the column is a verifier and not a credential, the
+  same posture as `pager_sessions.token_hash`.
+
+**The three vendor migrations are not published, and none of them could be.** Fortify, Sanctum and
+`laravel/passkeys` each ship one; read in-session, they use `$table->id()` (bigint, where every id here but
+`audit_log`'s is uuid), `$table->timestamp()` (where every timestamp in `§2.5` is `timestamptz`) and
+`$table->morphs()` (which would make `tokenable_id` bigint against a uuid `users.id`), and not one of them
+grants a column to a role, adds a table to the C4 allowlist, or runs as the owner. The schemas were read and
+re-expressed in `2026_10_28_120000_create_auth_contract`.
+
+**And neither package's routes are used.** Installing both with their defaults published **27 unversioned
+endpoints outside `/v1`** — `/register`, `/login`, `/logout`, `/forgot-password`, `/two-factor-challenge`,
+`/user/passkeys`, Sanctum's `/sanctum/csrf-cookie` and the rest — and `RouteSurfaceTest` rejected the lot,
+which is what that test is for. `§6` requires `/v1` and `§11.3` requires every public route to be explicitly
+marked and justified, and `/register` is self-service account creation, which this project does not have at
+any tier: a staff account comes from Task 6's invite wizard. So `Fortify::$registersRoutes = false`,
+`sanctum.routes = false`, and Task 5 mounts what it wants by hand under `/v1`.
 
 **Dropped from the Laravel skeleton:** `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`. Redis is
 the locked store for session, cache and queue (`PROJECT_INSTRUCTIONS.md §1`), so these were five unused
@@ -545,7 +594,9 @@ everywhere, which is the distinction this correction adds; the residual is accep
 
 The remaining two named paths in `§4 › Tenancy` — **the QR token lookup** and **a user's own memberships** —
 have no policy here on purpose. They are implemented by the task that needs them (3 and 5) with the recipe
-in §2.8, because a policy wide enough to serve them would be a standing bypass for `qrpager_app`.
+in §2.8, because a policy wide enough to serve them would be a standing bypass for `qrpager_app`. **Both now
+exist: the token lookup at Task 3 and `public.user_memberships(uuid)` at Task 5**, and neither added a
+policy, which is what that sentence predicted.
 
 ### 2.7 Column grants — what each role may touch
 
@@ -559,6 +610,9 @@ The point of column grants is that over-broad SQL cannot leak what the role was 
 | `push_subscriptions` | SELECT · INSERT · UPDATE `(p256dh, auth, updated_at)` · DELETE                                                                                                                                                                                                     | SELECT · DELETE _(404/410 pruning)_                                                          |
 | `outbox`             | SELECT · INSERT `(id, tenant_id, pager_session_id, type, dedupe_key, payload, available_at, created_at, updated_at)`                                                                                                                                               | SELECT · UPDATE `(status, attempts, available_at, sent_at, dead_at, last_error, updated_at)` |
 | `audit_log`          | INSERT `(tenant_id, actor_type, actor_user_id, action, subject_type, subject_id, context, ip_address)` · SELECT                                                                                                                                                    | INSERT same · SELECT                                                                         |
+| `passkeys` _(Task 5)_ | SELECT all · INSERT `(id, user_id, name, credential_id, credential, created_at, updated_at)` · UPDATE `(name, last_used_at, updated_at)` · DELETE | **none** |
+| `personal_access_tokens` _(Task 5)_ | SELECT all · INSERT `(id, tokenable_type, tokenable_id, name, token, abilities, expires_at, created_at, updated_at)` · UPDATE **`(last_used_at, updated_at)` only** · DELETE | **none** |
+| `users` _(Task 5, narrowed)_ | SELECT `(id, name, email, email_verified_at, is_platform_admin, two_factor_confirmed_at, created_at, updated_at)` — **no `password`, no `remember_token`, no `two_factor_secret`, no `two_factor_recovery_codes`** · INSERT those four plus the readable set · UPDATE `(email, email_verified_at, name, password, remember_token, two_factor_*, updated_at)` — **no `is_platform_admin`** | SELECT `(id, name, email)` |
 
 - **`token_hash` is write-only for `app`.** Verified: a role can `INSERT` a column it cannot `SELECT`, so the
   hash can be stored and never read back — the raw token is already forbidden anywhere (`§4 › Data`), and
@@ -566,6 +620,27 @@ The point of column grants is that over-broad SQL cannot leak what the role was 
 - **No role has `UPDATE` on any `tenant_id`**, so a row cannot be moved between tenants even with context set.
 - **No role has `UPDATE`, `DELETE` or `TRUNCATE` on `audit_log`**; the trigger in §2.9 is the backstop behind that.
 - `app` has no `DELETE` on `pager_sessions` or `outbox`: sessions are cancelled or expire, they are not deleted.
+- **`R-006` IS CLOSED AT TASK 5, and the four names absent from `users`' SELECT set are the closure.**
+  `qrpager_app` lost `SELECT` on `password` and `remember_token`, and was never granted it on the two 2FA
+  secrets added in the same migration — the same class of secret, so granting them would have re-opened the
+  row at the moment it closed. **Measured against the real cluster as `qrpager_app`:** `select password from
+  users` → `42501`, `select * from users` → `42501` (`*` expands to every column, so one withheld column
+  refuses the whole statement), and `where password = 'x'` → `42501` as well, because a column-level grant is
+  required to name a column in a **predicate** and not only in a select list. That last one is the same
+  measurement `§2.8` records for `token_hash`.
+- **A consequence worth knowing before it surprises someone: `App\Models\User` may never emit `select *`.**
+  Eloquent's default select is `select *`, which now refuses, so the model pins an explicit column list
+  (`User::READABLE`) through a global scope. Without it every read of a user is a `42501` — a loud failure
+  rather than a leak, but it is every authentication in the application.
+- **And remember-me is off by construction.** Validating a recaller cookie requires *reading*
+  `remember_token`, which the role no longer can, so `getRememberToken()` answers null and
+  `setRememberToken()` is a no-op. A staff member re-authenticates when their session expires.
+- **No `UPDATE` on `users.is_platform_admin`**, deliberately: granting a tenant-facing role the ability to
+  write the platform-admin flag would make privilege escalation a single `UPDATE`. The absence of the grant
+  is the control, not a policy check that could be wrong. The surface that sets it is Task 6's.
+- **No `UPDATE` on `personal_access_tokens.abilities` or `.expires_at`**, for the same reason: a token that
+  could widen its own abilities or extend its own life is the escalation Task 5's second named invariant
+  forbids, and withholding the grant makes that structural.
 
 **The one `EXECUTE` grant, added at Task 3 and recorded here on 2026-10-27 (QA M-3).**
 Column grants are not the whole of §2.7 any more: the token lookup is a function, and a
@@ -574,12 +649,26 @@ function has an ACL of its own.
 | Function | `qrpager_app` | everyone else |
 | --- | --- | --- |
 | `public.resolve_pager_token(bytea)` | `EXECUTE` | **none** — `REVOKE ALL … FROM PUBLIC` runs first, so the grant is additive to nothing |
+| `public.authenticate_user(varchar)` _(Task 5)_ | `EXECUTE` | **none**, same `REVOKE`-then-`GRANT` |
+| `public.user_memberships(uuid)` _(Task 5)_ | `EXECUTE` | **none**, same `REVOKE`-then-`GRANT` |
 
 Owned by `qrpager_owner`, `SECURITY DEFINER`, `SET search_path = pg_catalog, pg_temp`. The
 `REVOKE` before the `GRANT` is load-bearing: a `SECURITY DEFINER` function is executable by
 `PUBLIC` by default, so without it every role on the cluster could resolve a token hash.
 `PagerTokenLookupTest` reads `pg_proc.proacl` back as an exact two-entry set, so a third
 grantee fails the suite.
+
+**Two more arrived at Task 5**, both the same shape and both verified the same way. Read back from
+`pg_proc.proacl` in-session, all three are exact two-entry sets:
+
+```
+authenticate_user    {qrpager_owner=X/qrpager_owner,qrpager_app=X/qrpager_owner}
+resolve_pager_token  {qrpager_owner=X/qrpager_owner,qrpager_app=X/qrpager_owner}
+user_memberships     {qrpager_owner=X/qrpager_owner,qrpager_app=X/qrpager_owner}
+```
+
+and `qrpager_worker` is refused on both new ones — measured: *permission denied for function
+authenticate_user* and *permission denied for function user_memberships*.
 
 **This row did not exist until 2026-10-27.** `QRPAGER-10 §6.1` asserted that §2.7 "gains the
 one `EXECUTE` grant above" and that §2.8 names the function, and neither edit had been made —
@@ -626,6 +715,41 @@ public.resolve_pager_token(token_hash bytea)
   audit row" is a property of `withoutTenantScope()` rather than of every bypass in the
   system. Carried as a finding against the record, not against the design: a per-resolution
   audit row would make an unauthenticated loop an unbounded writer into an append-only table.
+
+**TWO MORE ARRIVED AT TASK 5, and only one of them is a cross-tenant path.** The distinction matters because
+`§4 › Tenancy`'s list is about **tenant** boundaries, and a `SECURITY DEFINER` function is also the only tool
+available for crossing a **column grant** — a different thing that happens to use the same mechanism.
+
+```sql
+public.user_memberships(p_user_id uuid)
+  RETURNS TABLE (tenant_id uuid, role tenant_role,
+                 tenant_status tenant_status, tenant_slug varchar)
+  SECURITY DEFINER, owned by qrpager_owner, SET search_path = pg_catalog, pg_temp
+
+public.authenticate_user(presented_email varchar)
+  RETURNS TABLE (user_id uuid, password_hash text, is_platform_admin boolean,
+                 two_factor_secret text, two_factor_confirmed_at timestamptz,
+                 email_verified_at timestamptz)
+  SECURITY DEFINER, owned by qrpager_owner, SET search_path = pg_catalog, pg_temp
+```
+
+- **`user_memberships` IS a cross-tenant read** — `tenant_users` and `tenants` are both tenant tables under
+  FORCE RLS — and it is `§4 › Tenancy`'s **second named path, "a user's own memberships"**, already on the
+  list, so no rank-2 edit was needed. It turns the bypass on for its body only and restores the previous
+  value before returning, including on the error path; measured in-session, `app.bypass_tenant` reads empty
+  after the call and the caller's own direct queries stay tenant-bound.
+- **`authenticate_user` is NOT a cross-tenant read.** `users` is global and carries no RLS at all, so there
+  is no tenant boundary to cross and **no `set_config` pair in its body** — adding one would be cargo-culted
+  from a function that genuinely needs it. What it crosses is `R-006`'s column grant: it is the only way
+  `qrpager_app` can reach the password hash now that the `SELECT` is revoked. It returns the hash and the
+  application verifies it in PHP, because bcrypt verification needs the hash in the process doing the
+  comparison; a verify-in-SQL variant would need `pgcrypto` and would put the plaintext on the wire to
+  Postgres.
+- **Both obey §2.8's two rules.** `RETURNS TABLE` with named columns and never `RETURNS SETOF users` or
+  `SETOF tenant_users` — a `SETOF users` resolver would hand back every column including the two 2FA secrets
+  and silently undo the revoke. And **one exact-match argument each**, compared with `=`, with no pattern,
+  range or `IN`: each answers one question and neither can enumerate. For `user_memberships` the argument is
+  the **authenticated** user's id, taken from the guard and never from request input, from one call site.
 
 ### 2.9 `audit_log` immutability
 

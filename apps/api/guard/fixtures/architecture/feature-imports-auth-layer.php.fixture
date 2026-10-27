@@ -1,0 +1,31 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Features\Deliberately;
+
+use App\Platform\Auth\AuthenticatedTenantResolver;
+
+/**
+ * The auth layer has ONE entry point, and a feature module is not allowed to go round it.
+ *
+ * REPURPOSED AT TASK 5, and the rule it proves is now stronger than the one it replaced.
+ * Until Task 5 this fixture imported the pre-Task-5 stub and the rule was "nothing may be
+ * built on a class that is about to vanish" -- true, but temporary, and worthless the
+ * moment the class went. QRPAGER-12 §6 required any rule that existed only to contain the
+ * stub to be removed or deliberately repurposed rather than left pointing at a class that
+ * no longer exists.
+ *
+ * What it proves now: a feature module may not reach into App\Platform\Auth at all. Not
+ * the resolver, not the membership reader, not the device-token helper. A feature asks
+ * "which tenant is this request" through the TenantResolver INTERFACE in Platform, reads
+ * roles and abilities from the enums in Domain, and authorises through Gate -- so the
+ * answer to that question has exactly one implementation and one place to audit it, which
+ * is the property RequireTenantScope's docblock depends on.
+ *
+ * Importing the concrete resolver here is the violation deptrac must report.
+ */
+final class FeatureBuiltOnTheAuthStub
+{
+    public function __construct(private readonly AuthenticatedTenantResolver $resolver) {}
+}

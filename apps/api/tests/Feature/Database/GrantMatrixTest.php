@@ -96,8 +96,10 @@ it('reaches exactly the tables in the matrix and no others', function (): void {
     // invisible to the application and fails loudly, and a grant that widens the
     // reach has to widen this list too, in the diff, on purpose.
     expect(Schema::reachableTables('qrpager_app'))->toBe([
-        'audit_log', 'outbox', 'pager_sessions', 'password_reset_tokens',
-        'push_subscriptions', 'tenant_users', 'tenants', 'users',
+        // passkeys and personal_access_tokens joined at Task 5. Both are global and
+        // RLS-free, and RlsCoverageTest's pinned allowlist carries the argument for each.
+        'audit_log', 'outbox', 'pager_sessions', 'passkeys', 'password_reset_tokens',
+        'personal_access_tokens', 'push_subscriptions', 'tenant_users', 'tenants', 'users',
     ]);
 
     expect(Schema::reachableTables('qrpager_worker'))->toBe([
@@ -114,15 +116,39 @@ it('reaches exactly the tables in the matrix and no others', function (): void {
  */
 
 it('states the app grants on users as exact column sets', function (): void {
-    $all = ['created_at', 'email', 'email_verified_at', 'id', 'name', 'password', 'remember_token', 'updated_at'];
+    // NARROWED AT TASK 5 -- this is R-006 closing, and the four names that are ABSENT from
+    // the SELECT set are the whole point of the row:
+    //
+    //     password  remember_token  two_factor_secret  two_factor_recovery_codes
+    //
+    // R-006's review-by cell required exactly this: "qrpager_app holds no SELECT on
+    // users.password or users.remember_token; authentication reads the hash only through a
+    // named SECURITY DEFINER function granted to qrpager_app alone". The two 2FA secrets
+    // are added by the same migration and are never granted SELECT either -- same class of
+    // secret, so granting them would have re-opened the row at the moment it closed.
+    expect(Schema::grantedColumns('qrpager_app', 'users', 'SELECT'))->toBe([
+        'created_at', 'email', 'email_verified_at', 'id', 'is_platform_admin', 'name',
+        'two_factor_confirmed_at', 'updated_at',
+    ]);
 
-    expect(Schema::grantedColumns('qrpager_app', 'users', 'SELECT'))->toBe($all)
-        ->and(Schema::grantedColumns('qrpager_app', 'users', 'INSERT'))->toBe($all);
+    // A WRITE WITHOUT A READ, which §2.7 already proves is possible with
+    // pager_sessions.token_hash. Enrolling 2FA and rotating a password are writes; neither
+    // needs to read the old value, because verification goes through the function.
+    expect(Schema::grantedColumns('qrpager_app', 'users', 'INSERT'))->toBe([
+        'created_at', 'email', 'email_verified_at', 'id', 'is_platform_admin', 'name',
+        'password', 'remember_token', 'two_factor_confirmed_at', 'two_factor_recovery_codes',
+        'two_factor_secret', 'updated_at',
+    ]);
 
     // No id and no created_at: a uuid primary key and a creation timestamp are never
-    // rewritten by the application.
+    // rewritten by the application. And NO is_platform_admin: granting a tenant-facing
+    // role the ability to write the platform-admin flag would make privilege escalation a
+    // single UPDATE. The absence of the grant is the control -- not a policy check that
+    // could be wrong.
     expect(Schema::grantedColumns('qrpager_app', 'users', 'UPDATE'))->toBe([
-        'email', 'email_verified_at', 'name', 'password', 'remember_token', 'updated_at',
+        'email', 'email_verified_at', 'name', 'password', 'remember_token',
+        'two_factor_confirmed_at', 'two_factor_recovery_codes', 'two_factor_secret',
+        'updated_at',
     ]);
 
     // Nobody deletes a user row; deactivation is a status change (PLAN.md §2.4).

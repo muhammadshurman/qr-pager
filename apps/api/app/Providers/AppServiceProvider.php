@@ -2,7 +2,10 @@
 
 namespace App\Providers;
 
-use App\Platform\Auth\HarnessTenantResolver;
+use App\Models\Passkey;
+use App\Platform\Auth\ActiveTenant;
+use App\Platform\Auth\AuthenticatedTenantResolver;
+use App\Platform\Auth\Memberships;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
@@ -22,6 +25,8 @@ use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Fortify\Fortify;
+use Laravel\Passkeys\Passkeys;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -74,12 +79,47 @@ class AppServiceProvider extends ServiceProvider
         // in both of the two ways a request can end (R-022).
         $this->app->singleton(TenantScopeGuard::class);
 
-        // The pre-Task-5 resolver (B5). One binding, replaced wholesale by Task 5 --
-        // which is why RequireTenantScope, the rate limiter's per-tenant key and
-        // everything downstream speak to the INTERFACE and not to this class. The stub
-        // reads a container binding a test sets, never an HTTP input, and refuses to run
-        // outside local/testing, so it cannot serve a production request at all.
-        $this->app->bind(TenantResolver::class, HarnessTenantResolver::class);
+        // THE REAL RESOLVER. Task 5 (QRPAGER-12) replaced the pre-Task-5 stub here, and
+        // the stub is DELETED rather than disabled -- PROJECT_INSTRUCTIONS.md §4 ›
+        // Tenancy calls one that survives Task 5 a Critical finding, and R-035 is the row
+        // saying nothing mechanical would have caught it. StubRemovedTest is now that
+        // mechanism: three assertions, each of which fails wherever the stub lands.
+        //
+        // One binding, exactly as the interface's own docblock promised ("Task 5 replaces
+        // the implementation and nothing else"), which is why RequireTenantScope, the rate
+        // limiter's per-tenant key and the tenant-scope guard all needed no change.
+        $this->app->bind(TenantResolver::class, AuthenticatedTenantResolver::class);
+
+        // Request-scoped, never singleton, and QRPAGER-12 §10.5 is the answer to "what
+        // does the auth layer cache": the membership set for ONE user for ONE request.
+        // Octane keeps workers alive between requests, so a singleton here would carry one
+        // user's memberships into the next request -- a cross-tenant read with nothing
+        // behind it. scoped() says what is meant and the request boundary forgets it; the
+        // measurement that makes this a rule rather than a preference is in the
+        // TenantContext comment above.
+        $this->app->scoped(Memberships::class, static fn ($app): Memberships => new Memberships(
+            $app->make('db')->connection(),
+        ));
+
+        // Same reasoning, same lifetime: it reads and writes ONE key in the session, and
+        // it holds the membership reader so that selecting a tenant is verified rather
+        // than merely recorded.
+        $this->app->scoped(ActiveTenant::class);
+
+        // laravel/passkeys' own seam for swapping its model. App\Models\Passkey is the
+        // vendor model plus HasUuids: every id in this schema is a uuid (PLAN.md §2.5) and
+        // the vendor migration -- which this project does not publish -- declares
+        // $table->id(). Without this, the first registration inserts no id into a uuid
+        // column that has no default.
+        Passkeys::usePasskeyModel(Passkey::class);
+
+        // FORTIFY REGISTERS NO ROUTES. config/fortify.php carries the measurement: with
+        // the defaults, Fortify and Sanctum published 27 unversioned endpoints outside
+        // /v1 -- /register among them -- and RouteSurfaceTest rejected the lot. §6
+        // requires /v1 and §11.3 requires every public route to be explicitly marked and
+        // justified, so this task mounts the ones it wants by hand in routes/v1.php.
+        // Fortify stays as the actions and the pipeline behind them.
+        Fortify::$registersRoutes = false;
 
         // One gauge for the worker's life, because CPU throttling is a cumulative
         // counter and the signal is its DELTA over a window: a per-request instance

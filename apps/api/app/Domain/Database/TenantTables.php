@@ -53,7 +53,18 @@ final class TenantTables
     public const GLOBAL = [
         'failed_jobs',
         'migrations',
+        // A passkey belongs to a USER, not to a tenant, and the WebAuthn ceremony
+        // identifies the user before any tenant is selected. `credential` holds a public
+        // key, so a disclosure yields nothing to authenticate with (PLAN.md §2.4).
+        'passkeys',
         'password_reset_tokens',
+        // Sanctum's. Resolvable from a bearer token ALONE, which is the one property a
+        // tenant-scoped table cannot have: giving it a tenant_id makes it a tenant table,
+        // C4 then forces RLS on it, and the row becomes invisible to the lookup that has
+        // to happen before any tenant is known. The tenant a device token is good for
+        // travels in `abilities` and is verified against the holder's own memberships on
+        // every request (PLAN.md §2.4, QRPAGER-12 §10.1(e)).
+        'personal_access_tokens',
         'users',
     ];
 
