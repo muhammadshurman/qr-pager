@@ -38,6 +38,58 @@ final class SourceGuard
     public const UNSCANNABLE_PATH = 'unscannable-path';
 
     /**
+     * Rule 8: exactly one PLAN.md and one BLUEPRINT.md, and only PLAN.md carries a task table.
+     *
+     * RULE 7 IS DELIBERATELY SKIPPED. It is the vacuous-assertion rule, which lands with
+     * `task-4-notifications`. Numbering this 8 here rather than renumbering at the rebase
+     * keeps both branches' constants stable, so a `§5` row or a CI log naming a rule means
+     * the same thing on either side of the merge.
+     *
+     * WHAT THIS IS FOR, and it is not tidiness. `docs/claude/PLAN.md` and
+     * `docs/claude/BLUEPRINT.md` were committed by `e5ebc9a` on this branch, in a commit
+     * whose message says "Record only; no behaviour" and does not mention adding them. The
+     * BLUEPRINT copy was byte-identical; the PLAN copy was a 1079-line Task-1-era snapshot
+     * of a 2583-line file, reading "Last completed: Task 1 / Next up: Task 2" and carrying
+     * its own `## 3. Task table` at line 406.
+     *
+     * That is three rank-2 rules broken at once: `PROJECT_INSTRUCTIONS.md §3 C7` ("One task
+     * table only, in PLAN.md"), `CLAUDE.md` ("Nothing else in this repo states current
+     * state"), and `§0` precedence, which had two rank-3 documents disagreeing about where
+     * the project is. The danger is not the bytes: it is that THE NEXT SESSION TO READ THE
+     * REPO MAY ACT ON THE STALE ONE.
+     *
+     * A deletion takes no regression test, so this is the control instead. It is mechanical
+     * for the same reason the C1/C2 rules are: the files arrived without anyone deciding to
+     * add them, and review is not a defence against that.
+     *
+     * TWO CLAUSES:
+     *   (a) no file other than `docs/PLAN.md` contains a task-table HEADING;
+     *   (b) `docs/BLUEPRINT.md`'s content appears at no other path.
+     *
+     * (a) matches a HEADING and not the words, because `PROJECT_INSTRUCTIONS.md §3`'s C7 row
+     * says "task table duplicated verbatim" in prose and `§7`'s own text mentions it too --
+     * a word-matching rule would flag the documentation of the rule it enforces, which is
+     * the mistake rule 1 already has a case against.
+     */
+    public const DUPLICATE_CANONICAL_DOC = 'duplicate-canonical-doc';
+
+    /**
+     * The documents that must exist exactly once, relative to the REPOSITORY root.
+     *
+     * Not `self::PATHS`, which is relative to `apps/api` and lists PHP directories. These
+     * live two levels up, which is why `repositoryRoot()` exists.
+     *
+     * @var array<string, string>
+     */
+    public const CANONICAL_DOCS = [
+        'plan' => 'docs/PLAN.md',
+        'blueprint' => 'docs/BLUEPRINT.md',
+    ];
+
+    /** A markdown heading whose text is "task table". C7's subject. */
+    public const TASK_TABLE_HEADING = '/^#{1,6}\s+.*task\s+table/im';
+
+    /**
      * The paths this guard scans. ONE source, and both halves of that matter.
      *
      * It was spelled out twice -- in guard/bin/guard's default and again in
@@ -660,6 +712,127 @@ final class SourceGuard
      * @param  list<string>  $relativePaths
      * @return array<string, string> relative path => absolute path
      */
+    /**
+     * Rule 8: the canonical documents exist exactly once, and only PLAN.md has a task table.
+     *
+     * Scans the repository's TRACKED markdown, via `git ls-files`, rather than walking the
+     * filesystem. Three reasons, and the first is the one that matters: an untracked scratch
+     * copy in a working tree is nobody's business and flagging it would make the guard
+     * something people work around. The second is that `git ls-files` is already the
+     * boundary every other control in this project uses. The third is speed -- no
+     * `vendor/`, no `node_modules/`, no `storage/`.
+     *
+     * It degrades to a PASS, not a failure, when git is unavailable -- and says so through
+     * the normal channel rather than silently, because `bin/coverage` runs this repository
+     * inside a container where `git` refuses the mounted tree for dubious ownership, and a
+     * guard that goes red there would be switched off rather than fixed.
+     *
+     * @return list<Violation>
+     */
+    public function scanCanonicalDocs(): array
+    {
+        $root = $this->repositoryRoot();
+        $tracked = $this->trackedMarkdown($root);
+
+        if ($tracked === null) {
+            return [new Violation(
+                self::DUPLICATE_CANONICAL_DOC,
+                'docs/',
+                0,
+                'could not list tracked files with git, so the canonical-document rule did not run. '
+                .'This is reported rather than passed silently: a rule that cannot run is not a rule that holds',
+            )];
+        }
+
+        $violations = [];
+        $planPath = self::CANONICAL_DOCS['plan'];
+        $blueprintPath = self::CANONICAL_DOCS['blueprint'];
+
+        // (a) Only docs/PLAN.md may carry a task-table heading. C7.
+        foreach ($tracked as $relative) {
+            if ($relative === $planPath) {
+                continue;
+            }
+
+            $contents = @file_get_contents($root.'/'.$relative);
+
+            if (! is_string($contents) || preg_match(self::TASK_TABLE_HEADING, $contents, $match, PREG_OFFSET_CAPTURE) !== 1) {
+                continue;
+            }
+
+            $violations[] = new Violation(
+                self::DUPLICATE_CANONICAL_DOC,
+                $relative,
+                1 + substr_count(substr($contents, 0, (int) $match[0][1]), "\n"),
+                'carries a task-table heading, and C1-C7\'s C7 allows exactly one task table, in '
+                .$planPath.'. A second one is a second claimant to rank 3 of §0: the next session to '
+                .'read this repository may act on the stale one',
+            );
+        }
+
+        // (b) docs/BLUEPRINT.md's content must appear at no other tracked path.
+        $blueprint = @file_get_contents($root.'/'.$blueprintPath);
+
+        if (is_string($blueprint)) {
+            $fingerprint = hash('sha256', $blueprint);
+
+            foreach ($tracked as $relative) {
+                if ($relative === $blueprintPath) {
+                    continue;
+                }
+
+                $contents = @file_get_contents($root.'/'.$relative);
+
+                if (is_string($contents) && hash('sha256', $contents) === $fingerprint) {
+                    $violations[] = new Violation(
+                        self::DUPLICATE_CANONICAL_DOC,
+                        $relative,
+                        1,
+                        'is byte-identical to '.$blueprintPath.'. The Blueprint is an ARCHIVE and a binding '
+                        .'baseline (§0), so a second copy is a second thing to keep in step with the first -- '
+                        .'and the one that drifts is the one somebody reads',
+                    );
+                }
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * The repository root: two levels above `apps/api`, which is this guard's own root.
+     *
+     * Resolved rather than assumed, so running the guard from a worktree or a copied tree
+     * still reaches the right `docs/`.
+     */
+    public function repositoryRoot(): string
+    {
+        return dirname($this->root, 2);
+    }
+
+    /**
+     * Every tracked `.md` path, relative to the repository root. Null when git cannot answer.
+     *
+     * @return list<string>|null
+     */
+    private function trackedMarkdown(string $root): ?array
+    {
+        // -c safe.directory, because bin/coverage runs this tree inside a container where
+        // the mount is owned by another uid and plain git refuses with "dubious ownership".
+        $command = 'git -C '.escapeshellarg($root).' -c safe.directory='.escapeshellarg($root)
+            .' ls-files -z -- "*.md" 2>/dev/null';
+
+        $output = shell_exec($command);
+
+        if (! is_string($output) || $output === '') {
+            return null;
+        }
+
+        $paths = array_values(array_filter(explode("\0", $output), static fn (string $p): bool => $p !== ''));
+
+        return $paths === [] ? null : $paths;
+    }
+
     public function scannedFiles(array $relativePaths): array
     {
         $files = [];

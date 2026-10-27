@@ -24,7 +24,9 @@ $paths = array_slice($argv, 1);
 // One source for the list -- SourceGuard::PATHS. It used to be spelled out here and
 // again in RepoGuardTest, so the test could agree with its own copy while CI ran a
 // different list.
-if ($paths === []) {
+$explicitPaths = $paths !== [];
+
+if (! $explicitPaths) {
     $paths = SourceGuard::PATHS;
 }
 
@@ -34,6 +36,11 @@ $violations = array_merge(
     $guard->scanScannablePaths($paths),
     $guard->scan($paths),
     $guard->scanConfiguredGucs(),
+    // Rule 8 takes no path argument: its subject is the repository's own documents, two
+    // levels above this guard's root, and it is the whole tree or nothing. Skipped when the
+    // caller named explicit paths, so pointing the guard at one fixture still reports only
+    // that fixture -- which is how every rule-N test in RepoGuardTest works.
+    $explicitPaths ? [] : $guard->scanCanonicalDocs(),
 );
 
 if ($violations === []) {
@@ -54,6 +61,7 @@ foreach ($violations as $violation) {
 
 fwrite(STDERR, "\nC1: app.tenant_id and app.bypass_tenant are the only GUCs.\n");
 fwrite(STDERR, "C2: always select set_config(name, value, true) -- third argument a literal true.\n");
-fwrite(STDERR, "Both are locked in PROJECT_INSTRUCTIONS.md §3; a change there comes first.\n");
+fwrite(STDERR, "C7: one task table only, in docs/PLAN.md; one BLUEPRINT.md, nowhere else.\n");
+fwrite(STDERR, "All three are locked in PROJECT_INSTRUCTIONS.md §3; a change there comes first.\n");
 
 exit(1);

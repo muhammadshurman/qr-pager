@@ -169,6 +169,110 @@ it('rejects a third configured GUC, which no SQL would reveal', function (): voi
         ->and(GuardFixtures::text('unexpected-configured-gucs'))->toContain($extra[0]);
 });
 
+/**
+ * Copy a rule 8 fixture into the repository under a real .md name, run the rule, remove it.
+ *
+ * TRACKED, because rule 8 lists `git ls-files -- "*.md"` rather than walking the filesystem
+ * — an untracked scratch copy is nobody's business and flagging one would make the guard
+ * something people work around. So the fixture has to be staged to be seen, and the `finally`
+ * unstages and deletes it.
+ *
+ * A crash between the two leaves a stray `.md` in `docs/` — which the guard itself then
+ * reports on the next run, so the failure mode of this helper is the guard working.
+ *
+ * @return list<Violation>
+ */
+function withPlantedDoc(string $fixture, string $planted, Closure $assert): void
+{
+    $root = dirname(base_path(), 2);
+    $source = base_path("guard/fixtures/docs/{$fixture}");
+    $target = $root.'/'.$planted;
+
+    expect(is_file($source))->toBeTrue("the fixture {$fixture} is missing");
+    expect(is_file($target))->toBeFalse("{$planted} already exists; refusing to overwrite it");
+
+    copy($source, $target);
+    exec('git -C '.escapeshellarg($root).' add -N '.escapeshellarg($planted).' 2>/dev/null');
+
+    try {
+        $assert((new SourceGuard(base_path()))->scanCanonicalDocs());
+    } finally {
+        exec('git -C '.escapeshellarg($root).' reset -q -- '.escapeshellarg($planted).' 2>/dev/null');
+        @unlink($target);
+    }
+}
+
+it('passes rule 8 on the real tree, so a failure below is the fixture and not the repo', function (): void {
+    expect((new SourceGuard(base_path()))->scanCanonicalDocs())->toBe([]);
+});
+
+it('rejects a second document carrying a task-table heading — rule 8, C7', function (): void {
+    // THE DEFECT THIS EXISTS FOR. docs/claude/PLAN.md was a 1079-line Task-1-era copy of a
+    // 2583-line file, with its own "## 3. Task table", committed by e5ebc9a in a commit
+    // whose message says "Record only; no behaviour". C7 allows one task table, in
+    // docs/PLAN.md; CLAUDE.md says nothing else in this repo states current state. A second
+    // one is a second claimant to rank 3 of §0, and the danger is not the bytes — it is that
+    // the next session to read the repository may act on the stale one.
+    withPlantedDoc('stale-plan.md.fixture', 'docs/A-SECOND-PLAN.md', function (array $violations): void {
+        expect($violations)->toHaveCount(1)
+            ->and($violations[0]->rule)->toBe(SourceGuard::DUPLICATE_CANONICAL_DOC)
+            ->and($violations[0]->file)->toBe('docs/A-SECOND-PLAN.md')
+            ->and($violations[0]->detail)->toContain('task-table heading')
+            // The line is the heading's, not the file's first line, so the report points at
+            // the thing rather than at the document.
+            ->and($violations[0]->line)->toBeGreaterThan(1);
+    });
+});
+
+it('rejects a byte-identical copy of the Blueprint — rule 8, clause (b)', function (): void {
+    // docs/claude/BLUEPRINT.md was byte-identical to docs/BLUEPRINT.md. The Blueprint is an
+    // ARCHIVE and a binding baseline (§0), so a second copy is a second thing to keep in
+    // step — and the one that drifts is the one somebody reads.
+    withPlantedDoc('duplicate-blueprint.md.fixture', 'docs/BLUEPRINT-COPY.md', function (array $violations): void {
+        expect($violations)->toHaveCount(1)
+            ->and($violations[0]->rule)->toBe(SourceGuard::DUPLICATE_CANONICAL_DOC)
+            ->and($violations[0]->file)->toBe('docs/BLUEPRINT-COPY.md')
+            ->and($violations[0]->detail)->toContain('byte-identical');
+    });
+});
+
+it('does not flag prose that merely mentions a task table, only a heading', function (): void {
+    // PROJECT_INSTRUCTIONS.md §3's C7 row says "task table duplicated verbatim" in prose, and
+    // §7 mentions it too. A word-matching rule would flag the documentation of the rule it
+    // enforces — which is the mistake rule 1 already has a case against. Both those files are
+    // tracked .md and the real-tree case above passes, which is the proof; this pins the
+    // pattern directly so the reason survives a refactor.
+    expect(preg_match(SourceGuard::TASK_TABLE_HEADING, 'the §5 task table duplicated verbatim'))->toBe(0)
+        ->and(preg_match(SourceGuard::TASK_TABLE_HEADING, 'One task table only, in PLAN.md'))->toBe(0)
+        ->and(preg_match(SourceGuard::TASK_TABLE_HEADING, '## 3. Task table'))->toBe(1)
+        ->and(preg_match(SourceGuard::TASK_TABLE_HEADING, '#### the task Table'))->toBe(1);
+});
+
+it('reports rather than passes when git cannot list the tree', function (): void {
+    // A rule that cannot run is not a rule that holds. bin/coverage runs this repository
+    // inside a container where git refuses the mount for dubious ownership, so the failure
+    // mode is real rather than theoretical — and it must be visible, not a silent pass.
+    $guard = new SourceGuard('/nonexistent/apps/api');
+
+    $violations = $guard->scanCanonicalDocs();
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::DUPLICATE_CANONICAL_DOC)
+        ->and($violations[0]->detail)->toContain('did not run');
+});
+
+it('exits non-zero through the real binary when a canonical document is duplicated', function (): void {
+    // The rule reaching the exit code, not just the class. Same shape as the unscannable-path
+    // case: a guard whose violations do not fail the process is not a guard.
+    withPlantedDoc('stale-plan.md.fixture', 'docs/A-THIRD-PLAN.md', function (): void {
+        $result = Process::path(base_path())->run('php guard/bin/guard');
+
+        expect($result->exitCode())->toBe(1)
+            ->and($result->errorOutput())->toContain('docs/A-THIRD-PLAN.md')
+            ->and($result->errorOutput())->toContain('C7: one task table only');
+    });
+});
+
 it('does not read comments, so the prose explaining C2 is not a violation', function (): void {
     expect(GuardFixtures::text('comment-only'))->toContain('@see')
         ->and(GuardFixtures::guard()->scan([GuardFixtures::path('comment-only')]))->toBe([]);

@@ -1,0 +1,27 @@
+# PLAN.md — QR Pager SaaS
+
+> DELIBERATELY BAD. Rule 8's fixture for clause (a): a second document carrying a
+> task-table heading.
+>
+> `PROJECT_INSTRUCTIONS.md §3` C7 allows exactly one task table, in `docs/PLAN.md`. This
+> file is what `docs/claude/PLAN.md` was — a stale snapshot with its own task table, which
+> made it a second claimant to rank 3 of `§0`. `RepoGuardTest` copies it into the tree,
+> asserts the guard reports it, and removes it again; the guard's real scan lists TRACKED
+> markdown, and this file is tracked as `.fixture`, not as `.md`, so it is invisible to it.
+>
+> The `.fixture` suffix is load-bearing for exactly that reason.
+
+**Version:** 2.9 · **Backend:** Laravel 13 (O1)
+
+## 0. WHERE WE ARE RIGHT NOW
+
+|                      |                                                  |
+| -------------------- | ------------------------------------------------ |
+| **Last completed**   | **Task 1 — complete, merged and tagged `task-1`** |
+| **Next up**          | **Task 2** — API core                             |
+
+## 3. Task table
+
+| #     | Task          | Own acceptance gate   |
+| ----- | ------------- | --------------------- |
+| **0** | Repo + local  | a stale copy of a row |
