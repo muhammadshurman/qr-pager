@@ -27,6 +27,16 @@ use Illuminate\Http\JsonResponse;
 final class Problem
 {
     /**
+     * The media type EVERY error response carries, and the media type the spec publishes
+     * them under (R-033's "one producer, two readers" applied to the envelope rather than
+     * the body). The committed spec published all four error codes under
+     * `application/json` while this header has always said `application/problem+json`, so
+     * a client generated from the document would have been told the wrong media type for
+     * every error it will actually receive. Both halves now read this constant.
+     */
+    public const string CONTENT_TYPE = 'application/problem+json';
+
+    /**
      * @param  array<string, list<string>>  $errors
      */
     public function __construct(
@@ -107,7 +117,7 @@ final class Problem
     public function toResponse(): JsonResponse
     {
         $headers = [
-            'Content-Type' => 'application/problem+json',
+            'Content-Type' => self::CONTENT_TYPE,
             'Cache-Control' => 'no-store',
         ];
 

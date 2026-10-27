@@ -29,12 +29,33 @@ cd "$(dirname "$0")/.."
 
 export PAO_DISABLE=1
 
+# mktemp, NOT fixed /tmp paths (security L-5). They were
+# /tmp/qrpager-rollback-{before,after,second}.txt plus an `rm -f /tmp/qrpager-rollback-*.txt`
+# glob -- so on a shared or multi-user host a local user pre-creating one as a symlink has
+# this script truncate and overwrite an arbitrary file with the developer's privileges, and
+# the glob is the same class. The sibling bin/concurrent-suite-proof already does this
+# correctly, so the repository carried both patterns.
+before="$(mktemp -t qrpager-rollback-before-XXXXXX.txt)"
+after="$(mktemp -t qrpager-rollback-after-XXXXXX.txt)"
+second="$(mktemp -t qrpager-rollback-second-XXXXXX.txt)"
+# No trap here: cleanup() below is the one trap this script installs, and a second
+# `trap ... EXIT` would REPLACE it rather than add to it -- which is what the first version
+# of this change did, leaving the mktemp files behind on every run.
+
 probe="${ROLLBACK_PROOF_DATABASE:-qrpager_rollback_proof}"
 export DB_DATABASE="$probe"
 
 host="$(php -r 'echo getenv("DB_HOST") ?: "127.0.0.1";')"
 root="$(php -r 'echo getenv("DB_ROOT_USERNAME") ?: "qrpager_root";')"
 maintenance="$(php -r 'echo getenv("DB_MAINTENANCE_DATABASE") ?: "postgres";')"
+
+# Required, not defaulted -- see psql_as_root() below. `.env` carries it and `.env.example`
+# ships the name, so an unset value means the environment was never loaded, which is worth
+# failing on rather than guessing past.
+if [ -z "${DB_ROOT_PASSWORD:-}" ]; then
+  echo "migration-rollback-proof: DB_ROOT_PASSWORD is unset. Load .env, or export it." >&2
+  exit 1
+fi
 
 # psql, wherever it is. CI's runner has a client on PATH; a developer machine often has
 # only the one inside the Postgres container, which is where `docker compose up` put it.
@@ -43,7 +64,12 @@ maintenance="$(php -r 'echo getenv("DB_MAINTENANCE_DATABASE") ?: "postgres";')"
 compose="../../compose.yaml"
 
 if command -v psql >/dev/null 2>&1; then
-  psql_as_root() { PGPASSWORD="${DB_ROOT_PASSWORD:-local_dev_only}" psql -h "$host" -U "$root" "$@"; }
+  # NO FALLBACK LITERAL (security L-5). It was `${DB_ROOT_PASSWORD:-local_dev_only}`, which
+  # is the same local-dev password compose.yaml already carries -- so no new secret was
+  # disclosed and gitleaks was right not to fire -- but a credential literal in a script is a
+  # thing that gets copied into one that is not local-only. Unset is now a loud failure
+  # rather than a silent fallback to a guess.
+  psql_as_root() { PGPASSWORD="$DB_ROOT_PASSWORD" psql -h "$host" -U "$root" "$@"; }
   echo "migration-rollback-proof: using the psql on PATH"
 elif docker compose -f "$compose" ps postgres >/dev/null 2>&1; then
   # -T, so stdin is not a TTY and `-f -` works. The password is already in the
@@ -63,9 +89,13 @@ fingerprint() { psql_as_root -d "$probe" -q -f - < database/schema-fingerprint.s
 cleanup() {
   psql_as_root -d "$maintenance" -q \
     -c "drop database if exists \"$probe\" with (force)" >/dev/null 2>&1 || true
-  rm -f /tmp/qrpager-rollback-*.txt
+
+  # The three mktemp files by name. It was `rm -f /tmp/qrpager-rollback-*.txt`, a glob over a
+  # world-writable directory, which is the other half of security L-5: on a shared host that
+  # deletes whatever anyone else put there under that prefix.
+  rm -f "$before" "$after" "$second"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 echo "migration-rollback-proof: database [$probe] on $host"
 cleanup
@@ -83,27 +113,27 @@ echo "distinct batches: $batches (expected 1)"
 echo
 
 echo "=== 2. a second apply is a no-op ==="
-php artisan migrate --database=pgsql_owner --force | tee /tmp/qrpager-rollback-second.txt
-grep -q "Nothing to migrate" /tmp/qrpager-rollback-second.txt \
+php artisan migrate --database=pgsql_owner --force | tee "$second"
+grep -q "Nothing to migrate" "$second" \
   || { echo "the second apply was not a no-op" >&2; exit 1; }
 echo
 
 echo "=== 3. this task's objects are present ==="
-fingerprint > /tmp/qrpager-rollback-before.txt
-echo "fingerprint lines: $(wc -l < /tmp/qrpager-rollback-before.txt)"
+fingerprint > "$before"
+echo "fingerprint lines: $(wc -l < "$before")"
 for needle in \
   'function resolve_pager_token secdef=t' \
   "policy pager_sessions.worker_reads_expired_sessions" \
   "policy pager_sessions.worker_expires_sessions"
 do
-  grep -q "$needle" /tmp/qrpager-rollback-before.txt \
+  grep -q "$needle" "$before" \
     || { echo "missing from the schema: $needle" >&2; exit 1; }
 done
 # The narrowing itself, not just the policy's existence: R-003 is about the USING clause.
-grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' /tmp/qrpager-rollback-before.txt \
+grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' "$before" \
   | grep -q "ARRAY\['waiting'" \
   || { echo "the worker policies are not status-bounded -- R-003 is not applied" >&2; exit 1; }
-grep -E 'policy pager_sessions.worker_' /tmp/qrpager-rollback-before.txt
+grep -E 'policy pager_sessions.worker_' "$before"
 echo
 
 echo "=== 4. rollback runs clean ==="
@@ -122,8 +152,8 @@ echo
 
 echo "=== 5. a re-apply returns the identical schema ==="
 php artisan migrate --database=pgsql_owner --force >/dev/null || exit 1
-fingerprint > /tmp/qrpager-rollback-after.txt
-if diff -u /tmp/qrpager-rollback-before.txt /tmp/qrpager-rollback-after.txt; then
+fingerprint > "$after"
+if diff -u "$before" "$after"; then
   echo "schema identical after rollback and re-apply"
 else
   echo "migration-rollback-proof: FAILED -- the re-applied schema differs" >&2

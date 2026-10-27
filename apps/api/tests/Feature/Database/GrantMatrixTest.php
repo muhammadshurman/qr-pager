@@ -25,8 +25,19 @@ it('grants UPDATE on no tenant_id column anywhere', function (): void {
         $column = $table === 'tenants' ? 'id' : 'tenant_id';
 
         foreach (['qrpager_app', 'qrpager_worker'] as $role) {
-            expect(Schema::grantedColumns($role, $table, 'UPDATE'))
-                ->not->toContain($column, "{$role} can update {$table}.{$column} and move a row between tenants");
+            // in_array() AND NOT `->not->toContain($column, "message")`, which is what
+            // this line was and which asserted NOTHING. Pest's toContain takes
+            // ...$needles, so a message passed as a second argument is read as a SECOND
+            // NEEDLE -- and under ->not the whole thing becomes "does not contain BOTH",
+            // which a message that is never present makes trivially true. Measured
+            // 2026-10-27: expect('hello app_limit')->not->toContain('app_limit') fails as
+            // it should, and expect('hello app_limit')->not->toContain('app_limit',
+            // 'msg') PASSES. So this control -- no role may update a tenant key, which is
+            // what makes moving a row between tenants impossible -- was green and inert.
+            // Introduced by this branch's own 122d203 at Task 1. Task 4 carries the guard
+            // rule and the positive control; here the correction stands alone.
+            expect(in_array($column, Schema::grantedColumns($role, $table, 'UPDATE'), true))
+                ->toBeFalse("{$role} can update {$table}.{$column} and move a row between tenants");
         }
     }
 });

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Pager\PagerAuditAction;
 use App\Domain\Pager\PagerStatus;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -221,6 +223,37 @@ it('stops the worker expiring another tenant’s completed or cancelled order �
 
     expect($statuses[$completed])->toBe(PagerStatus::Completed->value)
         ->and($statuses[$cancelled])->toBe(PagerStatus::Cancelled->value);
+});
+
+it('binds the worker INSIDE a tenant scope by isolation alone, not by the status whitelist — security L-2', function (): void {
+    // §2.6 read as though the narrowing bounded the worker everywhere. It does not, and
+    // the expiry command's own docblock is the accurate one: "the isolation policy permits
+    // it and the worker's narrowed cross-tenant policy ORs in beside it, so neither is
+    // load-bearing alone". Permissive policies are OR-ed, and inside a scope
+    // `tenant_isolation_pager_sessions` satisfies both USING and WITH CHECK on its own --
+    // so within one tenant's scope the status whitelist does not bind the worker at all.
+    //
+    // Measured here rather than asserted in prose, because §2.6's sentence about terminal
+    // rows is the kind of claim that reads as a control. What actually bounds this path is
+    // the command's own `and status = ?` predicate and the column grant, and both are one
+    // code change away -- which is why the residual is an accepted §5 row with an owner
+    // rather than a line of documentation.
+    $tenant = $this->makeTenant();
+    $completed = expiredSessionIn($tenant, PagerStatus::Completed);
+
+    $affected = withTenant($tenant, fn (): int => DB::connection('pgsql_worker')->update(
+        'update pager_sessions
+            set status = ?::pager_status, expired_at = now(), updated_at = now()
+          where id = ?',
+        [PagerStatus::Expired->value, $completed],
+    ), 'pgsql_worker');
+
+    // ONE, not zero: the same statement that reports UPDATE 0 cross-tenant succeeds here.
+    expect($affected)->toBe(1, 'the in-scope worker could no longer rewrite a terminal row, so §2.6 and R-080 need re-measuring');
+
+    $after = withTenant($tenant, fn (): ?string => DB::table('pager_sessions')->where('id', $completed)->value('status'));
+
+    expect($after)->toBe(PagerStatus::Expired->value);
 });
 
 it('still refuses any transition other than expiring, which WITH CHECK pins — R-003', function (): void {
@@ -560,4 +593,31 @@ it('derives its live-status list from the enum; the SELECT policy whitelist carr
     // And its WITH CHECK pins the only status the worker may write without context, which is
     // the third limb and the one that keeps the SELECT whitelist from being a widening.
     expect((string) $updatePolicy->check_expr)->toContain("'".PagerStatus::Expired->value."'");
+});
+
+it('is scheduled, so the TTL is enforced without anyone typing a command — security M-2', function (): void {
+    // THE INVARIANT WAS UNBUILT, not merely ungated. `§4 › Data` states a 2-hour TTL, and
+    // until 2026-10-27 the only enforcement was refuseIfPastTtl() on the staff READ path:
+    // this command was in withCommands() and in no schedule, so no deployment ever moved a
+    // row to `expired`. §2.11's "rows reach a terminal status within 2 h of creation" was
+    // false as shipped, and the partial index it relies on grew with order volume.
+    //
+    // Asserted off the real Schedule rather than by reading routes/console.php, which is the
+    // same instrument ReadinessCarrierTest uses for the carrier.
+    $events = array_values(array_filter(
+        app(Schedule::class)->events(),
+        static fn (Event $event): bool => str_contains((string) $event->command, 'pager:expire'),
+    ));
+
+    expect($events)->toHaveCount(1, 'pager:expire is scheduled '.count($events).' times, expected exactly once');
+
+    // Every minute: the claim is "within 2 hours", so a minute of lag is three orders of
+    // magnitude inside the budget. Not sub-minute -- that would spend a worker connection
+    // more often for nothing.
+    expect($events[0]->expression)->toBe('* * * * *')
+        ->and($events[0]->repeatSeconds)->toBeNull('the expiry pass is scheduled sub-minute, which buys nothing')
+        // A stalled pass must not stack a second behind it, each holding one of the worker
+        // role's 20 connections. The pass is re-runnable, so overlap would be wasteful
+        // rather than wrong; this keeps it from being either.
+        ->and($events[0]->withoutOverlapping)->toBeTrue();
 });

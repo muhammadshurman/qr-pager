@@ -128,8 +128,15 @@ it('keeps the raw token out of captured log output, even when the object is logg
         $captured .= $record->message.' '.(string) json_encode($record->context);
     }
 
-    expect($captured)->not->toContain($raw, 'the raw token reached captured log output')
-        ->and($captured)->toContain(PagerToken::REDACTED);
+    // str_contains() AND NOT `->not->toContain($raw, 'message')`, which is what this was
+    // and which asserted NOTHING -- Pest's toContain takes ...$needles, so the message was
+    // read as a second needle and ->not became "does not contain BOTH", trivially true.
+    // Measured 2026-10-27. This is the control for a §3 row 3 gate clause -- "the raw
+    // token never reaches a log" -- so it was the most expensive of the three instances to
+    // have been inert. Task 4 carries the guard rule and the positive control; here the
+    // correction stands alone.
+    expect(str_contains($captured, $raw))->toBeFalse('the raw token reached captured log output');
+    expect($captured)->toContain(PagerToken::REDACTED);
 });
 
 it('never reaches the database: only the hash is stored', function (): void {

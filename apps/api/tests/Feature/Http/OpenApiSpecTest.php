@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Http\ProblemType;
 use App\Platform\Http\Problem;
+use App\Providers\AppServiceProvider;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Route;
@@ -343,10 +344,222 @@ it('keeps internal rationale out of every published description — R-052, R-056
             // database and framework internals
             'SQLSTATE', 'pg_', 'deptrac', 'Scramble',
         ] as $forbidden) {
-            expect($description)->not->toContain(
-                $forbidden,
+            // str_contains() AND NOT `->not->toContain($forbidden, "message")`, which is
+            // what this was -- and it is why `0.9 x app_limit` is in the committed spec
+            // today with a test that claims to forbid it. Pest's toContain takes
+            // ...$needles, so the message was read as a second needle and ->not became
+            // "does not contain BOTH", which a message that never appears makes trivially
+            // true. Measured 2026-10-27, found at Task 4. R-052 is an accepted row owned
+            // by Task 12; what was NOT known is that its compensating control had never
+            // worked.
+            expect(str_contains($description, $forbidden))->toBeFalse(
                 "a published description carries [{$forbidden}]: ".substr($description, 0, 120),
             );
         }
     }
+});
+
+it('publishes a security requirement on EVERY operation, and the staff routes are not public — security M-1', function (): void {
+    // THE DEFECT: the committed spec had no `components.securitySchemes` and no `security`
+    // member on any operation, so all five state-changing staff endpoints were published as
+    // requiring no authentication. §11.3 asks that public routes be "explicitly marked and
+    // justified", and in that document an authenticated route with no scheme and a
+    // deliberately public one were indistinguishable -- while the spec is what Tasks 8-9
+    // generate clients from.
+    //
+    // EVERY OPERATION, including the probes. OpenAPI's inheritance would let the
+    // document-level requirement cover the staff routes with the probes overriding it, and
+    // that is one fewer thing written down: a reader would need the inheritance rule to see
+    // that /healthz is public on purpose. Explicit everywhere means THIS CASE CAN REQUIRE
+    // THE MEMBER, so a route added without one fails rather than silently inheriting.
+    $spec = committedSpec();
+    $scheme = AppServiceProvider::STAFF_SECURITY_SCHEME;
+
+    expect($spec['components']['securitySchemes'] ?? [])->toHaveKey($scheme);
+
+    $declared = $spec['components']['securitySchemes'][$scheme];
+
+    expect($declared['type'] ?? null)->toBe('http')
+        ->and($declared['scheme'] ?? null)->toBe('bearer')
+        // The description says what the credential is and that Task 5 issues it, so a
+        // reader is not left to infer that "bearer" means something exists today.
+        ->and($declared['description'] ?? '')->toContain('Task 5');
+
+    $missing = [];
+    $public = [];
+    $authenticated = [];
+
+    foreach ($spec['paths'] as $path => $operations) {
+        foreach ($operations as $verb => $operation) {
+            if (! in_array($verb, ['get', 'post', 'put', 'patch', 'delete'], true)) {
+                continue;
+            }
+
+            $label = strtoupper($verb).' '.$path;
+
+            if (! array_key_exists('security', $operation)) {
+                $missing[] = $label;
+
+                continue;
+            }
+
+            // `[{}]` is OpenAPI's spelling for "no authentication required". Anything else
+            // names a scheme.
+            if ($operation['security'] === [[]] || $operation['security'] === []) {
+                $public[] = $path;
+            } else {
+                $authenticated[] = $label;
+                expect($operation['security'])->toBe([[$scheme => []]], "{$label} names an unexpected scheme");
+            }
+        }
+    }
+
+    expect($missing)->toBe([], 'these operations publish no security member at all: '.implode(', ', $missing));
+
+    // The public set is EXACTLY the two probes, from the same constant the generator reads,
+    // so adding a third public route means editing that constant deliberately.
+    expect(array_values(array_unique($public)))->toBe(AppServiceProvider::PUBLIC_PATHS);
+
+    // ...and every staff route is in the other set. Five, named, so a route that quietly
+    // became public is a failure here rather than a reading of the diff.
+    expect($authenticated)->toHaveCount(5)
+        ->and($authenticated)->toContain('POST /v1/pager-sessions');
+});
+
+it('publishes the 401 that every unauthenticated request actually receives — QA L-5', function (): void {
+    // RequireTenantScope answers 401 before any controller method runs, and that is the most
+    // common answer this surface gives -- yet the spec documented 201/422 and 200/404/409 and
+    // never 401. §6's clause ("any REST endpoint added is in the generated OpenAPI spec") was
+    // met; the published contract was incomplete.
+    //
+    // Required on the AUTHENTICATED routes only: the probes cannot answer 401, because they
+    // carry no tenant middleware at all, and requiring it of them would document an answer
+    // they never give.
+    // COLLECTED, THEN ASSERTED ONCE, and not with a message handed to toHaveKey: that
+    // matcher's second parameter is the expected VALUE and its message is the THIRD
+    // (`toHaveKey($key, $value, $message)`), so `toHaveKey('401', 'some message')` asserts
+    // that the 401 response EQUALS that sentence. It fails loudly here -- that is how this
+    // was found -- but negated it can never fail at all. Measured on 2026-10-27, inside
+    // Pest: `expect(['a' => 1])->not->toHaveKey('a', 'a message')` PASSES while the key is
+    // present. Collecting first needs no message slot and names every offender at once.
+    $spec = committedSpec();
+    $missing = [];
+    $wrongShape = [];
+    $spurious = [];
+
+    foreach ($spec['paths'] as $path => $operations) {
+        foreach ($operations as $verb => $operation) {
+            if (! in_array($verb, ['get', 'post', 'put', 'patch', 'delete'], true)) {
+                continue;
+            }
+
+            $label = strtoupper($verb).' '.$path;
+            $responses = $operation['responses'] ?? [];
+
+            if (($operation['security'] ?? null) === [[]]) {
+                if (array_key_exists('401', $responses)) {
+                    $spurious[] = $label;
+                }
+
+                continue;
+            }
+
+            if (! array_key_exists('401', $responses)) {
+                $missing[] = $label;
+
+                continue;
+            }
+
+            // And it is the project's own problem document, not an ad-hoc shape.
+            $ref = $responses['401']['content']['application/problem+json']['schema']['$ref'] ?? '';
+
+            if (! str_contains($ref, 'ProblemDocument')) {
+                $wrongShape[] = $label.' -> '.($ref === '' ? 'no problem+json schema' : $ref);
+            }
+        }
+    }
+
+    expect($missing)->toBe([], 'authenticated, and documents no 401: '.implode(', ', $missing))
+        ->and($wrongShape)->toBe([], 'a 401 that is not the problem document: '.implode(', ', $wrongShape))
+        ->and($spurious)->toBe([], 'public, and documents a 401 it can never give: '.implode(', ', $spurious));
+});
+
+it('publishes every problem document under the media type the API really sends, and under one only', function (): void {
+    // THE DEFECT: Problem::toResponse() has always sent `application/problem+json` -- six
+    // test files assert that header against real responses -- while the committed spec
+    // published all four error codes under `application/json`. A client generated from the
+    // document is therefore told the wrong media type for every error this API can answer
+    // with, which §6's "any REST endpoint added is in the generated OpenAPI spec" does not
+    // catch: the endpoint WAS in the spec, described wrongly.
+    //
+    // MEASURED, NOT ASSUMED. The expected value is read off a real refused request rather
+    // than compared to the constant both sides already share -- a constant equal to itself
+    // would prove nothing about what goes over the wire.
+    Route::middleware('api')->prefix('v1')->get('media-type-probe', fn () => response()->json(['unreachable' => true]));
+
+    $refused = $this->getJson('/v1/media-type-probe');
+
+    $refused->assertStatus(401);
+
+    $measured = trim(explode(';', (string) $refused->headers->get('Content-Type'))[0]);
+
+    expect($measured)->toBe(Problem::CONTENT_TYPE, 'a real error response no longer sends '.Problem::CONTENT_TYPE);
+
+    // ONE MEDIA TYPE PER RESPONSE, which is the part that regressed while this was being
+    // written: Scramble infers a 422 from the FormRequest and a `#[Response]` attribute
+    // adds its own, so the operation published BOTH `application/json` (Laravel's default
+    // validation body, a shape this API never sends) and the problem document. Two
+    // alternatives, one of them fictional, is worse than one wrong one.
+    $problemSchemas = ['#/components/schemas/ProblemDocument', '#/components/schemas/ValidationProblemDocument'];
+    $wrongType = [];
+    $alternatives = [];
+    $seen = 0;
+
+    foreach (committedSpec()['paths'] as $path => $operations) {
+        foreach ($operations as $verb => $operation) {
+            if (! in_array($verb, ['get', 'post', 'put', 'patch', 'delete'], true)) {
+                continue;
+            }
+
+            foreach ($operation['responses'] ?? [] as $code => $response) {
+                $content = $response['content'] ?? [];
+
+                $isProblem = array_filter(
+                    $content,
+                    fn (array $media) => in_array($media['schema']['$ref'] ?? '', $problemSchemas, true),
+                );
+
+                if ($isProblem === []) {
+                    continue;
+                }
+
+                $seen++;
+                $label = strtoupper($verb).' '.$path.' '.$code;
+
+                if (count($content) > 1) {
+                    $alternatives[] = $label.' -> '.implode(' + ', array_keys($content));
+                }
+
+                if (array_keys($content) !== [$measured]) {
+                    $wrongType[] = $label.' -> '.implode(' + ', array_keys($content));
+                }
+            }
+        }
+    }
+
+    // The count is asserted so that a document which stopped publishing problem documents
+    // altogether cannot pass this by having nothing left to check -- R-029's shape.
+    expect($seen)->toBe(14, 'the spec publishes '.$seen.' problem responses, not the 14 the five staff routes declare')
+        ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
+        ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
+});
+
+it('leaves a body that is not a problem document as application/json — /readyz 503', function (): void {
+    // The counter-case, and the reason the step above keys off the SCHEMA and not the
+    // status code: /readyz answers 503 with a readiness body, not an error envelope, and
+    // moving it would have been the same defect in the other direction.
+    $spec = committedSpec();
+
+    expect(array_keys($spec['paths']['/readyz']['get']['responses']['503']['content']))->toBe(['application/json'])
+        ->and(array_keys($spec['paths']['/readyz']['get']['responses']['200']['content']))->toBe(['application/json']);
 });

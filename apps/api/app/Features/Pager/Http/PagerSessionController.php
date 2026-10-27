@@ -32,6 +32,14 @@ use RuntimeException;
  * endpoints that consume it -- polling, subscriptions -- are Task 4's. This task builds
  * the resolver; Task 4 puts a route in front of it.
  *
+ * EVERY METHOD PUBLISHES A 401, and the class publishes a security requirement (QA L-5 and
+ * security M-1). The committed spec had neither: no `components.securitySchemes`, no
+ * `security` member on any operation, and no 401 anywhere -- so the five state-changing
+ * staff endpoints were published as requiring no authentication, while 401 is in fact the
+ * most common answer this surface gives. RequireTenantScope answers it before any method
+ * here runs, which is why no method mentions it in its own body and every one of them
+ * documents it.
+ *
  * DOCBLOCKS HERE ARE PUBLISHED. Scramble ships a controller method's docblock as the
  * endpoint's `description` in docs/openapi.json, which is R-052 and R-056 -- a capacity
  * figure reached the committed spec that way. So every method comment below is written as
@@ -48,6 +56,7 @@ final class PagerSessionController
      * Issues a single-use token for one order and returns the payload to encode in a QR
      * code. The token is returned by this call only and cannot be retrieved afterwards.
      */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
     #[DocResponse(status: 201, description: 'The session, and the QR payload to encode.')]
     #[DocResponse(status: 422, description: 'The order reference did not pass validation.', type: ValidationProblemDocument::class)]
     public function store(CreatePagerSessionRequest $request): JsonResponse
@@ -74,6 +83,7 @@ final class PagerSessionController
      * nothing and sends no second notification. A session that has passed its two-hour
      * expiry is refused; issue a new session instead.
      */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
     #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
@@ -88,6 +98,7 @@ final class PagerSessionController
      * Requires a session that has already been marked ready, and is limited to a fixed
      * number of repeats per session.
      */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
     #[DocResponse(status: 409, description: 'The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.', type: ProblemDocument::class)]
@@ -101,6 +112,7 @@ final class PagerSessionController
      *
      * Sends no notification: the customer is at the counter. Safe to repeat.
      */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
     #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
@@ -115,6 +127,7 @@ final class PagerSessionController
      * Notifies, so that a customer waiting on a pager that will never go off is told.
      * Safe to repeat.
      */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
     #[DocResponse(status: 200, description: 'The session state after the call.')]
     #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
     #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]

@@ -10,6 +10,7 @@ use App\Platform\Http\TenantResolver;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * Deny-by-default for every /v1 route: no tenant, no request.
@@ -34,7 +35,34 @@ final class RequireTenantScope
 
     public function handle(Request $request, Closure $next): Response
     {
-        $tenant = $this->resolver->resolve($request);
+        // A RESOLVER THAT REFUSES IS "NO TENANT", NOT A SERVER FAULT (security L-3).
+        //
+        // resolve() was called bare, so the pre-Task-5 stub's own refusal outside
+        // local/testing -- a RuntimeException, by design, so the stub cannot serve a
+        // production request -- became an uncaught throwable and a generic 500. Measured as
+        // part of this fix: every /v1 route answered 500 in `production`, not the 401 this
+        // class's docblock and TenantResolutionTest both describe.
+        //
+        // Three things were wrong with that. Deny-by-default still held -- no route body
+        // ran -- but a misdeployment presented as a 500 storm indistinguishable from an
+        // outage rather than a clean refusal; a 500 goes through the ServerError arm of the
+        // renderer rather than the Unauthenticated one, so the body was asserted nowhere on
+        // that path; and RateLimit::tenant() already swallows the same throw one middleware
+        // earlier, so the two disagreed about what a refusing resolver means.
+        //
+        // Throwable and not RuntimeException: the resolver is an interface, Task 5 replaces
+        // the implementation, and "could not determine a tenant" is the same answer whatever
+        // the reason. The detail reaches the operator through the log -- the exception is
+        // still reported by the handler registered in bootstrap/app.php -- and never the
+        // caller, who gets the same no-detail 401 as an unknown tenant. "This tenant does
+        // not exist" and "that tenant is not yours" are the same answer from outside.
+        try {
+            $tenant = $this->resolver->resolve($request);
+        } catch (Throwable $refused) {
+            report($refused);
+
+            $tenant = null;
+        }
 
         if ($tenant === null) {
             return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();

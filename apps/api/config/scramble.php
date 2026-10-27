@@ -1,5 +1,6 @@
 <?php
 
+use App\Platform\Http\ValidationProblemResponseExtension;
 use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
 use Dedoc\Scramble\OpenApiVersion;
 
@@ -197,7 +198,18 @@ return [
         RestrictedDocsAccess::class,
     ],
 
-    'extensions' => [],
+    /*
+     * The one registered extension replaces Scramble's default ValidationException
+     * response, which describes Laravel's default validation body under
+     * `application/json`. This API answers every error -- validation included -- with an
+     * RFC 7807 document under `application/problem+json` (App\Platform\Http\Problem), so
+     * the default would publish a body and a media type the application never sends.
+     * Appended after the built-ins, which is how Scramble gives a custom extension
+     * priority.
+     */
+    'extensions' => [
+        ValidationProblemResponseExtension::class,
+    ],
 
     /*
      * Automatically document API security (OpenAPI `security` / `securitySchemes`) based on route

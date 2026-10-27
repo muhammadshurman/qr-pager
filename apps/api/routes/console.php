@@ -30,3 +30,38 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('readiness:refresh')
     ->everyFiveSeconds()
     ->withoutOverlapping();
+
+/*
+ * The expiry job (PLAN.md §3 row 3's TTL clause, and security M-2).
+ *
+ * IT WAS REGISTERED AND SCHEDULED NOWHERE until 2026-10-27. `PROJECT_INSTRUCTIONS.md §4 ›
+ * Data` states a 2-hour TTL as a locked invariant, and the only thing enforcing it was
+ * `PagerSessions::refuseIfPastTtl()` on the staff path -- a READ-path check. Nothing moved a
+ * row to `expired` in any deployment, so:
+ *
+ *   - `pager_sessions.status` never left `waiting`/`ready`;
+ *   - the partial index on `(expires_at) WHERE status IN ('waiting','ready')` grew with total
+ *     order volume rather than with the live population, which is the opposite of what
+ *     §2.11 claims it is for;
+ *   - and §2.11's "rows reach a terminal status within 2 h of creation" was false as shipped.
+ *
+ * The ruling (Muhammad, 2026-10-27) is that this is "the invariant unbuilt, not a gap to
+ * carry": a command registered and scheduled nowhere does not enforce anything. `R-058` now
+ * covers only the cadence and the operational question -- where the scheduler runs -- not
+ * whether the job runs at all.
+ *
+ * everyMinute(), not everyFiveSeconds(). The claim it has to keep is "within 2 hours", so a
+ * minute of lag between `expires_at` passing and `status` following is three orders of
+ * magnitude inside the budget. One pass is a single indexed read against the partial index
+ * plus one keyed UPDATE per due row, capped at `pager.expiry_batch`; a shorter cadence would
+ * buy nothing and spend a worker connection more often.
+ *
+ * withoutOverlapping(), for the same reason the readiness carrier has it: a pass that stalls
+ * -- a lock wait, a slow cluster -- must not stack a second pass behind it, each holding one
+ * of the worker role's 20 connections. The pass is already re-runnable (a keyed,
+ * status-guarded UPDATE reports 0 on a row another pass took), so overlapping would be safe
+ * and wasteful rather than wrong; this keeps it from being either.
+ */
+Schedule::command('pager:expire')
+    ->everyMinute()
+    ->withoutOverlapping();

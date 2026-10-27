@@ -199,9 +199,11 @@ it('leaves no verifier in the container log for a bootstrap that logs everything
  *
  * WHAT THIS ASSERTS IS THE SOURCE, NOT THE VALUE, and that distinction is the whole test.
  * Asserting `log_statement = 'none'` would be RED ON CI BY DESIGN: CI issues
- * `alter system set log_statement = 'all'` before the suite to give R-036's verifier scan
- * a positive control (R-059). What R-004 is about is the CLUSTER-WIDE COMMAND-LINE
- * setting, and Postgres reports where a value came from:
+ * `alter system set log_statement = 'ddl'` before the suite to give R-036's verifier scan
+ * a positive control. ('all' until 2026-10-27 -- security L-4 narrowed it to 'ddl', which
+ * keeps the ALTER ROLE lines that scan reads and drops every bound parameter, closing
+ * R-059.) What R-004 is about is the CLUSTER-WIDE COMMAND-LINE setting, and Postgres
+ * reports where a value came from:
  *
  *   compose `-c log_statement=all`  -> pg_settings.source = 'command line'
  *   CI's `alter system`             -> 'configuration file'
@@ -277,8 +279,8 @@ it('takes log_statement from no command-line flag, which is what R-004 removed',
     $root->statement('reset vacuum_cost_delay');
 
     // THE PROPERTY. R-004 is about the CLUSTER-WIDE COMMAND-LINE setting specifically, so
-    // the value is deliberately not asserted: CI sets `all` through `alter system` on
-    // purpose, to give R-036's verifier scan a positive control (R-059).
+    // the value is deliberately not asserted: CI sets `ddl` through `alter system` on
+    // purpose, to give R-036's verifier scan a positive control.
     /** @var object{setting: string, source: string}|null $row */
     $row = $root->selectOne(
         "select setting, source from pg_settings where name = 'log_statement'",

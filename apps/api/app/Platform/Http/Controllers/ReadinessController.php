@@ -32,32 +32,51 @@ final class ReadinessController
      *
      * 200 when the last probe is fresh and both dependencies were up; 503 otherwise,
      * with `reason` naming which. Opens no database connection.
-     *
-     * ONE RETURN, with the body as a literal array, and that shape is for the generated
-     * spec rather than for taste. Scramble infers a response schema from what a
-     * controller actually returns: with the body built in a private helper the exported
-     * document described this endpoint as `{"type":"string"}` -- a generated spec that is
-     * wrong in the quietest possible way, since nothing fails and the file looks
-     * plausible. §7's own caveat said as much ("a controller must return a declared
-     * shape rather than one branch's literals"), and this is that caveat met.
-     *
-     * THREE FIELDS, AND THE CAPACITY FIGURES ARE GONE (R-031, QA M-2 / security #3).
-     * This used to publish the whole snapshot -- `app_backends`, `app_limit`,
-     * `saturation`, `postgres_up`, `redis_up`, `measured_at` -- to any anonymous caller,
-     * on the one middleware group that carries no rate limiter, while ShedLoad withheld
-     * the SAME saturation figure from its 503 on the stated grounds that it tells a
-     * caller how close this task is to the edge. `ShedLoadTest` asserts that absence;
-     * two reviews found the contradiction independently. The shed threshold is
-     * `0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact
-     * onset of shedding and watch it work.
-     *
-     * Nothing operational is lost: ShedLoad logs its reason at warning, the carrier
-     * prints the snapshot it wrote, and `reason` still names WHICH dependency failed,
-     * which is what makes a 503 diagnosable. What is gone is diagnosing readiness from
-     * outside the VPC, which belongs on an operator path rather than a world-readable
-     * one. `probe_age_seconds` stays because it discloses only carrier liveness, and it
-     * is the field that separates "this task has no snapshot" from "its carrier died".
      */
+    // INTERNAL NOTES -- LINE COMMENTS ON PURPOSE, SO THEY ARE NOT PUBLISHED.
+    //
+    // MOVED OUT OF THE DOCBLOCK, FOUND AT TASK 4. Scramble ships this method's docblock verbatim as
+    // the endpoint's `description` in docs/openapi.json -- which is R-052 and R-056 -- and the
+    // text below was going out with it: the shed threshold `0.9 x app_limit`, the field names
+    // `app_backends`, `app_limit` and `saturation`, a review id, a test name, and the `     * `
+    // artefact of a docblock quoting itself.
+    //
+    // IT WAS SUPPOSED TO BE IMPOSSIBLE. OpenApiSpecTest has a sweep over every published
+    // description that forbids exactly those strings -- and it had never worked: it used
+    // `expect($d)->not->toContain($forbidden, "message")`, and Pest's toContain takes
+    // ...$needles, so the message was read as a SECOND NEEDLE and ->not became "does not
+    // contain BOTH", which a message that never appears makes trivially true. Measured
+    // 2026-10-27. The sweep is fixed, it now bites, and this is the leak it found.
+    //
+    // R-052 and R-056 are accepted §5 rows owned by Task 12 and they stay accepted; what was
+    // not known is that their compensating control was inert. The text itself is kept in full
+    // -- it is the reasoning behind a deliberate trim and losing it would be worse than
+    // publishing it -- and moved to where Scramble cannot see it.
+    //
+    // ONE RETURN, with the body as a literal array, and that shape is for the generated
+    // spec rather than for taste. Scramble infers a response schema from what a
+    // controller actually returns: with the body built in a private helper the exported
+    // document described this endpoint as `{"type":"string"}` -- a generated spec that is
+    // wrong in the quietest possible way, since nothing fails and the file looks
+    // plausible. §7's own caveat said as much ("a controller must return a declared
+    // shape rather than one branch's literals"), and this is that caveat met.
+    //
+    // THREE FIELDS, AND THE CAPACITY FIGURES ARE GONE (R-031, QA M-2 / security #3).
+    // This used to publish the whole snapshot -- `app_backends`, `app_limit`,
+    // `saturation`, `postgres_up`, `redis_up`, `measured_at` -- to any anonymous caller,
+    // on the one middleware group that carries no rate limiter, while ShedLoad withheld
+    // the SAME saturation figure from its 503 on the stated grounds that it tells a
+    // caller how close this task is to the edge. `ShedLoadTest` asserts that absence;
+    // two reviews found the contradiction independently. The shed threshold is
+    // `0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact
+    // onset of shedding and watch it work.
+    //
+    // Nothing operational is lost: ShedLoad logs its reason at warning, the carrier
+    // prints the snapshot it wrote, and `reason` still names WHICH dependency failed,
+    // which is what makes a 503 diagnosable. What is gone is diagnosing readiness from
+    // outside the VPC, which belongs on an operator path rather than a world-readable
+    // one. `probe_age_seconds` stays because it discloses only carrier liveness, and it
+    // is the field that separates "this task has no snapshot" from "its carrier died".
     public function __invoke(): JsonResponse
     {
         /*

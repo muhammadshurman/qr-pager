@@ -9,6 +9,11 @@
             "url": "http://localhost:8000"
         }
     ],
+    "security": [
+        {
+            "staffBearer": []
+        }
+    ],
     "paths": {
         "/healthz": {
             "get": {
@@ -46,7 +51,10 @@
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
             }
         },
         "/v1/pager-sessions": {
@@ -126,14 +134,29 @@
                     "422": {
                         "description": "The order reference did not pass validation.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ValidationProblemDocument"
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/ready": {
@@ -205,10 +228,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -218,14 +251,19 @@
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/renotify": {
@@ -297,10 +335,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -310,14 +358,19 @@
                     "409": {
                         "description": "The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/complete": {
@@ -389,10 +442,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -402,14 +465,19 @@
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/cancel": {
@@ -481,10 +549,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -494,20 +572,25 @@
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/readyz": {
             "get": {
                 "operationId": "probe.readiness",
-                "description": "200 when the last probe is fresh and both dependencies were up; 503 otherwise,\nwith `reason` naming which. Opens no database connection.\n\nONE RETURN, with the body as a literal array, and that shape is for the generated\nspec rather than for taste. Scramble infers a response schema from what a\ncontroller actually returns: with the body built in a private helper the exported\ndocument described this endpoint as `{\"type\":\"string\"}` -- a generated spec that is\nwrong in the quietest possible way, since nothing fails and the file looks\nplausible. \u00a77's own caveat said as much (\"a controller must return a declared\n     * shape rather than one branch's literals\"), and this is that caveat met.\n\nTHREE FIELDS, AND THE CAPACITY FIGURES ARE GONE (R-031, QA M-2 / security #3).\nThis used to publish the whole snapshot -- `app_backends`, `app_limit`,\n`saturation`, `postgres_up`, `redis_up`, `measured_at` -- to any anonymous caller,\non the one middleware group that carries no rate limiter, while ShedLoad withheld\nthe SAME saturation figure from its 503 on the stated grounds that it tells a\ncaller how close this task is to the edge. `ShedLoadTest` asserts that absence;\ntwo reviews found the contradiction independently. The shed threshold is\n`0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact\nonset of shedding and watch it work.\n\nNothing operational is lost: ShedLoad logs its reason at warning, the carrier\nprints the snapshot it wrote, and `reason` still names WHICH dependency failed,\nwhich is what makes a 503 diagnosable. What is gone is diagnosing readiness from\noutside the VPC, which belongs on an operator path rather than a world-readable\none. `probe_age_seconds` stays because it discloses only carrier liveness, and it\nis the field that separates \"this task has no snapshot\" from \"its carrier died\".",
+                "description": "200 when the last probe is fresh and both dependencies were up; 503 otherwise,\nwith `reason` naming which. Opens no database connection.",
                 "summary": "Readiness probe",
                 "tags": [
                     "Readiness"
@@ -607,15 +690,25 @@
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
             }
         }
     },
     "components": {
+        "securitySchemes": {
+            "staffBearer": {
+                "type": "http",
+                "description": "Staff and admin endpoints require an authenticated user. The credential is issued by Task 5's auth surface (Fortify + Sanctum), which is not built yet: before then the only resolver is a test harness that reads a container binding and refuses to run outside local and testing, so no credential of any kind is accepted in a deployed environment. These endpoints are therefore NOT public, and a client that omits authentication receives 401.",
+                "scheme": "bearer"
+            }
+        },
         "schemas": {
             "CreatePagerSessionRequest": {
                 "type": "object",
-                "description": "The only body any route in this task accepts.\n\nVALIDATED AGAINST \u00a72.5'S OWN COLUMN, not against a guess: `order_reference` is\nvarchar(32) NOT NULL, so a longer or empty value would reach Postgres and come back as\na 23514 or a 22001 -- a driver error rendered through the envelope, which tells the\ncaller nothing about what to fix. 32 and `required` here mean it is a 422 with the\nfield named, which is what the `errors` member of the problem document exists for.\n\n`regex` rather than `string` alone because this value is printed on a physical ticket\nand shown on a staff board: a control character or a newline in it is either a broken\nlabel or a line break in a dashboard. Printable ASCII plus the separators a kitchen\nactually uses, and nothing else.\n\nauthorize() returns true and that is NOT the authorization decision. Every /v1 route is\nbehind RequireTenantScope, which is deny-by-default and answers 401 with no detail when\nno tenant resolves; the tenant then scopes every query, so there is no per-request\nauthorization left for this class to make. Stated because an `authorize(): true` that\nmeans \"something else decided\" and one that means \"anyone may\" look identical.",
+                "description": "The body for creating a pager session: the order reference to print on the ticket.",
                 "properties": {
                     "order_reference": {
                         "type": "string",

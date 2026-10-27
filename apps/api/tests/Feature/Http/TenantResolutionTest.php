@@ -104,8 +104,12 @@ it('cannot run outside local or testing, so it cannot survive to production — 
     // Stronger than a CI check: the stub cannot serve a production request at all.
     // Every /v1 route is behind RequireTenantScope, so a deployment carrying this class
     // denies every API request loudly -- which is deny-by-default working, not a
-    // regression. routes/v1.php is empty at Task 2 by design, so there is nothing to
-    // deny yet.
+    // regression.
+    //
+    // THE LAST SENTENCE OF THIS COMMENT USED TO READ "routes/v1.php is empty at Task 2 by
+    // design, so there is nothing to deny yet" -- stale as of Task 3, which is the diff that
+    // first put routes behind this middleware (security L-3). There are five of them now,
+    // and the case below asserts the HTTP answer rather than only the resolver's throw.
     expect(fn () => app(TenantResolver::class)->resolve(Request::create('/v1/tenant-probe')))
         ->toThrow(RuntimeException::class, 'cannot run in [production]');
 });
@@ -121,4 +125,50 @@ it('is the whole of the pre-Task-5 auth surface', function (): void {
     }
 
     expect($implementations)->toBe(['HarnessTenantResolver']);
+});
+
+it('answers 401 and not 500 when the resolver itself refuses — security L-3', function (): void {
+    // THE HALF THAT WAS NEVER ASSERTED. The case above proves the stub THROWS outside
+    // local/testing; nothing proved what a real request then receives. Measured before the
+    // fix: RequireTenantScope called resolve() bare, so the stub's refusal became an
+    // uncaught throwable and every /v1 route answered 500 -- while this file's own comment
+    // and the middleware's docblock both said 401.
+    //
+    // Deny-by-default held either way: no route body ran. What a 500 cost was a
+    // misdeployment presenting as an outage rather than a refusal, and a response body on a
+    // path nothing asserted.
+    $this->actingForTenant();
+
+    app()->detectEnvironment(fn () => 'production');
+
+    $response = $this->postJson('/v1/pager-sessions', ['order_reference' => 'A-1']);
+
+    $response->assertStatus(401)
+        ->assertJsonPath('type', ProblemType::Unauthenticated->value);
+
+    // And the body says nothing about WHY, which is the same clause the null-tenant path
+    // already satisfies: "this tenant does not exist" and "that tenant is not yours" are the
+    // same answer from outside, and so is "the resolver refused".
+    $body = (string) $response->getContent();
+
+    expect(str_contains($body, 'production'))->toBeFalse('the refusal named the environment');
+    expect(str_contains($body, 'HarnessTenantResolver'))->toBeFalse('the refusal named the resolver');
+    expect(str_contains($body, 'RuntimeException'))->toBeFalse('the refusal named the exception class');
+    expect($response->json())->not->toHaveKey('errors');
+});
+
+it('answers 401 for every staff route when the resolver refuses, not just the first — security L-3', function (): void {
+    // All five, because the middleware is on the group and a per-route regression would be
+    // invisible in a single-route case.
+    $this->actingForTenant();
+    $session = (string) Str::uuid7();
+
+    app()->detectEnvironment(fn () => 'production');
+
+    $this->postJson('/v1/pager-sessions', ['order_reference' => 'A-1'])->assertStatus(401);
+
+    foreach (['ready', 'renotify', 'complete', 'cancel'] as $action) {
+        $this->postJson("/v1/pager-sessions/{$session}/{$action}")
+            ->assertStatus(401, "the {$action} route did not answer 401 when the resolver refused");
+    }
 });

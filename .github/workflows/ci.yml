@@ -209,10 +209,27 @@ jobs:
       # ALTER SYSTEM rather than ALTER DATABASE: the in-suite cases set and RESET the
       # database-level value in their own finally, which would undo a database-level
       # setting partway through the run.
-      - name: Log every statement, so the scan below cannot pass vacuously
+      # 'ddl' AND NOT 'all' (security L-4). `log_statement = 'all'` put every statement in
+      # the runner's Postgres log WITH ITS BOUND PARAMETERS -- including
+      # `insert into pager_sessions (... token_hash ...) values (..., decode(?, 'hex'), ...)`
+      # and `resolve_pager_token(decode(?, 'hex'))`, so a run's worth of QR token hashes was
+      # written to a log on the default path. That is `§4 › Data`'s clause verbatim one step
+      # removed, and `R-059` is the row.
+      #
+      # The scan below needs the ALTER ROLE statements and nothing else: its subject is a
+      # role VERIFIER (`SCRAM-SHA-256$...`), which reaches a log only as the text of an
+      # `ALTER ROLE ... PASSWORD`. That is DDL. Measured on 2026-10-27 against the composed
+      # Postgres 16: with `log_statement = 'ddl'`, an `ALTER ROLE ... PASSWORD 'SCRAM-...'`
+      # appears in the log (1 line) while a prepared SELECT and its bound parameter appear
+      # **zero** times.
+      #
+      # So the positive control `R-036` asks for is kept in full and the token hashes are
+      # gone -- strictly narrower, not weaker. A step that genuinely needs 'all' sets it
+      # itself, in its own job, and resets it; it is never the default path.
+      - name: Log DDL, so the verifier scan below cannot pass vacuously
         run: |
           PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
-            -c "alter system set log_statement = 'all'" -c "select pg_reload_conf()"
+            -c "alter system set log_statement = 'ddl'" -c "select pg_reload_conf()"
 
       - name: Tests against real Postgres and Redis
         run: php artisan test
