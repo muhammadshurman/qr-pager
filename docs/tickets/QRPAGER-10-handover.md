@@ -4,8 +4,13 @@
 > different machine with only the repository. Nothing here depends on that session, its
 > transcript, or anything outside the repo.
 
-**Branch `task-3-pager-domain`, head `de3e4e4`, pushed.** Not reviewed, no PR, no merge,
-no tag — by instruction.
+**Branch `task-3-pager-domain`, pushed. Head `3ec36e0`; last CODE commit `de3e4e4`.**
+Not reviewed, no PR, no merge, no tag — by instruction.
+
+The two are different on purpose and the distinction is the one `W-7` got wrong on Task 2.
+Every figure below was measured at **`de3e4e4`**; `3ec36e0` is docs-only (`git diff
+--stat de3e4e4 3ec36e0` touches `docs/` alone), so the figures carry to the head rather
+than being quoted against a tree they were not measured on.
 
 ---
 
