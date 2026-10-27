@@ -37,19 +37,68 @@ final class Problem
     ) {}
 
     /**
+     * The document this problem renders as -- the shape docs/openapi.json publishes (R-033).
+     *
+     * ONE PRODUCER, TWO READERS: toArray() below serialises what this returns, and
+     * Scramble documents these same classes' properties. So the published schema and the
+     * emitted body come from one place and cannot drift -- which they already had, before
+     * this method existed. Pointing Scramble at THIS class published `retryAfter` (a
+     * HEADER, never a body member) and omitted `title` and `status`, which are in every
+     * body, because Scramble reads constructor-promoted properties and this class's are
+     * the renderer's inputs rather than the wire's output. Shipping that would have been
+     * R-025's category inside a generated artefact.
+     *
+     * TWO CLASSES AND NOT ONE OPTIONAL MEMBER, which is forced rather than chosen:
+     * Scramble marks every property of a documented class `required`, measured both as a
+     * promoted constructor parameter with a default and as a plain property with an
+     * initialiser. So a single class carrying `errors` would publish it as required while
+     * a 404 or a 409 body omits it. The honest split is the real one -- a 422 body ALWAYS
+     * has per-field messages and no other status ever does -- so each schema is exactly
+     * right and the wire format is unchanged from Task 2. The alternative, emitting
+     * `errors: null` on every error response, would have made one schema work by changing
+     * every body in the API, which is a wire change nothing asked for.
+     *
+     * OpenApiSpecTest pins the published property names against the keys a real rendered
+     * body has, so neither class can drift from toArray() in either direction.
+     */
+    public function document(): ProblemDocument
+    {
+        if ($this->errors !== []) {
+            return new ValidationProblemDocument(
+                $this->type,
+                $this->type->title(),
+                $this->type->status(),
+                $this->instance,
+                $this->errors,
+            );
+        }
+
+        return new ProblemDocument(
+            $this->type,
+            $this->type->title(),
+            $this->type->status(),
+            $this->instance,
+        );
+    }
+
+    /**
      * @return array{type: string, title: string, status: int, instance: string|null, errors?: array<string, list<string>>}
      */
     public function toArray(): array
     {
+        $document = $this->document();
+
         $body = [
-            'type' => $this->type->value,
-            'title' => $this->type->title(),
-            'status' => $this->type->status(),
-            'instance' => $this->instance,
+            'type' => $document->type->value,
+            'title' => $document->title,
+            'status' => $document->status,
+            'instance' => $document->instance,
         ];
 
-        if ($this->errors !== []) {
-            $body['errors'] = $this->errors;
+        // Absent rather than present-and-empty, and the type carrying it is the type the
+        // 422 response is documented with.
+        if ($document instanceof ValidationProblemDocument) {
+            $body['errors'] = $document->errors;
         }
 
         return $body;

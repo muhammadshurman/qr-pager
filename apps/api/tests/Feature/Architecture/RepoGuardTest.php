@@ -70,13 +70,20 @@ it('refuses a configured path that does not resolve, rather than scanning nothin
 });
 
 it('refuses a path that resolves but produces no file to read', function (): void {
-    // app/Features exists and holds only .gitkeep until Task 3 puts a module in it, so
-    // it is the real "walked it and read nothing" case rather than a fabricated one.
-    $violations = GuardFixtures::guard()->scanScannablePaths(['app/Features']);
+    // A DEDICATED FIXTURE, because this case used to point at app/Features with the
+    // comment "holds only .gitkeep until Task 3 puts a module in it". Task 3 put a module
+    // in it and this went red -- not because the guard regressed, but because the
+    // directory it borrowed had been repurposed by ordinary work. The comment predicted
+    // its own expiry and nothing acted on the prediction, which is §3.2's recurring shape.
+    //
+    // guard/fixtures/no-php/ holds a README explaining that it must stay free of .php
+    // files, which is a contract nobody can break by writing a feature.
+    $violations = GuardFixtures::guard()->scanScannablePaths(['guard/fixtures/no-php']);
 
     expect($violations)->toHaveCount(1)
         ->and($violations[0]->rule)->toBe(SourceGuard::UNSCANNABLE_PATH)
-        ->and($violations[0]->detail)->toContain('never read');
+        ->and($violations[0]->detail)->toContain('never read')
+        ->and($violations[0]->file)->toBe('guard/fixtures/no-php');
 });
 
 it('exits non-zero through the real binary when a path cannot be scanned', function (): void {

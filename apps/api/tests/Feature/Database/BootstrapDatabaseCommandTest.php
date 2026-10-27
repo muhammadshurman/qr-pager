@@ -130,11 +130,23 @@ it('releases the advisory lock it serialises on, even when it fails', function (
 
     // Parallel suites queue on this lock; a bootstrap that died holding it would
     // hang every other runner (PROJECT_INSTRUCTIONS.md §4 › Postgres traps).
+    //
+    // FILTERED ON THE BOOTSTRAP'S OWN KEY, which is what this assertion always meant.
+    // It used to count every advisory lock in the cluster and expect zero, and that
+    // passed only because the bootstrap's was the only advisory lock anything took. It
+    // is not any more: R-049's fix has the suite process hold one of its own for its
+    // whole life, so the unfiltered count is 1 here and the assertion failed for a
+    // reason that had nothing to do with what it checks. Same shape as R-016's
+    // unfiltered audit_log count -- a count bounded by circumstance rather than by its
+    // filter -- and narrowing it makes it STRONGER: it now says this key is released,
+    // rather than that no advisory lock exists anywhere.
+    $key = (int) config('tenancy.bootstrap_lock_key');
+
     $held = DB::connection('pgsql_root')->selectOne(
-        'select count(*) as c from pg_locks where locktype = ?', ['advisory'],
+        'select count(*) as c from pg_locks where locktype = ? and objid = ?', ['advisory', $key],
     );
 
-    expect((int) $held->c)->toBe(0);
+    expect((int) $held->c)->toBe(0, "the bootstrap left advisory lock {$key} held");
 });
 
 /*

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Http\ProblemType;
+use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\RequestLimiter;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -369,4 +370,92 @@ it('hashes the address in the key the middleware actually writes', function (): 
     // it is a uuid this application issued, and §4 › Realtime already builds the Redis
     // namespace from exactly this value.
     expect($joined)->toContain($this->tenant);
+});
+
+/*
+ * QA L-1, which is R-045's shape with a real instance behind it at last.
+ *
+ * R-045 (Task 2, QA L-4): keysFor() reads config("ratelimit.buckets.{$bucket}", []), so an
+ * unconfigured bucket name yields NO keys, the foreach body never runs, and the request is
+ * served with no limit at all -- silently. At Task 2 that was theoretical: `api` and
+ * `unknown` were the only buckets and both were hard-coded beside their config. Task 3
+ * added the first route-level bucket parameter, `RateLimit:pager-create`, so the typo R-045
+ * describes is now one character away from being real and nothing tested it.
+ *
+ * THIS ASSERTS THE PROPERTY, NOT THE INSTANCE. Testing that `pager-create` happens to be
+ * spelled right today would pass tomorrow with a fifth bucket misspelled. Instead every
+ * bucket name any route actually references is read off the router and checked against
+ * config, so a new route with a bad name fails here rather than serving unlimited.
+ *
+ * R-045 itself stays open: the row asks that an unconfigured name REFUSE or throw at boot,
+ * which is a change to RateLimit owned by Task 12. This closes the "no test covers it" half
+ * for every name now in use.
+ */
+it('configures every rate-limit bucket that a route actually references — R-045, QA L-1', function (): void {
+    $referenced = [];
+
+    foreach (Route::getRoutes() as $route) {
+        foreach ($route->gatherMiddleware() as $middleware) {
+            if (! is_string($middleware) || ! str_starts_with($middleware, RateLimit::class.':')) {
+                continue;
+            }
+
+            $referenced[] = substr($middleware, strlen(RateLimit::class) + 1);
+        }
+    }
+
+    // The group-level RateLimit carries no parameter and defaults to `api`, which no
+    // route spells out -- so `api` is added here rather than discovered, and `unknown` is
+    // the fallback route's, applied in bootstrap/app.php.
+    $referenced = array_values(array_unique([...$referenced, 'api', 'unknown']));
+
+    // A positive control: if the scan found nothing, this case would pass vacuously while
+    // asserting about an empty list, which is R-036's defect.
+    // in_array + toBeTrue, not toContain: Pest's toContain is VARIADIC over needles, so a
+    // second argument is another needle rather than a message. Cost two red runs in this
+    // round before the pattern was obvious.
+    expect(in_array('pager-create', $referenced, true))->toBeTrue(
+        'the router scan found no route-level bucket at all, so the loop below asserts nothing'
+    );
+
+    foreach ($referenced as $bucket) {
+        /** @var array<string, mixed> $limits */
+        $limits = (array) config("ratelimit.buckets.{$bucket}");
+
+        expect($limits)->not->toBe(
+            [],
+            "the route middleware references bucket [{$bucket}] and config/ratelimit.php has no such bucket, "
+            .'so every route carrying it is served with NO limit at all (R-045)'
+        );
+
+        // A bucket with neither dimension configured is the same silent no-op as a
+        // missing one: keysFor() checks per_ip and per_tenant individually.
+        expect(isset($limits['per_ip']) || isset($limits['per_tenant']))->toBeTrue(
+            "bucket [{$bucket}] has neither a per_ip nor a per_tenant limit, so it produces no keys"
+        );
+    }
+});
+
+it('refuses past the pager-create bucket, which is the route-level one Task 3 added', function (): void {
+    config(['ratelimit.buckets.pager-create.per_ip.attempts' => 2]);
+
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant);
+
+    $create = fn () => $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->postJson('/v1/pager-sessions', ['order_reference' => 'A-'.random_int(100, 999)]);
+
+    expect($create()->status())->toBe(201)
+        ->and($create()->status())->toBe(201);
+
+    $refused = $create();
+
+    // The tighter bucket bites before the api group's 120, which is the whole reason the
+    // route carries its own: creating a session does real work per call (a CSPRNG draw,
+    // an insert and an audit row) while the four transition routes act on a row that
+    // already exists.
+    $refused->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+
+    expect((string) $refused->getContent())->not->toContain('pager-create')
+        ->not->toContain('ratelimit');
 });

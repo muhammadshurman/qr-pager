@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# Unit coverage on the code a task adds (PROJECT_INSTRUCTIONS.md §6: "Unit coverage >= 90%
+# on code this task added. Report the number").
+#
+# WHY THIS SCRIPT EXISTS. The §6 clause needs a coverage DRIVER, and this machine has
+# neither pcov nor xdebug -- PLAN.md §0 records that, and records the consequence: Task 2's
+# coverage figure was measured once at `ae43e12` and then could not be re-measured after
+# two further fix rounds, so the number in the delivery record predates the code it
+# describes. Deferring the measurement to CI cost Task 2 a round.
+#
+# Installing a driver on the host needs root, which an unattended session does not have.
+# So the driver is brought to the code instead of the other way round: a throwaway
+# container with pcov, on the compose network, with the repository mounted. Nothing is
+# installed on the host and nothing is left behind.
+#
+# IT IS IN THE REPOSITORY, which is the point. R-043 is a §5 row because a gate clause
+# named a demonstration whose script lived in a session scratchpad, so nobody could re-run
+# it. A coverage number nobody else can reproduce is the same defect applied to a figure
+# in the delivery record.
+#
+# Usage:
+#   bin/coverage                     the whole app/ tree
+#   bin/coverage --min=90            fail under a threshold
+#   bin/coverage --task=task-2       only files this branch added or changed since a ref
+#
+# The --task form is what §6 actually asks for: coverage on the code THIS TASK ADDED, not
+# on the whole tree. It resolves the added-or-modified set with git and passes it to
+# PHPUnit as an explicit filter, so the denominator is the task's own code.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+export PAO_DISABLE=1
+
+min=""
+since=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --min=*) min="${arg#*=}" ;;
+    --task=*) since="${arg#*=}" ;;
+    *) echo "coverage: unknown argument [$arg]" >&2; exit 2 ;;
+  esac
+done
+
+image="qrpager-coverage:php8.4-pcov"
+network="$(docker network ls --format '{{.Name}}' | grep -E '^qr-pager_default$' || true)"
+
+if [ -z "$network" ]; then
+  echo "coverage: the compose network is not up. Run: docker compose up -d" >&2
+  exit 1
+fi
+
+# Built once and cached. pcov rather than xdebug: it is a coverage-only driver and is
+# roughly an order of magnitude cheaper, which matters for a 400-test suite.
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  echo "coverage: building $image (first run only)"
+  # EVERY extension EnvironmentTest pins, plus composer, plus git. Not because coverage
+  # needs them, but because the suite does: this container runs the WHOLE suite to collect
+  # coverage, so anything missing here is a test failing for an environment reason and
+  # a coverage figure measured over a partly-red run. Measured by building it without
+  # them -- four tests failed: EnvironmentTest's extension list (gd, mbstring), two
+  # RepoGuardTest cases and one OpenApiSpecTest case that shell out to `composer`.
+  docker build -t "$image" -f - . >/dev/null <<'DOCKERFILE'
+FROM php:8.4-cli
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libpq-dev libzip-dev libicu-dev libpng-dev libjpeg-dev libfreetype6-dev \
+      git unzip \
+ && docker-php-ext-configure gd --with-jpeg --with-freetype \
+ && docker-php-ext-install -j"$(nproc)" pdo_pgsql intl bcmath gd zip \
+ && pecl install pcov redis \
+ && docker-php-ext-enable pcov redis \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+DOCKERFILE
+fi
+
+# The file set. --task resolves what this branch added or changed under app/, which is the
+# denominator §6 names; without it, the whole tree.
+filter_args=()
+scope="the whole app/ tree"
+
+if [ -n "$since" ]; then
+  # The pathspec is the DIRECTORY and the .php filter is a grep: git's pathspec globbing
+  # does not treat `app/**.php` as "any depth", so that form silently matched nothing and
+  # the file set came back empty -- which would have measured the whole tree while
+  # printing that it measured the task's files.
+  mapfile -t changed < <(git -C ../.. diff --name-only --diff-filter=ACMR "$since"...HEAD -- 'apps/api/app' \
+    | grep '\.php$' \
+    | sed 's|^apps/api/||')
+
+  if [ "${#changed[@]}" -eq 0 ]; then
+    echo "coverage: no files under app/ changed since $since" >&2
+    exit 1
+  fi
+
+  for file in "${changed[@]}"; do
+    filter_args+=("--coverage-filter" "$file")
+  done
+
+  scope="${#changed[@]} file(s) added or changed since $since"
+fi
+
+# INSIDE THE MOUNT, not a host temp file. The container writes this document and the host
+# reads it, so it has to be a path both can see -- a mktemp path on the host is invisible
+# to the container, which wrote its clover somewhere inside its own filesystem and left an
+# empty file here. Measured: "parser error : Document is empty".
+#
+# build/ is git-ignored and already holds the PHPStan and deptrac caches, so it is where a
+# tool artefact belongs rather than needing a new ignore rule.
+mkdir -p build/coverage
+clover="build/coverage/clover.xml"
+: >"$clover"
+trap 'rm -f "$clover.files"' EXIT
+
+echo "coverage: measuring $scope"
+echo
+
+# The suite needs the real Postgres and Redis (§6: no DB mocks for DB behaviour), so the
+# container joins the compose network and addresses them by service name.
+#
+# THE REPOSITORY ROOT IS MOUNTED, not apps/api. OpenApiSpecTest reads
+# base_path('../../docs/openapi.json') -- the committed spec lives in docs/, outside the
+# application directory -- so a mount of apps/api alone put that path outside the
+# container and eleven tests failed on a missing file. Measured, not predicted.
+#
+# AND THE DATABASE IS THE SUITE'S OWN, qrpager_test. A database of its own looked tidier
+# and broke RealDatabaseTest, which pins current_database() to qrpager_test on purpose --
+# that assertion is the "never sqlite" control and is worth keeping exact. Sharing is safe
+# because R-049's suite lock is held on the maintenance database and this container
+# contends for it like any other runner: a host suite and this one queue rather than
+# truncating under each other.
+docker run --rm \
+  --network "$network" \
+  -v "$(cd ../.. && pwd)":/repo \
+  -w /repo/apps/api \
+  -e APP_ENV=testing \
+  -e PAO_DISABLE=1 \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  -e DB_DATABASE=qrpager_test \
+  -e DB_SSLMODE=disable \
+  -e REDIS_HOST=redis \
+  -e REDIS_PORT=6379 \
+  "$image" \
+  php artisan test --coverage ${min:+--min="$min"} --coverage-clover="$clover" "${filter_args[@]}"
+
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo >&2
+  echo "coverage: FAILED (exit $status)" >&2
+  exit "$status"
+fi
+
+# THE FIGURE §6 ACTUALLY ASKS FOR. `--coverage-filter` does not narrow the printed report:
+# phpunit.xml's <source><include><directory>app</directory> already includes the whole
+# tree, and the flag only ADDS to that -- so the per-class table and the `Total:` line
+# above are for all of app/, not for this task. Measured, not assumed: the table listed
+# Platform/Boot and Platform/Console on a --task run.
+#
+# So the task's own number is aggregated here from the clover document, over exactly the
+# file set resolved above. Statements covered / statements total, which is the same unit
+# Task 2's figure was expressed in ("932/999 statements over 35 app/ files") and therefore
+# comparable with it.
+if [ -n "$since" ] && [ -f "$clover" ]; then
+  echo
+  printf '%s\n' "${changed[@]}" > "$clover.files"
+
+  php -r '
+    $clover = $argv[1];
+    $wanted = array_values(array_filter(array_map("trim", (array) file($argv[1].".files"))));
+    $xml = simplexml_load_file($clover);
+    if ($xml === false) { fwrite(STDERR, "coverage: could not read the clover document
+"); exit(1); }
+
+    $rows = [];
+    $covered = $total = 0;
+
+    foreach ($xml->xpath("//file") as $file) {
+        $name = (string) $file["name"];
+        $relative = null;
+        foreach ($wanted as $candidate) {
+            if (str_ends_with(str_replace("\\", "/", $name), "/".$candidate)) { $relative = $candidate; break; }
+        }
+        if ($relative === null) { continue; }
+
+        $m = $file->metrics;
+        $c = (int) $m["coveredstatements"];
+        $t = (int) $m["statements"];
+        $covered += $c; $total += $t;
+        $rows[$relative] = [$c, $t];
+    }
+
+    ksort($rows);
+    foreach ($rows as $name => [$c, $t]) {
+        printf("  %-62s %4d/%-4d  %6.1f%%
+", $name, $c, $t, $t === 0 ? 100.0 : $c / $t * 100);
+    }
+
+    $pct = $total === 0 ? 0.0 : $covered / $total * 100;
+    printf("
+  %-62s %4d/%-4d  %6.2f%%
+", "THIS TASK (".count($rows)." file(s))", $covered, $total, $pct);
+    printf("
+  Files resolved from git: %d. Files found in the coverage document: %d.
+", count($wanted), count($rows));
+
+    if (count($wanted) !== count($rows)) {
+        fwrite(STDERR, "coverage: a resolved file is missing from the coverage document -- the figure would be over a subset
+");
+        exit(1);
+    }
+  ' "$clover" || exit 1
+fi

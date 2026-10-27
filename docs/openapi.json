@@ -49,6 +49,461 @@
                 }
             }
         },
+        "/v1/pager-sessions": {
+            "post": {
+                "operationId": "pager.sessions.store",
+                "description": "Issues a single-use token for one order and returns the payload to encode in a QR\ncode. The token is returned by this call only and cannot be retrieved afterwards.",
+                "summary": "Create a pager session",
+                "tags": [
+                    "PagerSession"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreatePagerSessionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The session, and the QR payload to encode.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer",
+                                                    "const": 0
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        },
+                                        "qr_payload": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "session",
+                                        "qr_payload"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The order reference did not pass validation.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/pager-sessions/{session}/ready": {
+            "post": {
+                "operationId": "pager.sessions.ready",
+                "description": "Safe to repeat: calling this again on a session that is already ready changes\nnothing and sends no second notification. A session that has passed its two-hour\nexpiry is refused; issue a new session instead.",
+                "summary": "Mark an order ready and notify the customer",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session state after the call.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer"
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "session"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such session in this tenant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/pager-sessions/{session}/renotify": {
+            "post": {
+                "operationId": "pager.sessions.renotify",
+                "description": "Requires a session that has already been marked ready, and is limited to a fixed\nnumber of repeats per session.",
+                "summary": "Send the ready notification again",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session state after the call.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer"
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "session"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such session in this tenant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/pager-sessions/{session}/complete": {
+            "post": {
+                "operationId": "pager.sessions.complete",
+                "description": "Sends no notification: the customer is at the counter. Safe to repeat.",
+                "summary": "Mark an order collected",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session state after the call.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer"
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "session"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such session in this tenant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/pager-sessions/{session}/cancel": {
+            "post": {
+                "operationId": "pager.sessions.cancel",
+                "description": "Notifies, so that a customer waiting on a pager that will never go off is told.\nSafe to repeat.",
+                "summary": "Cancel an order and tell the customer",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session state after the call.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer"
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "session"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such session in this tenant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/readyz": {
             "get": {
                 "operationId": "probe.readiness",
@@ -153,6 +608,107 @@
                         }
                     }
                 }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "CreatePagerSessionRequest": {
+                "type": "object",
+                "description": "The only body any route in this task accepts.\n\nVALIDATED AGAINST \u00a72.5'S OWN COLUMN, not against a guess: `order_reference` is\nvarchar(32) NOT NULL, so a longer or empty value would reach Postgres and come back as\na 23514 or a 22001 -- a driver error rendered through the envelope, which tells the\ncaller nothing about what to fix. 32 and `required` here mean it is a 422 with the\nfield named, which is what the `errors` member of the problem document exists for.\n\n`regex` rather than `string` alone because this value is printed on a physical ticket\nand shown on a staff board: a control character or a newline in it is either a broken\nlabel or a line break in a dashboard. Printable ASCII plus the separators a kitchen\nactually uses, and nothing else.\n\nauthorize() returns true and that is NOT the authorization decision. Every /v1 route is\nbehind RequireTenantScope, which is deny-by-default and answers 401 with no detail when\nno tenant resolves; the tenant then scopes every query, so there is no per-request\nauthorization left for this class to make. Stated because an `authorize(): true` that\nmeans \"something else decided\" and one that means \"anyone may\" look identical.",
+                "properties": {
+                    "order_reference": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9 \\-_#.\\/]+$",
+                        "maxLength": 32
+                    }
+                },
+                "required": [
+                    "order_reference"
+                ],
+                "title": "CreatePagerSessionRequest"
+            },
+            "ProblemDocument": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/ProblemType"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "instance": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "instance"
+                ],
+                "title": "ProblemDocument"
+            },
+            "ProblemType": {
+                "type": "string",
+                "description": "The vocabulary of `type` values this API can return in an RFC 7807 problem document. Each case is a stable URI, the HTTP status beside it, and a fixed human-readable title. A client may switch on `type`; it is the part of an error response that is contractual.\n",
+                "enum": [
+                    "https://qrpager.dev/problems/bad-request",
+                    "https://qrpager.dev/problems/validation",
+                    "https://qrpager.dev/problems/not-found",
+                    "https://qrpager.dev/problems/method-not-allowed",
+                    "https://qrpager.dev/problems/unauthenticated",
+                    "https://qrpager.dev/problems/forbidden",
+                    "https://qrpager.dev/problems/conflict",
+                    "https://qrpager.dev/problems/expired",
+                    "https://qrpager.dev/problems/rate-limited",
+                    "https://qrpager.dev/problems/unavailable",
+                    "https://qrpager.dev/problems/server-error"
+                ],
+                "title": "ProblemType"
+            },
+            "ValidationProblemDocument": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/ProblemType"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "instance": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "errors": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "instance",
+                    "errors"
+                ],
+                "title": "ValidationProblemDocument"
             }
         }
     }

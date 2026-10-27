@@ -7,10 +7,55 @@ services:
       POSTGRES_USER: qrpager_root
       POSTGRES_PASSWORD: local_dev_only
       POSTGRES_DB: qrpager
+    # R-004: log_statement=all WAS here, cluster-wide, and Task 3 is the task that made
+    # it untenable -- from here on every statement that stores or looks up a QR token
+    # binds its sha256, so a cluster that logs every statement writes tenant data into a
+    # log nobody redacts. The raw token never reaches Postgres at all (only the hash
+    # does), so this was never the §4 "never logged" clause; it was the hash, which R-004
+    # recorded as "not a credential, but tenant data in a log nobody redacts".
+    #
+    # NOTHING DEPENDED ON IT -- but removing it was HALF the fix, not the whole one, and
+    # this comment claimed otherwise until QA M-1 measured it (2026-10-27). `docker compose`
+    # does not recreate a running container when its command changes, so this edit changed
+    # nothing on any clone whose container already existed, the builder's included.
+    # Measured at review time, nine hours after the edit: Config.Cmd still carried
+    # log_statement=all, `show log_statement` returned `all`, the postmaster's start time
+    # predated the edit, and 2665 `DETAIL: parameters` lines had been written in thirty
+    # minutes -- among them `insert into pager_sessions` with the token sha256 as $3.
+    # The other half is `docker compose up -d --force-recreate postgres`, and because an
+    # unrun recreate is invisible, the control is now asserted rather than assumed:
+    # BootstrapLoggingTest requires log_statement's `pg_settings.source` to be one of the
+    # four provenances this project produces -- default, session, database, configuration
+    # file -- so 'command line' fails and so does anything new. The VALUE is deliberately
+    # not asserted: CI sets `all` through `alter system` for R-036's positive control
+    # (R-059).
+    #
+    # THAT TEST'S OWN POSITIVE CONTROL USED TO READ THIS FILE'S log_connections FLAG, and
+    # it was red on CI from the commit that added it (2026-10-27 -- four of this branch's
+    # five red checks). Not because the flag went away: it is below, and it has been at
+    # every commit on this branch. Because CI DOES NOT USE THIS FILE. CI's Postgres is a
+    # GitHub Actions service container with `image:` and `options:` and no `command:`, so
+    # it reads no command line and log_connections is 'default' there. The control now
+    # manufactures its own provenance instead -- a session SET, read back as
+    # source=session -- which no launcher can take away. Do not reintroduce a test
+    # assertion that depends on a flag in this file: the two environments start Postgres
+    # differently and always will. The two places that need statement logging turn it on themselves and scope
+    # it: BootstrapLoggingTest issues `alter database ... set log_statement = 'all'` and
+    # resets it in a finally, and CI has its own `alter system set log_statement = 'all'`
+    # step before the suite ("Log every statement, so the scan below cannot pass
+    # vacuously"). So neither the in-suite R-009 assertion nor CI's whole-run verifier
+    # scan loses anything here.
+    #
+    # R-004's review-by also assigns Task 4 "scopes the setting per-session rather than
+    # cluster-wide". That half is DISSOLVED rather than deferred: with no cluster-wide
+    # value there is nothing to scope, and Task 4's "the polling endpoint touches zero
+    # Postgres queries" proof has the instrument Task 2 already used for the same claim --
+    # a query listener over a real request (ReadinessCarrierTest) -- or it turns logging
+    # on for its own window the way BootstrapLoggingTest does.
+    #
+    # log_connections stays: it logs who connected, not what they ran.
     command:
       - postgres
-      - -c
-      - log_statement=all
       - -c
       - log_connections=on
     ports:

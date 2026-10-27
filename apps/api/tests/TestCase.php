@@ -8,22 +8,49 @@ use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Tenancy\TenantRole;
 use App\Platform\Auth\HarnessTenantResolver;
+use App\Platform\Database\DatabaseRoles;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Database\Connection;
+use Illuminate\Database\Connectors\PostgresConnector;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PDO;
 use Throwable;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * The advisory lock this suite PROCESS holds for its whole life (R-049).
+     *
+     * Deliberately not tenancy.bootstrap_lock_key: db:bootstrap takes that one on the
+     * same database from a connection of its own, and sharing the key would have this
+     * lock deadlock against the bootstrap that setUp() is about to run.
+     *
+     * AND DELIBERATELY ABOVE 2_000_000_000, which is not decoration. RoleTimeoutTest's
+     * lock_timeout firing proof draws its key from random_int(1, 2_000_000_000) and has
+     * a second session take it first -- so a key inside that range could be drawn, and
+     * because THIS lock is never released, that draw would not merely clash, it would
+     * block that test forever. One in two billion, and the failure mode is a hung suite
+     * with no output, which is the single most expensive shape this branch has paid for.
+     * Out of the range by construction costs nothing and cannot be drawn.
+     */
+    private const SUITE_LOCK_KEY = 2_000_000_049;
+
     private static bool $databaseReady = false;
 
     private static ?string $runMarker = null;
 
     private static ?string $suiteStartedAt = null;
+
+    /**
+     * The handle holding SUITE_LOCK_KEY. Never released, never purged, never closed.
+     *
+     * @see serialiseThisRunnerAgainstEveryOther()
+     */
+    private static ?PDO $suiteLock = null;
 
     /**
      * Truncated between tests. audit_log is deliberately absent: it is append-only,
@@ -37,6 +64,11 @@ abstract class TestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // FIRST, before the bootstrap and before the TRUNCATE below (R-049). A second
+        // `php artisan test` queues here instead of wiping this run's rows between its
+        // statements.
+        self::serialiseThisRunnerAgainstEveryOther();
 
         if (! self::$databaseReady) {
             // The suite runs from a fresh clone with nothing but `docker compose up`:
@@ -70,6 +102,75 @@ abstract class TestCase extends BaseTestCase
             // A Redis that cannot be reached has no key to clear, and the tests that
             // care about Redis being down say so themselves.
         }
+    }
+
+    /**
+     * One suite process at a time, for the life of the process (R-049).
+     *
+     * THE FAILURE THIS EXISTS FOR. setUp() truncates six tables on every test. The
+     * bootstrap takes pg_advisory_lock so parallel runners queue instead of racing a
+     * duplicate CREATE ROLE -- and that was the ONLY place concurrency was handled, so a
+     * second `php artisan test`, even on one file, wiped the first run's rows between its
+     * statements. Reproduced deterministically at `ae43e12` from two pest invocations on
+     * two different files: OwnerAndBypassTest took 23503 on tenant_users_tenant_id_fkey
+     * ("Key is not present in table tenants", TestCase.php:305) and RefusalDiagnosticsTest
+     * reported "the premise of this test is gone: the write did not survive". Foreign-key
+     * checks bypass row level security, so the row was genuinely gone.
+     *
+     * That is the identified cause of §4a's one red run -- the 363 recorded as
+     * "unexplained" for a week -- and the failure DIRECTION is why it cost that long: a
+     * lost write presents as a write made inside withTenant() that did not survive, which
+     * is indistinguishable at a glance from H-B's family.
+     *
+     * A RAW PDO HANDLE, and that is the whole mechanism. An advisory lock is held by a
+     * SESSION, and tearDown() purges every Laravel connection after every test -- so a
+     * lock taken on DB::connection(...) would be released by the next purge and this
+     * would serialise nothing. This handle is outside the connection manager, so nothing
+     * purges it, and it is static so it outlives every test in the process.
+     *
+     * The bootstrap connection, because of WHEN this runs: it is the maintenance database
+     * (DB_MAINTENANCE_DATABASE, `postgres` by default), which always exists. The test
+     * database does not -- db:bootstrap creates it, two lines below the call to this
+     * method -- so a lock taken on the test database could not be taken on a fresh
+     * cluster at all. Advisory locks are allocated per database, so every runner has to
+     * agree on which one, and the one that is always there is the right answer.
+     *
+     * RELEASED BY THE PROCESS ENDING, which is the property that matters for a suite that
+     * can be killed: pg_advisory_lock is session-scoped, so a kill -9, an OOM or a CI
+     * timeout drops the connection and the lock with it. There is deliberately no
+     * unlock and no shutdown function -- the one thing worse than a serialised suite is
+     * one whose lock survives a crash and blocks every later run.
+     *
+     * The connector is the framework's own, rather than a DSN assembled here: sslmode and
+     * the rest of the pgsql options already live in config/database.php, and a second
+     * copy of that assembly is the duplicated-configuration shape QA H-1 cost us.
+     */
+    private static function serialiseThisRunnerAgainstEveryOther(): void
+    {
+        if (self::$suiteLock !== null) {
+            return;
+        }
+
+        $name = DatabaseRoles::connection('bootstrap');
+
+        /** @var array<string, mixed> $config */
+        $config = (array) config('database.connections.'.$name);
+
+        $pdo = (new PostgresConnector)->connect($config);
+
+        // Queue, never refuse. An advisory lock IS subject to lock_timeout, and the root
+        // role is the one role tenancy.timeouts does not set one for -- so today this
+        // session inherits the cluster default of 0 and waits. Pinned on the session
+        // rather than relied on: the whole value of this lock is that the second runner
+        // WAITS, and inheriting that from a role attribute nobody is looking at would
+        // turn a queue into a 55P03 the first time someone gives root a lock_timeout.
+        $pdo->exec('set lock_timeout = 0');
+        $pdo->exec('select pg_advisory_lock('.self::SUITE_LOCK_KEY.')');
+
+        // Assigned only after the lock is held: a handle in this property is the
+        // claim that this process owns the lock, so it must not be set by a connect
+        // that then failed to acquire.
+        self::$suiteLock = $pdo;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Pager\PagerToken;
 use App\Platform\Boot\BootChecks;
 use App\Platform\Boot\RefuseUnsafeBoot;
 use App\Platform\Database\DatabaseRoles;
@@ -145,6 +146,66 @@ it('refuses an sslmode that can silently downgrade to plaintext — D8', functio
  * Security finding #2. Three ways to get trusted proxies wrong, all three refused, and
  * the exemption for local/testing asserted so the suite's own exemption is deliberate.
  */
+
+/*
+ * Security S-5. pager.landing_url is the base of every QR payload, and PagerToken puts
+ * the raw token in that URL's fragment. The fragment is protected by the CLIENT being the
+ * one to resolve it -- so the protection is a property of the SCHEME, and nothing was
+ * checking the scheme. PAGER_LANDING_URL was also absent from .env.example, so "unset"
+ * was the likely state rather than the unlikely one.
+ */
+
+it('refuses a landing URL that would deliver the token unsafely — S-5', function (string $url, string $because): void {
+    app()->detectEnvironment(fn () => 'production');
+    config(['pager.landing_url' => $url]);
+
+    $failures = app(BootChecks::class)->landingUrlIsSound();
+
+    expect($failures)->toHaveCount(1, "[{$url}] was accepted, and it is {$because}")
+        ->and($failures[0])->toStartWith(BootChecks::UNSAFE_LANDING_URL);
+})->with([
+    'empty' => ['', 'where an unset PAGER_LANDING_URL lands'],
+    'whitespace' => ['   ', 'empty with extra steps'],
+    'plaintext' => ['http://pager.example.com/p', 'the scheme that removes the fragment\'s whole protection'],
+    'scheme-relative' => ['//pager.example.com/p', 'not absolute, so it resolves nowhere'],
+    'path only' => ['/p', 'not a URL at all'],
+    'no host' => ['https:///p', 'https with nothing to resolve'],
+    'already fragmented' => ['https://pager.example.com/p#x', 'a second # the client cannot split'],
+]);
+
+it('accepts the shape a deployment is supposed to carry', function (): void {
+    app()->detectEnvironment(fn () => 'production');
+
+    foreach ([
+        'https://pager.example.com/p',
+        'https://pager.example.com/scan',
+        'https://pager.example.com/p?v=2',
+        'HTTPS://pager.example.com/p',
+    ] as $url) {
+        config(['pager.landing_url' => $url]);
+
+        expect(app(BootChecks::class)->landingUrlIsSound())->toBe([], "[{$url}] was refused");
+    }
+});
+
+it('proves the fragment case is real and not a guess about parse_url', function (): void {
+    // The refusal above is only worth having if the failure it prevents is real. This is
+    // that failure, measured rather than described: the token is appended after a '#', so
+    // a base URL that already has one yields a fragment the client cannot split, and
+    // nothing on either side reports it.
+    $token = PagerToken::issue();
+    $payload = $token->qrPayload('https://pager.example.com/p#already');
+
+    expect(parse_url($payload, PHP_URL_FRAGMENT))->toBe('already#'.$token->reveal())
+        ->and(parse_url($payload, PHP_URL_FRAGMENT))->not->toBe($token->reveal());
+});
+
+it('exempts local and testing, where the landing URL is whatever the suite builds', function (string $environment): void {
+    app()->detectEnvironment(fn () => $environment);
+    config(['pager.landing_url' => 'http://localhost/p']);
+
+    expect(app(BootChecks::class)->landingUrlIsSound())->toBe([]);
+})->with(['local', 'testing']);
 
 it('refuses to serve with no trusted proxy configured, outside local and testing', function (): void {
     app()->detectEnvironment(fn () => 'production');
