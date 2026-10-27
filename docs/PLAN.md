@@ -2606,9 +2606,15 @@ on the rebase. Reported rather than fixed there, on instruction.
 
 #### The two ruled into `§5`, or decided
 
-- **`L-4`** — `pager:expire` registered and scheduled nowhere: **the gap is accepted and it
-  is already `R-058`**, owner Task 13 with `R-047`. But *"two artefacts naming different
-  owners is a false record, not a risk"*, so the disagreement was corrected **first**:
+- **`L-4`** — `pager:expire` registered and scheduled nowhere: **the gap was accepted as
+  `R-058`**, owner Task 13 with `R-047`. **⚠ SUPERSEDED THE SAME DAY by security `M-2`: it is
+  now scheduled** — `Schedule::command('pager:expire')->everyMinute()->withoutOverlapping()`
+  in `routes/console.php`, asserted against the scheduler's own collection — so `R-058` is
+  narrowed to "nothing runs `schedule:run`", which is the half that really is Task 13's. The
+  `bootstrap/app.php` comment that said the command is "registered and not scheduled" is
+  corrected with it; two reviewers reaching the same gap from different directions is why
+  this disposition moved within a day of being written. What stands unchanged is the
+  ownership correction below, because it is why the row reads as it does:
   `bootstrap/app.php` said "Scheduling it is Task 13/14's" while `R-058`'s owner cell said
   "Task 13 (infrastructure), with `R-047` — the same gap, the same owner". The docblock now
   says Task 13 and names both rows.
@@ -2626,7 +2632,13 @@ on the rebase. Reported rather than fixed there, on instruction.
 
 **`L-5`** — the 401 is undocumented in the generated spec. Held until Security `M-1` (the
 spec publishes the staff endpoints as needing no authentication) is ruled on: same artefact,
-regenerate once, together.
+regenerate once, together. **⚠ RELEASED AND FIXED 2026-10-27 at `123c9b3`, with `M-1`, in one
+regeneration as intended** — every authenticated operation publishes a `401` carrying this
+project's problem document, the probes publish none, and a third defect in the same artefact
+surfaced while the assertions were being written: every error had been published under
+`application/json` while the API sends `application/problem+json`. Holding it was the right
+call and it is the only finding on this branch that was deliberately deferred rather than
+dispositioned on sight.
 
 #### Gate after the disposition round
 

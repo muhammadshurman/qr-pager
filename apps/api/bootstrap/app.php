@@ -108,15 +108,24 @@ return Application::configure(basePath: dirname(__DIR__))
         // Task 3's expiry job. Registered rather than auto-discovered because it lives in
         // app/Features, which withCommands' directory scan does not cover -- and because
         // the list being explicit is what makes `php artisan` the record of what exists.
-        // Scheduling it is TASK 13's, with R-047 and R-058 -- one gap, one owner. This
-        // comment said "Task 13/14's" until 2026-10-27, while §5's R-058 owner cell said
-        // "Task 13 (infrastructure), with R-047 -- the same gap, the same owner". Two
-        // artefacts naming different owners is a false record rather than a risk, so it is
-        // corrected here rather than carried (QA L-4).
+        // IT IS NOW SCHEDULED, in routes/console.php, and this comment said the opposite
+        // until 2026-10-27 (security M-2). What is still TASK 13's, with R-047 and R-058, is
+        // a PROCESS that runs `schedule:run`: the schedule is a declaration, and nothing in
+        // any deployed environment reads it yet.
         //
-        // A command that is registered and never run is a visible gap; one scheduled
-        // against infrastructure that does not exist yet is R-047's shape, which is why it
-        // is registered and not scheduled.
+        // The ownership note this comment carried is kept, because it is why the row reads
+        // the way it does: the comment said "Task 13/14's" while §5's R-058 owner cell said
+        // "Task 13 (infrastructure), with R-047 -- the same gap, the same owner", and two
+        // artefacts naming different owners is a false record rather than a risk (QA L-4).
+        //
+        // The reasoning that kept it unscheduled -- "one scheduled against infrastructure
+        // that does not exist yet is R-047's shape" -- was answered rather than overruled. A
+        // schedule is a DECLARATION: nothing runs until a process runs `schedule:run`, so
+        // there is no behaviour to go wrong before Task 13, and the gap stops being invisible
+        // because `php artisan schedule:list` now shows it. What `withoutOverlapping()` adds
+        // is for when that process exists: a mutex, default expiry 1440 minutes, released on
+        // a termination signal (measured in the framework's own signature, not recalled), so
+        // a pass longer than a minute cannot be overlapped by the next tick.
         ExpirePagerSessionsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
