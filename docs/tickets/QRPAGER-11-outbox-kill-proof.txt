@@ -1,14 +1,16 @@
-# bin/outbox-kill-proof
+# bin/outbox-kill-proof — RE-RUN at 056d7a1, after R-083's fix, on Muhammad's
+# instruction: "Re-run the kill-mid-batch proof; it must still report nothing lost and
+# nothing duplicated."
 #
-# Measured on the REBASED branch at bef66a3 — task-4-notifications rebased onto the
-# task-3 tag (f30bd24). Every figure here supersedes one taken before the rebase;
-# PLAN.md §4a and QRPAGER-11-handover.md §11 annotate the old value in place.
+# IT DOES, AND THE FIGURES ARE UNCHANGED: 8 sent, 0 pending, 0 dead, max attempts 2 of 6.
 #
-# 8 sent, 0 pending, 0 dead; max attempts 2 of 6 allowed; no duplicate (tenant_id,
-# dedupe_key). A real worker, kill -9 while blocked inside a send, lease released, a
-# second worker finishing the batch.
+# That it is unchanged is the finding. The re-lease adds one keyed UPDATE immediately
+# before each row's send, and the single-worker crash path must not notice: a worker
+# that holds its own lease re-takes it successfully every time, so the only new
+# behaviour is on the path where a SECOND worker exists — which this proof does not
+# have and bin/outbox-lease-proof does.
 #
-outbox-kill-proof — bef66a3, 2026-10-27T14:24:32Z
+outbox-kill-proof — 056d7a1, 2026-10-27T18:30:55Z
   rows: 8
   database: qrpager_outbox_proof (bootstrapped and migrated)
 
@@ -19,7 +21,7 @@ seeded:
     "pending_outbox_rows": 8
 }
 
-worker pid 188945 started; waiting for it to claim the batch and block
+worker pid 727286 started; waiting for it to claim the batch and block
 worker killed -9 while blocked inside a send
 
 after the kill:

@@ -1,4 +1,9 @@
-STATUS: TASK-3 TAGGED, TASK-4 BLOCKED — R-083: the outbox lease covers the whole batch but rows are sent one at a time, so a second worker re-sends; it falsifies Task 4's own §3.1 invariant and every fix is a design choice reserved to you.
+STATUS (SUPERSEDED 2026-10-27, LATER THE SAME DAY): R-083 IS FIXED AND CLOSED, and so are QA M-6 and security L-1. Muhammad ruled all three; the branch is at 056d7a1, gate green at 642 passed / 3768 assertions, and what remains before the tag is the §11 review of the fix diff. Read docs/PLAN.md §0 for current state — this file is now a record of the overnight run and no longer states where the project is.
+
+> **The original STATUS line, kept because the rest of this file was written under it:**
+> TASK-3 TAGGED, TASK-4 BLOCKED — R-083: the outbox lease covers the whole batch but rows are sent one at a time, so a second worker re-sends; it falsifies Task 4's own §3.1 invariant and every fix is a design choice reserved to you.
+>
+> **What changed.** The design choice was taken: RE-LEASE PER ROW plus a device safety cap, chosen over the four alternatives because it makes correctness independent of batch size, device count and network latency. The two-process proof this file records as deliberately NOT written (assumption 12) is now `bin/outbox-lease-proof`, and it was RED before the fix at 12 requests for 8 rows. `R-074` closed too — Muhammad wrote the rank-2 sentence himself and it is mirrored into the repo's `PROJECT_INSTRUCTIONS.md §4 › Realtime`.
 
 # Overnight run, 2026-10-27 — close Task 3, rebase and close Task 4
 

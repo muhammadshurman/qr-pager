@@ -1,0 +1,122 @@
+# R-083's CLOSING GATE — the two-process duplicate-send proof, and the revert proof.
+#
+# This is the acceptance evidence R-083 names and the overnight run deliberately did NOT
+# write, because the design it had to be built around was Muhammad's to choose:
+#
+#   "a two-process proof (outbox:work --once twice over, lease_seconds=1, batch_size=8,
+#    an edge that sleeps ~1 s per send) asserting EACH ENDPOINT RECEIVED EXACTLY ONE
+#    REQUEST — which should be RED on the current head"
+#
+# ⚠ ONE PARAMETER IS DELIBERATELY DIFFERENT, and the reason is a correction to the gate
+# rather than a convenience. THE SEND IS 250 ms, NOT ~1 s. A ~1 s send against a 1 s
+# lease is a configuration in which NO per-row re-lease can hold: the fix bounds the
+# duplicate window by ONE ROW'S processing, so the lease must EXCEED one row's
+# processing. At 1 s against a 1 s lease the worker loses the row WHILE sending it and
+# no statement placed before the send can see that coming. lease_seconds=1 and
+# batch_size=8 are used verbatim. Written down rather than quietly adjusted: as
+# specified, the gate's parameters describe a system that cannot satisfy the gate.
+#
+# ================================================================================
+# PART 1 — RED, without the fix (reLease() made unreachable, nothing else changed)
+# ================================================================================
+#
+#   worker A — claimed 8, sent 8, retried 0, dead 0, skipped 0, pruned 0
+#   worker B — claimed 4, sent 4, retried 0, dead 0, skipped 0, pruned 0
+#
+#   requests at the edge: 12 across 3 worker(s), 8 distinct endpoint(s)
+#   outbox: sent 8, pending 0, dead 0
+#
+#   outbox-lease-proof: FAILED
+#     - nothing duplicated: 2 requests reached https://push.example.test/fa5566c707a09172…
+#     - nothing duplicated: 2 requests reached https://push.example.test/c922a5f074b5845a…
+#     - nothing duplicated: 2 requests reached https://push.example.test/87fda43ca13cc7d3…
+#     - nothing duplicated: 2 requests reached https://push.example.test/33f0aa2127a412fc…
+#
+# TWELVE REQUESTS FOR EIGHT ROWS, four customers buzzed twice — WHILE THE TABLE READS
+# "sent 8, pending 0, dead 0". That line is the whole reason this proof counts at the
+# edge and not in Postgres: the losing worker's keyed, status-guarded finish() reports 0
+# affected rows and writes nothing, so the duplicate leaves no trace anywhere in the
+# database. R-083 said so; this is it happening.
+#
+# ================================================================================
+# PART 2 — GREEN, with the fix. The transcript below is the real run.
+# ================================================================================
+#
+# Note worker A's line: claimed 8, SENT 4, SKIPPED 4. A's lease lapsed mid-batch, B
+# claimed the four rows A had not reached, and A skipped every one of them when it got
+# there because its token no longer matched. The lease genuinely lapsed; nothing was
+# sent twice and nothing was lost.
+#
+outbox-lease-proof — cf4c3a9, 2026-10-27T17:51:23Z
+  rows: 8 · lease_seconds: 1 · send: 250ms · second worker at +1.25s
+  database: qrpager_outbox_proof (bootstrapped and migrated)
+
+seeded:
+{
+    "tenants": 2,
+    "sessions": 8,
+    "pending_outbox_rows": 8
+}
+
+worker A (pid 710000) exited 0:
+  outbox:work — claimed 8, sent 4, retried 0, dead 0, skipped 4, pruned 0 subscription(s).
+worker B (pid 710004) exited 0:
+  outbox:work — claimed 4, sent 4, retried 0, dead 0, skipped 0, pruned 0 subscription(s).
+
+released 0 leased row(s)
+  
+
+requests at the edge: 8 across 3 worker(s), 8 distinct endpoint(s)
+outbox: sent 8, pending 0, dead 0
+
+outbox-lease-proof: each of the 8 endpoints received exactly one request.
+
+# ================================================================================
+# PART 3 — bin/lease-revert-proof: every case red without the half it guards
+# ================================================================================
+#
+# The two halves of the fix are reverted SEPARATELY, because a single combined revert
+# cannot show which case guards which half — and a case that is red for the other half's
+# reason is not revert-proved.
+#
+R-083 revert proof — OutboxLeaseTest, 056d7a1, 2026-10-27T18:32:17Z
+
+=== baseline — no revert, every case should pass
+   PASS  Tests\Feature\Notifications\OutboxLeaseTest
+  ✓ it sends each notification exactly once across two concurrent worke… 3.76s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.16s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.17s  
+  ✓ it says so in the log when the cap bites, because a device silently… 0.16s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.07s  
+  Tests:    7 passed (47 assertions)
+
+=== revert A — the per-row re-lease removed (R-083's first half)
+   FAIL  Tests\Feature\Notifications\OutboxLeaseTest
+  ⨯ it sends each notification exactly once across two concurrent worke… 3.77s  
+  ⨯ it skips a row whose lease was stolen mid-batch instead of sending…  0.17s  
+  ⨯ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.15s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.16s  
+  ✓ it says so in the log when the cap bites, because a device silently… 0.18s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it sends each notif…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it skips a row whos…   
+  Tests:    3 failed, 4 passed (23 assertions)
+
+=== revert B — the device cap removed (R-083's second half)
+   FAIL  Tests\Feature\Notifications\OutboxLeaseTest
+  ✓ it sends each notification exactly once across two concurrent worke… 3.75s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.16s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.18s  
+  ⨯ it sends to at most the configured number of devices for one sessio… 0.17s  
+  ⨯ it says so in the log when the cap bites, because a device silently… 0.16s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.15s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.06s  
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it sends to at most…   
+   FAILED  Tests\Feature\Notifications\OutboxLeaseTest > it says so in the l…   
+  Tests:    2 failed, 5 passed (42 assertions)
+
+both files restored: no revert sentinel remains in either.
