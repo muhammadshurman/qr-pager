@@ -40,6 +40,19 @@ final class DriverError
 
     public const QUERY_CANCELED = '57014';
 
+    /**
+     * lock_timeout fired: another transaction holds the row and we gave up waiting.
+     *
+     * The SIBLING of QUERY_CANCELED and it was missing, which is QA L-7. Both are
+     * timeouts the app role carries deliberately (§2.1: statement_timeout = 5s,
+     * lock_timeout = 2s), and `select ... for update` in PagerSessions is the one
+     * statement in the project that waits on another transaction -- so this is an
+     * EXPECTED operational outcome under contention, not a server fault. Measured
+     * 2026-10-27: a competing holder on the row makes markReady fail after 2.02s with
+     * 55P03, and with only 57014 mapped it rendered a 500.
+     */
+    public const LOCK_NOT_AVAILABLE = '55P03';
+
     public const TOO_MANY_CONNECTIONS = '53300';
 
     public const INVALID_TEXT_REPRESENTATION = '22P02';

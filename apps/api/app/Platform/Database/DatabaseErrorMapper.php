@@ -53,9 +53,18 @@ final class DatabaseErrorMapper
             // client -- measured: the 41st qrpager_app connection is refused with
             // 08006 and "too many connections for role", NOT with 53300. A mapper
             // keyed only on 53300 would never fire for the case the gate is about.
+            // 55P03 joins QUERY_CANCELED here rather than falling to the default,
+            // which is QA L-7. Both are timeouts the app role sets on purpose, and a
+            // lock_timeout means another transaction holds the row -- transient
+            // contention the caller may retry, not a fault on our side. It rendered a
+            // 500 while 57014 rendered a 503, so two spellings of "we waited and gave
+            // up" answered differently. Unavailable, not Conflict: the STATE is fine,
+            // we simply could not get the lock in time, and Conflict would assert
+            // something about the state that is not true.
             DriverError::CONNECTION_FAILURE,
             DriverError::TOO_MANY_CONNECTIONS,
-            DriverError::QUERY_CANCELED => ProblemType::Unavailable,
+            DriverError::QUERY_CANCELED,
+            DriverError::LOCK_NOT_AVAILABLE => ProblemType::Unavailable,
 
             default => ProblemType::ServerError,
         };

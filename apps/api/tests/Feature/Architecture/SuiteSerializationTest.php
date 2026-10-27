@@ -79,3 +79,48 @@ it('keeps its behavioural proof in the repository, not in a session scratchpad �
     expect($source)->toContain('OwnerAndBypassTest.php')
         ->and($source)->toContain('RefusalDiagnosticsTest.php');
 });
+
+/*
+ * QA L-5: R-054's fix is one line and nothing guarded it.
+ *
+ * `bin/gate` exports PAO_DISABLE=1 because `laravel/pao` swaps the console output style
+ * whenever AgentDetector::detect()->isAgent, so without it the gate log is a single JSON
+ * line with no frame list in any agent session and Pest's normal output in a terminal --
+ * the gate log's CONTENT depended on who ran it, which is what R-054 was. The claim in
+ * bin/gate, CLAUDE.md and R-049's compensating control was kept and made true for every
+ * runner by that one export.
+ *
+ * Deleting it would restore the frameless form silently: no test fails, the gate still
+ * exits 0, and the loss only shows up on the next red run, which is exactly when the
+ * frames are needed. The precedent for pinning a bin/ script's content is the R-043 case
+ * above, which is why this lives in the same file.
+ */
+it('keeps the gate log readable for every runner, which is one export line — R-054, QA L-5', function (): void {
+    $gate = base_path('bin/gate');
+
+    expect(is_file($gate))->toBeTrue('bin/gate is missing')
+        ->and(is_executable($gate))->toBeTrue('bin/gate is not executable');
+
+    $source = (string) file_get_contents($gate);
+
+    // The export itself, and that it is EXPORTED rather than merely assigned: the steps
+    // run as child processes, so a shell variable without `export` would not reach them.
+    // str_contains + toBeTrue rather than toContain, because Pest's toContain is
+    // VARIADIC over needles -- a second argument is another needle, not a message, so the
+    // first draft of this case asserted that bin/gate contained its own failure message.
+    // It went red and said so, which is the only reason this comment exists.
+    expect(str_contains($source, 'export PAO_DISABLE=1'))->toBeTrue(
+        'bin/gate no longer exports PAO_DISABLE=1, so its log is the frameless JSON form in any agent session (R-054)'
+    );
+
+    // And that the switch is the package's own, not a guess: if this constant ever stops
+    // being the name laravel/pao checks, the assertion above is pinning nothing. Read
+    // from the vendor source, which is where QRPAGER-10 §4 measured it.
+    $provider = base_path('vendor/laravel/pao/src/Laravel/ServiceProvider.php');
+
+    if (is_file($provider)) {
+        expect(str_contains((string) file_get_contents($provider), 'PAO_DISABLE'))->toBeTrue(
+            'laravel/pao no longer reads PAO_DISABLE, so bin/gate is exporting a dead variable'
+        );
+    }
+});

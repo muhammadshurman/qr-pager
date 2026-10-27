@@ -11,8 +11,11 @@ use Illuminate\Support\Str;
  * §3 gate, clause 4: "cross-tenant IDOR blocked through HTTP, not just at the DB".
  *
  * THROUGH HTTP IS THE POINT. §11 › Security requires "every route taking an ID is proven
- * inaccessible across tenants by a test, not by reading the code", and these five routes
- * are the first in the project to take an id at all. So every assertion here goes through
+ * inaccessible across tenants by a test, not by reading the code", and these FOUR routes
+ * are the first in the project to take an id at all -- the four transitions. `store` is
+ * the fifth pager route and takes no id, so it is not an IDOR surface and is not here.
+ * (This said "five" until QA L-8; the file's own transitionRoutes() has always listed
+ * four, so the comment disagreed with the code beside it.) So every assertion here goes through
  * a real request -- the middleware stack, the resolver, the tenant scope and the policies
  * -- and not through the service.
  *

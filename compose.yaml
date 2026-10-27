@@ -14,8 +14,20 @@ services:
     # does), so this was never the §4 "never logged" clause; it was the hash, which R-004
     # recorded as "not a credential, but tenant data in a log nobody redacts".
     #
-    # NOTHING DEPENDED ON IT, which is why removing it is the whole fix rather than half
-    # of one. The two places that need statement logging turn it on themselves and scope
+    # NOTHING DEPENDED ON IT -- but removing it was HALF the fix, not the whole one, and
+    # this comment claimed otherwise until QA M-1 measured it (2026-10-27). `docker compose`
+    # does not recreate a running container when its command changes, so this edit changed
+    # nothing on any clone whose container already existed, the builder's included.
+    # Measured at review time, nine hours after the edit: Config.Cmd still carried
+    # log_statement=all, `show log_statement` returned `all`, the postmaster's start time
+    # predated the edit, and 2665 `DETAIL: parameters` lines had been written in thirty
+    # minutes -- among them `insert into pager_sessions` with the token sha256 as $3.
+    # The other half is `docker compose up -d --force-recreate postgres`, and because an
+    # unrun recreate is invisible, the control is now asserted rather than assumed:
+    # BootstrapLoggingTest checks `pg_settings.source` for log_statement is never
+    # 'command line' (the value is not asserted -- CI sets `all` deliberately for R-036's
+    # positive control, R-059), with log_connections asserted AS 'command line' so the
+    # case cannot pass against a cluster that reads no command line at all. The two places that need statement logging turn it on themselves and scope
     # it: BootstrapLoggingTest issues `alter database ... set log_statement = 'all'` and
     # resets it in a finally, and CI has its own `alter system set log_statement = 'all'`
     # step before the suite ("Log every statement, so the scan below cannot pass

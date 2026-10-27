@@ -273,3 +273,46 @@ it('carries the status whitelist in the policies themselves, read from pg_catalo
     // And WITH CHECK still pins the only status the worker may write without context.
     expect((string) $byName['worker_expires_sessions']->check_expr)->toContain("'expired'");
 });
+
+/*
+ * QA L-4. The §3 gate's FIRST clause is stated generally — "the status change, the outbox
+ * row and the audit row commit in one transaction, or none of them does" — and
+ * PagerTransactionTest proves it for the three writers in PagerSessions. This job is the
+ * FOURTH writer of a status change plus an audit row in one withTenant() transaction, and
+ * it had no injected-failure case: the invariant was proven for the service and assumed
+ * for the job, on the grounds that both use the same helper.
+ *
+ * Same helper is a reason to expect it to hold, not a reason not to test it — and the one
+ * thing that differs here is the connection. The job runs on pgsql_worker, whose scope is
+ * opened by withTenant(..., 'pgsql_worker'), and nothing had ever injected a failure
+ * inside a worker-connection scope.
+ */
+it('commits the expiry and its audit row together or not at all — QA L-4', function (): void {
+    $tenant = $this->makeTenant();
+    $session = expiredSessionIn($tenant, PagerStatus::Waiting);
+
+    // beforeExecuting fires BEFORE the statement runs, so no test-only seam exists in
+    // production code -- the same instrument PagerTransactionTest uses, pointed at the
+    // worker connection, which is the half that had never been exercised.
+    DB::connection('pgsql_worker')->beforeExecuting(function (string $query): void {
+        if (str_contains($query, 'insert into audit_log')) {
+            throw new RuntimeException('deliberate, after the expiry UPDATE');
+        }
+    });
+
+    expect(fn () => Artisan::call('pager:expire'))
+        ->toThrow(RuntimeException::class, 'deliberate, after the expiry UPDATE');
+
+    $status = withTenant($tenant, fn () => DB::table('pager_sessions')->where('id', $session)->value('status'));
+    $audit = withTenant($tenant, fn (): int => DB::table('audit_log')
+        ->where('subject_id', $session)
+        ->where('action', PagerAuditAction::Expired->value)
+        ->count());
+
+    // The UPDATE had already succeeded when the audit insert threw, so this asserts the
+    // rollback and not merely that nothing happened.
+    expect($status)->toBe(
+        PagerStatus::Waiting->value,
+        'the expiry survived a transaction whose audit row was rolled back'
+    )->and($audit)->toBe(0);
+});

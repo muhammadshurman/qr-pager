@@ -264,3 +264,66 @@ it('refuses to run a pager action with no tenant bound, so a route off the api g
     expect(fn () => $controller->ready(Request::create('/v1/pager-sessions/x/ready', 'POST'), 'x'))
         ->toThrow(RuntimeException::class, 'No tenant is bound for this request');
 });
+
+/*
+ * QA L-7. §11's failure checklist is timeout, retry, duplicate, crash mid-way. Retry is
+ * PagerIdempotencyTest, duplicate is its unique-index case, crash mid-way is
+ * PagerTransactionTest -- and TIMEOUT had no test on this task at all.
+ *
+ * The app role carries lock_timeout = 2s (§2.1) and `select ... for update` in
+ * PagerSessions is the only statement in the project that waits on another transaction,
+ * so this is the one path that can reach it. Measured at review time: a competing holder
+ * made markReady fail after 2.02s with SQLSTATE 55P03 and the envelope answered
+ * **500 ServerError**, because only 57014 was mapped. Both are timeouts the role sets on
+ * purpose, so two spellings of "we waited and gave up" answered differently. 55P03 now
+ * joins 57014 on Unavailable.
+ */
+it('answers 503 and not 500 when the row lock times out — QA L-7', function (): void {
+    $tenant = $this->makeTenant();
+    $session = $this->makeSession($tenant);
+    $this->actingForTenant($tenant);
+
+    $holder = proc_open(
+        [PHP_BINARY, base_path('tests/Support/hold-pager-session-lock.php'), $tenant, $session, '6000'],
+        [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
+
+    expect($holder)->not->toBeFalse('could not start the lock holder');
+
+    try {
+        // BLOCK on the holder's own signal rather than sleeping: a fixed sleep either
+        // makes the test slow or makes it flaky, and this line is how the script says
+        // the lock is actually held.
+        $signal = (string) fgets($pipes[1]);
+
+        expect(trim($signal))->toBe('locked', "the lock holder did not acquire: [{$signal}]");
+
+        $started = microtime(true);
+        $response = $this->postJson("/v1/pager-sessions/{$session}/ready");
+        $waited = microtime(true) - $started;
+
+        expect($response->status())->toBe(503, 'a lock timeout did not render as Unavailable')
+            ->and($response->json('type'))->toBe(ProblemType::Unavailable->value)
+            ->and($response->json('title'))->toBe(ProblemType::Unavailable->title());
+
+        // The LOWER bound only, which is F10's lesson and R-014's: the role's
+        // lock_timeout is 2s, so a refusal that arrives sooner than that did not come
+        // from the timeout and the test would be passing for the wrong reason. No upper
+        // bound -- a loaded host turned a passing proof red at 27.6s on this branch.
+        expect($waited)->toBeGreaterThan(1.5, 'the refusal arrived too early to be the lock timeout');
+
+        // And the body carries nothing: no SQLSTATE, no SQL, no role name.
+        $body = (string) $response->getContent();
+
+        expect($body)->not->toContain('55P03')
+            ->not->toContain('SQLSTATE')
+            ->not->toContain('qrpager_')
+            ->not->toContain('pager_sessions');
+    } finally {
+        if (is_resource($holder)) {
+            proc_terminate($holder);
+            proc_close($holder);
+        }
+    }
+});
