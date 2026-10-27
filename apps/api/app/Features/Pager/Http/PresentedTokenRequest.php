@@ -6,6 +6,7 @@ namespace App\Features\Pager\Http;
 
 use App\Domain\Pager\PagerToken;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 /**
  * The base of every customer request: a QR token, in the BODY, never in the URL.
@@ -41,9 +42,51 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 abstract class PresentedTokenRequest extends FormRequest
 {
+    /**
+     * Request keys that may arrive in the BODY and nowhere else.
+     *
+     * ⚠ WITHOUT THIS LIST THE DOCBLOCK ABOVE WAS A CONVENTION, NOT A CONTROL (security
+     * M-2, 2026-10-27). `FormRequest::validationData()` is `all()`, and Laravel's `all()`
+     * is `getInputSource()->all() + $this->query->all()` -- so a token in the QUERY STRING
+     * was validated and honoured exactly like one in the body. Measured against the pinned
+     * framework: `POST /v1/pager/status?token=<22 chars>` with a JSON body carrying no
+     * token resolved that token, and so did
+     * `DELETE /v1/pager/subscription?token=…&endpoint=…`.
+     *
+     * That defeats the whole reason these routes are POST. `§4 › Data` says the raw token
+     * is "never logged, never in a URL query string" and `§3` row 3 as amended says "no
+     * URL path or query string"; a server that ACCEPTS one guarantees it will eventually be
+     * sent one, and it lands in the ALB access log, the proxy URL trace and any CDN log
+     * before this application sees it.
+     *
+     * REFUSED, not silently ignored. Ignoring it would answer 404/422 for a token the
+     * caller believes is valid, and the client developer would never learn why; the
+     * refusal names the rule. `endpoint` is here too because it is the other value these
+     * routes take and a URL in a URL is the same disclosure in miniature.
+     *
+     * @var list<string>
+     */
+    public const BODY_ONLY = ['token', 'endpoint'];
+
     public function authorize(): bool
     {
         return true;
+    }
+
+    /**
+     * @return list<callable>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                foreach (self::BODY_ONLY as $key) {
+                    if ($this->query->has($key)) {
+                        $validator->errors()->add($key, 'That value must be sent in the request body.');
+                    }
+                }
+            },
+        ];
     }
 
     /** @return array<string, list<string>> */

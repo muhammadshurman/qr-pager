@@ -160,7 +160,12 @@ it('treats a key the encrypter cannot use as retryable, and leaks nothing about 
 it('posts to exactly the endpoint the subscription named and follows no redirect', function (): void {
     // A push service never legitimately redirects a send, and following one would re-send
     // the VAPID JWT and the encrypted payload to a host the subscription did not name.
-    // allow_redirects is false on the bound client; this pins the destination.
+    //
+    // THIS CASE PINS THE DESTINATION AND NOT `allow_redirects` (QA L-6, 2026-10-27, which
+    // corrected this comment's claim that it pinned both). The recorder cannot redirect,
+    // so no assertion here can distinguish a client that follows redirects from one that
+    // does not; `allow_redirects => false` is set in NotificationsServiceProvider and is
+    // asserted by nothing. That gap is a §5 row, not a line of this comment.
     $edge = new RecordingPushEdge(201);
     $subscription = PushFixtures::subscription('https://push.example.test/exactly-this');
 

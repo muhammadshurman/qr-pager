@@ -21,7 +21,15 @@ use Tests\Support\RecordingPushEdge;
  * nobody can tell whether it is.
  *
  * So the pass-level behaviour is tested here, in process, and the crash behaviour stays in
- * the proof where it belongs. Between them every line of the command is driven.
+ * the proof where it belongs.
+ *
+ * ⚠ AND NOT EVERY LINE IS DRIVEN, which this header claimed until 2026-10-27 (QA M-4). Every
+ * case here and in bin/outbox-kill-proof passes --once, which returns before the continuous
+ * loop body is reached, so the loop, its sleep, its shouldStop exit and the two pcntl signal
+ * handlers are measurably uncovered -- the task's own coverage transcript reports
+ * `WorkOutboxCommand … 64..71, 105..109 / 63.0%`. PLAN.md §4a stated the honest version in
+ * the same breath, so the repository contradicted itself. The SIGTERM proof that would close
+ * it is a §5 row with an owner.
  */
 
 function pushEdge(array|int $statuses = 201): RecordingPushEdge

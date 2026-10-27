@@ -1,4 +1,4 @@
-STATUS: TASK-3 TAGGED, TASK-4 BLOCKED — rebased and green at bef66a3; the §11 reviews are the remaining work. This line is rewritten at each phase boundary.
+STATUS: TASK-3 TAGGED, TASK-4 BLOCKED — R-083: the outbox lease is taken for the whole batch at claim time while rows are sent one at a time, so a second worker re-sends. A High that falsifies Task 4's own §3.1 invariant, and every fix is a design choice you reserved.
 
 # Overnight run, 2026-10-27 — close Task 3, rebase and close Task 4
 
@@ -149,9 +149,88 @@ published as needing a credential it does not use. The spec's problem-response c
 from 14 to **26** as Task 3's validation extension and media-type step reached Task 4's
 routes; the committed-file case and the in-process generator case both assert the new number.
 
-## Phase C — the Task 4 reviews
+## Phase C — the Task 4 `§11` reviews
 
-*(not started — this section is rewritten when the phase ends)*
+Both ran as separate agent sessions that did not write the code, each receiving **the diff
+(`git diff task-3..task-4-notifications`) and `docs/tickets/QRPAGER-11.md` only**, plus
+`PROJECT_INSTRUCTIONS.md` and `PLAN.md` as their own role definitions require. Neither was
+given the handover, this file, or the other's output; both state in their reports that they
+opened none of them. Neither ran the suite — a second concurrent runner corrupts the shared
+test database (`R-049`) — and each named what it wanted run instead. Both requests were run;
+results below.
+
+### The counts
+
+**24 findings: 0 Critical, 3 High, 9 Medium, 12 Low.** QA reported **13** (0 / 2 / 4 / 7);
+Security reported **11** (0 / 1 / 5 / 5). Security labels its Mediums `M-2`…`M-6` with no
+`M-1`; the count and the list agree, so the labels are relayed exactly as given rather than
+renumbered.
+
+**The two reviews found the same High independently, from two directions** — QA from the
+batch-wide lease, Security from unbounded devices per session. One row, `R-083`.
+
+### QA — 13 findings: 0 Critical, 2 High, 4 Medium, 7 Low
+
+| # | Severity | Finding | Disposition |
+| --- | --- | --- | --- |
+| **H-1** | High | The lease is taken for the whole batch at claim time but rows are processed sequentially, so a batch that outlives its lease lets a second worker re-claim and re-send — "nothing duplicated" fails for the multi-worker configuration the design claims to support | **BLOCKS THE TAG**, `R-083`. Verified myself: `claim()` leases every row in one transaction and commits, `pass()` then walks them one at a time. No attacker needed at `batch_size: 100`, `lease_seconds: 60` |
+| **H-2** | High | `PagerDelivery::Permanent` is documented in three places to dead-letter the row; the worker marks it `sent` with `last_error = null`, and the test named for the behaviour asserts the opposite without ever reading the row | **FIXED** with a regression test, proven red without the fix. All-permanent now dead-letters with a recorded reason; a second case pins the other half (one device delivered, another refused → still `sent`) |
+| **M-3** | Medium | Two worker state-machine branches have no test, including the only database failure/timeout path inside the worker | **§5 `R-088`**, owner **Muhammad**, before the `task-4` tag — Task 4 has no successor to inherit its own gaps |
+| **M-4** | Medium | The command's continuous mode and SIGTERM handling are untested while the test file asserts in writing that every line is driven | **§5 `R-088`** for the proof; the false sentence in the test header is **corrected in place** |
+| **M-5** | Medium | Refusal branches on the customer read path have no test: wrong-alphabet token on any route, unknown token on either subscription verb, every refusal through `DELETE`, and a pointer hit with the projection gone | **§5 `R-088`**, same owner and round |
+| **M-6** | Medium | The gate clause "every polling response carries `poll_after_seconds`" is not literally met: the 404 `Stale` answer carries no pacing value | **YOURS — left open.** Either `stale()` carries the value or `§3` row 4 is narrowed, and amending your own gate to match your own code is exactly Task 3's security `S-1` defect. Not a `§5` row, because a gate amendment is rank-2 |
+| **L-1** | Low | "Floored at 1 s" is stated as present-tense fact in `§2.13` and in `config/pager.php`; the code removed the floor | **CORRECTED IN PLACE**, both sites |
+| **L-2** | Low | `§0` claims all four dead assertions are revert-proved; the proof covers three | **CORRECTED IN PLACE** — `§0` now says three revert-proved and the fourth re-run |
+| **L-3** | Low | `§4a` and `§3.2` still attribute `OpenApiSpecTest`'s sweep to Task 2, which `§0` corrected the same day and which `git log -S` contradicts | **CORRECTED IN PLACE**, both sites, with the commit named |
+| **L-4** | Low | `§0`'s two cells disagree about which `§3.2` delta carries Task 4's rows | **CORRECTED IN PLACE** — both say eleventh |
+| **L-5** | Low | The ticket's published-contract diagram lists `ready_at` on the poll response; neither the code nor the committed spec has it | **CORRECTED IN PLACE** in the ticket, with a note that the resolve response does carry it |
+| **L-6** | Low | The only thing bounding a hung push edge is config no test reads, and one test's comment claims to pin `allow_redirects` when it pins only the destination | **§5 `R-090`** for the assertions; the comment's claim **corrected in place** |
+| **L-7** | Low | "Loud rather than silent" describes code that is silent — a bare `continue` with no log and no counter | **CORRECTED IN PLACE** — the comment now says the arm is defensive and silent, and why skipping is right either way |
+
+### Security — 11 findings: 0 Critical, 1 High, 5 Medium, 5 Low
+
+| # | Severity | Finding | Disposition |
+| --- | --- | --- | --- |
+| **H-1** | High | Nothing caps push endpoints per session and the worker sends to all of them sequentially, so one token holder can make a row's processing exceed its own lease — the same root as QA `H-1`, reached from the device side | **BLOCKS THE TAG**, `R-083`. Verified: `forSession()` has no `LIMIT`, the per-send worst case is 3 s connect + 8 s request, the lease is 60 s, and the code states it has no per-device cursor |
+| **M-2** | Medium | The raw QR token is accepted from the URL **query string**, so "never in a URL query string" is enforced by client convention only | **FIXED** with a regression test over all four routes, proven red without the fix. Measured independently before fixing: `?token=` was honoured on the JSON POST **and** the DELETE |
+| **M-3** | Medium | Arbitrary `https://` push endpoints make the worker an SSRF primitive with a 1-bit existence oracle (201 vs 200 on re-registration) | **§5 `R-084`**, owner Task 12 with Task 13 for egress |
+| **M-4** | Medium | No per-tenant rate limit anywhere on the customer surface, and the failure counter is global so nothing names the tenant under attack | **§5 `R-085`**, owner Task 12, whose gate says "per-tenant + per-IP limits in Redis" verbatim |
+| **M-5** | Medium | Tenant data enters Redis for the first time with no boot-time requirement that Redis is authenticated or encrypted; `BootChecks` has a clause for everything else and none for Redis | **§5 `R-086`**, owner Task 13 with `R-008` |
+| **M-6** | Medium | The VAPID fail-closed boot check is wired only to the HTTP process, which never sends a push; `outbox:work` evaluates no check | **§5 `R-087`**, owner Task 13 with `R-077`; the docblock's posture claim is **corrected in place** |
+| **L-1** | Low | `PROJECT_INSTRUCTIONS.md` (rank 2) was not amended for the non-tenant-namespaced pointer key; the permitting reading lives only in rank-3 `PLAN.md`. **This is the reviewer's ruling on `R-074` / ticket `§8.1`, which the ticket assigned to this review** — on the merits it judged the key acceptable, and found the *record* wanting | **YOURS — left open, and it is the one thing the ticket explicitly asked a reviewer to rule on.** One dated sentence in `PROJECT_INSTRUCTIONS.md §4 › Realtime` permitting exactly one key whose name is the secret the caller must present. A rank-3 file cannot qualify a rank-2 clause, and a session must not edit rank 2 |
+| **L-2** | Low | The `customer` middleware group is empty, so a fifth route added to that file would default to unauthenticated, unlimited and unshed — and the compensating test iterates a hardcoded list of four names | **§5 `R-089`(a)**, owner Task 12 |
+| **L-3** | Low | An enumeration's magnitude is not observable: one log line per hour at exactly the threshold, so 50 attempts and 5,000,000 read alike | **§5 `R-089`(b)**, owner Task 13's metrics path |
+| **L-4** | Low | `GuzzleHttp\Client` is used by production code but is only a transitive dependency of `apps/api` | **§5 `R-089`(c)**, owner Task 12. Not fixed tonight: a dependency constraint added unattended is not worth the risk for a latent fault |
+| **L-5** | Low | A Redis outage removes the only bound on the Postgres-backed customer route and silences its failure counter at the same moment, widening `R-027` | **§5 `R-089`** context; `R-027` already carries the class with owner Task 12 |
+
+### What both reviewers asked to be run, and what it showed
+
+- **Security:** the six customer/worker test files on this commit — `69 passed / 700 assertions`.
+  Every one green while `H-1` is live, which is the reviewer's own point: no existing case
+  covers the property.
+- **QA, for `H-2`:** assert the row's status in `it dead-letters a 400 immediately` and watch
+  it fail on the current head. Done, as the fix's regression proof: **red before, green
+  after**.
+- **QA, for `H-1`:** a two-process proof showing duplicate sends today. **Not written** — it
+  is the acceptance evidence for a fix whose design is yours, so building the harness before
+  the design is chosen would prejudge it. `R-083`'s closing gate names the proof precisely.
+- **QA, for `§11` item 7:** `bin/vacuous-assertion-proof` plus the two guard invocations.
+  The proof ran green in Phase B (all three invariants red without their fix); `composer
+  guard` is clean over 190 files and its fixture case is one of the nine green rule cases.
+
+### Why Task 4 is not tagged
+
+`§11`'s merge rule: a High blocks the tag until it is fixed with a regression test. `R-083`'s
+fix is a choice between re-leasing per row, renewing the lease, bounding `lease_seconds` by
+`batch_size × worst case × devices` (which needs a device cap — a product decision), adding a
+per-device cursor (which `R-078` already circles), or sending concurrently under one budget.
+Each is a different design for the same invariant, and **"any finding that would change Task
+4's design rather than fix a defect" is on your list, not mine.** So the branch is left
+pushed, green, and untagged, with the finding recorded as `R-083` and its closing gate
+written.
+
+**Nothing is at risk while it waits:** `R-077` records that no deployed environment runs
+`outbox:work` at all, so the duplicate-send window has no production exposure today.
 
 ## Assumptions made, and the alternative rejected
 
@@ -188,6 +267,54 @@ routes; the committed-file case and the in-process generator case both assert th
    application's behaviour is untouched; only the generated document was wrong. *Rejected:*
    stopping and leaving it for you, which would have meant tagging Task 4 — or asking you to
    — on a published contract that tells customers to present a staff credential.
+
+8. **`H-2` was fixed by changing the CODE, not the three documents.** `PagerDelivery`,
+   `WebPushDispatcher` and ticket `§6.2` all said `Permanent` dead-letters; only the worker
+   disagreed, so the majority was not the tie-breaker — the behaviour was. A notification no
+   retry can deliver recorded as `sent` is a false record in the one table an operator reads.
+   *Rejected:* correcting the three documents to say "sent", which would have made the
+   repository consistent and the record wrong.
+9. **`H-2`'s condition is "nothing reached anybody", not "a permanent failure happened".**
+   *Rejected:* dead-lettering any row with a permanent refusal, which would turn a
+   notification that one of a customer's two devices received into a lost one — the exact
+   failure this product exists to prevent. A second case pins that half.
+10. **`M-2` refuses the request rather than ignoring the query parameter.** *Rejected:*
+   silently reading the body only, which would answer 404 or 422 for a token the caller
+   believes is valid and teach the client developer nothing.
+11. **Mediums went to `§5` and only two findings were fixed.** Your `C3` says Medium and Low
+   go to `§5` with an owner; `H-2` is a High, and `M-2` would have meant accepting a
+   documented `§4 › Data` invariant breach into the ledger, which `§11` does not sanction.
+   *Rejected:* fixing more of them — `M-5`'s Redis boot clause, `M-6`'s worker boot check,
+   `L-4`'s dependency constraint — each of which is defensible and none of which was asked
+   for tonight. They are rows with owners and closing gates instead.
+12. **The two-process duplicate-send proof QA asked for was NOT written.** *Rejected:*
+   writing it anyway. It is the acceptance evidence for a fix whose design is yours, and a
+   harness built around one of the five candidate designs would prejudge the choice.
+   `R-083`'s closing gate specifies it precisely so it can be built in one sitting.
+
+## Where it stopped
+
+**`R-083` is why `task-4` has no tag.** `§11`'s merge rule makes a High block the tag until it
+is fixed with a regression test; this one falsifies Task 4's own `§3.1` row 4 invariant
+("nothing lost, nothing duplicated"), and every fix available is a different design:
+
+| Candidate fix | What it costs |
+| --- | --- |
+| Re-lease each row immediately before its send | smallest change; one extra statement per row |
+| Renew the lease during a long row | needs a heartbeat inside the send loop |
+| Bound `lease_seconds ≥ batch_size × worst case × devices` | needs a **device cap**, which is a product rule about how many devices one order may notify |
+| A per-device cursor | the largest change, and `R-078` already circles this ground |
+| Send concurrently under one total budget | changes the worker's shape and its failure modes |
+
+**Nothing is at risk while it waits.** `R-077` records that no deployed environment runs
+`outbox:work`, so the duplicate-send window has no production exposure today.
+
+**Two more things are yours and are not `§5` rows:** QA `M-6` (the `Stale` 404 carries no
+`poll_after_seconds`, so `§3` row 4's clause is not literally met — carry the value, or narrow
+the clause, which is a rank-2 amendment) and Security `L-1` (`PROJECT_INSTRUCTIONS.md §4 ›
+Realtime` needs one dated sentence permitting the pointer key; the reviewer judged the key
+acceptable on the merits and the record wanting, and that is the ruling ticket `§8.1` asked a
+reviewer for).
 
 ## Parked refs
 

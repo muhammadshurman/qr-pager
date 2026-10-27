@@ -357,3 +357,45 @@ it('counts into an hourly window, so the key is bounded and comparable', functio
         // structure here would be personal data this feature does not need.
         ->and(TokenResolutionFailures::keyFor($noon))->not->toContain('127.0.0.1');
 });
+
+it('refuses a token in the query string on every customer route — security M-2', function (): void {
+    // THE DOCBLOCK WAS A CONVENTION UNTIL THIS CASE EXISTED. `FormRequest::validationData()`
+    // is `all()`, and Laravel's `all()` is the input source PLUS `$this->query->all()` — so
+    // a token in the query string validated and resolved exactly like one in the body, and
+    // the whole reason these four routes are POST (keeping the secret out of the request
+    // line, the access log, the Referer, the proxy trace and the CDN key) was defeated
+    // server-side. §4 › Data says "never in a URL query string"; a server that accepts one
+    // guarantees it will be sent one.
+    //
+    // Measured on the pinned framework before the fix: POST /v1/pager/status?token=<22>
+    // with a body carrying no token resolved that token, and so did the DELETE.
+    $issued = app(PagerSessions::class)->create($this->makeTenant(), 'Q-1');
+    $token = $issued->token->reveal();
+
+    // A VALID token, in the wrong place. The refusal must come from WHERE it was sent, not
+    // from what it is -- otherwise this case would pass for the wrong reason.
+    $routes = [
+        ['post', '/v1/pager/session'],
+        ['post', '/v1/pager/status'],
+        ['post', '/v1/pager/subscription'],
+        ['delete', '/v1/pager/subscription'],
+    ];
+
+    foreach ($routes as [$verb, $path]) {
+        $response = test()->json(strtoupper($verb), $path.'?token='.$token, ['token' => $token]);
+
+        expect($response->status())->toBe(422, strtoupper($verb).' '.$path.' accepted a token in the query string')
+            ->and($response->json('type'))->toBe(ProblemType::Validation->value)
+            // And the body names the rule rather than the secret.
+            ->and((string) $response->getContent())->not->toContain($token);
+    }
+
+    // `endpoint` is the other value these routes take, and a URL in a URL is the same
+    // disclosure in miniature.
+    $device = PushFixtures::subscription();
+
+    test()->json('DELETE', '/v1/pager/subscription?endpoint='.urlencode($device['endpoint']), [
+        'token' => $token,
+        'endpoint' => $device['endpoint'],
+    ])->assertStatus(422);
+});

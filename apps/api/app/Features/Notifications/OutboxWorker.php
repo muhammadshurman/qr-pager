@@ -182,9 +182,15 @@ final class OutboxWorker
                     [$lease, (string) $row->id],
                 );
 
-                // Unreachable while this transaction holds the row lock. Loud rather than
-                // silent if it ever is not: processing a row we did not lease is the one
-                // way two workers could send the same notification.
+                // DEFENSIVE AND SILENT, and the comment used to claim the opposite (QA
+                // L-7, 2026-10-27): it read "loud rather than silent" above a bare
+                // `continue` with no log and no counter. The arm is unreachable while this
+                // transaction holds the row's FOR UPDATE lock, which is why it has never
+                // been observed and why it is reported uncovered -- so the claim was the
+                // risk, not the behaviour. Skipping is the right action either way:
+                // processing a row we did not lease is the one way two workers could send
+                // the same notification, so a row that did not take the lease is left
+                // alone for the next pass.
                 if ($leased !== 1) {
                     continue;
                 }
@@ -263,6 +269,7 @@ final class OutboxWorker
         $delivered = 0;
         $retryable = 0;
         $pruned = 0;
+        $permanent = 0;
 
         foreach ($devices as $device) {
             $outcome = $this->dispatcher->send(
@@ -280,9 +287,9 @@ final class OutboxWorker
                 PagerDelivery::Gone => $pruned += $this->subscriptions->prune($row->tenantId, (string) $device->id),
                 PagerDelivery::Retry => $retryable++,
                 // Permanent: the request itself is wrong for this device. Retrying is a
-                // loop, so it counts as neither delivered nor retryable and the row
-                // finishes on whatever the other devices did.
-                PagerDelivery::Permanent => null,
+                // loop, so it is neither delivered nor retryable -- but it IS counted, and
+                // the count is load-bearing: see the dead-letter branch below.
+                PagerDelivery::Permanent => $permanent++,
             };
         }
 
@@ -294,6 +301,38 @@ final class OutboxWorker
         // phone and a tablet is not exotic.
         if ($retryable > 0) {
             return $this->backOff($row, 'edge refused for '.$retryable.' of '.count($devices).' device(s)');
+        }
+
+        // EVERY DEVICE REFUSED PERMANENTLY AND NOBODY TOOK IT: the row is DEAD, not sent.
+        //
+        // QA H-2 (2026-10-27). This branch did not exist: with `retryable` at zero the row
+        // fell through to `finish(Sent, null)`, so a notification that can never be
+        // delivered was recorded with `status = 'sent'`, a `sent_at`, a null `last_error`
+        // and an info log reading `delivered: 0`. THREE documents and the ticket said
+        // otherwise -- PagerDelivery's own case comment ("the row dead-letters now rather
+        // than after six tries"), WebPushDispatcher's mapping comment, and §6.2's
+        // "Permanent (dead-letter)" -- so the code was the one place that disagreed, and
+        // the case named `it dead-letters a 400 immediately` asserted the tally and the
+        // attempt count while never reading the row's status.
+        //
+        // THE CONDITION IS "NOTHING REACHED ANYBODY", not "a permanent failure happened".
+        // A delivery to one device and a 400 from another is still a delivered
+        // notification, and a 410 is a subscription that no longer exists rather than a
+        // failure -- all-pruned stays `sent` for the same reason no-devices does, since
+        // there is nobody left to tell. Both halves are driven by their own case.
+        if ($delivered === 0 && $pruned === 0 && $permanent > 0) {
+            $this->finish(
+                $row,
+                OutboxStatus::Dead,
+                'edge refused permanently for all '.$permanent.' device(s)',
+            );
+
+            $this->log->warning('outbox notification dead-lettered', [
+                'outbox_id' => $row->id,
+                'devices' => count($devices),
+            ]);
+
+            return ['result' => 'dead', 'pruned' => 0];
         }
 
         $this->finish($row, OutboxStatus::Sent, null);

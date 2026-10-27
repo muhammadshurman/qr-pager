@@ -78,7 +78,9 @@ return [
     |--------------------------------------------------------------------------
     |
     | A CEILING, not the value. PagerProjection writes
-    | min(remaining session life, this), floored at one second -- so a session's own
+    | min(remaining session life, this) and NO FLOOR -- both writers refuse to write
+    | at all once expires_at has passed (QA L-1 corrected this sentence on 2026-10-27;
+    | the floor was removed and this comment still described it) -- so a session's own
     | expires_at always wins and A PROJECTION CANNOT OUTLIVE THE SESSION IT DESCRIBES.
     | That is what makes the polling endpoint's miss honest: a token stops resolving in
     | Redis at the same moment it stops being valid, and the client is pushed back to the

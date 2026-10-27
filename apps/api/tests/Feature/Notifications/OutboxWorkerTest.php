@@ -246,16 +246,72 @@ it('dead-letters after max_attempts, with a category and never a driver message'
 });
 
 it('dead-letters a 400 immediately, because no retry fixes a request we built wrong', function (): void {
+    // ⚠ THIS CASE ASSERTED ITS OWN OPPOSITE UNTIL 2026-10-27 (QA H-2). Its name states the
+    // contract that PagerDelivery, WebPushDispatcher and §6.2 all state -- Permanent means
+    // the row dead-letters now -- and its body asserted `$tally['sent'] === 1` and
+    // `attempts === 1` while never reading the row. Both of those are true of a row
+    // recorded as SENT, which is what the worker actually did: `status = 'sent'`, a
+    // `sent_at`, a null `last_error`, and an info log reading `delivered: 0`. A
+    // notification that can never be delivered was recorded as delivered, and the only
+    // thing asserting otherwise was this case's name.
+    //
+    // It now reads the ROW, which is the only place the disposition is visible.
     $tenant = $this->makeTenant();
     readySessionWithDevice($tenant, $sessionId, $device);
     edge(400);
 
     $tally = app(OutboxWorker::class)->pass();
 
-    expect($tally['sent'])->toBe(1)->and($tally['retried'])->toBe(0);
+    expect($tally['dead'])->toBe(1)
+        ->and($tally['sent'])->toBe(0)
+        ->and($tally['retried'])->toBe(0);
 
-    // The row finishes rather than consuming six attempts and the backoff between them.
-    expect(outboxRow($tenant, (string) $sessionId)->attempts)->toBe(1);
+    $row = outboxRow($tenant, (string) $sessionId);
+
+    // The row finishes rather than consuming six attempts and the backoff between them...
+    expect($row->attempts)->toBe(1)
+        // ...and it finishes DEAD, with the reason recorded and no sent_at claiming a
+        // delivery that never happened.
+        ->and($row->status)->toBe(OutboxStatus::Dead->value)
+        ->and($row->dead_at)->not->toBeNull()
+        ->and($row->sent_at)->toBeNull()
+        ->and((string) $row->last_error)->toContain('refused permanently');
+});
+
+it('still records a row as sent when one device took it and another refused permanently', function (): void {
+    // The other half of H-2's condition, and the reason it is "nothing reached anybody"
+    // rather than "a permanent failure happened": a customer with a phone and a tablet
+    // where one endpoint is wrong has still been notified. Dead-lettering that row would
+    // turn a delivered notification into a lost one, which is the failure this product
+    // exists to prevent.
+    $tenant = $this->makeTenant();
+    $token = readySessionWithDevice($tenant, $sessionId, $device);
+
+    // A second device on the same session, registered the way a customer's second phone
+    // would be -- through the route, with the same token.
+    $second = PushFixtures::subscription('https://push.example.test/second-device');
+
+    test()->postJson('/v1/pager/subscription', [
+        'token' => $token,
+        'endpoint' => $second['endpoint'],
+        'p256dh' => $second['p256dh'],
+        'auth' => $second['auth'],
+    ])->assertStatus(201);
+
+    // Sends go in `order by created_at`, so the first device delivers and the second is
+    // refused permanently.
+    $pushEdge = edge([201, 400]);
+
+    $tally = app(OutboxWorker::class)->pass();
+
+    expect($pushEdge->sentCount())->toBe(2);
+
+    expect($tally['sent'])->toBe(1)->and($tally['dead'])->toBe(0);
+
+    $row = outboxRow($tenant, (string) $sessionId);
+
+    expect($row->status)->toBe(OutboxStatus::Sent->value)
+        ->and($row->sent_at)->not->toBeNull();
 });
 
 it('finishes a row whose session has no subscription, rather than retrying forever', function (): void {

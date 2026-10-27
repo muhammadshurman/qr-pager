@@ -366,7 +366,12 @@ $key2 = 't:' . $tenant_id . ':pager:' . $session_id        tenant_id from the VA
 Redis GET $key2   -->  miss  ==>  404 ProblemType::Stale
    |
    v  hit: the projection
-200  { status, order_reference, ready_at, expires_at, poll_after_seconds, ... }
+200  { status, order_reference, expires_at, poll_after_seconds, ... }
+
+> ⚠ `ready_at` was listed on the poll response here until 2026-10-27 (QA `L-5`) and is on
+> neither `PagerStatusView::toArray()` nor `docs/openapi.json`. The code and the generated
+> spec agree; this diagram was the outlier, and Task 9 generates its client from the spec.
+> `/v1/pager/session` does carry `ready_at` — that is the resolve response, not the poll one.
 ```
 
 **Two Redis commands, zero Postgres statements, and both are asserted.**
