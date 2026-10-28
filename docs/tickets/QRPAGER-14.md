@@ -13,8 +13,40 @@
 
 ## 0. STATUS AND STOP-AND-REPORTS
 
-**Status: in build.** The handover is `docs/tickets/QRPAGER-14-handover.md` and its STATUS
-line is current at every push.
+**Status at the head of this branch: the seven `§6` answers are written and committed, and
+no Task 7 code exists yet.** The handover is `docs/tickets/QRPAGER-14-handover.md`; its
+STATUS line reads exactly one of `TASK-7 TAGGED` or `TASK-7 BLOCKED — <one line>`, and it is
+pushed, current, at every phase boundary.
+
+### ⚠ THIS SECTION WAS CORRECTED ON 2026-10-28, IN ITS OWN COMMIT, BEFORE ANY CODE
+
+It read, from the moment this file was first committed at `84c919b`:
+
+> **Status: in build.** The handover is `docs/tickets/QRPAGER-14-handover.md` and its STATUS
+> line is current at every push.
+
+**Neither half was true of the repository.** The handover did not exist — a `find` over the
+whole tree for `*QRPAGER-14*` returned this file and nothing else — so "its STATUS line is
+current at every push" described a file with no STATUS line and no pushes. And nothing was
+*in build*: `84c919b` changes exactly one file, this one, and its own subject says so —
+"the seven §6 answers, **before any code**".
+
+What that line stated was an **intent**. What `§0` is for is the **state**. They are not the
+same sentence and the difference is the whole value of the section: a reader who opened this
+file to learn where the task stood would have been told there was a handover to read and a
+build to review, and both would have been false. This is `PLAN.md §4a`'s most frequently
+recorded defect — a record that claims a thing before the thing exists — and it is written
+out here rather than quietly overwritten, because the quiet overwrite is what makes the
+shape invisible the next time.
+
+**The state at `84c919b`, measured rather than recalled:** `task-7-landing-builder` exists
+locally and on `origin` at the same commit (`84c919b`), `git status --porcelain` is empty,
+`infra-local-mail-and-object-store` is merged into this branch at `a77d92d` and into no other
+branch, there is no `task-7` tag, and the only Task 7 artifact in the tree is this ticket.
+
+**The rule this section now follows:** the status is what the repo shows. A clause here that
+describes something not yet in the tree names the commit it is waiting for, or it does not
+go here at all.
 
 ### SR-1 — `§4 › Tenancy`'s 2026-10-28 ruling and `§4.3`'s page inventory disagree
 
