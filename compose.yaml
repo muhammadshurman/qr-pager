@@ -79,6 +79,110 @@ services:
       timeout: 3s
       retries: 20
 
+  # ADR-002's local stack, added 2026-10-28 -- SIX TASKS LATE, which is R-125.
+  #
+  # ADR-002's Decision table has said "MinIO in compose.yaml" and "Mailpit in compose.yaml"
+  # since 2026-10-25, its Consequences say "compose.yaml gains MinIO and Mailpit", and
+  # PROJECT_INSTRUCTIONS.md §1 (rank 2) points at that ADR as the reason it need not say more.
+  # Neither service was ever here. Measured 2026-10-28: services were postgres, redis and
+  # frankenphp; `grep -ci minio compose.yaml` returned 0.
+  #
+  # It blocked nothing for five tasks because nothing sent mail or stored an object -- and then
+  # it made a GATE CLAUSE UNPROVABLE: §3 row 6's fourth clause names "the local mail catcher"
+  # as its instrument, and Task 6 could not have met it on this machine even with an invite to
+  # send. That is why this is its own commit on its own branch rather than part of Task 7:
+  # Task 7 would otherwise be building on infrastructure introduced in its own diff.
+  #
+  # BOTH BIND TO 127.0.0.1 ONLY, which ADR-002 requires of them in the same words it uses for
+  # Postgres and Redis. Neither carries a volume: a mail catcher and a local object store hold
+  # test fixtures, and a fixture that survives a `docker compose down -v` is cross-run shared
+  # state of exactly the kind TestCase::RESETTABLE exists to prevent one layer down.
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    # 1025 is SMTP (what Laravel's mailer connects to), 8025 is the HTTP API and UI (what a
+    # test reads a delivered message back out of). ADR-002's clause is "asserted against the
+    # local mail catcher", and only the second port can satisfy it: SMTP proves a message was
+    # ACCEPTED, the API proves one EXISTS. Mail::fake() proves neither, which the ticket says
+    # in those words.
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      # Mailpit's own readiness endpoint. wget, not curl: the image is Alpine-based and
+      # ships busybox wget, which is why this is not the `curl -f` a reader might expect.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8025/readyz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # THE LOCAL OBJECT STORE (R-125's other half, ADR-004). Where MinIO was going to go.
+  #
+  # ADR-002 named MinIO and MinIO no longer publishes an image a clone holding no credentials
+  # can pull. Measured 2026-10-28 with DOCKER_CONFIG pointing at a config.json of `{}` -- no
+  # credsStore, no auths, which is PROJECT_INSTRUCTIONS.md §1's "anonymously pullable by a
+  # fresh clone" turned into an instrument:
+  #
+  #   minio/minio:latest  ->  pull access denied ... repository does not exist
+  #   minio/mc:latest     ->  the same
+  #   hub API /v2/repositories/minio/minio/  ->  HTTP 404 {"message":"object not found"}
+  #   quay.io/minio/minio -> 401 · ghcr.io/minio/minio -> denied · registry.min.io -> no manifest
+  #
+  #   CONTROL: minio/warp:latest, the SAME namespace, resolves and its hub API answers 200; the
+  #   minio namespace still has 20 public repos; redis:7-alpine and the Mailpit tag above pull
+  #   from the same shell. The server image and the client are the two that are gone -- it is
+  #   not this machine, not this network, and not the namespace.
+  #
+  # ⚠ THE EARLIER READING IN THIS FILE SAID `denied: authentication required`, AND THAT WAS THIS
+  # LAPTOP TALKING. Docker Desktop's credential helper (credsStore: desktop.exe) is consulted
+  # before every pull and it failed with `error getting credentials - err: exit status 1` on 7
+  # of 8 pulls in the first measurement run. The credential-free config removes it, and the
+  # answer underneath is the stronger one: the repository is not there.
+  #
+  # WHY SEAWEEDFS AND NOT ANOTHER MINIO PACKAGING -- fourteen candidates, five instruments, the
+  # matrix is in ADR-004. In short: chainguard/minio IS current MinIO and passes the round trip
+  # but publishes 0 version tags out of 2954 (latest and latest-dev only), so it cannot be
+  # pinned; bitnamilegacy/minio pins and passes, and its publisher says the repository "will
+  # receive no further updates" and "may be removed in the future", which is R-125 again on a
+  # delay. adobe/s3mock and an UNCONFIGURED seaweedfs each completed the whole round trip while
+  # signing with a wrong secret -- which is why the credentials below are not decoration and
+  # why LocalObjectStoreTest asserts that a wrong secret is refused.
+  #
+  # BOUND TO 127.0.0.1 ONLY, like every other service here (ADR-002 requires it of the local
+  # stack in the same words it uses for Postgres and Redis). NO VOLUME, for the reason the mail
+  # catcher has none: a fixture that survives `docker compose down -v` is cross-run shared state
+  # of exactly the kind TestCase::RESETTABLE exists to prevent one layer down.
+  objectstore:
+    # Named for the ROLE, not the product. The product is now a measured choice that can change
+    # (ADR-004 names the runners-up in order), and the next change should not rename a service
+    # or an env var. `mailpit` keeps its product name because ADR-002's mail row still stands.
+    image: chrislusf/seaweedfs:4.51
+    # `server -s3` runs master, volume, filer and the S3 gateway in one process. Only the S3
+    # port is published; the other three stay inside the container, unreachable from the host.
+    command: ["server", "-s3", "-dir=/data"]
+    environment:
+      # SeaweedFS reads these and requires a SigV4 signature that matches. Without them it
+      # serves ANY signature, which measured as a full green round trip under the secret
+      # `definitely-not-the-secret` -- the vacuous pass this project has paid for before. The
+      # names are the AWS SDK's own, so .env.example and phpunit.xml name the same two values
+      # for the client side.
+      AWS_ACCESS_KEY_ID: qrpager
+      AWS_SECRET_ACCESS_KEY: local_dev_only
+    ports:
+      # 8333 is SeaweedFS's S3 API -- the only port the application or a test ever speaks to.
+      - "127.0.0.1:8333:8333"
+    healthcheck:
+      # /healthz on the S3 port, which answers 200 WITHOUT a signature while `/` answers 403 --
+      # measured, because a healthcheck that needs credentials is a healthcheck that lies. wget
+      # and not curl: the image is Alpine-based and ships busybox wget, like Mailpit's.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8333/healthz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+
   # The pinned runtime (Q7), behind a profile so `docker compose up -d` still starts
   # only Postgres and Redis -- the suite needs those two and nothing else, and building
   # an image to run `php artisan test` would be a gate that depends on a Docker build.

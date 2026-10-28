@@ -1,0 +1,15 @@
+# NOT a violation on its own: a scheduled job is a different decision, and a rule that flagged
+# it would be the kind nobody keeps. The directory-level clause is what stops "no workflow runs
+# on push at all" from slipping through.
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nothing

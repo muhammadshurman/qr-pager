@@ -103,10 +103,29 @@ connection, including the owner and worker connections and statements that fail 
 sent. The named invariant is proven with a listener. Nothing is lost; the ticket's sentence is
 simply stale, and this is the correction rather than a substitution made quietly.
 
-### SR-5 — branch name
+### SR-5 — branch name: the records now follow the repository, not the other way round
 
-Ticket `§6` says branch `task-6-tenant-provisioning`; the rank-1 prompt says `task-6-provisioning`.
-Rank 1 wins. The branch is **`task-6-provisioning`**.
+**SETTLED 2026-10-28, after `task-6` was tagged and pushed.** The branch that exists, carries
+ten commits and carries the annotated `task-6` tag is **`task-6-provisioning`**. Every record
+in this repository names that, and this ticket's `§6` *Definition of Done* is corrected to it
+below.
+
+**Why it was cut under that name.** The rank-1 prompt's second line reads, verbatim:
+
+> "Branch task-6-provisioning off task-5-auth-rbac at the task-5 tag (5a227f8)."
+
+while this ticket's `§6` said `task-6-tenant-provisioning`. `§0` makes the chat message rank 1
+and the ticket rank 3, so the prompt's spelling won and the divergence was recorded here rather
+than resolved silently. **Muhammad's reading is that the ticket's name was the correction and
+should have won**; the prompt's text is quoted above so the disagreement rests on a fact rather
+than on either memory, and it changes nothing about what to do now.
+
+**Why the branch is NOT renamed.** It carries a pushed annotated tag. `§10` makes the tag the
+delivery record, so renaming the branch would leave `task-6` pointing into a ref name that no
+longer exists on the remote and would require deleting and recreating the tag — which is the
+operation Task 2 had to perform once already (`§4a`: the remote tag was deleted and recreated
+rather than force-moved) and which costs a CI run and a verdict. A record that disagrees with
+the repository is the `§8` failure this project stops for, so **the record moves.**
 
 ---
 
@@ -552,7 +571,16 @@ two-membership login edge ("which is Task 10"). **New date: accepted 2026-10-28,
 2026-10-28.** Its `§5` row is updated in place with both, and the recommended rule text is below so
 the decision is one paste rather than one design session.
 
-### 9.2 Ready to paste — the two `§4 › Tenancy` clauses (SR-1)
+### 9.2 ✅ PASTED AND MIRRORED 2026-10-28 — the two `§4 › Tenancy` clauses (SR-1 CLOSED)
+
+Muhammad pasted these into the claude.ai Project instructions; the repo copy was brought
+byte-for-byte into line at `c346098`, with containment verified mechanically rather than by eye
+(975 bytes). They sit in `§4 › Tenancy`, immediately after the "Before Task 5 exists" bullet.
+
+**One word differs from the rank-1 prompt, deliberately and with Muhammad's agreement:** "which
+already holds **a** named cross-tenant path", not "**the one**". The worker holds **two** — the
+outbox queue and the expiry job, four policies across them in `§2.6` — so "the one" was
+measurably wrong. **SR-1 is closed.**
 
 ```markdown
 - **Platform tables are not tenant tables.** The platform admin panel operates only on tables
@@ -568,14 +596,35 @@ the decision is one paste rather than one design session.
   that reaches a tenant table is a rejected design. Added 2026-10-28.
 ```
 
-### 9.3 Ready to paste — the `§4 › Security` clause R-106 asks for
+### 9.3 ✅ CREATED 2026-10-28 — `§4 › Security`, a NEW sixth subsection of `§4` (for `R-106`)
+
+⚠ **`§4` had no `Security` subsection at all**, although `R-106`'s *review by* cell has
+prescribed writing into one since 2026-10-28. Its five subsections were `Tenancy`, `Data`,
+`Postgres traps`, `Realtime (post-O2)` and `Edge & ops`. Creating it was Muhammad's decision,
+taken rather than filing a role-seniority rule under tenant isolation or data shape, where it
+belongs to neither.
+
+**Placement:** `## 4. NON-NEGOTIABLE INVARIANTS`, a new `### Security` heading inserted
+immediately after `### Data`'s last bullet (`- audit_log is append-only, enforced by trigger on
+UPDATE / DELETE / TRUNCATE — superuser included.`) and before `### Postgres traps`. It is now
+`§4`'s **third** subsection of six.
+
+**The clause states the stricter implementation rather than leaving the clause weaker than the
+code** — Muhammad's instruction, and the right way round: a clause that describes something
+weaker than what is enforced is a clause a later reader will relax the code down to.
 
 ```markdown
 - **Role seniority, and consent.** `owner` is senior to `manager`, which is senior to `staff`. No
   actor may grant a role senior to its own, assume one, or change its own role at all — a manager
   promoting itself to owner is refused, not audited after the fact. Attaching an **existing** user
   to a tenant requires that user's acceptance of an invite; a membership is never created for a
-  user by someone else's request alone. Added 2026-10-__ (R-106).
+  user by someone else's request alone. **Until that invite flow exists, the implementation is
+  deliberately stricter than this clause: an address that already belongs to an account holding
+  any membership, or to a platform admin, is refused outright rather than invited** — so the
+  weaker rule is never the one in force. Both refusals answer with one message, because
+  distinguishing them would let a form probe whether an address has an account. The residual —
+  what a restaurant group's owner does when they legitimately want a second restaurant — is
+  `PLAN.md R-119`. Added 2026-10-28 (R-106).
 ```
 
 ---

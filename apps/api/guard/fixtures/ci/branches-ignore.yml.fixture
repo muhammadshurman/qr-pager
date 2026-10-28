@@ -1,0 +1,15 @@
+# The other way to exclude a pushed branch: name it in branches-ignore. Anything matched here
+# is a branch that reaches no CI, which is the same hole with the sign reversed.
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - 'wip/**'
+      - scratch
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nothing

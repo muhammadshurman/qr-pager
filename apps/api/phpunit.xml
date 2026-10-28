@@ -43,13 +43,39 @@
         <ini name="memory_limit" value="1G"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <!-- THE REAL OBJECT STORE, pointed at the composed SeaweedFS (R-125, ADR-004). The
+             `s3` disk is the production driver and these are the only values that differ from
+             production: an endpoint and path-style addressing. ADR-002's argument, now
+             exercised: "tests run against MinIO and Mailpit with no code difference" — the
+             service changed, the argument did not. The two credentials match compose.yaml's
+             own, and they MATTER: with no credentials configured the service accepts any
+             signature, which measured as a fully green round trip under a wrong secret. The
+             suite asserts the refusal rather than trusting it. -->
+        <env name="AWS_ACCESS_KEY_ID" value="qrpager"/>
+        <env name="AWS_SECRET_ACCESS_KEY" value="local_dev_only"/>
+        <env name="AWS_DEFAULT_REGION" value="us-east-1"/>
+        <env name="AWS_BUCKET" value="qrpager-local"/>
+        <env name="AWS_ENDPOINT" value="http://127.0.0.1:8333"/>
+        <env name="AWS_USE_PATH_STYLE_ENDPOINT" value="true"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="pgsql"/>
         <env name="DB_DATABASE" value="qrpager_test"/>
         <env name="DB_URL" value=""/>
-        <env name="MAIL_MAILER" value="array"/>
+        <!-- THE REAL TRANSPORT, pointed at the composed Mailpit — not `array`, which is what
+             this was until 2026-10-28 (R-125). ADR-002's own words: "tests run against MinIO
+             and Mailpit with no code difference — the same rule the project already applies to
+             Postgres and Redis: real services, never mocks, for behaviour that belongs to the
+             service." A mailer named `array` makes that sentence false for every test that
+             will ever send mail, and it is why §3 row 6's mail-catcher clause had no
+             instrument. DB_CONNECTION above names the real database for exactly this reason.
+             Mail::fake() still works where a test wants to assert dispatch rather than
+             delivery; it intercepts before the transport. -->
+        <env name="MAIL_MAILER" value="smtp"/>
+        <env name="MAIL_HOST" value="127.0.0.1"/>
+        <env name="MAIL_PORT" value="1025"/>
+        <env name="MAIL_SCHEME" value="smtp"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

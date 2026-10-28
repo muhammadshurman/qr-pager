@@ -402,3 +402,190 @@ it('scopes its one exception to a method, not to a file and not to tests as a cl
     expect($violations)->toHaveCount(1, 'the same shape in a second method of the same file must be reported')
         ->and($violations[0]->rule)->toBe(SourceGuard::SESSION_SCOPED_SET_CONFIG);
 });
+
+/*
+ * ================================================================================
+ * RULE 9 — a branch pattern that can exclude a pushed branch
+ * ================================================================================
+ *
+ * `R-126`. The trigger was `branches: [main, 'task-*']` and the branch this rule arrived on
+ * matched neither, so CI never ran on it: `gh run list --branch
+ * infra-local-mail-and-object-store` returned no rows on 2026-10-28 while the same command
+ * for `task-6-provisioning` returned a run per commit. A green local gate and a green CI are
+ * two different claims, and the second one was ABSENT rather than failing — which on a branch
+ * page looks exactly like no news.
+ */
+
+it('reads at least one real workflow, so rule 9 cannot be passing on an empty directory', function (): void {
+    // R-029's shape first: the pass has to be over something. Rule 9's own fixtures end in
+    // `.fixture` precisely so they are never counted here.
+    $workflows = GuardFixtures::guard()->workflowFiles();
+
+    expect($workflows)->not->toBe([])
+        ->and(array_keys($workflows))->toContain('.github/workflows/ci.yml');
+});
+
+it('passes rule 9 on the real tree, so a failure below is the fixture and not the repo', function (): void {
+    expect(GuardFixtures::guard()->scanWorkflowTriggers())->toBe([]);
+});
+
+it('rejects a push trigger whose branch patterns can exclude a pushed branch — rule 9', function (): void {
+    $violations = GuardFixtures::guard()->scanWorkflowSource(
+        'ci.yml',
+        GuardFixtures::workflow('excludes-pushed-branch'),
+    );
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::WORKFLOW_EXCLUDES_PUSHED_BRANCH)
+        // The patterns are quoted back, because a guard that says "wrong" without saying which
+        // pattern is one you have to re-derive the answer for.
+        ->and($violations[0]->detail)->toContain('main')
+        ->and($violations[0]->detail)->toContain('task-*');
+});
+
+it('rejects branches-ignore on a push trigger — rule 9, the same hole with the sign reversed', function (): void {
+    $violations = GuardFixtures::guard()->scanWorkflowSource(
+        'ci.yml',
+        GuardFixtures::workflow('branches-ignore'),
+    );
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::WORKFLOW_EXCLUDES_PUSHED_BRANCH)
+        ->and($violations[0]->detail)->toContain('scratch');
+});
+
+it('accepts every-branch written as a block sequence, not only as a flow list — rule 9', function (): void {
+    // The real workflow spells it `['**']`. If the parser only understood that spelling, the
+    // first person to reformat the file would silently disable the rule.
+    expect(GuardFixtures::guard()->scanWorkflowSource('ci.yml', GuardFixtures::workflow('every-branch-block-form')))
+        ->toBe([]);
+});
+
+it('does not flag a workflow with no push trigger — rule 9', function (): void {
+    // A scheduled job is a different decision. Clause (b) over the directory is what stops
+    // this from being a loophole.
+    expect(GuardFixtures::guard()->scanWorkflowSource('nightly.yml', GuardFixtures::workflow('no-push-trigger')))
+        ->toBe([]);
+});
+
+it('fails CLOSED on a trigger it cannot read — rule 9', function (): void {
+    $violations = GuardFixtures::guard()->scanWorkflowSource(
+        'ci.yml',
+        GuardFixtures::workflow('unreadable-trigger'),
+    );
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::WORKFLOW_EXCLUDES_PUSHED_BRANCH)
+        ->and($violations[0]->detail)->toContain('CLOSED');
+});
+
+it('reports a directory it found no workflow in, rather than passing it — rule 9', function (): void {
+    // Pointed at the fixture directory, which holds five `.yml.fixture` files and no `.yml`.
+    // Two things in one assertion: the empty-directory case is a violation (rule 6's lesson),
+    // and the fixtures are genuinely invisible to the glob that reads real workflows.
+    $violations = GuardFixtures::guard()->scanWorkflowTriggers('apps/api/guard/fixtures/ci');
+
+    expect($violations)->toHaveCount(1)
+        ->and($violations[0]->rule)->toBe(SourceGuard::WORKFLOW_EXCLUDES_PUSHED_BRANCH)
+        ->and($violations[0]->detail)->toContain('holds no workflow file');
+});
+
+it('rejects a workflow directory where nothing runs on every pushed branch — rule 9, clause (b)', function (): void {
+    // The real defect's shape, at directory level: one workflow, restricted patterns. Planted
+    // as a REAL .yml under a temporary directory, because that is the only way to exercise the
+    // clause that reads the directory rather than one file's text.
+    $directory = base_path('guard/fixtures/ci-planted');
+    $planted = $directory.'/ci.yml';
+
+    expect(is_dir($directory))->toBeFalse("{$directory} already exists; refusing to overwrite it");
+
+    mkdir($directory);
+    file_put_contents($planted, GuardFixtures::workflow('excludes-pushed-branch'));
+
+    try {
+        $violations = GuardFixtures::guard()->scanWorkflowTriggers('apps/api/guard/fixtures/ci-planted');
+
+        // Both clauses fire: the file's own patterns, and "nothing here runs on every branch".
+        expect($violations)->toHaveCount(2)
+            ->and($violations[0]->file)->toBe('apps/api/guard/fixtures/ci-planted/ci.yml')
+            ->and($violations[1]->detail)->toContain('no workflow here runs on every pushed branch');
+    } finally {
+        @unlink($planted);
+        @rmdir($directory);
+    }
+});
+
+/*
+ * ================================================================================
+ * RULE 10 — an object ACL in application code
+ * ================================================================================
+ *
+ * `ADR-004`'s one measured divergence, made unreachable instead of only documented. SeaweedFS
+ * honours object ACLs, MinIO answers `NotImplemented`, and a current S3 bucket with ownership
+ * enforced answers `AccessControlListNotSupported` — so the stand-in is MORE PERMISSIVE than
+ * production on the published-asset path, and a green local test there proves nothing about
+ * production. `ADR-002` already said public read is "an explicit, per-path decision … never a
+ * bucket-wide setting"; it was documented for six tasks that `compose.yaml` had MinIO, too
+ * (`R-125`), which is why this one is mechanical.
+ */
+
+it('passes rule 10 on the real tree, so a failure below is the fixture and not the repo', function (): void {
+    $violations = array_values(array_filter(
+        GuardFixtures::guard()->scan(SourceGuard::PATHS),
+        static fn ($violation): bool => $violation->rule === SourceGuard::PUBLIC_OBJECT_VISIBILITY,
+    ));
+
+    expect($violations)->toBe([]);
+});
+
+it('rejects every form that reaches an S3 object ACL from application code — rule 10', function (): void {
+    $violations = GuardFixtures::guard()->scanObjectVisibility(
+        'app/Fixture.php',
+        GuardFixtures::application('sets-public-visibility'),
+    );
+
+    // Five, not one: the option key, the call, the flysystem constant, and the canned ACL as
+    // both a key and a value. Each is a different way to the same ACL, and a rule that caught
+    // only the obvious one would be a rule somebody routes around without meaning to.
+    expect($violations)->toHaveCount(5)
+        ->and(array_unique(array_map(static fn ($violation): string => $violation->rule, $violations)))
+        ->toBe([SourceGuard::PUBLIC_OBJECT_VISIBILITY]);
+
+    $details = implode(' ', array_map(static fn ($violation): string => $violation->detail, $violations));
+
+    expect($details)->toContain('setVisibility')
+        ->and($details)->toContain('Visibility')
+        ->and($details)->toContain('public-read');
+});
+
+it('does not flag the local public disk, whose filesystem has no ACLs — rule 10', function (): void {
+    $source = GuardFixtures::application('sets-public-visibility');
+    $lines = explode("\n", $source);
+
+    $legitimate = null;
+
+    foreach ($lines as $number => $line) {
+        if (str_contains($line, 'legitimate') === false && str_contains($line, "disk('public')")) {
+            $legitimate = $number + 1;
+        }
+    }
+
+    expect($legitimate)->not->toBeNull('the fixture no longer carries the line this test is about');
+
+    $flagged = array_map(
+        static fn ($violation): int => $violation->line,
+        GuardFixtures::guard()->scanObjectVisibility('app/Fixture.php', $source),
+    );
+
+    expect($flagged)->not->toContain($legitimate);
+});
+
+it('applies to application code only, so config can declare the local disk — rule 10', function (): void {
+    // §1's own wording is "nothing under `apps/` may depend on which one is running". config/
+    // is where the local `public` disk legitimately sets a visibility, and tests/ is where a
+    // refusal has to be provable.
+    $source = GuardFixtures::application('sets-public-visibility');
+
+    expect(GuardFixtures::guard()->scanObjectVisibility('config/filesystems.php', $source))->toBe([])
+        ->and(GuardFixtures::guard()->scanObjectVisibility('tests/Feature/Probe.php', $source))->toBe([]);
+});

@@ -1,0 +1,10 @@
+# No top-level trigger key at all. Rule 9 FAILS CLOSED here rather than assuming the
+# permissive case -- rule 6's lesson: a guard must not report a pass for a file it did not
+# understand.
+name: CI
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nothing

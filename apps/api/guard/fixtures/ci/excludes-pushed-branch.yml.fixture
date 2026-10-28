@@ -1,0 +1,17 @@
+# Rule 9's positive control: the trigger this repository actually had until 2026-10-28.
+# `infra-local-mail-and-object-store` matches neither pattern, so it was pushed, reviewed and
+# mergeable with no CI run ever having existed for it (R-126).
+name: CI
+
+on:
+  push:
+    branches: [main, 'task-*']
+    tags: ['task-*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nothing
