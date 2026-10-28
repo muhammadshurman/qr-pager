@@ -231,8 +231,14 @@ decision (`§3`: do not re-litigate).
   stand-in is **more permissive than production** on exactly the path ADR-002 calls "an
   explicit, per-path decision in Task 7, never a bucket-wide setting". **Task 7 must not use
   object ACLs as the mechanism for a published asset** — the mechanism is the bucket policy and
-  CloudFront. This is the one place where a green local test could mislead, and it is written
-  down rather than left to be discovered.
+  CloudFront. ⚠ **This is now MECHANICAL rather than written down**: `composer guard` rule 10
+  (`public-object-visibility`) rejects the `setVisibility` call, the flysystem `Visibility`
+  constant, a `visibility` option key and S3's canned ACLs anywhere under `app/` or `routes/`,
+  and it is proven to fail on `guard/fixtures/visibility/sets-public-visibility.php.fixture`.
+  Documented was not enough once already: ADR-002's MinIO row was documented for six tasks
+  while the service was absent (`R-125`). The rule's one stated limit is the bare
+  `put($path, $bytes, 'public')` form, which is not matched because `'public'` is also a disk
+  name here.
 - `PROJECT_INSTRUCTIONS.md §1`'s Object-storage row now reads "S3
   (`league/flysystem-aws-s3-v3`); **SeaweedFS locally** — see `docs/adr/004-local-object-store.md`"
   and points **straight here**, not through ADR-002 (rank 2, Muhammad's text, mirrored into the
