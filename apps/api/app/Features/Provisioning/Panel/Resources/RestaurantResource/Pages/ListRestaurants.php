@@ -12,7 +12,6 @@ use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 /**
  * The registry list, and the create action — S1's write surface.
@@ -69,11 +68,25 @@ class ListRestaurants extends ListRecords
                         ->required()
                         ->maxLength(63)
                         ->regex('/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/')
+                        // THE UNIQUENESS IS A FIELD RULE, not only a caught exception, and
+                        // that is a correction rather than a belt-and-braces addition.
+                        // Measured in this session: a ValidationException thrown from the
+                        // action's own closure lands under the bare key `slug`, while
+                        // Filament attaches a field's errors at
+                        // `mountedActions.0.data.slug` -- so the duplicate message was
+                        // raised and would NOT have appeared beside the field it is about.
+                        // A rule on the field is keyed by Filament itself and cannot drift.
+                        //
+                        // The unique index on the table is still the real guard; this rule
+                        // is the ordinary case and the catch below is the race.
+                        ->unique(table: 'tenant_provisionings', column: 'slug')
                         ->helperText('Lower-case letters, digits and hyphens. This becomes the restaurant’s web address and cannot be changed later.')
                         ->validationMessages([
                             // Filament's default regex message names the pattern, which is
-                            // schema detail on a screen. This says what to type instead.
+                            // schema detail on a screen. These say what to do instead, and
+                            // neither carries a table name, a column name or SQL.
                             'regex' => 'Use lower-case letters, digits and hyphens only, starting and ending with a letter or digit.',
+                            'unique' => 'That address is already taken by another restaurant.',
                         ]),
                     TextInput::make('owner_email')
                         ->label('Owner’s email address')
@@ -92,12 +105,25 @@ class ListRestaurants extends ListRecords
                             actorIp: request()->ip(),
                         );
                     } catch (DuplicateSlug $e) {
-                        // A FIELD ERROR, not a notification and not a 500. The message is
-                        // the exception's own, which carries no SQL, no constraint name and
-                        // no SQLSTATE -- it is a response body (§4 › Edge & ops).
-                        throw ValidationException::withMessages([
-                            'slug' => $e->getMessage(),
-                        ]);
+                        // THE RACE, AND ONLY THE RACE. The ordinary duplicate is caught by
+                        // the field's `unique` rule above, where Filament keys the error to
+                        // the field. This path is two admins submitting the same address
+                        // between that check and the insert, which the table's unique index
+                        // refuses and nothing in PHP can prevent.
+                        //
+                        // A notification rather than a field error, because re-keying a
+                        // hand-thrown ValidationException to Filament's mounted-action path
+                        // would mean reproducing an internal state path by hand -- a string
+                        // that goes stale silently the next time Filament changes it. The
+                        // message is the exception's own and carries no SQL, no constraint
+                        // name and no SQLSTATE (§4 › Edge & ops).
+                        Notification::make()
+                            ->title('Not provisioned')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+
+                        return;
                     }
 
                     Notification::make()
