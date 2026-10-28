@@ -95,7 +95,7 @@ grep -q 'REVERTED BY bin/provisioning-revert-proof' "$service" \
 php -l "$service" >/dev/null || { echo "FATAL: revert A does not parse"; exit 1; }
 
 run "revert A — the provisioning transaction split into four"
-revert_proof_require_red "revert A" "leaves NO partial tenant when the membership insert fails halfway"
+revert_proof_require_red "revert A" "leaves NO partial tenant"
 
 # ---------------------------------------------------------------------------------------
 # REVERT B: the panel reads a tenant table from OUTSIDE any scope.
@@ -109,7 +109,11 @@ grep -q 'REVERTED BY bin/provisioning-revert-proof' "$dashboard" \
 php -l "$dashboard" >/dev/null || { echo "FATAL: revert B does not parse"; exit 1; }
 
 run "revert B — the dashboard reads the tenants table, unscoped"
-revert_proof_require_red "revert B" "reaches NO tenant table on any panel route"
+# ⚠ THE STATUS CASE, NOT THE INVARIANT CASE, and that is the point of having revert C.
+# The runtime scope guard refuses an unscoped statement before it is sent, so the panel
+# answers 500 and `it answers every panel route without a server error` is what reds. The
+# listener never fires, which is exactly what QA M-1 found -- and is why revert C exists.
+revert_proof_require_red "revert B" "answers every panel route"
 
 # ---------------------------------------------------------------------------------------
 # REVERT C: the panel reads a tenant table from INSIDE a tenant scope — QA M-1.
@@ -126,7 +130,7 @@ grep -q 'REVERTED BY bin/provisioning-revert-proof' "$dashboard" \
 php -l "$dashboard" >/dev/null || { echo "FATAL: revert C does not parse"; exit 1; }
 
 run "revert C — the dashboard reads the tenants table INSIDE a scope"
-revert_proof_require_red "revert C" "reaches NO tenant table on any panel route"
+revert_proof_require_red "revert C" "reaches NO tenant table"
 
 # RESTORE EXPLICITLY on the normal path, so the check below has something true to check.
 restore || exit 1

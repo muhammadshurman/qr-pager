@@ -277,9 +277,14 @@ revert_proof_require_red() {
     return 1
   fi
 
-  # The colour is stripped first, for the reason revert_proof_run's own comment gives:
-  # Pest writes an SGR escape in front of the glyph, so a pattern anchored before it
-  # matches nothing. Then: a RED line that mentions this case.
+  # ⚠ THE FRAGMENT MUST BE SHORT, BECAUSE PEST TRUNCATES THE CASE NAME. The colour is
+  # stripped first (revert_proof_run's own comment says why: an SGR escape sits in front of
+  # the glyph, so a pattern anchored before it matches nothing) -- and then the ⨯ line
+  # carries the case name cut to about 62 characters with an ellipsis, while the FAILED
+  # summary line cuts it harder still. Measured here: a caller that passed a whole case
+  # name got "the required case did NOT go red" for a case that HAD gone red, which is a
+  # false alarm in the one direction this machinery must not produce. A fragment of a few
+  # distinctive words survives both truncations.
   if sed 's/\x1b\[[0-9;]*m//g' "$output" | grep -F '⨯' | grep -qF "$fragment"; then
     echo "  required red PRESENT: [$fragment]"
     return 0
