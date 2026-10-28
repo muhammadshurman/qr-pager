@@ -571,7 +571,16 @@ two-membership login edge ("which is Task 10"). **New date: accepted 2026-10-28,
 2026-10-28.** Its `§5` row is updated in place with both, and the recommended rule text is below so
 the decision is one paste rather than one design session.
 
-### 9.2 Ready to paste — the two `§4 › Tenancy` clauses (SR-1)
+### 9.2 ✅ PASTED AND MIRRORED 2026-10-28 — the two `§4 › Tenancy` clauses (SR-1 CLOSED)
+
+Muhammad pasted these into the claude.ai Project instructions; the repo copy was brought
+byte-for-byte into line at `c346098`, with containment verified mechanically rather than by eye
+(975 bytes). They sit in `§4 › Tenancy`, immediately after the "Before Task 5 exists" bullet.
+
+**One word differs from the rank-1 prompt, deliberately and with Muhammad's agreement:** "which
+already holds **a** named cross-tenant path", not "**the one**". The worker holds **two** — the
+outbox queue and the expiry job, four policies across them in `§2.6` — so "the one" was
+measurably wrong. **SR-1 is closed.**
 
 ```markdown
 - **Platform tables are not tenant tables.** The platform admin panel operates only on tables
@@ -587,14 +596,35 @@ the decision is one paste rather than one design session.
   that reaches a tenant table is a rejected design. Added 2026-10-28.
 ```
 
-### 9.3 Ready to paste — the `§4 › Security` clause R-106 asks for
+### 9.3 ✅ CREATED 2026-10-28 — `§4 › Security`, a NEW sixth subsection of `§4` (for `R-106`)
+
+⚠ **`§4` had no `Security` subsection at all**, although `R-106`'s *review by* cell has
+prescribed writing into one since 2026-10-28. Its five subsections were `Tenancy`, `Data`,
+`Postgres traps`, `Realtime (post-O2)` and `Edge & ops`. Creating it was Muhammad's decision,
+taken rather than filing a role-seniority rule under tenant isolation or data shape, where it
+belongs to neither.
+
+**Placement:** `## 4. NON-NEGOTIABLE INVARIANTS`, a new `### Security` heading inserted
+immediately after `### Data`'s last bullet (`- audit_log is append-only, enforced by trigger on
+UPDATE / DELETE / TRUNCATE — superuser included.`) and before `### Postgres traps`. It is now
+`§4`'s **third** subsection of six.
+
+**The clause states the stricter implementation rather than leaving the clause weaker than the
+code** — Muhammad's instruction, and the right way round: a clause that describes something
+weaker than what is enforced is a clause a later reader will relax the code down to.
 
 ```markdown
 - **Role seniority, and consent.** `owner` is senior to `manager`, which is senior to `staff`. No
   actor may grant a role senior to its own, assume one, or change its own role at all — a manager
   promoting itself to owner is refused, not audited after the fact. Attaching an **existing** user
   to a tenant requires that user's acceptance of an invite; a membership is never created for a
-  user by someone else's request alone. Added 2026-10-__ (R-106).
+  user by someone else's request alone. **Until that invite flow exists, the implementation is
+  deliberately stricter than this clause: an address that already belongs to an account holding
+  any membership, or to a platform admin, is refused outright rather than invited** — so the
+  weaker rule is never the one in force. Both refusals answer with one message, because
+  distinguishing them would let a form probe whether an address has an account. The residual —
+  what a restaurant group's owner does when they legitimately want a second restaurant — is
+  `PLAN.md R-119`. Added 2026-10-28 (R-106).
 ```
 
 ---
