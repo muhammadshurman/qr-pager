@@ -78,6 +78,33 @@ ports, with the local driver as the one that runs here and the AWS driver deferr
 account; what it does demonstrate is that **no domain reaches `active` without a verified DNS
 challenge and a recorded certificate**, which is the falsifiable half.
 
+### SR-3 — `§6.1`'s worker grant assumes a cross-tenant sweep that `§4` does not allow
+
+Recorded 2026-10-28, at the start of the build, before the migration.
+
+`§6.1` below says: *"`worker` gets `SELECT` on `tenant_domains` and `landing_pages` (the
+verification and issuance polling commands run as the worker)"*. The parenthetical is the
+grant's only justification, and it does not survive `PROJECT_INSTRUCTIONS.md §4 › Tenancy`:
+
+> Cross-tenant reads exist **only** on these named paths: QR token lookup, a user's own
+> memberships, the outbox queue, the expiry job. Adding one requires editing this file first.
+
+A command that walks **every** tenant's domains to advance the ones whose certificate has
+issued is a fifth cross-tenant read. Adding it means a rank-2 edit to
+`PROJECT_INSTRUCTIONS.md`, which is a stop-and-report rather than a build step.
+
+**Resolved without the edit, and recorded rather than resolved in passing:** the lifecycle
+runs **inside the tenant's own scope** — from the `/studio/domains` screen, and from
+`domains:advance {tenant}`, a console command that takes a tenant argument and opens
+`withTenant()` for it. No sweep exists, so no cross-tenant path is needed and
+**`qrpager_worker` is granted nothing at all on any of this task's three tables** — a grant
+whose only justification was a code path that does not exist would be a widened surface for
+nothing, against a grant table whose whole point is deny-by-default.
+
+The product residual — a certificate becomes `active` when someone next looks rather than
+the moment it issues — is `PLAN.md R-130`, owned by Task 13, which is where the AWS driver
+and its event source arrive. `PLAN.md §2.6` and `§2.7` carry the same record.
+
 ---
 
 ## 4.1 THE SINGLE INVARIANT THIS TASK SHIPS ON

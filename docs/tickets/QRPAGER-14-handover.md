@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — the build has not started; `84c919b` carries the `§6` answers and no code, so `task-7` is waiting on the whole of Task 7.
+STATUS: TASK-7 BLOCKED — the data contract is written; the migration, the builder, the gates and the `§11` reviews are all still ahead of the tag.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -47,6 +47,19 @@ table is a rejected design**". A landing page, its media and its domains are ten
 So the builder is a **tenant-scoped panel** (decision D1) and `§4.3`'s wording is corrected
 by this task's `§5` row `R-127` rather than by an edit to `§4`.
 
+### SR-3 — the ticket's worker grant assumed a sweep that `§4` does not allow
+
+Raised by this build, at the data-contract step, and recorded in `QRPAGER-14.md §0 › SR-3`,
+`PLAN.md §2.6` and `PLAN.md §2.7` rather than resolved in passing. The ticket's `§6.1`
+granted `qrpager_worker` `SELECT` on two of the three new tables, justified by "the
+verification and issuance polling commands run as the worker". A worker that walks every
+tenant's domains is a **fifth cross-tenant read**, and `§4 › Tenancy` names four and says
+adding one "requires editing this file first" — a rank-2 edit, which is a stop.
+
+So there is no sweep. The lifecycle runs inside the tenant's own scope, from the panel and
+from `domains:advance {tenant}`, and **the worker is granted nothing on any of the three new
+tables**. The residual is `R-130` (Task 13).
+
 ### SR-2 — the certificate infrastructure is Task 13's; the lifecycle is Task 7's
 
 The ruling, verbatim:
@@ -78,7 +91,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | # | Phase | State | Commit | Pushed |
 | - | ----- | ----- | ------ | ------ |
 | 0 | Corrections: `§0` status, this file | **done** | *this commit* | yes |
-| 1 | Data contract — `PLAN.md §2.3/§2.5/§2.6/§2.7` before the migration | not started | — | — |
+| 1 | Data contract — `PLAN.md §2.3/§2.5/§2.6/§2.7` before the migration | **done** | *this commit* | yes |
 | 2 | Migration — three tenant tables, two enums, RLS, grants | not started | — | — |
 | 3 | Block schema, generated contract, `landing-schema-check` | not started | — | — |
 | 4 | Media library — upload validation, isolation | not started | — | — |
