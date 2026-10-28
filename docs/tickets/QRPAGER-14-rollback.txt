@@ -1,0 +1,80 @@
+================================================================================
+MIGRATIONS APPLY FROM EMPTY, TWICE, AND ROLL BACK CLEAN (§6)
+================================================================================
+
+Commit:   8d243a9 + the bin/migration-rollback-proof change in this commit
+Run at:   2026-10-28
+Command:  bin/migration-rollback-proof            (apps/api)
+Database: qrpager_rollback_proof -- created for the run and dropped afterwards,
+          never qrpager_test, so one rollback really does go back to EMPTY
+Result:   all five checks passed
+
+  1. migrations apply from EMPTY, in one batch
+  2. a second apply is a no-op
+  3. this task's objects are present -- the three tables with rls=t force=t,
+     their six policies, and the privilege block below
+  4. migrate:rollback leaves ONE table (migrations) and no functions
+  5. a re-apply returns a BYTE-IDENTICAL schema fingerprint
+
+⚠ WHAT THE POSITIVE CONTROL CAUGHT, because it is the point of having one.
+The first version of Task 7's privilege block asked has_table_privilege() for
+every privilege. That function answers `f` for a COLUMN-level grant -- it asks
+only about the table-level one -- so:
+
+    has_table_privilege     ('qrpager_app','media_assets','INSERT')  ->  f
+    has_any_column_privilege('qrpager_app','media_assets','INSERT')  ->  t
+
+Every one of the worker's absence checks would therefore have answered `f` for
+a worker holding a column-level grant on every column: the control passing
+while the thing it forbids was true. The positive control failed loudly
+("qrpager_app does NOT hold INSERT on media_assets -- the absence checks above
+are vacuous") and the block now uses has_any_column_privilege for the column
+privileges and keeps has_table_privilege for DELETE, which has no column form.
+
+That is the same shape the script's own DELETE comment already recorded for
+passkeys, arriving from the other direction.
+
+================================================================================
+
+qrpager_app UPDATE on landing_pages: t (expected t)
+qrpager_app SELECT on media_assets: t (expected t)
+qrpager_app INSERT on media_assets: t (expected t)
+qrpager_app DELETE on media_assets: t (expected t)
+qrpager_app INSERT on tenant_domains: t (expected t)
+qrpager_app UPDATE on tenant_domains: t (expected t)
+qrpager_owner UPDATE on media_assets: t (expected t)
+qrpager_app DELETE on passkeys: f (expected f)
+policy pager_sessions.worker_expires_sessions cmd=w roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status]))) check=(status = 'expired'::pager_status)
+policy pager_sessions.worker_reads_expired_sessions cmd=r roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status, 'expired'::pager_status]))) check=-
+policies on the three platform tables: 0 (expected 0)
+tenant_id columns on the three platform tables: 0 (expected 0)
+trigger platform_audit_log.platform_audit_log_no_mutation enabled=A CREATE TRIGGER platform_audit_log_no_mutation BEFORE DELETE OR UPDATE ON public.platform_audit_log FOR EACH STATEMENT EXECUTE FUNCTION platform_audit_log_is_append_only()
+trigger platform_audit_log.platform_audit_log_no_truncate enabled=A CREATE TRIGGER platform_audit_log_no_truncate BEFORE TRUNCATE ON public.platform_audit_log FOR EACH STATEMENT EXECUTE FUNCTION platform_audit_log_is_append_only()
+no UPDATE or DELETE on platform_audit_log for either runtime role
+
+=== 4. rollback runs clean ===
+
+   INFO  Rolling back migrations.  
+
+  2026_10_28_160000_create_landing_tables ....................... 41.43ms DONE
+  2026_10_28_150000_create_platform_tables ...................... 17.01ms DONE
+  2026_10_28_140000_narrow_auth_grants ........................... 5.17ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 4.54ms DONE
+  2026_10_28_120000_create_auth_contract ........................ 14.94ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 4.47ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 5.22ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 5.07ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 9.05ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 23.68ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 34.48ms DONE
+  2026_10_25_150000_create_global_tables ........................ 13.09ms DONE
+
+tables left: 1 (expected 1, the migrations table)
+functions left: 0 (expected 0 -- the resolver and the audit trigger are both dropped)
+
+=== 5. a re-apply returns the identical schema ===
+schema identical after rollback and re-apply
+
+migration-rollback-proof: all five checks passed on [qrpager_rollback_proof].
+
+[exited with code 0]

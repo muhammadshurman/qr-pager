@@ -1,0 +1,102 @@
+================================================================================
+UNIT COVERAGE ON THE CODE THIS TASK ADDED (§6)
+================================================================================
+
+Commit:   8d243a9  (task-7-landing-builder)
+Run at:   2026-10-28
+Command:  bin/coverage --task=task-6 --min=90      (apps/api)
+Result:   THIS TASK (51 files) 1571/1667 = 94.24%   -- the bar is 90%
+          Whole tree, same run: 94.6%
+
+The denominator is the files this branch ADDED OR CHANGED since `task-6`,
+resolved with git and passed to PHPUnit as an explicit filter -- which is what
+§6 asks for ("coverage on code this task added") rather than a whole-tree
+figure that this task's code barely moves.
+
+⚠ TWO THINGS THIS RUN CHANGED ABOUT THE SCRIPT, both recorded in bin/coverage:
+  - it ran on the compose network, where 127.0.0.1 is the container, and the
+    object store and mail catcher that joined the stack on 2026-10-28 were
+    therefore unreachable: 84 failures, none of them a coverage problem. It
+    uses --network host now.
+  - it ran as root and left a root-owned livewire-tmp inside the mounted
+    repository, which broke the next HOST run of the suite. It runs as the
+    host user now.
+
+THE FILES STILL BELOW 90%, named rather than averaged away:
+
+  SystemDnsVerifier            40.0%  the PRODUCTION DNS driver. Its challenge
+                                      comparison was lifted into DnsChallenge
+                                      (100%) and is driven directly; what stays
+                                      uncovered is the branch that needs a real
+                                      TXT record this suite cannot create. Said
+                                      so in DnsChallengeTest rather than implied.
+  SvgPolicy                    86.4%  21 hostile shapes are driven; the residue
+                                      is defensive arms (malformed-name guards)
+                                      a well-formed XML document cannot reach.
+  MediaAssetRow / MediaOptions 81-86% the null-dimension arms of a row object.
+  LandingBuilderPage           ~53%   Filament's own generated accessors.
+
+================================================================================
+
+  Platform/Support/helpers ............................................ 100.0%  
+  Providers/AppServiceProvider .............................. 268, 272 / 97.5%  
+  ────────────────────────────────────────────────────────────────────────────  
+                                                                 Total: 94.6 %  
+
+  app/Domain/Database/TenantTables.php                              7/7      100.0%
+  app/Domain/DatabaseEnums.php                                     10/10     100.0%
+  app/Domain/Landing/BlockSchema.php                               57/61      93.4%
+  app/Domain/Landing/BlockType.php                                  9/9      100.0%
+  app/Domain/Landing/CertificateIssuer.php                          0/0      100.0%
+  app/Domain/Landing/DnsChallenge.php                               7/7      100.0%
+  app/Domain/Landing/DnsVerifier.php                                0/0      100.0%
+  app/Domain/Landing/DomainStatus.php                              11/11     100.0%
+  app/Domain/Landing/Field.php                                      8/8      100.0%
+  app/Domain/Landing/FieldKind.php                                  0/0      100.0%
+  app/Domain/Landing/LandingDocument.php                          192/204     94.1%
+  app/Domain/Landing/LandingDocumentInvalid.php                     1/1      100.0%
+  app/Domain/Landing/LandingPageStatus.php                          6/6      100.0%
+  app/Domain/Landing/LandingSchema.php                            140/140    100.0%
+  app/Domain/Landing/MediaReferences.php                            0/0      100.0%
+  app/Domain/Landing/ThemeTokenKind.php                             0/0      100.0%
+  app/Domain/Landing/ThemeTokens.php                               11/11     100.0%
+  app/Features/Landing/Console/AdvanceDomainsCommand.php           29/32      90.6%
+  app/Features/Landing/Console/ExportLandingSchemaCommand.php      21/23      91.3%
+  app/Features/Landing/DomainRefused.php                            1/1      100.0%
+  app/Features/Landing/FixtureDnsVerifier.php                      21/24      87.5%
+  app/Features/Landing/InspectedImage.php                          36/36     100.0%
+  app/Features/Landing/LandingPageRow.php                          10/10     100.0%
+  app/Features/Landing/LandingPages.php                           149/155     96.1%
+  app/Features/Landing/LandingRenderer.php                         23/24      95.8%
+  app/Features/Landing/LandingServiceProvider.php                  16/17      94.1%
+  app/Features/Landing/LocalCertificateIssuer.php                  19/21      90.5%
+  app/Features/Landing/MediaAssetRow.php                           13/16      81.2%
+  app/Features/Landing/MediaLibrary.php                            67/71      94.4%
+  app/Features/Landing/MediaRejected.php                            1/1      100.0%
+  app/Features/Landing/Panel/MediaOptions.php                       6/7       85.7%
+  app/Features/Landing/Panel/Pages/DomainsPage.php                 47/49      95.9%
+  app/Features/Landing/Panel/Pages/LandingBuilderPage.php          26/49      53.1%
+  app/Features/Landing/Panel/Pages/MediaLibraryPage.php            31/31     100.0%
+  app/Features/Landing/Panel/Pages/PreviewController.php           30/30     100.0%
+  app/Features/Landing/Panel/StudioForm.php                       153/155     98.7%
+  app/Features/Landing/Panel/StudioPanelProvider.php               38/38     100.0%
+  app/Features/Landing/PublishFailed.php                            1/1      100.0%
+  app/Features/Landing/PublishedPage.php                            1/1      100.0%
+  app/Features/Landing/PublishedSite.php                            9/10      90.0%
+  app/Features/Landing/SvgPolicy.php                               51/59      86.4%
+  app/Features/Landing/SystemDnsVerifier.php                        8/20      40.0%
+  app/Features/Landing/TenantDomainRow.php                         15/15     100.0%
+  app/Features/Landing/TenantDomains.php                          123/126     97.6%
+  app/Features/Landing/TenantMediaReferences.php                    5/5      100.0%
+  app/Features/Landing/ThemeStylesheet.php                          6/6      100.0%
+  app/Models/User.php                                              56/56     100.0%
+  app/Platform/Auth/AuthenticatedMembership.php                    13/14      92.9%
+  app/Platform/Http/ActiveMembership.php                            0/0      100.0%
+  app/Platform/Http/TenantPanelAccess.php                           9/9      100.0%
+  app/Providers/AppServiceProvider.php                             78/80      97.5%
+
+  THIS TASK (51 file(s))                                         1571/1667   94.24%
+
+  Files resolved from git: 51. Files found in the coverage document: 51.
+
+[exited with code 0]

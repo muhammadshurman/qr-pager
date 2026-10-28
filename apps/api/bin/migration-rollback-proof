@@ -232,28 +232,62 @@ grep -qE 'grant qrpager_app users.is_platform_admin INSERT' "$before" \
 # integrity takes when a referenced tenants row is deleted -- requires UPDATE, so revoking
 # it from the owner made `delete from tenants` answer 42501. The migration carries the
 # measurement.
+# ⚠ has_any_column_privilege AND NOT has_table_privilege FOR THE COLUMN PRIVILEGES, and
+# the positive control below is what caught it. `GRANT INSERT (id, tenant_id, …) ON
+# media_assets` is a COLUMN-level grant, and has_table_privilege() answers `f` for one --
+# it asks only about the table-level privilege. Measured on this database:
+#
+#   has_table_privilege     ('qrpager_app','media_assets','INSERT')  ->  f
+#   has_any_column_privilege('qrpager_app','media_assets','INSERT')  ->  t
+#
+# So with has_table_privilege the worker's absence checks would have answered `f` for a
+# worker that held a column-level grant on every column -- the control passing while the
+# thing it forbids was true. That is the same shape this script's own DELETE comment
+# records one block down, arriving from the other direction, and it is why a positive
+# control sits beside every absence here.
+#
+# DELETE keeps has_table_privilege, because DELETE has no column form at all.
+privilege_check() {
+  local role="$1" table="$2" priv="$3"
+
+  if [ "$priv" = "DELETE" ] || [ "$priv" = "TRUNCATE" ]; then
+    psql_as_root -d "$probe" -tAc "select has_table_privilege('$role', '$table', '$priv')"
+  else
+    psql_as_root -d "$probe" -tAc "select has_any_column_privilege('$role', '$table', '$priv')"
+  fi
+}
+
 for spec in 'qrpager_owner:landing_pages:DELETE' \
             'qrpager_worker:landing_pages:SELECT' \
             'qrpager_worker:media_assets:SELECT' \
             'qrpager_worker:tenant_domains:SELECT' \
             'qrpager_worker:landing_pages:INSERT' \
-            'qrpager_worker:tenant_domains:UPDATE'; do
+            'qrpager_worker:media_assets:INSERT' \
+            'qrpager_worker:tenant_domains:INSERT' \
+            'qrpager_worker:landing_pages:UPDATE' \
+            'qrpager_worker:media_assets:UPDATE' \
+            'qrpager_worker:tenant_domains:UPDATE' \
+            'qrpager_app:media_assets:UPDATE'; do
   role="${spec%%:*}"; rest="${spec#*:}"; table="${rest%%:*}"; priv="${rest##*:}"
-  held=$(psql_as_root -d "$probe" -tAc \
-    "select has_table_privilege('$role', '$table', '$priv')")
+  held=$(privilege_check "$role" "$table" "$priv")
   [ "$held" = "f" ] \
     || { echo "Task 7: $role holds $priv on $table, which the migration revokes or never grants" >&2; exit 1; }
   echo "$role $priv on $table: $held (expected f)"
 done
 
-# The positive control for the block above: the APP role does hold what it is granted, so
-# these checks are not all answering f because the tables are missing.
+# THE POSITIVE CONTROL. Without it the eleven absences above would all be satisfied by a
+# database in which these tables do not exist, or by asking the wrong question -- which
+# is exactly what happened the first time this block was written.
 for spec in 'qrpager_app:landing_pages:SELECT' \
+            'qrpager_app:landing_pages:UPDATE' \
+            'qrpager_app:media_assets:SELECT' \
             'qrpager_app:media_assets:INSERT' \
-            'qrpager_app:tenant_domains:UPDATE'; do
+            'qrpager_app:media_assets:DELETE' \
+            'qrpager_app:tenant_domains:INSERT' \
+            'qrpager_app:tenant_domains:UPDATE' \
+            'qrpager_owner:media_assets:UPDATE'; do
   role="${spec%%:*}"; rest="${spec#*:}"; table="${rest%%:*}"; priv="${rest##*:}"
-  held=$(psql_as_root -d "$probe" -tAc \
-    "select has_table_privilege('$role', '$table', '$priv')")
+  held=$(privilege_check "$role" "$table" "$priv")
   [ "$held" = "t" ] \
     || { echo "Task 7: $role does NOT hold $priv on $table -- the absence checks above are vacuous" >&2; exit 1; }
   echo "$role $priv on $table: $held (expected t)"
