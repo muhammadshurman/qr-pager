@@ -104,15 +104,72 @@ it('reaches exactly the tables in the matrix and no others', function (): void {
         // without a cross-tenant read: the panel reads and writes these and nothing else.
         // tenant_statistics is SELECT-only for this role -- the aggregate job is its only
         // writer -- which the per-column case below pins.
-        'audit_log', 'outbox', 'pager_sessions', 'passkeys', 'password_reset_tokens',
-        'personal_access_tokens', 'platform_audit_log', 'push_subscriptions',
+        //
+        // landing_pages, media_assets and tenant_domains joined at Task 7. All three are
+        // TENANT tables, and they are reachable by this role and by NO OTHER -- see the
+        // worker's list below, which does not grow.
+        'audit_log', 'landing_pages', 'media_assets', 'outbox', 'pager_sessions',
+        'passkeys', 'password_reset_tokens', 'personal_access_tokens',
+        'platform_audit_log', 'push_subscriptions', 'tenant_domains',
         'tenant_provisionings', 'tenant_statistics', 'tenant_users', 'tenants', 'users',
     ]);
 
+    // UNCHANGED BY TASK 7, AND THAT IS THE ASSERTION. QRPAGER-14 §6.1 granted the worker
+    // SELECT on tenant_domains and landing_pages, justified by "the verification and
+    // issuance polling commands run as the worker". A worker sweeping every tenant's
+    // domains is a fifth cross-tenant read and §4 › Tenancy names four, so the sweep was
+    // never built and the grant it implied was never made (QRPAGER-14 §0 SR-3, R-130).
+    // This list is where that stays true: adding the grant later fails here.
     expect(Schema::reachableTables('qrpager_worker'))->toBe([
         'audit_log', 'failed_jobs', 'outbox', 'pager_sessions', 'platform_audit_log',
         'push_subscriptions', 'tenant_provisionings', 'tenant_statistics',
         'tenant_users', 'tenants', 'users',
+    ]);
+});
+
+it('states Task 7 grants as exact column sets, with the three absences that are the design', function (): void {
+    // NO DELETE ON landing_pages FOR ANYONE. A tenant has one page row and every other
+    // row points at it; emptying the page is an UPDATE to 'draft', not a delete.
+    foreach (['qrpager_app', 'qrpager_worker', 'qrpager_owner'] as $role) {
+        expect(Schema::hasTablePrivilege($role, 'landing_pages', 'DELETE'))->toBeFalse();
+    }
+
+    // NO UPDATE ON media_assets FOR ANYONE. Every column describes bytes already in the
+    // object store, so an update leaves a row that no longer describes its object.
+    foreach (['qrpager_app', 'qrpager_worker'] as $role) {
+        expect(Schema::grantedColumns($role, 'media_assets', 'UPDATE'))->toBe([]);
+    }
+
+    // NOTHING AT ALL FOR THE WORKER on any of the three -- SR-3 again, per column this
+    // time, because the table-level list above would still pass if a single column were
+    // granted without the table becoming "reachable" in some future definition of it.
+    foreach (['landing_pages', 'media_assets', 'tenant_domains'] as $table) {
+        foreach (['SELECT', 'INSERT', 'UPDATE'] as $privilege) {
+            expect(Schema::grantedColumns('qrpager_worker', $table, $privilege))
+                ->toBe([], "qrpager_worker holds {$privilege} on {$table}; SR-3 says it holds nothing");
+        }
+
+        expect(Schema::hasTablePrivilege('qrpager_worker', $table, 'DELETE'))->toBeFalse();
+    }
+
+    // The app's own sets, stated exactly. tenant_id is insertable and never updatable on
+    // any of the three: a row does not change tenant.
+    expect(Schema::grantedColumns('qrpager_app', 'landing_pages', 'UPDATE'))->toBe([
+        'draft_document', 'draft_updated_at', 'published_at', 'published_checksum',
+        'published_document', 'published_hostname', 'status', 'updated_at',
+    ]);
+
+    expect(Schema::grantedColumns('qrpager_app', 'tenant_domains', 'INSERT'))->toBe([
+        'created_at', 'hostname', 'id', 'status', 'tenant_id', 'updated_at',
+        'verification_token',
+    ]);
+
+    // Every lifecycle column is UPDATE-only: a domain is always created with nothing
+    // earned, and dns_verified_at, the certificate pair and activated_at can only ever
+    // arrive through an update the transition table and the CHECKs both bound.
+    expect(Schema::grantedColumns('qrpager_app', 'tenant_domains', 'UPDATE'))->toBe([
+        'activated_at', 'certificate_identifier', 'certificate_issued_at', 'checked_at',
+        'dns_verified_at', 'last_error', 'redirects_to_domain_id', 'status', 'updated_at',
     ]);
 });
 

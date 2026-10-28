@@ -76,7 +76,14 @@ abstract class TestCase extends BaseTestCase
      */
     private const RESETTABLE = [
         'push_subscriptions', 'outbox', 'pager_sessions', 'tenant_users',
-        'tenant_statistics', 'tenant_provisionings', 'tenants', 'users',
+        'tenant_statistics', 'tenant_provisionings',
+        // Task 7's three. All three carry an FK to `tenants`, so `TRUNCATE ... CASCADE`
+        // below would reach them anyway -- they are named explicitly because this list is
+        // read as the statement of what a test may assume is empty, and a table cleared
+        // only as a side effect of another table's cascade is not something a reader
+        // should have to derive.
+        'landing_pages', 'media_assets', 'tenant_domains',
+        'tenants', 'users',
     ];
 
     protected function setUp(): void
@@ -594,6 +601,37 @@ abstract class TestCase extends BaseTestCase
                 'actor_user_id' => $userId,
                 'action' => $this->auditAction('seed.created'),
                 'context' => $this->auditContext(),
+            ]);
+
+            // ---- Task 7's three. They are seeded here for the reason the six above are:
+            // TenantIsolationTest asserts "0 rows with no tenant context" over EVERY tenant
+            // table, and that assertion is vacuous for a table that has no rows to hide. A
+            // table added to the registry without a row here would pass isolation by being
+            // empty, which is the dead-assertion shape §4a records four of.
+            $owner->table('landing_pages')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenantId,
+                'draft_document' => '{}',
+            ]);
+
+            // The key has to satisfy media_assets_key_is_unguessable: 32 hex characters and
+            // a 2-5 character extension, under this tenant's own prefix.
+            $owner->table('media_assets')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenantId,
+                'object_key' => 'media/'.$tenantId.'/'.bin2hex(random_bytes(16)).'.png',
+                'original_name' => 'seed.png',
+                'content_type' => 'image/png',
+                'byte_size' => 1024,
+                'checksum' => hash('sha256', 'seed'),
+            ]);
+
+            // Unique across every tenant (R-129), so the hostname carries the tenant id.
+            $owner->table('tenant_domains')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenantId,
+                'hostname' => 'seed-'.str_replace('-', '', $tenantId).'.example.test',
+                'verification_token' => bin2hex(random_bytes(16)),
             ]);
         }, 'pgsql_owner');
     }

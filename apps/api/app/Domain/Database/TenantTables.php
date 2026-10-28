@@ -33,9 +33,20 @@ final class TenantTables
      */
     public const TENANT = [
         'audit_log',
+        // ---- Task 7's three. All three hold TENANT CONTENT -- the page a restaurant
+        // publishes, the images it uploads, and the hostnames it owns -- which is the
+        // whole of QRPAGER-14 §0 SR-1: the 2026-10-28 ruling puts them out of the
+        // platform panel's reach and into a tenant-scoped one.
+        //
+        // media_assets carries a second, structural isolation on top of its policies:
+        // two CHECK constraints pin object_key to 'media/{tenant_id}/{32 hex}.{ext}', so
+        // a row cannot name another tenant's prefix even with RLS disabled.
+        'landing_pages',
+        'media_assets',
         'outbox',
         'pager_sessions',
         'push_subscriptions',
+        'tenant_domains',
         'tenant_users',
         'tenants',
     ];

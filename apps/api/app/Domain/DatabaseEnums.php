@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use App\Domain\Audit\AuditActorType;
+use App\Domain\Landing\DomainStatus;
+use App\Domain\Landing\LandingPageStatus;
 use App\Domain\Outbox\OutboxStatus;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Provisioning\ProvisioningStatus;
@@ -32,6 +34,11 @@ final class DatabaseEnums
             // Task 6. The platform's own record of a provisioning attempt; no tenant
             // scope, because the row is written before the tenant exists (PLAN.md §2.4).
             'provisioning_status' => ProvisioningStatus::class,
+            // Task 7. The tenant's own page and the hostnames it is served under; both
+            // are tenant tables, so unlike provisioning_status these sit behind RLS
+            // (PLAN.md §2.5).
+            'landing_page_status' => LandingPageStatus::class,
+            'domain_status' => DomainStatus::class,
         ];
     }
 }

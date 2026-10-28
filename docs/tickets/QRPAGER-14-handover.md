@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — the data contract is written; the migration, the builder, the gates and the `§11` reviews are all still ahead of the tag.
+STATUS: TASK-7 BLOCKED — schema in and green; the block schema, media, publish, domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -92,7 +92,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | - | ----- | ----- | ------ | ------ |
 | 0 | Corrections: `§0` status, this file | **done** | *this commit* | yes |
 | 1 | Data contract — `PLAN.md §2.3/§2.5/§2.6/§2.7` before the migration | **done** | *this commit* | yes |
-| 2 | Migration — three tenant tables, two enums, RLS, grants | not started | — | — |
+| 2 | Migration — three tenant tables, two enums, RLS, grants | **done** | *this commit* | yes |
 | 3 | Block schema, generated contract, `landing-schema-check` | not started | — | — |
 | 4 | Media library — upload validation, isolation | not started | — | — |
 | 5 | Publish — render, snapshot, pointer, manifest | not started | — | — |

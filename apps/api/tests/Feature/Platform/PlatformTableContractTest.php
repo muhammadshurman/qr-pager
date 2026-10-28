@@ -198,6 +198,12 @@ it('pins TestCase::RESETTABLE as an exact set, so a mutable table cannot drop ou
         // anything. They are listed BEFORE `tenants` because `tenants` is truncated with
         // CASCADE and the order makes the dependency direction readable.
         'tenant_statistics', 'tenant_provisionings',
+        // TASK 7's THREE. All three carry an FK to `tenants`, so the CASCADE below would
+        // reach them with or without this line -- they are named because this constant is
+        // read as the statement of what a test may assume is empty, and a table cleared
+        // only as a side effect of another table's cascade is not something a reader
+        // should have to derive from the schema.
+        'landing_pages', 'media_assets', 'tenant_domains',
         'tenants', 'users',
     ]);
 

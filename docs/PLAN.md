@@ -674,7 +674,8 @@ Five choices in those three rows are load-bearing, and each is a thing a review 
 
 - **`media_assets.object_key` is constrained twice, structurally, in the schema rather than in a policy.**
   `CHECK (object_key LIKE ('media/' || tenant_id::text || '/%'))` and
-  `CHECK (object_key ~ ('^media/' || tenant_id::text || '/[0-9a-f]{32}\.[a-z0-9]{2,5}$'))`. The first makes
+  `CHECK (object_key ~ ('^media/' || tenant_id::text || '/[0-9a-f]{32}\.(png|jpg|webp|avif|svg)$'))`, plus a
+  third that pins the extension to the detected `content_type`. The first makes
   a row that names another tenant's prefix impossible **even with RLS disabled**; the second makes the leaf
   name 32 hex characters of CSPRNG — 128 bits, the same bar `§4 › Data` sets for the QR token — so a key is
   not guessable from anything the tenant can see. This is deliberately **not** a policy: a policy is

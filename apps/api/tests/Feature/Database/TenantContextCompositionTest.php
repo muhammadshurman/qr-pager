@@ -288,7 +288,11 @@ it('pins the configured bypass value to the literal every policy compares agains
          where schemaname = 'public' and policyname like 'owner_bypass_%' order by policyname"
     );
 
-    expect($policies)->toHaveCount(6);
+    // Nine since Task 7: landing_pages, media_assets and tenant_domains each carry the
+    // owner_bypass_* half of §2.6's pair, as C4 requires of every tenant table. Counted
+    // rather than merely iterated, so a table that arrives WITHOUT the policy fails here
+    // instead of being skipped by a loop with nothing in it.
+    expect($policies)->toHaveCount(9);
 
     foreach ($policies as $policy) {
         expect((string) $policy->qual)->toContain("'{$value}'")
