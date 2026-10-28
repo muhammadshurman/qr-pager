@@ -11,6 +11,7 @@ use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * The audit log viewer — over `platform_audit_log`, which is a PLATFORM table.
@@ -39,20 +40,23 @@ class PlatformAuditResource extends Resource
 
     protected static ?string $slug = 'audit-log';
 
-    public static function getEloquentQuery(): Builder
-    {
-        // An explicit select list: `context` is a free-text jsonb column written by this
-        // application's own writers, and the columns are named so a reader can see exactly
-        // what reaches the browser.
-        return PlatformAuditEntry::query()->select([
-            'id', 'created_at', 'action', 'actor_user_id', 'subject_type', 'subject_id',
-            'context', 'ip_address',
-        ]);
-    }
-
     public static function table(Table $table): Table
     {
         return $table
+            // An explicit select list, through a query modifier rather than an override of
+            // getEloquentQuery() -- Eloquent's Builder declares TModel as INVARIANT, so an
+            // override returning Builder<PlatformAuditEntry> cannot satisfy the parent's
+            // Builder<Model> without widening or casting, and both would hide the mismatch
+            // rather than remove it. PHPStan found that; the modifier is the idiomatic place
+            // for this anyway.
+            //
+            // `context` is a free-text jsonb column written by this application's own
+            // writers, and the columns are named so a reader can see what reaches the
+            // browser.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->select([
+                'id', 'created_at', 'action', 'actor_user_id', 'subject_type', 'subject_id',
+                'context', 'ip_address',
+            ]))
             ->columns([
                 TextColumn::make('created_at')->label('When')->dateTime()->sortable(),
                 TextColumn::make('action')->label('Action')->searchable()->sortable(),

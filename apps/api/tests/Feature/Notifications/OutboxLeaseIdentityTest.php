@@ -295,6 +295,23 @@ it('has exactly two statements in the application that write attempts, and both 
 
             $literal = (string) $token[1];
 
+            // ⚠ ONLY LITERALS THAT TARGET `outbox`. This condition was ABSENT until
+            // 2026-10-28 and the scanner read every `set ... attempts = ...` in app/
+            // whatever table it was against -- so it was a scanner for "the word attempts"
+            // wearing the name of one for `outbox.attempts`. Task 6 added
+            // `tenant_provisionings.attempts`, whose keyed `attempts = attempts + 1` is on
+            // a PLATFORM table and has nothing to do with the outbox lease, and this case
+            // failed with three writers and a demand that they all live in OutboxWorker.
+            //
+            // The INSERT half below has always required `insert into outbox`, so the two
+            // halves of one control disagreed about their own subject. This is the UPDATE
+            // half brought up to the INSERT half's discipline, which NARROWS the matcher
+            // and does not weaken the control: every statement it used to catch that was
+            // genuinely about the outbox still names `outbox`.
+            if (preg_match('/\bupdate\s+outbox\b/i', $literal) !== 1) {
+                continue;
+            }
+
             // The SET list of every UPDATE in this literal: everything between `set` and
             // the `where` that follows it, which is where an assignment can live.
             if (preg_match_all('/\bset\b(.*?)\bwhere\b/is', $literal, $clauses) !== 0) {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Features\Provisioning\Panel\Resources;
 
-use App\Domain\Provisioning\ProvisioningStatus;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource\Pages\ListRestaurants;
 use App\Models\TenantProvisioningRecord;
 use Filament\Resources\Pages\PageRegistration;
@@ -12,6 +11,7 @@ use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * The restaurant registry: S1's read surface, over `tenant_provisionings`.
@@ -44,37 +44,42 @@ class RestaurantResource extends Resource
 
     protected static ?string $slug = 'restaurants';
 
-    /**
-     * The base query: two platform tables, one join, no tenant table.
-     *
-     * An explicit select list rather than `select *` plus the joined columns, so a column
-     * added to either table does not silently start travelling to the browser — and so
-     * that what the panel reads is enumerable by a reader as well as by the test.
-     */
-    public static function getEloquentQuery(): Builder
-    {
-        return TenantProvisioningRecord::query()
-            ->leftJoin('tenant_statistics', 'tenant_statistics.id', '=', 'tenant_provisionings.id')
-            ->select([
-                'tenant_provisionings.id',
-                'tenant_provisionings.name',
-                'tenant_provisionings.slug',
-                'tenant_provisionings.owner_email',
-                'tenant_provisionings.status',
-                'tenant_provisionings.attempts',
-                'tenant_provisionings.failure_reason',
-                'tenant_provisionings.completed_at',
-                'tenant_provisionings.created_at',
-                'tenant_statistics.sessions_total',
-                'tenant_statistics.staff_count',
-                'tenant_statistics.median_wait_seconds',
-                'tenant_statistics.computed_at',
-            ]);
-    }
-
     public static function table(Table $table): Table
     {
         return $table
+            // THE BASE QUERY: two platform tables, one join, no tenant table. That join is
+            // how "usage" reaches the registry without a second page and without a query
+            // per row.
+            //
+            // modifyQueryUsing() AND NOT an override of getEloquentQuery(), for a reason
+            // PHPStan found rather than a preference: Eloquent's `Builder` declares TModel
+            // as INVARIANT, so an override returning `Builder<TenantProvisioningRecord>`
+            // does not satisfy the parent's `Builder<Model>` and cannot be made to without
+            // widening or casting -- both of which would be hiding the mismatch instead of
+            // removing it. A query modifier takes the builder Filament already built, which
+            // is the idiomatic place for this anyway.
+            //
+            // An explicit select list rather than `select *` plus the joined columns, so a
+            // column added to either table does not silently start travelling to the
+            // browser, and so that what the panel reads is enumerable by a reader as well
+            // as by the invariant test.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query
+                ->leftJoin('tenant_statistics', 'tenant_statistics.id', '=', 'tenant_provisionings.id')
+                ->select([
+                    'tenant_provisionings.id',
+                    'tenant_provisionings.name',
+                    'tenant_provisionings.slug',
+                    'tenant_provisionings.owner_email',
+                    'tenant_provisionings.status',
+                    'tenant_provisionings.attempts',
+                    'tenant_provisionings.failure_reason',
+                    'tenant_provisionings.completed_at',
+                    'tenant_provisionings.created_at',
+                    'tenant_statistics.sessions_total',
+                    'tenant_statistics.staff_count',
+                    'tenant_statistics.median_wait_seconds',
+                    'tenant_statistics.computed_at',
+                ]))
             ->columns([
                 TextColumn::make('name')
                     ->label('Restaurant')
@@ -165,10 +170,5 @@ class RestaurantResource extends Resource
     public static function canCreate(): bool
     {
         return self::canViewAny();
-    }
-
-    public static function getStatusOptions(): array
-    {
-        return array_combine(ProvisioningStatus::values(), ProvisioningStatus::values());
     }
 }

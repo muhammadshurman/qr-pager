@@ -22,6 +22,15 @@ use Illuminate\Support\Facades\File;
  * counts, and it only looks at statements that READ rows -- a privilege probe, a
  * refused DELETE and a list of table names are not assertions about row contents and
  * have nothing to filter.
+ *
+ * ⚠ AND IT COVERS `platform_audit_log` TOO, as of Task 6. The match is on the substring
+ * `audit_log`, so the new table was caught without this file changing -- and that is
+ * CORRECT rather than lucky: `platform_audit_log` is append-only by the same ENABLE ALWAYS
+ * triggers, is absent from `TestCase::RESETTABLE` for the same reason, and therefore grows
+ * monotonically on a developer machine and starts empty on CI. The asymmetry this file
+ * exists for is a property of both tables. It caught an unfiltered count in
+ * PlatformTableContractTest on the day that table was added; stated here so nobody
+ * "fixes" the matcher into naming only `audit_log`.
  */
 
 /** Reading row data, as opposed to asking the catalog a question about the table. */

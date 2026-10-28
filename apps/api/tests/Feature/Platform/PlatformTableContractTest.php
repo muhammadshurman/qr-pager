@@ -130,9 +130,20 @@ it('reaches every platform table with NO tenant context at all, which is what th
     // says the app role can actually read them with app.tenant_id unset, which is the
     // state every panel request is in. A test that only asserted the absence of a policy
     // would pass on a table the app role had no grant for.
-    expect(DB::connection('pgsql')->table('tenant_provisionings')->count())->toBeInt()
-        ->and(DB::connection('pgsql')->table('tenant_statistics')->count())->toBeInt()
-        ->and(DB::connection('pgsql')->table('platform_audit_log')->count())->toBeInt();
+    // EVERY COUNT IS FILTERED, and on platform_audit_log that is not tidiness. That table
+    // is append-only, so it is deliberately absent from TestCase::RESETTABLE and grows
+    // monotonically on a developer machine while CI builds from empty every run -- so an
+    // unfiltered count here is the "passes on CI, fails locally" trap R-016 exists for.
+    // AuditLogAssertionTest caught this very line, matching `platform_audit_log` on the
+    // `audit_log` substring, and it is a TRUE positive rather than a lucky one: the
+    // reasoning behind that scanner is a property of both tables.
+    //
+    // A filter costs nothing here, because what this case needs is that the SELECT is
+    // PERMITTED and needs no tenant scope -- not how many rows exist. Each predicate
+    // matches nothing, so every count is a deterministic 0.
+    expect(DB::connection('pgsql')->table('tenant_provisionings')->where('slug', '~never~')->count())->toBe(0)
+        ->and(DB::connection('pgsql')->table('tenant_statistics')->where('sessions_total', -1)->count())->toBe(0)
+        ->and(DB::connection('pgsql')->table('platform_audit_log')->where('action', '~never~')->count())->toBe(0);
 
     // And the context really is unset, so the line above is not passing for the wrong
     // reason -- which is the shape bin/vacuous-assertion-proof exists to catch.

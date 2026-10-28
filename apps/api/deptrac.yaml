@@ -81,7 +81,7 @@ deptrac:
     - name: Framework
       collectors:
         - type: classLike
-          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery|Minishlink|GuzzleHttp)\\.*
+          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery|Minishlink|GuzzleHttp|Filament|Livewire)\\.*
 
     # DELIBERATELY REPURPOSED AT TASK 5, not deleted. QRPAGER-12 §6 required any rule
     # that existed only to contain the pre-Task-5 stub to be "either removed or

@@ -90,9 +90,43 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         '/{fallbackPlaceholder}',
     ];
 
+    // ELEVEN MORE ARRIVED WITH FILAMENT AT TASK 6, and they are matched by PATTERN rather
+    // than listed, for a reason that is measured and not stylistic.
+    //
+    // Nine are Livewire's, under a prefix Livewire 4 derives from the application key:
+    // `substr(hash('sha256', config('app.key').'livewire-endpoint'), 0, 8)`, read from
+    // Livewire\Mechanisms\HandleRequests\EndpointResolver in this session. It is
+    // deliberately per-installation so a universal scanner cannot guess it -- which means
+    // **the literal differs on this machine and on CI**, and writing today's value here
+    // would be exactly the "pass that depends on something only present on the builder's
+    // machine" §6 forbids. So the prefix is `livewire-<8 hex>`.
+    //
+    // Two are Filament's export/import download routes, and they are REFUSED rather than
+    // served: both answered 500 to an anonymous GET, because they read `exports` and
+    // `imports`, tables this application never created. RefuseUnservedVendorRoutes answers
+    // the ordinary 404 for them and for Livewire's two file-upload paths. They still appear
+    // in the ROUTE TABLE, which is what this case reads, so they are allowed here and
+    // their refusal is asserted in the case below.
+    $vendorPatterns = [
+        '#^/livewire-[0-9a-f]{8}/#',
+        '#^/filament/(exports|imports)/#',
+    ];
+
     $outside = array_values(array_filter(
         publicRouteUris(),
-        static fn (string $uri): bool => ! str_starts_with($uri, '/v1') && ! in_array($uri, $allowed, true),
+        static function (string $uri) use ($allowed, $vendorPatterns): bool {
+            if (str_starts_with($uri, '/v1') || in_array($uri, $allowed, true)) {
+                return false;
+            }
+
+            foreach ($vendorPatterns as $pattern) {
+                if (preg_match($pattern, $uri) === 1) {
+                    return false;
+                }
+            }
+
+            return true;
+        },
     ));
 
     // Asserted as a diff rather than per-route, so a failure names every offender at
@@ -100,6 +134,61 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // form asserted that the allowlist contained the failure text -- which is how this
     // test first failed.)
     expect($outside)->toBe([], 'public routes outside /v1: '.implode(', ', $outside));
+});
+
+it('keeps the Livewire prefix pattern matching the real routes, so the allowance cannot go quiet', function (): void {
+    // THE OTHER HALF OF THE PATTERN ABOVE. A pattern allowance is only honest while it
+    // still matches what it was written for: if Livewire changed its prefix scheme, the
+    // case above would stop excluding those routes and fail loudly -- but the matcher in
+    // RefuseUnservedVendorRoutes would silently stop refusing the upload endpoints, which
+    // is a guard going quiet rather than failing. That is the defect class §4a records four
+    // instances of, so it is closed from this side.
+    $livewire = array_values(array_filter(
+        publicRouteUris(),
+        static fn (string $uri): bool => str_contains($uri, 'livewire'),
+    ));
+
+    expect($livewire)->not->toBe([], 'no Livewire routes found at all: the panel cannot work');
+
+    foreach ($livewire as $uri) {
+        expect(preg_match('#^/livewire-[0-9a-f]{8}/#', $uri))
+            ->toBe(1, "Livewire route [{$uri}] no longer matches the prefix pattern the guard and the allowlist both use");
+    }
+});
+
+it('refuses the four vendor routes it mounts and does not serve', function (): void {
+    // Two of these answered 500 to an ANONYMOUS GET before this was fixed, reading tables
+    // that were never created; the other two are file-upload endpoints for a panel with no
+    // file upload. All four answer the same 404 problem document an unknown path gets --
+    // the same one deliberately, because a distinct status or body would tell a scanner the
+    // path is special, and the refusal would become the disclosure.
+    $prefix = '';
+
+    foreach (publicRouteUris() as $uri) {
+        if (preg_match('#^(/livewire-[0-9a-f]{8})/#', $uri, $m) === 1) {
+            $prefix = $m[1];
+
+            break;
+        }
+    }
+
+    expect($prefix)->not->toBe('', 'no Livewire prefix found');
+
+    foreach ([
+        ['get', '/filament/exports/1/download'],
+        ['get', '/filament/imports/1/failed-rows/download'],
+        ['post', $prefix.'/upload-file'],
+        ['get', $prefix.'/preview-file/anything'],
+    ] as [$method, $uri]) {
+        $response = $this->{$method}($uri);
+
+        expect($response->getStatusCode())->toBe(404, "{$uri} is still served")
+            ->and($response->headers->get('Content-Type'))->toContain('application/problem+json');
+    }
+
+    // And the routes the panel DOES need are untouched: refusing those would leave a panel
+    // that renders and does nothing.
+    expect($this->get($prefix.'/livewire.js')->getStatusCode())->toBe(200);
 });
 
 it('loads the passkey harness page only outside production', function (): void {
