@@ -496,6 +496,15 @@ the boolean above and one is a credential shape (a KDS device token) — and `Ap
 capability vocabulary rather than a stored value. Keeping the five principals in one PHP enum is what lets
 the role matrix be one array over all of them without putting either case in the data contract.
 
+**One type joined at Task 6:** `provisioning_status` — `pending`, `running`, `completed`, `failed` —
+mirrored by `App\Domain\Provisioning\ProvisioningStatus`, registered in `DatabaseEnums::map()` so
+`EnumContractTest` fails on drift in either direction. Its transition table lives on the PHP enum, as
+`PagerStatus`' does, so the panel, the provisioning job and the tests read one source. `running -> pending`
+is the one judgement call: a job killed mid-flight leaves the row at `running`, and the only way a later run
+may pick it up is to put it back — `attempts` is what stops that being a loop. `completed` is terminal with
+no exit at all, because a provisioned tenant's id is already taken and the insert that would re-provision it
+raises `23505`.
+
 ### 2.4 Global tables — no `tenant_id`, no RLS
 
 A table with no tenant scope column must appear in this list **and** in the allowlist in
@@ -510,6 +519,10 @@ table from quietly escaping tenant isolation.
 | `personal_access_tokens` _(Task 5)_ | `id` uuid PK · `tokenable_type` varchar(255) · `tokenable_id` uuid · `name` text · `token` varchar(64) **unique** _(the sha256 OF the plaintext)_ · `abilities` text NULL · `last_used_at` timestamptz NULL · `expires_at` timestamptz NULL · `created_at` · `updated_at` · INDEX `(tokenable_type, tokenable_id)` · INDEX `(expires_at)` | app: SELECT/INSERT/UPDATE `(last_used_at, updated_at)`/DELETE · worker: none |
 | `password_reset_tokens` | `email` varchar(255) PK · `token` varchar(255) · `created_at`                                                                                                                                                                                                      | app: SELECT/INSERT/DELETE                  |
 | `failed_jobs`           | Laravel standard (`id` bigint identity · `uuid` unique · `connection` · `queue` · `payload` · `exception` · `failed_at`)                                                                                                                                           | **worker only**: INSERT/SELECT/DELETE      |
+
+| `tenant_provisionings` _(Task 6)_ | `id` uuid PK — **IS the tenant id this row provisions** · `name` varchar(120) · `slug` varchar(63) **unique**, CHECK DNS-label · `owner_email` varchar(255), CHECK lower-cased · `status` `provisioning_status` default `pending` · `attempts` smallint CHECK ≥ 0 · `failure_reason` text NULL · `requested_by_user_id` uuid NULL → `users.id` SET NULL · `completed_at` timestamptz NULL · `created_at` · `updated_at` · INDEX `(status, created_at DESC)` · CHECK `status <> 'failed' OR failure_reason IS NOT NULL` · CHECK `status <> 'completed' OR completed_at IS NOT NULL` | app: SELECT · INSERT `(id, name, slug, owner_email, status, requested_by_user_id, created_at, updated_at)` · UPDATE `(status, attempts, failure_reason, completed_at, updated_at)` · worker: SELECT `(id, slug, status)` |
+| `tenant_statistics` _(Task 6)_ | `id` uuid PK — **IS the tenant id these aggregates describe** · `sessions_total` · `sessions_waiting` · `sessions_ready` · `sessions_completed` · `sessions_cancelled` · `sessions_expired` · `staff_count` — all integer NOT NULL default 0 CHECK ≥ 0 · `median_wait_seconds` · `p95_wait_seconds` integer NULL CHECK ≥ 0 · `window_start` · `window_end` timestamptz NULL, CHECK ordered · `computed_at` · `created_at` · `updated_at` | app: **SELECT only** · worker: SELECT · INSERT · UPDATE (every aggregate column) |
+| `platform_audit_log` _(Task 6)_ | `id` bigint `GENERATED ALWAYS AS IDENTITY` PK · `actor_user_id` uuid NULL, **no FK** · `action` varchar(64) · `subject_type` varchar(64) NULL · `subject_id` uuid NULL · `context` jsonb default `{}` · `ip_address` inet NULL · `created_at` default `now()` · INDEX `(created_at DESC)` · INDEX `(action, created_at DESC)` | app: SELECT · INSERT `(actor_user_id, action, subject_type, subject_id, context, ip_address)` · worker: INSERT (same columns). **No UPDATE or DELETE to any role.** |
 
 `users` is global because a user may hold memberships in several tenants and platform staff belong to none.
 `failed_jobs` is granted to the worker **only**: a serialized job payload can contain tenant data, and a
@@ -553,6 +566,62 @@ any tier: a staff account comes from Task 6's invite wizard. So `Fortify::$regis
 **Dropped from the Laravel skeleton:** `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`. Redis is
 the locked store for session, cache and queue (`PROJECT_INSTRUCTIONS.md §1`), so these were five unused
 tables, four of which would have needed a tenant-isolation justification they cannot have.
+
+**THREE MORE JOINED AT TASK 6, and they are the largest single widening of the RLS-free surface since
+Task 5.** They are **platform** tables under the ruling settled 2026-10-28 (`QRPAGER-13 §0`, rank 1): the
+platform admin panel operates only on tables belonging to no tenant, and **a panel query that reaches a
+tenant table is a rejected design**. Each holds the platform's own record *about* a restaurant and no tenant
+content, which is why there is no scope for RLS to narrow.
+
+- **`tenant_provisionings`** — the provisioning record, and the registry the panel lists (the ruling's
+  *"can see that a restaurant exists"*). It is **written before the tenant exists**, which is the one
+  property a tenant-scoped table cannot have: at insert time there is no tenant to be scoped to. That is
+  also why it carries **no FK** to `tenants.id` — an FK would invert the order and make the failure path, a
+  provisioning record for a tenant that was never created, unrepresentable. That record is the only evidence
+  a failed attempt leaves.
+- **`tenant_statistics`** — one row of aggregates per tenant, written by a job **from inside that tenant's
+  own context** and read by the panel from outside. The ruling's *"an aggregate carries no row-level detail:
+  no order reference, no token, no session identifier"* is enforced as a property, not a promise:
+  `PlatformTableContractTest` pins the column set exactly and asserts none of a forbidden list is in it.
+- **`platform_audit_log`** — what a platform admin did to a platform record, append-only by the same
+  `ENABLE ALWAYS` statement-level triggers as `audit_log` (`§2.9`). **It exists for a measured reason, not a
+  preference:** `audit_log` is a tenant table whose `tenant_id` is nullable and documented in `§2.5` as
+  "platform scope", and `tenant_isolation_audit_log` compares `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`
+  — where `NULL = anything` is `NULL`, never true. Measured at Task 6's Phase 0: the insert is refused
+  **`42501` for `qrpager_app` with and without a context, and for `qrpager_owner` without the bypass**, and a
+  committed row reads back as **0 rows** for the app role in either state. Only `qrpager_owner` with
+  `app.bypass_tenant = 'on'` can write or read one, which is a migration-time posture and not a request-time
+  one. **So `§3` row 6's "platform admin actions all land in `audit_log`" was never reachable by a serving
+  process at any point in this project's history**; it is met against this table instead, and two docblocks
+  asserting the opposite (`User.php`, `RoleMatrix.php`) are corrected in place rather than carried as risks.
+
+**⚠ AND THE THING A REVIEWER SHOULD PUSH ON: none of the three carries a column named `tenant_id`.** That is
+deliberate, and it interacts with a live mechanism rather than being cosmetic. C4's meta-test classifies a
+table as tenant-scoped by exactly two rules read from `pg_catalog` — `relname = 'tenants'`, or a column named
+`tenant_id` — so a platform table carrying that name would be classified tenant-scoped and
+`RlsCoverageTest` would demand RLS on it, which the ruling forbids.
+
+**The claim is that it is not a rename to escape the classifier.** Each of these tables is **one row per
+tenant**, so the tenant's id is the row's *identity* rather than a scope column over many rows:
+`tenant_provisionings.id` **is** the id the tenant will carry, `tenant_statistics.id` **is** the id of the
+tenant it describes. That is the exact mirror of the property `§2.5` and `TenantTables` already document for
+`tenants` itself — *"its own id IS the tenant scope"* — with the sides reversed: `tenants.id` **scopes**
+tenant data, and these ids **reference** a tenant from a record holding none.
+
+**What was rejected.** (a) Naming the column `tenant_id` and giving the tables RLS — then the platform admin,
+who holds no tenant context, reads nothing, which is exactly the state Task 5 shipped and Task 6 exists to
+fix without widening it. (b) Loosening the meta-test's classifier to a hand-maintained list — that trades the
+one mechanical control stopping a *new* tenant table escaping isolation for a label on three tables, which is
+the wrong direction.
+
+**So the classifier is owed a replacement, and `tests/Feature/Platform/PlatformTableContractTest.php` is it:**
+all three column sets are pinned **exactly** against `information_schema`, so neither a `tenant_id` column
+nor a row-level-detail column can join one of these tables without the diff showing it; the three tables are
+asserted to carry no RLS *and* to be readable by the app role with `app.tenant_id` unset (the absence of a
+policy alone would pass on a table the role had no grant for); and the scope guard's statement matcher is
+pinned against all three names, with `audit_log`, `tenants` and `tenant_users` as the controls — because
+`platform_audit_log` **embeds** `audit_log` and only survives on the matcher's identifier-boundary lookbehind,
+which is a property of a regex rather than of a schema.
 
 ### 2.5 Tenant tables — `ENABLE` + `FORCE` RLS on every one (C4)
 

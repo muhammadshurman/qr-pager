@@ -98,14 +98,50 @@ it('reaches exactly the tables in the matrix and no others', function (): void {
     expect(Schema::reachableTables('qrpager_app'))->toBe([
         // passkeys and personal_access_tokens joined at Task 5. Both are global and
         // RLS-free, and RlsCoverageTest's pinned allowlist carries the argument for each.
+        //
+        // platform_audit_log, tenant_provisionings and tenant_statistics joined at Task 6.
+        // All three are PLATFORM tables, which is what makes the admin panel possible
+        // without a cross-tenant read: the panel reads and writes these and nothing else.
+        // tenant_statistics is SELECT-only for this role -- the aggregate job is its only
+        // writer -- which the per-column case below pins.
         'audit_log', 'outbox', 'pager_sessions', 'passkeys', 'password_reset_tokens',
-        'personal_access_tokens', 'push_subscriptions', 'tenant_users', 'tenants', 'users',
+        'personal_access_tokens', 'platform_audit_log', 'push_subscriptions',
+        'tenant_provisionings', 'tenant_statistics', 'tenant_users', 'tenants', 'users',
     ]);
 
     expect(Schema::reachableTables('qrpager_worker'))->toBe([
-        'audit_log', 'failed_jobs', 'outbox', 'pager_sessions',
-        'push_subscriptions', 'tenant_users', 'tenants', 'users',
+        'audit_log', 'failed_jobs', 'outbox', 'pager_sessions', 'platform_audit_log',
+        'push_subscriptions', 'tenant_provisionings', 'tenant_statistics',
+        'tenant_users', 'tenants', 'users',
     ]);
+});
+
+it('keeps the panel out of the aggregate table as a writer, and the worker out of the registry', function (): void {
+    // THE RULING AS A GRANT RATHER THAN A CONVENTION (QRPAGER-13 §0). "Aggregates written
+    // to a platform table by a job, and the panel reads only that platform row" is only
+    // true if the panel cannot write one, so the app role holds no INSERT and no UPDATE on
+    // tenant_statistics at all.
+    expect(Schema::grantedColumns('qrpager_app', 'tenant_statistics', 'INSERT'))->toBe([])
+        ->and(Schema::grantedColumns('qrpager_app', 'tenant_statistics', 'UPDATE'))->toBe([]);
+
+    // And the worker, which enumerates tenants to aggregate them, gets three columns of
+    // the registry and not the owner's address, who requested it, or why one failed.
+    expect(Schema::grantedColumns('qrpager_worker', 'tenant_provisionings', 'SELECT'))
+        ->toBe(['id', 'slug', 'status'])
+        ->and(Schema::grantedColumns('qrpager_worker', 'tenant_provisionings', 'INSERT'))->toBe([])
+        ->and(Schema::grantedColumns('qrpager_worker', 'tenant_provisionings', 'UPDATE'))->toBe([]);
+
+    // platform_audit_log is append-only by grant as well as by trigger: no role holds
+    // UPDATE or DELETE on it. §2.9's belt and braces, for the platform half.
+    foreach (['qrpager_app', 'qrpager_worker'] as $role) {
+        expect(Schema::grantedColumns($role, 'platform_audit_log', 'UPDATE'))->toBe([])
+            ->and(Schema::hasTablePrivilege($role, 'platform_audit_log', 'DELETE'))->toBeFalse();
+    }
+
+    // The registry's identity columns are never rewritten: a retry does not rename a
+    // restaurant or move it to another slug.
+    expect(Schema::grantedColumns('qrpager_app', 'tenant_provisionings', 'UPDATE'))
+        ->toBe(['attempts', 'completed_at', 'failure_reason', 'status', 'updated_at']);
 });
 
 /*

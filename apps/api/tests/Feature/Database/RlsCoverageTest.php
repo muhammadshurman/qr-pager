@@ -122,12 +122,40 @@ it('pins the global allowlist as an exact set, not just a consistent one', funct
     // The common sentence is "it must be readable before a tenant is known", which is
     // true of both and is exactly the sentence an attacker would also like to be
     // true, so a reviewer should push on it rather than take it from here.
+    //
+    // THREE JOINED AT TASK 6 and they are the largest single widening of the RLS-free
+    // surface since Task 5. All three are PLATFORM tables under the ruling of 2026-10-28
+    // (QRPAGER-13 §0): the platform admin panel operates only on tables belonging to no
+    // tenant, and a panel query that reaches a tenant table is a rejected design. They
+    // hold the platform's own records ABOUT a restaurant and no tenant content:
+    //
+    //   platform_audit_log    what a platform admin did to a platform record. Here for a
+    //                         MEASURED reason and not a preference: a platform-scope
+    //                         audit_log row (tenant_id NULL) is refused 42501 on insert
+    //                         for qrpager_app in AND out of context, and a committed one
+    //                         reads back as 0 rows -- NULL = ctx is never true -- so
+    //                         audit_log could never have served this (SR-3).
+    //   tenant_provisionings  the provisioning record, written BEFORE the tenant exists,
+    //                         which is the one property a tenant-scoped table cannot have.
+    //   tenant_statistics     aggregates, written by a job from inside the tenant.
+    //
+    // ⚠ AND NONE OF THE THREE HAS A COLUMN NAMED tenant_id, WHICH IS WHY THIS TEST DID
+    // NOT STOP THEM. A reviewer should push on that rather than take it from here. The
+    // claim is that each is ONE ROW PER TENANT, so the tenant's id is the row's identity
+    // and not a scope column -- the mirror of `tenants`, with the sides reversed. The
+    // classifier above cannot see that distinction, so the replacement for what it cannot
+    // see is tests/Feature/Platform/PlatformTableContractTest.php, which pins all three
+    // column sets EXACTLY against information_schema: a tenant_id column, or any
+    // row-level-detail column, cannot join one of these without failing that test.
     expect(GLOBAL_TABLES)->toBe([
         'failed_jobs',
         'migrations',
         'passkeys',
         'password_reset_tokens',
         'personal_access_tokens',
+        'platform_audit_log',
+        'tenant_provisionings',
+        'tenant_statistics',
         'users',
     ]);
 });

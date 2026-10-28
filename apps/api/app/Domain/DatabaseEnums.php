@@ -7,6 +7,7 @@ namespace App\Domain;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Outbox\OutboxStatus;
 use App\Domain\Pager\PagerStatus;
+use App\Domain\Provisioning\ProvisioningStatus;
 use App\Domain\Tenancy\TenantRole;
 use App\Domain\Tenancy\TenantStatus;
 
@@ -28,6 +29,9 @@ final class DatabaseEnums
             'tenant_status' => TenantStatus::class,
             'tenant_role' => TenantRole::class,
             'audit_actor_type' => AuditActorType::class,
+            // Task 6. The platform's own record of a provisioning attempt; no tenant
+            // scope, because the row is written before the tenant exists (PLAN.md §2.4).
+            'provisioning_status' => ProvisioningStatus::class,
         ];
     }
 }

@@ -161,7 +161,11 @@ for needle in \
   'function user_memberships secdef=t' \
   'function user_two_factor secdef=t' \
   'table passkeys rls=f' \
-  'table personal_access_tokens rls=f'
+  'table personal_access_tokens rls=f' \
+  'function platform_audit_log_is_append_only secdef=f' \
+  'table tenant_provisionings rls=f' \
+  'table tenant_statistics rls=f' \
+  'table platform_audit_log rls=f'
 do
   grep -q "$needle" "$before" \
     || { echo "missing from the schema: $needle" >&2; exit 1; }
@@ -219,6 +223,49 @@ grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' "$before
   | grep -q "ARRAY\['waiting'" \
   || { echo "the worker policies are not status-bounded -- R-003 is not applied" >&2; exit 1; }
 grep -E 'policy pager_sessions.worker_' "$before"
+
+# TASK 6: the three platform tables carry NO RLS, and that is the ruling rather than an
+# oversight (QRPAGER-13 §0) -- so it is asserted here as the POSITIVE `rls=f` needles above
+# AND as the absence of any policy on them, which the needles cannot say. A later migration
+# that "fixed" one by enabling RLS would make the admin panel read nothing, and this is
+# where that shows up.
+policies=$(grep -cE '^policy (tenant_provisionings|tenant_statistics|platform_audit_log)\.' "$before" || true)
+echo "policies on the three platform tables: $policies (expected 0)"
+[ "$policies" = "0" ] \
+  || { echo "a platform table has an RLS policy -- the panel would read nothing" >&2; exit 1; }
+
+# And none of them grew a tenant_id column, which is the premise the whole platform/tenant
+# split rests on. Asked of the catalog, because the fingerprint carries no column list.
+scoped=$(psql_as_root -d "$probe" -tAc \
+  "select count(*) from information_schema.columns
+    where table_schema = 'public' and column_name = 'tenant_id'
+      and table_name in ('tenant_provisionings', 'tenant_statistics', 'platform_audit_log')")
+echo "tenant_id columns on the three platform tables: $scoped (expected 0)"
+[ "$scoped" = "0" ] \
+  || { echo "a platform table carries tenant_id -- it is a tenant table now, and C4 applies" >&2; exit 1; }
+
+# The append-only triggers are ENABLE ALWAYS, which is what makes them hold for a superuser
+# that sets session_replication_role = replica. `tgenabled` is 'A' for ALWAYS and 'O' for
+# the ordinary default, so this distinguishes the real control from its decoration.
+for trg in platform_audit_log_no_mutation platform_audit_log_no_truncate; do
+  grep -qE "^trigger platform_audit_log\.$trg enabled=A " "$before" \
+    || { echo "$trg is not ENABLE ALWAYS -- a superuser walks through it" >&2; exit 1; }
+done
+grep -E '^trigger platform_audit_log\.' "$before"
+
+# No role holds UPDATE or DELETE on platform_audit_log: the trigger makes it impossible and
+# the absent grant makes it unreachable. DELETE is table-level, so it is asked of the
+# catalog -- the fingerprint's grant lines come from column_privileges and can never carry
+# it, which is the dead-control trap recorded for passkeys:DELETE above.
+for role in qrpager_app qrpager_worker; do
+  for priv in UPDATE DELETE; do
+    held=$(psql_as_root -d "$probe" -tAc \
+      "select has_table_privilege('$role', 'platform_audit_log', '$priv')")
+    [ "$held" = "f" ] \
+      || { echo "$role holds $priv on platform_audit_log" >&2; exit 1; }
+  done
+done
+echo "no UPDATE or DELETE on platform_audit_log for either runtime role"
 echo
 
 echo "=== 4. rollback runs clean ==="
