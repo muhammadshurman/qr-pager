@@ -107,7 +107,7 @@ it('exposes exactly the three public reads its docblock describes', function ():
     }
 });
 
-it('is called from exactly the five places that pass a server-derived user id', function (): void {
+it('is called from exactly the seven lines, in four files, that pass a server-derived id', function (): void {
     // Each of these was read at Task 5's QA review and again here. What makes each one
     // safe is named, because the list is worthless if the next person only counts it:
     //

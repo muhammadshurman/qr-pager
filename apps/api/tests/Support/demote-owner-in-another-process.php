@@ -24,7 +24,21 @@ use Illuminate\Foundation\Application;
  *   refused            -- the last-owner rule refused it
  *   error:<class>:<msg>-- anything else, so a failure is diagnosable rather than silent
  *
- * argv: 1 = tenant uuid, 2 = membership uuid to demote, 3 = acting user uuid
+ * ⚠ A START BARRIER, BECAUSE THE RACE WAS PROBABILISTIC WITHOUT ONE. Launching two
+ * children and letting them run gave the parent no control over WHEN each reached its
+ * transaction: each spends ~150 ms booting Laravel and then a sub-millisecond transaction,
+ * so whether the two overlapped was luck. The `§11` review of the fix diff measured it --
+ * against the UNLOCKED code the test went red in only 4 of 5 runs, so the only guard on a
+ * tenant with zero owners (no in-product repair before Task 6) would have let the defect
+ * through one run in five.
+ *
+ * So the boot happens BEFORE the race: the child writes `<barrier>.ready.<pid>`, spins until
+ * the parent creates `<barrier>.go`, and only then calls `changeRole`. The parent waits for
+ * both ready files before writing `go`. That takes Laravel's boot out of the window and
+ * leaves the two transactions starting within microseconds of each other.
+ *
+ * argv: 1 = tenant uuid, 2 = membership uuid to demote, 3 = acting user uuid,
+ *       4 = barrier path prefix (optional; no barrier when absent)
  */
 
 require __DIR__.'/../../vendor/autoload.php';
@@ -32,6 +46,27 @@ require __DIR__.'/../../vendor/autoload.php';
 /** @var Application $app */
 $app = require __DIR__.'/../../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
+
+$barrier = (string) ($argv[4] ?? '');
+
+if ($barrier !== '') {
+    // Booted and ready. The parent is watching for this file.
+    @file_put_contents($barrier.'.ready.'.getmypid(), '1');
+
+    // Spin rather than sleep: the whole point is to start within microseconds of the
+    // sibling, and a sleep granularity of milliseconds is the window being removed. Bounded
+    // so a lost parent cannot hang a test run forever.
+    $deadline = microtime(true) + 10.0;
+
+    while (! is_file($barrier.'.go')) {
+        if (microtime(true) > $deadline) {
+            fwrite(STDOUT, "error:BarrierTimeout:the parent never wrote the go file\n");
+            exit(1);
+        }
+
+        usleep(50);
+    }
+}
 
 try {
     $changed = $app->make(MemberDirectory::class)->changeRole(

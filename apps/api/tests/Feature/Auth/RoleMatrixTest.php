@@ -381,6 +381,16 @@ it('answers device × every staff route the way the matrix says, in its own tena
             expect($response->status())->not->toBe(403,
                 "a device token was refused {$name}, which the matrix and its abilities grant",
             );
+
+            // ⚠ AND THE PERMITTED CELL ASSERTS ITS CONTENT, not just "not 403". The device
+            // row has exactly ONE permitted cell -- the board -- and the §11 review of the
+            // fix diff showed that `return [];` in PagerSessions::board() left this case
+            // green. A capability that returns nothing is not a capability that works.
+            if ($name === 'pager.sessions.index') {
+                expect(str_contains((string) $response->getContent(), $session))->toBeTrue(
+                    'the device token read a board that did not contain its own tenant\'s session',
+                );
+            }
         } else {
             expect($response->status())->toBe(403,
                 "a device token was ALLOWED {$name}, which it does not hold",
@@ -391,6 +401,16 @@ it('answers device × every staff route the way the matrix says, in its own tena
 
 it('refuses every principal on every staff route in a tenant they do not belong to', function (): void {
     // PROPERTY 3, other-tenant column -- the cell that IS this task's named invariant.
+    //
+    // ⚠ BUT DO NOT CREDIT THIS CASE WITH IDOR, which both `§11` reviewers of the fix diff
+    // flagged for the record. `staffRoutes()` builds the keyed paths from `Str::uuid7()`,
+    // i.e. ids that do not exist -- so for `members.update`, `members.destroy` and
+    // `devices.destroy` this column proves "a nonexistent id is refused", not "another
+    // tenant's REAL id is refused". The real cross-tenant coverage is `MembersTest`'s case
+    // that reads beta's actual membership id out of `GET /v1/members` and drives 404 on it,
+    // `DeviceTokenScopeTest`'s revoke case with alpha's real token id, and `PagerIdorTest`.
+    // What this case does prove, over every route and every principal, is the AUTHORISATION
+    // half: a principal of one tenant is refused on the whole surface of another.
     //
     // The refusal is 401 and not 403, and the distinction is the design rather than an
     // accident: a principal with no membership in the target tenant resolves NO TENANT at
@@ -467,9 +487,10 @@ it('refuses device and platform_admin on every staff route of a tenant they cann
      * hard-coded in their own files -- so the router-iterating check could not extend them
      * and a new route grew no cell for either. QA M-1.
      *
-     * ⚠ THERE IS NO OWN-TENANT COLUMN FOR `platform_admin`, and that is the finding `§5`
-     * records rather than a gap in this file: a platform admin holds NO membership, so there
-     * is no tenant that is theirs. `Principal::isTenantScoped()` says so and
+     * ⚠ THERE IS NO OWN-TENANT COLUMN FOR `platform_admin`, and that is recorded in
+     * `PLAN.md §3.1` row 6 and `§0`'s blocker cell -- NOT in `§5`, which is what this
+     * comment used to cite and no row says. It is not a gap in this file: a platform admin
+     * holds NO membership, so there is no tenant that is theirs. `Principal::isTenantScoped()` says so and
      * `RoleMatrix`'s PlatformAdmin row is empty. Their whole row is this column.
      *
      * The two kinds of route are discriminated exactly as the case above discriminates
@@ -538,6 +559,20 @@ it('refuses device and platform_admin on every staff route of a tenant they cann
             }
 
             $body = (string) $response->getContent();
+
+            // ⚠ THE STATUS FIRST, FOR THE PRINCIPAL THAT HAS NO TENANT AT ALL. The §11
+            // review of the fix diff found that the platform-admin non-targeting cells
+            // asserted only that two ids were absent from the body -- and a platform admin
+            // gets a 401 problem document, which can never contain either, so a
+            // hypothetical 200 with an empty board would have passed. A platform admin
+            // resolves NO tenant, so every one of these must refuse; the device token does
+            // resolve one (its own), so its non-targeting cells legitimately answer 200 and
+            // are bounded by the content assertions below instead.
+            if ($principal === 'platform_admin') {
+                expect($response->status())->toBe(401,
+                    "a platform admin got {$response->status()} on {$name}, and it holds no tenant to act in",
+                );
+            }
 
             expect(str_contains($body, $theirs))->toBeFalse(
                 "{$name} leaked another tenant's id to a {$principal}",

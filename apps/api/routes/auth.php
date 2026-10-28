@@ -106,6 +106,14 @@ Route::prefix('auth')->group(function (): void {
      * lookup before anything refuses it. On `auth-session` rather than `auth-login` because a
      * dashboard asks this on every page load -- the bucket is here to BOUND the cost, not to
      * make it small.
+     *
+     * ⚠ AND THIS BUCKET IS NOT WHAT BOUNDS THAT LOOKUP, which this comment used to claim.
+     * `ResolvePrincipal` is GROUP middleware and the bucket is ROUTE middleware, so the
+     * lookup happens first -- measured at the `§11` review of this task's fix diff: 100
+     * requests with a malformed bearer gave 100 x 422 and zero 429s, each costing a failed
+     * Postgres statement, from a caller with no credential. What bounds it is the
+     * `auth-surface` bucket, which `bootstrap/app.php` now runs FIRST in the group. This
+     * bucket is the per-route policy on top of that.
      */
     Route::get('me', [AuthController::class, 'me'])
         ->middleware([RateLimit::class.':auth-session'])

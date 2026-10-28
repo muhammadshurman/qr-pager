@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Auth\Ability;
+use App\Domain\Tenancy\TenantRole;
 use App\Platform\Database\UnsafeDatabaseRoleException;
 use App\Platform\Logging\RedactLogs;
 use App\Platform\Logging\Redactor;
@@ -305,6 +307,17 @@ dataset('task 5 secret keys', [
     'recovery_codes' => ['recovery_codes', 'klmno-pqrst'],
     'recovery_code' => ['recovery_code', 'uvwxy-z1234'],
     'challenge' => ['challenge', 'Y2hhbGxlbmdlLXZhbHVl'],
+    // ⚠ THE KEY THAT CARRIES THE SECRET WITHOUT THE WORD IN ITS NAME, and the one the
+    // first version of this list missed: `qr_code_url` is what the enable response actually
+    // emits, and its value is an otpauth URI with the secret in a query parameter. The §11
+    // review of the fix diff measured it coming back verbatim while `secret` beside it was
+    // redacted. The value below is the real shape, secret included, so a rule that only
+    // matched the word `secret` inside the value would not satisfy this.
+    'qr_code_url (the otpauth URI)' => ['qr_code_url',
+        'otpauth://totp/QR%20Pager:a@b.test?secret=JBSWY3DPEHPK3PXP&issuer=QR%20Pager'],
+    'qr_code_svg (Fortify\'s own key name)' => ['qr_code_svg', '<svg>JBSWY3DPEHPK3PXP</svg>'],
+    'otpauth_url' => ['otpauth_url', 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP'],
+    'bearer' => ['bearer', 'Bearer 7|aaaabbbbccccddddeeeeffff'],
 ]);
 
 it('redacts each of this task’s secret key names', function (string $key, string $value): void {
@@ -329,3 +342,55 @@ it('redacts each of this task’s secret key names', function (string $key, stri
     // The positive control: this case can only pass by redacting, not by failing to log.
     expect(str_contains($log, 'keep-me'))->toBeTrue('nothing was logged at all');
 })->with('task 5 secret keys');
+
+it('keeps a refused device token\'s row id readable, because that is the one thing the line is for', function (): void {
+    /*
+     * BOTH `§11` REVIEWERS OF THE FIX DIFF FOUND THIS, and it is the opposite of a leak.
+     *
+     * `RefuseDeviceToken` logs the refused token's row id so an operator knows which kitchen
+     * screen to revoke. `token_id` CONTAINS the `token` needle, so the redactor replaced the
+     * one datum the line exists for -- measured against captured output:
+     * `{"route":"auth.me","token_id":"[redacted]"}`. The previous form carried the id in an
+     * exception MESSAGE, which `message()` does not scrub, so moving to a structured warning
+     * silently lost it while the comment claimed it was kept.
+     *
+     * And nothing tested the line at all, at any level, at either commit.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $issued = $this->postJson('/v1/devices', [
+        'name' => 'kds-logline',
+        'ability' => Ability::PagerRead->value,
+        'ttl_minutes' => 60,
+    ]);
+
+    $issued->assertStatus(201);
+
+    $tokenId = (string) $issued->json('device.id');
+    $plaintext = (string) $issued->json('device.token');
+
+    auth()->forgetGuards();
+    app('auth')->guard('web')->logout();
+
+    $this->getJson('/v1/auth/me', ['Authorization' => 'Bearer '.$plaintext])->assertStatus(403);
+
+    $log = capturedLog($this->logFile);
+
+    // THE DATUM IS THERE, which is the assertion the fix is about.
+    expect(str_contains($log, $tokenId))->toBeTrue(
+        'the refusal line does not name the token to revoke, which is the only reason it exists',
+    );
+
+    // AT WARNING AND NOT ERROR: an unbounded ERROR line per refusal is alerting volume, and
+    // this is a refusal rather than an application fault.
+    expect(str_contains($log, 'WARNING'))->toBeTrue('the refusal is still logged at ERROR');
+    expect(str_contains($log, 'RefuseDeviceToken refused'))->toBeTrue();
+
+    // AND STILL NO CREDENTIAL. The id is not the credential; the plaintext and its sha256
+    // are, and neither may appear.
+    expect(str_contains($log, $plaintext))->toBeFalse('the refusal line carried the token plaintext');
+    expect(str_contains($log, hash('sha256', explode('|', $plaintext, 2)[1] ?? '')))->toBeFalse(
+        'the refusal line carried the token hash',
+    );
+});

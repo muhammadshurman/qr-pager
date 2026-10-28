@@ -228,10 +228,20 @@ return Application::configure(basePath: dirname(__DIR__))
         // know who is asking. It refuses nothing, so a request with no credential reaches
         // the controller and gets the 401 the controller itself returns.
         //
-        // Shedding and the limiter are NOT on the group: each route in routes/auth.php
-        // names its own bucket, because a login and a tenant selection do not deserve the
-        // same allowance and `api`'s shared bucket would give them one. That is the same
-        // decision the customer group records for its three routes.
+        // ⚠ THE LIMITER IS ON THE GROUP, AS A COARSE BACKSTOP, AND SHEDDING IS NOT. This
+        // paragraph used to say neither was, and the `§11` review of this task's fix diff
+        // found it still saying so eighteen lines above the limiter that is now the group's
+        // first entry -- the same false claim this round corrected in routes/auth.php and
+        // config/ratelimit.php, left standing in the file it was changing.
+        //
+        // Each route in routes/auth.php still names its OWN bucket, because a login and a
+        // tenant selection do not deserve the same allowance; the group's bucket exists
+        // because group middleware runs FIRST, so without it every refusal the four entries
+        // below produce was unmetered. Both layers bind and the tighter wins.
+        //
+        // Shedding is still NOT here, and that is now the only half of the original decision
+        // that stands: dropping a login under load locks staff out of a restaurant mid-
+        // service, which needs Task 14's numbers to decide. `R-105`.
         // RefuseDeviceToken runs LAST, and the order is the whole of it: it reads the
         // access token ResolvePrincipal resolved, so it cannot run before it. A
         // `pager:read` device token used to satisfy every controller's
@@ -239,6 +249,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // RefuseDeviceToken's docblock has the measurements and
         // DeviceTokenOnAuthSurfaceTest drives every route on the group.
         $middleware->group('auth-surface', [
+            // ⚠ THE LIMITER RUNS FIRST, AND THE ORDER IS THE FIX. Laravel runs group
+            // middleware before route middleware, so while the five buckets in
+            // routes/auth.php were named per route, every refusal the four entries BELOW
+            // produce happened before any bucket was consulted -- unmetered, and two of
+            // those paths need no credential at all. Measured at the §11 review of this
+            // task's fix diff: 100 CSRF-less logins gave 100 x 419, zero 429s, and one new
+            // Redis session key each. config/ratelimit.php's `auth-surface` entry has the
+            // three measurements and why the double-count with the per-route buckets is
+            // deliberate. This is the same ordering this file already argues for on the
+            // `api` group, twenty lines down.
+            RateLimit::class.':auth-surface',
             EncryptCookies::class,
             AddQueuedCookiesToResponse::class,
             StartSession::class,

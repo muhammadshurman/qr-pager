@@ -6,6 +6,7 @@ namespace App\Platform\Auth;
 
 use App\Domain\Auth\Ability;
 use App\Domain\Auth\TenantPin;
+use App\Models\PersonalAccessToken;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -105,10 +106,39 @@ final class DeviceToken
      * places that need to tell them apart — CSRF applies to one and not the other, and the
      * principal is `Device` for one and a tenant role for the other — ask here rather than
      * each sniffing the request their own way.
+     *
+     * ================================================================================
+     * ⚠ A REAL TOKEN ROW, AND NOT `HasAbilities` — WHY THE PREDICATE IS NARROWER
+     * ================================================================================
+     *
+     * This read `instanceof HasAbilities`, and **Sanctum's `TransientToken` implements that
+     * interface**. `Sanctum\Guard::__invoke` attaches one to any user it resolves from the
+     * **web** guard — unconditionally, not gated on `sanctum.stateful`, which this project
+     * correctly leaves empty — and `TransientToken::can()` returns `true` for every ability
+     * including ones that do not exist. So the moment anything resolves the `sanctum` guard
+     * on a SESSION request, this answered `true` for a staff user.
+     *
+     * Both `§11` reviewers of the fix diff found it independently, and what it costs is
+     * worse than a mis-answer: `RefuseDeviceToken` reads the token's `getKey()` for its log
+     * line, `TransientToken` has no such method, and the measured result was a **500 on
+     * `GET /v1/auth/me` for a legitimate signed-in owner**. `RequestPrincipal` would
+     * separately demote that user to `Principal::Device`, which holds one ability.
+     *
+     * Nothing resolves that guard in this tree today — `ResolvePrincipal` tries `web` first
+     * and returns, and nothing else calls `auth('sanctum')` — so this was latent. It stops
+     * being latent the moment any route uses `auth:sanctum`, which is the obvious shape for
+     * Task 10's KDS work, and it would then be a 500 in the file holding a Critical's fix.
+     *
+     * `PersonalAccessToken` is this project's own model (a uuid key, `§2.4`), which is what
+     * a genuine device token always is. `DeviceToken::allows()` keeps the broader
+     * `HasAbilities` check because it asks a different question — "may this credential do
+     * X" — and a `TransientToken` answering `true` there is harmless: `RequestPrincipal`
+     * requires the matrix to grant the principal the ability as well, and the weaker of the
+     * two always wins.
      */
     public static function isTokenRequest(Request $request): bool
     {
-        return $request->user()?->currentAccessToken() instanceof HasAbilities;
+        return $request->user()?->currentAccessToken() instanceof PersonalAccessToken;
     }
 
     /**

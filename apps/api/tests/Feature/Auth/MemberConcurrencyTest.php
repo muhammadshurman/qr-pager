@@ -64,80 +64,121 @@ function ownerCountOf(string $tenantId): int
 }
 
 it('never leaves a tenant with zero owners when two owners are demoted at the same instant', function (): void {
-    $tenant = $this->makeTenant();
+    /*
+     * ⚠ THE RACE IS RUN THREE TIMES, AND THAT IS NOT BELT AND BRACES.
+     *
+     * The first version launched the two children and let them run. The `§11` review of the
+     * fix diff reverted `lockOwnerCount()` to the unlocked count and ran this file five
+     * times: red, GREEN, red, red, red. So the only guard on a state with no in-product
+     * repair -- a tenant with zero owners, and the admin surface is Task 6 -- would have
+     * let the defect through one run in five.
+     *
+     * Two things fix that, and neither touches production code. The children now align on a
+     * START BARRIER (their docblock has it), so Laravel's ~150 ms boot is outside the window
+     * rather than inside it; and the race is run three times, so a per-attempt miss rate of
+     * even one in five leaves under a 1% chance of a green run against broken code. With
+     * the lock in place every attempt is deterministic, so this costs nothing in the green
+     * direction -- measured, 6/6 green before the barrier and after it.
+     */
+    foreach (range(1, 3) as $attempt) {
+        $tenant = $this->makeTenant();
 
-    // The acting user is an owner, and `actingForTenant` makes the membership. A second
-    // owner makes the race possible: with one owner the rule refuses both callers trivially
-    // and the test would pass against the unlocked code.
-    $this->actingForTenant($tenant, TenantRole::Owner);
+        // The acting user is an owner, and `actingForTenant` makes the membership. A second
+        // owner makes the race possible: with one owner the rule refuses both callers
+        // trivially and the test would pass against the unlocked code.
+        $this->actingForTenant($tenant, TenantRole::Owner);
 
-    $actorUserId = (string) auth()->id();
+        $actorUserId = (string) auth()->id();
 
-    $first = withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenant_users')
-        ->where('tenant_id', $tenant)
-        ->where('user_id', $actorUserId)
-        ->value('id'), 'pgsql_owner');
+        $first = withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenant_users')
+            ->where('tenant_id', $tenant)
+            ->where('user_id', $actorUserId)
+            ->value('id'), 'pgsql_owner');
 
-    $second = extraOwner($tenant);
+        $second = extraOwner($tenant);
 
-    expect(ownerCountOf($tenant))->toBe(2);
+        expect(ownerCountOf($tenant))->toBe(2);
 
-    $script = base_path('tests/Support/demote-owner-in-another-process.php');
-    $database = (string) config('database.connections.pgsql.database');
+        $script = base_path('tests/Support/demote-owner-in-another-process.php');
+        $database = (string) config('database.connections.pgsql.database');
+        $barrier = sys_get_temp_dir().'/qrpager-owner-race-'.Str::random(12);
 
-    // Merged, not replaced: proc_open's $env REPLACES the environment, so a bare array
-    // loses PATH and everything .env resolution needs -- the lesson
-    // PagerIdempotencyTest's comment records, and a child that produces no output at all
-    // reads as a concurrency result rather than as a broken launch.
-    $env = array_merge(getenv(), [
-        'APP_ENV' => 'testing',
-        'DB_DATABASE' => $database,
-        'PAO_DISABLE' => '1',
-    ]);
+        // Merged, not replaced: proc_open's $env REPLACES the environment, so a bare array
+        // loses PATH and everything .env resolution needs -- the lesson
+        // PagerIdempotencyTest's comment records, and a child that produces no output at
+        // all reads as a concurrency result rather than as a broken launch.
+        $env = array_merge(getenv(), [
+            'APP_ENV' => 'testing',
+            'DB_DATABASE' => $database,
+            'PAO_DISABLE' => '1',
+        ]);
 
-    // BOTH LAUNCHED BEFORE EITHER IS READ, so the two transactions really do overlap:
-    // Laravel's boot is ~100 ms and the demotion is sub-millisecond.
-    $children = [];
+        $children = [];
 
-    foreach ([$first, $second] as $i => $membershipId) {
-        $children[$i] = ['handle' => proc_open(
-            ['php', $script, $tenant, (string) $membershipId, $actorUserId],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $children[$i]['pipes'],
-            base_path(),
-            $env,
-        ), 'pipes' => $children[$i]['pipes'] ?? []];
+        foreach ([$first, $second] as $i => $membershipId) {
+            $children[$i] = ['handle' => proc_open(
+                ['php', $script, $tenant, (string) $membershipId, $actorUserId, $barrier],
+                [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                $children[$i]['pipes'],
+                base_path(),
+                $env,
+            ), 'pipes' => $children[$i]['pipes'] ?? []];
 
-        expect($children[$i]['handle'])->not->toBeFalse("could not start process {$i}");
+            expect($children[$i]['handle'])->not->toBeFalse("could not start process {$i}");
+        }
+
+        // BOTH BOOTED AND WAITING before either is released, which is what makes the two
+        // transactions start together instead of whenever each finished booting.
+        $deadline = microtime(true) + 30.0;
+
+        // ⚠ THROWS RATHER THAN ASSERTS, and the reason is this project's own evidence
+        // practice. An `expect()` inside a spin loop runs an unpredictable number of times,
+        // so the file's assertion count varied run to run -- measured at 248, 253, 259 and
+        // 264 over four green runs. `§4a` publishes "N passed / M assertions" at a commit for
+        // every figure, and a non-reproducible M makes that figure meaningless.
+        while (count(glob($barrier.'.ready.*') ?: []) < 2) {
+            if (microtime(true) > $deadline) {
+                throw new RuntimeException('the two children never both reached the barrier');
+            }
+
+            usleep(1000);
+        }
+
+        touch($barrier.'.go');
+
+        $outcomes = [];
+
+        foreach ($children as $child) {
+            $outcomes[] = trim((string) stream_get_contents($child['pipes'][1]));
+            $stderr = trim((string) stream_get_contents($child['pipes'][2]));
+            fclose($child['pipes'][1]);
+            fclose($child['pipes'][2]);
+            proc_close($child['handle']);
+
+            expect($stderr)->toBe('', "a child process wrote to stderr: {$stderr}");
+        }
+
+        foreach (glob($barrier.'*') ?: [] as $leftover) {
+            @unlink($leftover);
+        }
+
+        sort($outcomes);
+
+        // THE INVARIANT, asserted first because it is the one that matters: whatever the
+        // interleaving, the tenant still has an owner. Against the unlocked count this read
+        // 0.
+        expect(ownerCountOf($tenant))->toBe(1,
+            "attempt {$attempt}: two concurrent demotions left the tenant with the wrong number of owners",
+        );
+
+        // And the shape of the outcome: exactly one caller won, and the loser was REFUSED
+        // rather than erroring. A deadlock, a serialisation failure or an exception would
+        // all leave the invariant intact and are all still wrong -- a 40P01 surfacing to a
+        // staff user as a 500 is not "the rule held".
+        expect($outcomes)->toBe(['demoted', 'refused'],
+            "attempt {$attempt}: expected one demotion and one refusal, got: ".implode(', ', $outcomes),
+        );
     }
-
-    $outcomes = [];
-
-    foreach ($children as $child) {
-        $outcomes[] = trim((string) stream_get_contents($child['pipes'][1]));
-        $stderr = trim((string) stream_get_contents($child['pipes'][2]));
-        fclose($child['pipes'][1]);
-        fclose($child['pipes'][2]);
-        proc_close($child['handle']);
-
-        expect($stderr)->toBe('', "a child process wrote to stderr: {$stderr}");
-    }
-
-    sort($outcomes);
-
-    // THE INVARIANT, asserted first because it is the one that matters: whatever the
-    // interleaving, the tenant still has an owner. Against the unlocked count this read 0.
-    expect(ownerCountOf($tenant))->toBe(1,
-        'two concurrent demotions left the tenant with the wrong number of owners',
-    );
-
-    // And the shape of the outcome: exactly one caller won, and the loser was REFUSED
-    // rather than erroring. A deadlock, a serialisation failure or an exception would all
-    // leave the invariant intact and are all still wrong -- a 40P01 surfacing to a staff
-    // user as a 500 is not "the rule held".
-    expect($outcomes)->toBe(['demoted', 'refused'],
-        'expected exactly one demotion and one refusal, got: '.implode(', ', $outcomes),
-    );
 });
 
 it('still refuses the last owner when nothing is racing it', function (): void {

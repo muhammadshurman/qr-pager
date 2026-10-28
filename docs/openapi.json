@@ -2675,10 +2675,11 @@
             },
             "PasskeyRegistrationRequest": {
                 "type": "object",
+                "description": "A passkey to register.",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "maxLength": 255
+                        "maxLength": 120
                     },
                     "credential": {
                         "type": "object",

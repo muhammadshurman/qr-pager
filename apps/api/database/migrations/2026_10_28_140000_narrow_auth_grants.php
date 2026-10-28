@@ -42,7 +42,17 @@ use Illuminate\Support\Facades\DB;
  *    `user_id, password_hash, two_factor_confirmed_at`) and `public.user_two_factor(uuid)`
  *    already exists for the code that does need it, so the column bought nothing.
  *
- * `GrantMatrixTest` and `AuthContractTest` pin all three, so none can come back by accident.
+ * ⚠ WHICH TESTS ACTUALLY PIN THESE, corrected after the `§11` review of this diff (QA M-5):
+ * this line read "`GrantMatrixTest` and `AuthContractTest` pin all three", and
+ * **`AuthContractTest` has never existed** — introduced while correcting two other docblocks
+ * that named imaginary tests, which is the joke the review did not have to make.
+ *
+ * `AuthGrantNarrowingTest` drives all three as statements: `42501` on the `is_platform_admin`
+ * INSERT, `42501` on `delete from passkeys`, and `42703` on
+ * `select two_factor_secret from authenticate_user(...)`, each with a positive control.
+ * `GrantMatrixTest` pins the `users` INSERT column set as an exact catalog fact — one of the
+ * three, not all of them. `bin/migration-rollback-proof` adds the absence checks, one against
+ * the fingerprint and one against `has_table_privilege`.
  */
 return new class extends Migration
 {

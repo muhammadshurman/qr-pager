@@ -31,14 +31,34 @@ use Illuminate\Support\Str;
  *    a pattern, a list, or a tenant the caller chose. `MembershipCallSiteTest` pins the set
  *    of public methods, so a fourth cannot be added without the test naming it.
  * 2. **Every call site passes a server-derived id, and the set of call sites is pinned.**
- *    The five are `AuthController` (twice), `ActiveTenant`, `RequestPrincipal` and
- *    `AuthenticatedTenantResolver`; each passes a guard identifier or a credential
- *    verification's answer, never request input. `MembershipCallSiteTest` greps the tree and
+ *    There are **seven call lines in FOUR files**: `Http/AuthController` (2),
+ *    `AuthenticatedTenantResolver` (3), `ActiveTenant` (1), `RequestPrincipal` (1). Each
+ *    passes a guard identifier or a credential verification's answer, never request input.
+ *
+ *    ⚠ THIS COUNT HAS NOW BEEN WRONG TWICE. It said "one call site", then "seven lines in
+ *    five files" — and the sentence announcing the second correction carried the third error,
+ *    while the enumeration right beside it listed four files all along. Caught by the second
+ *    `§11` review of the fix diff, by counting. Four files, seven lines, and
+ *    `MembershipCallSiteTest` pins both. `MembershipCallSiteTest` greps the tree and
  *    fails on a sixth, because "the user id comes from the guard" is a property of the call
  *    site and not of this file.
  * 3. **The SQL is `select * from public.user_memberships(?)`** — a function with one
- *    exact-match uuid parameter, compared with `=` inside its body. No input shape returns
- *    a second user's memberships.
+ *    exact-match uuid parameter, compared with `=` inside its body. No input shape THIS
+ *    CLASS can send returns a second user's memberships.
+ *
+ *    ⚠ AND THAT IS A PROPERTY OF THIS FILE, NOT OF THE FUNCTION, which is the correction the
+ *    `§11` review of the fix diff forced. The sentence used to end "No input shape returns a
+ *    second user's memberships", and the function is `SECURITY DEFINER` with the tenant
+ *    bypass on — so any role that can read `users` can join over it. Measured as
+ *    `qrpager_app`: `select count(*) from tenant_users` -> **0** (RLS, no scope), while
+ *    `select count(*) from users u, public.user_memberships(u.id) m` -> **18 rows across all
+ *    14 tenants**, matching the privileged ground truth exactly.
+ *
+ *    **So RLS is NOT a backstop for reads through this function**, and `§10.3(d)`'s "even if
+ *    the policy check is wrong" does not cover them. The bound is the PHP one in point 2,
+ *    pinned by `MembershipCallSiteTest`, and `MembershipEnumerationTest` pins the absence of
+ *    the database-level bound as a measured fact rather than leaving it to be rediscovered.
+ *    `R-108` owns the question of whether that is acceptable.
  * 4. **The function is `RETURNS TABLE` with four named columns** (§2.8 rule 1), so nothing
  *    else from `tenant_users` can come back even if this class asked for it.
  * 5. **`EXECUTE` is granted to `qrpager_app` alone**, after `REVOKE ALL … FROM PUBLIC`.

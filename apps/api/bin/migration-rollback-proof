@@ -183,12 +183,27 @@ grep -E '^grant qrpager_app users\.(is_platform_admin|password|remember_token|tw
 # 2026_10_28_140000 revoked these three, each because its presence was an escalation or an
 # un-backstopped write (SEC L-1, SEC L-2, QA M-6), so the proof has to fail if a later
 # migration hands any of them back.
-for forbidden in \
-  'grant qrpager_app users.is_platform_admin INSERT' \
-  'grant qrpager_app passkeys.*DELETE'
-do
-  grep -qE "$forbidden" "$before" \
-    && { echo "a narrowed grant is back in the schema: $forbidden" >&2; exit 1; }
+# ⚠ ONLY THE COLUMN-LEVEL NARROWING CAN BE CHECKED AGAINST THE FINGERPRINT. The second
+# needle used to be 'grant qrpager_app passkeys.*DELETE' and it COULD NEVER MATCH:
+# database/schema-fingerprint.sql builds its grant lines from
+# information_schema.column_privileges, which carries only SELECT/INSERT/UPDATE/REFERENCES
+# -- DELETE is a TABLE-level privilege and never appears there. Both §11 reviewers of the
+# fix diff measured it the same way: re-granting DELETE on passkeys left the fingerprint
+# BYTE-IDENTICAL, so step 5's identity check is blind to it too. A dead control with a
+# comment saying it was live, which is the defect class §4a exists to record -- and the
+# `grants -ge 20` floor above proves the file is non-empty, which cannot make a DELETE
+# line appear.
+grep -qE 'grant qrpager_app users.is_platform_admin INSERT' "$before" \
+  && { echo "a narrowed grant is back in the schema: users.is_platform_admin INSERT" >&2; exit 1; }
+
+# The table-level ones are asked of the catalog directly, which is where they live.
+for spec in 'passkeys:DELETE'; do
+  table="${spec%%:*}"; priv="${spec##*:}"
+  held=$(psql_as_root -d "$probe" -tAc \
+    "select has_table_privilege('qrpager_app', '$table', '$priv')")
+  [ "$held" = "f" ] \
+    || { echo "a narrowed grant is back: qrpager_app holds $priv on $table" >&2; exit 1; }
+  echo "qrpager_app $priv on $table: $held (expected f)"
 done
 
 # authenticate_user must not return the 2FA secret. Checked against the function's own

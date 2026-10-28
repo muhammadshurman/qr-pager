@@ -261,36 +261,66 @@ it('keeps the passkey table out of every tenant-scoped reckoning, because a pass
 });
 
 it('bounds the passkey name at the column\'s own length, not at the vendor\'s', function (): void {
-    // SEC L-4. laravel/passkeys' PasskeyRegistrationRequest rules `name` at max:255 while
-    // `passkeys.name` is varchar(120), so a 121-255 character name survived validation and
-    // raised `22001` at the INSERT -- a 500 for what is a 422. Reachable only after a
-    // successful ceremony, so it is `R-100`'s blind spot as well: no test here can produce
-    // the credential that would reach the insert.
-    //
-    // What IS driven: the refusal happens BEFORE the ceremony is attempted, and the two
-    // numbers that have to agree are read from the database rather than asserted from
-    // memory.
+    /*
+     * SEC L-4, and ⚠ THE FIRST VERSION OF THIS CASE COULD NOT FAIL.
+     *
+     * It asserted only `assertStatus(422)` for a 121-character name — and the vendor's
+     * `passedValidation()` answers 422 for any credential a test can fabricate, whatever
+     * the name is. The `§11` QA review of the fix diff deleted the guard being tested and
+     * re-ran this file: 9 passed. That is `§6`'s regression-test clause literally unmet,
+     * and it is the project's signature defect class.
+     *
+     * WHAT MADE IT UNFALSIFIABLE WAS THE FIX, NOT THE TEST. The guard was an
+     * `mb_strlen()` check in the controller, and the vendor deserialises in
+     * `passedValidation()` — which runs after validation PASSES — so the controller was
+     * never reached. The bound is now a validation RULE in this project's own
+     * `PasskeyRegistrationRequest`, which runs BEFORE deserialisation, and that makes the
+     * two refusals tell apart: `errors.name` versus `errors.credential`.
+     *
+     * So this case asserts WHICH refusal happened, not merely that one did.
+     */
     $column = DB::connection('pgsql_owner')->selectOne(
         "select character_maximum_length as len from information_schema.columns
           where table_name = 'passkeys' and column_name = 'name'",
     );
 
     expect((int) $column->len)->toBe(120,
-        'passkeys.name changed length -- PasskeyController::register hard-codes 120',
+        'passkeys.name changed length -- App\\Platform\\Auth\\Http\\PasskeyRegistrationRequest rules max:120',
     );
 
     signedInUser();
 
     $this->getJson('/v1/auth/passkeys/options')->assertStatus(200);
 
-    // 121 characters: one over the column, far under the vendor's 255.
-    $this->postJson('/v1/auth/passkeys', [
+    // 121 characters: one over the column, far under the vendor's 255. The NAME is what is
+    // refused, and the credential is never looked at -- which is the whole point, because
+    // looking at it is what raises `22001` at the INSERT after a real ceremony.
+    $tooLong = $this->postJson('/v1/auth/passkeys', [
         'name' => str_repeat('n', 121),
         'credential' => fakeCredential(),
-    ])->assertStatus(422);
+    ]);
 
-    // And 120 is accepted by the name check -- it still fails at 422 on the credential,
-    // which is the ceremony and not the name, so this asserts the boundary is 121 and not
-    // that everything is refused.
+    $tooLong->assertStatus(422)
+        ->assertJsonPath('type', 'https://qrpager.dev/problems/validation')
+        ->assertJsonMissingPath('errors.credential');
+
+    expect($tooLong->json('errors.name'))->toBeArray()->not->toBeEmpty(
+        'a 121-character name was not refused on the NAME -- the bound is not reachable',
+    );
+
+    // AND THE DISCRIMINATING CONTROL: 120 characters passes the name rule and is then
+    // refused on the CREDENTIAL. Without this, the assertion above would also hold for a
+    // request class that refused every name.
+    $atLimit = $this->postJson('/v1/auth/passkeys', [
+        'name' => str_repeat('n', 120),
+        'credential' => fakeCredential(),
+    ]);
+
+    $atLimit->assertStatus(422)->assertJsonMissingPath('errors.name');
+
+    expect($atLimit->json('errors.credential'))->toBeArray()->not->toBeEmpty(
+        'a 120-character name was refused on the name, so the boundary is not at 121',
+    );
+
     expect(DB::connection('pgsql_owner')->table('passkeys')->count())->toBe(0);
 });

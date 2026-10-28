@@ -55,9 +55,19 @@ it('refuses the app role every withheld users column, as the statements R-006 na
 
     // THE POSITIVE CONTROL. Without it, five 42501s are indistinguishable from a role that
     // cannot read `users` at all -- which would be a different (and broken) application.
-    $readable = DB::select('select id, email, name, is_platform_admin, two_factor_confirmed_at from users limit 1');
+    //
+    // ⚠ `toBeArray()` WAS NOT A CONTROL: DB::select() always returns an array, so the
+    // assertion held whatever the grants were. The §11 review of the fix diff caught it.
+    // What the control has to say is that the statement SUCCEEDS and returns the acting
+    // user's own row, so it is written that way.
+    expect($this->sqlStateOf(fn () => DB::select(
+        'select id, email, name, is_platform_admin, two_factor_confirmed_at from users limit 1',
+    )))->toBeNull('the app role cannot read the users columns it IS granted');
 
-    expect($readable)->toBeArray();
+    $mine = DB::selectOne('select id, email from users where id = ?', [(string) auth()->id()]);
+
+    expect($mine)->not->toBeNull('the app role could not read its own user row')
+        ->and((string) $mine->id)->toBe((string) auth()->id());
 });
 
 it('refuses the app role the platform-admin flag at INSERT as well as at UPDATE', function (): void {

@@ -5,10 +5,14 @@ declare(strict_types=1);
 use App\Domain\Auth\Ability;
 use App\Domain\Tenancy\TenantRole;
 use App\Platform\Auth\ActiveTenant;
+use App\Platform\Auth\DeviceToken;
 use App\Platform\Auth\Http\PasskeyController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\Contracts\HasAbilities;
+use Laravel\Sanctum\TransientToken;
 
 /*
  * ================================================================================
@@ -25,11 +29,21 @@ use Illuminate\Support\Str;
  * states and that still hold -- neither `RequireTenantScope` nor `RequireAbility`. So the
  * only gate left on each of these routes was the controller's own
  * `$request->user() instanceof User`. `ResolvePrincipal` tries `web` and then `sanctum`,
- * so A BEARER TOKEN SATISFIES THAT TEST. A `pager:read` device token on a kitchen screen
- * therefore reached every session-management route its issuer could: the cross-tenant
- * membership map from `auth.me`, a fresh TOTP secret and all eight recovery codes from
- * `two-factor/enable`, the removal of the second factor from `two-factor/disable`, and the
- * registration ceremony that mints a new passkey -- a full staff session as an owner.
+ * so A BEARER TOKEN SATISFIES THAT TEST.
+ *
+ * ⚠ WITH ONE CORRECTION THIS FILE OWES THE `§11` REVIEW OF THE FIX DIFF.
+ * `ValidateCsrfToken` runs before `RefuseDeviceToken` in the group, so a BEARER-ONLY caller
+ * was already refused 419 on every state-changing route. What a bearer token alone genuinely
+ * reached is the two GETs -- `auth.me`'s cross-tenant membership map, and
+ * `passkeys/options`' live challenge plus the victim's WebAuthn handle and display name.
+ * Both are cross-tenant disclosures from a credential scoped to one tenant and one read-only
+ * capability, which is the named invariant failing on its own.
+ *
+ * The POSTs -- a fresh TOTP secret with all eight recovery codes, the second factor removed,
+ * the registration ceremony that mints a passkey the attacker holds -- were reachable in the
+ * shape that matters for a kitchen screen: one that still holds a live session cookie AND
+ * its matching CSRF token, which is what a browser-based KDS on a shared screen has.
+ * `RefuseDeviceToken`'s docblock carries the measured table.
  *
  * `RoleMatrixTest`'s closed-world check could not see it: it lists these twelve names in a
  * `$auth` ALLOWLIST, and membership in that set asserts nothing about who may call them.
@@ -183,19 +197,32 @@ it('is refused on every route of the auth surface, and the refusal is the same a
         // which routes exist and which credential would have worked.
         expect($response->json('type'))->toBe('https://qrpager.dev/problems/forbidden', $name);
 
-        // THE KEY SET IS EXACTLY THE PROBLEM DOCUMENT'S, which is the assertion that makes
-        // the two below meaningful: no extra field can be carrying anything, so checking
-        // the values is checking all of them.
+        // ⚠ THE KEY SET IS THE CONTROL, and the word scan below is a second line rather than
+        // the first. That ordering is the `§11` review's correction: `type`, `title` and
+        // `status` are CONSTANTS for a given problem type, so scanning them can only catch a
+        // future change that put a leaked word into one of them. What makes this case sound
+        // is THIS assertion -- a leak would have to arrive in a new key, and a new key fails
+        // here. Credited explicitly so the next reader does not mistake 130 word-scan
+        // assertions for 130 facts.
         $body = $response->json();
 
         expect(array_keys($body))->toBe(['type', 'title', 'status', 'instance'], $name);
 
-        // `instance` is the request's own path and `type` is the problem's URL, so both are
-        // things the caller already had. Everything else is what the refusal CHOSE to say,
-        // and that is what the two checks below read -- the earlier version of this case
-        // read the whole document and tripped over `/v1/auth/two-factor/challenge`
-        // containing the word "challenge", which is the path and not a leak.
-        $said = strtolower((string) json_encode([$body['title'], $body['status']]));
+        // ⚠ THE WHOLE DOCUMENT MINUS `instance`, which is the third version of this line.
+        //
+        // The first read the whole body and tripped over `/v1/auth/two-factor/challenge`
+        // containing the word "challenge" -- the path, not a leak. The second narrowed to
+        // `[title, status]`, and the §11 review of the fix diff pointed out that those two
+        // are CONSTANTS here, so ~130 of this case's assertions could not fail.
+        //
+        // So: everything the refusal chose to say, with only `instance` removed -- and
+        // `instance` is removed because it is the caller's own request path, which they
+        // supplied. `type` stays in, so a future problem type whose URL carried a leaked
+        // word would be caught.
+        $chosen = $body;
+        unset($chosen['instance']);
+
+        $said = strtolower((string) json_encode($chosen));
 
         // THE THINGS THE OPEN SURFACE HANDED OVER, asserted absent by name on every route
         // rather than only on the one that leaked each.
@@ -213,6 +240,14 @@ it('is refused on every route of the auth surface, and the refusal is the same a
 
         // And the refusal is BYTE-IDENTICAL across routes apart from the path, so it
         // discloses nothing about which of them exists or what each wanted.
+        //
+        // ⚠ UNDER THE TEST HARNESS, and that qualification is the honest one. CSRF is
+        // skipped here (`runningUnitTests()`), so all thirteen reach `RefuseDeviceToken` and
+        // answer 403. IN PRODUCTION the nine state-changing routes are refused 419 by
+        // `ValidateCsrfToken` one layer earlier, so the answer varies by METHOD -- still
+        // refused, and refused sooner, but not one answer. The `§11` review of the fix diff
+        // measured it. The property worth having is that none of the thirteen SERVES the
+        // request, and both layers give that.
         expect($body['title'])->toBe($forbiddenTitle, $name);
         expect($body['instance'])->toBe($path, $name);
     }
@@ -307,4 +342,124 @@ it('covers every route on the auth surface, so a route added later cannot skip t
     expect(authSurfaceRouteNames())->toBe($driven,
         'a route was added to the auth surface without a device-token refusal case in this file',
     );
+});
+
+it('does not mistake a session user for a device, even when the sanctum guard has been resolved', function (): void {
+    /*
+     * BOTH `§11` REVIEWERS OF THE FIX DIFF FOUND THIS, and the measured cost was a 500.
+     *
+     * `DeviceToken::isTokenRequest()` read `instanceof HasAbilities`, and Sanctum's
+     * `TransientToken` implements that interface. `Sanctum\Guard::__invoke` attaches one to
+     * any user it resolves from the WEB guard — unconditionally — and
+     * `TransientToken::can()` answers true for every ability, including invented ones. So
+     * resolving the sanctum guard once on a session request made `isTokenRequest()` true
+     * for a signed-in owner; `RefuseDeviceToken` then read the token's `getKey()`, which
+     * `TransientToken` does not have, and `GET /v1/auth/me` answered **500**.
+     *
+     * Nothing in this tree resolves that guard today, which is why it was latent rather
+     * than broken. It stops being latent the moment any route uses `auth:sanctum` — the
+     * obvious shape for Task 10's KDS work — so the predicate is narrowed to this project's
+     * own token model and this case holds it there.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    // Resolve the sanctum guard, which is what attaches the TransientToken. This is the
+    // line that made the old predicate true.
+    $resolved = app('auth')->guard('sanctum')->user();
+
+    expect($resolved)->not->toBeNull('the sanctum guard resolved nobody, so this case proves nothing');
+
+    $token = $resolved->currentAccessToken();
+
+    // THE PRECONDITION, asserted rather than assumed: the user really is carrying a
+    // TransientToken, and it really does satisfy the interface the old predicate used.
+    expect($token)->toBeInstanceOf(TransientToken::class)
+        ->and($token)->toBeInstanceOf(HasAbilities::class)
+        ->and($token->can('this-ability-does-not-exist'))->toBeTrue(
+            'TransientToken stopped answering true for everything, so this case is testing nothing',
+        );
+
+    // AND THE PREDICATE SAYS NO.
+    //
+    // ⚠ ON A REQUEST THAT ACTUALLY CARRIES THE USER, which is the difference between an
+    // assertion and a decoration. The first version of this line passed `request()` -- the
+    // test's own ambient request, which has no user resolver -- and so returned false with
+    // the BROKEN predicate too. It was vacuous, and it was vacuous in the file written to
+    // fix vacuous assertions. Caught by running it against the old predicate, which is the
+    // only thing that ever catches this.
+    $carrying = Request::create('/v1/auth/me');
+    $carrying->setUserResolver(fn () => $resolved);
+
+    expect(DeviceToken::isTokenRequest($carrying))->toBeFalse(
+        'a session user carrying a TransientToken was read as a device',
+    );
+
+    // Driven through HTTP as well, because the 500 was an HTTP outcome: the staff session
+    // still reaches its own surface rather than being refused or erroring.
+    $me = $this->getJson('/v1/auth/me');
+
+    $me->assertStatus(200)->assertJsonPath('active_tenant', $tenant);
+
+    // And the staff surface still answers as the MEMBERSHIP role, not as Principal::Device
+    // -- which is the other half of what the old predicate broke.
+    $this->getJson('/v1/members')->assertStatus(200);
+});
+
+it('refuses a malformed bearer token with 401 and no reported exception', function (): void {
+    /*
+     * `R-110`, closed here rather than carried: the parent `findToken()` put an
+     * attacker-chosen id straight into `where id = ?` on a uuid column, so
+     * `Bearer zzz|q` raised `22P02` and the renderer answered **422** on an
+     * AUTHENTICATION failure -- plus one failed Postgres statement and ~337 bytes of
+     * `local.ERROR` echoing the attacker's own string, per request, with no credential.
+     *
+     * Both `§11` reviews of the fix diff measured it. The second one named the
+     * inconsistency that made it worth fixing rather than filing: this task downgraded
+     * `RefuseDeviceToken` to `Log::warning` precisely to stop an unbounded ERROR flood, and
+     * this is the same flood on the path that needs no credential.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    // A real token first, as the positive control: the shape check must not refuse a
+    // credential that works.
+    $issued = $this->postJson('/v1/devices', [
+        'name' => 'kds-shape',
+        'ability' => Ability::PagerRead->value,
+        'ttl_minutes' => 60,
+    ]);
+
+    $issued->assertStatus(201);
+
+    auth()->forgetGuards();
+    app('auth')->guard('web')->logout();
+    session()->flush();
+
+    $this->getJson('/v1/pager-sessions', ['Authorization' => 'Bearer '.$issued->json('device.token')])
+        ->assertStatus(200);
+
+    auth()->forgetGuards();
+
+    // AND THE MALFORMED ONES ANSWER 401, not 422 -- on the staff surface, where the
+    // statement used to be sent.
+    foreach ([
+        'Bearer zzz|q',
+        "Bearer 1'||(select version())||'|q",
+        'Bearer not-a-uuid|anything',
+        'Bearer |',
+    ] as $header) {
+        $response = $this->getJson('/v1/pager-sessions', ['Authorization' => $header]);
+
+        expect($response->status())->toBe(401, "[{$header}] answered {$response->status()}");
+
+        // The attacker's own string is not echoed back either.
+        expect(str_contains((string) $response->getContent(), 'zzz'))->toBeFalse();
+        expect(str_contains((string) $response->getContent(), 'version()'))->toBeFalse();
+    }
+
+    // A WELL-FORMED but unknown id still answers 401, which is what makes the refusal about
+    // the credential rather than about the shape check alone.
+    $this->getJson('/v1/pager-sessions', ['Authorization' => 'Bearer '.Str::uuid7().'|nope'])
+        ->assertStatus(401);
 });

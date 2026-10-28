@@ -606,6 +606,14 @@ returns anything that distinguishes "no such user" from "wrong password".
   test drives a state-changing route **without** a token and asserts 419. The Sanctum bearer
   surface is token-authenticated and stateless, so CSRF does not apply to it — stated rather
   than assumed, because the two surfaces must not be confused.
+  ⚠ **AND THAT HALF IS FALSE AS BUILT.** The second `§11` review of the fix diff drove a
+  genuine device token (positive control: `GET /v1/pager-sessions` → 200, so it really
+  authenticates) and measured `POST /v1/devices` → **419 csrf-mismatch**, with every
+  state-changing `/v1/auth/*` → **419**. `ValidateCsrfToken` is on the `api` group and on the
+  auth surface, so it applies to bearer requests too. It matters because this task's own
+  corrected blast-radius analysis counts that 419 as the reason production exposure was only
+  the two GETs — a control documented as inapplicable is doing load-bearing work, and Task 10
+  needs bearer WRITES, which removes it. Carried as **`R-112`**, owned by Task 10.
   ⚠ **This clause was not met as written, and the gap hid a defect.** `SessionPolicyTest`
   asserted the *exception class* from an instantiated middleware — the right way to prove the
   middleware is really enabled, and it meant nothing ever saw the STATUS. The `§11` security

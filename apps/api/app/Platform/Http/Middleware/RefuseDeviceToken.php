@@ -9,6 +9,7 @@ use App\Platform\Auth\DeviceToken;
 use App\Platform\Http\Problem;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -31,15 +32,39 @@ use Symfony\Component\HttpFoundation\Response;
  * ability permits. That is also right.
  *
  * Together they left each auth route's only gate as the controller's own
- * `$request->user() instanceof User` — **and a bearer token satisfies that test.** A
- * `pager:read` token on a kitchen screen therefore reached every session-management route
- * its issuer could: measured on this project's own composed Postgres, a token with one
- * tenant pin and one read-only capability got **200** from `auth.me` (the issuer's whole
- * membership map, including a tenant the token is not pinned to), **200** from
- * `two-factor/enable` (a fresh TOTP secret and all eight recovery codes, and a *confirmed*
- * factor silently re-keyed, which is a lockout rather than a disclosure), **204** from
- * `two-factor/disable`, and the complete passkey registration ceremony — a route to a full
- * staff session as an owner of every tenant the issuer belongs to.
+ * `$request->user() instanceof User` — **and a bearer token satisfies that test.**
+ *
+ * ================================================================================
+ * WHAT A BEARER-ONLY CALLER ACTUALLY REACHED, corrected to the production stack
+ * ================================================================================
+ *
+ * ⚠ THE FIRST VERSION OF THIS DOCBLOCK OVER-STATED IT, and the `§11` review of the fix diff
+ * measured the difference. `ValidateCsrfToken` runs BEFORE this middleware in the group, so
+ * a bearer-only client — no session cookie, no CSRF token — was already refused **419** on
+ * every state-changing route. The earlier figures (200 from `two-factor/enable` with a fresh
+ * secret and eight recovery codes, 204 from `two-factor/disable`, the whole registration
+ * ceremony, 204 from `auth/tenant`) were taken through the TEST harness, where
+ * `ValidateCsrfToken::runningUnitTests()` turns CSRF off. They are real as test-harness
+ * measurements and they are not the production blast radius.
+ *
+ * **What was genuinely reachable with a bearer token alone, measured against the production
+ * CSRF semantics, is the two GETs:**
+ *
+ *   GET /v1/auth/me               -> 200, the issuer's WHOLE membership map, including
+ *                                   tenants the token is not pinned to
+ *   GET /v1/auth/passkeys/options -> 200, a live challenge plus the victim's WebAuthn user
+ *                                   handle and display name
+ *
+ * That is a cross-tenant disclosure from a credential whose entire scope is one tenant and
+ * one read-only capability, which is `PLAN.md §3.1` row 5's second named invariant failing —
+ * so the fix stands on its own without the larger claim.
+ *
+ * **And the POSTs were reachable in one shape that is not hypothetical:** a stolen kitchen
+ * screen that still holds a live session cookie *and* its matching CSRF token — which is
+ * exactly what a browser-based KDS on a shared screen has. In that shape the full list
+ * applies: a fresh TOTP secret with all eight recovery codes, a *confirmed* factor silently
+ * re-keyed (a lockout, not a disclosure), the second factor removed, and the registration
+ * ceremony that mints a credential the attacker holds.
  *
  * That is `PLAN.md §3.1` row 5's second named invariant, "device token scope cannot
  * escalate", failing. `RequestPrincipal` makes it structural on the staff surface by
@@ -106,16 +131,25 @@ final class RefuseDeviceToken
         // the analyser can carry here.
         $tokenId = $request->user()?->currentAccessToken()?->getKey();
 
-        // Reported, because this is an anomaly rather than a user error: no legitimate
-        // client presents a device token here, so the signal is worth an operator's
-        // attention and costs nothing in normal operation. The token ID identifies the
-        // screen to revoke; the plaintext is never in this process's reach and the hash is
-        // not published here either.
-        report(new \RuntimeException(sprintf(
-            'RefuseDeviceToken refused a bearer-token request on the auth surface: route %s, token %s.',
-            $request->route()?->getName() ?? '(unnamed)',
-            is_scalar($tokenId) ? (string) $tokenId : '(unknown)',
-        )));
+        // LOGGED AT WARNING, NOT REPORTED AS AN EXCEPTION, and the difference is a
+        // measurement rather than taste. This was `report(new RuntimeException(...))`: the
+        // §11 review of the fix diff drove 100 refusals and measured **32,200 bytes of
+        // local.ERROR** -- 322 per request -- with no bound, from one stolen screen. In any
+        // deployment with error alerting that is unbounded alerting too.
+        //
+        // The signal is still worth keeping: no legitimate client presents a device token
+        // here, so a single line says which screen to revoke. What it is not is an
+        // application FAULT, and ERROR is the level that pages somebody. The volume is
+        // separately bounded now by the `auth-surface` bucket, which runs before this
+        // middleware -- that is the actual fix for the flood, and this is the right level
+        // for what is being said.
+        //
+        // The token ID identifies the screen to revoke; the plaintext is never in this
+        // process's reach and the hash is not published here either.
+        Log::warning('RefuseDeviceToken refused a bearer-token request on the auth surface.', [
+            'route' => $request->route()?->getName() ?? '(unnamed)',
+            'token_id' => is_scalar($tokenId) ? (string) $tokenId : '(unknown)',
+        ]);
 
         return (new Problem(ProblemType::Forbidden, $request->getPathInfo()))->toResponse();
     }

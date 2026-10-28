@@ -83,15 +83,31 @@ final class TwoFactorController
          * was right; leaving it unconditional was not.
          *
          * The consequence measured on the open version: a caller with a session -- or,
-         * before `RefuseDeviceToken`, a `pager:read` device token -- called `enable` on an
-         * account whose factor was already CONFIRMED, got a different secret back, and
-         * `two_factor_confirmed_at` stayed set. The legitimate authenticator stops working
+         * before `RefuseDeviceToken`, a `pager:read` device token presented alongside a live
+         * session cookie and its CSRF token, which is what a browser-based kitchen screen
+         * holds -- called `enable` on an account whose factor was already CONFIRMED, got a
+         * different secret back, and `two_factor_confirmed_at` stayed set. (A bearer-ONLY
+         * caller was refused 419 by CSRF before reaching this method; the `§11` review of
+         * the fix diff corrected that over-claim.) The legitimate authenticator stops working
          * and the secret in force is the caller's. That is a LOCKOUT, not a disclosure, and
          * it is silent.
          *
-         * Changing an authenticator is still expressible: disable, then enable. That path
-         * is two deliberate acts and the first of them is visible to the account's owner,
-         * which re-keying in place is not.
+         * Changing an authenticator is still expressible: disable, then enable.
+         *
+         * ⚠ AND THE REASON THIS DOCBLOCK GAVE FOR THAT BEING SAFER WAS FALSE. It said "the
+         * first of them is visible to the account's owner, which re-keying in place is not".
+         * It is not visible to anyone: the `§11` review of the fix diff measured
+         * `select count(*) from audit_log where action like 'two_factor%'` -> **0** after a
+         * full enrol/confirm/disable/re-enrol cycle, and the only audited actions in the
+         * whole application are the device-token and membership ones. There is no
+         * notification either.
+         *
+         * So what this 409 actually buys is narrower than the first version claimed: it stops
+         * the SILENT re-key -- a secret replaced under a working authenticator, which is a
+         * lockout the owner cannot attribute -- and it does not stop a caller who already
+         * holds a session from walking around it in one extra request (`disable`, then
+         * `enable`). That walk-around is `R-104`, which now also carries the missing audit
+         * rows, and it needs a re-authentication rule this task is not the place to decide.
          *
          * NOT CONFIRMED is deliberately still allowed to re-enrol. Enrolment is two steps
          * and the secret exists between them, so a caller who abandoned the first step --

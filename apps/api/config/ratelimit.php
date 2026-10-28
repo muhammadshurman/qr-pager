@@ -156,6 +156,50 @@ return [
             'per_ip' => ['attempts' => 60, 'seconds' => 60],
         ],
 
+        /*
+        | THE AUTH SURFACE'S COARSE BUCKET, AND IT IS A BACKSTOP RATHER THAN A POLICY.
+        |
+        | ⚠ WHY IT HAD TO EXIST, measured at the `§11` review of Task 5's fix diff (SEC H-1).
+        | The five buckets above are named PER ROUTE, and Laravel runs GROUP middleware
+        | before ROUTE middleware. The `auth-surface` group carries the session stack,
+        | `ValidateCsrfToken`, `ResolvePrincipal` and `RefuseDeviceToken` — so every refusal
+        | those four produce happened BEFORE any bucket was consulted, and was therefore
+        | never counted. Driven, 100 requests per form:
+        |
+        |   GET  /v1/auth/me with a valid device token  -> 100 x 403, ZERO 429s,
+        |                                                  each costing a Redis session
+        |                                                  read/write and one
+        |                                                  personal_access_tokens SELECT
+        |   GET  /v1/auth/me with `Bearer zzz|q`        -> 100 x 422, ZERO 429s, each
+        |                                                  costing a FAILED Postgres
+        |                                                  statement -- and needing no
+        |                                                  credential at all
+        |   POST /v1/auth/login with no CSRF token      -> 100 x 419, ZERO 429s, each
+        |                                                  creating a new Redis session key
+        |                                                  with a 120-minute TTL
+        |
+        | The last one is the attack: an unauthenticated caller fills the session store, and
+        | Redis is also the limiter's own backend — `RateLimit` fails OPEN when it cannot
+        | reach Redis, so filling it removes every bucket in the project (`R-027`).
+        |
+        | SO THIS BUCKET RUNS FIRST IN THE GROUP, before the session is even started. That
+        | is the ordering `bootstrap/app.php` already documents for the `api` group — "the
+        | limiter runs FIRST so an unauthenticated flood costs the limiter and not the
+        | resolver" — applied to the surface that was missing it.
+        |
+        | GENEROUS ON PURPOSE, and it double-counts with the per-route buckets. Both are
+        | deliberate: this one bounds the paths the per-route buckets cannot see, while the
+        | tight ones (a bcrypt at 10/min, a six-digit code at 5/min) stay the policy. The
+        | `api` group does exactly this — `RateLimit` with no argument at the front, plus
+        | `pager-create` on the route — so the shape is the project's own and not new here.
+        |
+        | Per-IP only, for `R-063`'s reason and one more: it runs before the session starts,
+        | so there is no tenant to key on even in principle.
+        */
+        'auth-surface' => [
+            'per_ip' => ['attempts' => 120, 'seconds' => 60],
+        ],
+
         'pager-token' => [
             'per_ip' => ['attempts' => 30, 'seconds' => 60],
         ],

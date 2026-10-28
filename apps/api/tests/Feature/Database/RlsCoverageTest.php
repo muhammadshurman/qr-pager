@@ -120,7 +120,7 @@ it('pins the global allowlist as an exact set, not just a consistent one', funct
     //                           §4 › Tenancy forbids without a rank-2 edit first.
     //
     // The common sentence is "it must be readable before a tenant is known", which is
-    // true of all three and is exactly the sentence an attacker would also like to be
+    // true of both and is exactly the sentence an attacker would also like to be
     // true, so a reviewer should push on it rather than take it from here.
     expect(GLOBAL_TABLES)->toBe([
         'failed_jobs',

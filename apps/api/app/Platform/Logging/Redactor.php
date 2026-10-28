@@ -51,7 +51,24 @@ final class Redactor
      *
      * @var list<string>
      */
-    private const NOT_SECRET_KEYS = ['sqlstate'];
+    private const NOT_SECRET_KEYS = [
+        'sqlstate',
+        // ADDED after the `§11` review of Task 5's fix diff found the opposite of a leak.
+        //
+        // `RefuseDeviceToken` logs the refused token's ROW ID so an operator knows which
+        // kitchen screen to revoke. `token_id` contains the `token` needle, so the one datum
+        // the line exists for came out as `[redacted]` on every channel -- measured against
+        // captured output. The previous form carried the id in the exception MESSAGE, which
+        // `message()` does not scrub, so the change to a structured warning silently lost it.
+        //
+        // ARGUED FOR, as this list's docblock requires: a token's primary key is not the
+        // credential. The credential is the plaintext, which exists only in the issuing
+        // response and never again in this process, and the sha256 of it, which lives in the
+        // `token` column -- still covered, because `token` is not on this list. An id is what
+        // `DELETE /v1/devices/{id}` takes, i.e. exactly what an operator needs and what a
+        // holder of the token already has.
+        'token_id',
+    ];
 
     private const SECRET_KEYS = [
         'password', 'secret', 'token', 'credential', 'verifier', 'authorization',
@@ -82,6 +99,18 @@ final class Redactor
         // with no trace, so PHP's argument capture never sees them. A latent gap closed
         // while it is still latent, rather than a leak fixed after one.
         'recovery', 'challenge',
+        // AND THE ONE THAT CARRIES THE SECRET WITHOUT THE WORD IN ITS NAME, found at the
+        // §11 review of the fix diff (SEC M-3). `two_factor_secret` matches `secret` and
+        // `two_factor_recovery_codes` matches `recovery` -- but `qr_code_url` matches
+        // nothing, and its value is `otpauth://totp/...?secret=<THE SECRET>`. That is the
+        // key TwoFactorController::enable actually emits, one field away from the one that
+        // IS redacted. Measured by calling Redactor::context() on the real enable payload:
+        // `secret` [redacted], `qr_code_url` verbatim.
+        //
+        // `qr_code` covers `qr_code_url` and Fortify's own `qr_code_svg`; `otpauth` covers
+        // a bare `otpauth_url`. `bearer` is here for the same reason `authorization`
+        // already is -- the header's name is covered and the scheme's was not.
+        'qr_code', 'otpauth', 'bearer',
     ];
 
     public function message(string $message): string
