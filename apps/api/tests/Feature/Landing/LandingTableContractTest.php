@@ -23,12 +23,6 @@ use Illuminate\Support\Str;
  * it is the half of the named invariant that is not about RLS at all.
  */
 
-/** The SQLSTATE a closure's QueryException carries, or null if it did not throw. */
-function landingSqlState(TestCase $case, callable $callback): ?string
-{
-    return $case->sqlStateOf($callback);
-}
-
 it('refuses a media key that names another tenants prefix, even as owner with the bypass on', function (): void {
     $alpha = $this->makeTenant();
     $beta = $this->makeTenant();

@@ -49,4 +49,35 @@ return [
 
     'preview_cache_control' => 'no-store, no-cache, must-revalidate, max-age=0',
 
+    /*
+    |--------------------------------------------------------------------------
+    | The two lifecycle drivers (decision D7, SR-2)
+    |--------------------------------------------------------------------------
+    |
+    | `local` runs here: a zone file the developer can edit and a recorded issuance
+    | with a delay. `system` resolves TXT records through the real resolver, which is
+    | what runs wherever DNS resolves. `aws` is Task 13's and is deliberately ABSENT
+    | rather than stubbed -- a binding that resolved to a class which does nothing
+    | would be the dead control §4a records four of. Asking for it fails loudly and
+    | names the task that owns it.
+    |
+    */
+
+    'dns_driver' => env('LANDING_DNS_DRIVER', 'local'),
+
+    'certificate_driver' => env('LANDING_CERTIFICATE_DRIVER', 'local'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | How long the local issuer stays pending
+    |--------------------------------------------------------------------------
+    |
+    | Zero by default so the suite is not slow. It exists because §12.3 has a "still
+    | issuing, {minutes} minutes so far" state, and an issuer that answered instantly
+    | would make that state unreachable and its copy untestable.
+    |
+    */
+
+    'local_certificate_delay' => (int) env('LANDING_LOCAL_CERTIFICATE_DELAY', 0),
+
 ];

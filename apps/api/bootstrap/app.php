@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Http\ProblemType;
+use App\Features\Landing\Console\AdvanceDomainsCommand;
 use App\Features\Landing\Console\ExportLandingSchemaCommand;
 use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
@@ -194,6 +195,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // committed artifact. What keeps it honest is `--check`, which bin/gate and CI
         // both run, so the file cannot go stale without something going red.
         ExportLandingSchemaCommand::class,
+        // Task 7's domain lifecycle, per tenant. NOT scheduled, and that is not R-058's
+        // shape: a scheduler entry would have to name a tenant and there is no "the
+        // tenant" at schedule time. SR-3 and R-130 carry the argument.
+        AdvanceDomainsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request

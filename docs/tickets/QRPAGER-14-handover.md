@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — publish and the XSS fuzz suite are in and green; domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
+STATUS: TASK-7 BLOCKED — the domain lifecycle and the redirect are in and green; the `/studio` panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -96,7 +96,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 3 | Block schema, generated contract, `landing-schema-check` | **done** | *this commit* | yes |
 | 4 | Media library — upload validation, isolation | **done** | *this commit* | yes |
 | 5 | Publish — render, snapshot, pointer, manifest | **done** | *this commit* | yes |
-| 6 | Domains — DNS verification, issuance, redirect | not started | — | — |
+| 6 | Domains — DNS verification, issuance, redirect | **done** | *this commit* | yes |
 | 7 | The `/studio` panel | not started | — | — |
 | 8 | `composer guard` rule 11 — theme tokens | not started | — | — |
 | 9 | Gates: gate log, coverage, fresh clone, rollback, three runs | not started | — | — |
@@ -118,7 +118,7 @@ empty row is an unmet clause, not an unwritten one.
 | publish produces a statically rendered, CDN-cached page | `LandingPublishTest` — the object exists, its bytes hash to the recorded checksum, and `ContentType` and `Cache-Control` are read back out of the store through `headObject`. The CDN's own behaviour is Task 13's and is not claimed | *this commit* |
 | an unpublished draft is not reachable | — | — |
 | a tenant cannot inject script through any block | `LandingXssFuzzTest` — 46 payloads into every text field of every block, asserted structurally by PARSING the output (no script, iframe, object, embed, base, form, `on*`, `javascript:`/`data:` URL, or `url()` in the theme attribute) while the payload is still present as text; the non-text fields refuse all 46; the fuzz paths are checked against `BlockSchema` so the sweep cannot go stale | *this commit* |
-| custom domain issues TLS automatically and the old domain redirects | — | — |
+| custom domain issues TLS automatically and the old domain redirects | `DomainLifecycleTest` + `DomainRedirectTest` — the lifecycle walks one step per call and never skips one; `active` is unreachable without a verified challenge and a recorded certificate, falsified from the service, the transition table and the owner connection with the bypass GUC on; the superseded hostname stops serving the page and serves a canonical + meta-refresh + link document. **SR-2 bounds this: no ACM certificate is demonstrated, and a static object cannot send a 301 — a real 301 at the edge is Task 13's** | *this commit* |
 | theme overrides tokens only, never components | — | — |
 | an upload is validated by real content type and size, not by extension | `MediaUploadTest` — an HTML file called `logo.png` is refused naming `text/html`; the five types round-trip through the real composed store; the stored extension comes from the detected type, not the filename; empty, 5 MB and 21 hostile SVGs refused | *this commit* |
 | one tenant's asset path cannot be guessed or reached from another | `MediaIsolationTest` — RLS, the two key CHECKs, identical refusals for foreign and absent ids, and a reflection assertion that no public method takes an object key from a caller | *this commit* |
