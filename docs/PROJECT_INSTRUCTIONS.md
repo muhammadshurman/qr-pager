@@ -27,12 +27,14 @@ Everything in the archive that is still binding has already been absorbed into t
 | Auth | Fortify + Sanctum + WebAuthn passkeys + 2FA |
 | Runtime | Octane (FrankenPHP) |
 | Push | `minishlink/web-push` (VAPID) |
-| Object storage | S3 (`league/flysystem-aws-s3-v3`); MinIO locally — see `docs/adr/002-storage-and-mail.md` |
+| Object storage | S3 (`league/flysystem-aws-s3-v3`); SeaweedFS locally — see `docs/adr/004-local-object-store.md` |
 | Transactional mail | Amazon SES; Mailpit locally — see `docs/adr/002-storage-and-mail.md` |
 | Monorepo | pnpm workspaces — `apps/api` (Laravel), `apps/web` (PWA + staff), `apps/site` (public renderer), `packages/{tokens,ui,contracts}` — see `docs/adr/003-monorepo-and-frontend-tooling.md` |
 | Tests | PHP: Pest 5 + PHPUnit 13 (real Postgres + Redis) — see `docs/adr/001-pest-5.md`. TypeScript: **Vitest**. E2E: Playwright. Load: k6 |
 | IaC | Terraform — VPC (3 AZ), ECS Fargate, Aurora PG (PITR), ElastiCache, S3, SES, ALB, CloudFront, WAF, Shield, Secrets Manager, CloudWatch + X-Ray |
 | CI/CD | GitHub Actions + OIDC to AWS (no stored keys) |
+
+**Local stand-ins for production services are locked to an interface, not a vendor.** Production is what the table above names and never changes without an ADR. The local stand-in for a production service must speak that service's API, be pullable anonymously from a public registry by a fresh clone holding no credentials, and run from a pinned tag — never `latest`. When a named stand-in stops meeting those conditions, that is an ADR superseding the row, written with the measurement that forced it, not a substitution made in passing. A stand-in is development and test infrastructure only: nothing under `apps/` may depend on which one is running, and a test that proves a stand-in works must round-trip through the production client library, never check that a port is open.
 
 Verify every library API by running code in-session. Never from memory. If a version has moved, read the primary changelog before choosing.
 
