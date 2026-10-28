@@ -165,7 +165,16 @@ for needle in \
   'function platform_audit_log_is_append_only secdef=f' \
   'table tenant_provisionings rls=f' \
   'table tenant_statistics rls=f' \
-  'table platform_audit_log rls=f'
+  'table platform_audit_log rls=f' \
+  'table landing_pages rls=t force=t' \
+  'table media_assets rls=t force=t' \
+  'table tenant_domains rls=t force=t' \
+  'policy landing_pages.tenant_isolation_landing_pages' \
+  'policy landing_pages.owner_bypass_landing_pages' \
+  'policy media_assets.tenant_isolation_media_assets' \
+  'policy media_assets.owner_bypass_media_assets' \
+  'policy tenant_domains.tenant_isolation_tenant_domains' \
+  'policy tenant_domains.owner_bypass_tenant_domains'
 do
   grep -q "$needle" "$before" \
     || { echo "missing from the schema: $needle" >&2; exit 1; }
@@ -199,6 +208,52 @@ grep -E '^grant qrpager_app users\.(is_platform_admin|password|remember_token|tw
 # line appear.
 grep -qE 'grant qrpager_app users.is_platform_admin INSERT' "$before" \
   && { echo "a narrowed grant is back in the schema: users.is_platform_admin INSERT" >&2; exit 1; }
+
+# ================================================================================
+# TASK 7's TWO REVOKES, AND THE WORKER HOLDING NOTHING ON ITS THREE TABLES
+# ================================================================================
+#
+# qrpager_owner OWNS these tables, so Postgres grants it every privilege implicitly and
+# "no role gets DELETE on landing_pages" / "no UPDATE on media_assets" are false of the
+# owner until revoked. The migration revokes both; this is what fails if a later one
+# hands either back.
+#
+# ⚠ ASKED OF THE CATALOG AND NOT OF THE FINGERPRINT, and the comment above says why for
+# DELETE: information_schema.column_privileges carries SELECT/INSERT/UPDATE/REFERENCES
+# only, so a DELETE line can never appear there and step 5's byte-identical fingerprint
+# is blind to it. The owner's UPDATE is asked the same way for consistency -- one
+# instrument for one question beats two that disagree about coverage.
+#
+# And SR-3: qrpager_worker is granted NOTHING on any of the three. The ticket's §6.1
+# granted it SELECT on two of them to serve a polling sweep that §4 › Tenancy does not
+# allow and that was therefore never built.
+for spec in 'qrpager_owner:landing_pages:DELETE' \
+            'qrpager_owner:media_assets:UPDATE' \
+            'qrpager_worker:landing_pages:SELECT' \
+            'qrpager_worker:media_assets:SELECT' \
+            'qrpager_worker:tenant_domains:SELECT' \
+            'qrpager_worker:landing_pages:INSERT' \
+            'qrpager_worker:tenant_domains:UPDATE'; do
+  role="${spec%%:*}"; rest="${spec#*:}"; table="${rest%%:*}"; priv="${rest##*:}"
+  held=$(psql_as_root -d "$probe" -tAc \
+    "select has_table_privilege('$role', '$table', '$priv')")
+  [ "$held" = "f" ] \
+    || { echo "Task 7: $role holds $priv on $table, which the migration revokes or never grants" >&2; exit 1; }
+  echo "$role $priv on $table: $held (expected f)"
+done
+
+# The positive control for the block above: the APP role does hold what it is granted, so
+# these checks are not all answering f because the tables are missing.
+for spec in 'qrpager_app:landing_pages:SELECT' \
+            'qrpager_app:media_assets:INSERT' \
+            'qrpager_app:tenant_domains:UPDATE'; do
+  role="${spec%%:*}"; rest="${spec#*:}"; table="${rest%%:*}"; priv="${rest##*:}"
+  held=$(psql_as_root -d "$probe" -tAc \
+    "select has_table_privilege('$role', '$table', '$priv')")
+  [ "$held" = "t" ] \
+    || { echo "Task 7: $role does NOT hold $priv on $table -- the absence checks above are vacuous" >&2; exit 1; }
+  echo "$role $priv on $table: $held (expected t)"
+done
 
 # The table-level ones are asked of the catalog directly, which is where they live.
 for spec in 'passkeys:DELETE'; do

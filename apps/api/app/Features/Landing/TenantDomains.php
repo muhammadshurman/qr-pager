@@ -7,6 +7,7 @@ namespace App\Features\Landing;
 use App\Domain\Landing\CertificateIssuer;
 use App\Domain\Landing\DnsVerifier;
 use App\Domain\Landing\DomainStatus;
+use App\Platform\Database\DriverError;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\View;
@@ -79,7 +80,14 @@ final class TenantDomains
                 // it". The message says only that it is unavailable -- never which
                 // tenant, and never anything about them -- so the refusal discloses no
                 // more than `dig` already would.
-                if ($e->getCode() === '23505') {
+                //
+                // ⚠ DriverError::sqlState() AND NOT getCode(), which is the trap
+                // `§4 › Postgres traps` names and R-013 measured: QueryException::getCode()
+                // is the integer 7 for every connection-level failure, so a comparison
+                // against it would read `08006` as "not a unique violation" by luck
+                // rather than by reading the code. The first version of this method used
+                // getCode().
+                if (DriverError::sqlState($e) === DriverError::UNIQUE_VIOLATION) {
                     throw new DomainRefused('that hostname is not available');
                 }
 
