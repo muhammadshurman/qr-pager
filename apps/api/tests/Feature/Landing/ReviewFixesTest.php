@@ -562,5 +562,72 @@ it('refuses to finish a publish whose row changed underneath it', function (): v
     }
 
     // The row is what the unpublish left it, not what the publish wanted.
-    expect($pages->state($tenant)['status']->value)->toBe('draft');
+    expect($pages->state($tenant)['status']->value)->toBe('draft')
+        // ⚠ AND NOTHING IS LIVE, which this case did NOT assert and which is the whole
+        // point of it. Round 2 of the fix diff's review found that the guard refuses one
+        // phase AFTER the pointer write, so the refused publish left the page serving
+        // with the row at `draft` -- and `unpublish()`'s early return then made that
+        // permanent. The test reached the broken state and never looked at it.
+        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($pages->platformHostname($tenant))))
+        ->toBeFalse('a refused publish left a page live that no row records');
+});
+
+it('serialises publish against unpublish for one tenant, so neither can interleave', function (): void {
+    // ROUND 2's INVARIANT FAILURE, closed at the cause rather than at the symptom. A
+    // guard could not fix it: the switch happens one phase before the guard runs. A row
+    // lock would mean holding a transaction across the object writes, which is the High
+    // the phase split exists to fix. A SESSION-level advisory lock serialises the two
+    // and holds no transaction.
+    $tenant = $this->makeTenant(slug: 'serialised');
+    $pages = new LandingPages;
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+
+    // The lock is taken on the `pgsql` connection, so a second holder on ANOTHER
+    // connection must block. `pg_try_advisory_lock` from the owner connection tells us
+    // whether it is held, without waiting.
+    $held = null;
+
+    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation) use (&$held, $tenant): void {
+        if ($operation === 'put' && $held === null) {
+            $objectId = crc32($tenant);
+            $objectId = $objectId > 2147483647 ? $objectId - 4294967296 : $objectId;
+
+            $held = ! (bool) DB::connection('pgsql_owner')->selectOne(
+                'select pg_try_advisory_lock(?, ?) as got',
+                [LandingPages::LOCK_CLASS, $objectId],
+            )->got;
+
+            if (! $held) {
+                DB::connection('pgsql_owner')->statement(
+                    'select pg_advisory_unlock(?, ?)',
+                    [LandingPages::LOCK_CLASS, $objectId],
+                );
+            }
+        }
+    });
+
+    Storage::set('s3', $recorder);
+
+    try {
+        $pages->publish($tenant);
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    expect($held)->toBeTrue('the publish did not hold its tenant lock while writing objects');
+
+    // And it is RELEASED afterwards, so a second publish is not blocked for the life of
+    // the connection -- a session lock that leaks is worse than no lock.
+    $objectId = crc32($tenant);
+    $objectId = $objectId > 2147483647 ? $objectId - 4294967296 : $objectId;
+
+    $free = (bool) DB::connection('pgsql_owner')->selectOne(
+        'select pg_try_advisory_lock(?, ?) as got',
+        [LandingPages::LOCK_CLASS, $objectId],
+    )->got;
+
+    DB::connection('pgsql_owner')->statement('select pg_advisory_unlock(?, ?)', [LandingPages::LOCK_CLASS, $objectId]);
+
+    expect($free)->toBeTrue('the publish lock was not released');
 });

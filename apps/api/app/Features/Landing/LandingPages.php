@@ -7,6 +7,7 @@ namespace App\Features\Landing;
 use App\Domain\Landing\LandingDocument;
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Domain\Landing\LandingPageStatus;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -57,6 +58,14 @@ use Throwable;
  */
 final class LandingPages
 {
+    /**
+     * The advisory-lock class for this feature's per-tenant publish lock.
+     *
+     * 7 for Task 7. Two-argument advisory locks occupy a space of their own, so this
+     * cannot collide with any single-key lock in the repository however it hashes.
+     */
+    public const LOCK_CLASS = 7;
+
     public function __construct(
         private readonly LandingRenderer $renderer = new LandingRenderer,
         private readonly MediaLibrary $media = new MediaLibrary,
@@ -138,6 +147,11 @@ final class LandingPages
      * @throws PublishFailed
      */
     public function publish(string $tenantId): PublishedPage
+    {
+        return $this->withPublishLock($tenantId, fn (): PublishedPage => $this->publishUnderLock($tenantId));
+    }
+
+    private function publishUnderLock(string $tenantId): PublishedPage
     {
         // ---- PHASE 1: one short transaction, no network inside it. ----------------
         /** @var array{seen: string, document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
@@ -244,6 +258,19 @@ final class LandingPages
             $row = $this->row($tenantId);
 
             if ((string) ($row->publishedAt ?? '').'|'.$row->status->value !== $plan['seen']) {
+                // ⚠ THE POINTER IS REMOVED BEFORE THIS THROWS. The switch happened one
+                // phase ago, so refusing on its own would leave a page live that no row
+                // records -- which is exactly what round 2 of the fix diff's review
+                // found, and it is the first clause of the named invariant. Taking the
+                // pointer down is the only action that keeps "nothing unrecorded is
+                // reachable" true; the snapshot beside it has a name nobody knows.
+                //
+                // With the per-tenant advisory lock around publish and unpublish this
+                // branch is unreachable from this application -- the two serialise --
+                // so it stands for a row changed out of band, and it chooses a brief
+                // outage over serving something no row claims.
+                MediaLibrary::disk()->delete(PublishedSite::pointer($hostname));
+
                 throw new PublishFailed(
                     'your page changed while it was publishing; nothing was published, try again'
                 );
@@ -291,6 +318,13 @@ final class LandingPages
      * site down, it does not delete their images.
      */
     public function unpublish(string $tenantId): void
+    {
+        $this->withPublishLock($tenantId, function () use ($tenantId): void {
+            $this->unpublishUnderLock($tenantId);
+        });
+    }
+
+    private function unpublishUnderLock(string $tenantId): void
     {
         withTenant($tenantId, function () use ($tenantId): void {
             $row = $this->row($tenantId);
@@ -447,7 +481,63 @@ final class LandingPages
     }
 
     /**
-     * Every site prefix this tenant may have published to, newest first.
+     * Serialise publish and unpublish for ONE tenant, without holding a transaction.
+     *
+     * ================================================================================
+     * WHY A LOCK AND NOT A GUARD -- THE ROUND-2 INVARIANT FAILURE
+     * ================================================================================
+     *
+     * `publish()` writes the pointer in phase 2 and checks in phase 3 whether the row
+     * moved underneath it. Round 1 of the fix diff's review asked for that check and
+     * round 2 found what it actually produced: the check runs AFTER the switch, so an
+     * `unpublish()` landing between the phases left the page LIVE and the row at
+     * `draft` -- and `unpublish()` returns early when the status is not `published`, so
+     * nothing could ever take it down again. An unpublished page, reachable, permanently.
+     * That is the first clause of this task's named invariant, and it was introduced by
+     * the fix for a Medium.
+     *
+     * A guard cannot close it, because the damage is done one phase before the guard
+     * runs. A row lock would close it and would mean holding a transaction across the
+     * object writes -- which is the High that the phase split exists to fix. So: a
+     * SESSION-level advisory lock, which serialises the two operations per tenant and
+     * holds no transaction at all.
+     *
+     * TWO-ARGUMENT, so it lives in a different lock space from every one-argument key
+     * in this repository -- `TestCase::SUITE_LOCK_KEY` and `tenancy.bootstrap_lock_key`
+     * are both single-key locks and cannot collide with these whatever they hash to.
+     *
+     * RELEASED IN A `finally`, and if the process dies first the connection closing
+     * releases it -- which is the property a session lock has and a row lock does not.
+     *
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @return TReturn
+     */
+    private function withPublishLock(string $tenantId, Closure $callback): mixed
+    {
+        $connection = DB::connection('pgsql');
+        $objectId = self::lockObjectId($tenantId);
+
+        $connection->statement('select pg_advisory_lock(?, ?)', [self::LOCK_CLASS, $objectId]);
+
+        try {
+            return $callback();
+        } finally {
+            $connection->statement('select pg_advisory_unlock(?, ?)', [self::LOCK_CLASS, $objectId]);
+        }
+    }
+
+    /** A tenant id as a signed 32-bit advisory-lock object id. */
+    private static function lockObjectId(string $tenantId): int
+    {
+        $hash = crc32($tenantId);
+
+        return $hash > 2147483647 ? $hash - 4294967296 : $hash;
+    }
+
+    /**
+     * Every site prefix this tenant may have published to.
      *
      * The hostname currently recorded on the row, every hostname in `tenant_domains`
      * (an `active` one is the current target and a `redirecting` one is a superseded
