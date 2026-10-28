@@ -1,0 +1,109 @@
+migration-rollback-proof: using the psql inside the compose postgres service
+migration-rollback-proof: database [qrpager_final_rollback] on 127.0.0.1
+
+=== 1. apply from empty, one batch ===
+
+   INFO  Preparing database.  
+
+  Creating migration table ....................................... 8.34ms DONE
+
+   INFO  Running migrations.  
+
+  2026_10_25_150000_create_global_tables ........................ 20.62ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 60.08ms DONE
+  2026_10_25_150200_enable_row_level_security .................... 7.50ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 5.73ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 2.34ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 2.54ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 1.45ms DONE
+  2026_10_28_120000_create_auth_contract ........................ 25.74ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 1.87ms DONE
+  2026_10_28_140000_narrow_auth_grants ........................... 1.66ms DONE
+
+distinct batches: 1 (expected 1)
+
+=== 2. a second apply is a no-op ===
+
+   INFO  Nothing to migrate.  
+
+
+=== 3. this task's objects are present ===
+fingerprint lines: 499
+grant lines for this task's tables: 67
+grant qrpager_app passkeys.created_at INSERT
+grant qrpager_app passkeys.created_at SELECT
+grant qrpager_app passkeys.credential INSERT
+grant qrpager_app passkeys.credential SELECT
+grant qrpager_app passkeys.credential_id INSERT
+grant qrpager_app passkeys.credential_id SELECT
+grant qrpager_app passkeys.id INSERT
+grant qrpager_app passkeys.id SELECT
+grant qrpager_app passkeys.last_used_at SELECT
+grant qrpager_app passkeys.last_used_at UPDATE
+grant qrpager_app passkeys.name INSERT
+grant qrpager_app passkeys.name SELECT
+grant qrpager_app passkeys.name UPDATE
+grant qrpager_app passkeys.updated_at INSERT
+grant qrpager_app passkeys.updated_at SELECT
+grant qrpager_app passkeys.updated_at UPDATE
+grant qrpager_app passkeys.user_id INSERT
+grant qrpager_app passkeys.user_id SELECT
+grant qrpager_app personal_access_tokens.abilities INSERT
+grant qrpager_app personal_access_tokens.abilities SELECT
+grant qrpager_app personal_access_tokens.created_at INSERT
+grant qrpager_app personal_access_tokens.created_at SELECT
+grant qrpager_app personal_access_tokens.expires_at INSERT
+grant qrpager_app personal_access_tokens.expires_at SELECT
+grant qrpager_app personal_access_tokens.id INSERT
+grant qrpager_app personal_access_tokens.id SELECT
+grant qrpager_app personal_access_tokens.last_used_at SELECT
+grant qrpager_app personal_access_tokens.last_used_at UPDATE
+grant qrpager_app personal_access_tokens.name INSERT
+grant qrpager_app personal_access_tokens.name SELECT
+grant qrpager_app personal_access_tokens.token INSERT
+grant qrpager_app personal_access_tokens.token SELECT
+grant qrpager_app personal_access_tokens.tokenable_id INSERT
+grant qrpager_app personal_access_tokens.tokenable_id SELECT
+grant qrpager_app personal_access_tokens.tokenable_type INSERT
+grant qrpager_app personal_access_tokens.tokenable_type SELECT
+grant qrpager_app personal_access_tokens.updated_at INSERT
+grant qrpager_app personal_access_tokens.updated_at SELECT
+grant qrpager_app personal_access_tokens.updated_at UPDATE
+grant qrpager_app users.is_platform_admin SELECT
+grant qrpager_app users.password INSERT
+grant qrpager_app users.password UPDATE
+grant qrpager_app users.remember_token INSERT
+grant qrpager_app users.remember_token UPDATE
+grant qrpager_app users.two_factor_confirmed_at INSERT
+grant qrpager_app users.two_factor_confirmed_at SELECT
+grant qrpager_app users.two_factor_confirmed_at UPDATE
+grant qrpager_app users.two_factor_recovery_codes INSERT
+grant qrpager_app users.two_factor_recovery_codes UPDATE
+grant qrpager_app users.two_factor_secret INSERT
+grant qrpager_app users.two_factor_secret UPDATE
+qrpager_app DELETE on passkeys: f (expected f)
+policy pager_sessions.worker_expires_sessions cmd=w roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status]))) check=(status = 'expired'::pager_status)
+policy pager_sessions.worker_reads_expired_sessions cmd=r roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status, 'expired'::pager_status]))) check=-
+
+=== 4. rollback runs clean ===
+
+   INFO  Rolling back migrations.  
+
+  2026_10_28_140000_narrow_auth_grants ........................... 4.76ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 1.19ms DONE
+  2026_10_28_120000_create_auth_contract ......................... 7.04ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 1.58ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 2.64ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 1.77ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 3.98ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 12.69ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 19.09ms DONE
+  2026_10_25_150000_create_global_tables ......................... 5.48ms DONE
+
+tables left: 1 (expected 1, the migrations table)
+functions left: 0 (expected 0 -- the resolver and the audit trigger are both dropped)
+
+=== 5. a re-apply returns the identical schema ===
+schema identical after rollback and re-apply
+
+migration-rollback-proof: all five checks passed on [qrpager_final_rollback].
