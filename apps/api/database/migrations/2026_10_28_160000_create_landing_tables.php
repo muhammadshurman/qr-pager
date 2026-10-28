@@ -78,14 +78,31 @@ return new class extends Migration
                         AND published_at       IS NOT NULL)
                 ),
 
-                -- 256 KB, §6.5's stated bound, as a constraint rather than a comment.
-                -- octet_length over the text form: jsonb's own storage is compressed and
-                -- pg_column_size would measure the compression rather than the document.
+                -- 256 KB is §6.5's bound and LandingDocument::fromInput() is where it is
+                -- ENFORCED; these two are the backstop, and they are deliberately 50%
+                -- looser so that the validator is always the first to fire.
+                --
+                -- ⚠ THE TWO COUNT DIFFERENT THINGS, which is why the margin exists.
+                -- `jsonb::text` renders a space after every `:` and every `,`, and PHP's
+                -- json_encode does not -- measured in this project's container,
+                -- octet_length('{"a":1,"b":[1,2,3]}'::jsonb::text) is 24 against 19 for
+                -- the same literal. At 256 KB exactly that is a couple of KB of
+                -- separators, so a document the validator accepted could still raise
+                -- 23514 here: the tenant would get a driver error instead of §12.1's
+                -- named refusal, which is the defect the validator was added to remove,
+                -- one order of magnitude closer to the limit. Found by the §11 review of
+                -- the fix diff, round 1.
+                --
+                -- 393216 = 1.5 x 262144. The separator expansion cannot approach 50% --
+                -- it is two bytes per key or element against the bytes of the key and
+                -- value themselves -- so the validator fires first for every document
+                -- that can exist, and this constraint keeps its job: catching a writer
+                -- that never went through the validator at all.
                 CONSTRAINT landing_pages_draft_is_bounded CHECK (
-                    octet_length(draft_document::text) <= 262144
+                    octet_length(draft_document::text) <= 393216
                 ),
                 CONSTRAINT landing_pages_published_is_bounded CHECK (
-                    published_document IS NULL OR octet_length(published_document::text) <= 262144
+                    published_document IS NULL OR octet_length(published_document::text) <= 393216
                 ),
                 CONSTRAINT landing_pages_checksum_is_sha256 CHECK (
                     published_checksum IS NULL OR published_checksum ~ '^[0-9a-f]{64}$'

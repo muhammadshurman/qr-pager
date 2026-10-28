@@ -44,6 +44,18 @@ final class LandingFixtures
         if (! $client->doesBucketExist($bucket)) {
             $client->createBucket(['Bucket' => $bucket]);
         }
+
+        // ⚠ AND THE STORE IS EMPTIED, which it was not. The container holds no volume,
+        // but it outlives a single `php artisan test`, so `sites/` and `media/`
+        // accumulated across RUNS -- measured at 30 snapshots under one hostname -- and
+        // the hostnames these tests use are fixed strings. A test asserting what is at
+        // `sites/one.example.test/index.html` was therefore reading whatever the last
+        // run left there, which is cross-run shared state of exactly the kind
+        // TestCase::RESETTABLE exists to prevent one layer down. It hid a real defect
+        // for one run: a re-publish that silently did nothing still left the PREVIOUS
+        // run's correct page in place.
+        $disk->deleteDirectory('sites');
+        $disk->deleteDirectory('media');
     }
 
     /**

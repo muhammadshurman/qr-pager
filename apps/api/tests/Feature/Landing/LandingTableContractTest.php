@@ -202,10 +202,20 @@ it('allows one landing page per tenant and refuses the second', function (): voi
     expect($this->sqlStateOf($insert))->toBe('23505');
 });
 
-it('refuses a draft document over 256 KB', function (): void {
+it('refuses a draft document over the columns backstop, which is looser than the validators bound', function (): void {
+    // ⚠ THE TWO BOUNDS ARE DIFFERENT ON PURPOSE. 256 KB is the product rule and
+    // `LandingDocument::fromInput()` enforces it; this CHECK is 384 KB and exists to
+    // catch a writer that never went through the validator at all.
+    //
+    // The margin is not slack, it is a UNIT difference: `jsonb::text` renders a space
+    // after every `:` and every `,` and PHP's json_encode does not, so the same document
+    // measures longer here than it does there. At equal limits a document the validator
+    // accepted could still raise 23514 -- the tenant getting a driver error instead of
+    // §12.1's named refusal, which is the defect the validator was added to remove.
+    // Found by the §11 review of the fix diff, round 1.
     $tenant = $this->makeTenant();
 
-    $oversized = json_encode(['blocks' => [], 'pad' => str_repeat('a', 262200)], JSON_THROW_ON_ERROR);
+    $oversized = json_encode(['blocks' => [], 'pad' => str_repeat('a', 393300)], JSON_THROW_ON_ERROR);
 
     expect($this->sqlStateOf(fn () => withTenant($tenant, fn () => DB::connection('pgsql_owner')
         ->table('landing_pages')->insert([
@@ -213,6 +223,17 @@ it('refuses a draft document over 256 KB', function (): void {
             'tenant_id' => $tenant,
             'draft_document' => $oversized,
         ]), 'pgsql_owner')))->toBe('23514');
+
+    // And a document the VALIDATOR would refuse is still accepted by the column, which
+    // is what "the validator always fires first" means and is the thing the margin buys.
+    $underBackstop = json_encode(['blocks' => [], 'pad' => str_repeat('a', 300000)], JSON_THROW_ON_ERROR);
+
+    expect($this->sqlStateOf(fn () => withTenant($tenant, fn () => DB::connection('pgsql_owner')
+        ->table('landing_pages')->insert([
+            'id' => (string) Str::uuid7(),
+            'tenant_id' => $tenant,
+            'draft_document' => $underBackstop,
+        ]), 'pgsql_owner')))->toBeNull();
 });
 
 it('refuses every path to active that has not earned it', function (): void {

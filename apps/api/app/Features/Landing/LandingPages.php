@@ -38,7 +38,14 @@ use Throwable;
  * A failure at 1-5 leaves the live page and the database on the previous publish. A
  * failure at 6 does the same, because nothing before it is reachable: `{checksum}.html`
  * has a name nobody knows and the assets sit beside a pointer that still names the old
- * page. Steps 1-7 are inside one transaction, so a failure at 7 rolls the row back too.
+ * page.
+ *
+ * ⚠ THEY ARE NOT ALL IN ONE TRANSACTION, and this sentence said they were until the §11
+ * QA review. Steps 1-3 are one short transaction, steps 3-6 hold NO transaction at all,
+ * and step 7 is a second short one -- see publish()'s own docblock for why, which is
+ * that holding a connection idle across the object writes ran into
+ * `idle_in_transaction_session_timeout`. A failure at 7 therefore leaves the pointer
+ * switched, which is the residual the next paragraph is about.
  *
  * ⚠ THE ONE RESIDUAL, STATED RATHER THAN LEFT TO BE FOUND: if the pointer write succeeds
  * and then the COMMIT fails, the live page is the new one while the row still says the
@@ -133,7 +140,7 @@ final class LandingPages
     public function publish(string $tenantId): PublishedPage
     {
         // ---- PHASE 1: one short transaction, no network inside it. ----------------
-        /** @var array{document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
+        /** @var array{seen: string, document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
         $plan = withTenant($tenantId, function () use ($tenantId): array {
             $row = $this->row($tenantId);
 
@@ -174,6 +181,7 @@ final class LandingPages
             }
 
             return [
+                'seen' => (string) ($row->publishedAt ?? '').'|'.$row->status->value,
                 'document' => $document,
                 'hostname' => $this->hostnameInScope($tenantId),
                 'tenantName' => (string) DB::table('tenants')->where('id', $tenantId)->value('name'),
@@ -222,7 +230,25 @@ final class LandingPages
         // ---- PHASE 3: one short transaction. The database is the last word. -------
         $publishedAt = now();
 
-        withTenant($tenantId, function () use ($tenantId, $document, $checksum, $hostname, $publishedAt): void {
+        withTenant($tenantId, function () use ($tenantId, $plan, $document, $checksum, $hostname, $publishedAt): void {
+            // ⚠ GUARDED ON WHAT PHASE 1 SAW. The phases are three transactions now, so
+            // an unpublish or a domain activation can land between them -- and an
+            // unguarded UPDATE would then write `published` over a row somebody had just
+            // taken down, leaving a live pointer and a row that disagrees with it. The
+            // window existed before the split too and the split widened it. Found by the
+            // §11 review of the fix diff, round 1.
+            //
+            // A refusal here leaves the OBJECTS written and the row untouched, which is
+            // the safe direction: the bytes are unreachable without a pointer this
+            // transaction did not write, and the next publish converges.
+            $row = $this->row($tenantId);
+
+            if ((string) ($row->publishedAt ?? '').'|'.$row->status->value !== $plan['seen']) {
+                throw new PublishFailed(
+                    'your page changed while it was publishing; nothing was published, try again'
+                );
+            }
+
             DB::table('landing_pages')->where('tenant_id', $tenantId)->update([
                 'status' => LandingPageStatus::Published->value,
                 'published_document' => $this->encode($document->toArray()),
@@ -273,9 +299,34 @@ final class LandingPages
                 return;
             }
 
+            // ⚠ EVERY HOSTNAME THIS TENANT HAS EVER PUBLISHED TO, not just the current
+            // one. A domain switch leaves the superseded hostname serving a redirect --
+            // which is the point -- but `republish()` only OVERWRITES index.html and
+            // manifest.json there, so every earlier `{checksum}.html` and every copied
+            // asset survives under `sites/{old}/`. Deleting only `published_hostname`
+            // left those fetchable by exact URL after a take-down, to anyone who had
+            // recorded a name while the site was live. Found by the §11 review of the
+            // fix diff, round 1.
+            foreach ($this->publishedPrefixes($tenantId, $row->publishedHostname) as $prefix) {
+                if (MediaLibrary::disk()->deleteDirectory($prefix) === false) {
+                    throw new PublishFailed('your site could not be taken down; your page is unchanged');
+                }
+            }
+
             // The whole prefix, pointer and manifest and every snapshot and every copied
             // asset -- everything the CDN would serve for this hostname.
-            MediaLibrary::disk()->deleteDirectory(PublishedSite::root($row->publishedHostname));
+            //
+            // ⚠ THE RETURN VALUE IS CHECKED, AND IT WAS NOT. The s3 disk is configured
+            // `'throw' => false`, so a failed deleteDirectory returns FALSE and raises
+            // nothing -- the identical trap this file already documents for `put()` two
+            // methods down, missed on the one path whose whole job is to make a page
+            // unreachable. A transient store failure left index.html serving the full
+            // page while the row said `draft`, and the guard above (`status !==
+            // Published -> return`) then made every retry a no-op, so there was no way
+            // left to take it down. Found by the §11 review of the fix diff, round 1.
+            //
+            // Thrown BEFORE the row is updated, so the row stays `published` and a retry
+            // still has something to do.
 
             DB::table('landing_pages')->where('tenant_id', $tenantId)->update([
                 'status' => LandingPageStatus::Draft->value,
@@ -352,7 +403,13 @@ final class LandingPages
      */
     public function platformHostname(string $tenantId): string
     {
-        $slug = withTenant($tenantId, static fn () => DB::table('tenants')->where('id', $tenantId)->value('slug'));
+        return withTenant($tenantId, fn (): string => $this->platformHostnameInScope($tenantId));
+    }
+
+    /** The same answer for a caller that has already opened the scope. */
+    private function platformHostnameInScope(string $tenantId): string
+    {
+        $slug = (string) DB::table('tenants')->where('id', $tenantId)->value('slug');
 
         return $slug.'.'.config('landing.platform_domain');
     }
@@ -387,6 +444,30 @@ final class LandingPages
         $slug = (string) DB::table('tenants')->where('id', $tenantId)->value('slug');
 
         return $slug.'.'.config('landing.platform_domain');
+    }
+
+    /**
+     * Every site prefix this tenant may have published to, newest first.
+     *
+     * The hostname currently recorded on the row, every hostname in `tenant_domains`
+     * (an `active` one is the current target and a `redirecting` one is a superseded
+     * target that still has objects under it), and the platform fallback the first
+     * publish always went to. De-duplicated, because they overlap by design.
+     *
+     * @return list<string>
+     */
+    private function publishedPrefixes(string $tenantId, string $publishedHostname): array
+    {
+        $hostnames = [$publishedHostname, $this->platformHostnameInScope($tenantId)];
+
+        foreach (DB::table('tenant_domains')->pluck('hostname') as $hostname) {
+            $hostnames[] = (string) $hostname;
+        }
+
+        return array_values(array_unique(array_map(
+            static fn (string $hostname): string => PublishedSite::root($hostname),
+            array_unique($hostnames),
+        )));
     }
 
     /** The row, created on first touch. One per tenant -- UNIQUE (tenant_id). */

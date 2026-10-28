@@ -24,15 +24,28 @@ use Illuminate\Contracts\Filesystem\Filesystem;
  */
 final class RecordingDisk implements Filesystem
 {
-    /** @param Closure(string): void $observe */
+    /**
+     * @param  Closure(string): mixed  $observe
+     * @param  array<string, mixed>  $answers  operations to answer with a fixed value
+     *                                         INSTEAD of delegating -- for driving the
+     *                                         `'throw' => false` failure paths, where
+     *                                         the real disk returns false rather than
+     *                                         raising and there is no other way to make
+     *                                         it do so on demand.
+     */
     public function __construct(
         private readonly Filesystem $inner,
         private readonly Closure $observe,
+        private readonly array $answers = [],
     ) {}
 
     public function put($path, $contents, $options = []): mixed
     {
         ($this->observe)('put');
+
+        if (array_key_exists('put', $this->answers)) {
+            return $this->answers['put'];
+        }
 
         return $this->inner->put($path, $contents, $options);
     }
@@ -55,6 +68,10 @@ final class RecordingDisk implements Filesystem
     public function deleteDirectory($directory): bool
     {
         ($this->observe)('deleteDirectory');
+
+        if (array_key_exists('deleteDirectory', $this->answers)) {
+            return (bool) $this->answers['deleteDirectory'];
+        }
 
         return $this->inner->deleteDirectory($directory);
     }

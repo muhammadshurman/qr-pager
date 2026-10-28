@@ -118,8 +118,11 @@ class StudioPanelProvider extends PanelProvider
             // said otherwise, and no test could tell a 403 from the controller apart
             // from a 401 from the middleware -- so a refactor that moved the guard would
             // have opened the draft with the suite still green. Found by the §11
-            // security review, 2026-10-28; StudioPanelInvariantTest now reads the
-            // middleware list off the router and asserts it.
+            // security review, 2026-10-28; ReviewFixesTest now reads the
+            // middleware list off the router and asserts Authenticate is on every /studio
+            // route. (This comment named StudioPanelInvariantTest, which does not contain
+            // that assertion -- a citation to a control that is not where it says, which
+            // is the shape R-136 was raised for, in the same pass that raised it.)
             //
             // A second consequence closed with it: with Authenticate absent,
             // $request->user() resolved through config('auth.defaults.guard') rather

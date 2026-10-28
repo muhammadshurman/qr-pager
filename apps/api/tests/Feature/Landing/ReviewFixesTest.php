@@ -17,6 +17,7 @@ use App\Features\Landing\LocalCertificateIssuer;
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\MediaRejected;
 use App\Features\Landing\PublishedSite;
+use App\Features\Landing\PublishFailed;
 use App\Features\Landing\TenantDomains;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\Support\ImageFixtures;
 use Tests\Support\LandingFixtures;
+use Tests\Support\RecordingDisk;
 use Tests\Support\StubMediaReferences;
 
 /*
@@ -332,8 +334,11 @@ it('accepts an upload of exactly 5 MB and refuses one byte more', function (): v
     $tenant = $this->makeTenant(slug: 'boundary');
     $png = ImageFixtures::png();
 
-    // A PNG padded with a trailing comment chunk is still a PNG to libmagic and still
-    // decodes, so the only thing varying between these two cases is one byte of size.
+    // A PNG padded with trailing NUL bytes. libmagic reads the signature and
+    // getimagesizefromstring reads the IHDR, so both still call it a PNG and the only
+    // thing varying between these two cases is ONE BYTE of length. (The comment here
+    // said "a trailing comment chunk", which these bytes are not -- the §11 review of
+    // the fix diff read the comment against the code.)
     $pad = InspectedImage::MAX_BYTES - strlen($png);
 
     $atLimit = $png.str_repeat("\x00", $pad);
@@ -345,4 +350,217 @@ it('accepts an upload of exactly 5 MB and refuses one byte more', function (): v
 
     expect(fn () => (new MediaLibrary)->store($tenant, 'one-more.png', $overLimit))
         ->toThrow(MediaRejected::class, 'the limit is 5 MB');
+});
+
+/*
+ * ================================================================================
+ * ROUND 1 OF THE FIX DIFF'S OWN REVIEW — §11's Round limit, 1 of at most 2
+ * ================================================================================
+ *
+ * "The fixes they produce are code nobody has read, so a fix diff is reviewed too."
+ * 16 findings; the two Highs are below, with the Mediums that changed behaviour.
+ */
+
+it('leaves the page published when the take-down fails, instead of reporting success', function (): void {
+    // ROUND 1, HIGH #1. deleteDirectory()'s result was discarded on a disk configured
+    // `'throw' => false` -- the identical trap this file's sibling already documents for
+    // put(). A transient store failure left index.html serving the page while the row
+    // said `draft`, and the `status !== Published -> return` guard then made every retry
+    // a no-op, so nothing could take it down again.
+    $tenant = $this->makeTenant(slug: 'stubborn');
+    $pages = new LandingPages;
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+    $published = $pages->publish($tenant);
+
+    $refusing = new RecordingDisk(MediaLibrary::disk(), static fn (): null => null, [
+        'deleteDirectory' => false,
+    ]);
+
+    Storage::set('s3', $refusing);
+
+    try {
+        expect(fn () => $pages->unpublish($tenant))
+            ->toThrow(PublishFailed::class, 'could not be taken down');
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    // THE ROW IS STILL PUBLISHED, so a retry has something to do -- and the page is
+    // still there, which is the honest state rather than a lie in either direction.
+    expect($pages->state($tenant)['status']->value)->toBe('published')
+        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeTrue();
+
+    // And the real disk takes it down.
+    $pages->unpublish($tenant);
+    expect(MediaLibrary::disk()->allFiles(PublishedSite::root($published->hostname)))->toBe([]);
+});
+
+it('holds no transaction open while ACTIVATING a domain, not just while publishing', function (): void {
+    // ROUND 1, HIGH #2. `republish()` was called from inside advance()'s withTenant(),
+    // and TenantContext::run() RE-ENTERS rather than opening a second transaction when a
+    // scope is already in force -- so publish()'s "no transaction" phase ran inside the
+    // activation's transaction, and the fix was true of one caller and false of the
+    // other. The existing recorder test drives publish() directly and could not see it.
+    $tenant = $this->makeTenant(slug: 'activating');
+    $pages = new LandingPages;
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+    $pages->publish($tenant);
+
+    $service = domainService();
+    $id = $service->add($tenant, 'activating.example.test');
+    $challenge = $service->challenge($tenant, $id);
+    FixtureDnsVerifier::publish($challenge['name'], $challenge['value']);
+
+    $service->advance($tenant, $id);
+    $service->advance($tenant, $id);
+
+    $levels = [];
+    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation) use (&$levels): void {
+        $levels[] = $operation.'@'.DB::connection('pgsql')->transactionLevel();
+    });
+
+    Storage::set('s3', $recorder);
+
+    try {
+        expect($service->advance($tenant, $id))->toBe(DomainStatus::Active);
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    expect($levels)->not->toBe([], 'activation wrote no objects at all');
+
+    foreach ($levels as $seen) {
+        expect($seen)->toEndWith('@0', "activation ran an object operation inside a transaction: {$seen}");
+    }
+
+    // And it really did move the page, which is what makes the assertion above about
+    // the right writes rather than about an activation that did nothing.
+    expect(MediaLibrary::disk()->get(PublishedSite::pointer('activating.example.test')))
+        ->toContain('https://activating.example.test/');
+});
+
+it('clears every hostname this tenant published to, not just the current one', function (): void {
+    // ROUND 1, MEDIUM #5. A domain switch leaves the superseded hostname serving a
+    // redirect, and `republish()` overwrites only index.html and manifest.json there --
+    // so every earlier {checksum}.html and every copied asset survived under
+    // sites/{old}/, and unpublish deleted only `published_hostname`.
+    $tenant = $this->makeTenant(slug: 'two-homes');
+    $pages = new LandingPages;
+    $service = domainService();
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+    $platform = $pages->publish($tenant)->hostname;
+
+    foreach (['home-one.example.test', 'home-two.example.test'] as $hostname) {
+        $id = $service->add($tenant, $hostname);
+        $challenge = $service->challenge($tenant, $id);
+        FixtureDnsVerifier::publish($challenge['name'], $challenge['value']);
+        $service->advance($tenant, $id);
+        $service->advance($tenant, $id);
+        $service->advance($tenant, $id);
+    }
+
+    // All three prefixes hold something: the platform fallback, the superseded domain
+    // (a redirect plus its old snapshots) and the live one.
+    foreach ([$platform, 'home-one.example.test', 'home-two.example.test'] as $hostname) {
+        expect(MediaLibrary::disk()->allFiles(PublishedSite::root($hostname)))
+            ->not->toBe([], "nothing under sites/{$hostname} before the take-down");
+    }
+
+    $pages->unpublish($tenant);
+
+    foreach ([$platform, 'home-one.example.test', 'home-two.example.test'] as $hostname) {
+        expect(MediaLibrary::disk()->allFiles(PublishedSite::root($hostname)))
+            ->toBe([], "sites/{$hostname} still holds objects after the take-down");
+    }
+});
+
+it('derives the transition it checks from the row, so the check can actually fail', function (): void {
+    // ROUND 1, MEDIUM #3. assertTransition() was called with two compile-time constants
+    // at every site, so the predicate was a statement about the table alone and could
+    // never fail for any row -- a change-detector moved out of a test and into
+    // production, which is what its own docblock criticises.
+    $tenant = $this->makeTenant(slug: 'derived');
+    $service = domainService();
+
+    // A row in `active`, whose next write on the dns_verified path would be
+    // `active -> dns_verified` -- a move the table forbids.
+    $id = (string) Str::uuid7();
+    $now = now()->toIso8601String();
+
+    // Seeded at `dns_verified` and not at `certificate_pending`: the local issuer keeps
+    // a ledger, and a row placed straight into `certificate_pending` has never had a
+    // certificate REQUESTED, so `issued()` answers null and the domain holds there. That
+    // is the issuer behaving correctly and it is not what this case is about.
+    withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenant_domains')->insert([
+        'id' => $id, 'tenant_id' => $tenant, 'hostname' => 'derived.example.test',
+        'verification_token' => bin2hex(random_bytes(16)),
+        'status' => DomainStatus::DnsVerified->value, 'dns_verified_at' => $now,
+    ]), 'pgsql_owner');
+
+    // dns_verified -> certificate_pending -> active, both legal, which proves the guard
+    // is not simply refusing everything.
+    expect($service->advance($tenant, $id))->toBe(DomainStatus::CertificatePending);
+    expect($service->advance($tenant, $id))->toBe(DomainStatus::Active);
+
+    // A SECOND domain, activated, which demotes the first to `redirecting` -- the one
+    // transition in this lifecycle that a row's CURRENT status decides rather than the
+    // arm it entered. `tenant_domains_redirecting_has_a_target` refuses a redirect with
+    // no target, so this is also the only way to reach that state legally; an earlier
+    // draft of this case forced it by hand and the constraint refused it, correctly.
+    $second = $service->add($tenant, 'derived-two.example.test');
+    $challenge = $service->challenge($tenant, $second);
+    FixtureDnsVerifier::publish($challenge['name'], $challenge['value']);
+
+    $service->advance($tenant, $second);
+    $service->advance($tenant, $second);
+    expect($service->advance($tenant, $second))->toBe(DomainStatus::Active);
+
+    // The first is now `redirecting`, and advancing it is a no-op arm.
+    expect($service->advance($tenant, $id))->toBe(DomainStatus::Redirecting);
+
+    // ⚠ WHAT THIS CASE CAN AND CANNOT SHOW, stated rather than implied. Every arm the
+    // service can reach makes a LEGAL move, so the guard cannot be driven to refuse
+    // from outside without first introducing the defect it exists to catch -- which is
+    // the property we want, and which means no assertion here can watch it fire. What
+    // IS shown is that `$from` is the row's own status at every call site (the demotion
+    // above passes `DomainStatus::from($previous->status)`, not a literal), and that the
+    // guard admits every legal transition rather than refusing everything. The round-1
+    // finding was that the ARGUMENTS were constants; they are not now.
+    $reflection = new ReflectionMethod(TenantDomains::class, 'assertTransition');
+    expect($reflection->getNumberOfParameters())->toBe(2);
+});
+
+it('refuses to finish a publish whose row changed underneath it', function (): void {
+    // ROUND 1, MEDIUM #6. publish() is three transactions now, so an unpublish between
+    // phase 1 and phase 3 would otherwise have `published` written back over a row
+    // somebody had just taken down.
+    $tenant = $this->makeTenant(slug: 'raced');
+    $pages = new LandingPages;
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+    $pages->publish($tenant);
+
+    // The interleave, forced: the disk's pointer write is where another actor lands.
+    $raced = false;
+    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation) use (&$raced, $pages, $tenant): void {
+        if ($operation === 'put' && ! $raced) {
+            $raced = true;
+            $pages->unpublish($tenant);
+        }
+    });
+
+    Storage::set('s3', $recorder);
+
+    try {
+        expect(fn () => $pages->publish($tenant))
+            ->toThrow(PublishFailed::class, 'changed while it was publishing');
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    // The row is what the unpublish left it, not what the publish wanted.
+    expect($pages->state($tenant)['status']->value)->toBe('draft');
 });

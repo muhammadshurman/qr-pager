@@ -128,7 +128,20 @@ final class TenantDomains
      */
     public function advance(string $tenantId, string $domainId): DomainStatus
     {
-        return withTenant($tenantId, function () use ($tenantId, $domainId): DomainStatus {
+        // ⚠ THE SCOPE CLOSES BEFORE ANY OBJECT IS WRITTEN, and it did not. `republish()`
+        // was called from inside this `withTenant()`, and `TenantContext::run()`
+        // RE-ENTERS rather than opening a second transaction when a scope is already in
+        // force for the same tenant on the same connection -- so `LandingPages::publish()`
+        // ran its "no transaction" phase inside THIS transaction, and the fix that moved
+        // the object writes out of a transaction was true of one caller and false of the
+        // other. Up to 29 store operations against
+        // `idle_in_transaction_session_timeout = 15s`. Found by the §11 review of the
+        // fix diff, round 1, which also noted that the recorder test drives `publish()`
+        // directly and so could not see this path.
+        //
+        // The scope now returns what to do NEXT, and the doing happens after it closes.
+        /** @var array{status: DomainStatus, republish: ?array{previous: ?string, hostname: string}} $outcome */
+        $outcome = withTenant($tenantId, function () use ($domainId): array {
             $row = DB::table('tenant_domains')->where('id', $domainId)->first();
 
             if ($row === null) {
@@ -141,9 +154,9 @@ final class TenantDomains
             $hostname = (string) $row->hostname;
 
             return match ($status) {
-                DomainStatus::PendingDns => $this->checkDns($domainId, $hostname, (string) $row->verification_token),
-                DomainStatus::DnsVerified => $this->requestCertificate($domainId, $hostname),
-                DomainStatus::CertificatePending => $this->activateIfIssued($tenantId, $domainId, $hostname),
+                DomainStatus::PendingDns => ['status' => $this->checkDns($status, $domainId, $hostname, (string) $row->verification_token), 'republish' => null],
+                DomainStatus::DnsVerified => ['status' => $this->requestCertificate($status, $domainId, $hostname), 'republish' => null],
+                DomainStatus::CertificatePending => $this->activateIfIssued($status, $domainId, $hostname),
                 // Nothing to advance. `active` is where a domain is meant to end up, and
                 // `redirecting` is a superseded domain still doing its job.
                 //
@@ -155,9 +168,17 @@ final class TenantDomains
                 // which is what §6.6's table prescribes -- so the arm was unreachable
                 // AND wrong, and the §11 QA review found both. The state is now a
                 // documented no-op and its unreachability is R-137.
-                DomainStatus::Active, DomainStatus::Redirecting, DomainStatus::Failed => $status,
+                DomainStatus::Active, DomainStatus::Redirecting, DomainStatus::Failed => ['status' => $status, 'republish' => null],
             };
         });
+
+        // OUTSIDE the scope: the page moves to the new hostname and the old one starts
+        // redirecting. Both are object writes and neither holds a connection.
+        if ($outcome['republish'] !== null) {
+            $this->republish($tenantId, $outcome['republish']['previous'], $outcome['republish']['hostname']);
+        }
+
+        return $outcome['status'];
     }
 
     /**
@@ -195,7 +216,7 @@ final class TenantDomains
         ));
     }
 
-    private function checkDns(string $domainId, string $hostname, string $token): DomainStatus
+    private function checkDns(DomainStatus $from, string $domainId, string $hostname, string $token): DomainStatus
     {
         $verified = $this->dns->verify($hostname, $token);
         $now = now();
@@ -215,7 +236,7 @@ final class TenantDomains
             return DomainStatus::PendingDns;
         }
 
-        $this->assertTransition(DomainStatus::PendingDns, DomainStatus::DnsVerified);
+        $this->assertTransition($from, DomainStatus::DnsVerified);
 
         DB::table('tenant_domains')->where('id', $domainId)->update([
             'status' => DomainStatus::DnsVerified->value,
@@ -228,11 +249,11 @@ final class TenantDomains
         return DomainStatus::DnsVerified;
     }
 
-    private function requestCertificate(string $domainId, string $hostname): DomainStatus
+    private function requestCertificate(DomainStatus $from, string $domainId, string $hostname): DomainStatus
     {
         $this->certificates->request($hostname);
 
-        $this->assertTransition(DomainStatus::DnsVerified, DomainStatus::CertificatePending);
+        $this->assertTransition($from, DomainStatus::CertificatePending);
 
         $now = now();
 
@@ -245,7 +266,10 @@ final class TenantDomains
         return DomainStatus::CertificatePending;
     }
 
-    private function activateIfIssued(string $tenantId, string $domainId, string $hostname): DomainStatus
+    /**
+     * @return array{status: DomainStatus, republish: ?array{previous: ?string, hostname: string}}
+     */
+    private function activateIfIssued(DomainStatus $from, string $domainId, string $hostname): array
     {
         $identifier = $this->certificates->issued($hostname);
 
@@ -257,7 +281,7 @@ final class TenantDomains
                 'updated_at' => now(),
             ]);
 
-            return DomainStatus::CertificatePending;
+            return ['status' => DomainStatus::CertificatePending, 'republish' => null];
         }
 
         $now = now();
@@ -270,10 +294,10 @@ final class TenantDomains
             ->where('id', '!=', $domainId)
             ->first();
 
-        $this->assertTransition(DomainStatus::CertificatePending, DomainStatus::Active);
+        $this->assertTransition($from, DomainStatus::Active);
 
         if ($previous !== null) {
-            $this->assertTransition(DomainStatus::Active, DomainStatus::Redirecting);
+            $this->assertTransition(DomainStatus::from((string) $previous->status), DomainStatus::Redirecting);
 
             DB::table('tenant_domains')->where('id', $previous->id)->update([
                 'status' => DomainStatus::Redirecting->value,
@@ -292,13 +316,15 @@ final class TenantDomains
             'updated_at' => $now,
         ]);
 
-        // The page moves to the new hostname, and the old one starts redirecting. Both
-        // are object writes, and both are after the database has committed to the new
-        // state -- an object that is written and then rolled back is an orphan, while a
-        // row that is committed without its object is repaired by the next publish.
-        $this->republish($tenantId, $previous === null ? null : (string) $previous->hostname, $hostname);
-
-        return DomainStatus::Active;
+        // Handed back to advance(), which runs it AFTER this scope closes: an object
+        // write inside the transaction is what the §11 review of the fix diff found.
+        return [
+            'status' => DomainStatus::Active,
+            'republish' => [
+                'previous' => $previous === null ? null : (string) $previous->hostname,
+                'hostname' => $hostname,
+            ],
+        ];
     }
 
     /**
@@ -314,6 +340,12 @@ final class TenantDomains
      * So the table is now the guard, which is what `TenantProvisioning` already does
      * with `ProvisioningStatus` one task over. A divergence is an exception here rather
      * than a row in an impossible state.
+     *
+     * ⚠ `$from` IS THE ROW'S ACTUAL STATUS, not a literal. The first version passed two
+     * compile-time constants at every call site, so the predicate was a statement about
+     * the table alone and could never fail for any row -- a change-detector moved out of
+     * a test and into production, which is the very thing this docblock criticises. The
+     * §11 review of the fix diff caught it in the same pass that introduced it.
      */
     private function assertTransition(DomainStatus $from, DomainStatus $to): void
     {
@@ -333,9 +365,21 @@ final class TenantDomains
      */
     private function republish(string $tenantId, ?string $previousHostname, string $hostname): void
     {
-        $page = DB::table('landing_pages')->where('tenant_id', $tenantId)->first();
+        // ⚠ ITS OWN SHORT SCOPE. This method now runs OUTSIDE advance()'s transaction --
+        // which is the point of the change that moved it there -- so a bare query on
+        // `landing_pages` has no tenant context and the scope guard refuses it before it
+        // reaches Postgres. The first version of this fix did exactly that, and the
+        // failure was silent in the worst way: the read returned nothing, `$page` was
+        // null, and the re-publish was skipped, so a domain went `active` with no page
+        // at its new hostname. Caught by DomainRedirectTest.
+        //
+        // One short transaction for the read; `publish()` below opens its own, and the
+        // object writes after it hold none.
+        $published = withTenant($tenantId, static fn (): bool => (string) DB::table('landing_pages')
+            ->where('tenant_id', $tenantId)
+            ->value('status') === 'published');
 
-        if ($page !== null && (string) $page->status === 'published') {
+        if ($published) {
             // A failure here must not undo the activation: the certificate is real and
             // the row is correct, and the page is one `publish` away from being right.
             // Swallowed deliberately, with the reason, as TenantContext::assertScopeSurvived

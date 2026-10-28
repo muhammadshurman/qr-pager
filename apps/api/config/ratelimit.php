@@ -67,6 +67,17 @@ return [
             // share one. It is well above a person typing and well below what a script
             // needs to make the upload and publish paths expensive.
             //
+            // ⚠ WHICH STACK EACH HALF RUNS ON, because the first version of this comment
+            // claimed the tenant half covered `/studio`'s own routes and it does not.
+            // `RateLimit:panel` is deliberately the FIRST middleware on the panel stack,
+            // before StartSession (Task 6's security H-2 -- an anonymous 401 must not
+            // mint a Redis session key), so `$request->user()` cannot resolve there and
+            // the resolver answers null: on the page routes only the per-IP half counts.
+            // The per-tenant half bites on `POST /livewire-<hash>/update`, because the
+            // same bucket is APPENDED to the `web` group -- and that is the surface the
+            // bound is for, since every upload, publish and domain poll arrives over it.
+            // R-143, found by the §11 review of the fix diff.
+            //
             // The platform panel is unaffected: a platform admin resolves to no tenant,
             // so only the per-IP half applies there, which is what it had before.
             'per_tenant' => ['attempts' => 600, 'seconds' => 60],

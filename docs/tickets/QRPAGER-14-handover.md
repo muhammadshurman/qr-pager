@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — both `§11` reviews are in (29 findings) and dispositioned in one pass; the tag is waiting on the fix diff's own review and a re-run of the gates.
+STATUS: TASK-7 BLOCKED — three reviews done (45 findings, 35 fixed, 10 into `§5`) and the invariant holds; the tag is waiting on a re-run of every `§6` gate at the final commit.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -75,7 +75,14 @@ recorded certificate.**
 
 ---
 
-## 2a. ⚠ THE NAMED INVARIANT FAILED AT REVIEW AND HOLDS AFTER THE FIX PASS
+## 2a. ⚠ THE NAMED INVARIANT FAILED AT REVIEW AND HOLDS AFTER THE FIX PASSES
+
+**Three reviews, 45 findings, two fix passes.** The `§11` QA and Security pair found 29 (1 Critical,
+4 High); the fix diff's own review — `§11`'s round 1 of the 2 it permits — found 16 more, **both of
+its Highs inside the fixes themselves**. 35 fixed with a regression test, 10 accepted into `§5` as
+`R-134`…`R-143`. The invariant holds at the end, and the reviewer who said it failed is the reason
+it does.
+
 
 The `§11` security review falsified two of its three clauses on measured evidence, and both were
 reproduced in this session before the verdict was accepted. The QA review, running concurrently,
@@ -120,7 +127,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 9 | Gates: gate log, coverage, fresh clone, rollback, three runs | **done** | *this commit* | yes |
 | 10 | `§11` QA + Security, concurrently | **done** — 29 findings: QA 18 (0C 2H 7M 9L) · Security 11 (1C 2H 4M 4L) | — | — |
 | 11 | Disposition and the fix pass | **done** — 22 fixed with a regression test, 7 into `§5` (`R-134`…`R-140`) | *this commit* | yes |
-| 12 | Review of the fix diff (at most twice) | not started | — | — |
+| 12 | Review of the fix diff (`§11` round 1 of 2) | **done** — 16 findings (0C 2H 6M 8L), both Highs in the fixes; 13 fixed, 3 into `§5` (`R-141`…`R-143`) | *this commit* | yes |
 | 13 | `PLAN.md §0`, `§4a`, `§5` | **done** (re-checked after the reviews) | *this commit* | yes |
 | 14 | Tag `task-7`, pushed | not started | — | — |
 

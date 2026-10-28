@@ -70,14 +70,32 @@ class DomainsPage extends Page
         return app(LandingPages::class)->platformHostname(TenantPanelAccess::tenantId());
     }
 
-    /** @return array{name: string, type: string, value: string} */
+    /**
+     * The TXT record for one domain, or an empty record set.
+     *
+     * ⚠ IT RETURNS RATHER THAN THROWING, and it threw until the §11 review of the fix
+     * diff. Every public method on a Livewire component is reachable from
+     * `POST /livewire-<hash>/update`, so a crafted call answered 500 here while its
+     * sibling `advance()` answered a notification -- the same inconsistency the uuid
+     * guards were added for, re-introduced one method over in the pass that added them.
+     * Nothing was disclosed (the message is identical for malformed, unknown and
+     * foreign), but a 500 is not an answer.
+     *
+     * @return array{name: string, type: string, value: string}
+     */
     public function challenge(string $domainId): array
     {
+        $empty = ['name' => '', 'type' => 'TXT', 'value' => ''];
+
         if (! Str::isUuid($domainId)) {
-            throw new DomainRefused('that domain is not on your account');
+            return $empty;
         }
 
-        return app(TenantDomains::class)->challenge(TenantPanelAccess::tenantId(), $domainId);
+        try {
+            return app(TenantDomains::class)->challenge(TenantPanelAccess::tenantId(), $domainId);
+        } catch (DomainRefused) {
+            return $empty;
+        }
     }
 
     /** How long a certificate has been pending, for §12.3's "slow" state. */
