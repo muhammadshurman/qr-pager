@@ -63,7 +63,19 @@ return [
             'bucket' => env('AWS_BUCKET'),
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            // filter_var and not the skeleton's bare env(), because the AWS SDK's
+            // ClientResolver type-checks this one and nothing upstream guarantees a bool.
+            // Illuminate\Support\Env converts the STRINGS 'true' and 'false' and leaves
+            // everything else alone, and two of the three places that set this value do not
+            // go through a .env file at all: PHPUnit normalises <env value="true"/> to the
+            // string "1" (measured 2026-10-28 -- `Invalid configuration value provided for
+            // "use_path_style_endpoint". Expected bool, but got string(1) "1"`, thrown before
+            // a single object moved), and a container env var is always a string. ECS task
+            // definitions are the production form of exactly that.
+            'use_path_style_endpoint' => filter_var(
+                env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+                FILTER_VALIDATE_BOOLEAN
+            ),
             'throw' => false,
             'report' => false,
         ],

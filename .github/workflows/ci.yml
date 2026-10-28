@@ -231,7 +231,33 @@ jobs:
           PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
             -c "alter system set log_statement = 'ddl'" -c "select pg_reload_conf()"
 
-      - name: Tests against real Postgres and Redis
+      # Mailpit (`R-125`) and the object store (`ADR-004`) come from the project's own
+      # compose file rather than from `services:` above, and the reason is mechanical: a
+      # GitHub Actions service container takes an image and `options:` and CANNOT take a
+      # command line, while `objectstore` needs `server -s3 -dir=/data`. The runtime job
+      # below already starts Postgres and Redis this way, so this is the established form
+      # here rather than a new one.
+      #
+      # It also means CI cannot drift from what a clone gets: the image, the pinned tag, the
+      # published ports, the credentials and the healthchecks have ONE source. `--wait`
+      # blocks on those healthchecks, so the suite cannot race a starting service.
+      #
+      # WITHOUT THIS STEP THE SUITE IS RED HERE AND GREEN LOCALLY. LocalMailCatcherTest and
+      # LocalObjectStoreTest both fail rather than skip when their service is absent, which
+      # is the property they exist for -- 3 of 5 cases each, `cURL error 7` and
+      # `Connection refused`. CI had never evaluated either: pushes to this branch trigger
+      # nothing (`on.push.branches` is `main` and `task-*`), so the first verdict would have
+      # arrived on the PR into main, which is the shape `R-001` and the 2026-10-26 trigger
+      # change exist to prevent.
+      #
+      # Postgres and Redis stay as service containers above: they are up before the job's
+      # first step, and their provenance difference from `compose.yaml` is already recorded
+      # (`R-059` -- CI reads no compose command line, which is why no test asserts one).
+      - name: The local mail catcher and object store, from the project's own compose file
+        working-directory: .
+        run: docker compose -f compose.yaml up -d --wait mailpit objectstore
+
+      - name: Tests against real Postgres and Redis, Mailpit and the object store
         run: php artisan test
 
       - name: No role verifier reached the Postgres log, across the whole run
