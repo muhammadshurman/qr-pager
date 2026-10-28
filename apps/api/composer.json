@@ -85,7 +85,10 @@
         "guard": "@php guard/bin/guard",
         "openapi": "@php artisan scramble:export",
         "openapi:check": "bin/openapi-check",
-        "gate": "bin/gate"
+        "gate": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/gate"
+        ]
     },
     "extra": {
         "laravel": {

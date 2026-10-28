@@ -68,7 +68,18 @@ function panelRoutes(): array
     foreach (Route::getRoutes() as $route) {
         $uri = '/'.ltrim($route->uri(), '/');
 
-        if (! str_starts_with($uri, '/platform')) {
+        // ⚠ THE LIVEWIRE ENDPOINT IS IN THE SET, which QA M-2 found it was not. The filter
+        // was `/platform` alone, so `POST /livewire-<hash>/update` was excluded -- and
+        // EVERY table search, sort, paginate and modal submit in this panel goes through
+        // that one route. "A panel route with no case fails the suite" was therefore true
+        // of the four document routes and false of the busiest one.
+        //
+        // Matched by pattern because the prefix is derived from APP_KEY and differs per
+        // installation; RouteSurfaceTest asserts the pattern still matches the live routes.
+        $isPanel = str_starts_with($uri, '/platform')
+            || preg_match('#^/livewire-[0-9a-f]{8}/update$#', $uri) === 1;
+
+        if (! $isPanel) {
             continue;
         }
 
@@ -137,12 +148,20 @@ it('enumerates the panel routes, so the cases below have a subject', function ()
     expect($routes)->not->toBe([])
         // The four the panel mounts today. Stated as an exact set so a FIFTH route arrives
         // in this diff rather than silently joining the surface the invariant is about.
-        ->and($routes)->toBe([
+        // The four document routes, pinned exactly, plus the Livewire endpoint whose path
+        // carries an installation-specific hash and is therefore pinned by shape.
+        ->and(array_values(array_filter($routes, static fn (array $r): bool => str_starts_with($r[1], '/platform'))))
+        ->toBe([
             ['GET', '/platform'],
             ['GET', '/platform/audit-log'],
             ['GET', '/platform/restaurants'],
             ['POST', '/platform/logout'],
         ]);
+
+    $livewire = array_values(array_filter($routes, static fn (array $r): bool => str_contains($r[1], 'livewire-')));
+
+    expect($livewire)->toHaveCount(1, 'the Livewire update endpoint is not in the enumeration')
+        ->and($livewire[0][0])->toBe('POST');
 });
 
 it('reaches NO tenant table on any panel route, as a platform admin', function (): void {
@@ -179,6 +198,7 @@ it('reaches NO tenant table on any panel route, as a platform admin', function (
     );
 
     $failures = [];
+    $statuses = [];
 
     foreach (panelRoutes() as [$method, $uri]) {
         $statements = [];
@@ -204,13 +224,35 @@ it('reaches NO tenant table on any panel route, as a platform admin', function (
                 .implode(' | ', $offending);
         }
 
-        // Status recorded only so a failure message can carry it.
-        expect($response->getStatusCode())->toBeLessThan(500, "{$method} {$uri} answered a server error");
+        // ⚠ THE STATUS CHECK IS NOT HERE ANY MORE (QA M-1). It used to sit in this loop,
+        // and under a revert that made the panel query `tenants` the red arrived from IT
+        // rather than from the `$failures` assertion below -- because the runtime scope
+        // guard refuses an unscoped statement before it is sent, so the listener never
+        // fired. The listener half of the invariant's proof had therefore never been seen
+        // red while `§3.1` row 6 attributed the whole proof to it.
+        //
+        // Two assertions about two different things now live in two different cases, so a
+        // failure names which one broke. The status is covered by its own case below, and
+        // the LISTENER is covered by revert C in bin/provisioning-revert-proof.
+        $statuses[$method.' '.$uri] = $response->getStatusCode();
     }
 
     // ONE assertion with every offender named, rather than one per route: a failure here is
     // "something reached a tenant table" and the only useful next question is "what".
     expect($failures)->toBe([], implode("\n", $failures));
+});
+
+it('answers every panel route without a server error, as a platform admin', function (): void {
+    // SPLIT OUT OF THE CASE ABOVE (QA M-1). It is a different property -- "the panel works"
+    // rather than "the panel touches no tenant table" -- and while the two shared a case, a
+    // revert that broke the second was reported by the first. A failure must name which
+    // claim it falsified.
+    $admin = platformAdmin();
+
+    foreach (panelRoutes() as [$method, $uri]) {
+        expect($this->actingAs($admin)->call($method, $uri)->getStatusCode())
+            ->toBeLessThan(500, "{$method} {$uri} answered a server error");
+    }
 });
 
 it('answers every panel route to an anonymous caller without reaching a tenant table', function (): void {

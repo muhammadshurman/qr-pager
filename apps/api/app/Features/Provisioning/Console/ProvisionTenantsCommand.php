@@ -50,19 +50,30 @@ use Throwable;
 final class ProvisionTenantsCommand extends Command
 {
     protected $signature = 'platform:provision-tenants
-                            {--limit=25 : How many requests to drain in one pass}';
+                            {--limit=25 : How many requests to drain in one pass}
+                            {--retry-stalled= : Reclaim one row left at running or exhausted, by id}';
 
     protected $description = 'Create the tenants that the platform admin panel has requested';
 
     public function handle(TenantProvisioning $provisioning): int
     {
+        $stalled = $this->option('retry-stalled');
+
+        if (is_string($stalled) && $stalled !== '') {
+            return $this->reclaim($stalled);
+        }
+
         $limit = $this->boundedLimit();
 
         // `pending` only, and never `running`: a row left at `running` by a killed process
         // is NOT picked up here, because this pass cannot tell a stalled attempt from one
-        // that is in flight on another host. Recovering those is a deliberate act with its
-        // own bound -- `attempts` -- and it is `--retry-stalled`'s job, not this loop's,
-        // which is what stops `running -> pending -> running` becoming a hot loop.
+        // that is in flight on another host. Recovering those is `--retry-stalled`'s job,
+        // below, which is a deliberate per-row act rather than a loop.
+        //
+        // ⚠ UNTIL 2026-10-28 THAT OPTION DID NOT EXIST while this comment named it, and
+        // `attempts` was read by nothing — so a row left at `running` was stuck for ever,
+        // shown as "In progress" on the dashboard, recoverable only by hand SQL, which is
+        // the very thing `§3` row 6's "no SQL run by hand" forbids. QA H-2.
         //
         // ORDER BY created_at: the oldest request waits least, and a deterministic order
         // makes a partial drain reproducible.
@@ -107,6 +118,66 @@ final class ProvisionTenantsCommand extends Command
         // Zero even when some failed: a failure is recorded on its row and the pass itself
         // did its job. A non-zero exit would make the scheduler treat an ordinary duplicate
         // slug as an infrastructure fault.
+        return self::SUCCESS;
+    }
+
+    /**
+     * Reclaim one row by id — the operator path QA H-2 found missing.
+     *
+     * A row at `running` is one a killed process abandoned; a row at `failed` with
+     * `attempts` at the cap is one this command has stopped retrying. Neither is picked up
+     * by the drain, by design: the drain cannot tell a stalled attempt from one in flight on
+     * another host, and a cap that a loop resets is not a cap.
+     *
+     * So reclaiming is explicit, per row, and it RESETS `attempts` — which is the thing that
+     * makes it safe for the cap to exist at all. It takes one id rather than a status,
+     * because "reclaim everything stuck" is how a hot loop gets written by accident.
+     */
+    private function reclaim(string $tenantId): int
+    {
+        $row = DB::selectOne(
+            'select id, status, attempts from tenant_provisionings where id = ?',
+            [$tenantId],
+        );
+
+        if ($row === null) {
+            $this->error('platform:provision-tenants — no provisioning record with that id.');
+
+            return self::FAILURE;
+        }
+
+        $status = ProvisioningStatus::from((string) $row->status);
+
+        if ($status === ProvisioningStatus::Completed) {
+            $this->info('platform:provision-tenants — already provisioned; nothing to reclaim.');
+
+            return self::SUCCESS;
+        }
+
+        // Keyed and status-guarded, with the affected-row count checked: the same shape
+        // §4 › Postgres traps prescribes everywhere else in this repository.
+        $reclaimed = DB::update(
+            'update tenant_provisionings
+                set status = ?::provisioning_status, attempts = 0, failure_reason = null,
+                    updated_at = now()
+              where id = ? and status = ?::provisioning_status',
+            [ProvisioningStatus::Pending->value, $tenantId, $status->value],
+        );
+
+        if ($reclaimed === 0) {
+            $this->error('platform:provision-tenants — the row changed while being reclaimed; try again.');
+
+            return self::FAILURE;
+        }
+
+        $this->info(sprintf(
+            'platform:provision-tenants — reclaimed %s from [%s]; attempts reset from %d. '
+            .'The next pass will pick it up.',
+            $tenantId,
+            $status->value,
+            (int) $row->attempts,
+        ));
+
         return self::SUCCESS;
     }
 

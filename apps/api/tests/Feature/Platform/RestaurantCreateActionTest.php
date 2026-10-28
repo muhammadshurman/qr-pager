@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Database\TenantTables;
 use App\Domain\Provisioning\ProvisioningStatus;
+use App\Features\Provisioning\Panel\Pages\PlatformDashboardPage;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource\Pages\ListRestaurants;
 use App\Features\Provisioning\PlatformAudit;
 use App\Models\User;
+use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -173,9 +175,11 @@ it('tells the user what to type rather than naming the pattern', function (): vo
 });
 
 it('refuses the action to a caller who is not a platform admin', function (): void {
-    // canCreate() is the resource's own gate, beside the panel's canAccessPanel(). Both,
-    // because a resource reachable by a route that skipped the panel's gate must still
-    // refuse. Driven here through the component rather than read off the class.
+    // ⚠ QA M-6: THIS CASE USED TO ASSERT NOTHING IT CLAIMED. It created a non-admin, never
+    // authenticated as them, then called `canCreate()` statically -- which returned false
+    // because `auth()->user()` was NULL, not because the user was a non-admin. It would
+    // have passed on a resource that granted every authenticated non-admin. Its comment
+    // said "driven here through the component" and nothing was driven.
     $id = (string) Str::uuid7();
     DB::insert(
         'insert into users (id, name, email, created_at, updated_at) values (?, ?, ?, now(), now())',
@@ -184,8 +188,74 @@ it('refuses the action to a caller who is not a platform admin', function (): vo
     $user = User::query()->findOrFail($id);
     assert($user instanceof User);
 
-    expect($user->canAccessPanel(Filament\Facades\Filament::getPanel('platform')))->toBeFalse()
-        ->and(RestaurantResource::canCreate())->toBeFalse();
+    // AUTHENTICATED as them, so each decision is about the user rather than about the
+    // absence of one.
+    $this->actingAs($user);
+
+    expect($user->canAccessPanel(Filament::getPanel('platform')))->toBeFalse()
+        ->and(RestaurantResource::canCreate())->toBeFalse()
+        ->and(RestaurantResource::canViewAny())->toBeFalse();
+
+    // AND DRIVEN THROUGH THE COMPONENT, which is what the comment promised. Filament
+    // re-authorises a resource page on mount AND on every hydration, so this is a 403
+    // rather than a silent no-op.
+    $before = (int) DB::selectOne('select count(*) as c from tenant_provisionings')->c;
+
+    // ASSERTED AS A DISCLOSURE PROPERTY, not as an exception type. Filament's
+    // `mountCanAuthorizeAccess()` calls `abort_unless(static::canAccess(), 403)`, but
+    // Livewire's test harness turns that abort into a near-empty RENDER rather than letting
+    // the HttpException escape -- measured: 164 bytes for a refused mount against 12 284
+    // for an allowed one. What matters is that nothing reaches the caller, so that is the
+    // assertion; asserting the exception type would have been asserting a property of the
+    // test harness.
+    $refused = Livewire::actingAs($user)->test(ListRestaurants::class)->html();
+
+    expect(strlen($refused))->toBeLessThan(1000, 'a non-admin was served a rendered page')
+        ->and(str_contains($refused, 'New restaurant'))->toBeFalse()
+        ->and(str_contains($refused, 'No restaurants yet'))->toBeFalse();
+
+    expect((int) DB::selectOne('select count(*) as c from tenant_provisionings')->c)->toBe($before);
+});
+
+it('refuses the dashboard page to a non-admin and to an anonymous caller', function (): void {
+    // ⚠ SECURITY M-1. `PlatformDashboardPage` had NO `canAccess()`, and Filament's default
+    // for a CUSTOM page allows every authenticated panel user -- measured at `263bb16` as
+    // `true` with no user at all, and a non-admin rendered 12 284 bytes of platform-wide
+    // figures. The HTTP route was never the hole: `/platform` answers 401 anonymously. The
+    // hole was `POST /livewire-<hash>/update`, which runs neither `SetUpPanel` nor
+    // Filament's `Authenticate`, so the only barrier left was the snapshot's HMAC -- and a
+    // snapshot is signed with APP_KEY and bound to no user and no session, so one leaked
+    // admin page would have been a permanent key to the platform's figures.
+    expect(PlatformDashboardPage::canAccess())->toBeFalse();
+
+    $id = (string) Str::uuid7();
+    DB::insert(
+        'insert into users (id, name, email, created_at, updated_at) values (?, ?, ?, now(), now())',
+        [$id, 'Not An Admin', 'dash-'.Str::lower(Str::random(8)).'@example.test'],
+    );
+    $user = User::query()->findOrFail($id);
+    assert($user instanceof User);
+
+    $this->actingAs($user);
+
+    expect(PlatformDashboardPage::canAccess())->toBeFalse();
+
+    // Same shape as the case above, and the same reason.
+    $refused = Livewire::actingAs($user)->test(PlatformDashboardPage::class)->html();
+
+    expect(strlen($refused))->toBeLessThan(1000, 'a non-admin was served the dashboard')
+        // None of the figures reaches them, which is the actual finding.
+        ->and(str_contains($refused, 'Restaurants'))->toBeFalse()
+        ->and(str_contains($refused, 'Pager sessions'))->toBeFalse()
+        ->and(str_contains($refused, 'cannot see inside it'))->toBeFalse();
+
+    // THE CONTROL: a platform admin still can, so the lines above are a narrowing rather
+    // than a page nobody can open.
+    $admin = createActionAdmin();
+    $this->actingAs($admin);
+
+    expect(PlatformDashboardPage::canAccess())->toBeTrue()
+        ->and(Livewire::actingAs($admin)->test(PlatformDashboardPage::class)->html())->toContain('Restaurants');
 });
 
 it('completes the round trip: the action’s row becomes a tenant when the drain runs', function (): void {

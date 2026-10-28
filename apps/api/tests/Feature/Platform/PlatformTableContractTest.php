@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Domain\Database\TenantTables;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Provisioning\ProvisioningStatus;
+use App\Platform\Database\DriverError;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\TestCase;
 
 /*
  * THE REPLACEMENT FOR WHAT C4's CLASSIFIER CANNOT SEE.
@@ -174,6 +176,41 @@ it('still matches the tenant tables whose names these embed, so the check above 
         ->and(TenantTables::referencedBy('select * from tenant_users'))->toBe('tenant_users');
 });
 
+it('pins TestCase::RESETTABLE as an exact set, so a mutable table cannot drop out of it', function (): void {
+    // ⚠ QA L-5. `tenant_provisionings` and `tenant_statistics` were not in
+    // `TestCase::RESETTABLE`, so rows survived between tests and one case read TEN aggregate
+    // rows where it expected one. Removing them again leaves every platform case GREEN --
+    // measured by the reviewer -- because the case that originally failed was also rewritten
+    // to be scoped. So the fix had no regression test. This is it.
+    //
+    // AN EXACT SET, NOT A DERIVATION. The first version of this case derived the list from
+    // `TenantTables::all()` minus the append-only tables, and that is WRONG: `passkeys`,
+    // `personal_access_tokens` and `failed_jobs` are deliberately absent because
+    // `TRUNCATE users … CASCADE` already clears the first two, and the third is the worker's
+    // alone. A pinned set is honest about being a judgement per table; a derivation would
+    // have asserted a rule that does not hold.
+    $resettable = (new ReflectionClass(TestCase::class))->getConstant('RESETTABLE');
+
+    expect($resettable)->toBe([
+        'push_subscriptions', 'outbox', 'pager_sessions', 'tenant_users',
+        // TASK 6's TWO. Ordinary mutable state: a provisioning record left by one test is
+        // still there for the next, and `count(*) from tenant_statistics` stops meaning
+        // anything. They are listed BEFORE `tenants` because `tenants` is truncated with
+        // CASCADE and the order makes the dependency direction readable.
+        'tenant_statistics', 'tenant_provisionings',
+        'tenants', 'users',
+    ]);
+
+    // AND THE EXCLUSIONS ARE JUSTIFIED RATHER THAN LISTED: both append-only tables really do
+    // refuse TRUNCATE, which is why they cannot be in the list above and why including one
+    // would make every setUp() raise 42501.
+    foreach (['audit_log', 'platform_audit_log'] as $table) {
+        expect(in_array($table, $resettable, true))->toBeFalse("{$table} is append-only and cannot be truncated")
+            ->and($this->sqlStateOf(fn () => DB::connection('pgsql_owner')->unprepared('truncate '.$table)))
+            ->toBe('42501', "{$table} is excluded as append-only but does not refuse TRUNCATE");
+    }
+});
+
 it('mirrors provisioning_status between PHP and Postgres, in order', function (): void {
     // EnumContractTest already does this for every registered enum; this is here so the
     // new type's own file fails if someone registers it and forgets, and because the
@@ -188,6 +225,82 @@ it('mirrors provisioning_status between PHP and Postgres, in order', function ()
 
     expect($labels)->toBe(ProvisioningStatus::values())
         ->and($labels)->toBe(['pending', 'running', 'completed', 'failed']);
+});
+
+it('proves a platform-scope audit_log row is unreachable, which is SR-3’s whole premise', function (): void {
+    // ================================================================================
+    // QA M-5. THIS MEASUREMENT WAS ASSERTED IN SIX DOCUMENTS AND PINNED BY NO TEST.
+    // ================================================================================
+    //
+    // `platform_audit_log` exists because `audit_log` measurably cannot serve a
+    // platform-scope row: `tenant_isolation_audit_log` compares
+    // `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, and
+    // `NULL = anything` is NULL rather than true, so a `tenant_id IS NULL` row satisfies it
+    // in neither direction. That fact is stated in `User.php`, `RoleMatrix.php`,
+    // `PlatformAudit.php`, the migration, `PLAN.md §2.4` and `§3.1` row 6 -- and nothing
+    // would have gone red if a later `OR tenant_id IS NULL` had made all six wrong.
+    //
+    // It is the premise of a whole table's existence, so it gets a test.
+
+    // INSERT: refused for the app role with no context AND inside one.
+    expect($this->sqlStateOf(fn () => DB::connection('pgsql')->insert(
+        'insert into audit_log (tenant_id, actor_type, action) values (null, ?::audit_actor_type, ?)',
+        ['platform', 'probe.sr3.no_context'],
+    )))->toBe('42501');
+
+    $tenant = $this->makeTenant();
+
+    // INSIDE A CONTEXT TOO, and this is the interesting half: `NULL = ctx` is never true
+    // even when ctx is set, so a context does not help.
+    //
+    // THE FAILING STATEMENT GOES IN A NESTED TRANSACTION, i.e. behind a SAVEPOINT. A
+    // refused statement poisons the enclosing transaction (`25P02` on the next statement),
+    // so without the savepoint `withTenant()` cannot clear its own context on the way out
+    // and the case dies with a TenantContextException instead of the 42501 it is about.
+    // Measured here the hard way.
+    $inContext = withTenant($tenant, function (): ?string {
+        try {
+            DB::transaction(fn () => DB::connection('pgsql')->insert(
+                'insert into audit_log (tenant_id, actor_type, action) values (null, ?::audit_actor_type, ?)',
+                ['platform', 'probe.sr3.in_context'],
+            ));
+        } catch (Throwable $error) {
+            return DriverError::sqlState($error);
+        }
+
+        return null;
+    });
+
+    expect($inContext)->toBe('42501');
+
+    // And refused for the OWNER without the bypass, which is what makes owner+bypass the
+    // only writer rather than merely the usual one.
+    expect($this->sqlStateOf(fn () => DB::connection('pgsql_owner')->insert(
+        'insert into audit_log (tenant_id, actor_type, action) values (null, ?::audit_actor_type, ?)',
+        ['platform', 'probe.sr3.owner_no_bypass'],
+    )))->toBe('42501');
+
+    // THE CONTROL: owner+bypass CAN write one. Without this the three refusals above would
+    // also pass on a table that simply rejected every insert.
+    $action = 'probe.sr3.committed.'.bin2hex(random_bytes(6));
+
+    withoutTenantScope('SR-3 control: the one writer of a platform-scope audit_log row', fn () => DB::connection('pgsql_owner')->insert(
+        'insert into audit_log (tenant_id, actor_type, action) values (null, ?::audit_actor_type, ?)',
+        ['platform', $action],
+    ), 'pgsql_owner');
+
+    // READ: invisible to the app role in either state, visible to owner+bypass. Scoped by
+    // `action` rather than counted table-wide, because audit_log is append-only and is
+    // deliberately absent from RESETTABLE (R-016).
+    expect((int) DB::connection('pgsql')->selectOne(
+        'select count(*) as c from audit_log where action = ?', [$action]
+    )->c)->toBe(0)
+        ->and((int) withTenant($tenant, fn () => DB::connection('pgsql')->selectOne(
+            'select count(*) as c from audit_log where action = ?', [$action]
+        )->c))->toBe(0)
+        ->and((int) withoutTenantScope('SR-3 control: read it back', fn () => DB::connection('pgsql_owner')->selectOne(
+            'select count(*) as c from audit_log where action = ?', [$action]
+        )->c, 'pgsql_owner'))->toBe(1);
 });
 
 it('keeps platform_audit_log append-only, for the owner and for the app role alike', function (): void {

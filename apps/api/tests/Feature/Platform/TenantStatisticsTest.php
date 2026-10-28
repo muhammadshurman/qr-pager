@@ -82,6 +82,43 @@ it('aggregates a tenant’s sessions into the platform row, with no row-level de
     }
 });
 
+it('keeps the window bounds free of other tenants’ sessions, once they are written', function (): void {
+    // The contamination's second symptom, with enough sessions that the window is not
+    // suppressed: before the H-1 fix, tenant A's window_start was the oldest session on the
+    // whole platform -- a timestamp that could predate A's own existence.
+    $a = provisionedTenant();
+    $b = provisionedTenant();
+
+    // B's sessions are OLD and past their TTL, so the worker policy would have exposed them.
+    foreach (range(1, 3) as $i) {
+        $id = $this->makeSession($b, ['status' => PagerStatus::Ready->value]);
+        withTenant($b, fn () => DB::connection('pgsql_owner')->update(
+            "update pager_sessions
+                set created_at = now() - interval '30 days', ready_at = now() - interval '30 days',
+                    expires_at = now() - interval '29 days'
+              where id = ?",
+            [$id],
+        ), 'pgsql_owner');
+    }
+
+    // A's are recent, and there are five of them so the window is written.
+    foreach (range(1, 5) as $i) {
+        $id = $this->makeSession($a, ['status' => PagerStatus::Ready->value]);
+        withTenant($a, fn () => DB::connection('pgsql_owner')->update(
+            "update pager_sessions set created_at = now() - interval '1 hour', ready_at = now() where id = ?",
+            [$id],
+        ), 'pgsql_owner');
+    }
+
+    $this->artisan('platform:aggregate-stats')->assertSuccessful();
+
+    $rowA = statsRow($a);
+    $aFirst = withTenant($a, fn () => DB::selectOne('select min(created_at) as m from pager_sessions')->m);
+
+    expect((int) $rowA->sessions_total)->toBe(5)
+        ->and($rowA->window_start)->toBe($aFirst, "A's window reaches outside A's own sessions");
+});
+
 it('counts the tenant’s own staff and nobody else’s', function (): void {
     $tenant = provisionedTenant();
     $other = provisionedTenant();
@@ -166,6 +203,100 @@ it('reads each tenant inside its own scope, so no statement can see two tenants 
         ->toBeNull();
 });
 
+it('counts NO other tenant’s sessions, even past-TTL ones the worker policy can see', function (): void {
+    // ================================================================================
+    // SECURITY H-1's REGRESSION TEST (§11 review, 2026-10-28). It is red without the fix.
+    // ================================================================================
+    //
+    // This command used to read `pager_sessions` on the WORKER connection inside each
+    // tenant's scope, and its docblock called that "an ordinary scoped read". It was not.
+    // `qrpager_worker` carries `worker_reads_expired_sessions`, a PERMISSIVE cross-tenant
+    // SELECT policy `USING (expires_at <= now() AND status IN ('waiting','ready','expired'))`,
+    // and permissive policies are **OR-ed** -- so inside tenant A's scope the worker also
+    // sees every other tenant's past-TTL sessions. `§2.6` records exactly this asymmetry in
+    // the other direction and it was not connected to this design.
+    //
+    // THE CASE THAT EXISTED BELOW COULD NOT CATCH IT: it seeds only fresh sessions, whose
+    // `expires_at` is in the future, so the policy's predicate is false and nothing crosses.
+    // The sessions here are deliberately PAST their TTL and in the policy's status
+    // whitelist, which is the production steady state.
+    $a = provisionedTenant();
+    $b = provisionedTenant();
+
+    // A owns exactly one fresh session.
+    $this->makeSession($a, ['status' => PagerStatus::Waiting->value]);
+
+    // B owns three past-TTL sessions, one per status in the worker's whitelist.
+    foreach ([PagerStatus::Waiting, PagerStatus::Ready, PagerStatus::Expired] as $status) {
+        $id = $this->makeSession($b, ['status' => $status->value]);
+
+        // The owner connection: the app role holds no UPDATE on `expires_at` (§2.7).
+        withTenant($b, fn () => DB::connection('pgsql_owner')->update(
+            "update pager_sessions set expires_at = now() - interval '1 hour' where id = ?",
+            [$id],
+        ), 'pgsql_owner');
+    }
+
+    // THE MEASUREMENT THAT NAMES THE MECHANISM, so a future reader sees why the roles differ
+    // rather than only that they do. Without the fix the first of these is 4 rows over 2
+    // tenants; the app role sees 1 over 1.
+    $asWorker = withTenant($a, fn () => DB::connection('pgsql_worker')->selectOne(
+        'select count(*) as c, count(distinct tenant_id) as t from pager_sessions'
+    ), 'pgsql_worker');
+    $asApp = withTenant($a, fn () => DB::selectOne(
+        'select count(*) as c, count(distinct tenant_id) as t from pager_sessions'
+    ));
+
+    expect((int) $asWorker->t)->toBe(2, 'the worker policy no longer crosses tenants; this case has lost its subject')
+        ->and((int) $asApp->t)->toBe(1, 'the APP role crossed tenants, which would be a far worse finding');
+
+    $this->artisan('platform:aggregate-stats')->assertSuccessful();
+
+    // A's row counts A's one session and nothing of B's.
+    $rowA = statsRow($a);
+
+    expect((int) $rowA->sessions_total)->toBe(1)
+        ->and((int) $rowA->sessions_waiting)->toBe(1)
+        ->and((int) $rowA->sessions_ready)->toBe(0)
+        ->and((int) $rowA->sessions_expired)->toBe(0);
+
+    // And B's row counts B's three and nothing of A's -- both directions, because a
+    // one-directional assertion would pass on a job that simply summed everything into the
+    // first tenant it saw.
+    $rowB = statsRow($b);
+
+    expect((int) $rowB->sessions_total)->toBe(3)
+        ->and((int) $rowB->sessions_waiting)->toBe(1)
+        ->and((int) $rowB->sessions_ready)->toBe(1)
+        ->and((int) $rowB->sessions_expired)->toBe(1);
+
+    // The window bounds are SUPPRESSED here, because A has one session and the threshold is
+    // five (security L-4) -- so the contamination's other symptom, a window_start predating
+    // the tenant's own existence, is asserted as `null` rather than as A's first session.
+    // The case below drives the window with enough sessions for it to be written.
+    expect($rowA->window_start)->toBeNull();
+});
+
+it('reads the tenant’s sessions as the APP role, which holds no cross-tenant policy', function (): void {
+    // The mechanism of H-1's fix, asserted rather than left to the docblock: the aggregate
+    // statements must not be issued on the worker connection, because that role's permissive
+    // expiry policy is OR-ed into every scoped read it makes. Captured per connection.
+    $tenant = provisionedTenant();
+    $this->makeSession($tenant);
+
+    $byConnection = [];
+    DB::listen(function ($query) use (&$byConnection): void {
+        if (TenantTables::referencedBy($query->sql) !== null) {
+            $byConnection[$query->connectionName][] = $query->sql;
+        }
+    });
+
+    $this->artisan('platform:aggregate-stats')->assertSuccessful();
+
+    expect(array_keys($byConnection))->toBe(['pgsql'],
+        'a tenant table was read on a connection other than the app role: '.json_encode(array_keys($byConnection)));
+});
+
 it('is idempotent: a second pass leaves one row with the same counters', function (): void {
     $tenant = provisionedTenant();
     $this->makeSession($tenant);
@@ -185,24 +316,53 @@ it('is idempotent: a second pass leaves one row with the same counters', functio
         ->and($second->created_at)->toBe($first->created_at);
 });
 
-it('computes the wait percentiles in whole seconds, and leaves them null with no ready session', function (): void {
+it('computes the wait percentiles in whole seconds, once there are enough of them', function (): void {
     $tenant = provisionedTenant();
 
-    // A ready session whose wait is a known number of seconds. created_at and ready_at are
-    // both set explicitly, so the percentile is arithmetic rather than a race with the clock
-    // -- R-111 is an open row about a pre-existing case that races a wall clock, and this
-    // one deliberately does not.
-    $session = $this->makeSession($tenant, ['status' => PagerStatus::Ready->value]);
+    // FIVE ready sessions, because the percentiles are SUPPRESSED below
+    // AggregateTenantStatisticsCommand::WAIT_SUPPRESSION_THRESHOLD (security L-4): a median
+    // over one session IS that customer's wait, which is row-level detail wearing an
+    // aggregate's name. Each wait is set explicitly, so the figure is arithmetic rather
+    // than a race with the clock -- R-111 is an open row about a case that races a wall
+    // clock, and this one deliberately does not.
+    foreach ([60, 90, 90, 120, 150] as $seconds) {
+        $session = $this->makeSession($tenant, ['status' => PagerStatus::Ready->value]);
 
-    // DB::connection('pgsql_owner')->update(...), not DB::update(...). withTenant()'s third
-    // argument chooses the connection the SCOPE is opened on; the statement inside still
-    // goes to whatever connection it names, and the app role holds no UPDATE on
-    // `created_at` at all (§2.7 -- "a creation timestamp is never rewritten by the
-    // application"), so the app-role form is refused 42501. Measured here the hard way.
+        // The owner connection: the app role holds no UPDATE on `created_at` at all
+        // (§2.7 -- "a creation timestamp is never rewritten by the application").
+        withTenant($tenant, fn () => DB::connection('pgsql_owner')->update(
+            "update pager_sessions
+                set created_at = now() - interval '1 second' * ?, ready_at = now()
+              where id = ?",
+            [$seconds, $session],
+        ), 'pgsql_owner');
+    }
+
+    $this->artisan('platform:aggregate-stats')->assertSuccessful();
+
+    $row = statsRow($tenant);
+
+    // The median of 60, 90, 90, 120, 150 is 90; the 95th percentile interpolates to 144.
+    expect((int) $row->median_wait_seconds)->toBe(90)
+        ->and((int) $row->p95_wait_seconds)->toBe(144)
+        ->and((int) $row->sessions_ready)->toBe(5)
+        // The window bounds exist once the figures are not suppressed.
+        ->and($row->window_start)->not->toBeNull()
+        ->and($row->window_end)->not->toBeNull();
+});
+
+it('suppresses the wait figures and the window below the threshold, because one row IS a row', function (): void {
+    // ⚠ SECURITY L-4, AND IT IS THE RULING RATHER THAN A PREFERENCE. "An aggregate carries
+    // no row-level detail" -- and `percentile_cont(0.5)` over ONE ready session is that
+    // customer's exact wait, while `min`/`max(created_at)` are single-row timestamps by
+    // definition. The ruling's own enumeration names identifiers (order reference, token,
+    // session id) and `PlatformTableContractTest` enforces exactly that list, so nothing
+    // caught a figure that IS a row without being called one.
+    $tenant = provisionedTenant();
+
+    $session = $this->makeSession($tenant, ['status' => PagerStatus::Ready->value]);
     withTenant($tenant, fn () => DB::connection('pgsql_owner')->update(
-        "update pager_sessions
-            set created_at = now() - interval '90 seconds', ready_at = now()
-          where id = ?",
+        "update pager_sessions set created_at = now() - interval '90 seconds', ready_at = now() where id = ?",
         [$session],
     ), 'pgsql_owner');
 
@@ -210,14 +370,17 @@ it('computes the wait percentiles in whole seconds, and leaves them null with no
 
     $row = statsRow($tenant);
 
-    // Whole seconds, and within a second of 90: the two timestamps are set in one statement
-    // but `now()` is the transaction's clock, so the difference is exact to the microsecond
-    // and rounds to 90.
-    expect((int) $row->median_wait_seconds)->toBe(90)
-        ->and((int) $row->p95_wait_seconds)->toBe(90);
+    // THE COUNTS ARE STILL WRITTEN -- a count is an aggregate at any size. Only the figures
+    // that would be one customer's are withheld.
+    expect((int) $row->sessions_total)->toBe(1)
+        ->and((int) $row->sessions_ready)->toBe(1)
+        ->and($row->median_wait_seconds)->toBeNull()
+        ->and($row->p95_wait_seconds)->toBeNull()
+        ->and($row->window_start)->toBeNull()
+        ->and($row->window_end)->toBeNull();
 
-    // A tenant with sessions but none ready has NO median, which is a different fact from a
-    // median of zero -- and is why the column is nullable.
+    // A tenant with sessions but NONE ready has no median either, which is a different fact
+    // from a median of zero and is why the column is nullable.
     $noReady = provisionedTenant();
     $this->makeSession($noReady, ['status' => PagerStatus::Waiting->value]);
 

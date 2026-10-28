@@ -6,6 +6,7 @@ namespace App\Features\Provisioning\Panel\Resources;
 
 use App\Features\Provisioning\Panel\Resources\RestaurantResource\Pages\ListRestaurants;
 use App\Models\TenantProvisioningRecord;
+use Filament\Facades\Filament;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -164,7 +165,11 @@ class RestaurantResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        return auth()->user()?->getAttribute('is_platform_admin') === true;
+        // Filament::auth(), NOT auth() (QA L-7). `auth()` is the DEFAULT guard,
+        // while the panel names `authGuard('web')` explicitly so a change to
+        // config/auth.php's default cannot silently move which guard it trusts — and
+        // these gates were still bound to that default, so the two could diverge.
+        return Filament::auth()->user()?->getAttribute('is_platform_admin') === true;
     }
 
     public static function canCreate(): bool

@@ -50,6 +50,7 @@ REVERT_PROOF_CONTROLS=()
 REVERT_PROOF_SUITES=""
 REVERT_PROOF_FAILURES=0
 REVERT_PROOF_SCRATCH=""
+REVERT_PROOF_LAST_OUTPUT=""
 
 # Signatures that mean "the revert broke the program", not "the guard was removed".
 #
@@ -73,6 +74,18 @@ REVERT_PROOF_NOT_EVIDENCE=(
   'ArgumentCountError'
   'Call to undefined method'
   'Call to undefined function'
+  # ⚠ ADDED 2026-10-28, from Task 6's §11 security review (L-9). A revert that leaves a
+  # variable undefined, or indexes something that is not there, raises ErrorException --
+  # PHP's promoted warning -- and SIX of Task 6's revert A reds were exactly that, counted
+  # and published as coverage before the review measured them. That is the lease proof's
+  # defect, which this file exists to prevent, in a new costume: the published figure was
+  # "8 cases red" and the number of genuine assertion reds was TWO.
+  'ErrorException'
+  'Undefined variable'
+  'Undefined array key'
+  'Undefined property'
+  'TypeError'
+  'ValueError'
 )
 
 # revert_proof_is_evidence <output-file>
@@ -125,6 +138,10 @@ revert_proof_run() {
   local label="$1"
   local mode="${2:-revert}"
   local raw="$REVERT_PROOF_SCRATCH/$(echo "$label" | tr -cd '[:alnum:]')"
+
+  # A stable name for the most recent run, so revert_proof_require_red can find it
+  # without re-deriving the label's slug (added with that function, 2026-10-28).
+  REVERT_PROOF_LAST_OUTPUT="$raw"
 
   echo "=== $label"
 
@@ -194,6 +211,86 @@ revert_proof_run() {
 }
 
 # Exit non-zero if any check failed. Call once, at the end, after the restore.
+# revert_proof_require_clean_tree <file>...
+#
+# ⚠ REFUSE TO START ON A DIRTY TREE, and restore from GIT rather than from a copy taken at
+# run time. From Task 6's §11 reviews (QA L-3 / security L-9), both of which measured the
+# same thing from different directions: a proof took its restore copy with `cp` from the
+# WORKING TREE, so when a concurrent session had already left a revert applied, the "restore"
+# put the reverted file back and reported it byte-identical -- truthfully, to the wrong
+# baseline. One reviewer's run then measured a tree carrying two reverts and reported the
+# invariant case GREEN, which is the opposite of the published claim; a commit taken in that
+# state would have shipped a panel that queries a tenant table.
+#
+# `git stash list` is not consulted and no lock is taken: this refuses rather than
+# serialises, because two sessions editing one checkout is a situation to stop on, not to
+# queue behind.
+revert_proof_require_clean_tree() {
+  local dirty
+  dirty="$(git status --porcelain -- "$@" 2>/dev/null)"
+
+  if [ -n "$dirty" ]; then
+    echo "revert-proof: REFUSING TO RUN -- these files differ from the index/HEAD:" >&2
+    echo "$dirty" >&2
+    echo "  A revert proof must start from a known baseline. Commit or stash first." >&2
+    echo "  (Task 6's reviews measured a run that restored a CONCURRENT session's revert" >&2
+    echo "   and reported it byte-identical -- to the wrong tree.)" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# revert_proof_restore <file>...
+#
+# Restore from git, not from a copy. The copy is what went wrong; HEAD cannot.
+revert_proof_restore() {
+  git checkout -- "$@" || return 1
+
+  local dirty
+  dirty="$(git status --porcelain -- "$@" 2>/dev/null)"
+
+  if [ -n "$dirty" ]; then
+    echo "revert-proof: restore FAILED -- files still differ after git checkout:" >&2
+    echo "$dirty" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# revert_proof_require_red <label> <case-fragment>
+#
+# ⚠ A REVERT THAT PRODUCES NO RED IS NOT EVIDENCE OF ANYTHING (QA L-4). `revert_proof_run`
+# checked that the CONTROLS stayed green and that every red was an assertion; it never
+# checked that the revert produced a red at all -- so a revert whose sed silently matched
+# nothing passed, and the verdict still printed "every revert kept its controls green and
+# every red was an assertion", which is true and vacuous.
+#
+# Each revert now declares the case that MUST go red, and the run fails if it stayed green.
+revert_proof_require_red() {
+  local label="$1" fragment="$2" output="$REVERT_PROOF_LAST_OUTPUT"
+
+  if [ -z "$output" ] || [ ! -f "$output" ]; then
+    echo "revert-proof: $label -- no run output to check for a required red" >&2
+    REVERT_PROOF_FAILURES=$((REVERT_PROOF_FAILURES + 1))
+    return 1
+  fi
+
+  # The colour is stripped first, for the reason revert_proof_run's own comment gives:
+  # Pest writes an SGR escape in front of the glyph, so a pattern anchored before it
+  # matches nothing. Then: a RED line that mentions this case.
+  if sed 's/\x1b\[[0-9;]*m//g' "$output" | grep -F '⨯' | grep -qF "$fragment"; then
+    echo "  required red PRESENT: [$fragment]"
+    return 0
+  fi
+
+  echo "revert-proof: $label -- the required case did NOT go red: [$fragment]" >&2
+  echo "  A revert that changes no outcome proves nothing; the edit probably matched nothing." >&2
+  REVERT_PROOF_FAILURES=$((REVERT_PROOF_FAILURES + 1))
+  return 1
+}
+
 revert_proof_verdict() {
   local name="$1"
 

@@ -308,7 +308,15 @@ it('has exactly two statements in the application that write attempts, and both 
             // half brought up to the INSERT half's discipline, which NARROWS the matcher
             // and does not weaken the control: every statement it used to catch that was
             // genuinely about the outbox still names `outbox`.
-            if (preg_match('/\bupdate\s+outbox\b/i', $literal) !== 1) {
+            // BOTH SPELLINGS, and the quoted form too (security L-7). The first version of
+            // this condition was `update\s+outbox` alone, which `update public.outbox set
+            // attempts = …` escapes -- so narrowing the matcher correctly (Task 6's
+            // `tenant_provisionings.attempts` was a genuine false positive) had inherited
+            // the INSERT half's own gap instead of fixing it. Both halves now accept an
+            // optional schema and optional quoting.
+            $targetsOutbox = '/\bupdate\s+(?:"?public"?\.)?"?outbox"?(?![A-Za-z0-9_])/i';
+
+            if (preg_match($targetsOutbox, $literal) !== 1) {
                 continue;
             }
 
@@ -326,7 +334,8 @@ it('has exactly two statements in the application that write attempts, and both 
 
             // And no INSERT may name the column either -- a row that arrived with a
             // non-default attempt count would start life holding somebody's token.
-            if (preg_match('/\binsert\s+into\s+outbox\b/i', $literal) === 1 && preg_match('/\battempts\b/i', $literal) === 1) {
+            if (preg_match('/\binsert\s+into\s+(?:"?public"?\.)?"?outbox"?(?![A-Za-z0-9_])/i', $literal) === 1
+                && preg_match('/\battempts\b/i', $literal) === 1) {
                 $inserts[] = $relative;
             }
         }

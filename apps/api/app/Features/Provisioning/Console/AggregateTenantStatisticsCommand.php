@@ -12,6 +12,7 @@ use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use Throwable;
 
 /**
  * Per-tenant statistics, as aggregates on a platform table.
@@ -61,6 +62,24 @@ use LogicException;
  */
 final class AggregateTenantStatisticsCommand extends Command
 {
+    /**
+     * Below this many ready sessions, the wait percentiles and the window bounds are not
+     * written at all.
+     *
+     * ⚠ SECURITY L-4, AND IT IS THE RULING RATHER THAN A PREFERENCE. "An aggregate carries
+     * no row-level detail" — and `percentile_cont(0.5)` over ONE ready session is that
+     * customer's exact wait, while `min`/`max(created_at)` are single-row timestamps by
+     * definition. The ruling's own enumeration names identifiers (order reference, token,
+     * session id) and `PlatformTableContractTest` enforces exactly that list, so nothing
+     * caught a figure that IS a row without being called one.
+     *
+     * Five, because the dashboard's purpose is a sense of how a restaurant is doing and a
+     * median over four orders tells an admin nothing they should act on anyway — so the
+     * threshold costs no real information. A tenant below it still gets its COUNTS, which
+     * are aggregates at any size.
+     */
+    public const WAIT_SUPPRESSION_THRESHOLD = 5;
+
     protected $signature = 'platform:aggregate-stats
                             {--limit=500 : How many tenants to aggregate in one pass}
                             {--tenant= : Aggregate one tenant only, by id}';
@@ -69,16 +88,39 @@ final class AggregateTenantStatisticsCommand extends Command
 
     public function handle(): int
     {
-        $connection = DatabaseRoles::connection('worker');
-        $worker = DB::connection($connection);
+        $workerConnection = DatabaseRoles::connection('worker');
+        $worker = DB::connection($workerConnection);
 
+        // The registry is a PLATFORM table, so enumerating it needs no context and no
+        // cross-tenant anything. Read on the worker, which holds three columns of it.
         $tenants = $this->tenantIds($worker);
 
+        $aggregated = 0;
+        $failed = 0;
+
         foreach ($tenants as $tenantId) {
-            $this->aggregate($worker, $connection, $tenantId);
+            // PER-TENANT ISOLATION OF FAILURE (security L-3). Without this, one tenant that
+            // throws aborts the whole pass: every tenant later in the ordering is never
+            // aggregated, while the dashboard still reports the freshest row's timestamp --
+            // a silently partial pass. The drain command has had this shape since it was
+            // written; this one did not.
+            try {
+                $this->aggregate($worker, $tenantId);
+                $aggregated++;
+            } catch (Throwable) {
+                // No message logged: a driver message carries the SQL and the bound
+                // parameters (§4 › Edge & ops). The count is what an operator needs, and a
+                // tenant that keeps failing surfaces as a stale `computed_at`.
+                $failed++;
+            }
         }
 
-        $this->info('platform:aggregate-stats — '.count($tenants).' tenant(s) aggregated.');
+        $this->info(sprintf(
+            'platform:aggregate-stats - %d of %d tenant(s) aggregated, %d failed.',
+            $aggregated,
+            count($tenants),
+            $failed,
+        ));
 
         return self::SUCCESS;
     }
@@ -105,10 +147,20 @@ final class AggregateTenantStatisticsCommand extends Command
 
         $limit = $this->boundedLimit();
 
+        // ⚠ ORDERED BY STALENESS, NOT BY ID (QA M-4). `order by id limit <n>` with no
+        // offset or cursor recomputes the same first N every five minutes, so above the cap
+        // every remaining tenant NEVER gets a `tenant_statistics` row and reads "No data
+        // yet" for ever. `computed_at asc nulls first` turns the cap into a rate limit
+        // instead of a cliff: a tenant never aggregated goes first, then the stalest.
+        //
+        // The join is to a PLATFORM table, so this is still one unscoped statement over
+        // platform data and reaches no tenant table.
         $rows = $worker->select(
-            'select id from tenant_provisionings
-              where status = ?::provisioning_status
-              order by id
+            'select p.id
+               from tenant_provisionings p
+               left join tenant_statistics s on s.id = p.id
+              where p.status = ?::provisioning_status
+              order by s.computed_at asc nulls first, p.id
               limit '.$limit,
             [ProvisioningStatus::Completed->value],
         );
@@ -119,12 +171,14 @@ final class AggregateTenantStatisticsCommand extends Command
         ));
     }
 
-    /** One tenant: read inside its own scope, write outside it. */
-    private function aggregate(ConnectionInterface $worker, string $connection, string $tenantId): void
+    /** One tenant: read as the app role inside its own scope, write as the worker outside it. */
+    private function aggregate(ConnectionInterface $worker, string $tenantId): void
     {
-        // Read in the tenant's own context. One transaction, one tenant, and the context is
-        // transaction-scoped (C2) so it cannot outlive this call on a pooled connection.
-        $aggregate = withTenant($tenantId, fn (): TenantAggregate => $this->read($worker), $connection);
+        // Read in the tenant's own context, ON THE APP CONNECTION. One transaction, one
+        // tenant, and the context is transaction-scoped (C2) so it cannot outlive this call
+        // on a pooled connection. The app role carries no cross-tenant policy anywhere,
+        // which is the bound the worker connection did not have (security H-1).
+        $aggregate = withTenant($tenantId, fn (): TenantAggregate => $this->read(DB::connection(), $tenantId));
 
         // Write OUTSIDE the tenant context, on a platform table. An advisory lock keyed on
         // the tenant id, so two concurrent passes do not interleave two windows into one row.
@@ -177,7 +231,7 @@ final class AggregateTenantStatisticsCommand extends Command
      * `count`, `percentile_cont`, `min` and `max`, and the two window bounds are of
      * `created_at` rather than of any identifier.
      */
-    private function read(ConnectionInterface $worker): TenantAggregate
+    private function read(ConnectionInterface $connection, string $tenantId): TenantAggregate
     {
         // The per-status counters are derived from PagerStatus rather than written out, so
         // a sixth status cannot leave a counter silently at zero. The migration snapshots
@@ -209,7 +263,9 @@ final class AggregateTenantStatisticsCommand extends Command
             PagerStatus::cases(),
         ));
 
-        $row = $worker->selectOne(
+        // `where tenant_id = ?` EXPLICITLY, as well as running on a role that holds no
+        // cross-tenant policy. Two bounds, and only one of them lives in this file.
+        $row = $connection->selectOne(
             "select count(*) as sessions_total,
                    {$counters},
                    percentile_cont(0.5) within group (
@@ -220,16 +276,30 @@ final class AggregateTenantStatisticsCommand extends Command
                    ) filter (where ready_at is not null) as p95_wait_seconds,
                    min(created_at) as window_start,
                    max(created_at) as window_end
-              from pager_sessions"
+              from pager_sessions
+             where tenant_id = ?",
+            [$tenantId],
         );
 
-        $staff = $worker->selectOne('select count(*) as staff_count from tenant_users');
+        $staff = $connection->selectOne(
+            'select count(*) as staff_count from tenant_users where tenant_id = ?',
+            [$tenantId],
+        );
 
         $byStatus = [];
 
         foreach (PagerStatus::cases() as $status) {
             $byStatus[$status->value] = $this->int($row, 'sessions_'.$status->value) ?? 0;
         }
+
+        // The number of sessions with a wait at all is what the percentiles are computed
+        // over, so it is what the threshold has to be measured against -- not the total.
+        // No `?? 0`: the loop above writes a key for every PagerStatus case, so PHPStan
+        // knows both offsets exist — a null coalesce here would be dead code pretending to
+        // be a guard, which is the shape this task has already corrected three times.
+        $readySessions = $byStatus[PagerStatus::Ready->value] + $byStatus[PagerStatus::Completed->value];
+
+        $suppress = $readySessions < self::WAIT_SUPPRESSION_THRESHOLD;
 
         return new TenantAggregate(
             sessionsTotal: $this->int($row, 'sessions_total') ?? 0,
@@ -238,10 +308,12 @@ final class AggregateTenantStatisticsCommand extends Command
             // Whole seconds. A fractional percentile is rounded rather than truncated, and
             // null stays null: a tenant with no ready session has NO median, which is a
             // different fact from a median of zero.
-            medianWaitSeconds: $this->seconds($row, 'median_wait_seconds'),
-            p95WaitSeconds: $this->seconds($row, 'p95_wait_seconds'),
-            windowStart: $this->text($row, 'window_start'),
-            windowEnd: $this->text($row, 'window_end'),
+            // SUPPRESSED BELOW THE THRESHOLD, which is the ruling applied to a figure that
+            // would otherwise BE a row rather than merely describe one.
+            medianWaitSeconds: $suppress ? null : $this->seconds($row, 'median_wait_seconds'),
+            p95WaitSeconds: $suppress ? null : $this->seconds($row, 'p95_wait_seconds'),
+            windowStart: $suppress ? null : $this->text($row, 'window_start'),
+            windowEnd: $suppress ? null : $this->text($row, 'window_end'),
         );
     }
 

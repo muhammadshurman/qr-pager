@@ -7,6 +7,7 @@ use App\Domain\Provisioning\ProvisioningStatus;
 use App\Domain\Tenancy\TenantRole;
 use App\Domain\Tenancy\TenantStatus;
 use App\Features\Provisioning\DuplicateSlug;
+use App\Features\Provisioning\OwnerNeedsConsent;
 use App\Features\Provisioning\PlatformAudit;
 use App\Features\Provisioning\ProvisioningRecordMissing;
 use App\Features\Provisioning\TenantProvisioning;
@@ -204,6 +205,137 @@ it('attaches an existing user rather than creating a second account', function (
     $members = withTenant($id, fn () => DB::select('select user_id from tenant_users'));
 
     expect($members)->toHaveCount(1)->and($members[0]->user_id)->toBe($userId);
+});
+
+it('refuses an owner who already holds a membership, which is R-106’s DoS edge', function (): void {
+    // ================================================================================
+    // SECURITY M-2's REGRESSION TEST. Red without the fix.
+    // ================================================================================
+    //
+    // `resolveOwner()` matched on `users.email` and, on a hit, made that account OWNER of
+    // the new tenant: no consent, no invite, no check of who it was. The harm is not
+    // theoretical: `AuthController::login()` auto-selects a tenant only when the account
+    // holds exactly ONE membership, so a staff member who held one now holds two, resolves
+    // none, and every `/v1` call answers 401 until a client implements tenant selection --
+    // which is Task 10's. That is the denial-of-service edge `R-106` records, reachable by
+    // a platform admin typing a colleague's address into this form.
+    $victimTenant = $this->makeTenant();
+    $email = 'victim-'.Str::lower(Str::random(8)).'@example.test';
+    $victimId = (string) Str::uuid7();
+
+    DB::insert(
+        'insert into users (id, name, email, created_at, updated_at) values (?, ?, ?, now(), now())',
+        [$victimId, 'Victim', $email],
+    );
+    withTenant($victimTenant, fn () => DB::insert(
+        'insert into tenant_users (id, tenant_id, user_id, role, created_at, updated_at)
+         values (?, ?, ?, ?::tenant_role, now(), now())',
+        [(string) Str::uuid7(), $victimTenant, $victimId, TenantRole::Staff->value],
+    ));
+
+    expect(fn () => requestTenant(uniqueSlug(), $email))->toThrow(OwnerNeedsConsent::class);
+
+    // NOTHING was written: no provisioning row, so no drain will act on it either.
+    expect((int) DB::selectOne(
+        'select count(*) as c from tenant_provisionings where owner_email = ?', [$email]
+    )->c)->toBe(0);
+
+    // And the victim still holds exactly one membership, so they can still sign in.
+    expect(DB::select('select tenant_id from public.user_memberships(?)', [$victimId]))->toHaveCount(1);
+});
+
+it('refuses a platform admin as a tenant owner, which the ruling does not build here', function (): void {
+    // "Support access to a tenant's own data, if ever needed, is a temporary audited
+    // membership and is NOT BUILT HERE" -- so a platform admin must not be able to mint
+    // itself one by typing its own address into the provisioning form.
+    $email = 'admin-'.Str::lower(Str::random(8)).'@example.test';
+
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => (string) Str::uuid7(),
+        'name' => 'Platform Admin',
+        'email' => $email,
+        'is_platform_admin' => true,
+    ]);
+
+    expect(fn () => requestTenant(uniqueSlug(), $email))->toThrow(OwnerNeedsConsent::class);
+});
+
+it('says the same thing for both refusals, so the form cannot be used to enumerate', function (): void {
+    // Distinguishing the two reasons would let this form answer "does this address have an
+    // account" and "is it a platform admin's" -- the same enumeration argument that makes
+    // `AuthController::login()` answer identically for "no such account" and "wrong
+    // password". The REASON is carried on the exception for the application; the MESSAGE is
+    // one string.
+    $member = 'm-'.Str::lower(Str::random(8)).'@example.test';
+    $memberId = (string) Str::uuid7();
+    $tenant = $this->makeTenant();
+
+    DB::insert('insert into users (id, name, email, created_at, updated_at) values (?, ?, ?, now(), now())',
+        [$memberId, 'M', $member]);
+    withTenant($tenant, fn () => DB::insert(
+        'insert into tenant_users (id, tenant_id, user_id, role, created_at, updated_at)
+         values (?, ?, ?, ?::tenant_role, now(), now())',
+        [(string) Str::uuid7(), $tenant, $memberId, TenantRole::Staff->value],
+    ));
+
+    $admin = 'a-'.Str::lower(Str::random(8)).'@example.test';
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => (string) Str::uuid7(), 'name' => 'A', 'email' => $admin, 'is_platform_admin' => true,
+    ]);
+
+    $messages = [];
+    $reasons = [];
+
+    foreach ([$member, $admin] as $email) {
+        try {
+            requestTenant(uniqueSlug(), $email);
+            $this->fail("{$email} was accepted as an owner");
+        } catch (OwnerNeedsConsent $error) {
+            $messages[] = $error->getMessage();
+            $reasons[] = $error->reason;
+        }
+    }
+
+    // One message, two reasons: indistinguishable outside, distinguishable inside.
+    expect(array_unique($messages))->toHaveCount(1)
+        ->and($reasons)->toBe([OwnerNeedsConsent::ALREADY_A_MEMBER, OwnerNeedsConsent::PLATFORM_ADMIN])
+        // And the message names no address and no account detail.
+        ->and(str_contains($messages[0], $member))->toBeFalse()
+        ->and(str_contains($messages[0], 'platform'))->toBeFalse();
+});
+
+it('still attaches an existing account that holds no membership, which is the ordinary case', function (): void {
+    // THE REFUSAL IS NARROW, and this is the case that proves it did not become a blanket
+    // ban: an account with no membership anywhere is still attached rather than duplicated.
+    $email = 'fresh-'.Str::lower(Str::random(8)).'@example.test';
+    $userId = (string) Str::uuid7();
+
+    DB::insert('insert into users (id, name, email, created_at, updated_at) values (?, ?, ?, now(), now())',
+        [$userId, 'Fresh', $email]);
+
+    $id = requestTenant(uniqueSlug(), $email);
+    app(TenantProvisioning::class)->provision($id);
+
+    expect((int) DB::selectOne('select count(*) as c from users where email = ?', [$email])->c)->toBe(1)
+        ->and(withTenant($id, fn () => DB::selectOne('select user_id from tenant_users')->user_id))->toBe($userId);
+});
+
+it('records WHOM it made owner in the platform trail', function (): void {
+    // Security M-2's second half: the append-only trail did not record whom a platform
+    // admin made owner. The ADDRESS still stays out — it is personal data and the registry
+    // row carries it once — but the id is what an investigator needs.
+    $id = requestTenant(uniqueSlug());
+    app(TenantProvisioning::class)->provision($id);
+
+    $context = json_decode((string) DB::selectOne(
+        'select context from platform_audit_log where subject_id = ? and action = ?',
+        [$id, PlatformAudit::TENANT_PROVISIONED],
+    )->context, true);
+
+    $ownerId = withTenant($id, fn () => DB::selectOne('select user_id from tenant_users')->user_id);
+
+    expect($context['owner_user_id'] ?? null)->toBe($ownerId)
+        ->and(array_keys($context))->not->toContain('owner_email');
 });
 
 it('gives a provisioned owner NO password, because nothing may invent a credential', function (): void {

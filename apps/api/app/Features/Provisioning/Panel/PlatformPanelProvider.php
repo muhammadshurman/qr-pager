@@ -7,8 +7,8 @@ namespace App\Features\Provisioning\Panel;
 use App\Features\Provisioning\Panel\Pages\PlatformDashboardPage;
 use App\Features\Provisioning\Panel\Resources\PlatformAuditResource;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource;
+use App\Platform\Http\Middleware\RateLimit;
 use Filament\Http\Middleware\Authenticate;
-use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
@@ -98,10 +98,35 @@ class PlatformPanelProvider extends PanelProvider
             // redundant beside the user menu.
             ->widgets([])
             ->middleware([
+                // FIRST IN THE LIST, before StartSession, which is the whole point
+                // (security H-2). Every other surface in this application carries a
+                // bucket -- /v1, the auth group, even the unknown-path fallback -- and
+                // these four routes carried none. StartSession persists a session to
+                // carry a CSRF token BEFORE Authenticate refuses, so each anonymous 401
+                // minted one Redis key with a 7200 s TTL: measured 25 keys for 25
+                // requests, no credential needed. Redis is the session, cache AND queue
+                // store (§1), so that loop fills the store the customer pager path
+                // depends on. A limiter after StartSession would meter the requests and
+                // still mint the keys.
+                RateLimit::class.':panel',
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
-                AuthenticateSession::class,
+                // ⚠ AuthenticateSession IS DELIBERATELY ABSENT, and that is security L-1
+                // rather than an omission. The generator includes it; measured at
+                // `263bb16`, it cannot fire in this application: it compares the stored
+                // password hash against `getAuthPassword()`, and Task 5's `R-006`
+                // narrowing revoked the app role's `SELECT` on `users.password`, so that
+                // method returns NULL for every user this role reads. `Store::has()` is
+                // false for a null value, so the hash is simply re-stored on every
+                // request and the comparison can never differ — a password change would
+                // never invalidate an open panel session.
+                //
+                // A control that is present and cannot fire is worse than one that is
+                // absent, because it reads as protection: that is the dead-assertion
+                // class `§4a` records four instances of. Restoring the CAPABILITY needs
+                // the hash reached through `authenticate_user()`, which is `R-120`'s,
+                // owned by Task 12 beside `R-104`'s re-authentication work.
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,
                 SubstituteBindings::class,

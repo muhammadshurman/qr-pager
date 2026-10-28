@@ -208,6 +208,22 @@ return Application::configure(basePath: dirname(__DIR__))
         // measurement and for why the Livewire prefix is a pattern rather than a literal.
         $middleware->prepend(RefuseUnservedVendorRoutes::class);
 
+        // LIVEWIRE'S UPDATE ENDPOINT, metered through the one group it belongs to
+        // (security H-2). Filament's tables, modals and forms all talk to the server
+        // through `POST /livewire-<hash>/update`, which Livewire registers itself with
+        // the `web` group and `RequireLivewireHeaders` and nothing else -- so it was the
+        // busiest panel route and the only one with no bucket. Measured: 10 anonymous
+        // POSTs each answered 419 and minted one Redis key.
+        //
+        // appendToGroup('web') rather than re-registering the route with
+        // Livewire::setUpdateRoute(): that would mean choosing the path ourselves, and
+        // the path is derived from APP_KEY on purpose so a scanner cannot guess it.
+        // Measured at `263bb16`: the `web` group's ONLY members are Livewire's three
+        // routes (`route:list` with middleware filtered), so this widens nothing else --
+        // and PanelRateLimitTest asserts that membership, so if a future route joins the
+        // group it is a deliberate act rather than a surprise.
+        $middleware->appendToGroup('web', RateLimit::class.':panel');
+
         // The probes' own group. Empty, and that is the mechanism behind "while health
         // and readiness keep answering": they carry no rate limiter, no tenant
         // middleware and no load shedding, so there is nothing that can shed them.

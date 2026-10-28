@@ -44,7 +44,15 @@ use Livewire\Livewire;
  *     a positive tabindex is the single most common way a page stops being keyboard
  *     navigable in source order.
  *   - This task's own markup sets no `outline: none` and no `outline: 0`, which is how a
- *     focus ring gets removed.
+ *     focus ring gets removed, and no hard-coded hex colour.
+ *
+ * ⚠ AND NOT "no hard-coded colour, spacing or font value", which this header claimed until
+ * 2026-10-28 (QA L-6). The assertion checks a HEX PATTERN only, while the dashboard template
+ * legitimately uses Filament's utility classes for spacing (`gap-4`, `mt-1`), size
+ * (`text-sm`, `text-3xl`) and colour (`text-gray-500 dark:text-gray-400`). That practice is
+ * fine — `§12` exempts Tasks 6-7 from the visual bar and Task 8 restyles from the tokens —
+ * but the comment described a check that was not being made, which is the same defect class
+ * as an assertion that cannot fail.
  *   - The dashboard's figures are a real `<dl>` with a `<dt>` per figure, so each number
  *     has a programmatic label instead of being a number in a box.
  *   - The aggregates' staleness is TEXT in the document, not a tooltip and not a colour.
@@ -173,8 +181,10 @@ it('removes no focus ring in this task’s own markup', function (): void {
         $source = (string) file_get_contents($file);
 
         expect($source)->not->toMatch('/outline\s*:\s*(none|0)/i', basename($file).' removes a focus ring')
-            // And no hard-coded colour, spacing or font value: §12 forbids it generally and
-            // this task must leave nothing for Task 8 to undo.
+            // And no hard-coded HEX colour. Deliberately not "no colour, spacing or font
+            // value": the template uses Filament's own utility classes for all three, which
+            // is what §12's Tasks 6-7 exemption permits — a raw hex is the thing that would
+            // survive Task 8's restyle and have to be hunted down (QA L-6).
             ->and($source)->not->toMatch('/#[0-9a-f]{3,8}\b/i', basename($file).' hard-codes a hex colour');
     }
 });

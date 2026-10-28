@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Http\ProblemType;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RefuseUnservedVendorRoutes;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\DB;
@@ -174,12 +175,38 @@ it('refuses the four vendor routes it mounts and does not serve', function (): v
 
     expect($prefix)->not->toBe('', 'no Livewire prefix found');
 
-    foreach ([
+    // ⚠ THE PATH SET COMES FROM THE GUARD ITSELF (QA L-2). This case carried its own copy
+    // of the four paths while `RefuseUnservedVendorRoutes::patterns()` -- whose docblock
+    // says "exposed rather than duplicated in the test: a guard whose test carries its own
+    // copy of the list is a guard that can disagree with its test" -- had NO caller at all.
+    // A sample URI is derived per pattern, so a fifth refused path is driven here the
+    // moment it is added to the guard.
+    $patterns = RefuseUnservedVendorRoutes::patterns();
+
+    expect($patterns)->toHaveCount(4, 'the guard\'s pattern list changed; the samples below must follow');
+
+    $samples = [
         ['get', '/filament/exports/1/download'],
         ['get', '/filament/imports/1/failed-rows/download'],
         ['post', $prefix.'/upload-file'],
         ['get', $prefix.'/preview-file/anything'],
-    ] as [$method, $uri]) {
+    ];
+
+    // Every sample must match one of the guard's own patterns, and every pattern must be
+    // matched by a sample -- so the two lists cannot drift apart silently.
+    foreach ($samples as [, $uri]) {
+        $path = ltrim($uri, '/');
+
+        expect(array_filter($patterns, static fn (string $p): bool => preg_match($p, $path) === 1))
+            ->not->toBe([], "no guard pattern matches the sample [{$uri}]");
+    }
+
+    foreach ($patterns as $pattern) {
+        expect(array_filter($samples, static fn (array $s): bool => preg_match($pattern, ltrim($s[1], '/')) === 1))
+            ->not->toBe([], "the guard pattern [{$pattern}] has no sample driving it");
+    }
+
+    foreach ($samples as [$method, $uri]) {
         $response = $this->{$method}($uri);
 
         expect($response->getStatusCode())->toBe(404, "{$uri} is still served")

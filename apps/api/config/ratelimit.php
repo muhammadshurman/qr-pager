@@ -28,6 +28,35 @@ return [
         ],
 
         /*
+        | THE ADMIN PANEL, added at Task 6 to close security H-2.
+        |
+        | Every /v1 route carried a bucket, the auth surface carried one, and even the
+        | unknown-path fallback carried `unknown` -- the panel's four routes and Livewire's
+        | update endpoint carried NONE. Measured at `263bb16`: 25 anonymous GETs of
+        | /platform each answered 401 in ~3.6 ms, issued ZERO Postgres statements, and
+        | minted ONE Redis key apiece (`dbsize` +25), because `StartSession` persists a
+        | session to carry a CSRF token before `Authenticate` refuses. Each key lives
+        | 7200 s. Redis is the locked store for session, cache AND queue (§1), so an
+        | unmetered loop on a credential-free path fills the store the customer pager
+        | path, the outbox and `markReady` all depend on -- which is `R-027`'s shape
+        | arriving through a new door.
+        |
+        | PER IP ONLY, and that is `R-063`'s argument rather than an oversight: the
+        | refusal happens before any credential resolves, so there is no tenant to key on
+        | -- and a platform admin belongs to no tenant even after one does. §4's "per IP
+        | and per tenant" has no tenant dimension available on this surface at all, which
+        | is why the row recording it names the per-session half instead.
+        |
+        | 240/min is deliberately generous for a human clicking through an admin panel:
+        | one page load is one document plus several Livewire round trips, and a table
+        | search types a request per keystroke. It is three orders of magnitude below what
+        | a script needs to matter, which is the property that counts here.
+        */
+        'panel' => [
+            'per_ip' => ['attempts' => 240, 'seconds' => 60],
+        ],
+
+        /*
         | Creating a pager session is the one route in Task 3 that takes a body and the
         | one that does real work per call -- a CSPRNG draw, an insert and an audit row --
         | so it carries its own limit on top of the api group's. Sized well above a busy

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Features\Provisioning\Panel\Resources\RestaurantResource\Pages;
 
 use App\Features\Provisioning\DuplicateSlug;
+use App\Features\Provisioning\OwnerNeedsConsent;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource;
 use App\Features\Provisioning\TenantProvisioning;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -93,7 +95,37 @@ class ListRestaurants extends ListRecords
                         ->required()
                         ->email()
                         ->maxLength(255)
-                        ->helperText('The first owner. If this person already has an account, it is attached rather than duplicated.'),
+                        // THE CONSENT RULE, ON THE FIELD so Filament keys the error to it
+                        // (security M-2). The same rule runs again in the drain, because the
+                        // answer can change in the minute between — this one is for the
+                        // human, that one is the contract.
+                        //
+                        // A closure rule rather than a thrown ValidationException: an
+                        // exception from the action's closure lands under the bare key
+                        // `owner_email` while Filament's fields live at
+                        // `mountedActions.0.data.owner_email`, which is the same trap the
+                        // slug's uniqueness hit.
+                        //
+                        // A closure RETURNING the rule, not the rule itself: Filament
+                        // evaluates a `->rule()` closure through its OWN injector, which
+                        // supplies `$state`, `$component` and friends -- not the validator's
+                        // `$attribute, $value, $fail`. Passing the rule directly threw
+                        // "[$attribute] was unresolvable", measured here.
+                        ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                            if (! is_string($value) || $value === '') {
+                                return;
+                            }
+
+                            if (app(TenantProvisioning::class)->refusalForOwnerEmail($value) !== null) {
+                                // ONE MESSAGE FOR BOTH REASONS. Distinguishing them would
+                                // let this form be used to probe whether an address has an
+                                // account and whether it is a platform admin's — the same
+                                // enumeration argument that makes login answer identically
+                                // for "no such account" and "wrong password".
+                                $fail('That address cannot be made the owner of a new restaurant here. It needs an invitation the person accepts themselves.');
+                            }
+                        })
+                        ->helperText('The first owner. Use an address that has no account yet; an existing account has to accept an invitation instead.'),
                 ])
                 ->action(function (array $data): void {
                     try {
@@ -104,6 +136,18 @@ class ListRestaurants extends ListRecords
                             requestedByUserId: auth()->id() === null ? null : (string) auth()->id(),
                             actorIp: request()->ip(),
                         );
+                    } catch (OwnerNeedsConsent $e) {
+                        // The race between the field rule above and this insert: the account
+                        // could have gained a membership in between. Same shape as the
+                        // duplicate-slug race below, and the message is the exception's own,
+                        // which names no account and no reason.
+                        Notification::make()
+                            ->title('Not provisioned')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+
+                        return;
                     } catch (DuplicateSlug $e) {
                         // THE RACE, AND ONLY THE RACE. The ordinary duplicate is caught by
                         // the field's `unique` rule above, where Filament keys the error to
