@@ -218,7 +218,7 @@ attempt leaves.
 | --- | --- | --- |
 | `id` | uuid PK | **is the tenant id** these aggregates describe |
 | `sessions_total` | integer NOT NULL DEFAULT 0 CHECK ≥ 0 | |
-| `sessions_waiting` · `sessions_ready` · `sessions_completed` · `sessions_cancelled` · `sessions_expired` | integer NOT NULL DEFAULT 0 CHECK ≥ 0 | one per `pager_status` value, generated from the enum rather than typed out |
+| `sessions_waiting` · `sessions_ready` · `sessions_completed` · `sessions_cancelled` · `sessions_expired` | integer NOT NULL DEFAULT 0 CHECK ≥ 0 | one per `pager_status` value. ⚠ **Written out LITERALLY in the migration, not generated from the enum** — corrected 2026-10-28: a migration that reads today's enum is not a snapshot, which is the tenant-tables migration's own stated rule, and the first wording of this cell contradicted it. The CONTRACT is enforced from the other side instead: `PlatformTableContractTest` asserts one counter column per `PagerStatus` case, and the aggregate command derives its `count(*) filter (...)` list from the enum — so a sixth status fails the build rather than leaving a counter at zero. |
 | `staff_count` | integer NOT NULL DEFAULT 0 CHECK ≥ 0 | |
 | `median_wait_seconds` · `p95_wait_seconds` | integer NULL CHECK ≥ 0 | `ready_at - created_at`, whole seconds |
 | `window_start` · `window_end` | timestamptz NULL | the window the aggregates cover |
@@ -412,7 +412,7 @@ What this task does add, with its bound:
 | --- | --- | --- |
 | Create a restaurant (panel request) | 2 `INSERT`s, one transaction, no tenant table | one row per request; the unique `slug` makes a replay a 23505 rather than a second tenant |
 | `ProvisionTenant` (per job) | 1 `SELECT` + up to 3 `INSERT`s in one transaction | one tenant; retries bounded by `attempts` |
-| `AggregateTenantStatistics` | **O(tenants)** transactions, 2 aggregate `SELECT`s each | the number of provisioned tenants. **This is the one unbounded-in-principle cost added**, and it is bounded in practice by a chunked iteration and an explicit per-run cap, not by hope. At 300 K sessions (C6) the aggregates are index-only over `(tenant_id, status, created_at DESC)`, which already exists. |
+| `AggregateTenantStatistics` | **O(tenants)** transactions, 2 aggregate `SELECT`s each | the number of provisioned tenants. **This is the one unbounded-in-principle cost added**, and it is bounded by an explicit per-run cap. ⚠ **This cell said "a chunked iteration and an explicit per-run cap" and there was no chunked iteration** — corrected 2026-10-28 from QA M-4, which found the worse half of that: `order by id limit <n>` with no offset or cursor recomputed the same first N every five minutes, so above the cap every remaining tenant NEVER got a `tenant_statistics` row and the dashboard read "No data yet" for it indefinitely. The ordering is now `computed_at asc nulls first`, which makes the cap a **rate limit rather than a cliff**: a tenant never aggregated goes first, then the stalest. Still not chunked, and now it does not need to be. At 300 K sessions (C6) the aggregates are index-only over `(tenant_id, status, created_at DESC)`, which already exists. |
 | Dashboard / list / detail (panel read) | 1 `SELECT` each, platform tables | pagination; no N+1, since there is no relation to load |
 
 ---
@@ -427,7 +427,7 @@ that leaves no trace at all is an attempt nobody can see failed.
 | --- | --- |
 | The panel's transaction fails | Nothing. Both rows are in one transaction. |
 | `ProvisionTenant` fails **anywhere** — duplicate slug, duplicate email, a crash between the `tenants` insert and the `tenant_users` insert | **No `tenants` row and no `tenant_users` row.** The job's tenant-side work is one transaction inside one `withTenant` scope, so a half-created tenant is not representable. The platform row reads `failed` with a mapped reason. |
-| The job is killed mid-transaction | Same: Postgres rolls it back. The platform row stays `running` and the next run picks it up — `attempts` bounds that. |
+| The job is killed mid-transaction | Postgres rolls the tenant-side work back, so there is still no partial tenant. ⚠ **The rest of this cell was FALSE as written** — corrected 2026-10-28 from QA H-2. The row stayed `running` and **nothing ever picked it up**: the drain selects `pending` only, `running -> running` is forbidden by the transition table, and `attempts` was incremented, selected and read by **nothing**, so "`attempts` bounds that" had no implementation at all — `R-058`'s shape (a column selected and never read) in new code. A row left at `running` was shown as "In progress" for ever and recoverable only by hand SQL, which `§4`'s own "no SQL run by hand" forbids. **Both halves now exist:** a real `TenantProvisioning::MAX_ATTEMPTS` cap that `provision()` reads, and `platform:provision-tenants --retry-stalled <id>` — a per-row operator act that resets the counter deliberately, because a cap a loop resets is not a cap. |
 | The job runs twice | One tenant. The `tenants` insert is keyed on the id already allocated, so the second attempt raises 23505 and is mapped to "already provisioned" rather than a failure. |
 | Duplicate request, same slug | 23505 on `tenant_provisionings_slug_unique`, refused at the panel, no job dispatched. |
 | Rollback of this task's migrations | Clean, proven twice-over by `bin/migration-rollback-proof`. |
@@ -499,12 +499,15 @@ not be the only path to the message it is reporting.
 
 ## 8. What this task does NOT deliver — each with its owner and date
 
-Written here, in the handover, and in the `task-6` tag message. Four are SR-2's; one is Q5's.
+Written here, in the handover, in `PLAN.md §3.1` row 6 and in the `task-6` tag message.
+
+⚠ **And the REASON column was too broad in its first version** (QA M-7). "Needs a tenant table; the ruling rejects a panel query that reaches one" does **not** establish unreachability for this task: this task's own architecture writes two tenant tables **out of band**, from a scheduled command, inside the tenant's own context. So a QR batch or a membership row is reachable by exactly that pattern. What the ruling forbids is doing it **on the panel's request** — which is a narrower and more useful statement, and the one the rows now carry. For the invite clause the ruling is no obstacle whatsoever.
 
 | Not delivered | Gate row it belongs to | Why | Owner · date |
 | --- | --- | --- | --- |
 | "a **scannable QR** in one wizard pass" | `§3` row 6 · ticket `§4` | needs `pager_sessions`, a tenant table; the ruling rejects a panel query that reaches one | **R-115** — owner **Task 10** (staff dashboard, the first surface a tenant's own staff authenticate into) · accepted 2026-10-28 |
-| **staff management + invites** screens | `§3` row 6 · ticket `§1` | needs `tenant_users`; same reason. The `/v1/members` API from Task 5 already serves it | **R-115** — same row |
+| **staff management** screens | `§3` row 6 · ticket `§1` | needs `tenant_users`; same reason. The `/v1/members` API from Task 5 already serves the capability | **R-115** — same row |
+| "a staff **invite** is actually delivered, asserted against the local mail catcher" | `§3` row 6 · ticket `§4` | ⚠ **NOT for the reason above, and conflating them was itself a finding** (QA M-7). Delivering mail to Mailpit touches **no tenant table**, so the ruling is no obstacle at all. The honest reason: no invite is minted by this task, so there is no credential to deliver | **R-124**, owner **Task 10**, with `R-119` · accepted 2026-10-28 |
 | **QR batch** generation + printable sheets | `§3` row 6 · ticket `§1` | needs `pager_sessions`; same reason. The reprint constraint the ticket's `§5` raises is unanswered because nothing is printed | **R-115** — same row |
 | "platform admin actions land in **`audit_log`**" | `§3` row 6 · `§3.1` row 6 · ticket `§4` | **measured impossible** for a serving process, SR-3. Delivered against `platform_audit_log` instead | **corrected in place**, not a `§5` row — `§0`'s rule for a false claim |
 | the **branding** step and its upload surface | `§4.3` wizard | part of the wizard the ruling removes from the panel; Task 7 owns tenant-facing content and Task 8 owns tokens | **R-116** — owner **Task 7** · accepted 2026-10-28 |
@@ -514,7 +517,23 @@ Written here, in the handover, and in the `task-6` tag message. Four are SR-2's;
 
 ## 9. R-106, and the two rank-2 edits that are Muhammad's
 
-### 9.1 R-106 moves, with a reason
+### 9.1 R-106 moves, with a reason — ⚠ and one of the two reasons was WITHDRAWN
+
+**Corrected 2026-10-28, from this task's own `§11` security review (M-3), which was right.**
+This section gave two reasons; the second does not hold:
+
+> ~~Its trigger has not fired. The trigger is "At Task 6's acceptance gate, **before the
+> staff-management screens ship**." Under the ruling this task ships no staff-management
+> screen, so the condition the row waits on is still ahead.~~
+
+This task **did** ship a live writer for `R-106`'s **consent** half:
+`TenantProvisioning::resolveOwner()` made any existing account the owner of a new tenant with
+no consent, which re-opens the login-strand denial of service `R-106` itself records — through
+the provisioning form rather than through a staff screen. So the trigger had partly fired.
+That half is now **refused** (security M-2) and the residual policy question is `R-119`.
+
+**The move stands on the first reason alone**, which is sufficient on its own.
+
 
 The rank-1 prompt says *"Close it here or state why it moves, with a new owner and date."* It moves,
 for two independent reasons, either of which is sufficient:
