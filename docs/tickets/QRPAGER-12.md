@@ -533,8 +533,13 @@ public.user_memberships(p_user_id uuid)
 Five properties, each load-bearing, and each a thing a reviewer can falsify:
 
 1. **One exact-match argument, and it is the *authenticated* user's id** — taken from the
-   guard, never from the request. There is no code path that passes a user id from input;
-   the function is called from one place, with `$request->user()->getKey()`.
+   guard, never from the request. There is no code path that passes a user id from input.
+   ⚠ **This said "the function is called from one place". It is called from five, through a
+   class with three public reads** — corrected after the `§11` QA review measured it (M-7).
+   The property that matters was never the count: it is that EVERY caller passes a
+   server-derived id, and what was missing was the mechanism holding that true.
+   `MembershipCallSiteTest` now pins both the public surface and the set of call sites, so a
+   sixth caller fails the suite and has to be read.
 2. **`RETURNS TABLE`, never `RETURNS SETOF tenant_users`** — `§2.8` rule 1, because column
    grants are not applied to a function's result set. Three columns, named.
 3. **No pattern, range or `IN` argument.** The signature takes a uuid and compares it with
@@ -597,10 +602,18 @@ returns anything that distinguishes "no such user" from "wrong password".
   afterwards. Laravel's `SessionGuard::login()` migrates the session; the test exists because
   "the framework does it" is not evidence, and because the passkey and 2FA paths are the ones
   where a custom responder could skip it.
-* **CSRF:** the staff surface is session-authenticated, so `VerifyCsrfToken` applies and a
+* **CSRF:** the staff surface is session-authenticated, so `ValidateCsrfToken` applies and a
   test drives a state-changing route **without** a token and asserts 419. The Sanctum bearer
   surface is token-authenticated and stateless, so CSRF does not apply to it — stated rather
   than assumed, because the two surfaces must not be confused.
+  ⚠ **This clause was not met as written, and the gap hid a defect.** `SessionPolicyTest`
+  asserted the *exception class* from an instantiated middleware — the right way to prove the
+  middleware is really enabled, and it meant nothing ever saw the STATUS. The `§11` security
+  review (M-1) drove it through the kernel: `ProblemRenderer::fromStatus()` had no `419` arm,
+  so a CSRF rejection fell to `ProblemType::ServerError` and the API answered **500** to a
+  request it had correctly refused — unlogged too, since Laravel keeps
+  `TokenMismatchException` off its report list. `ProblemType::CsrfMismatch` exists now and a
+  second case drives a real `/v1` POST through the kernel asserting 419.
 
 ### (d) Rate limits
 
@@ -610,12 +623,32 @@ customer token route (`R-063`). New buckets: `auth-login`, `auth-2fa`, `auth-pas
 `devices-issue`. Each is proven to refuse **by being driven**, not by reading the config —
 `R-063`'s clause, applied to this surface because it is the same shape.
 
+⚠ **Neither half of that was true when shipped, and both `§11` reviews found it by dumping
+the live route table instead of reading this paragraph** (SEC H-2, QA M-4 and M-8).
+`auth-passkey` **did not exist** — the four passkey routes carried `auth-login`, the bucket
+sized for a bcrypt — and **no bucket on this surface was driven to a 429 anywhere**:
+`grep -rn 429 tests/Feature/Auth/` returned nothing, so the only thing holding the new
+buckets was `R-045`'s case, which checks that a referenced name *exists*. Worse, `auth.me`
+and `auth.logout` named no bucket at all and the `auth-surface` group carries no default by
+its own deliberate decision, so both were **unmetered**: 40 consecutive `GET /v1/auth/me`
+with a forged bearer header gave 40 answers, zero 429s and exactly 40 Postgres queries.
+`auth-passkey` and a fifth bucket, `auth-session`, exist now, and `RateLimitTest` drives
+each one on this surface to a real 429 with a positive control per route.
+
 ### (e) Log redaction and secrets
 
 No password, no `two_factor_secret`, no recovery code, no Sanctum plaintext token and no
 passkey challenge reaches a log line or an error body **at any `APP_DEBUG` setting**, asserted
 against captured output *and* captured response bodies — the rank-2 clause, both halves. The
-`Redactor` already exists; Task 5 adds its key names and a test per key. `#[Hidden]` covers
+`Redactor` already exists; Task 5 adds its key names and a test per key.
+⚠ **It added neither** — `Redactor.php` was not in the task's diff at all, and the `§11`
+security review (M-4) measured `two_factor_recovery_codes`, `recovery_codes`,
+`recovery_code` and `challenge` coming back **verbatim** from `Redactor::context()`. Nothing
+logged them, so it was a latent gap rather than a leak: `recovery` and `challenge` are on
+`SECRET_KEYS` now, with a `LogRedactionTest` case per name — and the first version of that
+case was itself vacuous (`->not->toContain($value, $message)` reads the message as a second
+NEEDLE, so the negation passed on the absent sentence alone), which is why it was run against
+the unfixed code before being believed. `#[Hidden]` covers
 serialisation for `password`, `remember_token`, `two_factor_secret`,
 `two_factor_recovery_codes` and `passkeys.credential`.
 
@@ -662,11 +695,18 @@ per-request state is cleared.
 
 ### (c) The isolation proof, which is a test and not an argument
 
-`R-022`'s shape, applied to auth: **two consecutive requests on one Octane worker, as two
-different users in two different tenants**, asserting that the second request sees its own
-user, its own memberships and its own tenant — and, the half that actually catches a leak,
-that the **second request entered with no tenant setting and no open transaction** from the
-first. Task 2's equivalent test exists because the measured failure was exactly this: the
+`R-022`'s shape, applied to auth. ⚠ **What was promised here and what was built are not the
+same test, and the QA review (L-5) is right that this paragraph should say so.** The promise
+was **two consecutive requests on one Octane worker, as two different users in two different
+tenants**, asserting that the second sees its own user, memberships and tenant — and, the
+half that actually catches a leak, that the **second request entered with no tenant setting
+and no open transaction** from the first. What `AuthOctaneIsolationTest` asserts instead is
+that the auth state is bound `scoped()` and is cleared by `forgetScopedInstances()`,
+composed with Task 2's `RequestBoundaryTest` D10 case for the boundary flush itself. That
+composition is sound — and it is a composition, not the direct proof. The direct version is
+not available here: Laravel's test client does not cross a worker boundary, which is `R-102`,
+and that row is open. Task 5 also measured the cost of the divergence twice while fixing
+other findings: two tests had to write the flush by hand to see fresh data at all. Task 2's equivalent test exists because the measured failure was exactly this: the
 next request on an Octane worker entered at transaction level 1 carrying the previous
 request's tenant uuid. The auth version is the same proof over the new state.
 

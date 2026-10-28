@@ -1,0 +1,24 @@
+fresh-clone-proof: fix(api): the auth surface took bearer tokens, and 25 more at 6e5847d
+
+=== clone through file:// so no object is shared
+
+=== the clone arrived with nothing the gate needs pre-installed
+no vendor/, no .env, no node_modules — the clone is bare
+
+=== the clone's tracked tree is byte-identical to this commit's
+tree d410e4955bd384a7acd2da9d2a5d4bd71c39c307
+
+=== composer install, from the repository's own lock file
+host composer cache: present (a cache, not a source — it costs time, not correctness)
+packages installed: 170
+
+=== the three commands CLAUDE.md says a fresh clone needs, and nothing else
+cp .env.example .env · php artisan key:generate · docker compose is already up
+
+=== composer gate, in the clone
+gate: all six steps green. Full output: /tmp/qrpager-fresh-clone-ENpmuH/clone/apps/api/storage/logs/gate-20261028T003605Z.log
+
+fresh-clone-proof: PASSED at 6e5847d
+  Tests:    758 passed (6644 assertions)
+  gate log: /tmp/qrpager-fresh-clone-ENpmuH/gate.log
+  (clone removed; pass --keep to inspect it)
