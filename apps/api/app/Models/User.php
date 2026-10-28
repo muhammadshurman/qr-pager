@@ -6,6 +6,8 @@ namespace App\Models;
 
 use App\Domain\Auth\Principal;
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -59,7 +61,7 @@ use Laravel\Sanctum\HasApiTokens;
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
-class User extends Authenticatable implements PasskeyUser
+class User extends Authenticatable implements FilamentUser, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasUuids, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
@@ -275,5 +277,31 @@ class User extends Authenticatable implements PasskeyUser
     public function getRememberTokenName(): string
     {
         return '';
+    }
+
+    /**
+     * Whether this account may open the Filament platform panel.
+     *
+     * THE PANEL'S OUTERMOST GATE, and it is one line because the decision is one bit:
+     * `is_platform_admin`. A tenant owner, manager or staff member is refused here, before
+     * any resource's own `canViewAny()` runs and before any query is issued -- which is why
+     * the panel's refusal costs nothing and reaches no table.
+     *
+     * `=== true` and not a truthy test: the column is `boolean NOT NULL DEFAULT false`, and
+     * a strict comparison means a future nullable or string-typed value fails closed rather
+     * than letting `"0"` through.
+     *
+     * ⚠ THIS GRANTS NO TENANT ABILITY. `RoleMatrix`'s `PlatformAdmin` row is empty and stays
+     * empty: a platform admin who opens this panel still resolves no tenant and is still
+     * refused by the ordinary bodiless 401 on every `/v1` route, which Task 5's
+     * `PlatformAdminIsNotABypassTest` drives through HTTP. The panel is useful because it
+     * reads PLATFORM tables, not because this flag widened anything.
+     *
+     * $panel is unused on purpose: there is exactly one panel, so a per-panel decision would
+     * be a branch with one arm pretending to be a policy.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $this->getAttribute('is_platform_admin') === true;
     }
 }

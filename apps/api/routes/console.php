@@ -65,3 +65,51 @@ Schedule::command('readiness:refresh')
 Schedule::command('pager:expire')
     ->everyMinute()
     ->withoutOverlapping();
+
+/*
+ * TASK 6 — THE TWO PLATFORM COMMANDS, scheduled in the same commit that created them.
+ *
+ * R-058's ruling is why that is not left for later: "a command registered and scheduled
+ * nowhere does not enforce anything" was the finding on `pager:expire`, which shipped
+ * registered and unscheduled and made §2.11 false as deployed. The same mistake here would
+ * make the provisioning wizard silently never finish — the panel would write a `pending`
+ * row and nothing would ever drain it, which is a worse failure than an error because the
+ * screen reports success.
+ *
+ * What is still Task 13's, with R-047 and R-058, is a PROCESS that runs `schedule:run`. The
+ * schedule is a declaration; nothing in any deployed environment reads it yet. The gain from
+ * declaring it now is the same one that applied to the expiry job: `php artisan
+ * schedule:list` shows the gap instead of it being invisible.
+ */
+
+/*
+ * everyMinute(), because this is the latency a platform admin WATCHES. They fill in a form
+ * and wait for the restaurant to appear; a five-minute cadence would be a five-minute stare
+ * at a `pending` row. One pass is a single indexed read against
+ * tenant_provisionings_status_created_at_index plus three inserts per pending row, and the
+ * usual row count is zero — the cost of an idle tick is one indexed read returning nothing.
+ *
+ * withoutOverlapping(), for the reason the expiry job has it and one more: `provision()`
+ * moves a row to `running` before it starts, and this command's drain query deliberately
+ * takes `pending` only, so two overlapping passes could not pick up the same row anyway.
+ * The mutex is here so a stalled pass does not stack a second one behind it, each holding
+ * one of the app role's connections.
+ */
+Schedule::command('platform:provision-tenants')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/*
+ * everyFiveMinutes(), and the asymmetry with the command above is deliberate. Nobody is
+ * watching a counter the way they watch a restaurant being created, and the cost is the
+ * other way round: a pass is O(tenants) transactions with two aggregate reads each, so the
+ * cadence is what bounds the standing load this adds to the cluster. Five minutes of
+ * staleness on a dashboard figure is not a defect; a dashboard that re-aggregates every
+ * tenant every minute is.
+ *
+ * The dashboard renders `computed_at` for exactly this reason — a figure whose age is not
+ * shown is a figure a reader will assume is live.
+ */
+Schedule::command('platform:aggregate-stats')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

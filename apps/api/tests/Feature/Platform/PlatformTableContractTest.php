@@ -67,7 +67,14 @@ it('carries no column named tenant_id on any platform table, which is the premis
     // the sentence the whole platform/tenant split rests on. If it ever becomes false, the
     // table belongs under RLS and the pin above is the wrong place to find that out.
     foreach (['tenant_provisionings', 'tenant_statistics', 'platform_audit_log'] as $table) {
-        expect(platformColumns($table))->not->toContain('tenant_id', "{$table} grew a tenant_id: it is a tenant table now, and C4 applies");
+        // str_contains-style check and NOT `->not->toContain($needle, $message)`: Pest's
+        // toContain() is VARIADIC, so a message in the second argument is read as a second
+        // needle and the negated assertion becomes "contains neither" -- which a message
+        // that never appears makes trivially true. Four assertions in this repository were
+        // that shape and three guarded named gate invariants (§4a); SourceGuard rule 7
+        // caught this very line while this test was being written.
+        expect(in_array('tenant_id', platformColumns($table), true))
+            ->toBeFalse("{$table} grew a tenant_id: it is a tenant table now, and C4 applies");
     }
 });
 

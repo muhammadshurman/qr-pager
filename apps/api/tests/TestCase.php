@@ -58,9 +58,25 @@ abstract class TestCase extends BaseTestCase
      * Truncated between tests. audit_log is deliberately absent: it is append-only,
      * so the trigger refuses to truncate it. Tests scope their audit assertions
      * instead of resetting the table.
+     *
+     * TASK 6 ADDED THREE PLATFORM TABLES AND ONLY TWO JOIN THIS LIST.
+     *
+     * `tenant_provisionings` and `tenant_statistics` are here because they are ordinary
+     * mutable state: without them a provisioning record written by one test is still
+     * there for the next, and `select count(*) from tenant_statistics` stops meaning
+     * anything. Measured while writing TenantStatisticsTest -- a case asserting one
+     * aggregate row read TEN, because nine were left by the cases before it. That is the
+     * same class of cross-test shared state as the readiness key cleared below, and it
+     * fails as a confusing wrong number rather than as an error.
+     *
+     * `platform_audit_log` is deliberately ABSENT, for `audit_log`'s own reason: it is
+     * append-only and its BEFORE TRUNCATE trigger is ENABLE ALWAYS, so including it here
+     * would make every setUp() raise 42501. Tests scope their platform-audit assertions
+     * by `subject_id` or by `action` instead, exactly as they already do for `audit_log`.
      */
     private const RESETTABLE = [
-        'push_subscriptions', 'outbox', 'pager_sessions', 'tenant_users', 'tenants', 'users',
+        'push_subscriptions', 'outbox', 'pager_sessions', 'tenant_users',
+        'tenant_statistics', 'tenant_provisionings', 'tenants', 'users',
     ];
 
     protected function setUp(): void

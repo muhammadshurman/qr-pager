@@ -3,12 +3,15 @@
 use App\Domain\Http\ProblemType;
 use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
+use App\Features\Provisioning\Console\AggregateTenantStatisticsCommand;
+use App\Features\Provisioning\Console\ProvisionTenantsCommand;
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
 use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\Middleware\RefuseDeviceToken;
+use App\Platform\Http\Middleware\RefuseUnservedVendorRoutes;
 use App\Platform\Http\Middleware\RequireTenantScope;
 use App\Platform\Http\Middleware\ResolvePrincipal;
 use App\Platform\Http\Middleware\ShedLoad;
@@ -177,6 +180,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // process, not a cron entry, and the ECS service definition is Task 13's
         // (R-077). `--once` is what the proofs and a scheduler drive.
         WorkOutboxCommand::class,
+        // Task 6's two platform commands, registered for the same reason as the three
+        // above: they live in app/Features, which withCommands' directory scan does not
+        // cover, and an explicit list is what makes `php artisan` the record of what
+        // exists. BOTH ARE SCHEDULED in routes/console.php in the same commit that
+        // created them, which is R-058's ruling applied before it could be repeated: "a
+        // command registered and scheduled nowhere does not enforce anything."
+        ProvisionTenantsCommand::class,
+        AggregateTenantStatisticsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
@@ -186,6 +197,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // is still a request. Arming is all it does; the refusal is
         // TenantScopeGuard's, before the statement reaches Postgres.
         $middleware->prepend(ArmTenantScopeGuard::class);
+
+        // ALSO GLOBAL, and also prepended, because it has to run before routing: Task 6's
+        // Filament install added two vendor routes that answered 500 to an ANONYMOUS GET
+        // (`/filament/exports/{export}/download` and the imports equivalent, both reading
+        // tables this application never created) plus two Livewire file-upload endpoints
+        // for a panel that has no file upload. Competing routes would have worked only
+        // while this application's routes are registered before the package's, and nothing
+        // pins that order -- a global middleware does not care. See the class for the
+        // measurement and for why the Livewire prefix is a pattern rather than a literal.
+        $middleware->prepend(RefuseUnservedVendorRoutes::class);
 
         // The probes' own group. Empty, and that is the mechanism behind "while health
         // and readiness keep answering": they carry no rate limiter, no tenant

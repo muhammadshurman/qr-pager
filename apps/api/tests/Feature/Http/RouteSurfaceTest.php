@@ -58,7 +58,37 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // versioned public contract, which is worse than an unversioned fixture. And it is not
     // served in production at all -- the case below drives that, which is what makes this
     // allowlist entry acceptable rather than a hole.
-    $allowed = ['/healthz', '/readyz', '/passkey-harness', '/{fallbackPlaceholder}'];
+    //
+    // FOUR PANEL PATHS JOINED AT TASK 6, and they are listed one by one rather than as a
+    // `/platform*` prefix on purpose: a wildcard would let a fifth panel route arrive
+    // without a diff, which is the whole mechanism this allowlist is.
+    //
+    // THEY ARE NOT UNDER /v1 AND SHOULD NOT BE. `/v1` versions the REST contract -- §6's
+    // "a published path is never changed in place" is a promise to API clients about
+    // request and response shapes. The Filament panel is a server-rendered admin UI whose
+    // "responses" are HTML pages and Livewire updates; it has no API consumers, so a
+    // version in its URL would promise something to nobody and would have to be honoured
+    // forever. §12 already treats the panel as a surface of its own.
+    //
+    // NONE OF THEM IS PUBLIC. All four sit behind the panel's `web` auth guard and
+    // Filament's Authenticate middleware, and `canAccessPanel()` additionally requires
+    // `is_platform_admin`. PlatformPanelInvariantTest drives every one of them as an
+    // anonymous caller and as all five Task 5 principals.
+    //
+    // `/platform/logout` is Filament's own and is NOT a second authentication surface: it
+    // takes no credential and only ends the session Task 5's login established. The panel
+    // mounts no `->login()` page, which is the line that would have been one (see
+    // PlatformPanelProvider's docblock).
+    $allowed = [
+        '/healthz',
+        '/readyz',
+        '/passkey-harness',
+        '/platform',
+        '/platform/audit-log',
+        '/platform/logout',
+        '/platform/restaurants',
+        '/{fallbackPlaceholder}',
+    ];
 
     $outside = array_values(array_filter(
         publicRouteUris(),
