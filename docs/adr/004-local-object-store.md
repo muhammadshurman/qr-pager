@@ -74,7 +74,7 @@ Instruments, one per condition, plus two that `§1` implies rather than states:
 
 | Instrument | What it is |
 |---|---|
-| **pull** | `docker pull` with `DOCKER_CONFIG` = an empty `config.json` (condition 2) |
+| **pull** | `docker pull` with `DOCKER_CONFIG` = an empty `config.json` (condition 2). The sizes quoted below are `docker image inspect --format '{{.Size}}'`, so they are comparable **with each other** and not with the `SIZE` column of `docker images`, which prints a larger number for the same image on this host — 399 MB against inspect's 99,351,173 bytes for `bitnamilegacy/minio` (Docker 29.6.1). Size decided nothing here; it is quoted because a 1.6 GB stand-in is a cost a fresh clone pays |
 | **pinned tag** | the Docker Hub / `cgr.dev` tag listing, looking for a version tag of the kind every other image here already uses — `postgres:16-alpine`, `redis:7-alpine`, `axllent/mailpit:v1.32.0` (condition 3) |
 | **round trip** | PUT, GET **with the bytes compared by sha256**, LIST, DELETE through `league/flysystem-aws-s3-v3` + `aws/aws-sdk-php` — the production client library, against the running container (conditions 1 and 4). 4KB of `random_bytes` plus a NUL, a `0xff` and a PNG signature, because a stand-in that mangles non-UTF-8 content passes a "hello world" probe and fails a logo upload |
 | **negative control** | the same round trip with a **wrong secret**, which MUST fail. A stand-in that accepts any signature makes a green round trip prove nothing — the vacuous-pass shape this project has paid for before (`R-059`, and `R-054`'s "the control never failed") |
