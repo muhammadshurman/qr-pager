@@ -73,6 +73,17 @@ Break any of these and the task is not done.
 - Cross-tenant reads exist **only** on these named paths: QR token lookup, a user's own memberships, the outbox queue, the expiry job. Adding one requires editing this file first.
 - **Two authentication surfaces, never confused.** Staff and admins authenticate as **users** (Task 5). A customer has no account and authenticates **only** by presenting the QR token, which resolves to exactly one session in exactly one tenant — built in Task 3, consumed by Task 4. A customer-facing route that accepts anything other than that token is a rejected design.
 - **Before Task 5 exists**, every route built in Tasks 2-4 is either on the customer token path above, or guarded by Task 2's deny-by-default guard with a **test-only** authentication stub that is deleted in Task 5. A stub that survives Task 5 is a Critical finding.
+- **Platform tables are not tenant tables.** The platform admin panel operates only on tables
+  belonging to no tenant — the tenant registry, provisioning and subscription records — which
+  carry no RLS because they carry no tenant data. A platform admin holds no tenant ability and no
+  cross-tenant read: they can see that a restaurant exists and administer it from outside, and
+  cannot see inside it. Support access to a tenant's own data, if ever needed, is a temporary
+  audited membership. Added 2026-10-28.
+- **Per-tenant statistics are aggregates written to a platform table, never a read of a tenant
+  table.** A counter or a timestamp is maintained by a job or the outbox worker — which already
+  holds a named cross-tenant path — and the panel reads only that platform row. An aggregate
+  carries no row-level detail: no order reference, no token, no session identifier. A panel query
+  that reaches a tenant table is a rejected design. Added 2026-10-28.
 
 ### Data
 - QR token: 128-bit CSPRNG, **stored only as a hash**, TTL 2 hours. Never logged, never in a URL query string, never in an error body.
