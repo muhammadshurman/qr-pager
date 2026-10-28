@@ -4602,6 +4602,36 @@ hook, which checks shape and not truth, and a reader. Every other claim in this 
 has a test, a proof script or a grep behind it; this class has nothing, which is why it is the
 one that recurs.
 
+#### The branch name, and why the RECORD moved rather than the branch (2026-10-28)
+
+`QRPAGER-13 §6`'s *Definition of Done* said branch **`task-6-tenant-provisioning`**. The branch
+that exists, carries ten commits and carries the annotated `task-6` tag is
+**`task-6-provisioning`**, and every record in this repository now names that one — `§0`, this
+section, and `QRPAGER-13 §0` SR-5, with the Jira ticket's `§6` corrected to match.
+
+**Why it was cut under that name.** The rank-1 prompt's second line reads, verbatim: *"Branch
+task-6-provisioning off task-5-auth-rbac at the task-5 tag (5a227f8)."* The ticket said the
+other. `§0` makes the chat message rank 1 and the ticket rank 3, so the prompt's spelling won
+and the divergence was recorded as SR-5 rather than resolved silently. **Muhammad's reading is
+that the ticket's name was the correction and should have won.** The prompt's text is quoted
+here so the disagreement rests on a fact rather than on either side's memory; it changes
+nothing about what to do now, because both readings end at the same place — the repository has
+one branch and the records must name it.
+
+**Why the branch is NOT renamed.** It carries a **pushed annotated tag**. `§10` makes the tag
+the delivery record, so a rename would leave `task-6` pointing into a ref name that no longer
+exists on the remote, and would require deleting and recreating the tag — the operation Task 2
+had to perform once already (recorded above: the remote tag was deleted and recreated on
+`2e42267` rather than force-moved, precisely so it got its own CI run in its own concurrency
+group). Renaming to tidy a name would spend a verdict to buy nothing.
+
+**The rule this settles, which is the part worth keeping:** when a record and the repository
+disagree about a *name*, the repository wins and the record moves — because the repository is
+the thing a later reader will `git checkout`, and `§8` stops for a record that disagrees with
+it. That is the opposite direction from a record and the repository disagreeing about a
+*measurement*, where `§4a` has corrected the record every time precisely because the
+measurement is the fact. Names are facts about the repo; figures are facts about the code.
+
 #### The one stop-and-report that is still open, and it is Muhammad's
 
 **`PROJECT_INSTRUCTIONS.md §4 › Tenancy` does not carry the two clauses dated 2026-10-28 that

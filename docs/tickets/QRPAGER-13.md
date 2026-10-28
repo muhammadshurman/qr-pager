@@ -103,10 +103,29 @@ connection, including the owner and worker connections and statements that fail 
 sent. The named invariant is proven with a listener. Nothing is lost; the ticket's sentence is
 simply stale, and this is the correction rather than a substitution made quietly.
 
-### SR-5 — branch name
+### SR-5 — branch name: the records now follow the repository, not the other way round
 
-Ticket `§6` says branch `task-6-tenant-provisioning`; the rank-1 prompt says `task-6-provisioning`.
-Rank 1 wins. The branch is **`task-6-provisioning`**.
+**SETTLED 2026-10-28, after `task-6` was tagged and pushed.** The branch that exists, carries
+ten commits and carries the annotated `task-6` tag is **`task-6-provisioning`**. Every record
+in this repository names that, and this ticket's `§6` *Definition of Done* is corrected to it
+below.
+
+**Why it was cut under that name.** The rank-1 prompt's second line reads, verbatim:
+
+> "Branch task-6-provisioning off task-5-auth-rbac at the task-5 tag (5a227f8)."
+
+while this ticket's `§6` said `task-6-tenant-provisioning`. `§0` makes the chat message rank 1
+and the ticket rank 3, so the prompt's spelling won and the divergence was recorded here rather
+than resolved silently. **Muhammad's reading is that the ticket's name was the correction and
+should have won**; the prompt's text is quoted above so the disagreement rests on a fact rather
+than on either memory, and it changes nothing about what to do now.
+
+**Why the branch is NOT renamed.** It carries a pushed annotated tag. `§10` makes the tag the
+delivery record, so renaming the branch would leave `task-6` pointing into a ref name that no
+longer exists on the remote and would require deleting and recreating the tag — which is the
+operation Task 2 had to perform once already (`§4a`: the remote tag was deleted and recreated
+rather than force-moved) and which costs a CI run and a verdict. A record that disagrees with
+the repository is the `§8` failure this project stops for, so **the record moves.**
 
 ---
 

@@ -1,0 +1,47 @@
+QRPAGER-13 — the audit_log measurement, re-run 2026-10-28T11:05:10Z at f7a81cc
+Re-runnable form: tests/Feature/Platform/PlatformTableContractTest.php
+  'it proves a platform-scope audit_log row is unreachable, which is SR-3's whole premise'
+
+=== 0. THE POLICY. tenant_id = ctx, so a NULL tenant_id satisfies it in NEITHER direction.
+          polname           |                                      using_expr                                      
+----------------------------+--------------------------------------------------------------------------------------
+ tenant_isolation_audit_log | (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)
+(1 row)
+
+
+=== 1. qrpager_app, NO tenant context -> expect 42501
+BEGIN
+SET
+ERROR:  new row violates row-level security policy for table "audit_log"
+ROLLBACK
+=== 2. qrpager_app, INSIDE a tenant context -> expect 42501 (NULL = ctx is never true)
+BEGIN
+SET
+              set_config              
+--------------------------------------
+ 01a18155-a177-7078-9e9b-bc9b93dfe0ae
+(1 row)
+
+ERROR:  new row violates row-level security policy for table "audit_log"
+ROLLBACK
+=== 3. qrpager_owner, NO bypass -> expect 42501
+BEGIN
+SET
+ERROR:  new row violates row-level security policy for table "audit_log"
+ROLLBACK
+=== 4. THE CONTROL: qrpager_owner WITH the bypass -> expect INSERT 0 1
+BEGIN
+SET
+ set_config 
+------------
+ on
+(1 row)
+
+INSERT 0 1
+---- and read it back in the same scope:
+ owner_bypass_sees 
+-------------------
+                 1
+(1 row)
+
+ROLLBACK
