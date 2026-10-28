@@ -151,6 +151,94 @@ it('validates every field, and the slug rule is the database’s own expression'
     'email not an address' => [['name' => 'N', 'slug' => 'ok-slug', 'owner_email' => 'not-an-address'], 'owner_email'],
 ]);
 
+it('refuses an owner who already holds a membership, as a FIELD error on the form', function (): void {
+    // ⚠ THE FORM'S OWN CONSENT RULE, which the service-level cases do not reach. Security
+    // M-2's refusal is enforced in two places on purpose -- a closure rule on the field, so
+    // Filament keys the error to it, and again in `request()` so a non-panel caller cannot
+    // walk around the form. The service half is driven by TenantProvisioningTest; THIS is
+    // the path a platform admin actually hits, and it was the one with no test.
+    $admin = createActionAdmin();
+
+    $email = 'already-'.Str::lower(Str::random(8)).'@example.test';
+    $userId = (string) Str::uuid7();
+    $tenant = $this->makeTenant();
+
+    DB::insert(
+        'insert into users (id, name, email, created_at, updated_at) values (?, ?, ?, now(), now())',
+        [$userId, 'Already A Member', $email],
+    );
+    withTenant($tenant, fn () => DB::insert(
+        'insert into tenant_users (id, tenant_id, user_id, role, created_at, updated_at)
+         values (?, ?, ?, ?::tenant_role, now(), now())',
+        [(string) Str::uuid7(), $tenant, $userId, 'staff'],
+    ));
+
+    $slug = 'consent-'.Str::lower(Str::random(8));
+
+    Livewire::actingAs($admin)
+        ->test(ListRestaurants::class)
+        ->callAction('provision', [
+            'name' => 'Consent Check',
+            'slug' => $slug,
+            'owner_email' => $email,
+        ])
+        // Keyed to the FIELD, which is the whole reason it is a rule rather than a thrown
+        // ValidationException: an exception from the action's closure lands under the bare
+        // key and Filament's fields live at `mountedActions.0.data.owner_email`.
+        ->assertHasActionErrors(['owner_email']);
+
+    // And nothing was written, so no drain will act on it either.
+    expect((int) DB::selectOne('select count(*) as c from tenant_provisionings where slug = ?', [$slug])->c)
+        ->toBe(0);
+});
+
+it('refuses a platform admin as owner on the form, with the same message', function (): void {
+    // The second of the two refused cases, through the form. One message for both, so the
+    // form cannot be used to probe whether an address has an account or is an admin's.
+    $admin = createActionAdmin();
+
+    $email = 'otheradmin-'.Str::lower(Str::random(8)).'@example.test';
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => (string) Str::uuid7(),
+        'name' => 'Other Admin',
+        'email' => $email,
+        'is_platform_admin' => true,
+    ]);
+
+    $component = Livewire::actingAs($admin)
+        ->test(ListRestaurants::class)
+        ->callAction('provision', [
+            'name' => 'Admin As Owner',
+            'slug' => 'adminowner-'.Str::lower(Str::random(8)),
+            'owner_email' => $email,
+        ])
+        ->assertHasActionErrors(['owner_email']);
+
+    $joined = implode(' ', $component->errors()->all());
+
+    expect(str_contains($joined, 'needs an invitation the person accepts themselves'))->toBeTrue($joined)
+        // No account detail, and no hint about WHICH of the two rules refused it.
+        ->and(str_contains($joined, 'platform admin'))->toBeFalse()
+        ->and(str_contains($joined, $email))->toBeFalse();
+});
+
+it('accepts a fresh address through the form, so the rule is narrow', function (): void {
+    // The control: the refusal must not have become a blanket ban on the happy path.
+    $slug = 'fresh-form-'.Str::lower(Str::random(8));
+
+    Livewire::actingAs(createActionAdmin())
+        ->test(ListRestaurants::class)
+        ->callAction('provision', [
+            'name' => 'Fresh Form',
+            'slug' => $slug,
+            'owner_email' => 'brand-new-'.Str::lower(Str::random(8)).'@example.test',
+        ])
+        ->assertHasNoActionErrors();
+
+    expect((int) DB::selectOne('select count(*) as c from tenant_provisionings where slug = ?', [$slug])->c)
+        ->toBe(1);
+});
+
 it('tells the user what to type rather than naming the pattern', function (): void {
     // Filament's default regex message names the expression, which is schema detail on a
     // screen. The override says what to do instead -- and no validation message anywhere
