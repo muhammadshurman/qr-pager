@@ -206,8 +206,20 @@ class User extends Authenticatable implements PasskeyUser
      * A platform admin, and NOT a tenant bypass.
      *
      * `QRPAGER-12 §5` and the rank-1 prompt both say so. This flag gates platform-scoped
-     * things — provisioning a tenant, reading `audit_log` rows whose `tenant_id` is NULL —
-     * and `RoleMatrix` grants the `PlatformAdmin` principal **no tenant ability at all**.
+     * things — provisioning a tenant, and reading the platform audit log — and `RoleMatrix`
+     * grants the `PlatformAdmin` principal **no tenant ability at all**.
+     *
+     * ⚠ THIS COMMENT SAID "reading `audit_log` rows whose `tenant_id` is NULL" UNTIL
+     * 2026-10-28, AND THAT WAS NEVER POSSIBLE. `audit_log` is a tenant table under FORCE
+     * RLS whose isolation policy compares `tenant_id = NULLIF(current_setting('app.tenant_id',
+     * true), '')::uuid`, and `NULL = anything` is `NULL` rather than true — so a
+     * platform-scope row satisfies no policy. Measured at Task 6's Phase 0: the insert is
+     * refused `42501` for `qrpager_app` with and without a context AND for `qrpager_owner`
+     * without the bypass, and a committed row reads back as 0 rows for the app role in
+     * either state; only `qrpager_owner` with `app.bypass_tenant = 'on'` can write or read
+     * one, which is a migration-time posture and not a request-time one. Task 6 adds
+     * `platform_audit_log`, a platform table, which is what this sentence now points at
+     * (`QRPAGER-13 §0` SR-3, `PLAN.md §2.4`).
      * A platform admin holding no membership in a tenant resolves no tenant for it and is
      * refused by the ordinary 401, which `PlatformAdminIsNotABypassTest` drives through
      * HTTP rather than reading off this comment.

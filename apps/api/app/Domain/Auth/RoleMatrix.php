@@ -58,9 +58,17 @@ namespace App\Domain\Auth;
  *
  * `PlatformAdmin` holds **nothing here at all**, and that is the entry a reviewer should
  * look at hardest. It is not an oversight and not a TODO: a platform admin's powers are
- * platform-scoped (provisioning a tenant, reading `audit_log` rows whose `tenant_id` is
- * NULL) and Task 6 owns that surface. Giving it any tenant ability here would be the
- * tenant bypass `§5` forbids, and would need a `PROJECT_INSTRUCTIONS.md §4` edit first.
+ * platform-scoped (provisioning a tenant, reading the platform audit log) and Task 6 owns
+ * that surface. Giving it any tenant ability here would be the tenant bypass `§5` forbids,
+ * and would need a `PROJECT_INSTRUCTIONS.md §4` edit first.
+ *
+ * ⚠ THIS SAID "reading `audit_log` rows whose `tenant_id` is NULL" UNTIL 2026-10-28, and
+ * that was never reachable by a serving process: `audit_log` is a tenant table under FORCE
+ * RLS, a platform-scope row has `tenant_id` NULL, and `NULL = ctx` is never true, so the
+ * row satisfies no policy in either direction. Measured at Task 6's Phase 0 — `42501` on
+ * insert for `qrpager_app` in and out of context, 0 rows on read, and only
+ * `qrpager_owner` with the bypass able to do either. Task 6's `platform_audit_log` is the
+ * table this now names (`QRPAGER-13 §0` SR-3).
  */
 final class RoleMatrix
 {
