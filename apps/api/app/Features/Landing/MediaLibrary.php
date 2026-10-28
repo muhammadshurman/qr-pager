@@ -108,7 +108,26 @@ final class MediaLibrary
             // nothing. That is precisely the one state the ordering above exists to
             // prevent: a row pointing at bytes that are not there, which the tenant
             // discovers at their next publish.
-            if (self::disk()->put($key, $bytes) === false) {
+            //
+            // ⚠ THE METADATA IS SET HERE AND NOT AT PUBLISH TIME, which looks odd on a
+            // PRIVATE object that is never served -- and is the only place it can be set.
+            // A publish copies this object into the site prefix SERVER-SIDE (D3, §6.5's
+            // cost argument), an S3 server-side copy carries the SOURCE's metadata, and
+            // Flysystem's copy() exposes no MetadataDirective. So an object stored bare
+            // produces a published copy with no Content-Type and no Cache-Control --
+            // measured, after LandingPublishTest read the copy's headers back and found
+            // CacheControl absent.
+            //
+            // Both values are correct for this object wherever it is served from: the
+            // bytes are immutable (the key's leaf is CSPRNG and is never reused), so a
+            // long shared cache can never go stale, and the Content-Type is the type the
+            // bytes were DETECTED as rather than anything the uploader claimed.
+            $written = self::disk()->put($key, $bytes, [
+                'ContentType' => $image->contentType,
+                'CacheControl' => (string) config('landing.cache_control'),
+            ]);
+
+            if ($written === false) {
                 throw new MediaRejected('the image could not be stored; nothing was saved');
             }
 

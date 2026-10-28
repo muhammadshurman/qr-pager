@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — the media library is in and green; publish, domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
+STATUS: TASK-7 BLOCKED — publish and the XSS fuzz suite are in and green; domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -95,7 +95,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 2 | Migration — three tenant tables, two enums, RLS, grants | **done** | *this commit* | yes |
 | 3 | Block schema, generated contract, `landing-schema-check` | **done** | *this commit* | yes |
 | 4 | Media library — upload validation, isolation | **done** | *this commit* | yes |
-| 5 | Publish — render, snapshot, pointer, manifest | not started | — | — |
+| 5 | Publish — render, snapshot, pointer, manifest | **done** | *this commit* | yes |
 | 6 | Domains — DNS verification, issuance, redirect | not started | — | — |
 | 7 | The `/studio` panel | not started | — | — |
 | 8 | `composer guard` rule 11 — theme tokens | not started | — | — |
@@ -115,9 +115,9 @@ empty row is an unmet clause, not an unwritten one.
 
 | `§3` row 7 clause | Evidence | Commit |
 | ----------------- | -------- | ------ |
-| publish produces a statically rendered, CDN-cached page | — | — |
+| publish produces a statically rendered, CDN-cached page | `LandingPublishTest` — the object exists, its bytes hash to the recorded checksum, and `ContentType` and `Cache-Control` are read back out of the store through `headObject`. The CDN's own behaviour is Task 13's and is not claimed | *this commit* |
 | an unpublished draft is not reachable | — | — |
-| a tenant cannot inject script through any block | — | — |
+| a tenant cannot inject script through any block | `LandingXssFuzzTest` — 46 payloads into every text field of every block, asserted structurally by PARSING the output (no script, iframe, object, embed, base, form, `on*`, `javascript:`/`data:` URL, or `url()` in the theme attribute) while the payload is still present as text; the non-text fields refuse all 46; the fuzz paths are checked against `BlockSchema` so the sweep cannot go stale | *this commit* |
 | custom domain issues TLS automatically and the old domain redirects | — | — |
 | theme overrides tokens only, never components | — | — |
 | an upload is validated by real content type and size, not by extension | `MediaUploadTest` — an HTML file called `logo.png` is refused naming `text/html`; the five types round-trip through the real composed store; the stored extension comes from the detected type, not the filename; empty, 5 MB and 21 hostile SVGs refused | *this commit* |
