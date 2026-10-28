@@ -20,6 +20,7 @@ use App\Features\Landing\PublishedSite;
 use App\Features\Landing\PublishFailed;
 use App\Features\Landing\TenantDomains;
 use Filament\Http\Middleware\Authenticate;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -533,72 +534,185 @@ it('derives the transition it checks from the row, so the check can actually fai
     expect($reflection->getNumberOfParameters())->toBe(2);
 });
 
-it('refuses to finish a publish whose row changed underneath it', function (): void {
-    // ROUND 1, MEDIUM #6. publish() is three transactions now, so an unpublish between
-    // phase 1 and phase 3 would otherwise have `published` written back over a row
-    // somebody had just taken down.
+it('refuses to finish a publish whose row changed underneath it, and leaves not one object behind', function (): void {
+    // ⚠ THE FIFTH CLAUSE-1 FAILURE, AND THE FIFTH IS THE FIRST ONE AGAIN. The third
+    // scoped re-review (2026-10-28) read the ordering change and found that phase 2 still
+    // wrote `{checksum}.html` INTO `sites/{hostname}/` before the row committed, on the
+    // argument that nothing names it. `manifest.json` names it -- in its body, at a
+    // predictable key, in the prefix the CDN maps `Host` onto -- and the checksum is a
+    // hash of the document, which `LandingDraftUnreachableTest` asserts is STABLE across
+    // an unpublish and a re-publish. So the name of a live page's snapshot is public for
+    // the life of that publish, and any later attempt that died before the commit put
+    // that exact key back into a swept prefix with the row at `draft`.
+    //
+    // Phase 2 touches no network at all now. This case drives the route end to end.
     $tenant = $this->makeTenant(slug: 'raced');
     $pages = new LandingPages;
 
-    $pages->saveDraft($tenant, LandingFixtures::fullPage());
-    $pages->publish($tenant);
+    // ⚠ WITH A REAL MEDIA ASSET, because the previous version of this case passed
+    // `$mediaId = null` and the publish's asset-copy loop therefore never ran -- so the
+    // "nothing is left behind" claim had never once been tested against a copied object,
+    // which is the same clause through a different key. The same review found that too.
+    $mediaId = (new MediaLibrary)->store($tenant, 'logo.png', ImageFixtures::png());
 
-    // The interleave, forced: the disk's pointer write is where another actor lands.
-    $raced = false;
-    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation) use (&$raced, $pages, $tenant): void {
-        if ($operation === 'put' && ! $raced) {
-            $raced = true;
-            $pages->unpublish($tenant);
+    $pages->saveDraft($tenant, LandingFixtures::fullPage($mediaId));
+    $published = $pages->publish($tenant);
+    $root = PublishedSite::root($published->hostname);
+
+    // What an attacker records while the page is live: one GET of a file the CDN serves.
+    $manifest = json_decode((string) MediaLibrary::disk()->get(PublishedSite::manifest($published->hostname)), true);
+    $recorded = is_array($manifest) ? (string) $manifest['checksum'] : '';
+
+    expect($recorded)->toBe($published->checksum)
+        ->and(MediaLibrary::disk()->exists(PublishedSite::snapshot($published->hostname, $recorded)))->toBeTrue()
+        ->and(MediaLibrary::disk()->allFiles($root.'/assets'))->not->toBe([]);
+
+    // The take-down lands while the NEXT publish is between phase 1 and phase 3. Forced
+    // on the owner connection from a query listener rather than by calling `unpublish()`
+    // here: phase 2 holds no transaction and makes no query, so there is no call this
+    // test could interleave with, and the row moving underneath the publish is the
+    // condition -- not which actor moved it.
+    $landed = false;
+
+    DB::listen(function (QueryExecuted $query) use (&$landed, $tenant, $root): void {
+        if ($landed || ! str_contains($query->sql, 'from "landing_pages"')) {
+            return;
         }
+
+        $landed = true;
+
+        // Exactly what `unpublish()` does: the whole prefix, then the row.
+        //
+        // ⚠ ON THE APP CONNECTION AND INSIDE THE SCOPE THAT IS ALREADY OPEN. The owner
+        // connection is how this file forces every other out-of-band row change, and it
+        // cannot be used here: the listener fires inside phase 1's own `withTenant()`,
+        // and `TenantContext` refuses a second scope on a second connection ("Tenant
+        // context is already open on connection [pgsql]"). The row ends up in exactly
+        // the state a take-down leaves it in, which is the condition phase 3 is guarded
+        // against; which actor moved it is not what this case is about.
+        MediaLibrary::disk()->deleteDirectory($root);
+
+        DB::table('landing_pages')
+            ->where('tenant_id', $tenant)
+            ->update([
+                'status' => 'draft',
+                'published_document' => null,
+                'published_checksum' => null,
+                'published_hostname' => null,
+                'published_at' => null,
+            ]);
+    });
+
+    expect(fn () => $pages->publish($tenant))
+        ->toThrow(PublishFailed::class, 'changed while it was publishing');
+
+    expect($landed)->toBeTrue('the interleave never fired, so this case proved nothing');
+
+    // ⚠ WHAT "NOTHING REACHABLE" MEANS, AND IT IS THE WHOLE PREFIX. `allFiles($prefix)
+    // === []` is the standard this project states and it is the one asserted here. The
+    // round-2 version of this case was narrowed to "no pointer and no manifest" on the
+    // argument that a leftover snapshot is unnamed; the review that followed pointed at
+    // the manifest the tenant had already published, and at the deleted comment which
+    // had said one key's absence was never the standard.
+    expect(MediaLibrary::disk()->allFiles($root))->toBe([])
+        ->and(MediaLibrary::disk()->exists(PublishedSite::snapshot($published->hostname, $recorded)))
+        ->toBeFalse('the refused publish put the taken-down page back at the key its own manifest had published')
+        ->and($pages->state($tenant)['status']->value)->toBe('draft');
+});
+
+it('sweeps the prefix when a take-down lands after the row has committed', function (): void {
+    // THE OTHER HALF OF THE ORDERING CHANGE, and the window the same review named: with
+    // every object write now AFTER the commit, an `unpublish()` landing inside phase 4
+    // empties the prefix and sets the row to `draft`, and the in-flight publish then
+    // writes the pointer into it -- a live page with the row denying it, which is clause
+    // 1 once more. Phase 5 reconciles: it re-reads the row, and when the row says
+    // `draft` -- the one state in which nothing of this tenant's may be live -- it
+    // sweeps. That gate is what makes this the one compensation this method can safely
+    // carry; the two it used to have could fire while the row still said `published`,
+    // and so could delete a live page's own objects.
+    //
+    // The interleave hooks the POINTER write by KEY. Hooking "the first put" is what the
+    // previous version did, and the reordering moved the first put from the pointer to
+    // the snapshot without the test noticing.
+    $tenant = $this->makeTenant(slug: 'swept');
+    $pages = new LandingPages;
+
+    $mediaId = (new MediaLibrary)->store($tenant, 'logo.png', ImageFixtures::png());
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage($mediaId));
+    $published = $pages->publish($tenant);
+    $root = PublishedSite::root($published->hostname);
+
+    $raced = false;
+    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation, string $key) use (&$raced, $pages, $tenant): void {
+        if ($operation !== 'put' || $raced || ! str_ends_with($key, '/index.html')) {
+            return;
+        }
+
+        $raced = true;
+        $pages->unpublish($tenant);
     });
 
     Storage::set('s3', $recorder);
 
     try {
         expect(fn () => $pages->publish($tenant))
-            ->toThrow(PublishFailed::class, 'changed while it was publishing');
+            ->toThrow(PublishFailed::class, 'taken down while it was publishing');
     } finally {
         Storage::forgetDisk('s3');
     }
 
-    // The row is what the unpublish left it, not what the publish wanted.
+    expect($raced)->toBeTrue('the pointer write was never hooked, so this case proved nothing');
+
+    // The row says `draft`, and so the prefix is EMPTY -- including the pointer and the
+    // manifest this publish wrote after the take-down had already swept.
     expect($pages->state($tenant)['status']->value)->toBe('draft')
-        // ⚠ AND NOTHING IS LIVE, which this case did NOT assert and which is the whole
-        // point of it. Round 2 of the fix diff's review found that the guard refuses one
-        // phase AFTER the pointer write, so the refused publish left the page serving
-        // with the row at `draft` -- and `unpublish()`'s early return then made that
-        // permanent. The test reached the broken state and never looked at it.
-        ->and(true)->toBeTrue();
+        ->and(MediaLibrary::disk()->allFiles($root))->toBe([]);
+});
 
-    // ⚠ WHAT "NOTHING REACHABLE" MEANS, and it is not "the prefix is empty".
-    //
-    // This case has been through three versions. It asserted `exists(pointer)` alone,
-    // and the scoped review found that the compensation then in place left
-    // `manifest.json` -- whose body carries the checksum -- beside `{checksum}.html`,
-    // so the page was still reachable in two requests. It was widened to
-    // `allFiles($prefix) === []`, which was right for THAT compensation.
-    //
-    // The ordering changed after the second scoped review: the row now commits BEFORE
-    // anything becomes reachable, so a refusal needs no compensation at all and simply
-    // leaves the snapshot it had already written. That object's key is a sha256 of its
-    // own bytes and NOTHING names it -- no pointer, no manifest -- so it is not
-    // reachable, and deleting it would be the compensation this ordering exists to make
-    // unnecessary. It is an unreferenced object, which is `R-155`.
-    //
-    // So the assertion is about the two keys that make something reachable.
-    $root = PublishedSite::root($pages->platformHostname($tenant));
-    $left = MediaLibrary::disk()->allFiles($root);
+it('tells the tenant which side of the commit a publish failed on', function (): void {
+    // ⚠ "Publish failed — your live page is unchanged" IS NOT TRUE OF EVERY FAILURE ANY
+    // MORE, and the panel showed it for all of them. `SR-4` put the row's commit before
+    // every object write, so from phase 4 on the row has already moved: a failed manifest
+    // write leaves the NEW page live, and a failed asset copy or pointer write leaves the
+    // old page live beside a row that says `published`. The third scoped re-review found
+    // the copy still promising the opposite. The exception now carries its own headline.
+    $tenant = $this->makeTenant(slug: 'headlines');
+    $pages = new LandingPages;
 
-    expect(MediaLibrary::disk()->exists(PublishedSite::pointer($pages->platformHostname($tenant))))
-        ->toBeFalse('a refused publish left a pointer, so a page nothing records is live')
-        ->and(MediaLibrary::disk()->exists(PublishedSite::manifest($pages->platformHostname($tenant))))
-        ->toBeFalse('a refused publish left a manifest, which names the snapshot -- the same route twice over');
-
-    // And everything that IS left is an unnamed snapshot, so the claim above is about
-    // the whole prefix rather than about two keys somebody remembered to check.
-    foreach ($left as $key) {
-        expect(basename((string) $key))->toMatch('/^[0-9a-f]{64}\.html$/', "unexpected object left behind: {$key}");
+    // Before the commit: an empty document is refused in phase 1, and nothing anywhere
+    // has moved.
+    try {
+        $pages->publish($tenant);
+        $this->fail('an empty page was published');
+    } catch (PublishFailed $e) {
+        expect($e->headline)->toBe(PublishFailed::LIVE_UNCHANGED);
     }
+
+    // After the commit: the store refuses every PUT, so phase 4 fails with the row
+    // already saying `published`.
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+
+    $recorder = new RecordingDisk(MediaLibrary::disk(), fn (string $operation, string $key) => null, ['put' => false]);
+
+    Storage::set('s3', $recorder);
+
+    try {
+        $pages->publish($tenant);
+        $this->fail('a publish whose every write failed reported success');
+    } catch (PublishFailed $e) {
+        expect($e->headline)->toBe(PublishFailed::AFTER_RECORD)
+            ->and($e->reason)->toContain('recorded as published');
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    // And the row records what it did: `published`, over a prefix that has nothing in
+    // it. That is the residual `SR-4` chose -- the row claiming MORE than exists -- and
+    // it is asserted here so that the trade is a tested property rather than a sentence
+    // in a docblock.
+    expect($pages->state($tenant)['status']->value)->toBe('published')
+        ->and(MediaLibrary::disk()->allFiles(PublishedSite::root($pages->hostname($tenant))))->toBe([]);
 });
 
 it('takes a page down even when the row has lost track of it', function (): void {
@@ -652,24 +766,36 @@ it('serialises publish against unpublish for one tenant, so neither can interlea
     // The lock is taken on the `pgsql` connection, so a second holder on ANOTHER
     // connection must block. `pg_try_advisory_lock` from the owner connection tells us
     // whether it is held, without waiting.
-    $held = null;
+    //
+    // ⚠ SAMPLED AT EVERY PUT, NOT AT THE FIRST ONE. The previous version took one sample
+    // on the first `put` and asserted from it that "the publish held its tenant lock
+    // while writing objects". Under the new ordering the first put is the snapshot and
+    // the one whose protection actually matters is the POINTER, two writes later, which
+    // that sample never looked at -- the third scoped re-review's Low. Every put is
+    // recorded by key, and every one of them has to have been protected.
+    /** @var array<string, bool> $samples */
+    $samples = [];
 
-    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation) use (&$held, $tenant): void {
-        if ($operation === 'put' && $held === null) {
-            $objectId = crc32($tenant);
-            $objectId = $objectId > 2147483647 ? $objectId - 4294967296 : $objectId;
+    $recorder = new RecordingDisk(MediaLibrary::disk(), function (string $operation, string $key) use (&$samples, $tenant): void {
+        if ($operation !== 'put') {
+            return;
+        }
 
-            $held = ! (bool) DB::connection('pgsql_owner')->selectOne(
-                'select pg_try_advisory_lock(?, ?) as got',
+        $objectId = crc32($tenant);
+        $objectId = $objectId > 2147483647 ? $objectId - 4294967296 : $objectId;
+
+        $taken = (bool) DB::connection('pgsql_owner')->selectOne(
+            'select pg_try_advisory_lock(?, ?) as got',
+            [LandingPages::LOCK_CLASS, $objectId],
+        )->got;
+
+        $samples[$key] = ! $taken;
+
+        if ($taken) {
+            DB::connection('pgsql_owner')->statement(
+                'select pg_advisory_unlock(?, ?)',
                 [LandingPages::LOCK_CLASS, $objectId],
-            )->got;
-
-            if (! $held) {
-                DB::connection('pgsql_owner')->statement(
-                    'select pg_advisory_unlock(?, ?)',
-                    [LandingPages::LOCK_CLASS, $objectId],
-                );
-            }
+            );
         }
     });
 
@@ -681,7 +807,17 @@ it('serialises publish against unpublish for one tenant, so neither can interlea
         Storage::forgetDisk('s3');
     }
 
-    expect($held)->toBeTrue('the publish did not hold its tenant lock while writing objects');
+    expect($samples)->not->toBe([], 'the publish wrote no objects, so nothing was sampled');
+
+    foreach ($samples as $key => $heldAtThisWrite) {
+        expect($heldAtThisWrite)->toBeTrue("the publish did not hold its tenant lock while writing {$key}");
+    }
+
+    // And the pointer -- the write that makes a page reachable -- is one of the keys
+    // sampled, so the assertion above is about the write that matters and not only
+    // about whichever one happened to come first.
+    expect(array_filter(array_keys($samples), static fn (string $key): bool => str_ends_with($key, '/index.html')))
+        ->not->toBe([], 'the pointer write was never sampled');
 
     // And it is RELEASED afterwards, so a second publish is not blocked for the life of
     // the connection -- a session lock that leaks is worse than no lock.

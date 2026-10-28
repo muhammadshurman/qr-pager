@@ -103,6 +103,31 @@ Assets and the snapshot first — the snapshot's key is a sha256 of its own byte
 names it — then the guarded row update, then the pointer, then the manifest last because the
 manifest is a second pointer.
 
+**⚠ EXTENDED 2026-10-28 BY THE THIRD SCOPED RE-REVIEW, WHICH FOUND CLAUSE 1 A FIFTH TIME IN THE
+PARAGRAPH ABOVE.** *"The snapshot's key is a sha256 of its own bytes and nothing names it"* is
+false: `manifest.json` carries that checksum **in its body**, at a predictable key, in the
+prefix the CDN maps `Host` onto, for the whole life of the publish — and the checksum is a hash
+of the document, so it is **stable** across an unpublish and a re-publish. Writing the snapshot
+into `sites/{hostname}/` one step before the commit therefore put a taken-down page back at a
+key the tenant's own manifest had already published, whenever an attempt died before the row
+committed. The ordering is now:
+
+    render + hash (NO NETWORK) → ROW (one keyed statement) → assets → snapshot → pointer → manifest
+
+Rendering never needed the store: `PublishedSite::assetUrl()` is a pure function of the private
+key. Phase 2 touches neither the database nor the network, so **the first byte reaches the store
+after the row says the page is published**, and a refusal before that writes nothing at all.
+
+**AND THE `§12.1` COPY TABLE BELOW IS WRITTEN FOR THE OLD ORDERING.** Its publish-failure row
+reads *"Publish failed — your live page is unchanged. {reason}"*, which was a promise the old
+order made: every throw site was at or before the pointer write. With the row first it is false
+from the commit onwards — a failed manifest write leaves the **new** page live, and a failed
+asset copy leaves the old page live beside a row that already says `published`. The code now
+carries two headlines (`PublishFailed::LIVE_UNCHANGED` and `PublishFailed::AFTER_RECORD`) and
+throws the second for everything from phase 4 on. **That is a deviation from this ticket's own
+copy table, recorded here under the stop-and-report that caused it rather than resolved in
+passing**; the table's row stands for the pre-commit half and is now incomplete for the other.
+
 **What this trades, stated plainly.** D8's ordering fails towards "a page is live that nothing
 records", which is an invariant failure. This one fails towards "a row claims published while
 the old page still serves", which is not: nothing unrecorded is reachable, the tenant sees the

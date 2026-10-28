@@ -65,8 +65,14 @@
                  (R-161), or any state an out-of-band change produces -- and Unpublish is
                  the only verb a tenant has. Hiding it on the row's say-so put the "no
                  path left to take it down" defect back into the VIEW after the service
-                 had been fixed for it; the scoped re-review found it there. The sweep is
-                 idempotent and costs nothing against an empty prefix. --}}
+                 had been fixed for it; the scoped re-review found it there.
+
+                 ⚠ AND IT IS NOT FREE, which this comment used to claim. `R-165` measured
+                 it: up to ten ListObjectsV2 + DeleteObjects round trips per call, inside
+                 the tenant transaction, on a path that cost zero store calls before the
+                 early return was removed -- ~6,000 LIST operations a minute at the
+                 panel's 600/min per-tenant bucket, billed to the tenant. Idempotent, yes;
+                 free, no, and the row that accepted the cost is the one to read. --}}
             <button type="button" wire:click="unpublish"
                     class="fi-btn fi-btn-size-md fi-color-danger px-4 py-2 rounded-lg">
                 @if ($state['status'] === \App\Domain\Landing\LandingPageStatus::Published)

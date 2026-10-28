@@ -137,8 +137,15 @@ class LandingBuilderPage extends Page
         try {
             $published = app(LandingPages::class)->publish($tenantId);
         } catch (PublishFailed $e) {
+            // ⚠ THE HEADLINE COMES FROM THE EXCEPTION, AND IT USED TO BE A CONSTANT HERE.
+            // `SR-4` put the row's commit BEFORE every object write, so "your live page is
+            // unchanged" stopped being true of every failure on that path -- after the
+            // pointer write it is false outright. A fixed sentence here would tell the
+            // tenant their page was untouched while the panel beside it said "Published,
+            // no unpublished changes". PublishFailed carries which of the two states its
+            // throw site leaves; the third scoped re-review found this one.
             Notification::make()
-                ->title('Publish failed — your live page is unchanged')
+                ->title($e->headline)
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -155,7 +162,25 @@ class LandingBuilderPage extends Page
 
     public function unpublish(): void
     {
-        app(LandingPages::class)->unpublish(TenantPanelAccess::tenantId());
+        // ⚠ IT CATCHES, AND IT DID NOT. `unpublish()` raises `PublishFailed` when a
+        // sweep answers false -- the s3 disk is `'throw' => false`, so a store that is
+        // down returns false rather than raising -- and this control is rendered
+        // UNCONDITIONALLY, for every tenant in every state, because it is the only verb
+        // that can take down a page the row has lost track of. Uncaught, a store blip
+        // turned the one control whose job is to make a page unreachable into a Livewire
+        // 500 instead of §12.1's named refusal. The third scoped re-review found it.
+        try {
+            app(LandingPages::class)->unpublish(TenantPanelAccess::tenantId());
+        } catch (PublishFailed $e) {
+            Notification::make()
+                ->title('Take-down failed — your page is still public')
+                ->body($e->reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
 
         Notification::make()->title('Your page is no longer public')->success()->send();
     }

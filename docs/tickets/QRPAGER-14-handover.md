@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — five reviews, 85 findings, 50 fixed, 35 into `§5`; clause 1 fell four times and holds now on an ORDERING change (SR-4); the tag is waiting on a re-run of every `§6` gate at the final commit.
+STATUS: TASK-7 BLOCKED — six reviews, 95 findings, 59 fixed, 36 into `§5`; clause 1 fell FIVE times and holds now because phase 2 touches no network at all (SR-4, extended); the tag is waiting on a re-run of every `§6` gate at the final commit.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -77,7 +77,7 @@ recorded certificate.**
 
 ## 2a. ⚠ THE NAMED INVARIANT FAILED AT REVIEW AND HOLDS AFTER THE FIX PASSES
 
-**Five reviews, 85 findings, five fix passes — and clause 1 failed FOUR times, three of them on the
+**Six reviews, 95 findings, six fix passes — and clause 1 failed FIVE times, four of them on the
 fix for the one before.** The `§11` QA and Security pair found 29 (1 Critical, 4 High) and disagreed about the
 invariant; Security said it failed and was right. Round 1 of the fix diff's review found 16 more,
 **both of its Highs inside the first fix pass**. Round 2 — the cap — found 19, and the invariant
@@ -91,8 +91,35 @@ it removed `index.html` alone — leaving `manifest.json`, which carries the che
 It clears the whole prefix now, with its return checked, and `unpublish()` no longer refuses to
 sweep when the row says `draft` — which is what had made every such state permanent.
 
-**48 fixed with a regression test, 29 accepted into `§5` as `R-134`…`R-162`** — four of them Highs,
-which is `§11`'s round limit working as written rather than a corner cut.
+Round 2's fix added a compensating delete, and the **scoped re-review** `§11` prescribes found that
+it removed `index.html` alone. The **second scoped re-review** then found clause 1 a fourth time —
+the manifest was written one step before the pointer, so a failed pointer write left the manifest
+naming a reachable snapshot — and that one was ended by an **ordering change** rather than a patch:
+the row commits before anything becomes reachable.
+
+**And the THIRD scoped re-review found clause 1 a FIFTH time, inside that ordering change.** The
+snapshot was still written into `sites/{hostname}/` one step before the commit, on the argument that
+*"its key is a sha256 of its own bytes and nothing names it"*. `manifest.json` names it — in its
+body, at a predictable key, in the prefix the CDN maps `Host` onto — and the checksum is **stable**
+across an unpublish and a re-publish, which this repo's own test asserts. So: read the checksum
+while a page is live, wait for the tenant to take it down, and any later publish attempt that dies
+before the commit puts the taken-down page back at that exact key, with the row at `draft`. Four
+steps, no concurrency needed.
+
+**The fix is again the ordering, and this time it is complete:** rendering never needed the object
+store, because the published URL of an asset is a pure function of its private key. Phase 2 now
+touches **neither the database nor the network**, so the first byte reaches the store only after the
+row says the page is published. A refusal before that writes nothing at all. The window the change
+opens — a take-down landing *inside* the writes — is closed by a phase-5 reconciliation that sweeps
+**only when the row says `draft`**, which is the one state in which nothing of that tenant's may be
+live, and is therefore the one compensation this method can carry without being able to delete a
+live page.
+
+**59 fixed with a regression test, 36 accepted into `§5` as `R-134`…`R-170`** — five of them Highs,
+which is `§11`'s round limit working as written rather than a corner cut. Two rows are **CLOSED the
+same day** (`R-147`, `R-163`: one defect recorded twice, now folded into a single keyed `UPDATE`
+whose affected-row count is checked), and one new row (`R-169`) is a residual the last fix itself
+introduced rather than a finding — counted separately, in `§5` and not in the finding totals.
 
 
 The `§11` security review falsified two of its three clauses on measured evidence, and both were
@@ -142,7 +169,8 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 12b | Review of the fix diff, round 2 of 2 — **the cap** | **done** — 19 findings (0C 4H 7M 8L); the invariant failed again on the round-1 fix | — | yes |
 | 12c | **Scoped re-review** — `§11`'s loop for a past-the-cap invariant failure | **done** — 13 findings (1C 3H 5M 4L); clause 1 failed a THIRD time, on round 2's compensation; 8 fixed, 5 into `§5` | — | yes |
 | 12d | **Second scoped re-review** | **done** — 8 findings (1C 1H 3M 3L); clause 1 failed a FOURTH time on a manifest written before the switch; ended by an ORDERING change (SR-4), 2 fixed, 6 into `§5` | *this commit* | yes |
-| 13 | `PLAN.md §0`, `§4a`, `§5` | **done** (re-checked after the reviews) | *this commit* | yes |
+| 12e | **Third scoped re-review** | **done** — 10 findings (1C 3H 4M 2L); clause 1 failed a FIFTH time, on the snapshot written into the CDN-served prefix before the commit; ended by moving every store write after the row; 9 fixed, 1 into `§5` (+`R-169`, a residual of the fix) | *this commit* | yes |
+| 13 | `PLAN.md §0`, `§4a`, `§5`, `§3.2`'s twentieth delta | **done** (re-checked after every review) | *this commit* | yes |
 | 14 | Tag `task-7`, pushed | not started | — | — |
 
 ---

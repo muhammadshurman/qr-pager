@@ -210,7 +210,13 @@ it('leaves the live page serving when the object store goes away mid-publish', f
     Storage::forgetDisk('s3');
 
     try {
-        expect(fn () => pages()->publish($tenant))->toThrow(PublishFailed::class);
+        pages()->publish($tenant);
+        $this->fail('a publish with no object store behind it reported success');
+    } catch (PublishFailed $e) {
+        // ⚠ AND THE HEADLINE SAYS WHICH SIDE OF THE COMMIT IT FAILED ON. Not "your live
+        // page is unchanged": the row has already moved, and the panel would otherwise
+        // promise the tenant something the next paragraph falsifies.
+        expect($e->headline)->toBe(PublishFailed::AFTER_RECORD);
     } finally {
         config()->set('filesystems.disks.s3.endpoint', $endpoint);
         Storage::forgetDisk('s3');
@@ -221,11 +227,19 @@ it('leaves the live page serving when the object store goes away mid-publish', f
     expect(hash('sha256', $live))->toBe($first->checksum)
         ->and($live)->not->toContain('must never go live');
 
-    // The DATABASE is on the previous publish too -- the row is updated last of all, so
-    // a failure anywhere before it rolls back with the transaction.
+    // ⚠ AND THE DATABASE IS AHEAD OF THE STORE, WHICH IS THE TRADE `SR-4` CHOSE RATHER
+    // THAN A DEFECT. This assertion used to read "the row is updated last of all, so a
+    // failure anywhere before it rolls back with the transaction" -- true of the
+    // ordering under which clause 1 of the named invariant failed five times, because
+    // with the row last every failure between a store write and the commit left
+    // something SERVING that nothing recorded. The row now commits before any object is
+    // written, so an outage in phase 4 leaves `published` recorded over a page that
+    // never changed: the row claims MORE than exists. That direction is visible to the
+    // tenant, is named in the failure they are shown, and converges on a re-publish.
     $row = withTenant($tenant, fn () => DB::table('landing_pages')->where('tenant_id', $tenant)->first());
 
-    expect($row->published_checksum)->toBe($first->checksum);
+    expect((string) $row->published_checksum)->not->toBe($first->checksum)
+        ->and((string) $row->status)->toBe('published');
 });
 
 it('writes a manifest naming what is live', function (): void {

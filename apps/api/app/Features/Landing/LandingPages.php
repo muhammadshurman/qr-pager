@@ -30,41 +30,45 @@ use Throwable;
  *
  *   1. validate the stored draft        -- a document that no longer validates is refused
  *   2. resolve the hostname             -- the active custom domain, else the platform one
- *   3. copy every referenced asset      -- a missing asset refuses the publish
- *   4. write {checksum}.html            -- immutable, named by the hash of its own bytes,
- *                                          and NOTHING NAMES IT YET
- *   5. update landing_pages             -- guarded on what step 1 saw
- *   6. write index.html                 -- THE POINTER WRITE IS THE SWITCH
- *   7. write manifest.json              -- metadata, and a SECOND pointer, so it is last
+ *   3. render and hash                  -- pure: no database, NO OBJECT STORE
+ *   4. update landing_pages             -- ONE statement, keyed on what step 1 saw, and
+ *                                          its affected-row count is checked
+ *   5. copy every referenced asset      -- the FIRST thing that touches the store
+ *   6. write {checksum}.html            -- immutable, named by the hash of its own bytes
+ *   7. write index.html                 -- THE POINTER WRITE IS THE SWITCH
+ *   8. write manifest.json              -- metadata, and a SECOND pointer, so it is last
+ *   9. reconcile                        -- if the row now says `draft`, sweep: nothing
+ *                                          of this tenant's may be live in that state
  *
- * ⚠ THE ROW IS WRITTEN BEFORE THE SWITCH, WHICH INVERTS DECISION D8, and `QRPAGER-14 §0
- * SR-4` records why rather than leaving it to be discovered. D8 says "the database is the
- * last word", and with the row last EVERY failure between the switch and the commit left
- * a page live that nothing recorded -- clause 1 of this task's named invariant. Clause 1
- * failed FOUR times before this ordering, and three of those were fixes for the one
- * before. With the row first the worst case is a row claiming MORE than exists --
- * `published` while the old page still serves -- which is not an invariant failure, is
- * visible to the tenant in the panel, and is corrected by publishing again.
+ * ⚠ THE ROW IS WRITTEN BEFORE ANY OBJECT AT ALL, WHICH INVERTS DECISION D8, and
+ * `QRPAGER-14 §0 SR-4` records why rather than leaving it to be discovered. D8 says "the
+ * database is the last word", and with the row last EVERY failure between a store write
+ * and the commit left something serving that nothing recorded -- clause 1 of this task's
+ * named invariant. Clause 1 failed FIVE times before this ordering, and four of those
+ * were fixes for the one before. With the row first the worst case is a row claiming
+ * MORE than exists -- `published` while the old page still serves -- which is not an
+ * invariant failure, is visible to the tenant in the panel, and is corrected by
+ * publishing again.
  *
- * A failure at 1-4 leaves the live page and the database on the previous publish, and the
- * only thing left behind is an object whose name is a hash of its own bytes that nothing
- * names. A failure at 5 is the same. A failure at 6 leaves the row ahead of the store. A
- * failure at 7 leaves the manifest stale, which is metadata.
+ * ⚠ AND THE SNAPSHOT IS NOT WRITTEN EARLY "BECAUSE NOTHING NAMES IT". It used to be, and
+ * the argument was false: `manifest.json` carries the checksum in its BODY and lives in
+ * the prefix the CDN maps `Host` onto, so the name of every snapshot is public for the
+ * life of the publish, and the checksum is STABLE across an unpublish and a re-publish
+ * (`LandingDraftUnreachableTest` asserts exactly that). "Not reachable" in this project
+ * means `allFiles($prefix) === []`; one key's absence was never the standard, and the
+ * fifth clause-1 failure was this method writing that key back into a swept prefix after
+ * a take-down. See publish()'s own docblock for the four-step route.
+ *
+ * A failure at 1-4 writes NOTHING and leaves the live page and the database on the
+ * previous publish. A failure at 5-8 leaves the row ahead of the store, which is the
+ * deliberate residual above, and the tenant is told so in those words
+ * (`PublishFailed::afterRecord()`) rather than "your live page is unchanged".
  *
  * ⚠ THEY ARE NOT ALL IN ONE TRANSACTION, and this sentence said they were until the §11
- * QA review. Steps 1-3 are one short transaction, steps 3-6 hold NO transaction at all,
- * and step 7 is a second short one -- see publish()'s own docblock for why, which is
- * that holding a connection idle across the object writes ran into
- * `idle_in_transaction_session_timeout`. A failure at 7 therefore leaves the pointer
- * switched, which is the residual the next paragraph is about.
- *
- * ⚠ THE ONE RESIDUAL, STATED RATHER THAN LEFT TO BE FOUND: if the pointer write succeeds
- * and then the COMMIT fails, the live page is the new one while the row still says the
- * old. It is self-healing -- a re-publish of the same document renders the same bytes and
- * therefore the same checksum, so it converges -- and the page that is live in that window
- * is a correct page of this tenant, never a partial one. It is not reordered to close it
- * because the alternative (row first) would make a failed pointer write leave the DATABASE
- * claiming a page that is not live, which is the direction that lies to the tenant.
+ * QA review. Step 1-3 is one short transaction, step 4 is a second one of ONE statement,
+ * and steps 5-8 hold no transaction at all -- see publish()'s own docblock for why,
+ * which is that holding a connection idle across the object writes ran into
+ * `idle_in_transaction_session_timeout`.
  */
 final class LandingPages
 {
@@ -124,6 +128,33 @@ final class LandingPages
      * Publish the draft. See the class docblock for the order and why it is that order.
      *
      * ================================================================================
+     * NOT ONE BYTE REACHES THE STORE BEFORE THE ROW COMMITS — THE FIFTH CLAUSE-1 FIX
+     * ================================================================================
+     *
+     * The previous ordering copied the assets and wrote the snapshot BEFORE the row, on
+     * the argument that `{checksum}.html` is unreachable because nothing names it. The
+     * third scoped re-review falsified that argument in one step: `manifest.json` carries
+     * the checksum in its BODY, in the prefix the CDN maps `Host` onto, so every checksum
+     * a publish produces is published BY NAME for the whole life of that publish -- and
+     * the checksum is a hash of the document, which `LandingDraftUnreachableTest` asserts
+     * is STABLE across an unpublish and a re-publish. The route is then four steps:
+     *
+     *   publish -> anyone (a crawler, one look) records `C` from `manifest.json`
+     *           -> the tenant unpublishes: the prefix is emptied, the row says `draft`
+     *           -> ANY later attempt that dies between the snapshot write and the commit
+     *              -- the guard refusing, `statement_timeout`, a worker recycle --
+     *           -> `sites/{host}/{C}.html` is back, serving the taken-down page in full,
+     *              with the row still at `draft`.
+     *
+     * That is clause 1 of the named invariant for the FIFTH time, by the same route as
+     * the first. The answer is not another compensation: three of the five failures WERE
+     * compensations. It is that phase 2 no longer touches the network at all. Rendering
+     * never needed a store write -- `PublishedSite::assetUrl()` is a pure function of the
+     * private key -- so the HTML and its checksum are computable before anything is
+     * copied, and every store write can happen after the row says the page is published,
+     * which is the only state in which any of those objects may exist.
+     *
+     * ================================================================================
      * THE OBJECT WRITES ARE OUTSIDE THE TRANSACTION, AND THAT IS A FIX, NOT A STYLE
      * ================================================================================
      *
@@ -139,21 +170,25 @@ final class LandingPages
      * connections for the whole publish, which is the exact cost `RequireTenantScope`'s
      * docblock cites as the reason this project refuses request-scoped transactions.
      *
-     * Found by the `§11` QA review on 2026-10-28. There are now THREE phases:
+     * Found by the `§11` QA review on 2026-10-28. There are now FIVE phases:
      *
      *   1. one SHORT transaction  -- read the draft, validate it, resolve the hostname
      *                                and the asset keys. Needs a tenant scope; touches
      *                                no network.
-     *   2. NO transaction         -- copy the assets, render, and write the SNAPSHOT,
-     *                                whose key nothing names yet. Touches no database.
-     *   3. one SHORT transaction  -- write the row, guarded on what phase 1 saw.
-     *   4. NO transaction         -- write the pointer, THEN the manifest.
+     *   2. NO transaction         -- render and hash. Touches NEITHER the database NOR
+     *                                the network: pure computation over phase 1's plan.
+     *   3. one SHORT transaction  -- ONE statement: the row, keyed on what phase 1 saw.
+     *   4. NO transaction         -- the assets, the snapshot, the pointer, the manifest.
+     *                                Everything reachable, and all of it after the row.
+     *   5. one SHORT read         -- reconcile, for the one window phase 4 leaves open.
      *
-     * The guarantees are unchanged, because the ORDER is unchanged: the pointer write is
-     * still the switch and the database is still the last word. Phase 1 or 2 failing
-     * leaves the live page and the row on the previous publish; the residual is still
-     * phase 3 failing after the pointer write, and it is still self-healing because a
-     * re-publish of the same document renders the same bytes.
+     * Phase 1, 2 or 3 failing writes NOTHING and leaves the live page and the row on the
+     * previous publish. The residual is phase 4 failing, which leaves the row claiming
+     * MORE than exists -- `published` while the old page still serves -- and that is the
+     * direction `SR-4` chose deliberately, because the other direction is a live page
+     * nothing records, which is the invariant. It is visible in the panel, it is named in
+     * the failure the tenant sees (`PublishFailed::afterRecord()`), and a re-publish of
+     * the same document renders the same bytes and converges.
      *
      * @throws PublishFailed
      */
@@ -165,7 +200,7 @@ final class LandingPages
     private function publishUnderLock(string $tenantId): PublishedPage
     {
         // ---- PHASE 1: one short transaction, no network inside it. ----------------
-        /** @var array{seen: string, document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
+        /** @var array{seenStatus: string, seenPublishedAt: ?string, document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
         $plan = withTenant($tenantId, function () use ($tenantId): array {
             $row = $this->row($tenantId);
 
@@ -206,7 +241,13 @@ final class LandingPages
             }
 
             return [
-                'seen' => (string) ($row->publishedAt ?? '').'|'.$row->status->value,
+                // ⚠ THE TWO COLUMNS, NOT A TOKEN BUILT FROM THEM. Phase 3 puts these in
+                // the UPDATE's own WHERE clause, so they have to be comparable to the
+                // columns; the concatenated `'{published_at}|{status}'` string the guard
+                // used to carry could only be compared in PHP, which is what made the
+                // guard a SECOND statement and left a window between it and the write.
+                'seenStatus' => $row->status->value,
+                'seenPublishedAt' => $row->publishedAt,
                 'document' => $document,
                 'hostname' => $this->hostnameInScope($tenantId),
                 'tenantName' => (string) DB::table('tenants')->where('id', $tenantId)->value('name'),
@@ -217,98 +258,118 @@ final class LandingPages
         $document = $plan['document'];
         $hostname = $plan['hostname'];
 
-        // ---- PHASE 2: no transaction, no database. --------------------------------
+        // ---- PHASE 2: no transaction, NO DATABASE AND NO NETWORK. -----------------
+        //
+        // The copies USED TO BE HERE, and that is the fifth clause-1 failure in one
+        // line. They are not needed to render: the published URL of an asset is a pure
+        // function of its private key, so the document's media ids map to their URLs
+        // with no round trip, and the destination keys are computed here and copied in
+        // phase 4.
         $assetUrls = [];
-        $copied = [];
+        $destinations = [];
 
         foreach ($plan['assets'] as $id => $privateKey) {
-            $destination = PublishedSite::asset($hostname, $privateKey);
-
-            if (! $this->media->copyObject($privateKey, $destination)) {
-                throw new PublishFailed('an image could not be copied to your site; nothing was published');
-            }
-
             $assetUrls[$id] = PublishedSite::assetUrl($privateKey);
-            $copied[] = $destination;
+            $destinations[$privateKey] = PublishedSite::asset($hostname, $privateKey);
         }
 
         $html = $this->renderer->render($document, $hostname, $plan['tenantName'], $assetUrls);
         $checksum = hash('sha256', $html);
 
-        // The snapshot, and NOTHING THAT NAMES IT. Its key is a sha256 of its own bytes,
-        // so until something publishes that name it is unreachable -- which is what lets
-        // phase 3 refuse below with no cleanup at all.
-        $this->write(PublishedSite::snapshot($hostname, $checksum), $html, 'text/html; charset=utf-8');
-
-        // ---- PHASE 3: the row, BEFORE anything becomes reachable. -----------------
+        // ---- PHASE 3: the row, and it is the FIRST thing this method writes. ------
         $publishedAt = now();
 
-        /** @var bool $committed */
-        $committed = withTenant($tenantId, function () use ($tenantId, $plan): bool {
-            // ⚠ GUARDED ON WHAT PHASE 1 SAW. The phases are three transactions now, so
-            // an unpublish or a domain activation can land between them -- and an
-            // unguarded UPDATE would then write `published` over a row somebody had just
-            // taken down, leaving a live pointer and a row that disagrees with it. The
-            // window existed before the split too and the split widened it. Found by the
-            // §11 review of the fix diff, round 1.
+        /** @var int $affected */
+        $affected = withTenant($tenantId, function () use ($tenantId, $plan, $document, $checksum, $hostname, $publishedAt): int {
+            // ⚠ ONE STATEMENT, KEYED ON WHAT PHASE 1 SAW, AND ITS ROW COUNT IS CHECKED.
+            // This is `§4 › Postgres traps` in the one place in this feature where it
+            // decides whether a page becomes reachable: SELECT, then UPDATE … WHERE the
+            // key AND what the SELECT saw, then check the affected rows. It replaced a
+            // read-then-unconditional-UPDATE pair in two separate `withTenant()` calls
+            // -- which is two TRANSACTIONS, because `TenantContext::run()` wraps each
+            // call in one, so the guard committed and released before the write began
+            // (`R-163`, and the docblock that called it "one short transaction" was
+            // wrong about its own code).
             //
-            // A refusal here leaves the OBJECTS written and the row untouched, which is
-            // the safe direction: the bytes are unreachable without a pointer this
-            // transaction did not write, and the next publish converges.
-            $row = $this->row($tenantId);
-
-            return (string) ($row->publishedAt ?? '').'|'.$row->status->value === $plan['seen'];
+            // `is not distinct from` rather than `=`: `published_at` is NULL on a draft
+            // row, and `NULL = NULL` is NULL, so `=` would never match the commonest
+            // case this guard exists for -- publishing a page that was just taken down.
+            return DB::table('landing_pages')
+                ->where('tenant_id', $tenantId)
+                ->where('status', $plan['seenStatus'])
+                ->whereRaw('published_at is not distinct from cast(? as timestamptz)', [$plan['seenPublishedAt']])
+                ->update([
+                    'status' => LandingPageStatus::Published->value,
+                    'published_document' => $this->encode($document->toArray()),
+                    'published_checksum' => $checksum,
+                    'published_hostname' => $hostname,
+                    'published_at' => $publishedAt,
+                    'updated_at' => $publishedAt,
+                ]);
         });
 
-        if (! $committed) {
-            // ⚠ NO COMPENSATION, AND THAT IS THE POINT OF THE NEW ORDERING. Nothing
-            // reachable has been written yet: the only object this attempt has created
-            // is `{checksum}.html`, whose name is a hash of its own bytes and which no
-            // manifest and no pointer names. So refusing here leaves the live page and
-            // the row exactly as they were, with one unreferenced object behind
-            // (`R-155`'s territory, with the snapshots a re-publish already leaves).
-            //
-            // The two compensations this method used to carry were each written to undo
-            // a switch that had already happened, and each introduced a clause-1 failure
-            // of its own -- one deleted the pointer and left the manifest naming the
-            // snapshot, the other deleted a prefix that might be a live page's. Removing
-            // the need for a compensation is worth more than getting one right.
+        if ($affected !== 1) {
+            // ⚠ NOTHING TO COMPENSATE, AND THAT IS THE POINT OF THE ORDERING. This
+            // method has written nothing at all yet -- no copy, no snapshot, no pointer,
+            // no manifest -- so a refusal here leaves the live page, the row and the
+            // prefix exactly as they were. The two compensations it used to carry were
+            // each written to undo a switch that had already happened, and each
+            // introduced a clause-1 failure of its own; the third version left a
+            // snapshot whose name the manifest had already published. Removing the need
+            // for a compensation is worth more than getting one right.
             throw new PublishFailed(
                 'your page changed while it was publishing; nothing was published, try again'
             );
         }
 
-        withTenant($tenantId, function () use ($tenantId, $document, $checksum, $hostname, $publishedAt): void {
-
-            DB::table('landing_pages')->where('tenant_id', $tenantId)->update([
-                'status' => LandingPageStatus::Published->value,
-                'published_document' => $this->encode($document->toArray()),
-                'published_checksum' => $checksum,
-                'published_hostname' => $hostname,
-                'published_at' => $publishedAt,
-                'updated_at' => $publishedAt,
-            ]);
-        });
-
-        // ---- PHASE 4: the switch, and then the metadata. --------------------------
+        // ---- PHASE 4: everything reachable, all of it after the row. --------------
         //
-        // THE POINTER IS WRITTEN AFTER THE ROW COMMITS, which inverts decision D8's "the
-        // database is the last word" -- see QRPAGER-14 §0 SR-4 for why, recorded rather
-        // than resolved in passing. In one line: with the row last, every failure
-        // between the switch and the commit left a page live that nothing recorded,
-        // which is clause 1 of the named invariant, and clause 1 failed four times
-        // before this ordering. With the row first the worst case is a row that claims
-        // MORE than exists -- "published" while the old page still serves -- which is
-        // not an invariant failure, is visible to the tenant, and is fixed by publishing
-        // again.
-        $this->write(PublishedSite::pointer($hostname), $html, 'text/html; charset=utf-8');
+        // THE ROW IS WRITTEN BEFORE ANY OBJECT, which inverts decision D8's "the
+        // database is the last word" -- see `QRPAGER-14 §0 SR-4` for why, recorded rather
+        // than resolved in passing. In one line: with the row last, every failure between
+        // a store write and the commit left something serving that nothing recorded,
+        // which is clause 1 of the named invariant, and clause 1 failed five times before
+        // this ordering. With the row first the worst case is a row that claims MORE than
+        // exists -- `published` while the old page still serves -- which is not an
+        // invariant failure, is visible to the tenant, and is fixed by publishing again.
+        //
+        // ⚠ EVERY FAILURE BELOW IS `afterRecord()`, NOT A PLAIN `PublishFailed`. The
+        // panel's "Publish failed — your live page is unchanged" is a promise about the
+        // STORE, and from here down the ROW has already moved, so that sentence would be
+        // a false claim to the tenant -- true about the page and wrong about what the
+        // panel will show them one line later. The ticket's `§12.1` copy table is written
+        // for the old ordering and `SR-4` now carries this consequence.
+        $copied = [];
 
-        // LAST, because it NAMES THE SNAPSHOT. `manifest.json` carries the checksum in
-        // its body, so it is a second pointer -- this file's `unpublish()` docblock says
-        // exactly that -- and writing it before the row committed is how the fourth
-        // clause-1 failure happened: a failed pointer write left the manifest naming a
-        // reachable snapshot with the row still saying `draft`. Anything it names is now
-        // already recorded as published before it is written.
+        foreach ($destinations as $privateKey => $destination) {
+            if (! $this->media->copyObject($privateKey, $destination)) {
+                throw PublishFailed::afterRecord(
+                    'an image could not be copied to your site, so your page is recorded as published but is not live yet; publish again'
+                );
+            }
+
+            $copied[] = $destination;
+        }
+
+        // The immutable snapshot, before the pointer and the manifest, because both of
+        // them name it.
+        $this->write(
+            PublishedSite::snapshot($hostname, $checksum),
+            $html,
+            'text/html; charset=utf-8',
+            'your page could not be written, so it is recorded as published but is not live yet; publish again',
+        );
+
+        $this->write(
+            PublishedSite::pointer($hostname),
+            $html,
+            'text/html; charset=utf-8',
+            'your page could not be put in place, so it is recorded as published but is not live yet; publish again',
+        );
+
+        // LAST, because it NAMES THE SNAPSHOT in its body -- this file's `unpublish()`
+        // docblock says exactly that, and a manifest written before the thing it names
+        // was reachable is how the fourth clause-1 failure happened.
         $this->write(
             PublishedSite::manifest($hostname),
             (string) json_encode([
@@ -319,7 +380,56 @@ final class LandingPages
                 'assets' => array_values($assetUrls),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
             'application/json',
+            'your page is live, but the site metadata beside it could not be written; publish again',
         );
+
+        // ---- PHASE 5: reconcile the one window phase 4 leaves open. ---------------
+        //
+        // ⚠ THIS IS A COMPENSATION, AND IT IS THE ONE SHAPE OF COMPENSATION THIS METHOD
+        // CAN SAFELY CARRY. The two it used to have deleted objects while the row might
+        // still have said `published`, so each could delete a LIVE page's own objects.
+        // This one fires only when the row says `draft`, which is the single state in
+        // which nothing of this tenant's may be live at all -- so the sweep it performs
+        // is the same sweep `unpublish()` performs, on a prefix that is already supposed
+        // to be empty, and it cannot take down a page another actor published.
+        //
+        // The window it closes: an `unpublish()` landing between the commit in phase 3
+        // and the last write in phase 4 empties the prefix and sets the row to `draft`,
+        // and this method then writes the pointer into it -- a live page with the row at
+        // `draft`, which is clause 1 again. The advisory lock prevents that across
+        // processes (and `R-158` records that the second caller aborts rather than
+        // waits); it does NOT prevent it within one session, where the lock is
+        // re-entrant, nor after `R-160`'s leak loses it with the connection.
+        $recorded = withTenant($tenantId, fn (): ?object => DB::table('landing_pages')
+            ->where('tenant_id', $tenantId)
+            ->first(['status', 'published_checksum']));
+
+        $stillOurs = $recorded !== null
+            && (string) $recorded->status === LandingPageStatus::Published->value
+            && (string) $recorded->published_checksum === $checksum;
+
+        if (! $stillOurs) {
+            if ($recorded === null || (string) $recorded->status === LandingPageStatus::Draft->value) {
+                // The prefixes are resolved inside the scope and swept OUTSIDE it, so
+                // the store round trips are not held against
+                // `idle_in_transaction_session_timeout` (`R-144`, `R-165`).
+                $this->sweep(withTenant(
+                    $tenantId,
+                    fn (): array => $this->publishedPrefixes($tenantId, $hostname),
+                ));
+
+                throw PublishFailed::afterRecord(
+                    'your page was taken down while it was publishing, so nothing is live; publish again when you are ready'
+                );
+            }
+
+            // The row records a DIFFERENT publish, so some other actor holds the prefix
+            // and this one must not touch it. Reachable only with the lock lost
+            // (`R-160`); recorded as `R-169` rather than guessed at here.
+            throw PublishFailed::afterRecord(
+                'another publish for your site finished while this one was running; check your page and publish again'
+            );
+        }
 
         return new PublishedPage(
             $hostname,
@@ -538,8 +648,8 @@ final class LandingPages
      * WHY A LOCK AND NOT A GUARD -- THE ROUND-2 INVARIANT FAILURE
      * ================================================================================
      *
-     * `publish()` writes the pointer in phase 2 and checks in phase 3 whether the row
-     * moved underneath it. Round 1 of the fix diff's review asked for that check and
+     * `publish()` wrote the pointer in phase 2 and checked in phase 3 whether the row
+     * had moved underneath it. Round 1 of the fix diff's review asked for that check and
      * round 2 found what it actually produced: the check runs AFTER the switch, so an
      * `unpublish()` landing between the phases left the page LIVE and the row at
      * `draft` -- and `unpublish()` returns early when the status is not `published`, so
@@ -570,7 +680,7 @@ final class LandingPages
      *   - WITHIN ONE SESSION it gives no exclusion at all: Postgres session advisory
      *     locks are re-entrant, so a nested call re-acquires instantly. That is why
      *     `ReviewFixesTest`'s interleave case can still force the race in-process, and
-     *     why the compensating action below is a real path rather than dead code.
+     *     why publish()'s phase-5 reconciliation is a real path rather than dead code.
      *   - IF THE PROCESS DIES the lock is held until the CONNECTION closes, which under
      *     Octane is not the same thing as the request ending (`R-160`).
      *
@@ -693,8 +803,14 @@ final class LandingPages
      * The return value is CHECKED because the s3 disk is configured `'throw' => false`
      * -- a failed PUT returns false and raises nothing, which is how a publish could
      * otherwise report success having written nothing (measured on the media path).
+     *
+     * ⚠ THE REASON IS THE CALLER'S, AND IT IS `afterRecord()`. Every call site is now in
+     * phase 4, i.e. after the row has committed, so the one sentence this used to raise
+     * -- "your live page is unchanged" -- is the one thing that is no longer true of all
+     * of them: by the pointer write it is false outright, and before it the row already
+     * disagrees with the store. Each call site says what state its own failure leaves.
      */
-    private function write(string $key, string $contents, string $contentType): void
+    private function write(string $key, string $contents, string $contentType, string $reason): void
     {
         $written = MediaLibrary::disk()->put($key, $contents, [
             'ContentType' => $contentType,
@@ -702,7 +818,7 @@ final class LandingPages
         ]);
 
         if ($written === false) {
-            throw new PublishFailed('your site could not be written; your live page is unchanged');
+            throw PublishFailed::afterRecord($reason);
         }
     }
 

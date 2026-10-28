@@ -25,7 +25,18 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 final class RecordingDisk implements Filesystem
 {
     /**
-     * @param  Closure(string): mixed  $observe
+     * @param  Closure(string, string): mixed  $observe  the operation, and the KEY it is
+     *                                                   about. The key arrived with the third
+     *                                                   scoped re-review: the only interleave case
+     *                                                   hooked "the first put", which the publish
+     *                                                   reordering turned from the pointer write
+     *                                                   into the snapshot write, so the test went
+     *                                                   on probing a window that had moved. An
+     *                                                   observer that cannot see WHICH object is
+     *                                                   being written cannot say where it landed.
+     *                                                   Closures declared with one parameter are
+     *                                                   unaffected -- PHP passes extra arguments to
+     *                                                   a userland function without complaint.
      * @param  array<string, mixed>  $answers  operations to answer with a fixed value
      *                                         INSTEAD of delegating -- for driving the
      *                                         `'throw' => false` failure paths, where
@@ -41,7 +52,7 @@ final class RecordingDisk implements Filesystem
 
     public function put($path, $contents, $options = []): mixed
     {
-        ($this->observe)('put');
+        ($this->observe)('put', $path);
 
         if (array_key_exists('put', $this->answers)) {
             return $this->answers['put'];
@@ -52,7 +63,7 @@ final class RecordingDisk implements Filesystem
 
     public function copy($from, $to): bool
     {
-        ($this->observe)('copy');
+        ($this->observe)('copy', $to);
 
         return $this->inner->copy($from, $to);
     }
@@ -60,14 +71,14 @@ final class RecordingDisk implements Filesystem
     /** @param  string|array<int, string>  $paths */
     public function delete($paths): bool
     {
-        ($this->observe)('delete');
+        ($this->observe)('delete', is_array($paths) ? implode(',', $paths) : $paths);
 
         return $this->inner->delete($paths);
     }
 
     public function deleteDirectory($directory): bool
     {
-        ($this->observe)('deleteDirectory');
+        ($this->observe)('deleteDirectory', $directory);
 
         if (array_key_exists('deleteDirectory', $this->answers)) {
             return (bool) $this->answers['deleteDirectory'];
