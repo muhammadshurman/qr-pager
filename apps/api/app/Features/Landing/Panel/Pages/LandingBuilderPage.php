@@ -1,0 +1,162 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Features\Landing\Panel\Pages;
+
+use App\Domain\Landing\LandingDocumentInvalid;
+use App\Domain\Landing\LandingPageStatus;
+use App\Features\Landing\LandingPages;
+use App\Features\Landing\Panel\MediaOptions;
+use App\Features\Landing\Panel\StudioForm;
+use App\Features\Landing\PublishFailed;
+use App\Platform\Http\TenantPanelAccess;
+use Filament\Notifications\Notification;
+use Filament\Pages\Page;
+use Filament\Schemas\Schema;
+
+/**
+ * `/studio` — the landing page builder (§12.1).
+ *
+ * THE TENANT IS NEVER A LIVEWIRE PROPERTY. `TenantPanelAccess::tenantId()` re-resolves it from
+ * the authenticated session on every call, including inside every action. A tenant id
+ * held as a property would be part of the snapshot the client round-trips, which is the
+ * ambient-parameter shape `ActiveTenant`'s docblock refuses in the strongest terms this
+ * project has written down.
+ *
+ * `canAccess()` is overridden, and every action re-asks. Task 6's security M-1 measured
+ * why: a custom page's default `canAccess()` allows every authenticated panel user, and
+ * `POST /livewire-<hash>/update` runs neither `SetUpPanel` nor Filament's `Authenticate`.
+ */
+class LandingBuilderPage extends Page
+{
+    protected string $view = 'studio.builder';
+
+    protected static ?string $title = 'Landing page';
+
+    protected static ?string $slug = '/';
+
+    protected static ?int $navigationSort = -2;
+
+    /** @var array<string, mixed> */
+    public ?array $data = [];
+
+    public static function canAccess(): bool
+    {
+        return TenantPanelAccess::allows();
+    }
+
+    public function mount(): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $this->landingForm()->fill(StudioForm::fromDocument(
+            app(LandingPages::class)->draft(TenantPanelAccess::tenantId())->toArray(),
+        ));
+    }
+
+    public function form(Schema $schema): Schema
+    {
+        return $schema
+            ->components(StudioForm::schema(new MediaOptions(TenantPanelAccess::tenantId())))
+            ->statePath('data');
+    }
+
+    /**
+     * This page's own form schema, resolved by name.
+     *
+     * `$this->form` works at runtime -- InteractsWithSchemas has a `__get` -- and is
+     * invisible to PHPStan, which reports it as an undefined property. getSchema() is the
+     * real method behind that magic, so this is the same object reached by its own name.
+     * It throws rather than returning null, because every caller here is already past
+     * canAccess() and a null schema would mean the page did not boot.
+     */
+    private function landingForm(): Schema
+    {
+        $schema = $this->getSchema('form');
+
+        if (! $schema instanceof Schema) {
+            throw new \RuntimeException('the studio builder form did not resolve');
+        }
+
+        return $schema;
+    }
+
+    /**
+     * §12.1's state table, for the view.
+     *
+     * @return array{status: LandingPageStatus, hostname: string, published_hostname: ?string, published_at: ?string, has_unpublished_changes: bool, blocks: int, invalid: ?string}
+     */
+    public function state(): array
+    {
+        return app(LandingPages::class)->state(TenantPanelAccess::tenantId());
+    }
+
+    public function save(): void
+    {
+        $tenantId = TenantPanelAccess::tenantId();
+
+        try {
+            app(LandingPages::class)->saveDraft($tenantId, StudioForm::toDocument($this->landingForm()->getState()));
+        } catch (LandingDocumentInvalid $e) {
+            // §12.1's "invalid" state: "{Field} can't be published: {reason}". The field
+            // is named and the VALUE is not -- see LandingDocumentInvalid for why.
+            Notification::make()
+                ->title($e->field." can't be published")
+                ->body($e->reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()->title('Draft saved')->success()->send();
+    }
+
+    public function publish(): void
+    {
+        $tenantId = TenantPanelAccess::tenantId();
+
+        // SAVE FIRST. A publish that used the stored draft while the form held newer
+        // values would publish something the tenant is not looking at, which is worse
+        // than refusing. If the save fails its notification is already on screen.
+        try {
+            app(LandingPages::class)->saveDraft($tenantId, StudioForm::toDocument($this->landingForm()->getState()));
+        } catch (LandingDocumentInvalid $e) {
+            Notification::make()
+                ->title($e->field." can't be published")
+                ->body($e->reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        try {
+            $published = app(LandingPages::class)->publish($tenantId);
+        } catch (PublishFailed $e) {
+            Notification::make()
+                ->title('Publish failed — your live page is unchanged')
+                ->body($e->reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title('Published to '.$published->hostname)
+            ->success()
+            ->send();
+    }
+
+    public function unpublish(): void
+    {
+        app(LandingPages::class)->unpublish(TenantPanelAccess::tenantId());
+
+        Notification::make()->title('Your page is no longer public')->success()->send();
+    }
+}

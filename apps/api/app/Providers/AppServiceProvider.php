@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\Passkey;
 use App\Models\PersonalAccessToken;
 use App\Platform\Auth\ActiveTenant;
+use App\Platform\Auth\AuthenticatedMembership;
 use App\Platform\Auth\AuthenticatedTenantResolver;
 use App\Platform\Auth\Memberships;
 use App\Platform\Auth\RequestPrincipal;
@@ -12,6 +13,7 @@ use App\Platform\Auth\TwoFactorSecrets;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
 use App\Platform\Database\TenantScopeGuard;
+use App\Platform\Http\ActiveMembership;
 use App\Platform\Http\PacedProblemDocument;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemDocument;
@@ -93,6 +95,12 @@ class AppServiceProvider extends ServiceProvider
         // the implementation and nothing else"), which is why RequireTenantScope, the rate
         // limiter's per-tenant key and the tenant-scope guard all needed no change.
         $this->app->bind(TenantResolver::class, AuthenticatedTenantResolver::class);
+
+        // Task 7's tenant-scoped panel needs the ROLE as well as the tenant, because D1
+        // restricts editing to `owner` and `manager`. Same resolution, same
+        // re-verification, one more field -- and a second INTERFACE rather than a widened
+        // one, so the four surfaces built on TenantResolver's shape are untouched.
+        $this->app->bind(ActiveMembership::class, AuthenticatedMembership::class);
 
         // Request-scoped, never singleton, and QRPAGER-12 §10.5 is the answer to "what
         // does the auth layer cache": the membership set for ONE user for ONE request.

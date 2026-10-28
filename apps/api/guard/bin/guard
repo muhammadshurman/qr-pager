@@ -57,7 +57,11 @@ if ($violations === []) {
     // green run had established; it now names what it checked and counts what it opened,
     // because "C1 and C2 hold" was also true of the run that read no workflow at all.
     $workflows = $explicitPaths ? 0 : count($guard->workflowFiles());
-    $also = $explicitPaths ? '' : ", C7 and rules 9-10 across {$workflows} workflow(s)";
+    // Rule 11 reads app/ and routes/ like rule 10, so it is covered by the file count
+    // above rather than by a second one; it is NAMED because a green line that listed
+    // only rules 9-10 would understate what the run established, which is the exact
+    // shape this line was corrected for once already.
+    $also = $explicitPaths ? '' : ", C7 and rules 9-11 across {$workflows} workflow(s) and the scanned tree";
 
     fwrite(STDOUT, "repo guard: C1 and C2 hold across {$files} file(s) in {$count} path(s){$also}.\n");
 
@@ -75,6 +79,7 @@ fwrite(STDERR, "C2: always select set_config(name, value, true) -- third argumen
 fwrite(STDERR, "C7: one task table only, in docs/PLAN.md; one BLUEPRINT.md, nowhere else.\n");
 fwrite(STDERR, "Rule 9: every pushed branch is evaluated -- on.push.branches includes ** (R-126).\n");
 fwrite(STDERR, "Rule 10: object ACLs are not the application's to set -- ADR-004; a bucket policy instead.\n");
+fwrite(STDERR, "Rule 11: a theme overrides TOKENS ONLY -- no <style, no CSS rule, one token list, one emitter.\n");
 fwrite(STDERR, "All three are locked in PROJECT_INSTRUCTIONS.md §3; a change there comes first.\n");
 
 exit(1);

@@ -196,7 +196,7 @@ final class MediaLibrary
     /**
      * The tenant's library, newest first. What §12.2's table renders.
      *
-     * @return list<object>
+     * @return list<MediaAssetRow>
      */
     public function all(string $tenantId): array
     {
@@ -205,6 +205,7 @@ final class MediaLibrary
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->get()
+                ->map(static fn (object $row): MediaAssetRow => MediaAssetRow::from($row))
                 ->all()
         ));
     }

@@ -88,6 +88,31 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         '/platform/audit-log',
         '/platform/logout',
         '/platform/restaurants',
+        // FIVE MORE JOINED AT TASK 7, from the SECOND panel. `/studio` is the
+        // TENANT-scoped builder (QRPAGER-14 decision D1, SR-1): the 2026-10-28 ruling
+        // puts tenant content out of the platform panel's reach, so the builder, its
+        // media library and its domains are a panel of their own whose every user is a
+        // member of exactly one tenant.
+        //
+        // They are listed one by one for the same reason the platform's four are: a
+        // `/studio*` wildcard would let a sixth arrive without a diff, which is the whole
+        // mechanism this allowlist is.
+        //
+        // NOT UNDER /v1, and the argument above applies unchanged -- these are
+        // server-rendered admin pages with no API consumers.
+        //
+        // NONE OF THEM IS PUBLIC. All five sit behind the panel's `web` guard and
+        // Filament's Authenticate, AND every page overrides canAccess() while the
+        // preview resolves its tenant from the session -- because
+        // `POST /livewire-<hash>/update` runs neither (Task 6's security M-1).
+        // StudioPanelInvariantTest drives every one of them anonymously and as all five
+        // Task 5 principals.
+        '/studio',
+        '/studio/domains',
+        '/studio/logout',
+        '/studio/media',
+        '/studio/preview',
+        '/studio/preview/asset/{asset}',
         '/{fallbackPlaceholder}',
     ];
 

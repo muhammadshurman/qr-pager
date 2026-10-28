@@ -211,6 +211,49 @@ final class SourceGuard
     public const APPLICATION_PATHS = ['app/', 'routes/'];
 
     /**
+     * Rule 11: a tenant theme overrides TOKENS ONLY, never components.
+     *
+     * `PLAN.md §3.1` row 7 says that clause "names no mechanism. Same empty-phrase shape
+     * the fourth review found in 'architecture guards' -- it needs a lint rule proven to
+     * fail on a bad file, or it is not checkable". This is that rule, and it has four
+     * clauses because the sentence makes four separate promises:
+     *
+     *   11a  NO `<style` ANYWHERE in application code. A class that carried its own
+     *        stylesheet would be a component styling itself, which is the half of the
+     *        clause that says "never components".
+     *   11b  NO CSS RULE-SET and no at-rule in a string literal. `.card { … }` IS a
+     *        component rule; `@import` and `@font-face` fetch. A theme may change a
+     *        VALUE and may never introduce, remove or re-target a rule.
+     *   11c  NO THEME TOKEN NAME outside `ThemeTokens`. The allow-list has one home, so
+     *        a second copy cannot drift from it -- the duplicated-list shape QA H-1
+     *        cost this project once already.
+     *   11d  `ThemeTokens::property()` IS CALLED FROM EXACTLY ONE FILE. That is the
+     *        "one file may emit a CSS declaration" half, stated as the thing a scanner
+     *        can actually see: the only way to build a custom-property name is that
+     *        method, so the only file that calls it is the only file that emits one.
+     *
+     * THE TOKEN LIST IS READ OUT OF `ThemeTokens` BY PARSING IT, never held here. A
+     * guard carrying its own copy of the list it exists to keep singular would be the
+     * very defect 11c is about.
+     */
+    public const STYLE_LITERAL = 'style-literal';
+
+    public const CSS_RULE_SET = 'css-rule-set';
+
+    public const THEME_TOKEN_COPIED = 'theme-token-copied';
+
+    public const THEME_EMITTER = 'theme-emitter';
+
+    /** The one home of the token list. Exempt from 11c, and from nothing else. */
+    public const THEME_TOKENS_FILE = 'app/Domain/Landing/ThemeTokens.php';
+
+    /** The one file that may build a CSS declaration (11d). */
+    public const THEME_STYLESHEET_FILE = 'app/Features/Landing/ThemeStylesheet.php';
+
+    /** A CSS at-rule: all of these either fetch or redefine, and none belongs in app/. */
+    public const CSS_AT_RULES = ['@import', '@font-face', '@keyframes', '@media', '@supports'];
+
+    /**
      * The documents that must exist exactly once, relative to the REPOSITORY root.
      *
      * Not `self::PATHS`, which is relative to `apps/api` and lists PHP directories. These
@@ -709,6 +752,7 @@ final class SourceGuard
         $violations = array_merge(
             $this->scanVacuousAssertions($relative, $source),
             $this->scanObjectVisibility($relative, $source),
+            $this->scanThemeBoundary($relative, $source),
         );
         $allowed = array_merge(self::GUCS, $this->frameworkAppConfigKeys());
 
@@ -1447,6 +1491,241 @@ final class SourceGuard
         }
 
         return $violations;
+    }
+
+    /**
+     * Rule 11 against one application file.
+     *
+     * @return list<Violation>
+     */
+    public function scanThemeBoundary(string $relative, string $source): array
+    {
+        $application = false;
+
+        foreach (self::APPLICATION_PATHS as $prefix) {
+            if (str_starts_with($relative, $prefix)) {
+                $application = true;
+
+                break;
+            }
+        }
+
+        if (! $application) {
+            return [];
+        }
+
+        $violations = [];
+        $tokens = token_get_all($source);
+        $names = $this->themeTokenNames();
+
+        foreach ($tokens as $index => $token) {
+            if (! is_array($token)) {
+                continue;
+            }
+
+            [$id, $text, $line] = $token;
+
+            // 11d: the one file that may build a CSS declaration is the one file that
+            // calls the method which builds a custom-property name.
+            if ($id === T_STRING
+                && $text === 'property'
+                && $this->precededByThemeTokens($tokens, $index)
+                && $relative !== self::THEME_STYLESHEET_FILE) {
+                $violations[] = new Violation(
+                    self::THEME_EMITTER,
+                    $relative,
+                    $line,
+                    'builds a CSS custom-property name; '.self::THEME_STYLESHEET_FILE
+                    .' is the one file that may emit a CSS declaration (QRPAGER-14 D6)',
+                );
+
+                continue;
+            }
+
+            // INLINE HTML counts for 11a. A PHP file with markup after `?` + `>` is not
+            // a string literal, and a `<style>` block there would be invisible to a
+            // literal scan -- which is the hole this clause would otherwise have.
+            if ($id === T_INLINE_HTML) {
+                if (stripos($text, '<style') !== false) {
+                    $violations[] = new Violation(
+                        self::STYLE_LITERAL,
+                        $relative,
+                        $line,
+                        'carries a style element in inline HTML; a theme overrides tokens only, never components',
+                    );
+                }
+
+                continue;
+            }
+
+            if ($id !== T_CONSTANT_ENCAPSED_STRING) {
+                continue;
+            }
+
+            $value = substr($text, 1, -1);
+
+            if (stripos($value, '<style') !== false) {
+                $violations[] = new Violation(
+                    self::STYLE_LITERAL,
+                    $relative,
+                    $line,
+                    'carries a style element; a theme overrides tokens only, never components',
+                );
+
+                continue;
+            }
+
+            foreach (self::CSS_AT_RULES as $atRule) {
+                if (stripos($value, $atRule) !== false) {
+                    $violations[] = new Violation(
+                        self::CSS_RULE_SET,
+                        $relative,
+                        $line,
+                        "carries the CSS at-rule [{$atRule}]; application code does not author CSS",
+                    );
+
+                    continue 2;
+                }
+            }
+
+            // A class or id selector followed by a brace. Deliberately NARROW -- an
+            // element selector like `p {` would flag a sprintf format and a JSON
+            // fragment, and rule 1's own lesson is that a guard which cries wolf gets
+            // ignored. A component's own rule is what this is looking for, and a
+            // component's rule has a class or an id.
+            if (preg_match('/[.#][A-Za-z_][\w-]*\s*\{/', $value) === 1) {
+                $violations[] = new Violation(
+                    self::CSS_RULE_SET,
+                    $relative,
+                    $line,
+                    'carries a CSS rule-set; a theme changes a token value and never a component rule',
+                );
+
+                continue;
+            }
+
+            // 11c: the token list has one home.
+            if ($relative !== self::THEME_TOKENS_FILE && in_array($value, $names, true)) {
+                $violations[] = new Violation(
+                    self::THEME_TOKEN_COPIED,
+                    $relative,
+                    $line,
+                    "names the theme token [{$value}]; the list lives only in ".self::THEME_TOKENS_FILE,
+                );
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * The theme token names, READ OUT OF ThemeTokens rather than copied here.
+     *
+     * The keys of its `NAMES` array, collected as the string literals that are followed
+     * by a `=>` inside that one const declaration. A guard holding its own copy of the
+     * list it exists to keep singular would be the defect rule 11c is about.
+     *
+     * An absent or unreadable file yields an EMPTY list, which makes 11c inert rather
+     * than making the whole guard fail -- and that is deliberate: rule 6 already refuses
+     * a configured path that reads nothing, and RepoGuardTest pins this list as non-empty
+     * so an inert 11c fails the suite rather than passing quietly.
+     *
+     * @return list<string>
+     */
+    public function themeTokenNames(): array
+    {
+        $path = $this->root.'/'.self::THEME_TOKENS_FILE;
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        $tokens = token_get_all((string) file_get_contents($path));
+        $names = [];
+        $inNames = false;
+        $depth = 0;
+
+        foreach ($tokens as $index => $token) {
+            if (is_array($token) && $token[0] === T_STRING && $token[1] === 'NAMES' && ! $inNames) {
+                $inNames = true;
+
+                continue;
+            }
+
+            if (! $inNames) {
+                continue;
+            }
+
+            if ($token === '[') {
+                $depth++;
+
+                continue;
+            }
+
+            if ($token === ']') {
+                $depth--;
+
+                if ($depth <= 0) {
+                    break;
+                }
+
+                continue;
+            }
+
+            if ($depth !== 1 || ! is_array($token) || $token[0] !== T_CONSTANT_ENCAPSED_STRING) {
+                continue;
+            }
+
+            if ($this->followedByDoubleArrow($tokens, $index)) {
+                $names[] = substr($token[1], 1, -1);
+            }
+        }
+
+        return $names;
+    }
+
+    /** Is the next significant token after $index a `=>`? */
+    private function followedByDoubleArrow(array $tokens, int $index): bool
+    {
+        for ($i = $index + 1, $count = count($tokens); $i < $count; $i++) {
+            $token = $tokens[$i];
+
+            if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            return is_array($token) && $token[0] === T_DOUBLE_ARROW;
+        }
+
+        return false;
+    }
+
+    /** Is `property` here the method on ThemeTokens, rather than any other `property`? */
+    private function precededByThemeTokens(array $tokens, int $index): bool
+    {
+        $seenDoubleColon = false;
+
+        for ($i = $index - 1; $i >= 0; $i--) {
+            $token = $tokens[$i];
+
+            if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            if (! $seenDoubleColon) {
+                if (! is_array($token) || $token[0] !== T_DOUBLE_COLON) {
+                    return false;
+                }
+
+                $seenDoubleColon = true;
+
+                continue;
+            }
+
+            return is_array($token) && $token[0] === T_STRING && $token[1] === 'ThemeTokens';
+        }
+
+        return false;
     }
 
     /** Is the next significant token after $index a `::`? */

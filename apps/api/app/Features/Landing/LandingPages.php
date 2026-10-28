@@ -119,8 +119,8 @@ final class LandingPages
                 throw new PublishFailed('your page has no blocks yet, so there is nothing to publish');
             }
 
-            // 2.
-            $hostname = $this->hostname($tenantId);
+            // 2. The in-scope variant: this closure is already inside withTenant().
+            $hostname = $this->hostnameInScope($tenantId);
             $tenantName = (string) DB::table('tenants')->where('id', $tenantId)->value('name');
 
             // 3. One query for every referenced asset, bounded at 24 by the document cap.
@@ -257,7 +257,7 @@ final class LandingPages
 
             return [
                 'status' => $status,
-                'hostname' => $this->hostname($tenantId),
+                'hostname' => $this->hostnameInScope($tenantId),
                 'published_hostname' => $row->publishedHostname,
                 'published_at' => $row->publishedAt,
                 // Compared as the CANONICAL encoding of each document, not as raw jsonb:
@@ -279,6 +279,27 @@ final class LandingPages
      * touched DNS.
      */
     public function hostname(string $tenantId): string
+    {
+        return withTenant($tenantId, fn (): string => $this->hostnameInScope($tenantId));
+    }
+
+    /**
+     * The same answer, for a caller that has ALREADY opened the scope.
+     *
+     * ⚠ THE SPLIT EXISTS BECAUSE THE SINGLE METHOD WAS A DEFECT, and the scope guard is
+     * what found it. `hostname()` was public, queried `tenant_domains` directly, and
+     * relied on its caller having opened a scope -- true of `publish()`, which calls it
+     * from inside one, and false of `DomainsPage::platformHostname()`, which is the
+     * panel's own first query. The guard refused the statement before it reached
+     * Postgres ("A statement touching [tenant_domains] was refused ... no tenant scope is
+     * open there") and `/studio/domains` answered 500 for an owner.
+     *
+     * That is §3.1 row 2's invariant doing exactly its job, and the lesson is the one
+     * RequireTenantScope's docblock already states: a method that NEEDS a scope either
+     * opens one or is private to a caller that has. This pair is both halves, named so
+     * neither can be used by mistake.
+     */
+    private function hostnameInScope(string $tenantId): string
     {
         $custom = DB::table('tenant_domains')
             ->where('tenant_id', $tenantId)

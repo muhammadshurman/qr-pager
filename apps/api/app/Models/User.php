@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Auth\Principal;
+use App\Platform\Http\TenantPanelAccess;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -300,8 +301,34 @@ class User extends Authenticatable implements FilamentUser, PasskeyUser
      * $panel is unused on purpose: there is exactly one panel, so a per-panel decision would
      * be a branch with one arm pretending to be a policy.
      */
+    /**
+     * Which panels this user may open. TWO EXIST SINCE TASK 7, and they are disjoint.
+     *
+     * `platform` is the platform admin's (Task 6): it operates only on tables belonging
+     * to no tenant. `studio` is a TENANT's (Task 7, decision D1): the landing page
+     * builder, its media and its domains, all of which are tenant content.
+     *
+     * ⚠ A PLATFORM ADMIN IS REFUSED BY `studio`, AND THAT IS SR-1 RATHER THAN AN
+     * OVERSIGHT. `§4 › Tenancy` (2026-10-28): "A platform admin holds no tenant ability
+     * and no cross-tenant read: they can see that a restaurant exists and administer it
+     * from outside, and cannot see inside it." A platform admin holds no `tenant_users`
+     * row, so `StudioAccess` resolves them to no membership -- and this method does not
+     * leave that to chance, because `is_platform_admin` is not a tenant role and the two
+     * panels must not become one surface by accident.
+     *
+     * The strict `=== true` on the platform half matches what it replaced: it fails
+     * closed if the column ever becomes nullable or string-typed.
+     *
+     * THIS IS NOT THE ONLY GATE ON `studio`. Every page in that panel overrides
+     * `canAccess()` as well, because `POST /livewire-<hash>/update` runs neither
+     * `SetUpPanel` nor Filament's `Authenticate` -- Task 6's security M-1, measured.
+     */
     public function canAccessPanel(Panel $panel): bool
     {
+        if ($panel->getId() === 'studio') {
+            return TenantPanelAccess::allows();
+        }
+
         return $this->getAttribute('is_platform_admin') === true;
     }
 }

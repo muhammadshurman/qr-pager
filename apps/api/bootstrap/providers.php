@@ -1,6 +1,7 @@
 <?php
 
 use App\Features\Landing\LandingServiceProvider;
+use App\Features\Landing\Panel\StudioPanelProvider;
 use App\Features\Notifications\NotificationsServiceProvider;
 use App\Features\Provisioning\Panel\PlatformPanelProvider;
 use App\Providers\AppServiceProvider;
@@ -25,4 +26,9 @@ return [
     // AppServiceProvider, for the reason NotificationsServiceProvider is one -- deptrac's
     // rule 2 forbids the Platform layer from importing a feature module.
     LandingServiceProvider::class,
+    // Task 7's TENANT-SCOPED panel, and the reason there are now two: SR-1. The
+    // 2026-10-28 ruling puts tenant content out of the platform panel's reach -- "a
+    // panel query that reaches a tenant table is a rejected design" -- and a landing
+    // page, its media and its domains are tenant content (decision D1, R-127).
+    StudioPanelProvider::class,
 ];

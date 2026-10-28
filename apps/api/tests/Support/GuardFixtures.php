@@ -47,6 +47,12 @@ final class GuardFixtures
         return (string) file_get_contents(base_path("guard/fixtures/visibility/{$name}.php.fixture"));
     }
 
+    /** One rule 11 fixture: application source, scanned under an `app/` path. */
+    public static function theme(string $name): string
+    {
+        return (string) file_get_contents(base_path("guard/fixtures/theme/{$name}.php.fixture"));
+    }
+
     /** @return list<Violation> */
     public static function violations(string $name, string $rule): array
     {

@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Features\Landing\MediaLibrary;
+use App\Models\User;
 use Illuminate\Filesystem\AwsS3V3Adapter;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -41,6 +44,32 @@ final class LandingFixtures
         if (! $client->doesBucketExist($bucket)) {
             $client->createBucket(['Bucket' => $bucket]);
         }
+    }
+
+    /**
+     * A platform admin, with deliberately no membership anywhere.
+     *
+     * In the shared fixtures class and not at file scope in one test, because two Task 7
+     * suites need it and a file-scope function is only defined when ITS file is loaded --
+     * running one test file then failed with "Call to undefined function". GuardFixtures'
+     * docblock records the same reasoning for the same shape.
+     *
+     * The OWNER connection, because `qrpager_app` holds no INSERT on
+     * `users.is_platform_admin` (R-006): the app role cannot create a platform admin at
+     * all, which is that narrowing working rather than an obstacle.
+     */
+    public static function platformAdmin(): User
+    {
+        $id = (string) Str::uuid7();
+
+        DB::connection('pgsql_owner')->table('users')->insert([
+            'id' => $id,
+            'name' => 'Platform Admin',
+            'email' => 'studio-admin-'.Str::lower(Str::random(10)).'@example.test',
+            'is_platform_admin' => true,
+        ]);
+
+        return User::query()->findOrFail($id);
     }
 
     /**

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Landing\ThemeTokens;
 use Guard\SourceGuard;
+use Guard\Violation;
 use Illuminate\Support\Facades\Process;
 use Tests\Support\GuardFixtures;
 
@@ -588,4 +590,92 @@ it('applies to application code only, so config can declare the local disk — r
 
     expect(GuardFixtures::guard()->scanObjectVisibility('config/filesystems.php', $source))->toBe([])
         ->and(GuardFixtures::guard()->scanObjectVisibility('tests/Feature/Probe.php', $source))->toBe([]);
+});
+
+/*
+ * ================================================================================
+ * RULE 11 — "a theme overrides TOKENS ONLY, never components" (QRPAGER-14 D6)
+ * ================================================================================
+ *
+ * PLAN.md §3.1 row 7 says that clause "names no mechanism. Same empty-phrase shape the
+ * fourth review found in 'architecture guards' -- it needs a lint rule proven to fail on
+ * a bad file, or it is not checkable." These cases are the proof that it fails on one.
+ */
+
+it('refuses every form that makes a theme more than a token map (rule 11)', function (): void {
+    $violations = GuardFixtures::guard()->scanThemeBoundary(
+        'app/Fixture/StylesAComponent.php',
+        GuardFixtures::theme('styles-a-component'),
+    );
+
+    $rules = array_map(static fn (Violation $v): string => $v->rule, $violations);
+
+    // All four clauses fire on the one fixture: a style element, an at-rule, a class
+    // rule-set, the token list copied, and a declaration built outside the one emitter.
+    expect($rules)->toContain(SourceGuard::STYLE_LITERAL)
+        ->and($rules)->toContain(SourceGuard::CSS_RULE_SET)
+        ->and($rules)->toContain(SourceGuard::THEME_TOKEN_COPIED)
+        ->and($rules)->toContain(SourceGuard::THEME_EMITTER);
+
+    // The at-rule and the rule-set are two different lines, so the rule is not one check
+    // reported twice.
+    $cssLines = array_values(array_map(
+        static fn (Violation $v): int => $v->line,
+        array_filter($violations, static fn (Violation $v): bool => $v->rule === SourceGuard::CSS_RULE_SET),
+    ));
+
+    expect(count(array_unique($cssLines)))->toBe(2);
+});
+
+it('leaves the four legitimate shapes in that fixture alone (rule 11)', function (): void {
+    // THE NEGATIVE CONTROL, and it is why rule 11b matches a class or an id and never a
+    // bare element name: `p {` appears in sprintf formats and in prose, and a guard that
+    // cried wolf would be switched off. Rule 1's own recorded lesson.
+    $violations = GuardFixtures::guard()->scanThemeBoundary(
+        'app/Fixture/StylesAComponent.php',
+        GuardFixtures::theme('styles-a-component'),
+    );
+
+    $lines = array_map(static fn (Violation $v): int => $v->line, $violations);
+
+    // The legitimate() method's body. Nothing in it may be flagged.
+    foreach (range(34, 48) as $line) {
+        expect($lines)->not->toContain($line);
+    }
+});
+
+it('applies rule 11 to app/ and routes/ and to nothing else', function (): void {
+    // resources/views is deliberately out of scope: the published page's own rules live
+    // in its Blade template, which is where a page's layout belongs. What rule 11
+    // forbids is a CLASS carrying styling.
+    $source = GuardFixtures::theme('styles-a-component');
+
+    expect(GuardFixtures::guard()->scanThemeBoundary('app/Anything.php', $source))->not->toBe([])
+        ->and(GuardFixtures::guard()->scanThemeBoundary('routes/web.php', $source))->not->toBe([])
+        ->and(GuardFixtures::guard()->scanThemeBoundary('config/landing.php', $source))->toBe([])
+        ->and(GuardFixtures::guard()->scanThemeBoundary('tests/Feature/X.php', $source))->toBe([]);
+});
+
+it('reads the token list out of ThemeTokens rather than holding a copy (rule 11c)', function (): void {
+    // A guard carrying its own copy of the list it exists to keep singular would be the
+    // very defect 11c is about. So the names are PARSED out of the one file that owns
+    // them -- and pinned non-empty here, because an empty list would make 11c inert and
+    // every case above would still pass on the other three clauses.
+    $names = GuardFixtures::guard()->themeTokenNames();
+
+    expect($names)->toBe(array_keys(ThemeTokens::NAMES))
+        ->and($names)->not->toBe([]);
+});
+
+it('does not flag ThemeTokens for owning the list, or ThemeStylesheet for emitting', function (): void {
+    // The two exemptions, driven against the REAL files rather than against a fixture:
+    // if either were flagged, `composer guard` would be red on a clean tree and the rule
+    // would have to be switched off -- which is how a guard stops guarding.
+    $guard = GuardFixtures::guard();
+
+    foreach ([SourceGuard::THEME_TOKENS_FILE, SourceGuard::THEME_STYLESHEET_FILE] as $file) {
+        $violations = $guard->scanThemeBoundary($file, (string) file_get_contents(base_path($file)));
+
+        expect($violations)->toBe([], $file.' is flagged by the rule it is exempt from');
+    }
 });
