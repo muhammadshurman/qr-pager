@@ -489,6 +489,15 @@ final class LandingDocument
             throw new LandingDocumentInvalid($path, "may hold at most {$field->maxItems} items");
         }
 
+        // A REQUIRED LIST MEANS AT LEAST ONE ITEM, which is what the panel's Repeater
+        // means by `required()` too. The two used to disagree -- this validator accepted
+        // `[]` for a required list while the form refused it, so a document the panel
+        // would not let a tenant save was one this class called valid. Found by driving
+        // the builder's own save action, which is the only path that runs both.
+        if ($value === [] && $field->required) {
+            throw new LandingDocumentInvalid($path, 'needs at least one item');
+        }
+
         $items = [];
 
         foreach ($value as $index => $item) {

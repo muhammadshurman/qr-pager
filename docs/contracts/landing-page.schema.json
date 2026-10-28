@@ -99,7 +99,10 @@
                                         "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
                                     },
                                     "steps": {
-                                        "type": "array",
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
                                         "maxItems": 6,
                                         "items": {
                                             "type": "object",
@@ -124,8 +127,7 @@
                                     }
                                 },
                                 "required": [
-                                    "heading",
-                                    "steps"
+                                    "heading"
                                 ]
                             }
                         }
@@ -152,7 +154,10 @@
                                         "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
                                     },
                                     "items": {
-                                        "type": "array",
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
                                         "maxItems": 12,
                                         "items": {
                                             "type": "object",
@@ -195,8 +200,7 @@
                                     }
                                 },
                                 "required": [
-                                    "heading",
-                                    "items"
+                                    "heading"
                                 ]
                             }
                         }
@@ -226,7 +230,10 @@
                                         "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
                                     },
                                     "images": {
-                                        "type": "array",
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
                                         "maxItems": 12,
                                         "items": {
                                             "type": "object",
@@ -249,10 +256,7 @@
                                             ]
                                         }
                                     }
-                                },
-                                "required": [
-                                    "images"
-                                ]
+                                }
                             }
                         }
                     },
@@ -284,6 +288,7 @@
                                     },
                                     "hours": {
                                         "type": "array",
+                                        "minItems": 1,
                                         "maxItems": 7,
                                         "items": {
                                             "type": "object",

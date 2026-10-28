@@ -173,11 +173,14 @@ final class LandingSchema
                 'minimum' => $field->min,
                 'maximum' => $field->max,
             ],
-            FieldKind::ItemList => [
+            FieldKind::ItemList => array_filter([
                 'type' => $nullable('array'),
+                // A required list means AT LEAST ONE ITEM, in the contract as well as in
+                // the validator and in the panel's Repeater -- all three agree.
+                'minItems' => $field->required ? 1 : null,
                 'maxItems' => $field->maxItems,
                 'items' => self::fieldMap($field->item ?? []),
-            ],
+            ], static fn (mixed $value): bool => $value !== null),
         };
     }
 

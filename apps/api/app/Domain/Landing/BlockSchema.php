@@ -78,10 +78,13 @@ final class BlockSchema
             ],
             BlockType::HowItWorks => [
                 'heading' => Field::text(80),
+                // OPTIONAL AT THE LIST LEVEL: a block whose list is empty is a section
+                // the tenant added and has not filled in yet, which is a draft state and
+                // not an error. What is NOT optional is each ITEM being complete.
                 'steps' => Field::itemList(6, [
                     'title' => Field::text(60),
                     'body' => Field::text(200),
-                ]),
+                ], required: false),
             ],
             BlockType::MenuHighlights => [
                 'heading' => Field::text(80),
@@ -93,7 +96,7 @@ final class BlockSchema
                     // currency the product has not chosen. It is displayed, never summed.
                     'price' => Field::text(20, required: false),
                     'image' => Field::media(required: false),
-                ]),
+                ], required: false),
             ],
             BlockType::Gallery => [
                 'heading' => Field::text(80, required: false),
@@ -103,11 +106,17 @@ final class BlockSchema
                     // content one: the caption is the img alt text, and §12's bar does not
                     // allow a gallery of unlabelled images.
                     'caption' => Field::text(120),
-                ]),
+                ], required: false),
             ],
             BlockType::HoursLocation => [
                 'heading' => Field::text(80),
                 'address' => Field::text(200),
+                // THE ONE REQUIRED LIST, and it is required so that the rule below is
+                // not a control that can never fire: a "Hours, location and map" block
+                // with no hours in it is a block that says nothing. An empty list here
+                // is refused by LandingDocument AND by the panel's Repeater, which is
+                // the agreement that `getState()` exposed as missing -- the form used to
+                // refuse an empty required list while the validator accepted one.
                 'hours' => Field::itemList(7, [
                     'day' => Field::text(20),
                     'hours' => Field::text(40),

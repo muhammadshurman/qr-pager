@@ -277,12 +277,23 @@ final class StudioForm
     {
         $state = ['blocks' => []];
 
-        foreach ((array) ($document['blocks'] ?? []) as $block) {
+        foreach ((array) ($document['blocks'] ?? []) as $index => $block) {
             if (! is_array($block)) {
                 continue;
             }
 
-            $state['blocks'][] = [
+            // ⚠ KEYED, NOT A LIST. Filament's Builder stores its items in a MAP whose
+            // keys are the item identities Livewire diffs against; a plain list fills as
+            // no items at all. The panel's own `mount()` happened to look right because
+            // an empty builder renders the same as one that failed to fill, and it was
+            // `fillForm()` in StudioActionsTest that made the difference visible --
+            // "actual size 0 matches expected size 7".
+            //
+            // The key is the ORDER INDEX rather than a fresh uuid, so filling the same
+            // document twice produces the same state and Livewire re-renders nothing it
+            // does not have to. Order is the document's own, which is what the builder's
+            // reorder control edits.
+            $state['blocks']['block-'.$index] = [
                 'type' => $block['type'] ?? null,
                 'data' => (array) ($block['fields'] ?? []),
             ];

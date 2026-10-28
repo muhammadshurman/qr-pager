@@ -181,7 +181,11 @@ it('re-assembles an accepted url from its parsed parts rather than passing it th
 
 it('refuses a map that is anything other than three numbers in range', function (): void {
     $map = fn (array $fields): array => ['blocks' => [['type' => 'hours_location', 'fields' => array_merge([
-        'heading' => 'Find us', 'address' => '1 High Street', 'hours' => [],
+        // ONE hours row, because `hours` is the one required list in the schema: a
+        // "Hours, location and map" block with no hours says nothing, and the validator,
+        // the panel's Repeater and the generated contract all agree it needs one.
+        'heading' => 'Find us', 'address' => '1 High Street',
+        'hours' => [['day' => 'Monday', 'hours' => '11:00 to 21:00']],
     ], $fields)]]];
 
     // §6.4: "Never an embed, an iframe or a provider URL." There is no field that could
@@ -335,4 +339,24 @@ it('re-validates a STORED document, because an asset it referenced can since hav
 
     expect(refusal(fn () => LandingDocument::fromStored($stored, new StubMediaReferences([]))))
         ->not->toBeNull();
+});
+
+it('refuses an empty required list, which the panel refuses too', function (): void {
+    // THE AGREEMENT THIS RULE EXISTS FOR. The form's Repeater and this validator used to
+    // disagree: `required()` on a Repeater means "at least one item" and this class
+    // accepted `[]`, so a document the panel would not let a tenant save was one this
+    // class called valid. Found by driving the builder's save action, which is the only
+    // path that runs both.
+    $hours = fn (array $rows): array => ['blocks' => [['type' => 'hours_location', 'fields' => [
+        'heading' => 'Find us', 'address' => '1 High Street', 'hours' => $rows,
+    ]]]];
+
+    expect(refusal(fn () => parse($hours([])))?->reason)->toContain('at least one item');
+    expect(refusal(fn () => parse($hours([['day' => 'Monday', 'hours' => '11:00']]))))->toBeNull();
+
+    // And an OPTIONAL list may be empty, which is the other half: a block whose list is
+    // empty is a section the tenant added and has not filled in yet.
+    expect(refusal(fn () => parse(['blocks' => [
+        ['type' => 'gallery', 'fields' => ['images' => []]],
+    ]])))->toBeNull();
 });

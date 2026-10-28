@@ -44,6 +44,10 @@ for arg in "$@"; do
 done
 
 image="qrpager-coverage:php8.4-pcov"
+# The compose stack still has to be UP -- the suite needs the four services -- but the
+# network's NAME no longer matters, because the container joins the host's namespace
+# rather than the compose one. Kept as a precondition so a missing stack fails here with
+# a sentence rather than 84 connection errors 5 minutes later.
 network="$(docker network ls --format '{{.Name}}' | grep -E '^qr-pager_default$' || true)"
 
 if [ -z "$network" ]; then
@@ -117,8 +121,33 @@ trap 'rm -f "$clover.files"' EXIT
 echo "coverage: measuring $scope"
 echo
 
-# The suite needs the real Postgres and Redis (§6: no DB mocks for DB behaviour), so the
-# container joins the compose network and addresses them by service name.
+# ================================================================================
+# HOST NETWORKING, SO THE CONTAINER SEES EXACTLY WHAT THE HOST SEES
+# ================================================================================
+#
+# This used to join the compose network and address the services by name -- DB_HOST=
+# postgres, REDIS_HOST=redis -- which worked for as long as those were the only two
+# services. On 2026-10-28 the stack gained a mail catcher and an object store (R-125,
+# ADR-004) and this script was not updated, so Task 7's coverage run reported
+# **84 FAILURES**, not one of which was a coverage problem: inside the container
+# 127.0.0.1 is the container, and phpunit.xml points both new services at 127.0.0.1
+# because that is where the HOST sees them.
+#
+# The first fix was two more -e overrides, and it got the count to 5 and then stopped:
+# LocalMailCatcherTest reads Mailpit's API at a literal http://127.0.0.1:8025, and
+# LocalObjectStoreTest ASSERTS that the configured endpoint is literally
+# http://127.0.0.1:8333 -- which is the right assertion for it to make, and which an
+# override makes false. Two tests would have had to be weakened to suit a tooling
+# decision.
+#
+# `--network host` removes the divergence instead of translating it. The container
+# shares the host's network namespace, so every published service answers on 127.0.0.1
+# exactly as it does for a host runner, every env var in phpunit.xml is true, and there
+# is no per-service mapping here to go stale the next time the stack grows. Verified in
+# this image before the change: postgres, redis, objectstore and mailpit all reachable
+# on 127.0.0.1.
+#
+# §6 still holds: real Postgres and Redis, no DB mocks for DB behaviour.
 #
 # THE REPOSITORY ROOT IS MOUNTED, not apps/api. OpenApiSpecTest reads
 # base_path('../../docs/openapi.json') -- the committed spec lives in docs/, outside the
@@ -132,17 +161,15 @@ echo
 # contends for it like any other runner: a host suite and this one queue rather than
 # truncating under each other.
 docker run --rm \
-  --network "$network" \
+  --network host \
   -v "$(cd ../.. && pwd)":/repo \
   -w /repo/apps/api \
   -e APP_ENV=testing \
   -e PAO_DISABLE=1 \
-  -e DB_HOST=postgres \
-  -e DB_PORT=5432 \
+  `# The suite's own database, and SSL off: the composed Postgres speaks no TLS, and`\
+  `# .env's DB_SSLMODE is the host developer's rather than this run's (R-011).`\
   -e DB_DATABASE=qrpager_test \
   -e DB_SSLMODE=disable \
-  -e REDIS_HOST=redis \
-  -e REDIS_PORT=6379 \
   "$image" \
   php -d memory_limit=1G artisan test --coverage ${min:+--min="$min"} --coverage-clover="$clover" "${filter_args[@]}"
 
