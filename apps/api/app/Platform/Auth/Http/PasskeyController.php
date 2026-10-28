@@ -102,6 +102,29 @@ final class PasskeyController
             return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
         }
 
+        /*
+         * THE NAME IS RE-VALIDATED HERE, against the column rather than against the vendor.
+         *
+         * `laravel/passkeys`' own `PasskeyRegistrationRequest` rules `name` at `max:255`,
+         * and `PLAN.md §2.4` declares `passkeys.name` as `varchar(120)`. So a name of 121
+         * to 255 characters passed validation and reached the INSERT, where Postgres raised
+         * `22001` -- a 500 on a request that should have been a 422, and only reachable
+         * AFTER a successful ceremony, which is why no test on this machine could find it
+         * (`R-100`). Found by reading the vendor rules against the schema at Task 5's
+         * security review.
+         *
+         * In the controller and not in a FormRequest because the request class is the
+         * vendor's: subclassing it and rebinding the container would put a cleverness
+         * between the route and its validation to save four lines here.
+         *
+         * 120 is read from nothing -- it is written twice, here and in the migration. That
+         * duplication is the honest cost of the vendor boundary, and `PasskeyTest` pins the
+         * column's length so the two cannot drift silently.
+         */
+        if (mb_strlen((string) $request->string('name')) > 120) {
+            return (new Problem(ProblemType::Validation, $request->getPathInfo()))->toResponse();
+        }
+
         try {
             // registrationOptions() PULLS the stored challenge -- single use, whatever the
             // outcome, which is what stops a failed attempt leaving a challenge to retry

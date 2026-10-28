@@ -2341,6 +2341,16 @@
                             }
                         }
                     },
+                    "409": {
+                        "description": "Two-factor is already in force. Disable it before enrolling again.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "500": {
                         "description": "The secret could not be read back.",
                         "content": {
@@ -2802,6 +2812,7 @@
                     "https://qrpager.dev/problems/unauthenticated",
                     "https://qrpager.dev/problems/forbidden",
                     "https://qrpager.dev/problems/conflict",
+                    "https://qrpager.dev/problems/csrf-mismatch",
                     "https://qrpager.dev/problems/expired",
                     "https://qrpager.dev/problems/stale",
                     "https://qrpager.dev/problems/rate-limited",

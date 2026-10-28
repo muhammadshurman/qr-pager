@@ -56,6 +56,32 @@ final class Redactor
     private const SECRET_KEYS = [
         'password', 'secret', 'token', 'credential', 'verifier', 'authorization',
         'api_key', 'apikey', 'private_key', 'dsn', 'bindings', 'sql', 'query',
+        // ADDED AT TASK 5, and each is argued for because the docblock above requires it.
+        //
+        // The substring rule already covered this task's two obvious names --
+        // `two_factor_secret` matches `secret` and `plainTextToken` matches `token` -- and
+        // the `§11` security review measured the two it did NOT cover by calling
+        // Redactor::context() directly: `two_factor_recovery_codes`, `recovery_codes`,
+        // `recovery_code` and `challenge` all came back verbatim, while
+        // `QRPAGER-12 §10.4(e)` claimed "Task 5 adds its key names and a test per key".
+        // The claim was false and this file was not in the task's diff at all.
+        //
+        // `recovery`: a recovery code is a SECOND password. Eight of them are issued at
+        // enrolment and each authenticates once, bypassing the authenticator entirely, so a
+        // logged one is a logged credential with a longer life than the session it would
+        // have unlocked.
+        //
+        // `challenge`: a WebAuthn challenge is single-use and server-held, and the whole
+        // security of the ceremony is that the client cannot choose it. A challenge in a log
+        // is one an attacker did not have to be issued -- and it is the one value on this
+        // list that is routinely in flight while an error can be thrown around it, because
+        // both passkey ceremonies store it in the session between two requests.
+        //
+        // Neither was reachable when it was found: nothing logs those keys, and
+        // ReportRedactedException keeps class/SQLSTATE/file/line plus the redacted message
+        // with no trace, so PHP's argument capture never sees them. A latent gap closed
+        // while it is still latent, rather than a leak fixed after one.
+        'recovery', 'challenge',
     ];
 
     public function message(string $message): string

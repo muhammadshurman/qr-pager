@@ -103,7 +103,7 @@ it('pins the global allowlist as an exact set, not just a consistent one', funct
     // added here, and neither check could tell. Pinning the set exactly means a new
     // arrival cannot join the allowlist without showing up in a diff.
     //
-    // THREE JOINED AT TASK 5 and each one is argued for in PLAN.md §2.4 rather than
+    // TWO JOINED AT TASK 5 and each one is argued for in PLAN.md §2.4 rather than
     // merely listed. This is the largest single widening of the RLS-free surface since
     // Task 1, which is stated here because the diff is where it is supposed to be noticed:
     //

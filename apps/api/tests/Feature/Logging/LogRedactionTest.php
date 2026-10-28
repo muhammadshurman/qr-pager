@@ -278,3 +278,54 @@ it('keeps redacting when the request goes through HTTP', function (): void {
         ->not->toContain($bound)
         ->not->toContain('select * from');
 });
+
+/*
+ * ================================================================================
+ * TASK 5'S OWN KEY NAMES, ONE CASE PER NAME
+ * ================================================================================
+ *
+ * `QRPAGER-12 §10.4(e)` claimed "Task 5 adds its key names and a test per key". It added
+ * neither: `Redactor.php` was not in the task's diff, and the `§11` security review measured
+ * four names coming back VERBATIM by calling `Redactor::context()` directly.
+ *
+ * Two of this task's secrets were already covered by the substring rule and are asserted
+ * here anyway, because "covered incidentally by a rule written for something else" is a
+ * property worth a test rather than an argument: `two_factor_secret` matches `secret`,
+ * `plainTextToken` matches `token`.
+ *
+ * The four that were NOT covered are the reason the list grew: a recovery code is a second
+ * password that bypasses the authenticator, and a WebAuthn challenge is the one value whose
+ * whole security is that the client could not choose it.
+ */
+dataset('task 5 secret keys', [
+    // [context key, the value that must not appear]
+    'two_factor_secret (by `secret`)' => ['two_factor_secret', 'JBSWY3DPEHPK3PXP'],
+    'plainTextToken (by `token`)' => ['plainTextToken', '7|aaaabbbbccccddddeeeeffff'],
+    'two_factor_recovery_codes' => ['two_factor_recovery_codes', 'abcde-fghij'],
+    'recovery_codes' => ['recovery_codes', 'klmno-pqrst'],
+    'recovery_code' => ['recovery_code', 'uvwxy-z1234'],
+    'challenge' => ['challenge', 'Y2hhbGxlbmdlLXZhbHVl'],
+]);
+
+it('redacts each of this task’s secret key names', function (string $key, string $value): void {
+    Log::info('probe', [$key => $value, 'nested' => [$key => $value], 'safe' => 'keep-me']);
+
+    $log = capturedLog($this->logFile);
+
+    // ⚠ `str_contains` AND NOT `expect($log)->not->toContain($value, $message)`, which is
+    // how this case was first written and why it is worth a comment. Pest's `toContain`
+    // takes VARIADIC NEEDLES, not a needle and a message -- so the negated form asserted
+    // "the log does not contain BOTH the value AND that sentence", which the absent
+    // sentence satisfied on its own. It passed with the key rule removed. The assertion
+    // could not fail, which is `§4a`'s vacuous-assertion defect, caught here the only way
+    // it ever is: by running the test against the unfixed code and watching it pass.
+    //
+    // Both depths, because the context walker recurses and a top-level-only rule would
+    // leave every structured payload uncovered.
+    expect(str_contains($log, $value))->toBeFalse(
+        "the key [{$key}] logged its value verbatim",
+    );
+
+    // The positive control: this case can only pass by redacting, not by failing to log.
+    expect(str_contains($log, 'keep-me'))->toBeTrue('nothing was logged at all');
+})->with('task 5 secret keys');

@@ -145,14 +145,60 @@ echo
 echo "=== 3. this task's objects are present ==="
 fingerprint > "$before"
 echo "fingerprint lines: $(wc -l < "$before")"
+# EVERY TASK'S OBJECTS, NOT JUST TASK 3'S. This list named only resolve_pager_token and
+# the two worker policies, so "this task's objects are present" would have passed with a
+# straight face if Task 5's migrations had created nothing at all -- found by Task 5's QA
+# review (L-7). Step 5's byte-identical fingerprint is what really covers the new objects;
+# this step is the one that says WHICH are expected, so it has to name them.
+#
+# Each needle is an object a §5 row or a gate clause depends on, so a rollback proof that
+# silently stopped covering one would be the control going quiet rather than failing.
 for needle in \
   'function resolve_pager_token secdef=t' \
   "policy pager_sessions.worker_reads_expired_sessions" \
-  "policy pager_sessions.worker_expires_sessions"
+  "policy pager_sessions.worker_expires_sessions" \
+  'function authenticate_user secdef=t' \
+  'function user_memberships secdef=t' \
+  'function user_two_factor secdef=t' \
+  'table passkeys rls=f' \
+  'table personal_access_tokens rls=f'
 do
   grep -q "$needle" "$before" \
     || { echo "missing from the schema: $needle" >&2; exit 1; }
 done
+
+# ⚠ THE ABSENCE CHECKS BELOW WOULD PASS ON AN EMPTY FILE, so the file is proven non-empty
+# for the tables they are about FIRST. An absence asserted against nothing is the vacuous
+# assertion §4a records four of -- and this very pass added a fifth before catching it, in a
+# redaction test whose negated `toContain` could not fail. The printed lines are also the
+# evidence a reader of this transcript actually wants.
+grants=$(grep -cE '^grant qrpager_app (users|passkeys|personal_access_tokens)\.' "$before")
+echo "grant lines for this task's tables: $grants"
+[ "$grants" -ge 20 ] \
+  || { echo "only $grants grant lines for this task's tables -- the absence checks below would be vacuous" >&2; exit 1; }
+grep -E '^grant qrpager_app (passkeys|personal_access_tokens)\.' "$before"
+grep -E '^grant qrpager_app users\.(is_platform_admin|password|remember_token|two_factor)' "$before"
+
+# THE NARROWINGS, asserted as ABSENCES -- which a list of present objects cannot do.
+# 2026_10_28_140000 revoked these three, each because its presence was an escalation or an
+# un-backstopped write (SEC L-1, SEC L-2, QA M-6), so the proof has to fail if a later
+# migration hands any of them back.
+for forbidden in \
+  'grant qrpager_app users.is_platform_admin INSERT' \
+  'grant qrpager_app passkeys.*DELETE'
+do
+  grep -qE "$forbidden" "$before" \
+    && { echo "a narrowed grant is back in the schema: $forbidden" >&2; exit 1; }
+done
+
+# authenticate_user must not return the 2FA secret. Checked against the function's own
+# argument names, because the fingerprint's function line carries no signature.
+psql_as_root -d "$probe" -tAc \
+  "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'authenticate_user'
+      and 'two_factor_secret' = any(p.proargnames)" \
+  | grep -qx '0' \
+  || { echo "authenticate_user still returns two_factor_secret -- QA M-6 is not applied" >&2; exit 1; }
 # The narrowing itself, not just the policy's existence: R-003 is about the USING clause.
 grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' "$before" \
   | grep -q "ARRAY\['waiting'" \

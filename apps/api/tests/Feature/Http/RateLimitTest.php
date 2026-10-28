@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Auth\Ability;
 use App\Domain\Http\ProblemType;
+use App\Domain\Tenancy\TenantRole;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\RequestLimiter;
 use Illuminate\Support\Facades\Cache;
@@ -458,4 +460,109 @@ it('refuses past the pager-create bucket, which is the route-level one Task 3 ad
 
     expect((string) $refused->getContent())->not->toContain('pager-create')
         ->not->toContain('ratelimit');
+});
+
+/*
+ * ================================================================================
+ * EVERY BUCKET ON THE AUTH SURFACE, DRIVEN TO AN ACTUAL 429
+ * ================================================================================
+ *
+ * `R-063`'s clause, which `QRPAGER-12 §10.4(d)` restates for this task: a limit is proven by
+ * being DRIVEN, not by being read off a config. Task 5 shipped its buckets with neither --
+ * `grep -rn 429 tests/Feature/Auth/` found nothing, so the only thing holding the four new
+ * buckets was `R-045`'s case above, which checks that a referenced name EXISTS. A bucket
+ * that exists and never refuses is the silent no-op that case was written to catch, one
+ * layer up.
+ *
+ * Both `§11` reviews found the same two holes by dumping the live route table: `auth.me` and
+ * `auth.logout` named no bucket at all, and `auth-passkey` -- named in the ticket -- did not
+ * exist, so the passkey routes shared the bucket sized for bcrypt. Both are fixed; this is
+ * what holds them fixed.
+ */
+dataset('auth surface buckets', [
+    // [bucket, method, path, body, the status a permitted request gets]
+    'auth-login on the login route' => ['auth-login', 'postJson', '/v1/auth/login',
+        ['email' => 'nobody@example.test', 'password' => 'correct-horse-battery-staple'], 401],
+    'auth-2fa on the challenge route' => ['auth-2fa', 'postJson', '/v1/auth/two-factor/challenge',
+        ['code' => '123456'], 401],
+    'auth-passkey on the login ceremony' => ['auth-passkey', 'getJson', '/v1/auth/passkeys/login/options',
+        [], 200],
+    // 200 and not 401: this file's beforeEach authenticates, so `me` answers. That is the
+    // point of carrying the permitted status in the dataset rather than assuming a refusal.
+    'auth-session on me' => ['auth-session', 'getJson', '/v1/auth/me', [], 200],
+    'auth-session on logout' => ['auth-session', 'postJson', '/v1/auth/logout', [], 204],
+]);
+
+it('refuses past each bucket on the auth surface', function (
+    string $bucket, string $method, string $path, array $body, int $permitted
+): void {
+    // Two, so the third request is the refusal. The configured allowances are deliberately
+    // generous enough that driving them literally would be 30 or 60 requests per case for
+    // no extra information -- what is under test is that the bucket BITES, and `R-045`'s
+    // case above is what pins the numbers themselves to the config.
+    config(["ratelimit.buckets.{$bucket}.per_ip.attempts" => 2]);
+
+    $send = fn () => $method === 'getJson'
+        ? $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->getJson($path)
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->{$method}($path, $body);
+
+    // THE POSITIVE CONTROL: the first two are answered by the ROUTE, whatever that answer
+    // is. Without this a 429 on the third would be indistinguishable from a surface that
+    // refuses everything -- and two of these paths answer 401 when permitted, which is
+    // exactly the confusion worth ruling out.
+    expect($send()->status())->toBe($permitted, "{$bucket}: first request")
+        ->and($send()->status())->toBe($permitted, "{$bucket}: second request");
+
+    $refused = $send();
+
+    $refused->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+
+    // And the refusal names neither the bucket nor the mechanism, so a caller probing the
+    // surface learns nothing about how it is apportioned.
+    expect((string) $refused->getContent())->not->toContain($bucket)
+        ->not->toContain('ratelimit');
+})->with('auth surface buckets');
+
+it('refuses past devices-issue, the fourth bucket the ticket named, on both of its dimensions', function (): void {
+    // The one new bucket with a PER-TENANT half as well, which is why it is driven apart
+    // from the dataset above: minting a device token happens inside a resolved tenant, so
+    // `R-063`'s "no tenant before the credential resolves" does not apply and both keys
+    // exist. Each dimension is driven on its own, because a single run cannot show which
+    // of the two refused.
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $issue = fn () => $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->postJson('/v1/devices', [
+            'name' => 'kds-'.random_int(1000, 9999),
+            'ability' => Ability::PagerRead->value,
+            'ttl_minutes' => 60,
+        ]);
+
+    config(['ratelimit.buckets.devices-issue.per_ip.attempts' => 2]);
+
+    expect($issue()->status())->toBe(201)->and($issue()->status())->toBe(201);
+
+    $issue()->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+
+    // NOW THE PER-TENANT HALF, from a different address so the per-IP counter above cannot
+    // be the thing that refuses. This is the dimension `R-085` exists about on the customer
+    // surface, and the one place at this task where it is actually present.
+    app(RequestLimiter::class)->clear('ratelimit:devices-issue:tenant:'.$tenant);
+
+    config([
+        'ratelimit.buckets.devices-issue.per_ip.attempts' => 100,
+        'ratelimit.buckets.devices-issue.per_tenant.attempts' => 2,
+    ]);
+
+    $fromElsewhere = fn () => $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.7'])
+        ->postJson('/v1/devices', [
+            'name' => 'kds-'.random_int(1000, 9999),
+            'ability' => Ability::PagerRead->value,
+            'ttl_minutes' => 60,
+        ]);
+
+    expect($fromElsewhere()->status())->toBe(201)->and($fromElsewhere()->status())->toBe(201);
+
+    $fromElsewhere()->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
 });

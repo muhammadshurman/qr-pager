@@ -210,11 +210,27 @@ it('answers no principal when there is no user, no tenant, or an impossible user
     expect(app(RequestPrincipal::class)->for($noTenant))->toBeNull();
 });
 
-it('reads no membership for an impossible user id, and drops a row it cannot map', function (): void {
-    // Memberships' two defensive arms. The shape check is the project's standing rule for
-    // anything that becomes a tenant scope; the unmappable-row arm is the belt behind
-    // §2.3's generated-enum check -- a role Postgres holds and PHP does not know grants
-    // nothing rather than guessing.
+it('reads no membership for an impossible user id, and refuses to pick between two', function (): void {
+    /*
+     * ⚠ THIS CASE USED TO BE NAMED "...and drops a row it cannot map", AND IT NEVER DID.
+     *
+     * Renamed at Task 5's QA review (L-3) rather than left over-claiming. `Memberships` has
+     * two `continue` arms -- one for a row missing a column, one for a `role` or
+     * `tenant_status` that `tryFrom()` cannot map -- and both are still UNCOVERED, which
+     * the coverage report shows at `Memberships.php:93` and `:104`. A name that claims an
+     * assertion the body does not make is worse than no case at all, because the next
+     * reader checks the name and stops.
+     *
+     * THEY ARE NOT DRIVEN HERE ON PURPOSE. `role` and `tenant_status` are Postgres ENUMS,
+     * so an unmappable value cannot be inserted: producing one needs
+     * `ALTER TYPE ... ADD VALUE` against the live cluster, which is `R-018`'s class of test
+     * -- three tests already mutate cluster-wide role attributes and that is a `§5` row,
+     * not a pattern to copy. The alternative, a hand-written fake connection returning
+     * crafted rows, is what `§6`'s "no test mocks database behaviour" rules out.
+     *
+     * So the arm stays a belt behind `§2.3`'s generated-enum check, which is the control
+     * that actually stops the drift, and this case asserts only what it drives.
+     */
     $reader = app(Memberships::class);
 
     expect($reader->for('not-a-uuid'))->toBe([])
@@ -424,4 +440,74 @@ it('re-reads a user with the readable column list, through refresh and fresh', f
     // And the platform principal accessor, which has no HTTP caller yet.
     expect($user->platformPrincipal())->toBeNull()
         ->and($user->isPlatformAdmin())->toBeFalse();
+});
+
+it('constructs the platform-admin principal for a tenant it has no membership in, and it holds nothing', function (): void {
+    /*
+     * `RequestPrincipal`'s CASE 2 -- the one arm of that class the named invariant is
+     * actually written over, and it was uncovered (QA L-9) although its own comment says
+     * "this arm exists ... for the test that drives it directly".
+     *
+     * WHY IT IS HARD TO REACH, which is the whole reason it needs a direct case: in a real
+     * request the resolver has already refused. A platform admin holds no membership, so no
+     * tenant resolves, so `RequireTenantScope` answers 401 and no route runs -- which is
+     * `§5`'s "a platform admin is NOT a tenant bypass", and it is why
+     * `PlatformAdminIsNotABypassTest` can only ever observe the 401. The arm is what
+     * happens if a tenant IS published for such a user, and the distinction it draws
+     * matters: NOT null, because "a platform admin reaching a tenant they do not belong to"
+     * is a real principal being correctly refused rather than an absence of authentication.
+     */
+    $admin = (string) Str::uuid7();
+
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => $admin,
+        'name' => 'Platform Admin',
+        'email' => 'arm-admin-'.substr(str_replace('-', '', $admin), 0, 12).'@example.test',
+        'is_platform_admin' => true,
+    ]);
+
+    // A tenant the admin is NOT a member of, published for the request as though a route
+    // had resolved one.
+    $tenant = $this->makeTenant();
+
+    app()->instance(RequireTenantScope::BINDING, $tenant);
+
+    $user = User::query()->findOrFail($admin);
+
+    expect($user->isPlatformAdmin())->toBeTrue();
+
+    $request = Request::create('/v1/pager-sessions');
+    $request->setUserResolver(fn () => $user);
+
+    // CASE 2: the principal is constructed, and it is PlatformAdmin and not null.
+    expect(app(RequestPrincipal::class)->for($request))->toBe(Principal::PlatformAdmin);
+
+    // AND IT HOLDS NOTHING. Driven over every ability rather than argued, so adding one to
+    // the enum without deciding about this principal fails here as well as in
+    // PlatformAdminIsNotABypassTest.
+    foreach (Ability::cases() as $ability) {
+        expect(app(RequestPrincipal::class)->may($request, $ability))->toBeFalse(
+            "a platform admin may {$ability->value} in a tenant it does not belong to",
+        );
+    }
+
+    // THE DISCRIMINATING HALF: the SAME request shape for an ordinary user with no
+    // membership answers null, not a principal. So the arm above is the flag's work and not
+    // a fallback that fires for everyone.
+    $nobody = (string) Str::uuid7();
+
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => $nobody,
+        'name' => 'No Memberships',
+        'email' => 'arm-nobody-'.substr(str_replace('-', '', $nobody), 0, 12).'@example.test',
+    ]);
+
+    $plain = User::query()->findOrFail($nobody);
+
+    $plainRequest = Request::create('/v1/pager-sessions');
+    $plainRequest->setUserResolver(fn () => $plain);
+
+    app()->forgetInstance(Memberships::class);
+
+    expect(app(RequestPrincipal::class)->for($plainRequest))->toBeNull();
 });

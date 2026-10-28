@@ -8,6 +8,7 @@ use App\Platform\Console\CheckBootCommand;
 use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RefuseDeviceToken;
 use App\Platform\Http\Middleware\RequireTenantScope;
 use App\Platform\Http\Middleware\ResolvePrincipal;
 use App\Platform\Http\Middleware\ShedLoad;
@@ -231,12 +232,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // names its own bucket, because a login and a tenant selection do not deserve the
         // same allowance and `api`'s shared bucket would give them one. That is the same
         // decision the customer group records for its three routes.
+        // RefuseDeviceToken runs LAST, and the order is the whole of it: it reads the
+        // access token ResolvePrincipal resolved, so it cannot run before it. A
+        // `pager:read` device token used to satisfy every controller's
+        // `$request->user() instanceof User` and reach all of this surface --
+        // RefuseDeviceToken's docblock has the measurements and
+        // DeviceTokenOnAuthSurfaceTest drives every route on the group.
         $middleware->group('auth-surface', [
             EncryptCookies::class,
             AddQueuedCookiesToResponse::class,
             StartSession::class,
             ValidateCsrfToken::class,
             ResolvePrincipal::class,
+            RefuseDeviceToken::class,
         ]);
 
         // TrustProxies is already on the global stack, and what it trusts is

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Auth\Ability;
 use App\Domain\Auth\TenantPin;
 use App\Domain\Tenancy\TenantRole;
+use App\Features\Devices\DeviceTokens;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -61,7 +63,20 @@ it('reads the board with its one capability, and is refused on every other staff
 
     // ITS ONE ABILITY WORKS, which is the positive control. Without it every refusal below
     // would pass for a token that simply does not authenticate at all.
-    $this->getJson('/v1/pager-sessions', $headers)->assertStatus(200);
+    //
+    // ⚠ AND IT ASSERTS THE BOARD'S CONTENT, not just the status. A status-only control is
+    // how this passed for a board that returns nothing: Task 5's QA review inserted
+    // `return [];` at the top of `PagerSessions::board()` and all 205 tests in
+    // tests/Feature/Auth and tests/Feature/Pager stayed green. A device token whose one
+    // capability returns an empty board is not a token whose capability works.
+    $board = $this->getJson('/v1/pager-sessions', $headers);
+
+    $board->assertStatus(200);
+
+    expect(str_contains((string) $board->getContent(), $session))->toBeTrue(
+        "the board did not contain this tenant's own session, so a board returning nothing "
+        .'would satisfy this case',
+    );
 
     // And everything else is refused.
     $refused = [
@@ -111,6 +126,11 @@ it('cannot act in another tenant even when its own issuer is a member of that te
     ]), 'pgsql_owner');
 
     $betaSession = $this->makeSession($beta);
+
+    // Alpha gets a session of its own, so the assertion below is "it reads ALPHA's and not
+    // BETA's" rather than "it reads nothing, and beta's is part of nothing".
+    $alphaSession = $this->makeSession($alpha);
+
     $device = issueDeviceToken($alpha);
 
     auth()->forgetGuards();
@@ -121,6 +141,11 @@ it('cannot act in another tenant even when its own issuer is a member of that te
     $board = $this->getJson('/v1/pager-sessions', $headers);
 
     $board->assertStatus(200);
+
+    expect(str_contains((string) $board->getContent(), $alphaSession))->toBeTrue(
+        'the board did not contain alpha\'s own session, so the absence of beta\'s below '
+        .'proves nothing',
+    );
 
     expect(str_contains((string) $board->getContent(), $betaSession))->toBeFalse(
         "a device token pinned to one tenant read another tenant's board",
@@ -303,4 +328,80 @@ it('revokes a token, and reports one belonging to another tenant as not found', 
 
     $this->getJson('/v1/pager-sessions', ['Authorization' => 'Bearer '.$betaDevice['token']])
         ->assertStatus(401);
+});
+
+it('writes a device token and its audit row in one transaction, or neither', function (): void {
+    /*
+     * `§6`'s "crash mid-way", answered for the one act this class's own comment calls
+     * "exactly the kind of act the log exists for".
+     *
+     * `issue()` called `createToken()` outside any transaction and then opened a SEPARATE
+     * one for the audit row. A failure between the two left a LIVE CREDENTIAL WITH NO AUDIT
+     * ROW -- and since the plaintext is returned only on the response that never arrived, a
+     * token nobody knows exists and nobody can find to revoke. Found by Task 5's QA review.
+     *
+     * THE FAILURE IS INJECTED THROUGH A REAL CODE PATH rather than by mocking: `ip_address`
+     * is cast `::inet`, so an un-parseable address makes the audit INSERT raise `22P02`
+     * after the token row has been written. That is the exact interleaving the finding is
+     * about, produced by an argument this method already accepts.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $issuer = User::query()->findOrFail((string) auth()->id());
+
+    $before = DB::connection('pgsql_owner')->table('personal_access_tokens')->count();
+
+    $failed = false;
+
+    try {
+        app(DeviceTokens::class)->issue(
+            $issuer,
+            $tenant,
+            'kitchen-screen',
+            Ability::PagerRead,
+            60,
+            'not-an-ip-address',
+        );
+    } catch (Throwable $thrown) {
+        $failed = true;
+
+        // The SQLSTATE is named, so a future change that fails for a different reason
+        // cannot pass for this one -- R-049's lesson about summaries versus output.
+        expect($thrown->getCode())->toBe('22P02', 'the audit insert failed for another reason');
+    }
+
+    expect($failed)->toBeTrue('the bogus address was accepted, so this case proves nothing');
+
+    // THE ASSERTION: no credential survived the failed audit. Against the non-atomic
+    // version this count was one higher, and the extra row was a working token.
+    expect(DB::connection('pgsql_owner')->table('personal_access_tokens')->count())->toBe($before,
+        'a device token survived a failed audit insert -- a live credential with no audit row',
+    );
+
+    // And the audit row is not there either, so the rollback took both and not just one.
+    $audited = withTenant($tenant, fn (): int => (int) DB::connection('pgsql_owner')
+        ->table('audit_log')
+        ->where('tenant_id', $tenant)
+        ->where('action', 'device_token.issued')
+        ->count(), 'pgsql_owner');
+
+    expect($audited)->toBe(0);
+
+    // THE POSITIVE CONTROL: the same call with a real address writes BOTH. Without it, a
+    // zero count above would be indistinguishable from an issue path that never works.
+    $device = app(DeviceTokens::class)->issue(
+        $issuer, $tenant, 'kitchen-screen', Ability::PagerRead, 60, '203.0.113.9',
+    );
+
+    expect(DB::connection('pgsql_owner')->table('personal_access_tokens')->count())->toBe($before + 1);
+
+    $auditedNow = withTenant($tenant, fn (): int => (int) DB::connection('pgsql_owner')
+        ->table('audit_log')
+        ->where('tenant_id', $tenant)
+        ->where('action', 'device_token.issued')
+        ->where('subject_id', $device['id'])
+        ->count(), 'pgsql_owner');
+
+    expect($auditedNow)->toBe(1);
 });

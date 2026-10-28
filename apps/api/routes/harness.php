@@ -15,7 +15,12 @@ use Illuminate\Support\Facades\Route;
  *
  * NOT SERVED IN PRODUCTION, and the condition is in bootstrap/app.php beside the drain
  * proof's -- the only two conditional route loads in the project, both visible in one place.
- * RouteSurfaceTest asserts this path is absent from the route table under `production`.
+ * RouteSurfaceTest asserts the SOURCE of that condition in bootstrap/app.php, and says in
+ * its own comment why it cannot assert the stronger thing: the route table is compiled once
+ * per process, so a test cannot re-register routes under a different APP_ENV without
+ * rebuilding the application. This comment used to claim the test "asserts this path is
+ * absent from the route table under production", which it does not -- corrected at Task 5's
+ * QA review. The absence was verified by hand, out of process, under APP_ENV=production.
  *
  * ON THE `auth-surface` GROUP, because the page needs a session: it reads a CSRF token for
  * its fetches and the ceremony's challenge is stored server-side. Unversioned and outside

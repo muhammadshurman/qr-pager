@@ -30,11 +30,26 @@ use Illuminate\Support\Facades\Route;
  * route added here without being listed fails the suite rather than quietly joining a set
  * that requires nothing of it.
  *
- * EVERY ROUTE HERE IS RATE-LIMITED PER IP AND NOT PER TENANT, for the same reason the
- * customer token route is (`R-063`): there is no tenant until the credential resolves, so
- * the per-tenant half cannot apply before the lookup, and resolving one in order to
- * rate-limit the request that asks for it is work an unauthenticated caller can make this
- * process do.
+ * EVERY ROUTE HERE NAMES A BUCKET, AND EVERY BUCKET IS PER IP AND NOT PER TENANT, for the
+ * same reason the customer token route is (`R-063`): there is no tenant until the credential
+ * resolves, so the per-tenant half cannot apply before the lookup, and resolving one in
+ * order to rate-limit the request that asks for it is work an unauthenticated caller can
+ * make this process do.
+ *
+ * ⚠ THIS SENTENCE USED TO BE FALSE, and it is worth keeping the correction visible. It read
+ * "EVERY ROUTE HERE IS RATE-LIMITED", while `me` and `logout` named no bucket and the
+ * `auth-surface` group deliberately carries no default -- so the two of them were unmetered.
+ * Both `§11` reviews found it the same way: by dumping the live route table instead of
+ * reading this comment. 40 consecutive `GET /v1/auth/me` with a forged bearer header gave
+ * 40 answers, zero 429s and exactly 40 Postgres queries. `auth-session` is the bucket they
+ * carry now, and `RateLimitTest` drives each bucket on this surface to an actual 429 --
+ * `R-063`'s own clause, that a limit is proven by being driven and not by being configured.
+ *
+ * `QRPAGER-12 §10.4(d)` named four new buckets -- `auth-login`, `auth-2fa`, `auth-passkey`,
+ * `devices-issue` -- and `auth-passkey` did not exist either: the four passkey routes shared
+ * `auth-login`. It exists now, and `config/ratelimit.php` carries why a WebAuthn ceremony
+ * does not belong in a bucket sized for bcrypt. `auth-session` is a FIFTH, beyond anything
+ * the ticket named, because the gap it covers was not one the ticket had noticed.
  */
 
 Route::prefix('auth')->group(function (): void {
@@ -52,12 +67,17 @@ Route::prefix('auth')->group(function (): void {
     /*
      * End the session.
      *
-     * Deliberately NOT rate-limited beyond the group default and deliberately answering
-     * the same way whether or not a session existed: a logout that reports "you were not
-     * logged in" is an oracle, and one that can be exhausted leaves people unable to end
-     * their own session.
+     * On the LOOSEST bucket here and deliberately answering the same way whether or not a
+     * session existed: a logout that reports "you were not logged in" is an oracle, and one
+     * that can be exhausted leaves people unable to end their own session. Those two
+     * properties are why it is not on `auth-login`'s 10/minute -- not a reason to leave it
+     * unmetered, which is what this comment used to say ("NOT rate-limited beyond the group
+     * default"). There is no group default: `bootstrap/app.php` states, correctly, that the
+     * limiter is not on the `auth-surface` group.
      */
-    Route::post('logout', [AuthController::class, 'logout'])->name('auth.logout');
+    Route::post('logout', [AuthController::class, 'logout'])
+        ->middleware([RateLimit::class.':auth-session'])
+        ->name('auth.logout');
 
     /*
      * Choose which restaurant this session is acting in.
@@ -80,8 +100,16 @@ Route::prefix('auth')->group(function (): void {
      * The one endpoint here that needs an established session. It exists so a client does
      * not have to guess: a user with one membership is already resolved, and a user with
      * several has to be shown the choice.
+     *
+     * It is also the one route on this surface that does real database work for an
+     * unauthenticated caller: a request with a bearer header costs a `personal_access_tokens`
+     * lookup before anything refuses it. On `auth-session` rather than `auth-login` because a
+     * dashboard asks this on every page load -- the bucket is here to BOUND the cost, not to
+     * make it small.
      */
-    Route::get('me', [AuthController::class, 'me'])->name('auth.me');
+    Route::get('me', [AuthController::class, 'me'])
+        ->middleware([RateLimit::class.':auth-session'])
+        ->name('auth.me');
 
     /*
      * TWO-FACTOR AUTHENTICATION.
@@ -134,19 +162,19 @@ Route::prefix('auth')->group(function (): void {
      */
     Route::prefix('passkeys')->group(function (): void {
         Route::get('options', [PasskeyController::class, 'registrationOptions'])
-            ->middleware([RateLimit::class.':auth-login'])
+            ->middleware([RateLimit::class.':auth-passkey'])
             ->name('auth.passkeys.options');
 
         Route::post('/', [PasskeyController::class, 'register'])
-            ->middleware([RateLimit::class.':auth-login'])
+            ->middleware([RateLimit::class.':auth-passkey'])
             ->name('auth.passkeys.register');
 
         Route::get('login/options', [PasskeyController::class, 'loginOptions'])
-            ->middleware([RateLimit::class.':auth-login'])
+            ->middleware([RateLimit::class.':auth-passkey'])
             ->name('auth.passkeys.login-options');
 
         Route::post('login', [PasskeyController::class, 'login'])
-            ->middleware([RateLimit::class.':auth-login'])
+            ->middleware([RateLimit::class.':auth-passkey'])
             ->name('auth.passkeys.login');
     });
 });

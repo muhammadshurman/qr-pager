@@ -134,8 +134,17 @@ it('states the app grants on users as exact column sets', function (): void {
     // A WRITE WITHOUT A READ, which §2.7 already proves is possible with
     // pager_sessions.token_hash. Enrolling 2FA and rotating a password are writes; neither
     // needs to read the old value, because verification goes through the function.
+    //
+    // AND NO is_platform_admin HERE EITHER, which it had until Task 5's security review.
+    // The UPDATE set below has carried that absence from the start, with a comment arguing
+    // that writing the flag "would make privilege escalation a single UPDATE" -- and the
+    // INSERT set granted the same column, which is the same escalation one row earlier.
+    // Nothing inserted a user at Task 5 (Fortify's registration routes are not mounted and
+    // MemberDirectory only attaches existing users), so it was unreachable rather than
+    // exploited; Task 6 is tenant provisioning and creating users is the first thing it
+    // does. Narrowed by 2026_10_28_140000_narrow_auth_grants.
     expect(Schema::grantedColumns('qrpager_app', 'users', 'INSERT'))->toBe([
-        'created_at', 'email', 'email_verified_at', 'id', 'is_platform_admin', 'name',
+        'created_at', 'email', 'email_verified_at', 'id', 'name',
         'password', 'remember_token', 'two_factor_confirmed_at', 'two_factor_recovery_codes',
         'two_factor_secret', 'updated_at',
     ]);

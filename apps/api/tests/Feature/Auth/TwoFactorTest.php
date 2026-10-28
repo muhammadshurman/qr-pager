@@ -370,3 +370,172 @@ it('refuses a code that has already been used, so an observed code cannot be rep
     $this->postJson('/v1/auth/two-factor/challenge', ['code' => nextCode($secret)])
         ->assertStatus(200);
 });
+
+/*
+ * ================================================================================
+ * THE THREE TRANSITIONS THIS FILE DID NOT DRIVE
+ * ================================================================================
+ *
+ * Found by the `§11` reviews rather than by writing them: `disable()` was driven by nothing
+ * at all (coverage had the whole method uncovered), `confirm()`'s rejection arm was
+ * uncovered, and re-enrolling over a factor that was ALREADY IN FORCE was not only untested
+ * but wrong -- it silently replaced the secret and left `two_factor_confirmed_at` set, so
+ * the account's own authenticator stopped working. The last of those is a defect with a fix;
+ * the other two were correct behaviour with no test holding it.
+ */
+
+/** A 2FA user who owns a tenant, so the surfaces that need a resolved tenant work. */
+function twoFactorOwner(): array
+{
+    $user = makeTwoFactorUser();
+    $tenant = test()->makeTenant();
+
+    withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
+        'id' => (string) Str::uuid7(),
+        'tenant_id' => $tenant,
+        'user_id' => $user['id'],
+        'role' => TenantRole::Owner->value,
+    ]), 'pgsql_owner');
+
+    return $user + ['tenant' => $tenant];
+}
+
+/** Enrol and confirm, returning the secret in force. */
+function enrolAndConfirm(array $user): string
+{
+    test()->postJson('/v1/auth/login', ['email' => $user['email'], 'password' => $user['password']])
+        ->assertStatus(200);
+
+    test()->postJson('/v1/auth/two-factor/enable')->assertStatus(200);
+
+    $secret = storedSecret($user['id']);
+
+    test()->postJson('/v1/auth/two-factor/confirm', ['code' => currentCode($secret)])->assertStatus(204);
+
+    return $secret;
+}
+
+it('refuses to re-key a second factor that is already in force, because that is a silent lockout', function (): void {
+    // THE DEFECT. `enable` called `$enable($user, force: true)` unconditionally, so a
+    // caller with a session got a NEW secret for an account whose factor was already
+    // confirmed -- and `two_factor_confirmed_at` stayed set, so the account kept demanding
+    // a second factor while the authenticator that could produce one no longer matched.
+    $user = twoFactorOwner();
+
+    $secret = enrolAndConfirm($user);
+
+    $stored = DB::connection('pgsql_owner')->table('users')
+        ->where('id', $user['id'])
+        ->first(['two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at']);
+
+    $again = $this->postJson('/v1/auth/two-factor/enable');
+
+    $again->assertStatus(409)
+        ->assertJsonPath('type', 'https://qrpager.dev/problems/conflict');
+
+    // NO SECRET IN THE REFUSAL, and nothing changed behind it. Both halves matter: a
+    // refusal that still returned the secret would be the disclosure without the lockout.
+    expect($again->json())->not->toHaveKey('two_factor');
+
+    $after = DB::connection('pgsql_owner')->table('users')
+        ->where('id', $user['id'])
+        ->first(['two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at']);
+
+    expect($after->two_factor_secret)->toBe($stored->two_factor_secret)
+        ->and($after->two_factor_recovery_codes)->toBe($stored->two_factor_recovery_codes)
+        ->and($after->two_factor_confirmed_at)->toBe($stored->two_factor_confirmed_at);
+
+    // AND THE AUTHENTICATOR THE USER ALREADY HAS STILL WORKS, which is the property the
+    // status code is standing in for.
+    $this->postJson('/v1/auth/logout')->assertStatus(204);
+
+    $this->postJson('/v1/auth/login', ['email' => $user['email'], 'password' => $user['password']])
+        ->assertStatus(200)->assertJsonPath('two_factor_required', true);
+
+    $this->postJson('/v1/auth/two-factor/challenge', ['code' => nextCode($secret)])->assertStatus(200);
+
+    $this->getJson('/v1/pager-sessions')->assertStatus(200);
+});
+
+it('lets an abandoned enrolment start again, because a pending secret must not strand an account', function (): void {
+    // THE OTHER SIDE of the refusal above, and the reason it keys on `confirmed` rather
+    // than on "is a secret present": enrolment is two steps, so a caller who closed the tab
+    // between them holds a secret they never scanned. Refusing that would leave the account
+    // with a secret it can neither use nor replace.
+    $user = twoFactorOwner();
+
+    $this->postJson('/v1/auth/login', ['email' => $user['email'], 'password' => $user['password']])
+        ->assertStatus(200);
+
+    $first = $this->postJson('/v1/auth/two-factor/enable');
+    $first->assertStatus(200);
+
+    $second = $this->postJson('/v1/auth/two-factor/enable');
+    $second->assertStatus(200);
+
+    // A genuinely different secret, and the second one is the one that works.
+    expect($second->json('two_factor.secret'))->not->toBe($first->json('two_factor.secret'));
+
+    $secret = storedSecret($user['id']);
+
+    expect($secret)->toBe($second->json('two_factor.secret'));
+
+    $this->postJson('/v1/auth/two-factor/confirm', ['code' => currentCode($secret)])->assertStatus(204);
+});
+
+it('refuses a wrong confirmation code and leaves two-factor not in force', function (): void {
+    // `confirm()`'s rejection arm. Uncovered before this case, so "confirmation is what
+    // arms it" rested entirely on the happy path.
+    $user = twoFactorOwner();
+
+    $this->postJson('/v1/auth/login', ['email' => $user['email'], 'password' => $user['password']])
+        ->assertStatus(200);
+
+    $this->postJson('/v1/auth/two-factor/enable')->assertStatus(200);
+
+    $this->postJson('/v1/auth/two-factor/confirm', ['code' => '000000'])->assertStatus(422);
+
+    expect(DB::connection('pgsql_owner')->table('users')
+        ->where('id', $user['id'])->value('two_factor_confirmed_at'))->toBeNull();
+
+    // Still not in force, driven rather than inferred from the column: a password alone
+    // signs in and reaches the staff surface.
+    $this->postJson('/v1/auth/logout')->assertStatus(204);
+
+    $this->postJson('/v1/auth/login', ['email' => $user['email'], 'password' => $user['password']])
+        ->assertStatus(200)->assertJsonMissingPath('two_factor_required');
+
+    $this->getJson('/v1/pager-sessions')->assertStatus(200);
+});
+
+it('disables two-factor, clearing all three columns and restoring a password-only sign-in', function (): void {
+    // `DELETE /v1/auth/two-factor` was driven by NOTHING. The whole method was uncovered.
+    $user = twoFactorOwner();
+
+    $secret = enrolAndConfirm($user);
+
+    expect($secret)->not->toBeEmpty();
+
+    $this->deleteJson('/v1/auth/two-factor')->assertStatus(204);
+
+    $row = DB::connection('pgsql_owner')->table('users')
+        ->where('id', $user['id'])
+        ->first(['two_factor_secret', 'two_factor_recovery_codes', 'two_factor_confirmed_at']);
+
+    expect($row->two_factor_secret)->toBeNull()
+        ->and($row->two_factor_recovery_codes)->toBeNull()
+        ->and($row->two_factor_confirmed_at)->toBeNull();
+
+    // THE BEHAVIOUR, not just the columns: a password alone signs in again, no second
+    // factor is demanded, and the code that used to work no longer does.
+    $this->postJson('/v1/auth/logout')->assertStatus(204);
+
+    $this->postJson('/v1/auth/login', ['email' => $user['email'], 'password' => $user['password']])
+        ->assertStatus(200)->assertJsonMissingPath('two_factor_required');
+
+    $this->getJson('/v1/pager-sessions')->assertStatus(200);
+
+    // And enrolling again is permitted, which closes the loop the 409 above opens: disable
+    // then enable is the supported way to change an authenticator.
+    $this->postJson('/v1/auth/two-factor/enable')->assertStatus(200);
+});

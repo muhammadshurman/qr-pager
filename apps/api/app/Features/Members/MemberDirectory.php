@@ -153,6 +153,17 @@ final class MemberDirectory
         return withTenant($tenantId, function () use (
             $tenantId, $membershipId, $role, $actorUserId, $actorIp
         ): bool {
+            // THE OWNER SET IS LOCKED FIRST, and the order of these two reads is the
+            // whole of the fix. See lockOwnerCount() -- an unlocked count let two
+            // concurrent demotions of two different owners each see two owners and each
+            // believe it was leaving one behind, which left the tenant with NONE.
+            //
+            // Locking before reading the target is deliberate: the only transition that
+            // can break the invariant is owner -> not-owner, and in that transition the
+            // target IS an owner, so it is inside the locked set. A target that is not an
+            // owner needs no lock, because changing it cannot reduce the owner count.
+            $owners = $this->lockOwnerCount();
+
             $current = DB::selectOne('select id, role from tenant_users where id = ?', [$membershipId]);
 
             if ($current === null) {
@@ -160,7 +171,7 @@ final class MemberDirectory
             }
 
             if ((string) $current->role === TenantRole::Owner->value && $role !== TenantRole::Owner
-                && $this->ownerCount($tenantId) <= 1) {
+                && $owners <= 1) {
                 // THE LAST-OWNER RULE. Demoting the only owner leaves a tenant nobody can
                 // administer, and the recovery is a platform admin -- a surface that does
                 // not exist until Task 6. So it is refused here, which makes this the one
@@ -197,13 +208,17 @@ final class MemberDirectory
         ?string $actorIp,
     ): bool {
         return withTenant($tenantId, function () use ($tenantId, $membershipId, $actorUserId, $actorIp): bool {
+            // Locked first, for the reason changeRole states and the same race: two
+            // concurrent removals of two different owners emptied the tenant.
+            $owners = $this->lockOwnerCount();
+
             $current = DB::selectOne('select id, role from tenant_users where id = ?', [$membershipId]);
 
             if ($current === null) {
                 return false;
             }
 
-            if ((string) $current->role === TenantRole::Owner->value && $this->ownerCount($tenantId) <= 1) {
+            if ((string) $current->role === TenantRole::Owner->value && $owners <= 1) {
                 return false;
             }
 
@@ -220,16 +235,56 @@ final class MemberDirectory
     }
 
     /** How many owners this tenant has. Called inside a scope. */
-    private function ownerCount(string $tenantId): int
+    /**
+     * How many owners this tenant has, with every one of their rows LOCKED for the rest of
+     * the transaction.
+     *
+     * ================================================================================
+     * WHY `FOR UPDATE`, measured rather than reasoned about
+     * ================================================================================
+     *
+     * The last-owner rule was `select count(*)` with no lock, inside a READ COMMITTED
+     * transaction. Two concurrent demotions of two DIFFERENT owners therefore both read
+     * two owners, both concluded they were leaving one behind, and both committed:
+     *
+     *     A sees owners: 2     B sees owners: 2
+     *     FINAL owner count for the tenant: 0
+     *
+     * Driven on this project's own composed Postgres by `MemberConcurrencyTest`, in two
+     * processes rather than two connections, for the reason that test and
+     * `PagerIdempotencyTest` both state: `for update` blocks, so two connections in one
+     * PHP process would deadlock the only thread there is instead of demonstrating order.
+     *
+     * A tenant with zero owners has no in-product recovery. `RoleMatrix` grants
+     * `PlatformAdmin` nothing and the admin surface is Task 6, so nobody could repair it
+     * through the API -- which is what made an unlocked count worth a lock rather than a
+     * `§5` row.
+     *
+     * ================================================================================
+     * WHY THE LOCK IS SUFFICIENT, AND WHY `order by id`
+     * ================================================================================
+     *
+     * Under READ COMMITTED a blocked `for update` RE-EVALUATES its predicate once the
+     * lock is granted, so the second transaction does not see the stale set it queued on:
+     * after the first commits its demotion, that row no longer satisfies `role = 'owner'`
+     * and the second reads one owner, not two. That re-check is the property being relied
+     * on, so it is named here rather than left to be rediscovered.
+     *
+     * `order by id` because two transactions locking the same set in different orders
+     * deadlock. One deterministic order means the second waits instead.
+     *
+     * The tenant id is still unused: RLS narrows every statement in this class to the
+     * tenant `withTenant()` opened, so a `tenant_id` predicate here would be a second,
+     * weaker copy of the control that is already load-bearing.
+     */
+    private function lockOwnerCount(): int
     {
-        unset($tenantId);
-
-        $row = DB::selectOne(
-            'select count(*) as c from tenant_users where role = ?::tenant_role',
+        $rows = DB::select(
+            'select id from tenant_users where role = ?::tenant_role order by id for update',
             [TenantRole::Owner->value],
         );
 
-        return (int) ($row->c ?? 0);
+        return count($rows);
     }
 
     /** @param array<string, string> $context */

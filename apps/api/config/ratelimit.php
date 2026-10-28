@@ -112,6 +112,50 @@ return [
             'per_ip' => ['attempts' => 5, 'seconds' => 60],
         ],
 
+        /*
+        | THE PASSKEY CEREMONIES, and the reason they are not on `auth-login`.
+        |
+        | `QRPAGER-12 §10.4(d)` named this bucket and the four passkey routes carried
+        | `auth-login` instead -- a claim the `§11` reviews falsified by reading the live
+        | router rather than the ticket. The claim was the thing that was wrong, and the
+        | bucket is the better of the two ways to make it true.
+        |
+        | Its own allowance, because the work is not the same work. A WebAuthn ceremony is
+        | an elliptic-curve signature check and a session write -- real, but nothing like a
+        | bcrypt at 12 rounds -- and sharing `auth-login`'s 10/minute meant that issuing
+        | options, posting a credential and retrying a failed ceremony (three requests for
+        | ONE legitimate sign-in attempt) ate a third of the password budget for the same
+        | IP. An office behind one NAT address would have exhausted it.
+        |
+        | Still per-IP only and not per-tenant, for `R-063`'s reason: a passkey login names
+        | no account and resolves no tenant until after the ceremony, so there is no tenant
+        | to key on, and resolving one in order to rate-limit the request that asks for it
+        | is work an unauthenticated caller can make this process do.
+        */
+        'auth-passkey' => [
+            'per_ip' => ['attempts' => 30, 'seconds' => 60],
+        ],
+
+        /*
+        | WHOEVER IS ASKING, AND ENDING A SESSION.
+        |
+        | `/v1/auth/me` and `/v1/auth/logout` carried NO limiter at all -- the `§11` reviews
+        | measured 40 consecutive requests to each with zero 429s, and `me` costs one
+        | indexed Postgres query plus a session read every time, so an unauthenticated loop
+        | with a forged bearer header was unmetered database work. `routes/auth.php` claimed
+        | they were covered by "the group default" and the `auth-surface` group has none, by
+        | its own deliberate decision.
+        |
+        | Loose on purpose. These two are the routes a legitimate client calls most: a
+        | dashboard asks `me` on every page load and a reconnecting KDS asks it again. The
+        | point of the bucket is that the cost is BOUNDED, not that it is small -- and a
+        | logout that can be exhausted leaves somebody unable to end their own session,
+        | which is why it is not on `auth-login`'s 10.
+        */
+        'auth-session' => [
+            'per_ip' => ['attempts' => 60, 'seconds' => 60],
+        ],
+
         'pager-token' => [
             'per_ip' => ['attempts' => 30, 'seconds' => 60],
         ],

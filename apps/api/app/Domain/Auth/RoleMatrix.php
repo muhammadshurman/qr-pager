@@ -31,10 +31,13 @@ namespace App\Domain\Auth;
  *
  * - **Principals** are `Principal`'s five cases. `Device` is in the matrix because a KDS
  *   token is a principal; it is not in `tenant_role`, and `Principal`'s docblock says why.
- * - **Actions** are every `/v1` route that exists at this task. `MatrixCoverageTest`
- *   iterates the router and fails if any `/v1` route has no `Ability` mapped to it, so
- *   "every route" is enforced rather than promised — a route added without a matrix row
- *   fails the suite. That is the same shape as the deny-by-default route test.
+ * - **Actions** are every `/v1` route that exists at this task. `RoleMatrixTest`'s first
+ *   case iterates the router and fails if any `/v1` staff route has no `Ability` mapped to
+ *   it, so "every route" is enforced rather than promised — a route added without a matrix
+ *   row fails the suite. That is the same shape as the deny-by-default route test.
+ *   (This named `MatrixCoverageTest`, which has never existed. Corrected at Task 5's QA
+ *   review: a docblock pointing at an imaginary test is worse than one pointing at none,
+ *   because a reader who greps for it concludes the guard is gone rather than misnamed.)
  * - **The other-tenant column is always refusal**, for every principal including
  *   `PlatformAdmin`, and it is in the matrix because that cell IS the invariant this task
  *   ships on (`§3.1` row 5: *a tenant-provisioning actor cannot read another tenant's

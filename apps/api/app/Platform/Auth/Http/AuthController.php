@@ -202,6 +202,25 @@ final class AuthController
             ];
         }
 
+        /*
+         * `active_tenant` IS ONE OF THE OFFERED MEMBERSHIPS, OR IT IS NULL.
+         *
+         * It used to be whatever the session held, which could name a tenant that is NOT in
+         * the list above -- measured at Task 5's security review with a suspended tenant:
+         * `{"memberships":[],"active_tenant":"<suspended id>"}`. Not a cross-tenant leak,
+         * because the caller chose that tenant themselves and the resolver refuses it on
+         * every other route; but a client reading `active_tenant` would offer a tenant that
+         * answers 401 everywhere, with nothing in the payload explaining why.
+         *
+         * Filtering it against the SAME list makes the two fields consistent by
+         * construction rather than by a reader noticing they should be: whatever reason
+         * removes a membership from `memberships` -- suspension today, anything §2.4 adds
+         * later -- removes it from here too.
+         */
+        $selected = $this->activeTenant->selected(request());
+
+        $offered = array_column($memberships, 'tenant_id');
+
         return [
             'user' => [
                 'id' => $userId,
@@ -212,7 +231,7 @@ final class AuthController
                 'passkeys_enabled' => $user->hasPasskeysEnabled(),
             ],
             'memberships' => $memberships,
-            'active_tenant' => $this->activeTenant->selected(request()),
+            'active_tenant' => in_array($selected, $offered, true) ? $selected : null,
         ];
     }
 }

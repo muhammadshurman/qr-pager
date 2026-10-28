@@ -163,6 +163,23 @@ final class ProblemRenderer
      *   402           -> the default  Payment Required is not an outcome this API has, so
      *                                 it is not modelled rather than mapped somewhere
      *                                 convenient
+     *   419           -> CsrfMismatch Laravel's own status for a missing or stale CSRF
+     *                                 token. ⚠ IT WAS ABSENT AND THEREFORE FELL TO THE
+     *                                 DEFAULT, so every CSRF rejection rendered as a 500
+     *                                 `server-error` -- measured end to end at Task 5's
+     *                                 security review: `POST /v1/auth/login` with no token
+     *                                 answered 500. Worse than the wrong number: Laravel
+     *                                 has `TokenMismatchException` on its internal
+     *                                 don't-report list, so the refusal was invisible in
+     *                                 the log AND misreported to the client, and a client
+     *                                 reading 5xx retries rather than refreshing its token.
+     *                                 The request was always correctly REFUSED; it is the
+     *                                 answer that was wrong. `QRPAGER-12 §10.4(c)` claimed
+     *                                 "a test drives a state-changing route without a token
+     *                                 and asserts 419" -- the test asserted the exception
+     *                                 class from an instantiated middleware, so nothing
+     *                                 ever saw the status. `SessionPolicyTest` drives it
+     *                                 through the kernel now.
      *
      * Asserted by throwing each status through this renderer and reading the rendered
      * `status`, which is how QA found the defect (ProblemEnvelopeTest).
@@ -176,6 +193,7 @@ final class ProblemRenderer
             404, 410 => ProblemType::NotFound,
             405 => ProblemType::MethodNotAllowed,
             409 => ProblemType::Conflict,
+            419 => ProblemType::CsrfMismatch,
             422 => ProblemType::Validation,
             429 => ProblemType::RateLimited,
             503 => ProblemType::Unavailable,

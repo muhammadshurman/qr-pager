@@ -99,36 +99,58 @@ final class DeviceTokens
             $ability->value,
         ];
 
-        $token = $issuer->createToken($name, $abilities, $expiresAt);
+        /*
+         * THE CREDENTIAL AND ITS AUDIT ROW COMMIT TOGETHER OR NOT AT ALL.
+         *
+         * ⚠ THEY USED NOT TO. `createToken()` ran outside any transaction and the audit
+         * insert then opened its own, so a failure between them left A LIVE CREDENTIAL WITH
+         * NO AUDIT ROW -- and, because the plaintext is returned only on the response that
+         * never arrived, a token nobody knows exists and nobody can find to revoke. Found by
+         * Task 5's QA review against `§6`'s "crash mid-way" question, on the one act this
+         * class's own comment calls "exactly the kind of act the log exists for".
+         *
+         * `§3` row 3's gate clause is the precedent and the wording: "the status change, the
+         * outbox row and the audit row commit together or not at all". A credential and the
+         * record of its issue are the same kind of pair.
+         *
+         * `withTenant()` IS the transaction -- it opens one and sets `app.tenant_id` for its
+         * duration with `set_config(..., true)` (C2), so both writes are inside it. The
+         * token row is global and RLS-free (`§2.4`), so being inside a tenant scope neither
+         * narrows nor refuses it; the audit row is a tenant table and could not be written
+         * outside one at all (42501, `§2.7`).
+         */
+        [$token, $id] = withTenant($tenantId, function () use (
+            $issuer, $tenantId, $name, $abilities, $ability, $expiresAt, $actorIp
+        ): array {
+            $token = $issuer->createToken($name, $abilities, $expiresAt);
 
-        $id = (string) $token->accessToken->getKey();
+            $id = (string) $token->accessToken->getKey();
 
-        // Audited inside the tenant's own scope, because audit_log carries the same
-        // isolation policy as every other tenant table and an insert outside a scope is
-        // refused with 42501 (§2.7). Issuing a credential for a shared screen is exactly
-        // the kind of act the log exists for.
-        withTenant($tenantId, fn () => DB::insert(
-            'insert into audit_log
-                (tenant_id, actor_type, actor_user_id, action, subject_type, subject_id, context, ip_address)
-             values (?, ?::audit_actor_type, ?, ?, ?, ?, ?::jsonb, ?::inet)',
-            [
-                $tenantId,
-                AuditActorType::User->value,
-                (string) $issuer->getKey(),
-                'device_token.issued',
-                'device_token',
-                $id,
-                json_encode([
-                    // The ability and the expiry, never the plaintext and never the hash:
-                    // §4 › Edge & ops keeps credential material out of anything readable,
-                    // and audit_log is readable by both runtime roles.
-                    'ability' => $ability->value,
-                    'expires_at' => $expiresAt->toIso8601String(),
-                    'name' => $name,
-                ], JSON_THROW_ON_ERROR),
-                $actorIp,
-            ],
-        ));
+            DB::insert(
+                'insert into audit_log
+                    (tenant_id, actor_type, actor_user_id, action, subject_type, subject_id, context, ip_address)
+                 values (?, ?::audit_actor_type, ?, ?, ?, ?, ?::jsonb, ?::inet)',
+                [
+                    $tenantId,
+                    AuditActorType::User->value,
+                    (string) $issuer->getKey(),
+                    'device_token.issued',
+                    'device_token',
+                    $id,
+                    json_encode([
+                        // The ability and the expiry, never the plaintext and never the
+                        // hash: §4 › Edge & ops keeps credential material out of anything
+                        // readable, and audit_log is readable by both runtime roles.
+                        'ability' => $ability->value,
+                        'expires_at' => $expiresAt->toIso8601String(),
+                        'name' => $name,
+                    ], JSON_THROW_ON_ERROR),
+                    $actorIp,
+                ],
+            );
+
+            return [$token, $id];
+        });
 
         return [
             'id' => $id,
@@ -165,29 +187,34 @@ final class DeviceTokens
             return false;
         }
 
-        $deleted = DB::delete('delete from personal_access_tokens where id = ?', [$tokenId]);
+        // THE DELETE AND ITS AUDIT ROW, in one transaction, for the reason `issue()` states
+        // at length. The failure here is the mirror image: a credential revoked with no
+        // record of who revoked it, which is the question an audit log exists to answer.
+        return withTenant($tenantId, function () use ($actor, $tenantId, $tokenId, $actorIp): bool {
+            $deleted = DB::delete('delete from personal_access_tokens where id = ?', [$tokenId]);
 
-        if ($deleted === 0) {
-            return false;
-        }
+            if ($deleted === 0) {
+                return false;
+            }
 
-        withTenant($tenantId, fn () => DB::insert(
-            'insert into audit_log
-                (tenant_id, actor_type, actor_user_id, action, subject_type, subject_id, context, ip_address)
-             values (?, ?::audit_actor_type, ?, ?, ?, ?, ?::jsonb, ?::inet)',
-            [
-                $tenantId,
-                AuditActorType::User->value,
-                (string) $actor->getKey(),
-                'device_token.revoked',
-                'device_token',
-                $tokenId,
-                json_encode([], JSON_THROW_ON_ERROR),
-                $actorIp,
-            ],
-        ));
+            DB::insert(
+                'insert into audit_log
+                    (tenant_id, actor_type, actor_user_id, action, subject_type, subject_id, context, ip_address)
+                 values (?, ?::audit_actor_type, ?, ?, ?, ?, ?::jsonb, ?::inet)',
+                [
+                    $tenantId,
+                    AuditActorType::User->value,
+                    (string) $actor->getKey(),
+                    'device_token.revoked',
+                    'device_token',
+                    $tokenId,
+                    json_encode([], JSON_THROW_ON_ERROR),
+                    $actorIp,
+                ],
+            );
 
-        return true;
+            return true;
+        });
     }
 
     /**

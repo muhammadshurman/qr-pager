@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
+use App\Domain\Tenancy\TenantStatus;
 use App\Platform\Auth\ActiveTenant;
+use App\Platform\Auth\Memberships;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -254,4 +256,148 @@ it('applies CSRF to the staff surface and not to a bearer-token request', functi
         ->and($groups['customer'] ?? [])->not->toContain(ValidateCsrfToken::class);
 
     expect($tenant)->not->toBeEmpty();
+});
+
+it('renders a CSRF refusal as 419 with a problem document, through the real kernel', function (): void {
+    /*
+     * THE HALF THE CASE ABOVE CANNOT REACH, and the defect it was hiding.
+     *
+     * That case instantiates `ValidateCsrfToken` and asserts the EXCEPTION CLASS, which is
+     * the right way to prove the middleware is really enabled -- and it means no test ever
+     * saw the STATUS the application answers with. `QRPAGER-12 §10.4(c)` claimed "a test
+     * drives a state-changing route without a token and asserts 419". Nothing did.
+     *
+     * Measured at the `§11` security review: `ProblemRenderer::fromStatus()` had no `419`
+     * arm, so a CSRF rejection fell through to `ProblemType::ServerError` and the API
+     * answered **500 `server-error`** to a request it had correctly refused. And because
+     * Laravel keeps `TokenMismatchException` on its internal don't-report list, nothing was
+     * logged either: the refusal was invisible to an operator and misreported to the
+     * client, which a client reading 5xx responds to by RETRYING rather than by fetching a
+     * fresh token.
+     *
+     * Driven through the kernel here -- container-bound rather than instantiated -- so the
+     * thing under test is the status the router, the middleware stack and the renderer
+     * produce together.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    ValidateCsrfToken::except([]);
+
+    $this->app->bind(ValidateCsrfToken::class, fn ($app) => new class($app, $app['encrypter']) extends ValidateCsrfToken
+    {
+        protected function runningUnitTests(): bool
+        {
+            return false;
+        }
+    });
+
+    $refused = $this->postJson('/v1/pager-sessions', ['order_reference' => 'A-7']);
+
+    $refused->assertStatus(419)
+        ->assertJsonPath('type', 'https://qrpager.dev/problems/csrf-mismatch')
+        ->assertJsonPath('status', 419)
+        ->assertJsonPath('instance', '/v1/pager-sessions');
+
+    // A PROBLEM DOCUMENT AND NOTHING ELSE: the same four keys as every other refusal, no
+    // exception class, no stack frame and no mention of the token or the session.
+    expect(array_keys($refused->json()))->toBe(['type', 'title', 'status', 'instance']);
+
+    $body = strtolower((string) $refused->getContent());
+
+    foreach (['tokenmismatch', 'exception', 'vendor', 'csrf_token', 'laravel_session'] as $leak) {
+        expect(str_contains($body, $leak))->toBeFalse("the CSRF refusal body carried {$leak}");
+    }
+
+    // AND THE POSITIVE CONTROL: the same route, same bound middleware, WITH a valid token
+    // succeeds -- so the 419 above is the token's absence and not the route being broken.
+    $session = session()->driver();
+    $session->start();
+
+    $allowed = $this->withSession([])
+        ->postJson('/v1/pager-sessions', [
+            'order_reference' => 'A-8',
+            '_token' => csrf_token(),
+        ]);
+
+    expect($allowed->status())->toBe(201,
+        'a request carrying a valid CSRF token was refused, so the 419 above proves nothing',
+    );
+});
+
+it('offers no suspended tenant and never names one as the active tenant', function (): void {
+    /*
+     * TWO FINDINGS IN ONE STATE, which is why they are driven together.
+     *
+     * QA L-4: `identity()` filters suspended memberships out of `login` and `me` with a
+     * `continue`, and that line was uncovered -- "only active tenants are offered" was an
+     * argument in a comment, not a tested property. Given `R-081`'s own reasoning about
+     * suspension not being an oracle, it is worth pinning.
+     *
+     * SEC L-5: `active_tenant` was read straight from the session, so a caller whose
+     * selected tenant had since been suspended got `{"memberships":[],"active_tenant":
+     * "<suspended id>"}` -- the two fields contradicting each other, and a client offering a
+     * tenant that answers 401 on every other route.
+     *
+     * ⚠ NO HTTP REQUEST BEFORE THE SUSPENSION, and that ordering is forced rather than
+     * chosen. `Memberships` memoises per user for the life of a request
+     * (`QRPAGER-12 §10.5`), and in this suite the container outlives the request -- `R-102`.
+     * Written the other way round, with a baseline `me` call first, the membership set read
+     * during that call is still answered to the second call and the case fails on stale data
+     * rather than on behaviour: measured, 2 memberships instead of 1. Neither
+     * `app()->forgetScopedInstances()` nor `forgetInstance(Memberships::class)` cleared it
+     * on this path, so the honest fix is to not need the flush, which is the same reason
+     * `RoleMatrixTest`'s suspended case makes no request first.
+     *
+     * The baseline that matters is kept, and it is a stronger one: the membership really IS
+     * returned by the cross-tenant function, so what removes it from the payload is the
+     * filter and not an absent row.
+     */
+    $live = $this->makeTenant();
+    $this->actingForTenant($live, TenantRole::Owner);
+
+    $userId = (string) auth()->id();
+    $suspended = $this->makeTenant();
+
+    withTenant($suspended, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
+        'id' => (string) Str::uuid7(),
+        'tenant_id' => $suspended,
+        'user_id' => $userId,
+        'role' => TenantRole::Owner->value,
+    ]), 'pgsql_owner');
+
+    withTenant($suspended, fn () => DB::connection('pgsql_owner')->table('tenants')
+        ->where('id', $suspended)
+        ->update(['status' => TenantStatus::Suspended->value]), 'pgsql_owner');
+
+    // THE BASELINE: both memberships exist and both are visible to the named cross-tenant
+    // read, one active and one not. So the payload below is the filter's work.
+    $all = app(Memberships::class)->for($userId);
+
+    expect($all)->toHaveCount(2)
+        ->and(array_map(fn ($membership): bool => $membership->tenantIsActive(), $all))
+        ->toBe([true, false]);
+
+    // Select the suspended one deliberately, which is the state that produced the
+    // contradiction: the session holds it, and it is no longer offerable.
+    session()->put(ActiveTenant::SESSION_KEY, $suspended);
+
+    $after = $this->getJson('/v1/auth/me');
+    $after->assertStatus(200);
+
+    $offered = array_column((array) $after->json('memberships'), 'tenant_id');
+
+    expect($offered)->toBe([$live],
+        'me offered a suspended tenant, or dropped the live one with it',
+    );
+
+    // AND THE TWO FIELDS AGREE. `active_tenant` is either one of the offered memberships or
+    // null -- never a tenant that is absent from the list beside it.
+    expect($after->json('active_tenant'))->toBeNull(
+        'me named a suspended tenant as active while omitting it from memberships',
+    );
+
+    // The suspended id appears NOWHERE in the payload, so the refusal is not an oracle
+    // either: the response is the same one a user with only the live membership would get.
+    expect(str_contains((string) $after->getContent(), $suspended))->toBeFalse();
 });

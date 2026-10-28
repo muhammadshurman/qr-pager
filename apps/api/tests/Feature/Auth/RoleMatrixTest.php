@@ -10,6 +10,7 @@ use App\Domain\Tenancy\TenantStatus;
 use App\Platform\Auth\RouteAbilities;
 use App\Providers\AppServiceProvider;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 
@@ -48,6 +49,29 @@ use Illuminate\Support\Str;
  *
  * @return array<string, array{method: string, path: callable(string, string): string, body: array<string, mixed>, targets: bool}>
  */
+/**
+ * A platform admin with no membership in any tenant.
+ *
+ * A local copy rather than a shared helper: Pest declares test-file functions in the global
+ * namespace, so reusing `makePlatformAdmin` from PlatformAdminIsNotABypassTest would be a
+ * redeclaration the moment both files load in one run.
+ */
+function makeMatrixPlatformAdmin(string $password = 'correct-horse-battery-staple'): array
+{
+    $id = (string) Str::uuid7();
+    $email = 'matrix-admin-'.substr(str_replace('-', '', $id), 0, 12).'@example.test';
+
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => $id,
+        'name' => 'Platform Admin',
+        'email' => $email,
+        'password' => Hash::make($password),
+        'is_platform_admin' => true,
+    ]);
+
+    return ['id' => $id, 'email' => $email, 'password' => $password];
+}
+
 function staffRoutes(): array
 {
     return [
@@ -165,13 +189,26 @@ it('covers every /v1 route in exactly one named set, so "full" is enforced and n
     // requiring an ability of it is circular. routes/auth.php carries the reasoning; the
     // names are listed here so that a route added to that file without being accounted for
     // fails this case rather than quietly joining a set that requires nothing of it.
+    //
+    // ⚠ BEING IN THIS SET ASSERTS NOTHING ABOUT WHO MAY CALL THE ROUTE, and for a while
+    // that was the whole of the auth surface's authorisation story. It is a NAME
+    // allowlist: it proves a route was accounted for, not that anything bounds it.
+    // Task 5's security review walked through the gap -- every controller here gated on
+    // `$request->user() instanceof User`, which a KDS device's bearer token satisfies, so a
+    // `pager:read` kitchen screen reached all twelve of these. `DeviceTokenOnAuthSurfaceTest`
+    // is the case that asserts something per route, and it enumerates the group from the
+    // live router so it cannot fall behind this list.
     $auth = [
         'auth.login',
         'auth.logout',
         'auth.tenant',
         'auth.me',
-        // Two-factor. `challenge` is the only one reachable without a session, because it
-        // is the step that completes one.
+        // Two-factor. `challenge` is the only one that does not need an ESTABLISHED
+        // session, because it is the step that completes one -- it reads the pending user
+        // id from the server-side session instead. (This used to read "the only one
+        // reachable without a session", which the security review falsified in the most
+        // direct way available: with a device bearer token, every route in this set was
+        // reachable without one.)
         'auth.two-factor.enable',
         'auth.two-factor.confirm',
         'auth.two-factor.disable',
@@ -276,6 +313,82 @@ it('answers every principal × every staff route the way the matrix says, in its
     }
 });
 
+it('answers device × every staff route the way the matrix says, in its own tenant', function (): void {
+    /*
+     * PROPERTY 3, own-tenant column, FOURTH PRINCIPAL.
+     *
+     * The case above loops the three TENANT ROLES, which is where `§3` row 5's named matrix
+     * ("5 principals × every /v1 route × both tenants") was only three-fifths driven:
+     * `device` and `platform_admin` had their own files with HARD-CODED route lists, so the
+     * router-iterating check that makes totality mechanical did not extend to them -- a
+     * route added to `staffRoutes()` grew a cell for Owner, Manager and Staff and silently
+     * none for the other two. Found by Task 5's QA review.
+     *
+     * Driven from `staffRoutes()` here, so a new route fails the suite for FIVE principals.
+     * `DeviceTokenScopeTest` keeps its own cases: they assert the four BOUNDS of a token
+     * (one capability, one tenant, an explicit expiry, the matrix as a ceiling), which is a
+     * different question from "does the matrix's device row describe what happens".
+     */
+    // ONE TOKEN PER ROUTE means one `POST /v1/devices` per route, and that bucket is
+    // 10/min/IP -- so the twelfth cell answered 429 and the case failed on the limiter
+    // rather than on the matrix. Raised here because the limiter is NOT what this case is
+    // about; `RateLimitTest` drives `devices-issue` to a real 429 on both of its dimensions.
+    config(['ratelimit.buckets.devices-issue.per_ip.attempts' => 1000]);
+
+    foreach (staffRoutes() as $name => $route) {
+        $tenant = $this->makeTenant();
+
+        // Issued by an OWNER, so every refusal below is the token's own scope rather than a
+        // weak issuer -- the same control DeviceTokenScopeTest states.
+        $this->actingForTenant($tenant, TenantRole::Owner);
+        $session = $this->makeSession($tenant);
+
+        $issued = $this->postJson('/v1/devices', [
+            'name' => 'matrix-probe',
+            'ability' => Ability::PagerRead->value,
+            'ttl_minutes' => 60,
+        ]);
+
+        $issued->assertStatus(201);
+
+        // Drop the session and present the token, which is what a kitchen screen does.
+        auth()->forgetGuards();
+        app('auth')->guard('web')->logout();
+
+        $headers = ['Authorization' => 'Bearer '.$issued->json('device.token')];
+
+        $ability = RouteAbilities::for($name);
+
+        expect($ability)->not->toBeNull("{$name} is not in RouteAbilities");
+
+        // BOTH HALVES, and the weaker wins -- which is RequestPrincipal::may()'s own rule.
+        // The matrix must grant `Device` the ability AND the token must carry it; this token
+        // carries exactly `pager:read`, so the second half is what bounds everything but
+        // the board.
+        $expected = RoleMatrix::allows(Principal::Device, $ability)
+            && $ability === Ability::PagerRead;
+
+        // getJson() takes headers as its SECOND argument and the others take them third,
+        // so the call is branched rather than spread -- the same shape
+        // DeviceTokenOnAuthSurfaceTest needs for the same reason.
+        $path = ($route['path'])($tenant, $session);
+
+        $response = $route['method'] === 'getJson'
+            ? $this->getJson($path, $headers)
+            : $this->{$route['method']}($path, $route['body'], $headers);
+
+        if ($expected) {
+            expect($response->status())->not->toBe(403,
+                "a device token was refused {$name}, which the matrix and its abilities grant",
+            );
+        } else {
+            expect($response->status())->toBe(403,
+                "a device token was ALLOWED {$name}, which it does not hold",
+            );
+        }
+    }
+});
+
 it('refuses every principal on every staff route in a tenant they do not belong to', function (): void {
     // PROPERTY 3, other-tenant column -- the cell that IS this task's named invariant.
     //
@@ -341,6 +454,106 @@ it('refuses every principal on every staff route in a tenant they do not belong 
             ->where('id', $theirSession)->value('status'));
 
         expect($status)->toBe('waiting', "a cross-tenant request changed another tenant's session");
+    }
+});
+
+it('refuses device and platform_admin on every staff route of a tenant they cannot act in', function (): void {
+    /*
+     * PROPERTY 3, other-tenant column, THE REMAINING TWO PRINCIPALS -- which completes
+     * `§3` row 5's "5 principals × every /v1 route × both tenants" from ONE source.
+     *
+     * Before this, `device` had 2 of 12 routes cross-tenant (`DeviceTokenScopeTest`) and
+     * `platform_admin` had 8 of 12 (`PlatformAdminIsNotABypassTest`), both from route lists
+     * hard-coded in their own files -- so the router-iterating check could not extend them
+     * and a new route grew no cell for either. QA M-1.
+     *
+     * ⚠ THERE IS NO OWN-TENANT COLUMN FOR `platform_admin`, and that is the finding `§5`
+     * records rather than a gap in this file: a platform admin holds NO membership, so there
+     * is no tenant that is theirs. `Principal::isTenantScoped()` says so and
+     * `RoleMatrix`'s PlatformAdmin row is empty. Their whole row is this column.
+     *
+     * The two kinds of route are discriminated exactly as the case above discriminates
+     * them, and for the same reason: a non-targeting route acts in whatever tenant the
+     * RESOLVER chose, so a 200 there is correct and the assertion has to be on the content.
+     */
+    foreach (['device', 'platform_admin'] as $principal) {
+        // ⚠ EACH ITERATION STARTS WITH NO RESOLVED GUARD, and this is `R-102`'s shape again
+        // rather than a production concern. The `device` pass leaves the SANCTUM guard
+        // holding the token it resolved, and Laravel's test client keeps the container
+        // across requests where Octane flushes it at every boundary -- so the
+        // `platform_admin` pass sent a login with no Authorization header and was answered
+        // 403 by `RefuseDeviceToken`, because the guard still reported a token request.
+        // Measured exactly that way. In production the guard is rebuilt per request and
+        // resolves the bearer token from the header that is actually present.
+        auth()->forgetGuards();
+        session()->flush();
+
+        $mine = $this->makeTenant();
+        $theirs = $this->makeTenant();
+        $theirSession = $this->makeSession($theirs);
+
+        $headers = [];
+
+        if ($principal === 'device') {
+            // A token pinned to MY tenant, issued by an owner of it.
+            $this->actingForTenant($mine, TenantRole::Owner);
+
+            $issued = $this->postJson('/v1/devices', [
+                'name' => 'cross-tenant-probe',
+                'ability' => Ability::PagerRead->value,
+                'ttl_minutes' => 60,
+            ]);
+
+            $issued->assertStatus(201);
+
+            auth()->forgetGuards();
+            app('auth')->guard('web')->logout();
+
+            $headers = ['Authorization' => 'Bearer '.$issued->json('device.token')];
+        } else {
+            // A platform admin with no membership anywhere, which is the point of the flag.
+            $admin = makeMatrixPlatformAdmin();
+
+            $this->postJson('/v1/auth/login', [
+                'email' => $admin['email'],
+                'password' => $admin['password'],
+            ])->assertStatus(200);
+        }
+
+        foreach (staffRoutes() as $name => $route) {
+            $path = ($route['path'])($theirs, $theirSession);
+
+            $response = $route['method'] === 'getJson'
+                ? $this->getJson($path, $headers)
+                : $this->{$route['method']}($path, $route['body'], $headers);
+
+            if ($route['targets']) {
+                foreach ([200, 201, 204] as $success) {
+                    expect($response->status())->not->toBe($success,
+                        "{$principal} got {$success} on {$name} aimed at another tenant",
+                    );
+                }
+
+                continue;
+            }
+
+            $body = (string) $response->getContent();
+
+            expect(str_contains($body, $theirs))->toBeFalse(
+                "{$name} leaked another tenant's id to a {$principal}",
+            );
+            expect(str_contains($body, $theirSession))->toBeFalse(
+                "{$name} leaked another tenant's session id to a {$principal}",
+            );
+        }
+
+        // And nothing of theirs moved.
+        $status = withTenant($theirs, fn () => DB::table('pager_sessions')
+            ->where('id', $theirSession)->value('status'));
+
+        expect($status)->toBe('waiting',
+            "a cross-tenant request by a {$principal} changed another tenant's session",
+        );
     }
 });
 

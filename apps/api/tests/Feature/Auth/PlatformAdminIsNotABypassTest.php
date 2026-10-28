@@ -207,10 +207,14 @@ it('acts as its MEMBERSHIP where it has one, rather than being demoted by the fl
 });
 
 it('cannot give itself the flag, because the app role holds no UPDATE on the column', function (): void {
-    // THE ESCALATION THAT IS NOT A POLICY CHECK. §2.7, as this task's migration sets it:
-    // qrpager_app has INSERT on is_platform_admin and NO UPDATE. So a staff member
+    // THE ESCALATION THAT IS NOT A POLICY CHECK. §2.7, as the migrations now set it:
+    // qrpager_app holds NEITHER UPDATE NOR INSERT on is_platform_admin. So a staff member
     // promoting themselves is not a check that could be wrong -- it is a grant that does
     // not exist, and this is the measurement rather than the claim.
+    //
+    // It did hold INSERT until Task 5's security review (SEC L-1): unreachable, because
+    // nothing inserted a user, and narrowed by 2026_10_28_140000_narrow_auth_grants before
+    // Task 6 made it reachable. The INSERT half is driven in AuthGrantNarrowingTest.
     $tenant = $this->makeTenant();
     $this->actingForTenant($tenant, TenantRole::Owner);
 

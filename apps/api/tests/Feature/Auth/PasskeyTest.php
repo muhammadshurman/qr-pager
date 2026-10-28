@@ -259,3 +259,38 @@ it('keeps the passkey table out of every tenant-scoped reckoning, because a pass
 
     expect((int) $hasTenantColumn->c)->toBe(0);
 });
+
+it('bounds the passkey name at the column\'s own length, not at the vendor\'s', function (): void {
+    // SEC L-4. laravel/passkeys' PasskeyRegistrationRequest rules `name` at max:255 while
+    // `passkeys.name` is varchar(120), so a 121-255 character name survived validation and
+    // raised `22001` at the INSERT -- a 500 for what is a 422. Reachable only after a
+    // successful ceremony, so it is `R-100`'s blind spot as well: no test here can produce
+    // the credential that would reach the insert.
+    //
+    // What IS driven: the refusal happens BEFORE the ceremony is attempted, and the two
+    // numbers that have to agree are read from the database rather than asserted from
+    // memory.
+    $column = DB::connection('pgsql_owner')->selectOne(
+        "select character_maximum_length as len from information_schema.columns
+          where table_name = 'passkeys' and column_name = 'name'",
+    );
+
+    expect((int) $column->len)->toBe(120,
+        'passkeys.name changed length -- PasskeyController::register hard-codes 120',
+    );
+
+    signedInUser();
+
+    $this->getJson('/v1/auth/passkeys/options')->assertStatus(200);
+
+    // 121 characters: one over the column, far under the vendor's 255.
+    $this->postJson('/v1/auth/passkeys', [
+        'name' => str_repeat('n', 121),
+        'credential' => fakeCredential(),
+    ])->assertStatus(422);
+
+    // And 120 is accepted by the name check -- it still fails at 422 on the credential,
+    // which is the ceremony and not the name, so this asserts the boundary is 121 and not
+    // that everything is refused.
+    expect(DB::connection('pgsql_owner')->table('passkeys')->count())->toBe(0);
+});

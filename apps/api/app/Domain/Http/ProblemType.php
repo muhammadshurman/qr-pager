@@ -43,6 +43,7 @@ enum ProblemType: string
     case Unauthenticated = 'https://qrpager.dev/problems/unauthenticated';
     case Forbidden = 'https://qrpager.dev/problems/forbidden';
     case Conflict = 'https://qrpager.dev/problems/conflict';
+    case CsrfMismatch = 'https://qrpager.dev/problems/csrf-mismatch';
     case Expired = 'https://qrpager.dev/problems/expired';
     case Stale = 'https://qrpager.dev/problems/stale';
     case RateLimited = 'https://qrpager.dev/problems/rate-limited';
@@ -59,6 +60,11 @@ enum ProblemType: string
             self::Unauthenticated => 401,
             self::Forbidden => 403,
             self::Conflict => 409,
+            // 419 is not an IANA status; it is Laravel's own for a CSRF token that is
+            // missing or stale, and it is what a client keys on to fetch a fresh token
+            // and retry. Mapping this to 409 or 400 instead would be tidier and would
+            // break that convention for the one case it exists for.
+            self::CsrfMismatch => 419,
             self::Expired => 409,
             self::Stale => 404,
             self::RateLimited => 429,
@@ -82,6 +88,7 @@ enum ProblemType: string
             self::Unauthenticated => 'Authentication is required.',
             self::Forbidden => 'That is not permitted.',
             self::Conflict => 'The request conflicts with the current state.',
+            self::CsrfMismatch => 'That form token was missing or stale. Reload and try again.',
             self::Expired => 'That resource has expired.',
             self::Stale => 'That live status is no longer held. Resolve the session again.',
             self::RateLimited => 'Too many requests.',

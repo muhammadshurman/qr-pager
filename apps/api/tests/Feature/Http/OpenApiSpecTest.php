@@ -705,7 +705,12 @@ it('publishes every problem document under the media type the API really sends, 
     // declares a 500, for the case where the secret it just wrote cannot be read back), and
     // the passkey ceremony's 401s and 422s. The 403 is new to this project's published
     // contract: before Task 5 nothing could answer it, because nothing authorised anything.
-    expect($seen)->toBe(65, 'the spec publishes '.$seen.' problem responses, not the 65 the twenty-eight routes declare')
+    // 66 AND NOT 65 SINCE THE `§11` REVIEW: `two-factor/enable` declares a 409 as well.
+    // A confirmed second factor is no longer silently re-keyed (`R-104`'s fixed half), and
+    // a refusal a client has to handle is part of the published contract rather than an
+    // implementation detail -- which is why it moves this count, and why this case caught
+    // the change rather than taking it on trust.
+    expect($seen)->toBe(66, 'the spec publishes '.$seen.' problem responses, not the 66 the twenty-eight routes declare')
         ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
         ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
 });
@@ -796,10 +801,11 @@ it('produces the security and media-type decisions in the GENERATOR, not only in
         '/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription',
         ...AppServiceProvider::PUBLIC_PATHS,
     ])
-        // Twelve and 65 as of Task 5 -- the in-process generator and the committed artifact
-        // must agree, which is this case's whole purpose, so both numbers move together
-        // with the ones in the committed-spec cases above.
+        // Twelve and 66 as of Task 5's §11 review -- the in-process generator and the
+        // committed artifact must agree, which is this case's whole purpose, so both
+        // numbers move together with the ones in the committed-spec cases above. The
+        // sixty-sixth is `two-factor/enable`'s 409.
         ->and($authenticated)->toHaveCount(12)
         ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
-        ->and($problemResponses)->toHaveCount(65);
+        ->and($problemResponses)->toHaveCount(66);
 });

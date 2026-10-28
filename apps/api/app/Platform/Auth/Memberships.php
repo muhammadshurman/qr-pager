@@ -18,13 +18,24 @@ use Illuminate\Support\Str;
  * WHY IT CANNOT BE WIDENED — the thing QRPAGER-12 §10.3(c) has to show
  * ================================================================================
  *
- * 1. **One argument, and it is the authenticated user's id.** `for()` takes the id the
- *    guard produced. There is no overload that takes a filter, a pattern, a list or a
- *    tenant; `MembershipScopeTest` asserts this class exposes exactly one public read.
- * 2. **One call site.** `AuthenticatedTenantResolver` is the only caller, and it passes
- *    `$request->user()->getAuthIdentifier()`. A test greps the tree for any other caller,
- *    because "the user id comes from the guard" is a property of the call site and not of
- *    this file.
+ * ⚠ TWO OF THESE FOUR POINTS USED TO BE FALSE, and the correction is kept visible because
+ * the false versions were the stronger claims. They said this class exposed "exactly one
+ * public read" asserted by a `MembershipScopeTest`, and that it had "one call site". It has
+ * THREE public reads (`for`, `in`, `sole`) and FIVE call sites, and `MembershipScopeTest`
+ * has never existed. Found by Task 5's QA review. The security property was never the count
+ * -- it is that every caller passes a SERVER-DERIVED id -- so what was missing was the
+ * mechanism that keeps that true, and `MembershipCallSiteTest` is now it.
+ *
+ * 1. **Every public read takes a user id, and it is always the authenticated user's.**
+ *    `for()`, `in()` and `sole()` each take the id the guard produced. None takes a filter,
+ *    a pattern, a list, or a tenant the caller chose. `MembershipCallSiteTest` pins the set
+ *    of public methods, so a fourth cannot be added without the test naming it.
+ * 2. **Every call site passes a server-derived id, and the set of call sites is pinned.**
+ *    The five are `AuthController` (twice), `ActiveTenant`, `RequestPrincipal` and
+ *    `AuthenticatedTenantResolver`; each passes a guard identifier or a credential
+ *    verification's answer, never request input. `MembershipCallSiteTest` greps the tree and
+ *    fails on a sixth, because "the user id comes from the guard" is a property of the call
+ *    site and not of this file.
  * 3. **The SQL is `select * from public.user_memberships(?)`** — a function with one
  *    exact-match uuid parameter, compared with `=` inside its body. No input shape returns
  *    a second user's memberships.

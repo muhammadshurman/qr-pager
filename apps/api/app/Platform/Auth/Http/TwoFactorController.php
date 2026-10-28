@@ -59,6 +59,7 @@ final class TwoFactorController
      * is confirmed with a code from the authenticator.
      */
     #[DocResponse(200, 'The secret, an otpauth URL to render as a QR code, and the recovery codes.')]
+    #[DocResponse(409, 'Two-factor is already in force. Disable it before enrolling again.', type: ProblemDocument::class)]
     #[DocResponse(500, 'The secret could not be read back.', type: ProblemDocument::class)]
     #[DocResponse(401, 'No session.', type: ProblemDocument::class)]
     public function enable(
@@ -70,6 +71,40 @@ final class TwoFactorController
 
         if (! $user instanceof User) {
             return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
+        }
+
+        /*
+         * A CONFIRMED FACTOR IS NOT RE-KEYED. Refused before anything is written.
+         *
+         * `$enable(force: true)` below overwrites whatever secret is already stored, and
+         * `force` is there for a real reason: the app role holds no SELECT on
+         * `two_factor_secret` (`§2.7`), so Fortify's own "is one already set?" test reads a
+         * null it is not allowed to see and would proceed regardless. Making that explicit
+         * was right; leaving it unconditional was not.
+         *
+         * The consequence measured on the open version: a caller with a session -- or,
+         * before `RefuseDeviceToken`, a `pager:read` device token -- called `enable` on an
+         * account whose factor was already CONFIRMED, got a different secret back, and
+         * `two_factor_confirmed_at` stayed set. The legitimate authenticator stops working
+         * and the secret in force is the caller's. That is a LOCKOUT, not a disclosure, and
+         * it is silent.
+         *
+         * Changing an authenticator is still expressible: disable, then enable. That path
+         * is two deliberate acts and the first of them is visible to the account's owner,
+         * which re-keying in place is not.
+         *
+         * NOT CONFIRMED is deliberately still allowed to re-enrol. Enrolment is two steps
+         * and the secret exists between them, so a caller who abandoned the first step --
+         * closed the tab, lost the QR code -- has to be able to start again. Refusing that
+         * would strand an account with a pending secret it can neither use nor replace.
+         *
+         * Read through the function rather than off the model, for the same grant reason as
+         * the read-back below.
+         */
+        $existing = $this->secrets->for((string) $user->getKey());
+
+        if ($existing !== null && $existing['confirmed']) {
+            return (new Problem(ProblemType::Conflict, $request->getPathInfo()))->toResponse();
         }
 
         $enable($user, force: true);
