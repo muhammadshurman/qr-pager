@@ -14,6 +14,7 @@ use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishedSite;
+use App\Features\Landing\PublishFailed;
 use App\Features\Landing\TenantDomains;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,7 @@ use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Support\ImageFixtures;
 use Tests\Support\LandingFixtures;
+use Tests\Support\RecordingDisk;
 
 /*
  * ================================================================================
@@ -90,6 +92,46 @@ it('publishes and unpublishes through the builder', function (): void {
 
     expect(app(LandingPages::class)->state($tenant)['status'])->toBe(LandingPageStatus::Draft)
         ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($state['hostname'])))->toBeFalse();
+});
+
+it('names the side of the commit a publish failed on, and never 500s on a take-down', function (): void {
+    // ⚠ BOTH OF THE PANEL'S FAILURE BRANCHES, WHICH NOTHING DROVE. The third scoped
+    // re-review found two defects one line apart: the publish notification asserted "your
+    // live page is unchanged" for EVERY failure, which `SR-4`'s ordering made false from
+    // the commit onwards; and the unpublish action caught nothing at all, so a store that
+    // answers false -- the s3 disk is `'throw' => false` -- turned the one control whose
+    // job is to make a page unreachable into a Livewire 500 rather than §12.1's named
+    // refusal. The control is rendered for every tenant in every state, so that 500 was
+    // reachable from the `draft` state by every owner.
+    $tenant = $this->actingForTenant(role: TenantRole::Owner);
+
+    // A store that refuses every write. The publish gets past phase 3 -- the ROW commits
+    // first now -- and fails in phase 4, which is the case the old headline lied about.
+    $refusing = new RecordingDisk(MediaLibrary::disk(), fn (string $operation, string $key) => null, [
+        'put' => false,
+        'deleteDirectory' => false,
+    ]);
+
+    Storage::set('s3', $refusing);
+
+    try {
+        Livewire::test(LandingBuilderPage::class)
+            ->fillForm(StudioForm::fromDocument(LandingFixtures::fullPage()))
+            ->call('publish')
+            ->assertNotified(PublishFailed::AFTER_RECORD);
+
+        // And the take-down answers the tenant instead of throwing. `deleteDirectory`
+        // returns false, `sweep()` raises, and the action renders it.
+        Livewire::test(LandingBuilderPage::class)
+            ->call('unpublish')
+            ->assertNotified('Take-down failed — your page is still public');
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    // The row is `published` over a prefix with nothing in it -- the residual `SR-4`
+    // chose, and the reason the headline above is the one the tenant is shown.
+    expect(app(LandingPages::class)->state($tenant)['status'])->toBe(LandingPageStatus::Published);
 });
 
 it('refuses to publish from the builder when the document does not validate', function (): void {
