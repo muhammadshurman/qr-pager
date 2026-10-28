@@ -78,6 +78,43 @@ ports, with the local driver as the one that runs here and the AWS driver deferr
 account; what it does demonstrate is that **no domain reaches `active` without a verified DNS
 challenge and a recorded certificate**, which is the falsifiable half.
 
+### SR-4 — decision D8's ordering produces the invariant failure the task ships on
+
+Recorded 2026-10-28, after the second scoped `§11` re-review, and resolved against D8 rather
+than silently.
+
+**D8 says:** *"publish is write-new-then-switch. The pointer write is the switch, the database
+is the last word, and nothing is ever partially live."* `§6.6`'s table says the same. The build
+implemented it literally: assets, snapshot, manifest, pointer, then the row.
+
+**That ordering is what made clause 1 of the named invariant fail, four times.** Every failure
+between the switch and the commit leaves a page live that no `landing_pages` row records —
+and the window is not small: it spans an object write, and before this task's `§11` rounds it
+also spanned the whole of phase 2. The three attempts to patch it each introduced the next one:
+
+1. the build left `manifest.json` and `{checksum}.html` behind on unpublish;
+2. the guard added in round 1 refuses one phase **after** the switch;
+3. round 2's compensation for that deleted the pointer alone, recreating (1);
+4. and with the compensation corrected, a failed pointer write still left the **manifest**
+   naming a reachable snapshot, because the manifest was written before the switch.
+
+**The ordering is therefore inverted: the row commits BEFORE anything becomes reachable.**
+Assets and the snapshot first — the snapshot's key is a sha256 of its own bytes and nothing
+names it — then the guarded row update, then the pointer, then the manifest last because the
+manifest is a second pointer.
+
+**What this trades, stated plainly.** D8's ordering fails towards "a page is live that nothing
+records", which is an invariant failure. This one fails towards "a row claims published while
+the old page still serves", which is not: nothing unrecorded is reachable, the tenant sees the
+claim in the panel, and publishing again corrects it. The two failure directions are not the
+same size, and `§11` blocks on one of them.
+
+**Why this is an SR and not just a fix.** D8 is an accepted decision in this ticket and `§6.6`
+is its table; changing the order contradicts both. `PROJECT_INSTRUCTIONS.md §0` says to stop and
+report rather than silently resolve, so the conflict is recorded here, resolved in favour of the
+invariant because that is the clause `§11` makes blocking, and D8's own sentence — *"nothing is
+ever partially live"* — is the thing the new order actually delivers.
+
 ### SR-3 — `§6.1`'s worker grant assumes a cross-tenant sweep that `§4` does not allow
 
 Recorded 2026-10-28, at the start of the build, before the migration.

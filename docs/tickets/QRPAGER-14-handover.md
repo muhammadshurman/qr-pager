@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — four reviews, 77 findings, 48 fixed, 29 into `§5`; clause 1 of the invariant fell three times and holds now; the tag is waiting on a re-run of every `§6` gate at the final commit.
+STATUS: TASK-7 BLOCKED — five reviews, 85 findings, 50 fixed, 35 into `§5`; clause 1 fell four times and holds now on an ORDERING change (SR-4); the tag is waiting on a re-run of every `§6` gate at the final commit.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -77,8 +77,8 @@ recorded certificate.**
 
 ## 2a. ⚠ THE NAMED INVARIANT FAILED AT REVIEW AND HOLDS AFTER THE FIX PASSES
 
-**Four reviews, 77 findings, four fix passes — and clause 1 of the invariant failed THREE times,
-each time on the fix for the one before it.** The `§11` QA and Security pair found 29 (1 Critical, 4 High) and disagreed about the
+**Five reviews, 85 findings, five fix passes — and clause 1 failed FOUR times, three of them on the
+fix for the one before.** The `§11` QA and Security pair found 29 (1 Critical, 4 High) and disagreed about the
 invariant; Security said it failed and was right. Round 1 of the fix diff's review found 16 more,
 **both of its Highs inside the first fix pass**. Round 2 — the cap — found 19, and the invariant
 **failed again on an interleaving the round-1 fix had introduced**: the guard it asked for refuses
@@ -140,7 +140,8 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 11 | Disposition and the fix pass | **done** — 22 fixed with a regression test, 7 into `§5` (`R-134`…`R-140`) | *this commit* | yes |
 | 12 | Review of the fix diff, round 1 of 2 | **done** — 16 findings (0C 2H 6M 8L), both Highs in the fixes; 13 fixed, 3 into `§5` | — | yes |
 | 12b | Review of the fix diff, round 2 of 2 — **the cap** | **done** — 19 findings (0C 4H 7M 8L); the invariant failed again on the round-1 fix | — | yes |
-| 12c | **Scoped re-review** — `§11`'s loop for a past-the-cap invariant failure | **done** — 13 findings (1C 3H 5M 4L); clause 1 failed a THIRD time, on round 2's own compensation; 8 fixed, 5 into `§5` | *this commit* | yes |
+| 12c | **Scoped re-review** — `§11`'s loop for a past-the-cap invariant failure | **done** — 13 findings (1C 3H 5M 4L); clause 1 failed a THIRD time, on round 2's compensation; 8 fixed, 5 into `§5` | — | yes |
+| 12d | **Second scoped re-review** | **done** — 8 findings (1C 1H 3M 3L); clause 1 failed a FOURTH time on a manifest written before the switch; ended by an ORDERING change (SR-4), 2 fixed, 6 into `§5` | *this commit* | yes |
 | 13 | `PLAN.md §0`, `§4a`, `§5` | **done** (re-checked after the reviews) | *this commit* | yes |
 | 14 | Tag `task-7`, pushed | not started | — | — |
 

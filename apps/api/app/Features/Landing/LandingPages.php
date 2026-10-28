@@ -31,15 +31,25 @@ use Throwable;
  *   1. validate the stored draft        -- a document that no longer validates is refused
  *   2. resolve the hostname             -- the active custom domain, else the platform one
  *   3. copy every referenced asset      -- a missing asset refuses the publish
- *   4. write {checksum}.html            -- immutable, named by the hash of its own bytes
- *   5. write manifest.json              -- what is live, for Task 11 and Task 13
+ *   4. write {checksum}.html            -- immutable, named by the hash of its own bytes,
+ *                                          and NOTHING NAMES IT YET
+ *   5. update landing_pages             -- guarded on what step 1 saw
  *   6. write index.html                 -- THE POINTER WRITE IS THE SWITCH
- *   7. update landing_pages             -- the database is the last word
+ *   7. write manifest.json              -- metadata, and a SECOND pointer, so it is last
  *
- * A failure at 1-5 leaves the live page and the database on the previous publish. A
- * failure at 6 does the same, because nothing before it is reachable: `{checksum}.html`
- * has a name nobody knows and the assets sit beside a pointer that still names the old
- * page.
+ * ⚠ THE ROW IS WRITTEN BEFORE THE SWITCH, WHICH INVERTS DECISION D8, and `QRPAGER-14 §0
+ * SR-4` records why rather than leaving it to be discovered. D8 says "the database is the
+ * last word", and with the row last EVERY failure between the switch and the commit left
+ * a page live that nothing recorded -- clause 1 of this task's named invariant. Clause 1
+ * failed FOUR times before this ordering, and three of those were fixes for the one
+ * before. With the row first the worst case is a row claiming MORE than exists --
+ * `published` while the old page still serves -- which is not an invariant failure, is
+ * visible to the tenant in the panel, and is corrected by publishing again.
+ *
+ * A failure at 1-4 leaves the live page and the database on the previous publish, and the
+ * only thing left behind is an object whose name is a hash of its own bytes that nothing
+ * names. A failure at 5 is the same. A failure at 6 leaves the row ahead of the store. A
+ * failure at 7 leaves the manifest stale, which is metadata.
  *
  * ⚠ THEY ARE NOT ALL IN ONE TRANSACTION, and this sentence said they were until the §11
  * QA review. Steps 1-3 are one short transaction, steps 3-6 hold NO transaction at all,
@@ -134,9 +144,10 @@ final class LandingPages
      *   1. one SHORT transaction  -- read the draft, validate it, resolve the hostname
      *                                and the asset keys. Needs a tenant scope; touches
      *                                no network.
-     *   2. NO transaction         -- copy the assets, render, write the snapshot, the
-     *                                manifest and then the pointer. Touches no database.
-     *   3. one SHORT transaction  -- write the row.
+     *   2. NO transaction         -- copy the assets, render, and write the SNAPSHOT,
+     *                                whose key nothing names yet. Touches no database.
+     *   3. one SHORT transaction  -- write the row, guarded on what phase 1 saw.
+     *   4. NO transaction         -- write the pointer, THEN the manifest.
      *
      * The guarantees are unchanged, because the ORDER is unchanged: the pointer write is
      * still the switch and the database is still the last word. Phase 1 or 2 failing
@@ -224,24 +235,12 @@ final class LandingPages
         $html = $this->renderer->render($document, $hostname, $plan['tenantName'], $assetUrls);
         $checksum = hash('sha256', $html);
 
+        // The snapshot, and NOTHING THAT NAMES IT. Its key is a sha256 of its own bytes,
+        // so until something publishes that name it is unreachable -- which is what lets
+        // phase 3 refuse below with no cleanup at all.
         $this->write(PublishedSite::snapshot($hostname, $checksum), $html, 'text/html; charset=utf-8');
 
-        $this->write(
-            PublishedSite::manifest($hostname),
-            (string) json_encode([
-                'hostname' => $hostname,
-                'checksum' => $checksum,
-                'published_at' => now()->toIso8601String(),
-                'bytes' => strlen($html),
-                'assets' => array_values($assetUrls),
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-            'application/json',
-        );
-
-        // THE SWITCH.
-        $this->write(PublishedSite::pointer($hostname), $html, 'text/html; charset=utf-8');
-
-        // ---- PHASE 3: one short transaction. The database is the last word. -------
+        // ---- PHASE 3: the row, BEFORE anything becomes reachable. -----------------
         $publishedAt = now();
 
         /** @var bool $committed */
@@ -262,31 +261,18 @@ final class LandingPages
         });
 
         if (! $committed) {
-            // ⚠ THE WHOLE PREFIX, AND OUTSIDE THE TRANSACTION. The switch happened one
-            // phase ago, so refusing on its own leaves a page live that no row records
-            // -- the first clause of the named invariant.
+            // ⚠ NO COMPENSATION, AND THAT IS THE POINT OF THE NEW ORDERING. Nothing
+            // reachable has been written yet: the only object this attempt has created
+            // is `{checksum}.html`, whose name is a hash of its own bytes and which no
+            // manifest and no pointer names. So refusing here leaves the live page and
+            // the row exactly as they were, with one unreferenced object behind
+            // (`R-155`'s territory, with the snapshots a re-publish already leaves).
             //
-            // The first version of this compensation deleted `index.html` ALONE, and the
-            // scoped review of it found the obvious: `manifest.json` carries the
-            // checksum in its body and `{checksum}.html` is the whole page, so the page
-            // stayed reachable in two requests. That is the IDENTICAL route this file's
-            // `unpublish()` docblock records as a previously-found clause-1 failure --
-            // reintroduced in the compensation for a different clause-1 failure, eight
-            // lines from the comment describing it. "Not reachable" in this project
-            // means `allFiles($prefix) === []`, which is what LandingDraftUnreachableTest
-            // has always asserted; one key's absence was never the standard.
-            //
-            // THE TRADE, stated: when the row moved to a DIFFERENT published state this
-            // takes that page down too, and the next publish restores it. An outage is a
-            // defect; serving a page no row claims is an invariant failure. They are not
-            // the same size.
-            if (MediaLibrary::disk()->deleteDirectory(PublishedSite::root($hostname)) === false) {
-                throw new PublishFailed(
-                    'your page changed while it was publishing and the half-written site could '
-                    .'not be cleared; check your page'
-                );
-            }
-
+            // The two compensations this method used to carry were each written to undo
+            // a switch that had already happened, and each introduced a clause-1 failure
+            // of its own -- one deleted the pointer and left the manifest naming the
+            // snapshot, the other deleted a prefix that might be a live page's. Removing
+            // the need for a compensation is worth more than getting one right.
             throw new PublishFailed(
                 'your page changed while it was publishing; nothing was published, try again'
             );
@@ -303,6 +289,37 @@ final class LandingPages
                 'updated_at' => $publishedAt,
             ]);
         });
+
+        // ---- PHASE 4: the switch, and then the metadata. --------------------------
+        //
+        // THE POINTER IS WRITTEN AFTER THE ROW COMMITS, which inverts decision D8's "the
+        // database is the last word" -- see QRPAGER-14 §0 SR-4 for why, recorded rather
+        // than resolved in passing. In one line: with the row last, every failure
+        // between the switch and the commit left a page live that nothing recorded,
+        // which is clause 1 of the named invariant, and clause 1 failed four times
+        // before this ordering. With the row first the worst case is a row that claims
+        // MORE than exists -- "published" while the old page still serves -- which is
+        // not an invariant failure, is visible to the tenant, and is fixed by publishing
+        // again.
+        $this->write(PublishedSite::pointer($hostname), $html, 'text/html; charset=utf-8');
+
+        // LAST, because it NAMES THE SNAPSHOT. `manifest.json` carries the checksum in
+        // its body, so it is a second pointer -- this file's `unpublish()` docblock says
+        // exactly that -- and writing it before the row committed is how the fourth
+        // clause-1 failure happened: a failed pointer write left the manifest naming a
+        // reachable snapshot with the row still saying `draft`. Anything it names is now
+        // already recorded as published before it is written.
+        $this->write(
+            PublishedSite::manifest($hostname),
+            (string) json_encode([
+                'hostname' => $hostname,
+                'checksum' => $checksum,
+                'published_at' => $publishedAt->toIso8601String(),
+                'bytes' => strlen($html),
+                'assets' => array_values($assetUrls),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+            'application/json',
+        );
 
         return new PublishedPage(
             $hostname,
@@ -619,6 +636,13 @@ final class LandingPages
 
     /**
      * Every site prefix this tenant may have published to.
+     *
+     * ⚠ COMPLETE ONLY WHILE TWO THINGS STAY TRUE, named here because the scoped
+     * re-review found them unstated: `tenants.slug` never changes (there is no Edit page
+     * on `RestaurantResource`, so the platform fallback this derives is stable), and a
+     * `tenant_domains` row is never deleted (`R-138` — there is no delete path). Break
+     * either and a prefix is orphaned with the row at `draft`, which is clause 1 of the
+     * named invariant again. `R-168`.
      *
      * The hostname currently recorded on the row, every hostname in `tenant_domains`
      * (an `active` one is the current target and a `redirecting` one is a superseded

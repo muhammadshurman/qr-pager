@@ -60,12 +60,21 @@
                 Publish
             </button>
 
-            @if ($state['status'] === \App\Domain\Landing\LandingPageStatus::Published)
-                <button type="button" wire:click="unpublish"
-                        class="fi-btn fi-btn-size-md fi-color-danger px-4 py-2 rounded-lg">
+            {{-- ⚠ ALWAYS OFFERED, NOT ONLY WHEN THE ROW SAYS PUBLISHED. A page can be live
+                 with the row at `draft` -- a redirect stub left by a domain activation
+                 (R-161), or any state an out-of-band change produces -- and Unpublish is
+                 the only verb a tenant has. Hiding it on the row's say-so put the "no
+                 path left to take it down" defect back into the VIEW after the service
+                 had been fixed for it; the scoped re-review found it there. The sweep is
+                 idempotent and costs nothing against an empty prefix. --}}
+            <button type="button" wire:click="unpublish"
+                    class="fi-btn fi-btn-size-md fi-color-danger px-4 py-2 rounded-lg">
+                @if ($state['status'] === \App\Domain\Landing\LandingPageStatus::Published)
                     Unpublish
-                </button>
-            @endif
+                @else
+                    Take my site down
+                @endif
+            </button>
         </div>
     </form>
 </x-filament-panels::page>
