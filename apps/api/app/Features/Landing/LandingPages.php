@@ -244,7 +244,8 @@ final class LandingPages
         // ---- PHASE 3: one short transaction. The database is the last word. -------
         $publishedAt = now();
 
-        withTenant($tenantId, function () use ($tenantId, $plan, $document, $checksum, $hostname, $publishedAt): void {
+        /** @var bool $committed */
+        $committed = withTenant($tenantId, function () use ($tenantId, $plan): bool {
             // ⚠ GUARDED ON WHAT PHASE 1 SAW. The phases are three transactions now, so
             // an unpublish or a domain activation can land between them -- and an
             // unguarded UPDATE would then write `published` over a row somebody had just
@@ -257,24 +258,41 @@ final class LandingPages
             // transaction did not write, and the next publish converges.
             $row = $this->row($tenantId);
 
-            if ((string) ($row->publishedAt ?? '').'|'.$row->status->value !== $plan['seen']) {
-                // ⚠ THE POINTER IS REMOVED BEFORE THIS THROWS. The switch happened one
-                // phase ago, so refusing on its own would leave a page live that no row
-                // records -- which is exactly what round 2 of the fix diff's review
-                // found, and it is the first clause of the named invariant. Taking the
-                // pointer down is the only action that keeps "nothing unrecorded is
-                // reachable" true; the snapshot beside it has a name nobody knows.
-                //
-                // With the per-tenant advisory lock around publish and unpublish this
-                // branch is unreachable from this application -- the two serialise --
-                // so it stands for a row changed out of band, and it chooses a brief
-                // outage over serving something no row claims.
-                MediaLibrary::disk()->delete(PublishedSite::pointer($hostname));
+            return (string) ($row->publishedAt ?? '').'|'.$row->status->value === $plan['seen'];
+        });
 
+        if (! $committed) {
+            // ⚠ THE WHOLE PREFIX, AND OUTSIDE THE TRANSACTION. The switch happened one
+            // phase ago, so refusing on its own leaves a page live that no row records
+            // -- the first clause of the named invariant.
+            //
+            // The first version of this compensation deleted `index.html` ALONE, and the
+            // scoped review of it found the obvious: `manifest.json` carries the
+            // checksum in its body and `{checksum}.html` is the whole page, so the page
+            // stayed reachable in two requests. That is the IDENTICAL route this file's
+            // `unpublish()` docblock records as a previously-found clause-1 failure --
+            // reintroduced in the compensation for a different clause-1 failure, eight
+            // lines from the comment describing it. "Not reachable" in this project
+            // means `allFiles($prefix) === []`, which is what LandingDraftUnreachableTest
+            // has always asserted; one key's absence was never the standard.
+            //
+            // THE TRADE, stated: when the row moved to a DIFFERENT published state this
+            // takes that page down too, and the next publish restores it. An outage is a
+            // defect; serving a page no row claims is an invariant failure. They are not
+            // the same size.
+            if (MediaLibrary::disk()->deleteDirectory(PublishedSite::root($hostname)) === false) {
                 throw new PublishFailed(
-                    'your page changed while it was publishing; nothing was published, try again'
+                    'your page changed while it was publishing and the half-written site could '
+                    .'not be cleared; check your page'
                 );
             }
+
+            throw new PublishFailed(
+                'your page changed while it was publishing; nothing was published, try again'
+            );
+        }
+
+        withTenant($tenantId, function () use ($tenantId, $document, $checksum, $hostname, $publishedAt): void {
 
             DB::table('landing_pages')->where('tenant_id', $tenantId)->update([
                 'status' => LandingPageStatus::Published->value,
@@ -329,7 +347,24 @@ final class LandingPages
         withTenant($tenantId, function () use ($tenantId): void {
             $row = $this->row($tenantId);
 
-            if ($row->status !== LandingPageStatus::Published || $row->publishedHostname === null) {
+            // ⚠ IT DOES NOT RETURN EARLY ON A `draft` ROW ANY MORE, and that early return
+            // was the thing that made two separate clause-1 failures PERMANENT rather
+            // than transient. Whenever a page is live with the row at `draft` -- a
+            // process killed between the pointer write and the row write, a refused
+            // phase 3 whose compensation itself failed -- the only verb a tenant has is
+            // Unpublish, and it looked at the row, saw `draft`, and did nothing. There
+            // was then no path left in the application that could take the page down.
+            //
+            // So it now sweeps the prefixes on every call. A take-down of a page that
+            // was already down is a few DELETEs against keys that are not there, which
+            // is cheap and idempotent; a take-down that refuses because the ROW says
+            // there is nothing to take down is a page nobody can remove.
+            if ($row->publishedHostname === null && $row->status !== LandingPageStatus::Published) {
+                // No hostname was ever recorded, so the only prefixes this tenant can
+                // have written to are the platform fallback and its own domains -- which
+                // publishedPrefixes() covers from the tenant's slug and tenant_domains.
+                $this->sweep($this->publishedPrefixes($tenantId, $this->platformHostnameInScope($tenantId)));
+
                 return;
             }
 
@@ -341,11 +376,10 @@ final class LandingPages
             // left those fetchable by exact URL after a take-down, to anyone who had
             // recorded a name while the site was live. Found by the §11 review of the
             // fix diff, round 1.
-            foreach ($this->publishedPrefixes($tenantId, $row->publishedHostname) as $prefix) {
-                if (MediaLibrary::disk()->deleteDirectory($prefix) === false) {
-                    throw new PublishFailed('your site could not be taken down; your page is unchanged');
-                }
-            }
+            $this->sweep($this->publishedPrefixes(
+                $tenantId,
+                $row->publishedHostname ?? $this->platformHostnameInScope($tenantId),
+            ));
 
             // The whole prefix, pointer and manifest and every snapshot and every copied
             // asset -- everything the CDN would serve for this hostname.
@@ -505,9 +539,23 @@ final class LandingPages
      * TWO-ARGUMENT, so it lives in a different lock space from every one-argument key
      * in this repository -- `TestCase::SUITE_LOCK_KEY` and `tenancy.bootstrap_lock_key`
      * are both single-key locks and cannot collide with these whatever they hash to.
+     * (Measured: `pg_locks.objsubid` is 1 for a one-key lock and 2 for a two-key one.)
      *
-     * RELEASED IN A `finally`, and if the process dies first the connection closing
-     * releases it -- which is the property a session lock has and a row lock does not.
+     * ⚠ WHAT IT DOES AND DOES NOT GUARANTEE, measured rather than assumed, because the
+     * first version of this docblock overstated both:
+     *
+     *   - ACROSS PROCESSES it does NOT make the second caller wait. `qrpager_app` carries
+     *     `lock_timeout = 2s` (`config/tenancy.php`), and a publish holds this lock for
+     *     far longer than that, so a concurrent publish or unpublish ABORTS with 55P03
+     *     rather than queueing. That still prevents the interleave -- one of the two
+     *     fails instead of both proceeding -- so clause 1 is protected, but "serialises"
+     *     is the wrong word for it and `R-158` is the row.
+     *   - WITHIN ONE SESSION it gives no exclusion at all: Postgres session advisory
+     *     locks are re-entrant, so a nested call re-acquires instantly. That is why
+     *     `ReviewFixesTest`'s interleave case can still force the race in-process, and
+     *     why the compensating action below is a real path rather than dead code.
+     *   - IF THE PROCESS DIES the lock is held until the CONNECTION closes, which under
+     *     Octane is not the same thing as the request ending (`R-160`).
      *
      * @template TReturn
      *
@@ -516,7 +564,11 @@ final class LandingPages
      */
     private function withPublishLock(string $tenantId, Closure $callback): mixed
     {
-        $connection = DB::connection('pgsql');
+        // The APP connection, resolved rather than named: `config('tenancy.connections.app')`
+        // is what `withTenant()` defaults to, so the lock and the work it guards cannot
+        // end up on two different connections after a config change. This was the one
+        // query in the class that hard-coded `'pgsql'`.
+        $connection = DB::connection((string) config('tenancy.connections.app'));
         $objectId = self::lockObjectId($tenantId);
 
         $connection->statement('select pg_advisory_lock(?, ?)', [self::LOCK_CLASS, $objectId]);
@@ -524,7 +576,17 @@ final class LandingPages
         try {
             return $callback();
         } finally {
-            $connection->statement('select pg_advisory_unlock(?, ?)', [self::LOCK_CLASS, $objectId]);
+            // SWALLOWED, for the reason TenantContext::assertScopeSurvived() swallows its
+            // rollback: this runs while an exception may already be in flight, and an
+            // unlock that throws would REPLACE it -- so a publish that failed for a
+            // reason the tenant needs to see would surface as a lock error instead. The
+            // connection closing releases the lock anyway, which is what makes losing
+            // this statement survivable.
+            try {
+                $connection->statement('select pg_advisory_unlock(?, ?)', [self::LOCK_CLASS, $objectId]);
+            } catch (Throwable) {
+                // The lock outlives this request and dies with the connection.
+            }
         }
     }
 
@@ -534,6 +596,25 @@ final class LandingPages
         $hash = crc32($tenantId);
 
         return $hash > 2147483647 ? $hash - 4294967296 : $hash;
+    }
+
+    /**
+     * Delete every one of these prefixes, or refuse.
+     *
+     * The return value is checked for the reason this file checks every other one: the
+     * s3 disk is configured `'throw' => false`, so a failed delete answers false and
+     * raises nothing -- and a take-down that reports success while the page is still
+     * served is the worst of the shapes this task has produced.
+     *
+     * @param  list<string>  $prefixes
+     */
+    private function sweep(array $prefixes): void
+    {
+        foreach ($prefixes as $prefix) {
+            if (MediaLibrary::disk()->deleteDirectory($prefix) === false) {
+                throw new PublishFailed('your site could not be taken down; your page is unchanged');
+            }
+        }
     }
 
     /**

@@ -568,8 +568,53 @@ it('refuses to finish a publish whose row changed underneath it', function (): v
         // phase AFTER the pointer write, so the refused publish left the page serving
         // with the row at `draft` -- and `unpublish()`'s early return then made that
         // permanent. The test reached the broken state and never looked at it.
-        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($pages->platformHostname($tenant))))
-        ->toBeFalse('a refused publish left a page live that no row records');
+        // ⚠ THE WHOLE PREFIX, NOT THE POINTER. This asserted `exists(pointer)` alone and
+        // the scoped review of the round-2 fix found what that missed: the compensating
+        // delete removed `index.html` and left `manifest.json` -- whose body carries the
+        // checksum -- and `{checksum}.html`, so the page was still reachable in two
+        // requests. The identical route `unpublish()`'s own docblock records as a
+        // previously-found clause-1 failure, reintroduced in the compensation for a
+        // different clause-1 failure. "Not reachable" in this project has always meant
+        // `allFiles($prefix) === []`.
+        ->and(MediaLibrary::disk()->allFiles(PublishedSite::root($pages->platformHostname($tenant))))
+        ->toBe([], 'a refused publish left objects behind that no row records');
+});
+
+it('takes a page down even when the row has lost track of it', function (): void {
+    // THE SCOPED REVIEW'S THIRD CLAUSE-1 FAILURE. `unpublish()` returned early whenever
+    // the row was not `published` -- so any state where a page is LIVE and the row says
+    // `draft` was permanent: a process killed between the pointer write and the row
+    // write, or a compensation that itself failed. The only verb a tenant has is
+    // Unpublish, and it looked at the row, saw `draft`, and did nothing.
+    $tenant = $this->makeTenant(slug: 'orphaned');
+    $pages = new LandingPages;
+
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+    $published = $pages->publish($tenant);
+
+    expect(MediaLibrary::disk()->allFiles(PublishedSite::root($published->hostname)))->not->toBe([]);
+
+    // The row loses track of the live page -- the state a crash between phase 2 and
+    // phase 3 leaves. Forced on the owner connection, because no application path
+    // produces it any more, which is the point.
+    withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('landing_pages')
+        ->where('tenant_id', $tenant)
+        ->update([
+            'status' => 'draft',
+            'published_document' => null,
+            'published_checksum' => null,
+            'published_hostname' => null,
+            'published_at' => null,
+        ]), 'pgsql_owner');
+
+    expect($pages->state($tenant)['status']->value)->toBe('draft')
+        // Live, with the row denying it.
+        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeTrue();
+
+    // And Unpublish can still take it down, which is the whole fix.
+    $pages->unpublish($tenant);
+
+    expect(MediaLibrary::disk()->allFiles(PublishedSite::root($published->hostname)))->toBe([]);
 });
 
 it('serialises publish against unpublish for one tenant, so neither can interleave', function (): void {
