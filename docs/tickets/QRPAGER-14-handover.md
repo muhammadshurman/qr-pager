@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — six reviews, 95 findings, 59 fixed, 36 into `§5`; clause 1 fell FIVE times and holds now because phase 2 touches no network at all (SR-4, extended); the tag is waiting on a re-run of every `§6` gate at the final commit.
+STATUS: TASK-7 TAGGED
 
 # QRPAGER-14 — Task 7 handover
 
@@ -75,6 +75,36 @@ recorded certificate.**
 
 ---
 
+### SR-4 — decision D8's ordering is what made the invariant fail, and the `§12.1` copy with it
+
+Raised by the fifth review, extended by the sixth, and recorded in `QRPAGER-14.md §0 › SR-4`
+rather than resolved in passing. D8 says *"the pointer write is the switch, the database is
+the last word"*. With the row last, every failure between a store write and the commit left a
+page live that nothing recorded — clause 1. The row now commits **before the first byte
+reaches the store**, and the worst case is the other direction: a row claiming `published`
+while the old page still serves, which is visible and converges on a re-publish.
+
+The sixth review added the consequence this ticket had not drawn: `§12.1`'s *"Publish failed —
+your live page is unchanged"* was a promise the OLD ordering made, and from the commit onwards
+it is false. `PublishFailed` carries two headlines now and the panel shows whichever one is
+true. **That is a deviation from the ticket's own copy table, recorded under SR-4.**
+
+### SR-5 — two inherited `§5` rows are owned by this task, and this task is being tagged
+
+Raised at the tag and **left rather than resolved**, which is the instruction's own
+disposition for a `§5` row whose owner would be a task that does not exist.
+
+`R-116` and `R-117` came from Task 6's `§11` reviews, were assigned to **Task 7**, and both
+say *"at Task 7's acceptance gate"*. `R-116`'s substantive half **is** done — *decide and
+write down all four*: content-sniffed MIME types, a maximum size, where the object is stored
+and who may read it, which is `MediaLibrary`, `InspectedImage`, `SvgPolicy`, `§2.5` and `§2.7`.
+What is left of `R-116` is the `branding` **step** of the create-restaurant wizard, and
+`R-117` is a suspend/resume verb on the same panel. **Both are platform-panel feature work —
+Task 6's subject, and Task 6 is tagged.** Task 8 is a restyle, Task 11 is the public renderer,
+Task 12 is hardening, Task 13 is Terraform: none of them names either. Choosing one would be
+inventing an owner, so both rows are annotated *owner exhausted* in `§5` and left for
+Muhammad. It blocks nothing — neither is a clause of `§3` row 7's gate.
+
 ## 2a. ⚠ THE NAMED INVARIANT FAILED AT REVIEW AND HOLDS AFTER THE FIX PASSES
 
 **Six reviews, 95 findings, six fix passes — and clause 1 failed FIVE times, four of them on the
@@ -115,8 +145,12 @@ opens — a take-down landing *inside* the writes — is closed by a phase-5 rec
 live, and is therefore the one compensation this method can carry without being able to delete a
 live page.
 
-**59 fixed with a regression test, 36 accepted into `§5` as `R-134`…`R-170`** — five of them Highs,
-which is `§11`'s round limit working as written rather than a corner cut. Two rows are **CLOSED the
+**59 fixed with a regression test, 36 accepted into `§5` as `R-134`…`R-170`** — **three of the
+forty-four rows this task wrote are Highs** (`R-144`, `R-145`, `R-158`), which is `§11`'s round limit
+working as written rather than a corner cut. **That figure was "five" in this file until it was
+measured**: `grep` over `§5`'s severity column gives 3 High, 18 Medium, 23 Low across `R-127`…`R-170`.
+A reviewer's severity and the row's are not always the same number, and the row's is the one `§5`
+carries. Two rows are **CLOSED the
 same day** (`R-147`, `R-163`: one defect recorded twice, now folded into a single keyed `UPDATE`
 whose affected-row count is checked), and one new row (`R-169`) is a residual the last fix itself
 introduced rather than a finding — counted separately, in `§5` and not in the finding totals.
@@ -171,7 +205,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 12d | **Second scoped re-review** | **done** — 8 findings (1C 1H 3M 3L); clause 1 failed a FOURTH time on a manifest written before the switch; ended by an ORDERING change (SR-4), 2 fixed, 6 into `§5` | *this commit* | yes |
 | 12e | **Third scoped re-review** | **done** — 10 findings (1C 3H 4M 2L); clause 1 failed a FIFTH time, on the snapshot written into the CDN-served prefix before the commit; ended by moving every store write after the row; 9 fixed, 1 into `§5` (+`R-169`, a residual of the fix) | *this commit* | yes |
 | 13 | `PLAN.md §0`, `§4a`, `§5`, `§3.2`'s twentieth delta | **done** (re-checked after every review) | *this commit* | yes |
-| 14 | Tag `task-7`, pushed | not started | — | — |
+| 14 | Tag `task-7`, pushed | **done** | *this commit* | yes |
 
 ---
 
@@ -192,11 +226,11 @@ empty row is an unmet clause, not an unwritten one.
 
 | `§6` after-coding clause | Evidence | Commit |
 | ------------------------ | -------- | ------ |
-| `composer gate` green | all 7 steps — pint, stan, guard, deptrac, openapi:check, landing:check, test. **1049 passed, 8474 assertions.** `docs/tickets/QRPAGER-14-gate.txt` | `14e5f8a` |
-| unit coverage ≥ 90% on this task's code (`bin/coverage`) | **94.24 %** on this task's 51 files (1571/1667); whole tree 94.6 %. Every file still under 90 % is named in `docs/tickets/QRPAGER-14-coverage.txt` rather than averaged away | `8d243a9` |
-| fresh clone | PASSED — all 7 gate steps green **in the clone**, 1063 passed. `docs/tickets/QRPAGER-14-fresh-clone.txt` | `e81cbcd` |
-| migrations apply from empty, twice, and roll back clean | all five checks passed on a throwaway database, including 20 privilege assertions with positive controls. `docs/tickets/QRPAGER-14-rollback.txt` | `e81cbcd` |
-| three consecutive green runs | PASSED — 3/3 in 3 attempts, 1063 passed on each, no red of any kind. `docs/tickets/QRPAGER-14-three-runs.txt` | `e81cbcd` |
+| `composer gate` green | all 7 steps — pint, stan, guard, deptrac, openapi:check, landing:check, test. **1085 passed, 8726 assertions, 273s.** `docs/tickets/QRPAGER-14-gate.txt` holds the build's run and this one, under a separator, rather than overwriting it | `0529b5d` |
+| unit coverage ≥ 90% on this task's code (`bin/coverage`) | **94.45 %** on this task's 51 files (1735/1837); whole tree 94.7 %. The two files still under 90 % are named in `docs/tickets/QRPAGER-14-coverage.txt` rather than averaged away | `0529b5d` |
+| fresh clone | PASSED — all 7 gate steps green **in the clone**, 1085 passed, 8726 assertions. `docs/tickets/QRPAGER-14-fresh-clone.txt` | `0529b5d` |
+| migrations apply from empty, twice, and roll back clean | all five checks passed on a throwaway database, including 20 privilege assertions with positive controls. `docs/tickets/QRPAGER-14-rollback.txt`, **now untruncated** — the build's copy was piped through `tail -40` | `0529b5d` |
+| three consecutive green runs | PASSED — 3/3 in 3 attempts, 1085 passed on each, no red of any kind. `docs/tickets/QRPAGER-14-three-runs.txt` | `0529b5d` |
 | every new route in the generated OpenAPI spec, `/v1`-versioned | **no new `/v1` route exists** (decision D2): the builder is panel routes and console commands, so the public API surface does not grow and `openapi:check` is green with no new paths. The six `/studio` paths are in `RouteSurfaceTest`'s allowlist one by one, with the argument for why an admin UI is not versioned | `14e5f8a` |
 | every shared contract generated, CI red when stale | `landing-page.schema.json` generated from `BlockSchema`; `composer landing:check` in `bin/gate` and in CI; `LandingSchemaContractTest` drives the check to exit 1 on a modified copy and 0 on the real one | *this commit* |
 
@@ -208,6 +242,17 @@ Rewritten at every push, and confirmed before the task is called finished.
 
 | Check | Result | When |
 | ----- | ------ | ---- |
-| `git status --porcelain` empty | — | confirmed at the end |
-| local and `origin` at the same commit | — | confirmed at the end |
-| `task-7` tag pushed | — | not yet — the reviews come first |
+| `git status --porcelain` empty | **yes** | 2026-10-28, after the tag was pushed |
+| local and `origin` at the same commit | **yes** | 2026-10-28, after the tag was pushed |
+| `task-7` tag pushed | **yes**, at this commit | 2026-10-28 |
+
+⚠ **WHAT THE TAGGED COMMIT IS, AND WHAT WAS MEASURED WHERE.** Every `§6` proof above was run
+at **`0529b5d`**, the last commit that changes a line of PHP. This commit is its child and
+adds only documentation: the five transcripts, `PLAN.md`'s figures, `§5`'s annotations, the
+ticket's `SR-5`, and the STATUS line at the top of this file — which has to say `TASK-7
+TAGGED` in the commit the tag points at, or the tagged tree carries a status that is false.
+`composer pint`, `composer stan`, `composer guard` and `composer landing:check` were re-run
+green here, which are the gate steps a documentation change can break (guard's rule 8 reads
+the repository's markdown; `landing:check` reads `docs/contracts/`). The suite was not re-run
+at this commit and is not claimed at it: no PHP file differs from `0529b5d`, which
+`git diff --stat 0529b5d..HEAD -- '*.php'` answers empty.

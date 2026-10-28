@@ -413,6 +413,34 @@ carries no colour-only state.
 | active | the live hostname, and which domain redirects to it | "Live at {hostname}. {old} redirects here." |
 | failed | the reason and the retry | "We could not verify {hostname}: {reason}" |
 
+### SR-5 — two inherited `§5` rows are owned by this task, and this task is being tagged
+
+Raised 2026-10-28, at the tag, and **left rather than resolved** — which is the instruction's
+own disposition for a `§5` row whose owner would be a task that does not exist.
+
+`R-116` and `R-117` were accepted from Task 6's `§11` reviews and assigned to **Task 7**, both
+with the "when" column reading *"at Task 7's acceptance gate"*. That gate is now, and neither
+is closed:
+
+- **`R-116` — the half it actually asked for IS done.** *"Decide and write down all four"* —
+  accepted MIME types verified by **content sniffing** rather than by extension, a maximum
+  size, where the object is stored, and who may read it — is `MediaLibrary`, `InspectedImage`,
+  `SvgPolicy`, `§2.5` and `§2.7`, built and tested here. What remains is the `branding`
+  **step** of the create-restaurant wizard, which is a screen on the **platform** panel.
+- **`R-117` — nothing of it was done.** `tenant_provisionings` has no `desired_status` and
+  `platform:provision-tenants` has no reconcile pass. It is a suspend/resume verb on the
+  platform panel.
+
+**Both remainders are Task 6's subject, and Task 6 is tagged.** No remaining task in `PLAN.md
+§3` names them: Task 8 is the design system and a restyle of the panels, Task 12 is security
+hardening, Task 11 is the public renderer, Task 13 is Terraform. **Choosing one would be
+inventing an owner**, which is the thing `§5.1`'s sweep exists to catch rather than to create —
+so the rows are annotated in `§5` as *owner exhausted* and left for Muhammad to assign.
+
+It does not block the tag: neither row is a clause of `§3` row 7's acceptance gate, neither is
+an invariant, and both are Low/Medium and positively unreachable or merely absent. It is named
+in the `task-7` tag message with the two rows and the reason there is no owner to name.
+
 ---
 
 ## 3. THE ACCEPTANCE GATE, CLAUSE BY CLAUSE

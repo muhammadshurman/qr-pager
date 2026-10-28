@@ -1,37 +1,19 @@
 ================================================================================
-THE GATE FROM A FRESH CLONE (§6 / CLAUDE.md)
+THE GATE, IN A FRESH CLONE (§6)
 ================================================================================
 
-Commit:   e81cbcd  (task-7-landing-builder)
-Run at:   2026-10-28
-Command:  bin/fresh-clone-proof                   (apps/api)
-Result:   PASSED -- all 7 gate steps green IN THE CLONE
-          Tests: 1063 passed, 8552 assertions
+Commit:   0529b5d  (task-7-landing-builder)
+Run at:   2026-10-28, after the sixth review's fix pass
+Command:  bin/fresh-clone-proof      (apps/api)
+Result:   PASSED -- all 7 gate steps green IN THE CLONE, 1085 passed,
+          8726 assertions
 
-"Gates run from a FRESH CLONE, not just a fresh database -- a pass that depends
-on something only present on the builder's machine is not a pass."
+The clone is taken through `file://` so no object is shared with this working
+copy, arrives with nothing the gate needs pre-installed, and is checked
+byte-identical to the commit before anything runs. It then runs exactly the
+three commands CLAUDE.md says a fresh clone needs, and nothing else.
 
-A `git clone file://...` goes through the transport rather than hardlinking the
-object store, so the clone shares nothing with this working tree. The script
-REFUSES to continue unless the clone arrived without vendor/, without .env and
-without node_modules/ -- the three things a copy would bring with it and the
-three that would make the pass meaningless.
-
-WHAT THIS PROVES FOR TASK 7 SPECIFICALLY. Everything the task added is tracked:
-the migration, the generated contract docs/contracts/landing-page.schema.json,
-guard/fixtures/theme/, the three Blade views under resources/views/studio/ and
-the published-page template. `composer landing:check` is a gate step, and it
-passed in a tree that had never run the exporter -- so the committed artifact
-really is what the PHP source generates and not something only this machine has.
-
-WHAT IT DOES NOT PROVE: the compose cluster is the host's. §6 requires the suite
-to run against Postgres 16 and Redis 7 from compose.yaml, not against a second
-pair, so the clone talks to the same four containers this repository starts.
-What is proven is that the REPOSITORY is sufficient, not that the machine is.
-
-================================================================================
-
-fresh-clone-proof: test(proof): the rollback proof asked a question blind to column grants at e81cbcd
+fresh-clone-proof: test(landing): drive both of the panel's failure branches at 0529b5d
 
 === clone through file:// so no object is shared
 
@@ -39,7 +21,7 @@ fresh-clone-proof: test(proof): the rollback proof asked a question blind to col
 no vendor/, no .env, no node_modules — the clone is bare
 
 === the clone's tracked tree is byte-identical to this commit's
-tree 4200cc4fa7a90c766a57bc9e9ca32e7c77b25492
+tree e30fc8b99e0ac18862b52a83a6c223f2d4e36a2e
 
 === composer install, from the repository's own lock file
 host composer cache: present (a cache, not a source — it costs time, not correctness)
@@ -49,9 +31,10 @@ packages installed: 205
 cp .env.example .env · php artisan key:generate · docker compose is already up
 
 === composer gate, in the clone
-gate: all 7 steps green. Full output: /tmp/qrpager-fresh-clone-4jVJNj/clone/apps/api/storage/logs/gate-20261028T161850Z.log
+gate: all 7 steps green. Full output: /tmp/qrpager-fresh-clone-YxgBVT/clone/apps/api/storage/logs/gate-20261028T200519Z.log
 
-fresh-clone-proof: PASSED at e81cbcd
-  Tests:    1063 passed (8552 assertions)
-  gate log: /tmp/qrpager-fresh-clone-4jVJNj/gate.log
+fresh-clone-proof: PASSED at 0529b5d
+  Tests:    1085 passed (8726 assertions)
+  gate log: /tmp/qrpager-fresh-clone-YxgBVT/gate.log
   (clone removed; pass --keep to inspect it)
+fresh-clone exit: 0

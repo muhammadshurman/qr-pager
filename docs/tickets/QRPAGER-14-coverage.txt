@@ -2,46 +2,1564 @@
 UNIT COVERAGE ON THE CODE THIS TASK ADDED (§6)
 ================================================================================
 
-Commit:   8d243a9  (task-7-landing-builder)
-Run at:   2026-10-28
+Commit:   0529b5d  (task-7-landing-builder)
+Run at:   2026-10-28, after the sixth review's fix pass
 Command:  bin/coverage --task=task-6 --min=90      (apps/api)
-Result:   THIS TASK (51 files) 1571/1667 = 94.24%   -- the bar is 90%
-          Whole tree, same run: 94.6%
+Result:   THIS TASK (51 files) 1735/1837 = 94.45%   -- the bar is 90%
+          Whole tree, same run: 94.7%
+
+⚠ RE-MEASURED. The figure this file carried before was 94.24% (1571/1667) at
+8d243a9, which was the BUILD's commit -- five fix passes before this one. A
+coverage number measured at a commit the tag does not sit on is a number about
+different code, which is the `§4a` defect shape this project records most
+often, so every figure here is from the run named above and nothing is carried.
 
 The denominator is the files this branch ADDED OR CHANGED since `task-6`,
 resolved with git and passed to PHPUnit as an explicit filter -- which is what
 §6 asks for ("coverage on code this task added") rather than a whole-tree
 figure that this task's code barely moves.
 
-⚠ TWO THINGS THIS RUN CHANGED ABOUT THE SCRIPT, both recorded in bin/coverage:
-  - it ran on the compose network, where 127.0.0.1 is the container, and the
-    object store and mail catcher that joined the stack on 2026-10-28 were
-    therefore unreachable: 84 failures, none of them a coverage problem. It
-    uses --network host now.
-  - it ran as root and left a root-owned livewire-tmp inside the mounted
-    repository, which broke the next HOST run of the suite. It runs as the
-    host user now.
+Two files are below the bar and are named rather than averaged away:
 
-THE FILES STILL BELOW 90%, named rather than averaged away:
+  Panel/Pages/LandingBuilderPage.php   Filament's own generated accessors, plus
+                                       the two notification branches, which ARE
+                                       now driven (StudioActionsTest, added by
+                                       the sixth fix pass -- it was 26/57 before
+                                       that test existed).
+  SystemDnsVerifier.php                the real resolver driver: it is not the
+                                       driver the suite binds, by design
+                                       (`R-142`), so its network path is
+                                       unexecuted here.
 
-  SystemDnsVerifier            40.0%  the PRODUCTION DNS driver. Its challenge
-                                      comparison was lifted into DnsChallenge
-                                      (100%) and is driven directly; what stays
-                                      uncovered is the branch that needs a real
-                                      TXT record this suite cannot create. Said
-                                      so in DnsChallengeTest rather than implied.
-  SvgPolicy                    86.4%  21 hostile shapes are driven; the residue
-                                      is defensive arms (malformed-name guards)
-                                      a well-formed XML document cannot reach.
-  MediaAssetRow / MediaOptions 81-86% the null-dimension arms of a row object.
-  LandingBuilderPage           ~53%   Filament's own generated accessors.
+coverage: measuring 51 file(s) added or changed since task-6
 
-================================================================================
 
+   INFO  Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/ef8d6d0dd64224f876e845cb93e36887fd65ba39b23a97a829bcab3477c62a11): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/d164c1836f8dd5e6f3895c4c0bfffe7b0aa83da573712e95d4b7b4f041ed72b8): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/e40a5ad2003dff1315c91bd5ddba8adf464d4a62cb761948e5b3806cdac4be47): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/0d2f88293792ad80fe3bd1b4b480b633691786a5137ffc24dacb43ef3ad5559e): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/2837b41906a7d37f58f4ae3c6db943bda23a1d71f8b13540bd8da0e8adf976f2): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/2dec0bef8e5dea77a3fcea7145abf534ed233aaf2bca34d5869a37d252e1dfe7): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/04256a2a5b2f8d2f91b1526157f0e3252989a7e97d4f6b88d9a1eafa6d5bdabe): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/ddeb4e403249021b47ab3b26af024abd943a0ea0f14ff2799ea224d8d9b9efb5): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/bb7aa3a649327a4ab8e9ac4c9cd318a227a01ea7ac902ff20d07a7aeb8cd3eae): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/c5599ac110e84dbd2242704870af9c5f7d1c66eb193d92d86345e4df3ba38990): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/100cbd5dc6b2326d178be4176ae7262e1322cf86afb88320afe876ec29f3d54d): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/e8f56ed666071d66eeae0f807272b51510ae8a3bc4fdddca8aa22454d031b559): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/62aa431fc349fcde577edb55927e1cc7625bcc619ef11a0390723cd116ab9304): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/a3796f96f681346de6d0c26f32e1250cc7aeb4ba9d73e9adacc61956d2e6d0d4): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/fd3aee1fe6b8d7bb4c0acd8f87f76ee642d2c5fc5cc2781e0319303f080738bc): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/9f94751cedabfdd74dd30a05aca6db621c4e5b732984b6e6bfdd4f7a720b5a72): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168
+
+Warning: file_put_contents(/repo/apps/api/vendor/pestphp/pest/.temp/code-coverage/67a009dd5bc58db2af4c37789fe1e41db91c10e91faee5da61cbb7286e77ed69): Failed to open stream: Permission denied in /repo/apps/api/vendor/phpunit/php-code-coverage/src/StaticAnalysis/CachingSourceAnalyser.php on line 168.
+
+   PASS  Tests\Unit\EnvironmentTest
+  ✓ it runs on the locked PHP major and minor                            0.01s  
+  ✓ it has every database and cache extension the stack requires
+
+   WARN  Tests\Feature\Architecture\ArchitectureGuardTest
+  ! it passes on the real tree, so a failure below means the fixture an… 1.76s  
+  ✓ it guard 1 fails when domain logic imports framework or DB code      1.13s  
+  ✓ it guard 2 fails when the platform layer imports a feature module    1.31s  
+  ✓ it guard 3 fails when production code imports a test helper          1.23s  
+  ✓ it fails when a feature module reaches into the auth layer — B5, re… 1.16s  
+  ✓ it leaves no fixture behind in app/                                  0.17s  
+
+   PASS  Tests\Feature\Architecture\AuditLogAssertionTest
+  ✓ it has no audit_log assertion in the suite that reads rows without…  0.21s  
+  ✓ it does not flag the documentation of its own rule                   0.15s  
+  ✓ it fails on a deliberately bad fixture, so the scan above is worth…  0.15s  
+  ✓ it gives every row the suite writes a run marker to filter on        0.16s  
+  ✓ it writes the marker into audit_log.context where the suite seeds a… 0.21s  
+
+   PASS  Tests\Feature\Architecture\ExpectationApiTest
+  ✓ it finds exactly the variadic matchers rule 7 names, and no others   0.16s  
+  ✓ it confirms that 77 other matchers really do take a message, so the… 0.15s  
+  ✓ it proves the broken shape really is inert, so rule 7 is not cargo…  0.16s  
+
+   PASS  Tests\Feature\Architecture\RepoGuardTest
+  ✓ it passes on the real tree, so a failure below is the fixture and n… 0.66s  
+  ✓ it is wired as a composer script and exits 0 on the real tree        0.65s  
+  ✓ it counts the files it read, not the paths it was given              0.64s  
+  ✓ it refuses a configured path that does not resolve, rather than sca… 0.16s  
+  ✓ it refuses a path that resolves but produces no file to read         0.15s  
+  ✓ it exits non-zero through the real binary when a path cannot be sca… 0.17s  
+  ✓ it rejects a session-scoped tenant setting                           0.16s  
+  ✓ it rejects a bound third argument, which the source cannot prove is… 0.15s  
+  ✓ it rejects an absent third argument, which Postgres defaults to ses… 0.15s  
+  ✓ it rejects a raw SET of an app GUC, in both of its spellings         0.15s  
+  ✓ it rejects every app GUC name that is not one of C1 two              0.15s  
+  ✓ it rejects a third configured GUC, which no SQL would reveal         0.15s  
+  ✓ it passes rule 8 on the real tree, so a failure below is the fixtur… 0.17s  
+  ✓ it rejects a second document carrying a task-table heading — rule 8… 0.15s  
+  ✓ it rejects a byte-identical copy of the Blueprint — rule 8, clause…  0.16s  
+  ✓ it does not flag prose that merely mentions a task table, only a he… 0.15s  
+  ✓ it does not flag its own fixtures, which deliberately contain both…  0.16s  
+  ✓ it exits non-zero through the real binary when a canonical document… 0.56s  
+  ✓ it rejects a negated variadic matcher given a message, which assert… 0.17s  
+  ✓ it leaves the correct forms alone, so rule 7 is not something anyon… 0.16s  
+  ✓ it scopes rule 7 exception to one function, so the guard cannot be…  0.15s  
+  ✓ it does not read comments, so the prose explaining C2 is not a viol… 0.14s  
+  ✓ it scopes its one exception to a method, not to a file and not to t… 0.14s  
+  ✓ it reads at least one real workflow, so rule 9 cannot be passing on… 0.14s  
+  ✓ it passes rule 9 on the real tree, so a failure below is the fixtur… 0.14s  
+  ✓ it rejects a push trigger whose branch patterns can exclude a pushe… 0.15s  
+  ✓ it rejects branches-ignore on a push trigger — rule 9, the same hol… 0.14s  
+  ✓ it accepts every-branch written as a block sequence, not only as a…  0.14s  
+  ✓ it does not flag a workflow with no push trigger — rule 9            0.14s  
+  ✓ it fails CLOSED on a trigger it cannot read — rule 9                 0.14s  
+  ✓ it reports a directory it found no workflow in, rather than passing… 0.16s  
+  ✓ it rejects a workflow directory where nothing runs on every pushed…  0.15s  
+  ✓ it passes rule 10 on the real tree, so a failure below is the fixtu… 0.56s  
+  ✓ it rejects every form that reaches an S3 object ACL from applicatio… 0.15s  
+  ✓ it does not flag the local public disk, whose filesystem has no ACL… 0.14s  
+  ✓ it applies to application code only, so config can declare the loca… 0.15s  
+  ✓ it refuses every form that makes a theme more than a token map (rul… 0.14s  
+  ✓ it leaves the four legitimate shapes in that fixture alone (rule 11… 0.14s  
+  ✓ it applies rule 11 to app/ and routes/ and to nothing else           0.15s  
+  ✓ it reads the token list out of ThemeTokens rather than holding a co… 0.17s  
+  ✓ it does not flag ThemeTokens for owning the list, or ThemeStyleshee… 0.14s  
+
+   PASS  Tests\Feature\Architecture\SuiteSerializationTest
+  ✓ it holds a process-lifetime advisory lock, so a second runner queue… 0.19s  
+  ✓ it keeps holding it after a connection purge, which is the half tha… 0.16s  
+  ✓ it does not collide with the key RoleTimeoutTest draws, because thi… 0.15s  
+  ✓ it keeps its behavioural proof in the repository, not in a session…  0.15s  
+  ✓ it keeps the gate log readable for every runner, which is one expor… 0.15s  
+
+   PASS  Tests\Feature\Auth\AuthGrantNarrowingTest
+  ✓ it refuses the app role every withheld users column, as the stateme… 0.23s  
+  ✓ it refuses the app role the platform-admin flag at INSERT as well a… 0.21s  
+  ✓ it holds no DELETE on passkeys, because no route deletes one yet     0.17s  
+  ✓ it returns no secret from authenticate_user, and exactly the column… 0.18s  
+
+   PASS  Tests\Feature\Auth\AuthOctaneIsolationTest
+  ✓ it binds every piece of per-request auth state as scoped, so the bo… 0.15s  
+  ✓ it leaves no membership set resolvable after the boundary, not mere… 0.20s  
+  ✓ it holds no authenticated user in a static property anywhere in the… 0.15s  
+  ✓ it reads a membership once per request rather than once per authori… 0.22s  
+
+   PASS  Tests\Feature\Auth\AuthUnitGapsTest
+  ✓ it refuses a route inside the staff group that has no ability mappe… 0.22s  
+  ✓ it exposes the route-ability map and the matrix as data, which the…  0.14s  
+  ✓ it reads a tenant pin out of an ability string, and answers an impo… 0.18s  
+  ✓ it treats a session request as unpinned and holding no token abilit… 0.17s  
+  ✓ it answers no principal when there is no user, no tenant, or an imp… 0.18s  
+  ✓ it reads no membership for an impossible user id, and refuses to pi… 0.17s  
+  ✓ it verifies a password through the function, and spends a compariso… 0.76s  
+  ✓ it reports no second factor for an impossible id, an unknown user,…  0.16s  
+  ✓ it lists a tenant device tokens without anything secret, and refuse… 0.19s  
+  ✓ it re-reads a user with the readable column list, through refresh a… 0.17s  
+  ✓ it constructs the platform-admin principal for a tenant it has no m… 0.18s  
+
+   PASS  Tests\Feature\Auth\DeviceTokenOnAuthSurfaceTest
+  ✓ it is refused on every route of the auth surface, and the refusal i… 0.32s  
+  ✓ it cannot re-key or remove a second factor that is already in force  0.22s  
+  ✓ it leaves the surface working for the staff session it exists for    0.24s  
+  ✓ it covers every route on the auth surface, so a route added later c… 0.15s  
+  ✓ it does not mistake a session user for a device, even when the sanc… 0.19s  
+  ✓ it refuses a malformed bearer token with 401 and no reported except… 0.24s  
+
+   PASS  Tests\Feature\Auth\DeviceTokenScopeTest
+  ✓ it reads the board with its one capability, and is refused on every… 0.26s  
+  ✓ it cannot act in another tenant even when its own issuer is a membe… 0.23s  
+  ✓ it cannot be issued without an explicit expiry, and stops working a… 0.23s  
+  ✓ it refuses a capability that is not issuable to a device at all      0.22s  
+  ✓ it cannot exceed the matrix even with its stored abilities tampered… 0.23s  
+  ✓ it stores a verifier and never the token, and never logs the plaint… 0.22s  
+  ✓ it revokes a token, and reports one belonging to another tenant as…  0.25s  
+  ✓ it writes a device token and its audit row in one transaction, or n… 0.22s  
+
+   PASS  Tests\Feature\Auth\MemberConcurrencyTest
+  ✓ it never leaves a tenant with zero owners when two owners are demot… 0.94s  
+  ✓ it still refuses the last owner when nothing is racing it            0.22s  
+
+   PASS  Tests\Feature\Auth\MembersTest
+  ✓ it lists the tenant staff, with the role and the account behind eac… 0.20s  
+  ✓ it adds an existing account, audits it, and is idempotent on a seco… 0.23s  
+  ✓ it reports an unknown address as not found, the same way it reports… 0.21s  
+  ✓ it changes a role, audits the transition with both ends of it, and…  0.29s  
+  ✓ it removes a member and audits it, and reports a second removal as…  0.26s  
+  ✓ it refuses to demote or remove the last owner, which is the bound w… 0.25s  
+  ✓ it allows the demotion once a second owner exists, so the rule is a… 0.25s  
+  ✓ it reports another tenant member id as not found, because RLS makes… 0.28s  
+  ✓ it refuses a malformed role or address before anything is written    0.26s  
+
+   PASS  Tests\Feature\Auth\MembershipCallSiteTest
+  ✓ it exposes exactly the three public reads its docblock describes     0.15s  
+  ✓ it is called from exactly the nine lines, in five files, that pass…  0.15s  
+  ✓ it finds a planted call site, so the grep cannot pass by matching n… 0.14s  
+
+   PASS  Tests\Feature\Auth\MembershipEnumerationTest
+  ✓ it cannot read tenant_users directly, which is the control that DOE… 0.20s  
+  ✓ it CAN enumerate every tenant's memberships by joining over user_me… 0.21s  
+  ✓ it CAN read every account's two-factor ciphertext through user_two_… 0.19s  
+  ✓ it CAN read every account's bcrypt password hash through authentica… 0.20s  
+
+   PASS  Tests\Feature\Auth\PasskeyTest
+  ✓ it issues registration options and keeps the challenge server-side   0.20s  
+  ✓ it refuses registration options without a session                    0.16s  
+  ✓ it refuses a credential when no challenge was issued                 0.18s  
+  ✓ it replaces the pending challenge on every options call, so an old…  0.19s  
+  ✓ it refuses a malformed credential before any ceremony is attempted   0.20s  
+  ✓ it issues login options to anyone, naming no account, and refuses a… 0.16s  
+  ✓ it stores a passkey with a uuid key, which the vendor migration wou… 0.16s  
+  ✓ it keeps the passkey table out of every tenant-scoped reckoning, be… 0.19s  
+  ✓ it bounds the passkey name at the column's own length, not at the v… 0.21s  
+
+   PASS  Tests\Feature\Auth\PlatformAdminIsNotABypassTest
+  ✓ it holds no tenant ability at all, which is the flag granting nothi… 0.15s  
+  ✓ it resolves no tenant and reaches no staff route in a tenant it has… 0.25s  
+  ✓ it cannot select a tenant it has no membership in                    0.23s  
+  ✓ it acts as its MEMBERSHIP where it has one, rather than being demot… 0.24s  
+  ✓ it cannot give itself the flag, because the app role holds no UPDAT… 0.18s  
+
+   PASS  Tests\Feature\Auth\RoleMatrixTest
+  ✓ it covers every /v1 route in exactly one named set, so "full" is en… 0.15s  
+  ✓ it grants each principal exactly the abilities the matrix names, an… 0.15s  
+  ✓ it answers every principal × every staff route the way the matrix s… 1.12s  
+  ✓ it answers device × every staff route the way the matrix says, in i… 0.72s  
+  ✓ it refuses every principal on every staff route in a tenant they do… 0.53s  
+  ✓ it refuses device and platform_admin on every staff route of a tena… 0.37s  
+  ✓ it refuses every staff route for a suspended tenant — R-081, and ev… 0.25s  
+
+   PASS  Tests\Feature\Auth\SessionPolicyTest
+  ✓ it moves the session id on login, and the pre-login id no longer au… 0.23s  
+  ✓ it moves the session id again when the acting tenant changes, becau… 0.24s  
+  ✓ it empties the session on logout rather than only forgetting the us… 0.28s  
+  ✓ it refuses a state-changing staff request with no CSRF token, with…  0.19s  
+  ✓ it applies CSRF to the staff surface and not to a bearer-token requ… 0.15s  
+  ✓ it renders a CSRF refusal as 419 with a problem document, through t… 0.20s  
+  ✓ it offers no suspended tenant and never names one as the active ten… 0.23s  
+
+   PASS  Tests\Feature\Auth\StubRemovedTest
+  ✓ it has no file for the deleted stub, wherever it might have been pu… 0.16s  
+  ✓ it mentions the deleted stub nowhere in production code, not even i… 0.16s  
+  ✓ it resolves the TenantResolver binding to the real implementation    0.15s  
+  ✓ it references the stub binding constant in no test either            0.23s  
+
+   PASS  Tests\Feature\Auth\SuspendedTenantCustomerSurfaceTest
+  ✓ it keeps serving a live customer session after its tenant is suspen… 0.22s  
+  ✓ it lets no NEW session be opened once the tenant is suspended, whic… 0.19s  
+  ✓ it refuses to mark an existing session ready while suspended, so th… 0.23s  
+
+   PASS  Tests\Feature\Auth\TwoFactorTest
+  ✓ it needs confirmation before two-factor is in force, so enrolment c… 0.25s  
+  ✓ it completes a sign-in with a code from the authenticator, and move… 0.26s  
+  ✓ it accepts a recovery code exactly once, and does not disable two-f… 0.28s  
+  ✓ it reads the pending user from the session and never from the reque… 0.22s  
+  ✓ it keeps the secret and the recovery codes out of every response bu… 0.19s  
+  ✓ it refuses a code that has already been used, so an observed code c… 0.24s  
+  ✓ it refuses to re-key a second factor that is already in force, beca… 0.28s  
+  ✓ it lets an abandoned enrolment start again, because a pending secre… 0.23s  
+  ✓ it refuses a wrong confirmation code and leaves two-factor not in f… 0.25s  
+  ✓ it disables two-factor, clearing all three columns and restoring a…  0.26s  
+
+   PASS  Tests\Feature\Boot\BootChecksTest
+  ✓ it passes on a correctly configured process, so the refusals below…  0.17s  
+  ✓ it refuses an unsafe runtime role, which is H-C’s boot-time clause   0.16s  
+  ✓ it names an unverifiable role as unsafe rather than passing it       0.15s  
+  ✓ it refuses a process that can resolve owner or root credentials — D… 0.15s  
+  ✓ it sees credentials baked into cached config, not only in the envir… 0.15s  
+  ✓ it refuses an sslmode that can silently downgrade to plaintext — D8  0.15s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.14s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.15s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.15s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.15s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.15s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.15s  
+  ✓ it refuses a landing URL that would deliver the token unsafely — S-… 0.15s  
+  ✓ it accepts the shape a deployment is supposed to carry               0.15s  
+  ✓ it proves the fragment case is real and not a guess about parse_url  0.15s  
+  ✓ it exempts local and testing, where the landing URL is whatever the… 0.17s  
+  ✓ it exempts local and testing, where the landing URL is whatever the… 0.14s  
+  ✓ it refuses to serve without a VAPID keypair the push library can us… 0.14s  
+  ✓ it refuses to serve without a VAPID keypair the push library can us… 0.14s  
+  ✓ it refuses to serve without a VAPID keypair the push library can us… 0.14s  
+  ✓ it refuses a VAPID pair that is present and not usable, which a pre… 0.14s  
+  ✓ it names no key material in the refusal, at any debug setting        0.14s  
+  ✓ it accepts a real generated pair, which is the positive control      0.14s  
+  ✓ it exempts local and testing, so the suite boots with no push keys…  0.14s  
+  ✓ it exempts local and testing, so the suite boots with no push keys…  0.14s  
+  ✓ it refuses to serve with no trusted proxy configured, outside local… 0.15s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.14s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.14s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.16s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.21s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.16s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.15s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.16s  
+  ✓ it refuses every value that hands the caller the address the limite… 0.16s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.15s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.17s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.15s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.16s  
+  ✓ it refuses entries that trust every peer between them with dataset…  0.14s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.14s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.15s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.15s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.14s  
+  ✓ it refuses a single range wider than any balancer, which the old fl… 0.16s  
+  ✓ it sees a catch-all set through trustProxies(at:), which is not in…  0.14s  
+  ✓ it refuses an entry that does not parse, because Symfony would leav… 0.15s  
+  ✓ it accepts a CIDR and a bare address, in both families               0.14s  
+  ✓ it exempts local and testing, where the peer is the client with ('l… 0.14s  
+  ✓ it exempts local and testing, where the peer is the client with ('t… 0.14s  
+  ✓ it refuses to serve on a connection carrying a session-scoped tenan… 0.15s  
+  ✓ it does not mistake a live transaction-local scope for a session-sc… 0.16s  
+  ✓ it refuses APP_DEBUG outside local                                   0.14s  
+  ✓ it logs every reason at critical and then stops, which is the gate’… 0.16s  
+  ✓ it does not stop a healthy boot                                      0.16s  
+  ✓ it exits 1 as a real process, because an exit code cannot be assert… 0.63s  
+  ✓ it is wired to WorkerStarting first, and to no service provider      0.16s  
+
+   PASS  Tests\Feature\Database\AuditLogImmutabilityTest
+  ✓ it accepts an append from the app role                               0.23s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.18s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.19s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.18s  
+  ✓ it refuses update, delete and truncate for every role, superuser in… 0.18s  
+  ✓ it refuses a statement that would match zero rows                    0.17s  
+  ✓ it refuses a superuser that disables triggers with session_replicat… 0.19s  
+  ✓ it keeps both triggers marked ENABLE ALWAYS, which is the whole mec… 0.18s  
+  ✓ it grants no role the privilege to mutate the log in the first plac… 0.18s  
+  ✓ it survives a tenant being deleted, because it carries no foreign k… 0.20s  
+
+   PASS  Tests\Feature\Database\BootstrapDatabaseCommandTest
+  ✓ it is idempotent, so a second run converges instead of failing       0.31s  
+  ✓ it reports what it did                                               0.22s  
+  ✓ it restores the role attributes if someone changes them by hand      0.26s  
+  ✓ it creates the database when it does not exist yet                  53.72s  
+  ✓ it refuses to apply a role setting that is not a timeout             0.17s  
+  ✓ it refuses to create a role with no password configured              0.16s  
+  ✓ it refuses to run with no target database configured                 0.21s  
+  ✓ it releases the advisory lock it serialises on, even when it fails   0.20s  
+  ✓ it never sends a role password to the server, in a statement or in…  0.28s  
+  ✓ it refuses a password SASLprep would rewrite, without echoing it     0.20s  
+  ✓ it gives every role a connection limit, and leaves the cluster head… 0.17s  
+  ✓ it refuses to create a role with no connection limit configured      0.16s  
+  ✓ it withholds the statement text when a role statement fails          0.17s  
+  ✓ it stores the verifier it built, byte for byte                       0.22s  
+
+   WARN  Tests\Feature\Database\BootstrapLoggingTest
+  ✓ it runs the bootstrap session with log_statement off, over an inher… 0.24s  
+  ✓ it suppresses the log for its own session only, not for the databas… 0.23s  
+  ✓ it sets it before anything else runs on that session                 0.23s  
+  - it leaves no verifier in the container log for a bootstrap that log… 0.15s  
+  ✓ it takes log_statement from no command-line flag, which is what R-0… 0.16s  
+
+   PASS  Tests\Feature\Database\ConnectionHygieneTest
+  ✓ it closes every database connection between tests                    0.24s  
+  ✓ it holds only a handful of backends open at any point in the suite   0.18s  
+  ✓ it fails closed on transport encryption rather than silently downgr… 0.14s  
+
+   PASS  Tests\Feature\Database\ConnectionReuseTest
+  ✓ it does not carry tenant context from one transaction to the next o… 0.18s  
+  ✓ it sets the guc transaction-locally, never for the session           0.17s  
+  ✓ it drops tenant context when the transaction rolls back              0.18s  
+
+   PASS  Tests\Feature\Database\CrossTenantForeignKeyTest
+  ✓ it refuses a subscription pointing at another tenant session         0.19s  
+  ✓ it accepts a subscription pointing at its own tenant session         0.19s  
+  ✓ it refuses an outbox row pointing at another tenant session          0.18s  
+  ✓ it cascades subscriptions when their session goes, without crossing… 0.18s  
+  ✓ it enforces one outbox row per logical event, which is Task 3 idemp… 0.18s  
+  ✓ it scopes the dedupe key per tenant, so two tenants never collide    0.18s  
+
+   PASS  Tests\Feature\Database\DataMigrationPatternTest
+  ✓ it characterises the data-migration trap and its corrected pattern,… 0.19s  
+  ✓ it survives at transaction level 1, which is where every migration…  0.17s  
+
+   PASS  Tests\Feature\Database\DatabaseRolesTest
+  ✓ it refuses an unknown role, connection or guc rather than returning… 0.15s  
+  ✓ it refuses a role name that was blanked out in config                0.15s  
+  ✓ it falls back to a usable bypass value if config is malformed        0.15s  
+  ✓ it returns an empty set of timeouts rather than failing when config… 0.15s  
+  ✓ it passes when all three roles exist                                 0.15s  
+  ✓ it tells the operator which command creates a missing role           0.15s  
+
+   PASS  Tests\Feature\Database\DriverErrorTest
+  ✓ it agrees with getCode() for ordinary statement errors with dataset… 0.15s  
+  ✓ it agrees with getCode() for ordinary statement errors with dataset… 0.15s  
+  ✓ it agrees with getCode() for ordinary statement errors with dataset… 0.15s  
+  ✓ it disagrees with getCode() for a connection failure, which is the…  0.16s  
+  ✓ it reports nothing rather than a wrong code when there is no driver… 0.14s  
+  ✓ it finds the SQLSTATE through a wrapping exception                   0.18s  
+
+   PASS  Tests\Feature\Database\EnumContractTest
+  ✓ it mirrors every PHP enum exactly, in order with ('pager_status', '… 0.16s  
+  ✓ it mirrors every PHP enum exactly, in order with ('outbox_status',…  0.15s  
+  ✓ it mirrors every PHP enum exactly, in order with ('tenant_status',…  0.16s  
+  ✓ it mirrors every PHP enum exactly, in order with ('tenant_role', 'A… 0.15s  
+  ✓ it mirrors every PHP enum exactly, in order with ('audit_actor_type… 0.15s  
+  ✓ it mirrors every PHP enum exactly, in order with ('provisioning_sta… 0.15s  
+  ✓ it mirrors every PHP enum exactly, in order with ('landing_page_sta… 0.16s  
+  ✓ it mirrors every PHP enum exactly, in order with ('domain_status',…  0.15s  
+  ✓ it registers every enum type that exists in the database             0.15s  
+  ✓ it refuses a value outside the enum at the database level            0.19s  
+  ✓ it keeps every database-backed enum value a bare identifier, so one… 0.18s  
+  ✓ it throws rather than interpolating a case value it cannot prove sa… 0.22s  
+
+   PASS  Tests\Feature\Database\FailedBypassTraceTest
+  ✓ it writes one line naming the reason when a bypass throws — R-005    0.18s  
+  ✓ it still leaves zero audit rows, which is the half that was already… 0.18s  
+  ✓ it carries no SQL, no bound parameter and no GUC name                0.16s  
+  ✓ it reports a refusal from the bypass itself, not only a failure ins… 0.16s  
+  ✓ it reports a commit that fails, not just a callback that throws      0.18s  
+  ✓ it keeps the channel on the redaction tap, like every other channel  0.17s  
+
+   PASS  Tests\Feature\Database\GrantMatrixTest
+  ✓ it keeps token_hash write-only for the app role and unreadable for…  0.18s  
+  ✓ it grants UPDATE on no tenant_id column anywhere                     0.17s  
+  ✓ it grants the app exactly the pager_sessions updates the state mach… 0.15s  
+  ✓ it grants the worker only the expiry columns on pager_sessions       0.15s  
+  ✓ it lets the app insert an outbox row only as pending                 0.15s  
+  ✓ it gives the worker no insert or delete on the outbox                0.15s  
+  ✓ it gives the app no delete on sessions or the outbox                 0.14s  
+  ✓ it lets the worker prune dead push subscriptions                     0.14s  
+  ✓ it keeps failed_jobs away from the app role                          0.15s  
+  ✓ it keeps the migrations table away from both runtime roles           0.15s  
+  ✓ it reaches exactly the tables in the matrix and no others            0.16s  
+  ✓ it states Task 7 grants as exact column sets, with the three absenc… 0.18s  
+  ✓ it keeps the panel out of the aggregate table as a writer, and the…  0.21s  
+  ✓ it states the app grants on users as exact column sets               0.16s  
+  ✓ it keeps user credentials away from the worker role entirely         0.15s  
+  ✓ it states the password_reset_tokens grants as exact column sets      0.15s  
+
+   PASS  Tests\Feature\Database\OwnerAndBypassTest
+  ✓ it binds the owner to force rls like any other role                  0.19s  
+  ✓ it is not a superuser and holds no bypassrls, which is what makes f… 0.16s  
+  ✓ it lets the owner read one tenant at a time with context set         0.18s  
+  ✓ it lets the owner cross tenants only through the audited bypass      0.19s  
+  ✓ it writes an audit row for every bypass, in the same transaction     0.16s  
+  ✓ it rolls the audit row back with the work when a bypass fails        0.16s  
+  ✓ it refuses a bypass without a reason                                 0.15s  
+  ✓ it refuses a bypass on any connection that is not the owner          0.16s  
+  ✓ it gains the app role nothing when it sets the bypass guc itself     0.18s  
+  ✓ it does not leave the bypass set after the transaction               0.15s  
+
+   PASS  Tests\Feature\Database\RefusalDiagnosticsTest
+  ✓ it names 08006 for a connectivity failure, where getCode() prints 7… 0.16s  
+  ✓ it reports nothing rather than a wrong code when there is no SQLSTA… 0.15s  
+  ✓ it tells "the statement was never built" from "the statement failed… 0.16s  
+  ✓ it does not claim a rollback it cannot know about on the commit-the… 0.18s  
+  ✓ it reaches the one catch that swallows, and says so rather than cla… 0.18s  
+  ✓ it states what the depth unwind attempted even when it succeeds — R… 0.17s  
+  ✓ it escapes an invalid-UTF-8 value through a real refusal path — R-0… 0.16s  
+  ✓ it counts the messages carrying unvalidated text, or does not count… 0.16s  
+
+   PASS  Tests\Feature\Database\RlsCoverageTest
+  ✓ it has every tenant-scoped table under ENABLE and FORCE row level s… 0.15s  
+  ✓ it fails on a deliberately bad table, so the check above is worth s… 0.16s  
+  ✓ it accounts for every table: either tenant-scoped or named in the g… 0.17s  
+  ✓ it keeps the global allowlist honest: nothing on it carries a tenan… 0.18s  
+  ✓ it pins the tenant registry against pg_catalog, in both directions   0.16s  
+  ✓ it pins the global allowlist as an exact set, not just a consistent… 0.17s  
+  ✓ it gives every tenant table both an isolation policy and an owner b… 0.16s  
+  ✓ it guards every isolation policy with NULLIF, which is what makes a… 0.16s  
+  ✓ it reads no app.* setting other than the two locked by C1            0.16s  
+  ✓ it targets every bypass policy at the owner alone                    0.17s  
+  ✓ it has exactly the four named cross-tenant policies and no others    0.14s  
+  ✓ it gives the app role no cross-tenant policy anywhere                0.15s  
+  ✓ it keeps every table owned by the owner role, so FORCE RLS has some… 0.15s  
+
+   PASS  Tests\Feature\Database\RoleNamingTest
+  ✓ it names in config exactly the roles the database was built for      0.16s  
+  ✓ it connects the application as the role config calls the app role    0.16s  
+  ✓ it grants privileges to exactly the two roles config calls runtime…  0.18s  
+  ✓ it has no login role in the cluster beyond the four in the contract  0.17s  
+  ✓ it names in config the two GUCs the policies actually read           0.16s  
+
+   PASS  Tests\Feature\Database\RoleTimeoutTest
+  ✓ it has the configured timeouts in effect on a fresh connection of e… 0.17s  
+  ✓ it has the configured timeouts in effect on a fresh connection of e… 0.16s  
+  ✓ it has the configured timeouts in effect on a fresh connection of e… 0.16s  
+  ✓ it fires lock_timeout for each role, which proves ALTER ROLE took e… 2.18s  
+  ✓ it fires lock_timeout for each role, which proves ALTER ROLE took e… 3.20s  
+  ✓ it fires lock_timeout for each role, which proves ALTER ROLE took e… 3.18s  
+  ✓ it fires statement_timeout for the app role, which is what load she… 5.14s  
+  ✓ it leaves the owner without a statement timeout, deliberately        0.14s  
+  ✓ it records the timeouts against the role itself, not one database    0.14s  
+  ✓ it refuses a timeout configured far too high, before it can hang th… 0.18s  
+  ✓ it treats a disabled timeout as past the ceiling, which an interval… 0.18s  
+  ✓ it allows the owner its deliberate absence of a statement timeout,…  0.15s  
+
+   PASS  Tests\Feature\Database\RuntimeRoleGuardTest
+  ✓ it accepts the app role, which is what the application connects as   0.15s  
+  ✓ it accepts the worker role                                           0.14s  
+  ✓ it rejects the owner role                                            0.14s  
+  ✓ it says why it rejected the owner                                    0.15s  
+  ✓ it rejects a superuser, and names the reason that actually matters   0.15s  
+  ✓ it would reject a role that could become the owner                   0.17s  
+  ✓ it would reject the runtime role if it were given BYPASSRLS          0.22s  
+
+   PASS  Tests\Feature\Database\TenantContextCompositionTest
+  ✓ it allows re-entry with the same tenant on the same connection, and… 0.16s  
+  ✓ it refuses a different tenant on the same connection                 0.15s  
+  ✓ it refuses to reuse an open scope on another connection              0.16s  
+  ✓ it refuses a bypass opened inside a tenant scope on the same connec… 0.16s  
+  ✓ it refuses a bypass opened inside a tenant scope on another connect… 0.16s  
+  ✓ it refuses a tenant scope opened inside a bypass on the same connec… 0.15s  
+  ✓ it allows a tenant scope inside a bypass on another connection, and… 0.17s  
+  ✓ it allows a bypass inside a bypass and restores the outer value      0.16s  
+  ✓ it refuses the H-A shape: scope, then bypass, then scope on one con… 0.15s  
+  ✓ it checks the bypass before the re-entry short-circuit, not after    0.15s  
+  ✓ it never yields an unscoped block from any nesting of the two helpe… 0.17s  
+  ✓ it holds every refusal inside an outer transaction too, and leaves…  0.16s  
+  ✓ it scopes correctly inside an outer transaction, and clears on the…  0.15s  
+  ✓ it withholds the statement when it cannot even read the context      0.15s  
+  ✓ it withholds the statement when a bypass cannot read the session st… 0.14s  
+  ✓ it pins the configured bypass value to the literal every policy com… 0.15s  
+  ✓ it refuses a bypass when a tenant setting is in force that it did n… 0.16s  
+  ✓ it refuses to reuse a scope on the worker connection, the other run… 0.17s  
+  ✓ it scopes a block on the worker connection just as tightly as on th… 0.19s  
+  ✓ it withholds the statement when it cannot set the tenant setting     0.16s  
+  ✓ it refuses a bypass after a nested scope exits inside a live one wi… 0.17s  
+  ✓ it refuses a bypass after a nested scope exits inside a live one wi… 0.17s  
+  ✓ it refuses a bypass after a nested scope exits inside a live one wi… 0.19s  
+  ✓ it never reports success when a bypass callback commits and reopens  0.16s  
+
+   PASS  Tests\Feature\Database\TenantContextTest
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.17s  
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.14s  
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.14s  
+  ✓ it rejects anything that is not a uuid before it reaches the databa… 0.14s  
+  ✓ it returns whatever the callback returns                             0.17s  
+  ✓ it reports the active tenant inside the callback and nothing outsid… 0.20s  
+  ✓ it allows re-entry with the same tenant, for a service that calls a… 0.20s  
+  ✓ it refuses to switch tenant inside an open context                   0.17s  
+  ✓ it refuses to reuse an open context on another connection            0.18s  
+  ✓ it runs the callback inside one transaction                          0.16s  
+  ✓ it rolls the work back when the callback throws                      0.16s  
+  ✓ it passes the tenant id as a bound parameter, never as SQL           0.17s  
+  ✓ it works inside a transaction it did not start, and leaves no resid… 0.21s  
+  ✓ it never leaves app.tenant_id set behind inside a transaction it do… 0.17s  
+  ✓ it never leaves app.bypass_tenant set behind inside a transaction i… 0.19s  
+  ✓ it refuses to open a tenant context while a bypass is active         0.17s  
+  ✓ it never runs an unscoped query inside a bypass block                0.17s  
+  ✓ it never reports success when the work was rolled back               0.18s  
+  ✓ it refuses to open a tenant scope on a connection row level securit… 0.17s  
+  ✓ it refuses a bypass on a connection row level security cannot narro… 0.16s  
+  ✓ it refuses to scope on a runtime connection whose role holds BYPASS… 0.20s  
+  ✓ it still lets the owner connection scope, which §2.10 depends on     0.17s  
+  ✓ it still refuses a bypass on a non-owner connection, ahead of which… 0.16s  
+  ✓ it refuses a tenant setting that no scope in this process opened     0.17s  
+  ✓ it runs every callback inside a transaction it opened itself         0.18s  
+  ✓ it never reports success when the connection under an open scope wa… 0.18s  
+  ✓ it reports the active tenant for a scope on any connection, not jus… 0.20s  
+  ✓ it reports no tenant when the setting holds something that is not a… 0.17s  
+  ✓ it reports no tenant for a setting no scope in this process opened   0.17s  
+  ✓ it reports no tenant for a connection it holds no scope on           0.18s  
+  ✓ it never reports success when the callback leaves a transaction ope… 0.20s  
+  ✓ it cannot have a refusal message forge a log line                    0.18s  
+  ✓ it bounds a refusal message built from a value it did not write      0.17s  
+  ✓ it never reports success when something in the block wrote over the… 0.17s  
+  ✓ it never unwinds past the depth the caller was already at            0.17s  
+  ✓ it never reports success when a bypass callback leaves a transactio… 0.17s  
+  ✓ it keeps a driver code from forging a log line on its way into a me… 0.16s  
+  ✓ it tells the two depth failures apart, because the remedies differ   0.17s  
+
+   PASS  Tests\Feature\Database\TenantIsolationTest
+  ✓ it returns zero rows and raises no error on every tenant table with… 0.25s  
+  ✓ it still returns zero rows and no error once the connection has car… 0.21s  
+  ✓ it shows a tenant only its own rows                                  0.19s  
+  ✓ it blocks a cross-tenant read even when the other tenant id is name… 0.18s  
+  ✓ it blocks a cross-tenant update                                      0.18s  
+  ✓ it blocks a cross-tenant delete                                      0.18s  
+  ✓ it blocks an insert made for another tenant                          0.17s  
+  ✓ it cannot move one of its own rows to another tenant                 0.17s  
+  ✓ it cannot read the token hash it is allowed to write                 0.19s  
+  ✓ it cannot create objects, so it cannot turn a policy off             0.17s  
+
+   PASS  Tests\Feature\Database\TenantScopeGuardTest
+  ✓ it refuses before Postgres executes the statement, where DB::listen… 0.23s  
+  ✓ it covers every way a statement can be issued, not just the query b… 0.15s  
+  ✓ it reattaches to a connection created after a purge                  0.16s  
+  ✓ it lets a statement that touches no tenant table through, armed or…  0.17s  
+  ✓ it allows the same statement inside a tenant scope                   0.16s  
+  ✓ it guards the runtime connections only, so the audited owner bypass… 0.15s  
+  ✓ it is armed by the GLOBAL middleware stack, which no route can be a… 0.17s  
+  ✓ it refuses an unscoped tenant query made by a real request, and the… 0.19s  
+  ✓ it arms a path that matches no route, because routing happens after… 0.16s  
+  ✓ it is not armed outside a request, so the RLS backstop stays provab… 0.20s  
+
+   PASS  Tests\Feature\Database\UserModelTest
+  ✓ it gives a new user a uuid key rather than an integer                0.19s  
+  ✓ it stores the email lower-cased, which the column constraint requir… 0.17s  
+  ✓ it refuses a mixed-case email at the database level                  0.15s  
+  ✓ it hides the password and remember token from serialisation          0.16s  
+
+   PASS  Tests\Feature\Database\WorkerScopeTest
+  ✓ it lets the worker drain the outbox across tenants with no context   0.18s  
+  ✓ it does not let the app see another tenant outbox row                0.19s  
+  ✓ it lets the worker claim outbox rows with for update skip locked     0.20s  
+  ✓ it does not let the worker insert or delete an outbox row            0.17s  
+  ✓ it runs the prescribed expiry pattern: select id, then update with…  0.19s  
+  ✓ it is why the worker select policy is bounded by time and not by st… 0.17s  
+  ✓ it does not let the worker make any other cross-tenant transition    0.17s  
+  ✓ it does not let the worker read a live session of another tenant     0.17s  
+  ✓ it does not let the worker read the token hash                       0.17s  
+  ✓ it has no cross-tenant reach outside the outbox and the expiry job   0.20s  
+openapi: 66 problem response(s) published as application/problem+json
+
+   PASS  Tests\Feature\Http\OpenApiSpecTest
+  ✓ it is committed, is OpenAPI 3.1 and names this API                   0.15s  
+  ✓ it describes exactly the routes that exist, and not the fallback     0.15s  
+  ✓ it describes both readiness outcomes with the real body shape        0.15s  
+  ✓ it fails loudly when the committed spec is stale                     2.23s  
+  ✓ it has no test that writes to a committed artefact — R-018 generali… 0.17s  
+  ✓ it exports the same bytes every time, so the diff means something    2.68s  
+  ✓ it publishes the error envelope’s type vocabulary, with every case…  0.15s  
+  ✓ it describes the problem body with the keys a real body actually ha… 0.15s  
+  ✓ it keeps internal rationale out of every published description — R-… 0.17s  
+  ✓ it publishes a security requirement on EVERY operation, and the sta… 0.15s  
+  ✓ it publishes the 401 that every unauthenticated request actually re… 0.14s  
+  ✓ it publishes every problem document under the media type the API re… 0.16s  
+  ✓ it leaves a body that is not a problem document as application/json… 0.17s  
+  ✓ it produces the security and media-type decisions in the GENERATOR,… 1.16s  
+
+   PASS  Tests\Feature\Http\ProblemEnvelopeTest
+  ✓ it renders a problem document, not Laravel debug output, for an une… 0.23s  
+  ✓ it leaks no SQL and no bound parameter from a real driver failure    0.21s  
+  ✓ it maps 23514 without returning the constraint name or the SQL — R-… 0.18s  
+  ✓ it maps 42501 to a forbidden problem that reveals nothing about the… 0.20s  
+  ✓ it renders a generic 500 for UnsafeDatabaseRoleException and names…  0.20s  
+  ✓ it renders validation failures with our own messages and nothing el… 0.19s  
+  ✓ it renders 404 and 405 as problem documents                          0.18s  
+  ✓ it renders the same document for a browser request, not an HTML deb… 0.18s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.18s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.16s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.19s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.18s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.16s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.18s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.18s  
+  ✓ it maps every status it is given to a type that renders that same s… 0.17s  
+  ✓ it never answers Forbidden for a status that is not about authoriza… 0.17s  
+  ✓ it renders the two pager domain refusals as 404 and 409, never as a… 0.17s  
+  ✓ it maps the three framework exceptions it matches by class, not by…  0.18s  
+
+   PASS  Tests\Feature\Http\ProblemRetryAfterTest
+  ✓ it gives every mapped 503 a Retry-After, chosen per SQLSTATE         0.17s  
+  ✓ it advises no retry on an answer that repeating cannot fix           0.14s  
+  ✓ it maps a throwable with no driver error to nothing, so the mapper…  0.14s  
+  ✓ it still carries no SQLSTATE, SQL, role or table name in the body    0.16s  
+
+   PASS  Tests\Feature\Http\RateLimitTest
+  ✓ it lets a request through and refuses the one past the per-IP limit  0.20s  
+  ✓ it limits per tenant as well as per IP, keyed by the resolver and n… 0.21s  
+  ✓ it takes the tenant from the resolver, so no request input can buy…  0.24s  
+  ✓ it keeps serving with Redis down, and says so in the log — B7 fail-… 0.19s  
+  ✓ it fails closed instead when the posture is configured closed        0.18s  
+  ✓ it keeps both probes answering while the limiter is refusing everyt… 0.19s  
+  ✓ it counts unknown paths on their own bucket, and not against /v1’s   0.19s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.18s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.17s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.20s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.19s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.24s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.18s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.17s  
+  ✓ it counts an unknown path on every verb the router dispatches, not…  0.26s  
+  ✓ it no longer answers an unauthenticated 200 to OPTIONS on any path   0.18s  
+  ✓ it answers a wrong verb on a real route as 404 rather than 405       0.18s  
+  ✓ it keys the per-IP bucket on the forwarded client when the peer is…  0.21s  
+  ✓ it keys it on the peer when nothing is trusted, which is the defaul… 0.20s  
+  ✓ it hashes the address in the key the middleware actually writes      0.19s  
+  ✓ it configures every rate-limit bucket that a route actually referen… 0.19s  
+  ✓ it refuses past the pager-create bucket, which is the route-level o… 0.29s  
+  ✓ it refuses past each bucket on the auth surface with dataset "auth-… 0.62s  
+  ✓ it refuses past each bucket on the auth surface with dataset "auth-… 0.20s  
+  ✓ it refuses past each bucket on the auth surface with dataset "auth-… 0.20s  
+  ✓ it refuses past each bucket on the auth surface with dataset "auth-… 0.20s  
+  ✓ it refuses past each bucket on the auth surface with dataset "auth-… 0.19s  
+  ✓ it refuses past devices-issue, the fourth bucket the ticket named,…  0.26s  
+  ✓ it meters every auth-surface refusal, whichever group middleware pr… 0.19s  
+  ✓ it meters every auth-surface refusal, whichever group middleware pr… 0.18s  
+  ✓ it meters a valid device token refused on the auth surface           0.26s  
+  ✓ it leaves the per-route buckets as the policy, with the coarse one…  0.59s  
+  ✓ it leaves no route on the auth surface without a bucket, and says w… 0.19s  
+
+   PASS  Tests\Feature\Http\RouteSurfaceTest
+  ✓ it serves exactly the two unversioned probes and nothing else outsi… 0.17s  
+  ✓ it keeps the Livewire prefix pattern matching the real routes, so t… 0.15s  
+  ✓ it refuses the four vendor routes it mounts and does not serve       0.16s  
+  ✓ it loads the passkey harness page only outside production            0.14s  
+  ✓ it has removed Laravel /up, the welcome page and both storage route… 0.14s  
+  ✓ it answers liveness without reading any dependency                   0.14s  
+  ✓ it answers readiness 503 with no snapshot, and opens no database co… 0.15s  
+  ✓ it answers readiness 503 when redis is unreachable, while liveness…  0.15s  
+  ✓ it answers an unknown path with a problem document and counts it     0.15s  
+  ✓ it rate limits unknown paths on their own tighter bucket — the gate… 0.14s  
+  ✓ it does not carry the drain proof’s slow route in the repository     0.14s  
+  ✓ it loads the drain route only outside production, when it is mounte… 0.14s  
+
+   PASS  Tests\Feature\Http\ShedLoadTest
+  ✓ it returns a fast 503 when the pool is saturated, and touches no da… 0.20s  
+  ✓ it keeps both probes answering while /v1 is being shed               0.20s  
+  ✓ it serves normally below the threshold                               0.19s  
+  ✓ it sheds exactly at the configured threshold and not before it       0.20s  
+  ✓ it does not shed on a missing or stale snapshot — it fails OPEN whe… 0.20s  
+  ✓ it returns 503 under memory pressure, read from cgroup v2            0.20s  
+  ✓ it measures this process against the ceiling when the cgroup has no… 0.18s  
+  ✓ it reports 503 when the task is being throttled, and not merely whe… 0.18s  
+  ✓ it does not report throttling for a task that is merely busy         0.19s  
+  ✓ it measures nothing rather than guessing when cgroup v2 is not ther… 0.18s  
+  ✓ it logs the reason it shed, where the body carries none              0.24s  
+  ✓ it runs before the rate limiter, so the cheapest refusal is the fir… 0.19s  
+  ✓ it sheds a real saturated pool end to end                            0.61s  
+
+   PASS  Tests\Feature\Http\TenantResolutionTest
+  ✓ it refuses a /v1 request with no resolvable tenant, and says nothin… 0.18s  
+  ✓ it publishes the resolved tenant for the request and forgets it aft… 0.19s  
+  ✓ it opens no tenant scope, because a scope belongs to a unit of work… 0.22s  
+  ✓ it takes the tenant from no HTTP input whatsoever, even now that it… 0.20s  
+  ✓ it refuses a session selection that is not a uuid, and one the user… 0.19s  
+  ✓ it refuses a suspended tenant at the resolver, before any route run… 0.21s  
+  ✓ it answers 401 and not 500 when the resolver itself refuses — secur… 0.18s  
+  ✓ it answers 401 for every staff route when the resolver refuses, not… 0.19s  
+  ✓ it reads a membership through the §2.8 function and nothing else     0.19s  
+  ✓ it builds a membership that knows a suspended tenant cannot authent… 0.14s  
+
+   PASS  Tests\Feature\Infrastructure\LocalMailCatcherTest
+  ✓ it reaches the local mail catcher, and FAILS rather than skipping w… 0.54s  
+  ✓ it uses the REAL transport, not array and not log                    0.14s  
+  ✓ it delivers a real message and reads it back OUT of the catcher      0.22s  
+  ✓ it leaves the catcher empty of its own probe afterwards              0.21s  
+  ✓ it is declared in compose.yaml, bound to 127.0.0.1 only              0.16s  
+
+   PASS  Tests\Feature\Infrastructure\LocalObjectStoreTest
+  ✓ it reaches the local object store, and FAILS rather than skipping w… 0.17s  
+  ✓ it uses the REAL driver against the composed service, not the local… 0.22s  
+  ✓ it round-trips an object through flysystem, with the bytes compared  0.20s  
+  ✓ it REFUSES a wrong secret, so the round trip above is not vacuous    0.17s  
+  ✓ it is declared in compose.yaml with a PINNED tag, bound to 127.0.0.… 0.15s  
+
+   WARN  Tests\Feature\Landing\DnsChallengeTest
+  ! it names the record under the hostname, never on it → file_put_cont… 0.15s  
+  ✓ it matches only the exact challenge value                            0.15s  
+  ! it fails closed in the production driver when the name does not res… 0.18s  
+  ✓ it states every transition of the landing page state machine         0.15s  
+  ✓ it states every transition of the domain state machine, and the one… 0.14s  
+  ! it writes the contract to a path, which is the exporter half nothin… 0.20s  
+
+   WARN  Tests\Feature\Landing\DomainLifecycleTest
+  ! it adds a domain at pending_dns with nothing earned, and shows the…  0.24s  
+  ✓ it refuses a hostname that is not one, and one that belongs to the…  0.17s  
+  ✓ it stays at pending_dns while the challenge is absent or wrong, wit… 0.19s  
+  ✓ it walks the whole lifecycle one step at a time and never skips one  0.21s  
+  ✓ it holds at certificate_pending while the certificate has not issue… 0.21s  
+  ✓ it cannot be made active by any route that skips a step              0.19s  
+  ✓ it refuses to advance another tenants domain, in the same words as…  0.19s  
+  ✓ it refuses a hostname another tenant already holds, without saying…  0.25s  
+  ✓ it names Task 13 rather than resolving to something that does nothi… 0.16s  
+  ✓ it advances a tenants domains from the command line, by id or by sl… 0.26s  
+  ✓ it fails the command on an unknown tenant rather than doing nothing… 0.17s  
+  ✓ it says so when a tenant has no custom domains                       0.18s  
+
+   WARN  Tests\Feature\Landing\DomainRedirectTest
+  ! it moves the live page to the new hostname and leaves a redirect on… 0.42s  
+  ✓ it keeps exactly one active domain per tenant, enforced by the data… 0.26s  
+  ✓ it redirects a domain only within its own tenant, enforced by a com… 0.31s  
+  ✓ it activates a domain even when the tenant has never published, and… 0.23s  
+
+   PASS  Tests\Feature\Landing\LandingDocumentTest
+  ✓ it accepts the smallest valid document, so every refusal below is d… 0.15s  
+  ✓ it refuses a top-level key the schema does not have                  0.16s  
+  ✓ it refuses an unknown block type and an unknown field inside a know… 0.14s  
+  ✓ it refuses a missing required field and accepts an absent optional…  0.14s  
+  ✓ it bounds text by CHARACTERS and not by bytes, because Arabic is a…  0.15s  
+  ✓ it refuses every control character, newline included                 0.15s  
+  ✓ it keeps markup characters as DATA rather than stripping them, whic… 0.15s  
+  ✓ it refuses every url that is not an absolute https address           0.14s  
+  ✓ it re-assembles an accepted url from its parsed parts rather than p… 0.16s  
+  ✓ it refuses a map that is anything other than three numbers in range  0.15s  
+  ✓ it bounds a list block and validates every item in it                0.14s  
+  ✓ it refuses a media id that is not this tenants, with the same words… 0.16s  
+  ✓ it bounds the number of media references over the whole document, n… 0.15s  
+  ✓ it bounds the number of blocks                                       0.16s  
+  ✓ it refuses a telephone that could carry a tel: parameter, and an ad… 0.15s  
+  ✓ it round-trips through toArray and back, which is what a stored dra… 0.15s  
+  ✓ it re-validates a STORED document, because an asset it referenced c… 0.15s  
+  ✓ it refuses an empty required list, which the panel refuses too       0.14s  
+
+   PASS  Tests\Feature\Landing\LandingDraftUnreachableTest
+  ✓ it writes nothing to the store for a page that has never been publi… 0.25s  
+  ✓ it writes nothing to the store when a PREVIEW is rendered            0.24s  
+  ✓ it refuses the preview to an anonymous caller                        0.17s  
+  ✓ it refuses the preview to a staff member and to a platform admin     0.21s  
+  ✓ it shows one tenant nothing of another tenants draft, with no param… 0.27s  
+  ✓ it serves no-store and noindex on the preview and on its assets      0.29s  
+  ✓ it answers 404 when one tenant asks the preview for another tenants… 0.28s  
+  ✓ it refuses to preview a draft that no longer validates, rather than… 0.26s  
+  ✓ it leaves NOTHING fetchable under the hostname after an unpublish    0.34s  
+
+   WARN  Tests\Feature\Landing\LandingPublishTest
+  ✓ it writes a static page whose bytes are the document, with the cach… 0.29s  
+  ✓ it copies every referenced asset into the site prefix and never ser… 0.27s  
+  ✓ it is idempotent: the same document publishes to the same checksum   0.30s  
+  ✓ it records the publish on the row, and reports unpublished changes…  0.27s  
+  ! it refuses to publish an empty page, and writes nothing → file_put_… 0.21s  
+  ✓ it refuses to publish when a referenced image has been deleted, and… 0.27s  
+  ✓ it leaves the live page serving when the object store goes away mid… 0.52s  
+  ✓ it writes a manifest naming what is live                             0.26s  
+  ✓ it takes the whole site down on unpublish, not just the pointer      0.27s  
+  ✓ it holds no database transaction open while it writes to the object… 0.28s  
+  ✓ it publishes to the active custom domain once there is one           0.24s  
+
+   PASS  Tests\Feature\Landing\LandingSchemaContractTest
+  ✓ it has the generated contract committed, byte for byte               0.16s  
+  ✓ it generates the same bytes three times running, so the check canno… 0.15s  
+  ✓ it describes every block type and every field of each, so the expor… 0.20s  
+  ✓ it pins the theme to exactly the token list, which is the tokens-on… 0.15s  
+  ✓ it carries the document-level bounds a JSON Schema keyword cannot e… 0.14s  
+  ✓ it fails the staleness check on a modified artifact, and passes on…  0.16s  
+
+   PASS  Tests\Feature\Landing\LandingTableContractTest
+  ✓ it refuses a media key that names another tenants prefix, even as o… 0.18s  
+  ✓ it refuses a media key whose leaf is guessable                       0.17s  
+  ✓ it accepts the one key shape the application produces, so the CHECK… 0.17s  
+  ✓ it refuses a key whose extension disagrees with the detected conten… 0.15s  
+  ✓ it refuses an unknown content type and an out-of-range size          0.15s  
+  ✓ it refuses a half-published page in either direction                 0.18s  
+  ✓ it allows one landing page per tenant and refuses the second         0.15s  
+  ✓ it refuses a draft document over the columns backstop, which is loo… 0.16s  
+  ✓ it refuses every path to active that has not earned it               0.16s  
+  ✓ it keeps the redirect graph inside the tenant, by foreign key rathe… 0.17s  
+  ✓ it allows one active domain per tenant and refuses a second          0.16s  
+  ✓ it refuses a hostname that is not a hostname, and one another tenan… 0.19s  
+
+   PASS  Tests\Feature\Landing\LandingXssFuzzTest
+  ✓ it has a detector that actually fires, which every assertion below…  0.21s  
+  ✓ it fuzzes every text field the schema has, so the sweep cannot go s… 0.18s  
+  ✓ it renders 46 payloads into every text field of every block with no… 0.19s  
+  ✓ it refuses every payload in every url, address and number field rat… 0.22s  
+  ✓ it refuses every payload as a theme token name and as a theme token… 0.19s  
+  ✓ it carries no raw echo in the template, which is the second half of… 0.18s  
+  ✓ it publishes a hostile document end to end with nothing executable…  0.29s  
+
+   PASS  Tests\Feature\Landing\MediaIsolationTest
+  ✓ it shows a tenant only its own assets, and the other tenant none of… 0.24s  
+  ✓ it answers false when the other tenant asks whether an asset exists… 0.21s  
+  ✓ it refuses a cross-tenant delete in the same words as a delete of n… 0.24s  
+  ✓ it reads back nothing when one tenant asks for another tenants asse… 0.20s  
+  ✓ it gives the object store no method that takes a key from a caller   0.17s  
+  ✓ it makes a key unguessable from everything a second tenant can see   0.20s  
+  ✓ it keeps the private prefix private: a published page never serves…  0.19s  
+
+   WARN  Tests\Feature\Landing\MediaUploadTest
+  ✓ it refuses an HTML file called logo.png, by content and not by name  0.18s  
+  ! it accepts each of the five types and refuses a real image that is…  0.30s  
+  ✓ it derives the stored extension from the detected type, never from…  0.19s  
+  ✓ it writes a key under this tenants prefix with a 128-bit random lea… 0.23s  
+  ✓ it refuses an empty file and one over 5 MB, by size and before anyt… 0.18s  
+  ✓ it refuses every hostile SVG, each for a reason naming the construc… 0.20s  
+  ✓ it accepts the SVG constructs a logo actually needs, so the allow-l… 0.17s  
+  ✓ it refuses a raster file whose container does not decode as the typ… 0.16s  
+  ✓ it stops at 200 assets, which is §12.2s full state                   0.22s  
+  ✓ it leaves no row behind when the object write fails, which is the f… 0.37s  
+
+   PASS  Tests\Feature\Landing\ReviewFixesTest
+  ✓ it refuses a document over 256 KB through the validator, not throug… 0.23s  
+  ✓ it caps the number of domains a tenant may claim                     0.26s  
+  ✓ it does not advance a failed or redirecting domain, and never makes… 0.22s  
+  ✓ it refuses the challenge for another tenants domain, in the same wo… 0.20s  
+  ✓ it answers a malformed id the same way it answers an unknown one     0.26s  
+  ✓ it puts Filaments Authenticate on every studio route, including the… 0.17s  
+  ✓ it serves a content security policy on the preview document, not on… 0.37s  
+  ✓ it refuses a fixture lifecycle driver outside local and testing      0.18s  
+  ✓ it gives a published page exactly one h1 whatever blocks it has      0.34s  
+  ✓ it accepts an upload of exactly 5 MB and refuses one byte more       0.41s  
+  ✓ it leaves the page published when the take-down fails, instead of r… 0.34s  
+  ✓ it holds no transaction open while ACTIVATING a domain, not just wh… 0.33s  
+  ✓ it clears every hostname this tenant published to, not just the cur… 0.43s  
+  ✓ it derives the transition it checks from the row, so the check can…  0.38s  
+  ✓ it refuses to finish a publish whose row changed underneath it, and… 0.32s  
+  ✓ it sweeps the prefix when a take-down lands after the row has commi… 0.38s  
+  ✓ it tells the tenant which side of the commit a publish failed on     0.27s  
+  ✓ it takes a page down even when the row has lost track of it          0.28s  
+  ✓ it serialises publish against unpublish for one tenant, so neither…  0.28s  
+
+   PASS  Tests\Feature\Landing\StudioAccessibilityTest
+  ✓ it gives every studio page exactly one h1 and headings that do not…  0.48s  
+  ✓ it labels every form control on every studio page                    0.39s  
+  ✓ it announces its own state in text, in a live region, and never by…  0.70s  
+  ✓ it disables Publish rather than hiding it when there is nothing to…  0.33s  
+  ✓ it uses no positive tabindex anywhere, which would reorder the whol… 0.39s  
+  ✓ it gives the published page a text alternative for every image and…  0.29s  
+  ✓ it keeps the published page RTL-safe, so the language setting is th… 0.26s  
+
+   PASS  Tests\Feature\Landing\StudioActionsTest
+  ✓ it saves a draft through the builder, and reports the fields it ref… 2.12s  
+  ✓ it publishes and unpublishes through the builder                     1.16s  
+  ✓ it names the side of the commit a publish failed on, and never 500s… 1.04s  
+  ✓ it refuses to publish from the builder when the document does not v… 0.79s  
+  ✓ it uploads and deletes through the media page, refusing what the li… 0.50s  
+  ✓ it reports the full library state at the cap                         0.33s  
+  ✓ it adds and advances a domain through the domains page               0.59s  
+  ✓ it shows the pending minutes, which is §12.3s slow state             0.27s  
+
+   PASS  Tests\Feature\Landing\StudioPanelInvariantTest
+  ✓ it enumerates the studio routes, so every case below has a subject   0.22s  
+  ✓ it serves nothing on any studio route to an anonymous caller         0.20s  
+  ✓ it refuses a platform admin on every studio route and on every page… 0.23s  
+  ✓ it refuses a staff member, who may not edit the page, on both layer… 0.24s  
+  ✓ it serves an owner and a manager, so the refusals above are discrim… 0.54s  
+  ✓ it shows a tenant only its own page, media and domains               0.27s  
+  ✓ it keeps the tenant out of the Livewire snapshot, so it cannot be t… 0.19s  
+
+   PASS  Tests\Feature\Landing\ThemeTokenTest
+  ✓ it refuses a token name the schema does not have, rather than ignor… 0.20s  
+  ✓ it accepts exactly the twelve tokens and no more                     0.19s  
+  ✓ it refuses every value that could end a declaration or start a rule  0.19s  
+  ✓ it emits declarations and never a rule, and only for tokens that we… 0.19s  
+  ✓ it puts the theme in one attribute of the published page and nowher… 0.27s  
+  ✓ it names every token in the generated contract, so Task 11 reads th… 0.20s  
+
+   PASS  Tests\Feature\Logging\LogRedactionTest
+  ✓ it taps every configured channel, so a new channel cannot log unred… 0.17s  
+  ✓ it strips the statement and the bound parameter from a real query f… 0.18s  
+  ✓ it strips the DETAIL line, which carries every column of the failin… 0.19s  
+  ✓ it drops the stack trace rather than rendering the statement inside… 0.17s  
+  ✓ it logs the role and the reasons for R-021, which the response body… 0.18s  
+  ✓ it redacts on the emergency logger too, which no tap can reach       0.17s  
+  ✓ it redacts a secret passed in context, by key name                   0.17s  
+  ✓ it redacts a SCRAM verifier wherever it appears — R-009 backstop     0.23s  
+  ✓ it keeps redacting when the request goes through HTTP                0.19s  
+  ✓ it redacts each of this task’s secret key names with dataset "two_f… 0.19s  
+  ✓ it redacts each of this task’s secret key names with dataset "plain… 0.18s  
+  ✓ it redacts each of this task’s secret key names with dataset "two_f… 0.18s  
+  ✓ it redacts each of this task’s secret key names with dataset "recov… 0.18s  
+  ✓ it redacts each of this task’s secret key names with dataset "recov… 0.18s  
+  ✓ it redacts each of this task’s secret key names with dataset "chall… 0.20s  
+  ✓ it redacts each of this task’s secret key names with dataset "qr_co… 0.20s  
+  ✓ it redacts each of this task’s secret key names with dataset "qr_co… 0.17s  
+  ✓ it redacts each of this task’s secret key names with dataset "otpau… 0.18s  
+  ✓ it redacts each of this task’s secret key names with dataset "beare… 0.18s  
+  ✓ it keeps a refused device token's row id readable, because that is…  0.22s  
+
+   PASS  Tests\Feature\Notifications\OutboxCrashTest
+  ✓ it loses nothing and duplicates nothing when the worker is killed -… 2.30s  
+  ✓ it never lets two workers hold the same outbox row, which is SKIP L… 0.45s  
+  ✓ it leases a claimed row into the future, so a dead worker’s rows co… 0.25s  
+
+   PASS  Tests\Feature\Notifications\OutboxLeaseIdentityTest
+  ✓ it reads affected rows = 0 when another worker has re-claimed the r… 0.19s  
+  ✓ it skips silently: no send, no write, no exception, and the tally s… 0.22s  
+  ✓ it increments attempts by exactly one per claim, and never by any o… 0.23s  
+  ✓ it never decrements or resets attempts on any path that keeps the r… 0.22s  
+  ✓ it has exactly two statements in the application that write attempt… 0.19s  
+  ✓ it lets no role but the worker move attempts, so there is no second… 0.17s  
+  ✓ it raises rather than wrapping when attempts overflows, so no value… 0.17s  
+  ✓ it derives the lease identity from the pre-claim value, which is wh… 0.15s  
+  ✓ it pins the three predicates in the worker’s own source, so no copy… 0.15s  
+  ✓ it rolls an attempt back only when the row still carries this worke… 0.20s  
+  ✓ it returns from every abandon(), because the identity proof rests o… 0.19s  
+
+   PASS  Tests\Feature\Notifications\OutboxLeaseTest
+  ✓ it sends each notification exactly once across two concurrent worke… 4.38s  
+  ✓ it skips a row whose lease was stolen mid-batch instead of sending…  0.27s  
+  ✓ it skips a row whose lease merely lapsed, because a lapsed lease is… 0.28s  
+  ✓ it evicts the OLDEST device past the cap, so a squatter cannot lock… 0.27s  
+  ✓ it sends to at most the configured number of devices for one sessio… 0.27s  
+  ✓ it says so in the log when the read-time cap bites, because a devic… 0.26s  
+  ✓ it does not cap a session that is under the limit, so the ordinary…  0.27s  
+  ✓ it keeps one row’s worst case inside the lease, which is the bound…  0.14s  
+  ✓ it does not finish a row another worker has claimed away mid-send    0.30s  
+  ✓ it does not back a row off after losing it, which would truncate th… 0.28s  
+  ✓ it hands the attempt back when it skips, so lease contention cannot… 0.60s  
+  ✓ it retries rather than losing a row whose session cannot be read     0.50s  
+  ✓ it dead-letters a row whose session no longer exists, rather than r… 0.21s  
+  ✓ it does not let a re-subscribing device evict itself, which a brows… 0.29s  
+
+   PASS  Tests\Feature\Notifications\OutboxWorkerTest
+  ✓ it claims a pending row, sends it, and marks it sent exactly once    0.25s  
+  ✓ it sends across tenants in one pass, which is the named cross-tenan… 0.28s  
+  ✓ it sends to every device a session has, not just the first           0.23s  
+  ✓ it prunes a subscription on 404 and on 410, on the first occurrence  0.30s  
+  ✓ it keeps a subscription on a 500, because a transient edge is not a… 0.24s  
+  ✓ it backs off with a future available_at rather than spinning on a f… 0.24s  
+  ✓ it dead-letters after max_attempts, with a category and never a dri… 0.30s  
+  ✓ it dead-letters a 400 immediately, because no retry fixes a request… 0.24s  
+  ✓ it still records a row as sent when one device took it and another…  0.27s  
+  ✓ it finishes a row whose session has no subscription, rather than re… 0.27s  
+  ✓ it dead-letters an outbox type this build cannot route, instead of…  0.20s  
+  ✓ it refreshes the projection after a send, so a poll agrees with the… 0.25s  
+  ✓ it does not revive a projection that has gone, because refresh is u… 0.24s  
+  ✓ it never reads a subscription without a tenant scope, which is meas… 0.21s  
+
+   PASS  Tests\Feature\Notifications\WebPushDispatcherTest
+  ✓ it treats exactly 404 and 410 as a dead subscription, and nothing e… 0.17s  
+  ✓ it sends aes128gcm and never the library default, which is the lega… 0.15s  
+  ✓ it carries a Topic, a TTL and high urgency, which is what bounds th… 0.15s  
+  ✓ it gives two different topics to a renotify and the ready it repeat… 0.17s  
+  ✓ it encrypts the payload, so the order reference never crosses the w… 0.15s  
+  ✓ it treats an edge that cannot be reached as retryable rather than t… 0.14s  
+  ✓ it treats a key the encrypter cannot use as retryable, and leaks no… 0.15s  
+  ✓ it posts to exactly the endpoint the subscription named and follows… 0.16s  
+
+   PASS  Tests\Feature\Notifications\WorkOutboxCommandTest
+  ✓ it is registered, so php artisan is the record of what exists        0.19s  
+  ✓ it runs one pass and exits with --once                               0.23s  
+  ✓ it says nothing when there is nothing to do, so an idle worker is q… 0.16s  
+  ✓ it honours --limit, so one pass cannot take the whole queue          0.29s  
+  ✓ it floors a nonsensical --limit at one rather than claiming nothing  0.23s  
+  ✓ it ignores a non-numeric --limit and falls back to the configured b… 0.23s  
+  ✓ it reports pruning in the tally, so an operator sees subscriptions…  0.24s  
+  ✓ it reports a retry without failing the pass, because one bad edge i… 0.25s  
+  ✓ it knows which dispositions are worth another attempt                0.16s  
+  ✓ it reports skipped rows on the tally line, which is the only signal… 0.28s  
+{"type":"throwable","class":"Tests\\Support\\DeliberateWorkerFailure","code":0,"file":"\/repo\/apps\/api\/tests\/Support\/OctaneWorker.php","line":140,"message":"deliberate, after responding","trace":[{"file":"\/repo\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":209,"function":"{closure:Tests\\Support\\OctaneWorker::throwAfterResponding():139}","class":"Tests\\Support\\OctaneWorker","type":"->","args":[{"attributes":{},"request":{},"query":{},"server":{},"files":{},"cookies":{},"headers":{}},{"headers":{},"original":{"status":"alive"},"exception":null},{"contextual":{"Dedoc\\Scramble\\Infer\\Extensions\\ExtensionsBroker":{"$extensions":{}},"Dedoc\\Scramble\\Infer\\Extensions\\IndexBuildingBroker":{"$indexBuilders":{}}},"contextualAttributes":[]}]},{"file":"\/repo\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":102,"function":"invokeRequestHandledCallbacks","class":"Laravel\\Octane\\Worker","type":"->","args":[{"attributes":{},"request":{},"query":{},"server":{},"files":{},"cookies":{},"headers":{}},{"headers":{},"original":{"status":"alive"},"exception":null},{"contextual":{"Dedoc\\Scramble\\Infer\\Extensions\\ExtensionsBroker":{"$extensions":{}},"Dedoc\\Scramble\\Infer\\Extensions\\IndexBuildingBroker":{"$indexBuilders":{}}},"contextualAttributes":[]}]}]}
+{"type":"throwable","class":"Tests\\Support\\DeliberateWorkerFailure","code":0,"file":"\/repo\/apps\/api\/tests\/Support\/OctaneWorker.php","line":140,"message":"deliberate, after responding","trace":[{"file":"\/repo\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":209,"function":"{closure:Tests\\Support\\OctaneWorker::throwAfterResponding():139}","class":"Tests\\Support\\OctaneWorker","type":"->","args":[{"attributes":{},"request":{},"query":{},"server":{},"files":{},"cookies":{},"headers":{}},{"headers":{},"original":{"status":"alive"},"exception":null},{"contextual":{"Dedoc\\Scramble\\Infer\\Extensions\\ExtensionsBroker":{"$extensions":{}},"Dedoc\\Scramble\\Infer\\Extensions\\IndexBuildingBroker":{"$indexBuilders":{}}},"contextualAttributes":[]}]},{"file":"\/repo\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":102,"function":"invokeRequestHandledCallbacks","class":"Laravel\\Octane\\Worker","type":"->","args":[{"attributes":{},"request":{},"query":{},"server":{},"files":{},"cookies":{},"headers":{}},{"headers":{},"original":{"status":"alive"},"exception":null},{"contextual":{"Dedoc\\Scramble\\Infer\\Extensions\\ExtensionsBroker":{"$extensions":{}},"Dedoc\\Scramble\\Infer\\Extensions\\IndexBuildingBroker":{"$indexBuilders":{}}},"contextualAttributes":[]}]}]}
+
+   PASS  Tests\Feature\Octane\RequestBoundaryTest
+  ✓ it rolls back a transaction a completed request abandoned, and does… 0.26s  
+  ✓ it cleans up after a request that throws, where RequestTerminated n… 0.20s  
+  ✓ it leaves a clean connection alone, so the cleanup is not a reconne… 0.20s  
+  ✓ it registers the cleanup on both keys, and first on each             0.16s  
+  ✓ it forgets tenant context at the request boundary even when the roo… 0.20s  
+  ✓ it disarms the tenant scope guard at the boundary, including after…  0.19s  
+
+   PASS  Tests\Feature\Pager\PagerCustomerRateLimitTest
+  ✓ it refuses the token endpoint once its own bucket is spent, proven…  0.27s  
+  ✓ it is tighter than the api bucket, which is the clause’s own compar… 0.16s  
+  ✓ it has no per-tenant half on any customer bucket, because a token c… 0.15s  
+  ✓ it refuses the poll bucket too, so the cheapest route is still boun… 0.93s  
+  ✓ it refuses the subscription bucket, which is the one customer route… 0.39s  
+  ✓ it counts a refused request against the bucket and not against the…  0.30s  
+
+   PASS  Tests\Feature\Pager\PagerCustomerSurfaceTest
+  ✓ it needs no tenant context at all, which is the whole point of the…  0.19s  
+  ✓ it accepts no tenant from the request, on any route or any field     0.18s  
+  ✓ it tells an expired session apart from an unknown one, which is gat… 0.18s  
+  ✓ it decides expiry from the clock and not from status, because statu… 0.18s  
+  ✓ it writes no projection for an expired session, so a poll cannot re… 0.18s  
+  ✓ it registers a device once and updates it thereafter, so repeating…  0.19s  
+  ✓ it removes a device, and removing one that is not there still succe… 0.26s  
+  ✓ it refuses to register a device against an expired session           0.19s  
+  ✓ it validates the subscription body against the database’s own bound… 0.19s  
+  ✓ it says nothing about the shape of the secret when a token fails va… 0.15s  
+  ✓ it counts a failed resolution so an enumeration is observable — R-0… 0.16s  
+  ✓ it writes no audit_log row for a failed resolution, which is the de… 0.17s  
+  ✓ it sheds the live timer and never the alert path, which is the stat… 0.23s  
+  ✓ it puts no token in any response body, on any answer                 0.20s  
+  ✓ it logs a failed-resolution run once per window, not once per attem… 0.17s  
+  ✓ it keeps counting when Redis is gone, by not counting and not faili… 0.15s  
+  ✓ it counts into an hourly window, so the key is bounded and comparab… 0.15s  
+  ✓ it refuses a token in the query string on every customer route — se… 0.18s  
+
+   PASS  Tests\Feature\Pager\PagerExpiryTest
+  ✓ it expires both live statuses and leaves everything else alone       0.24s  
+  ✓ it writes an audit row per expiry and no outbox row at all           0.19s  
+  ✓ it is re-runnable: a second pass expires nothing and audits nothing  0.21s  
+  ✓ it issues the prescribed statement shape, with no RETURNING anywher… 0.18s  
+  ✓ it bounds one pass, so a pass cannot hold a transaction over an unb… 0.22s  
+  ✓ it narrows the worker’s cross-tenant SELECT to live and expired ses… 0.18s  
+  ✓ it stops the worker expiring another tenant’s completed or cancelle… 0.19s  
+  ✓ it binds the worker INSIDE a tenant scope by isolation alone, not b… 0.18s  
+  ✓ it still refuses any transition other than expiring, which WITH CHE… 0.18s  
+  ✓ it carries the status whitelist in the policies themselves, read fr… 0.15s  
+  ✓ it commits the expiry and its audit row together or not at all — QA… 0.20s  
+  ✓ it expires nothing and audits nothing when a staff member wins the…  0.21s  
+  ✓ it derives its live-status list from the enum; the SELECT policy wh… 0.19s  
+  ✓ it is scheduled, so the TTL is enforced without anyone typing a com… 0.17s  
+
+   PASS  Tests\Feature\Pager\PagerIdempotencyTest
+  ✓ it is idempotent on a repeat call: one outbox row, one audit row, a… 0.19s  
+  ✓ it writes one outbox row when two processes mark the same session r… 0.42s  
+  ✓ it lets renotify through repeatedly, with a distinct outbox row eac… 0.20s  
+  ✓ it refuses a renotify past the configured cap, as a conflict rather… 0.19s  
+  ✓ it refuses a renotify on a session that was never marked ready       0.18s  
+  ✓ it has the unique index as the backstop, independent of the row loc… 0.19s  
+  ✓ it lets two concurrent renotifies both through, with distinct dedup… 0.41s  
+
+   PASS  Tests\Feature\Pager\PagerIdorTest
+  ✓ it answers 404 on every id-taking route when the session belongs to… 0.23s  
+  ✓ it answers the same 404 for an id that exists nowhere, so the two a… 0.27s  
+  ✓ it leaves the other tenant’s session completely untouched            0.24s  
+  ✓ it lets the owning tenant act on the very same session, so the 404…  0.24s  
+  ✓ it does not let a tenant id be chosen by anything the caller sends   0.25s  
+
+   PASS  Tests\Feature\Pager\PagerPollLatencyTest
+  ✓ it smoke-checks the latency harness: it runs, and still measures ze… 0.61s  
+
+   PASS  Tests\Feature\Pager\PagerPollingTest
+  ✓ it issues ZERO Postgres statements on a poll, proven by a query lis… 0.19s  
+  ✓ it issues exactly two Redis commands in the handler, and seven acro… 0.20s  
+  ✓ it answers 404 Stale when Redis holds no pointer, and never falls b… 0.19s  
+  ✓ it tells Stale apart from NotFound, so a client knows whether to re… 0.24s  
+  ✓ it spends nothing on a malformed token beyond the middleware that g… 0.15s  
+  ✓ it answers 503 with a Retry-After when Redis is unreachable, not 40… 0.18s  
+  ✓ it serves the live status with the pacing a client needs, and no-st… 0.18s  
+  ✓ it tells the customer nothing about the tenant or the session        0.18s  
+  ✓ it follows a transition within a poll, without the worker having ru… 0.21s  
+  ✓ it follows a completion too, which writes no outbox row and so no w… 0.19s  
+  ✓ it creates no projection for a session nobody scanned                0.18s  
+  ✓ it treats a corrupt projection as a miss rather than a 500           0.19s  
+  ✓ it carries poll_after_seconds on every polling response, 404 and 50… 0.21s  
+  ✓ it carries both the body pacing and the Retry-After header on a 503  0.19s  
+  ✓ it carries the pacing on a shed 503 and a throttled 429 too, which…  0.98s  
+  ✓ it paces nothing on a 422, because a malformed request is not a req… 0.19s  
+
+   PASS  Tests\Feature\Pager\PagerProjectionTest
+  ✓ it namespaces the projection by tenant id, in the exact shape the g… 0.16s  
+  ✓ it cannot be read through another tenant’s context, even with the r… 0.19s  
+  ✓ it takes the tenant from the pointer the server wrote, never from t… 0.18s  
+  ✓ it keys the pointer by the token’s own hash, which is the one deriv… 0.15s  
+  ✓ it never writes a projection that outlives the session it describes  0.16s  
+  ✓ it refreshes only what already exists, so an unscanned session gets… 0.15s  
+  ✓ it round-trips a view and refuses one it cannot read, rather than g… 0.16s  
+  ✓ it stores the status enum’s own value and keeps no vocabulary of it… 0.15s  
+  ✓ it answers false rather than null when Redis cannot be reached, so…  0.15s  
+  ✓ it forgets both keys together, so a pointer never outlives its proj… 0.22s  
+  ✓ it swallows every Redis failure rather than taking a request down w… 0.15s  
+  ✓ it refuses a pointer it cannot read, rather than building a key fro… 0.18s  
+  ✓ it keys the pointer on the SAME hash Postgres stores, not on the ra… 0.18s  
+  ✓ it stops resolving from Redis once the clock passes the session exp… 3.19s  
+  ✓ it refuses a projection whose expiry has passed even while its key…  0.18s  
+  ✓ it writes no key at all for a session that has already expired       0.14s  
+  ✓ it puts neither the key nor the token in any log line, at APP_DEBUG… 0.18s  
+  ✓ it puts neither the key nor the token in any response body, at APP_… 0.25s  
+
+   PASS  Tests\Feature\Pager\PagerRouteSurfaceTest
+  ✓ it serves every pager route under /v1 and by POST only               0.16s  
+  ✓ it denies every pager route when no tenant resolves, with no detail… 0.19s  
+  ✓ it creates a session and returns a QR payload carrying the token in… 0.20s  
+  ✓ it validates the order reference against the column it is stored in  0.23s  
+  ✓ it answers a malformed JSON body as a 422 naming the field, not an…  0.21s  
+  ✓ it runs the four transitions end to end through HTTP                 0.25s  
+  ✓ it keeps the refusal body free of status values, driver text and SQ… 0.21s  
+  ✓ it answers 404 for a session id that is not a uuid, through the unk… 0.20s  
+  ✓ it refuses to run a pager action with no tenant bound, so a route o… 0.15s  
+  ✓ it answers 503 and not 500 when the row lock times out — QA L-7      2.40s  
+  ✓ it mounts the customer surface off RequireTenantScope, and the staf… 0.17s  
+  ✓ it sheds the live timer and nothing else on the customer surface     0.15s  
+  ✓ it gives each customer route its own rate-limit bucket, and never t… 0.16s  
+  ✓ it takes no route parameter anywhere on the customer surface, which… 0.14s  
+
+   PASS  Tests\Feature\Pager\PagerTokenLookupTest
+  ✓ it resolves a presented token to exactly one session in exactly one… 0.17s  
+  ✓ it answers null for an unknown token, and for a malformed one        0.16s  
+  ✓ it does not leak the bypass GUC back to the caller                   0.18s  
+  ✓ it leaves the caller’s own queries tenant-bound, so the bypass is t… 0.17s  
+  ✓ it cannot be used to read the token hash, because the function does… 0.17s  
+  ✓ it is executable by the app role and by nothing else                 0.17s  
+  ✓ it is a SECURITY DEFINER function owned by the owner, with a pinned… 0.18s  
+  ✓ it resolves an expired session rather than hiding it, so the PWA ca… 0.18s  
+  ✓ it is permitted by the scope guard, while a bare pager_sessions sta… 0.18s  
+
+   PASS  Tests\Feature\Pager\PagerTokenTest
+  ✓ it is 128 bits of CSPRNG, 22 base64url characters, and stored only…  0.15s  
+  ✓ it draws a different token every time                                0.15s  
+  ✓ it cannot be leaked by any of the six ways a value escapes a PHP ob… 0.15s  
+  ✓ it has no __toString, so interpolating it is an error rather than a… 0.15s  
+  ✓ it keeps the raw token out of captured log output, even when the ob… 0.16s  
+  ✓ it never reaches the database: only the hash is stored               0.18s  
+  ✓ it never reaches a log when a session is created through the servic… 0.17s  
+  ✓ it satisfies each limb of the amended token-location clause, by nam… 0.15s  
+  ✓ it refuses a malformed presented token without touching the databas… 0.17s  
+
+   PASS  Tests\Feature\Pager\PagerTransactionTest
+  ✓ it commits the status change, the outbox row and the audit row toge… 0.19s  
+  ✓ it rolls back the status change when the OUTBOX insert fails — all…  0.19s  
+  ✓ it rolls back the status change AND the outbox row when the AUDIT i… 0.19s  
+  ✓ it holds for cancel as well, which is the other operation writing a… 0.20s  
+  ✓ it rolls back the session row itself when create fails after the in… 0.18s  
+  ✓ it writes exactly the outbox type and audit action the domain names… 0.20s  
+
+   PASS  Tests\Feature\Pager\PagerTransitionTest
+  ✓ it agrees with the enum about every from/to pair — 5 statuses x 3 o… 0.38s  
+  ✓ it lets nothing out of a terminal status, which is what isTerminal…  0.15s  
+  ✓ it allows waiting straight to completed, which is the one judgement… 0.18s  
+  ✓ it lets both live statuses expire, which the partial index and the…  0.15s  
+  ✓ it refuses a renotify from every status except ready                 0.20s  
+
+   PASS  Tests\Feature\Pager\PagerTtlTest
+  ✓ it refuses every staff transition on a session past its TTL, as an…  0.23s  
+  ✓ it refuses ready and renotify on a past-TTL session that is already… 0.20s  
+  ✓ it writes nothing at all when it refuses                             0.20s  
+  ✓ it is distinguishable from an illegal transition, which is the whol… 0.23s  
+  ✓ it leaves terminal statuses alone, so idempotency survives the fix   0.21s  
+  ✓ it still answers 404 and never 409 for another tenant’s expired ses… 0.21s  
+  ✓ it passes a session inside its TTL straight through, which is the p… 0.20s  
+  ✓ it refuses at the service too, so the rule is not a property of the… 0.17s  
+  ✓ it compares against the database clock, not PHP’s                    0.22s  
+
+   PASS  Tests\Feature\Platform\PanelRateLimitTest
+  ✓ it meters every panel route on the panel bucket with ('/platform')   0.16s  
+  ✓ it meters every panel route on the panel bucket with ('/platform/re… 0.14s  
+  ✓ it meters every panel route on the panel bucket with ('/platform/au… 0.16s  
+  ✓ it meters POST /platform/logout too, so the one state-changing pane… 0.15s  
+  ✓ it meters Livewire’s update endpoint, which carries most of the pan… 0.87s  
+  ✓ it keeps the web group to Livewire’s routes alone, which is why app… 0.17s  
+  ✓ it refuses an anonymous flood on a panel route, rather than serving… 0.95s  
+  ✓ it answers the 429 with a problem document and a Retry-After header  0.89s  
+  ✓ it stops the unmetered Redis key growth the finding was actually ab… 1.00s  
+  ✓ it issues no Postgres statement on an anonymous panel refusal        0.16s  
+
+   PASS  Tests\Feature\Platform\PlatformPanelAccessibilityTest
+  ✓ it renders every panel page with lang and dir on the document eleme… 0.24s  
+  ✓ it renders every panel page with lang and dir on the document eleme… 0.25s  
+  ✓ it renders every panel page with lang and dir on the document eleme… 0.25s  
+  ✓ it sets dir from the locale, so RTL is a configuration rather than…  0.27s  
+  ✓ it carries no positive tabindex anywhere, so the tab order is the d… 0.23s  
+  ✓ it carries no positive tabindex anywhere, so the tab order is the d… 0.21s  
+  ✓ it carries no positive tabindex anywhere, so the tab order is the d… 0.30s  
+  ✓ it removes no focus ring in this task’s own markup                   0.14s  
+  ✓ it labels every dashboard figure programmatically, not by position   0.25s  
+  ✓ it states the aggregates’ staleness as text, because an unshown sta… 0.21s  
+  ✓ it carries the restaurant state as text, never as colour alone       0.21s  
+  ✓ it declares the exact empty-state copy for both lists                0.22s  
+  ✓ it offers no destructive action on either list, which the audit vie… 0.22s  
+
+   PASS  Tests\Feature\Platform\PlatformPanelInvariantTest
+  ✓ it enumerates the panel routes, so the cases below have a subject    0.16s  
+  ✓ it reaches NO tenant table on any panel route, as a platform admin   0.39s  
+  ✓ it answers every panel route without a server error, as a platform…  0.33s  
+  ✓ it answers every panel route to an anonymous caller without reachin… 0.17s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.19s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.20s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.19s  
+  ✓ it lets a platform admin read no tenant row through the panel, with… 0.34s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.17s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.19s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.16s  
+  ✓ it points every platform model at a platform table, and never at a…  0.18s  
+  ✓ it points every platform model at a platform table, and never at a…  0.16s  
+  ✓ it points every platform model at a platform table, and never at a…  0.15s  
+  ✓ it registers exactly the resources and pages the invariant was meas… 0.14s  
+  ✓ it mounts no second login page, because that would be a third authe… 0.15s  
+
+   PASS  Tests\Feature\Platform\PlatformTableContractTest
+  ✓ it pins every platform table column set exactly, so a tenant_id can… 0.18s  
+  ✓ it pins every platform table column set exactly, so a tenant_id can… 0.17s  
+  ✓ it pins every platform table column set exactly, so a tenant_id can… 0.16s  
+  ✓ it carries no column named tenant_id on any platform table, which i… 0.18s  
+  ✓ it keeps row-level detail out of the aggregate table, which is the…  0.16s  
+  ✓ it has one counter column per pager status, so a sixth status canno… 0.16s  
+  ✓ it leaves all three platform tables without row level security, whi… 0.15s  
+  ✓ it reaches every platform table with NO tenant context at all, whic… 0.16s  
+  ✓ it is not matched by the scope guard, so an unscoped platform state… 0.15s  
+  ✓ it is not matched by the scope guard, so an unscoped platform state… 0.17s  
+  ✓ it is not matched by the scope guard, so an unscoped platform state… 0.15s  
+  ✓ it still matches the tenant tables whose names these embed, so the…  0.15s  
+  ✓ it pins TestCase::RESETTABLE as an exact set, so a mutable table ca… 0.15s  
+  ✓ it mirrors provisioning_status between PHP and Postgres, in order    0.15s  
+  ✓ it proves a platform-scope audit_log row is unreachable, which is S… 0.18s  
+  ✓ it keeps platform_audit_log append-only, for the owner and for the…  0.17s  
+  ✓ it refuses a DELETE that would match zero rows, which is why the tr… 0.15s  
+  ✓ it refuses a terminal provisioning row with no reason, at the datab… 0.16s  
+  ✓ it refuses a non-DNS-label slug and a non-lower-cased email, at the… 0.16s  
+
+   PASS  Tests\Feature\Platform\ProvisionTenantsCommandTest
+  ✓ it drains a pending request end to end, so the panel’s write really… 0.21s  
+  ✓ it touches no tenant table while deciding WHAT to drain              0.19s  
+  ✓ it leaves a running row alone, so a stalled attempt is not a hot lo… 0.18s  
+  ✓ it keeps draining after one request fails, and records the failure…  0.21s  
+  ✓ it bounds the drain size, and clamps a caller’s nonsense rather tha… 0.21s  
+  ✓ it reports what it did, so an operator reading the log can tell a q… 0.18s  
+  ✓ it is registered and SCHEDULED, which is R-058 applied rather than…  0.21s  
+
+   PASS  Tests\Feature\Platform\ProvisioningStateMachineTest
+  ✓ it pins the transition table against the enum, edge by edge          0.20s  
+  ✓ it answers allowsMoveTo for every ordered pair, so no edge is untes… 0.15s  
+  ✓ it treats completed as terminal and nothing else                     0.15s  
+  ✓ it refuses to provision a row that is already running, which is the… 0.18s  
+  ✓ it stops retrying at the attempts cap rather than looping for ever   0.17s  
+  ✓ it reclaims a stalled row, which is the operator path that did not…  0.20s  
+  ✓ it reclaims an exhausted row too, and refuses an id that does not e… 0.19s  
+  ✓ it writes exactly ONE provisioned audit row even when two runners r… 0.19s  
+
+   PASS  Tests\Feature\Platform\RestaurantCreateActionTest
+  ✓ it provisions a restaurant from the panel action, writing only plat… 0.31s  
+  ✓ it says “requested” and not “created”, because the tenant does not…  0.33s  
+  ✓ it refuses a duplicate address as a field error, not a 500           0.45s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.30s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.31s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.27s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.26s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.32s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.27s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.25s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.28s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.29s  
+  ✓ it validates every field, and the slug rule is the database’s own e… 0.27s  
+  ✓ it refuses an owner who already holds a membership, as a FIELD erro… 0.30s  
+  ✓ it refuses a platform admin as owner on the form, with the same mes… 0.26s  
+  ✓ it accepts a fresh address through the form, so the rule is narrow   0.31s  
+  ✓ it tells the user what to type rather than naming the pattern        0.28s  
+  ✓ it refuses the action to a caller who is not a platform admin        0.18s  
+  ✓ it refuses the dashboard page to a non-admin and to an anonymous ca… 0.20s  
+  ✓ it completes the round trip: the action’s row becomes a tenant when… 0.34s  
+
+   PASS  Tests\Feature\Platform\TenantProvisioningTest
+  ✓ it requests a tenant touching platform tables only, and nothing els… 0.18s  
+  ✓ it writes the request and its platform audit row in ONE transaction  0.18s  
+  ✓ it refuses a duplicate slug with a typed failure and writes no seco… 0.16s  
+  ✓ it never puts the driver message in the duplicate-slug failure       0.17s  
+  ✓ it lower-cases the owner email before it is stored, so the job can…  0.18s  
+  ✓ it provisions a tenant end to end: registry row, tenant, first owne… 0.18s  
+  ✓ it attaches an existing user rather than creating a second account   0.19s  
+  ✓ it refuses an owner who already holds a membership, which is R-106’… 0.18s  
+  ✓ it refuses a platform admin as a tenant owner, which the ruling doe… 0.16s  
+  ✓ it says the same thing for both refusals, so the form cannot be use… 0.17s  
+  ✓ it still attaches an existing account that holds no membership, whi… 0.18s  
+  ✓ it records WHOM it made owner in the platform trail                  0.24s  
+  ✓ it gives a provisioned owner NO password, because nothing may inven… 0.18s  
+  ✓ it leaves NO partial tenant when the membership insert fails halfwa… 0.19s  
+  ✓ it can be retried after a failure, and the retry succeeds and is bo… 0.19s  
+  ✓ it is idempotent: a redelivered provision leaves one tenant and one… 0.18s  
+  ✓ it throws a typed failure when the provisioning record is gone       0.16s  
+  ✓ it reaches exactly ONE tenant: the one it creates, and no other      0.20s  
+  ✓ it sets no session-scoped tenant context, so nothing leaks to the n… 0.17s  
+
+   PASS  Tests\Feature\Platform\TenantStatisticsTest
+  ✓ it aggregates a tenant’s sessions into the platform row, with no ro… 0.23s  
+  ✓ it keeps the window bounds free of other tenants’ sessions, once th… 0.29s  
+  ✓ it counts the tenant’s own staff and nobody else’s                   0.24s  
+  ✓ it reads each tenant inside its own scope, so no statement can see…  0.22s  
+  ✓ it counts NO other tenant’s sessions, even past-TTL ones the worker… 0.24s  
+  ✓ it reads the tenant’s sessions as the APP role, which holds no cros… 0.20s  
+  ✓ it is idempotent: a second pass leaves one row with the same counte… 0.22s  
+  ✓ it computes the wait percentiles in whole seconds, once there are e… 0.23s  
+  ✓ it suppresses the wait figures and the window below the threshold,…  0.22s  
+  ✓ it aggregates a tenant with no sessions to zeroes rather than skipp… 0.21s  
+  ✓ it aggregates only COMPLETED registry rows, so a pending restaurant… 0.18s  
+  ✓ it aggregates one tenant only when given --tenant, and refuses an i… 0.22s  
+  ✓ it leaves no tenant context behind on the worker connection          0.21s  
+  ✓ it writes the aggregate row with the worker role, which the panel c… 0.18s  
+  ✓ it has one counter column per pager status, driven from the enum     0.23s  
+
+   PASS  Tests\Feature\Readiness\ReadinessCarrierTest
+  ✓ it answers /readyz and /healthz with the app pool full — R-012       0.62s  
+  ✓ it measures saturation on the worker connection, which the app pool… 0.58s  
+  ✓ it opens no database connection on either probe’s request path — B6  0.17s  
+  ✓ it reports Postgres down when the worker role cannot reach it eithe… 0.15s  
+  ✓ it reports Redis down, and readiness refuses rather than guessing    0.16s  
+  ✓ it treats a stale snapshot as not ready, because the carrier shares… 0.16s  
+  ✓ it is scheduled sub-minute, without overlapping, and needs no tick   0.15s  
+
+   PASS  Tests\Feature\RealDatabaseTest
+  ✓ it runs the suite against the real composed postgres, never sqlite   0.16s  
+
+  Tests:    8 warnings, 1 skipped, 1076 passed (8723 assertions)
+  Duration: 317.56s
+
+  Domain/Audit/AuditActorType ......................................... 100.0%  
+  Domain/Auth/Ability ................................................. 100.0%  
+  Domain/Auth/Membership .............................................. 100.0%  
+  Domain/Auth/Principal ............................................... 100.0%  
+  Domain/Auth/RoleMatrix .............................................. 100.0%  
+  Domain/Auth/TenantPin ............................................... 100.0%  
+  Domain/Concerns/HasDatabaseValues ................................... 100.0%  
+  Domain/Database/TenantTables ........................................ 100.0%  
+  Domain/DatabaseEnum ................................................. 100.0%  
+  Domain/DatabaseEnums ................................................ 100.0%  
+  Domain/Http/ProblemType ............................................. 100.0%  
+  Domain/Landing/BlockSchema ................................ 158..164 / 93.4%  
+  Domain/Landing/BlockType ............................................ 100.0%  
+  Domain/Landing/CertificateIssuer .................................... 100.0%  
+  Domain/Landing/DnsChallenge ......................................... 100.0%  
+  Domain/Landing/DnsVerifier .......................................... 100.0%  
+  Domain/Landing/DomainStatus ......................................... 100.0%  
+  Domain/Landing/Field ................................................ 100.0%  
+  Domain/Landing/FieldKind ............................................ 100.0%  
+  Domain/Landing/LandingDocument  58, 239, 255, 272, 340, 374, 400, 427, 441, 487, 546, 577 / 94.4%  
+  Domain/Landing/LandingDocumentInvalid ............................... 100.0%  
+  Domain/Landing/LandingPageStatus .................................... 100.0%  
+  Domain/Landing/LandingSchema ........................................ 100.0%  
+  Domain/Landing/MediaReferences ...................................... 100.0%  
+  Domain/Landing/ThemeTokenKind ....................................... 100.0%  
+  Domain/Landing/ThemeTokens .......................................... 100.0%  
+  Domain/Outbox/OutboxStatus .......................................... 100.0%  
+  Domain/Pager/PagerAuditAction ....................................... 100.0%  
+  Domain/Pager/PagerDelivery .......................................... 100.0%  
+  Domain/Pager/PagerEvent ............................................. 100.0%  
+  Domain/Pager/PagerSessionExpired .................................... 100.0%  
+  Domain/Pager/PagerSessionNotFound ................................... 100.0%  
+  Domain/Pager/PagerStatus ............................. 137..141, 142 / 71.4%  
+  Domain/Pager/PagerToken ............................................. 100.0%  
+  Domain/Pager/PagerTransitionDenied .................................. 100.0%  
+  Domain/Provisioning/ProvisioningStatus .............................. 100.0%  
+  Domain/Provisioning/TenantAggregate ................................. 100.0%  
+  Domain/Tenancy/TenantRole ........................................... 100.0%  
+  Domain/Tenancy/TenantStatus ......................................... 100.0%  
+  Features/Devices/DeviceTokens ............................. 197, 244 / 97.7%  
+  Features/Devices/Http/DeviceController ......... 52, 64..72, 92, 119 / 76.5%  
+  Features/Devices/Http/IssueDeviceTokenRequest ....................... 100.0%  
+  Features/Landing/Console/AdvanceDomainsCommand .............. 91..94 / 90.6%  
+  Features/Landing/Console/ExportLandingSchemaCommand ......... 66..68 / 91.3%  
+  Features/Landing/DomainRefused ...................................... 100.0%  
+  Features/Landing/FixtureDnsVerifier ......................... 89..92 / 87.5%  
+  Features/Landing/InspectedImage ..................................... 100.0%  
+  Features/Landing/LandingPageRow ..................................... 100.0%  
+  Features/Landing/LandingPages  346..347, 429..430, 237, 714, 836..837, 847, 348, 431 / 95.3%  
+  Features/Landing/LandingRenderer ................................ 71 / 96.0%  
+  Features/Landing/LandingServiceProvider ......................... 32 / 96.2%  
+  Features/Landing/LocalCertificateIssuer ..................... 45, 61 / 90.5%  
+  Features/Landing/MediaAssetRow .............................. 49..51 / 81.3%  
+  Features/Landing/MediaLibrary ........................ 182..184, 185 / 94.4%  
+  Features/Landing/MediaRejected ...................................... 100.0%  
+  Features/Landing/Panel/MediaOptions ............................. 39 / 85.7%  
+  Features/Landing/Panel/Pages/DomainsPage  91, 96..97, 141..143, 170, 184 / 87.9%  
+  Features/Landing/Panel/Pages/LandingBuilderPage  79, 104..111, 127..134 / 73.7%  
+  Features/Landing/Panel/Pages/MediaLibraryPage ............. 115..117 / 94.1%  
+  Features/Landing/Panel/Pages/PreviewController ...................... 100.0%  
+  Features/Landing/Panel/StudioForm ......................... 237, 282 / 98.7%  
+  Features/Landing/Panel/StudioPanelProvider .......................... 100.0%  
+  Features/Landing/PublishFailed ...................................... 100.0%  
+  Features/Landing/PublishedPage ...................................... 100.0%  
+  Features/Landing/PublishedSite .................................. 84 / 90.0%  
+  Features/Landing/SvgPolicy ................. 103, 115, 224..226, 247 / 89.8%  
+  Features/Landing/SystemDnsVerifier .......... 45..47, 59..66, 85..93 / 40.0%  
+  Features/Landing/TenantDomainRow .................................... 100.0%  
+  Features/Landing/TenantDomains ............. 117, 353..354, 390, 355 / 96.6%  
+  Features/Landing/TenantMediaReferences .............................. 100.0%  
+  Features/Landing/ThemeStylesheet .................................... 100.0%  
+  Features/Members/Http/MemberController .................... 135, 146 / 94.9%  
+  Features/Members/Http/StoreMemberRequest ............................ 100.0%  
+  Features/Members/Http/UpdateMemberRoleRequest ....................... 100.0%  
+  Features/Members/MemberDirectory ...................... 65, 191, 226 / 96.8%  
+  Features/Notifications/ClaimedOutboxRow ............................. 100.0%  
+  Features/Notifications/Console/WorkOutboxCommand .. 64..71, 111..115 / 64.3%  
+  Features/Notifications/NotificationsServiceProvider ................. 100.0%  
+  Features/Notifications/OutboxWorker  208, 234, 265, 288..292, 383, 588, 685 / 94.6%  
+  Features/Notifications/PushMessage .................................. 100.0%  
+  Features/Notifications/WebPushDispatcher ............................ 100.0%  
+  Features/Pager/Console/ExpirePagerSessionsCommand .............. 118 / 97.9%  
+  Features/Pager/Http/CreatePagerSessionRequest ....................... 100.0%  
+  Features/Pager/Http/CustomerPagerController ...... 94, 221, 242, 248 / 93.9%  
+  Features/Pager/Http/ForgetPushSubscriptionRequest ................... 100.0%  
+  Features/Pager/Http/PagerSessionController .......................... 100.0%  
+  Features/Pager/Http/PollPagerStatusRequest .......................... 100.0%  
+  Features/Pager/Http/PresentedTokenRequest ........................... 100.0%  
+  Features/Pager/Http/ResolvePagerSessionRequest ...................... 100.0%  
+  Features/Pager/Http/StorePushSubscriptionRequest .................... 100.0%  
+  Features/Pager/IssuedPagerSession ................................... 100.0%  
+  Features/Pager/PagerProjection ................................. 243 / 98.1%  
+  Features/Pager/PagerSessionState .................................... 100.0%  
+  Features/Pager/PagerSessions ......................... 191, 308, 508 / 98.3%  
+  Features/Pager/PagerStatusView ................................. 131 / 96.8%  
+  Features/Pager/PagerTokenLookup ..................................... 100.0%  
+  Features/Pager/PushSubscriptions .................................... 100.0%  
+  Features/Pager/ResolvedPagerSession ................................. 100.0%  
+  Features/Pager/TokenResolutionFailures .............................. 100.0%  
+  Features/Provisioning/Console/AggregateTenantStatisticsCommand  110..114, 249..253, 353, 254 / 91.7%  
+  Features/Provisioning/Console/ProvisionTenantsCommand . 93, 168..170 / 94.4%  
+  Features/Provisioning/DuplicateSlug ................................. 100.0%  
+  Features/Provisioning/OwnerNeedsConsent ............................. 100.0%  
+  Features/Provisioning/Panel/Pages/PlatformDashboardPage ............. 100.0%  
+  Features/Provisioning/Panel/PlatformDashboard ....................... 100.0%  
+  Features/Provisioning/Panel/PlatformPanelProvider ................... 100.0%  
+  Features/Provisioning/Panel/PlatformSummary ......................... 100.0%  
+  Features/Provisioning/Panel/Resources/PlatformAuditResource .... 101 / 97.1%  
+  Features/Provisioning/Panel/Resources/PlatformAuditResource/Pages/L…  100.0%  
+  Features/Provisioning/Panel/Resources/RestaurantResource ............ 100.0%  
+  Features/Provisioning/Panel/Resources/RestaurantResource/Pages/List…  116, 139..170 / 84.4%  
+  Features/Provisioning/PlatformAudit ................................. 100.0%  
+  Features/Provisioning/ProvisioningExhausted ......................... 100.0%  
+  Features/Provisioning/ProvisioningRecordMissing ..................... 100.0%  
+  Features/Provisioning/ProvisioningTransitionDenied .................. 100.0%  
+  Features/Provisioning/TenantProvisioning  187, 253, 406, 490, 509, 513..514, 516..518 / 93.5%  
+  Http/Controllers/Controller ......................................... 100.0%  
+  Models/Passkey ...................................................... 100.0%  
+  Models/PersonalAccessToken .......................................... 100.0%  
+  Models/PlatformAuditEntry ........................................... 100.0%  
+  Models/TenantProvisioningRecord ..................................... 100.0%  
+  Models/TenantStatistic .............................................. 100.0%  
+  Models/User ......................................................... 100.0%  
+  Platform/Auth/ActiveTenant ..................................... 108 / 93.8%  
+  Platform/Auth/AuthenticatedMembership ....................... 38, 44 / 85.7%  
+  Platform/Auth/AuthenticatedTenantResolver ...................... 105 / 95.0%  
+  Platform/Auth/DeviceToken ....................................... 71 / 94.4%  
+  Platform/Auth/Http/AuthController .......................... 63, 149 / 96.9%  
+  Platform/Auth/Http/LoginRequest ..................................... 100.0%  
+  Platform/Auth/Http/PasskeyController ............. 98..137, 118..136 / 24.3%  
+  Platform/Auth/Http/PasskeyRegistrationRequest ....................... 100.0%  
+  Platform/Auth/Http/SelectTenantRequest .............................. 100.0%  
+  Platform/Auth/Http/TwoFactorChallengeRequest ........................ 100.0%  
+  Platform/Auth/Http/TwoFactorCodeRequest ............................. 100.0%  
+  Platform/Auth/Http/TwoFactorController . 73, 140..142, 177, 209, 243 / 91.3%  
+  Platform/Auth/Memberships ................................. 124, 135 / 93.3%  
+  Platform/Auth/RequestPrincipal ...................................... 100.0%  
+  Platform/Auth/RouteAbilities ........................................ 100.0%  
+  Platform/Auth/TwoFactorSecrets ................................. 107 / 96.6%  
+  Platform/Auth/UserCredentials ....................................... 100.0%  
+  Platform/Boot/BootChecks .............. 602, 636, 752, 777, 808..811 / 97.5%  
+  Platform/Boot/RefuseUnsafeBoot .......................... 34, 54..57 / 78.6%  
+  Platform/Boot/ResolvedTrustedProxies ................................ 100.0%  
+  Platform/Console/BootstrapDatabaseCommand ........................... 100.0%  
+  Platform/Console/CheckBootCommand ..................................... 0.0%  
+  Platform/Console/RefreshReadinessCommand .............................. 0.0%  
+  Platform/Database/DatabaseErrorMapper ............................... 100.0%  
+  Platform/Database/DatabaseRoles ................................ 152 / 98.4%  
+  Platform/Database/DriverError ....................................... 100.0%  
+  Platform/Database/RoleBootstrapper ........................ 367, 379 / 98.6%  
+  Platform/Database/RuntimeRoleGuard .................................. 100.0%  
+  Platform/Database/TenantContext ............ 444, 529..530, 613..614 / 96.3%  
+  Platform/Database/TenantContextException ............................ 100.0%  
+  Platform/Database/TenantScopeGuard .................................. 100.0%  
+  Platform/Database/TenantScopeMissingException ....................... 100.0%  
+  Platform/Database/UnsafeDatabaseRoleException ....................... 100.0%  
+  Platform/Http/ActiveMembership ...................................... 100.0%  
+  Platform/Http/Controllers/HealthController .......................... 100.0%  
+  Platform/Http/Controllers/ReadinessController .................. 141 / 95.5%  
+  Platform/Http/Middleware/ArmTenantScopeGuard ........................ 100.0%  
+  Platform/Http/Middleware/RateLimit .................................. 100.0%  
+  Platform/Http/Middleware/RefuseDeviceToken .......................... 100.0%  
+  Platform/Http/Middleware/RefuseUnservedVendorRoutes ................. 100.0%  
+  Platform/Http/Middleware/RequireAbility ............................. 100.0%  
+  Platform/Http/Middleware/RequireTenantScope ......................... 100.0%  
+  Platform/Http/Middleware/ResolvePrincipal ........................... 100.0%  
+  Platform/Http/Middleware/ShedLoad ............................... 96 / 96.0%  
+  Platform/Http/PacedProblemDocument .................................. 100.0%  
+  Platform/Http/PacedRoute ............................................ 100.0%  
+  Platform/Http/Problem ............................................... 100.0%  
+  Platform/Http/ProblemDocument ....................................... 100.0%  
+  Platform/Http/ProblemRenderer ....................................... 100.0%  
+  Platform/Http/RequestLimiter .................................... 86 / 94.4%  
+  Platform/Http/TenantPanelAccess ................................. 80 / 88.9%  
+  Platform/Http/TenantResolver ........................................ 100.0%  
+  Platform/Http/ValidationProblemDocument ............................. 100.0%  
+  Platform/Http/ValidationProblemResponseExtension .................... 100.0%  
+  Platform/Logging/RedactLogs ......................................... 100.0%  
+  Platform/Logging/RedactingProcessor ................................. 100.0%  
+  Platform/Logging/Redactor ...................................... 204 / 97.7%  
+  Platform/Logging/ReportRedactedException ............................ 100.0%  
+  Platform/Octane/RequestBoundaryCleanup ....... 57, 69, 108, 118, 135 / 76.2%  
+  Platform/Readiness/PressureGauge .................................... 100.0%  
+  Platform/Readiness/ReadinessSnapshot ................ 76..77, 81, 86 / 85.7%  
+  Platform/Readiness/ReadinessStore ....................... 52..53, 61 / 72.7%  
+  Platform/Readiness/SaturationProbe ........................ 118..119 / 92.0%  
   Platform/Support/helpers ............................................ 100.0%  
   Providers/AppServiceProvider .............................. 268, 272 / 97.5%  
   ────────────────────────────────────────────────────────────────────────────  
-                                                                 Total: 94.6 %  
+                                                                 Total: 94.7 %  
 
   app/Domain/Database/TenantTables.php                              7/7      100.0%
   app/Domain/DatabaseEnums.php                                     10/10     100.0%
@@ -53,7 +1571,7 @@ THE FILES STILL BELOW 90%, named rather than averaged away:
   app/Domain/Landing/DomainStatus.php                              11/11     100.0%
   app/Domain/Landing/Field.php                                      8/8      100.0%
   app/Domain/Landing/FieldKind.php                                  0/0      100.0%
-  app/Domain/Landing/LandingDocument.php                          192/204     94.1%
+  app/Domain/Landing/LandingDocument.php                          202/214     94.4%
   app/Domain/Landing/LandingDocumentInvalid.php                     1/1      100.0%
   app/Domain/Landing/LandingPageStatus.php                          6/6      100.0%
   app/Domain/Landing/LandingSchema.php                            140/140    100.0%
@@ -66,37 +1584,36 @@ THE FILES STILL BELOW 90%, named rather than averaged away:
   app/Features/Landing/FixtureDnsVerifier.php                      21/24      87.5%
   app/Features/Landing/InspectedImage.php                          36/36     100.0%
   app/Features/Landing/LandingPageRow.php                          10/10     100.0%
-  app/Features/Landing/LandingPages.php                           149/155     96.1%
-  app/Features/Landing/LandingRenderer.php                         23/24      95.8%
-  app/Features/Landing/LandingServiceProvider.php                  16/17      94.1%
+  app/Features/Landing/LandingPages.php                           225/236     95.3%
+  app/Features/Landing/LandingRenderer.php                         24/25      96.0%
+  app/Features/Landing/LandingServiceProvider.php                  25/26      96.2%
   app/Features/Landing/LocalCertificateIssuer.php                  19/21      90.5%
   app/Features/Landing/MediaAssetRow.php                           13/16      81.2%
   app/Features/Landing/MediaLibrary.php                            67/71      94.4%
   app/Features/Landing/MediaRejected.php                            1/1      100.0%
   app/Features/Landing/Panel/MediaOptions.php                       6/7       85.7%
-  app/Features/Landing/Panel/Pages/DomainsPage.php                 47/49      95.9%
-  app/Features/Landing/Panel/Pages/LandingBuilderPage.php          26/49      53.1%
-  app/Features/Landing/Panel/Pages/MediaLibraryPage.php            31/31     100.0%
-  app/Features/Landing/Panel/Pages/PreviewController.php           30/30     100.0%
+  app/Features/Landing/Panel/Pages/DomainsPage.php                 51/58      87.9%
+  app/Features/Landing/Panel/Pages/LandingBuilderPage.php          42/57      73.7%
+  app/Features/Landing/Panel/Pages/MediaLibraryPage.php            32/34      94.1%
+  app/Features/Landing/Panel/Pages/PreviewController.php           35/35     100.0%
   app/Features/Landing/Panel/StudioForm.php                       153/155     98.7%
-  app/Features/Landing/Panel/StudioPanelProvider.php               38/38     100.0%
-  app/Features/Landing/PublishFailed.php                            1/1      100.0%
+  app/Features/Landing/Panel/StudioPanelProvider.php               59/59     100.0%
+  app/Features/Landing/PublishFailed.php                            2/2      100.0%
   app/Features/Landing/PublishedPage.php                            1/1      100.0%
   app/Features/Landing/PublishedSite.php                            9/10      90.0%
-  app/Features/Landing/SvgPolicy.php                               51/59      86.4%
+  app/Features/Landing/SvgPolicy.php                               53/59      89.8%
   app/Features/Landing/SystemDnsVerifier.php                        8/20      40.0%
   app/Features/Landing/TenantDomainRow.php                         15/15     100.0%
-  app/Features/Landing/TenantDomains.php                          123/126     97.6%
+  app/Features/Landing/TenantDomains.php                          143/148     96.6%
   app/Features/Landing/TenantMediaReferences.php                    5/5      100.0%
   app/Features/Landing/ThemeStylesheet.php                          6/6      100.0%
   app/Models/User.php                                              56/56     100.0%
-  app/Platform/Auth/AuthenticatedMembership.php                    13/14      92.9%
+  app/Platform/Auth/AuthenticatedMembership.php                    12/14      85.7%
   app/Platform/Http/ActiveMembership.php                            0/0      100.0%
-  app/Platform/Http/TenantPanelAccess.php                           9/9      100.0%
+  app/Platform/Http/TenantPanelAccess.php                           8/9       88.9%
   app/Providers/AppServiceProvider.php                             78/80      97.5%
 
-  THIS TASK (51 file(s))                                         1571/1667   94.24%
+  THIS TASK (51 file(s))                                         1735/1837   94.45%
 
   Files resolved from git: 51. Files found in the coverage document: 51.
-
-[exited with code 0]
+coverage exit: 0

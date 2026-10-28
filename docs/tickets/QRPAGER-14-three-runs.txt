@@ -1,37 +1,25 @@
 ================================================================================
-THREE CONSECUTIVE GREEN FULL-SUITE RUNS -- THE TAG'S BAR
+THREE CONSECUTIVE GREEN RUNS (§6)
 ================================================================================
 
-Commit:   e81cbcd  (task-7-landing-builder)
-Run at:   2026-10-28T16:24:40Z .. 16:41Z
-Command:  bin/three-green-runs                    (apps/api)
-Result:   PASSED -- 3 consecutive green runs, in 3 attempts (no red to reset on)
-          1063 passed, 8552 assertions, on every one of the three
-
-Set by Muhammad on 2026-10-27, replacing R-092's original ten-green-runs
-condition: any red is NAMED with its SQLSTATE; if it is the 08006 or the
-claimed-count shortfall it is R-092 and does not block; any other red stops the
-run. A non-blocking red still RESETS the counter -- the bar is three greens IN A
-ROW, not three greens somewhere in a sequence, which a flaky suite reaches
-eventually by chance.
-
-There was no red of either kind. R-092 records this suite as intermittently red
-on one machine with two distinct faults; three clean attempts is the strongest
-statement this bar can make and is not a claim that R-092 is closed.
-
-================================================================================
+Commit:   0529b5d  (task-7-landing-builder)
+Run at:   2026-10-28, after the sixth review's fix pass
+Command:  bin/three-green-runs      (apps/api)
+Result:   PASSED -- 3 consecutive green runs in 3 attempts, 1085 passed and
+          8726 assertions on each, no red of any kind
 
 # THREE CONSECUTIVE GREEN FULL-SUITE RUNS
 #
-# Commit:  e81cbcd
+# Commit:  0529b5d
 # Machine: /home/lenovo/code/qr-pager/apps/api, Linux 6.18.54.1-microsoft-standard-WSL2
 # Needed:  3 consecutive, giving up after 12 attempts
 # Rule:    R-092's 08006 and its claim-shortfall family do not block, and do not
 #          count either -- a red of any kind RESETS the consecutive counter.
 #
-run 1  | e81cbcd | start 16:24:40Z | exit=0 | Tests:    1063 passed (8552 assertions) | no failures | streak 1/3
-run 2  | e81cbcd | start 16:30:24Z | exit=0 | Tests:    1063 passed (8552 assertions) | no failures | streak 2/3
-run 3  | e81cbcd | start 16:36:13Z | exit=0 | Tests:    1063 passed (8552 assertions) | no failures | streak 3/3
+run 1  | 0529b5d | start 20:10:36Z | exit=0 | Tests:    1085 passed (8726 assertions) | no failures | streak 1/3
+run 2  | 0529b5d | start 20:16:20Z | exit=0 | Tests:    1085 passed (8726 assertions) | no failures | streak 2/3
+run 3  | 0529b5d | start 20:22:03Z | exit=0 | Tests:    1085 passed (8726 assertions) | no failures | streak 3/3
 
-three-green-runs: PASSED -- 3 consecutive green runs at e81cbcd, in 3 attempt(s).
-  transcript: /home/lenovo/code/qr-pager/apps/api/storage/logs/three-green-runs-20261028T162440Z.txt
+three-green-runs: PASSED -- 3 consecutive green runs at 0529b5d, in 3 attempt(s).
+  transcript: /home/lenovo/code/qr-pager/apps/api/storage/logs/three-green-runs-20261028T201036Z.txt
+three-runs exit: 0

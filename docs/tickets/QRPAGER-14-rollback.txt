@@ -2,14 +2,15 @@
 MIGRATIONS APPLY FROM EMPTY, TWICE, AND ROLL BACK CLEAN (§6)
 ================================================================================
 
-⚠ AND THE FIRST VERSION OF THIS FILE WAS TRUNCATED, which is worth recording
-where the evidence is. It was captured through `| tail -40`, so 97 of the run's
-137 lines -- including 12 of the 20 privilege assertions it exists to show --
-were never written down. CLAUDE.md's own words: "A gate you cannot read
-afterwards is a gate you have to re-run to learn anything from." The run below
-is the complete, unedited output.
+Commit:   0529b5d  (task-7-landing-builder)
+Run at:   2026-10-28, after the sixth review's fix pass
+Command:  bin/migration-rollback-proof      (apps/api)
+Result:   PASSED -- all five checks, on a throwaway database
 
-================================================================================
+⚠ THE WHOLE OUTPUT IS HERE, UNTRUNCATED. The version of this file written
+during the build was piped through `tail -40`, which cut the privilege
+assertions it exists to record. CLAUDE.md's own rule is the reason: "a gate you
+cannot read afterwards is a gate you have to re-run to learn anything from."
 
 migration-rollback-proof: using the psql inside the compose postgres service
 migration-rollback-proof: database [qrpager_rollback_proof] on 127.0.0.1
@@ -18,22 +19,22 @@ migration-rollback-proof: database [qrpager_rollback_proof] on 127.0.0.1
 
    INFO  Preparing database.  
 
-  Creating migration table ...................................... 25.32ms DONE
+  Creating migration table ...................................... 24.34ms DONE
 
    INFO  Running migrations.  
 
-  2026_10_25_150000_create_global_tables ........................ 62.17ms DONE
-  2026_10_25_150100_create_tenant_tables ....................... 201.14ms DONE
-  2026_10_25_150200_enable_row_level_security ................... 12.39ms DONE
-  2026_10_25_150300_grant_runtime_role_privileges ............... 12.52ms DONE
-  2026_10_25_150400_protect_audit_log ............................ 5.37ms DONE
-  2026_10_27_120000_narrow_worker_session_policies ............... 4.57ms DONE
-  2026_10_27_120100_create_pager_token_resolver .................. 4.15ms DONE
-  2026_10_28_120000_create_auth_contract ........................ 78.86ms DONE
-  2026_10_28_130000_create_two_factor_reader ..................... 4.69ms DONE
-  2026_10_28_140000_narrow_auth_grants ........................... 4.75ms DONE
-  2026_10_28_150000_create_platform_tables ...................... 78.10ms DONE
-  2026_10_28_160000_create_landing_tables ...................... 113.95ms DONE
+  2026_10_25_150000_create_global_tables ........................ 40.56ms DONE
+  2026_10_25_150100_create_tenant_tables ....................... 103.56ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 12.41ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 9.42ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 3.49ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 4.29ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 2.28ms DONE
+  2026_10_28_120000_create_auth_contract ........................ 36.39ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 3.13ms DONE
+  2026_10_28_140000_narrow_auth_grants ........................... 2.56ms DONE
+  2026_10_28_150000_create_platform_tables ...................... 39.63ms DONE
+  2026_10_28_160000_create_landing_tables ....................... 57.91ms DONE
 
 distinct batches: 1 (expected 1)
 
@@ -128,18 +129,18 @@ no UPDATE or DELETE on platform_audit_log for either runtime role
 
    INFO  Rolling back migrations.  
 
-  2026_10_28_160000_create_landing_tables ....................... 37.83ms DONE
-  2026_10_28_150000_create_platform_tables ...................... 16.78ms DONE
-  2026_10_28_140000_narrow_auth_grants ........................... 5.55ms DONE
-  2026_10_28_130000_create_two_factor_reader ..................... 4.06ms DONE
-  2026_10_28_120000_create_auth_contract ........................ 11.71ms DONE
-  2026_10_27_120100_create_pager_token_resolver .................. 4.02ms DONE
-  2026_10_27_120000_narrow_worker_session_policies ............... 5.76ms DONE
-  2026_10_25_150400_protect_audit_log ............................ 4.60ms DONE
-  2026_10_25_150300_grant_runtime_role_privileges ................ 7.63ms DONE
-  2026_10_25_150200_enable_row_level_security ................... 22.87ms DONE
-  2026_10_25_150100_create_tenant_tables ........................ 29.43ms DONE
-  2026_10_25_150000_create_global_tables ........................ 14.00ms DONE
+  2026_10_28_160000_create_landing_tables ....................... 37.15ms DONE
+  2026_10_28_150000_create_platform_tables ...................... 13.76ms DONE
+  2026_10_28_140000_narrow_auth_grants ........................... 3.77ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 1.60ms DONE
+  2026_10_28_120000_create_auth_contract ......................... 9.42ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 2.11ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 3.40ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 2.37ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 5.31ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 21.33ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 32.48ms DONE
+  2026_10_25_150000_create_global_tables ......................... 8.78ms DONE
 
 tables left: 1 (expected 1, the migrations table)
 functions left: 0 (expected 0 -- the resolver and the audit trigger are both dropped)
@@ -148,3 +149,4 @@ functions left: 0 (expected 0 -- the resolver and the audit trigger are both dro
 schema identical after rollback and re-apply
 
 migration-rollback-proof: all five checks passed on [qrpager_rollback_proof].
+rollback exit: 0
