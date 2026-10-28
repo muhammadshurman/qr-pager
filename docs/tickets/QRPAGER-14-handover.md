@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — schema in and green; the block schema, media, publish, domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
+STATUS: TASK-7 BLOCKED — block schema and the generated contract are in and green; media, publish, domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -93,7 +93,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 0 | Corrections: `§0` status, this file | **done** | *this commit* | yes |
 | 1 | Data contract — `PLAN.md §2.3/§2.5/§2.6/§2.7` before the migration | **done** | *this commit* | yes |
 | 2 | Migration — three tenant tables, two enums, RLS, grants | **done** | *this commit* | yes |
-| 3 | Block schema, generated contract, `landing-schema-check` | not started | — | — |
+| 3 | Block schema, generated contract, `landing-schema-check` | **done** | *this commit* | yes |
 | 4 | Media library — upload validation, isolation | not started | — | — |
 | 5 | Publish — render, snapshot, pointer, manifest | not started | — | — |
 | 6 | Domains — DNS verification, issuance, redirect | not started | — | — |
@@ -131,7 +131,7 @@ empty row is an unmet clause, not an unwritten one.
 | migrations apply from empty, twice, and roll back clean | — | — |
 | three consecutive green runs | — | — |
 | every new route in the generated OpenAPI spec, `/v1`-versioned | — | — |
-| every shared contract generated, CI red when stale | — | — |
+| every shared contract generated, CI red when stale | `landing-page.schema.json` generated from `BlockSchema`; `composer landing:check` in `bin/gate` and in CI; `LandingSchemaContractTest` drives the check to exit 1 on a modified copy and 0 on the real one | *this commit* |
 
 ---
 

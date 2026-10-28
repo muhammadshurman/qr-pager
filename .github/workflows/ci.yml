@@ -168,6 +168,13 @@ jobs:
       # modified spec by tests/Feature/Http/OpenApiSpecTest.php.
       - run: composer openapi:check
 
+      # Task 7's block schema, the SAME MECHANISM one contract over: docs/contracts/
+      # landing-page.schema.json is generated from App\Domain\Landing\BlockSchema and is
+      # what Task 11's renderer will consume, so there is no second definition of a block
+      # anywhere. Proven to fail on a modified artifact by
+      # tests/Feature/Landing/LandingSchemaContractTest.php.
+      - run: composer landing:check
+
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
 

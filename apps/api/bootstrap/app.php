@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Http\ProblemType;
+use App\Features\Landing\Console\ExportLandingSchemaCommand;
 use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
 use App\Features\Provisioning\Console\AggregateTenantStatisticsCommand;
@@ -188,6 +189,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // command registered and scheduled nowhere does not enforce anything."
         ProvisionTenantsCommand::class,
         AggregateTenantStatisticsCommand::class,
+        // Task 7's generator for the shared block contract. NOT scheduled, and that is
+        // not R-058's shape repeating: it enforces nothing on a timer, it WRITES a
+        // committed artifact. What keeps it honest is `--check`, which bin/gate and CI
+        // both run, so the file cannot go stale without something going red.
+        ExportLandingSchemaCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request

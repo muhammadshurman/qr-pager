@@ -15,9 +15,13 @@
 # excerpt and the frame list on disk.
 #
 # NOT A REPLACEMENT FOR THE THREE COMMANDS in PROJECT_INSTRUCTIONS.md §6 -- it runs
-# them, in the gate's own order, plus the three this task added (guard, deptrac,
-# openapi:check). Running them by hand stays correct; this is the form that leaves
+# them, in the gate's own order, plus the four generated-artifact and architecture steps
+# the tasks since have added (guard, deptrac, openapi:check, and Task 7's
+# landing:check). Running the three by hand stays correct; this is the form that leaves
 # evidence.
+#
+# The closing line counts the array rather than naming a number, because it said "all six
+# steps green" for the whole of Task 7's build while running seven.
 #
 # First failure stops the run: a stan error makes the suite's result uninteresting, and
 # a half-read log is worse than a short one.
@@ -64,6 +68,7 @@ steps=(
   "composer guard"
   "composer deptrac"
   "composer openapi:check"
+  "composer landing:check"
   "php artisan test"
 )
 
@@ -81,4 +86,4 @@ for step in "${steps[@]}"; do
   echo | tee -a "$log"
 done
 
-echo "gate: all six steps green. Full output: $(pwd)/$log" | tee -a "$log"
+echo "gate: all ${#steps[@]} steps green. Full output: $(pwd)/$log" | tee -a "$log"

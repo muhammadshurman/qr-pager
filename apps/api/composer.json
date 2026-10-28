@@ -86,6 +86,8 @@
         "guard": "@php guard/bin/guard",
         "openapi": "@php artisan scramble:export",
         "openapi:check": "bin/openapi-check",
+        "landing:schema": "@php artisan landing:schema-export",
+        "landing:check": "bin/landing-schema-check",
         "gate": [
             "Composer\\Config::disableProcessTimeout",
             "bin/gate"
