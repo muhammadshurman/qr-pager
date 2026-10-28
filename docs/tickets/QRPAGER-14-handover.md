@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — block schema and the generated contract are in and green; media, publish, domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
+STATUS: TASK-7 BLOCKED — the media library is in and green; publish, domains, the panel, guard rule 11, the gates and the `§11` reviews are still ahead of the tag.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -94,7 +94,7 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 1 | Data contract — `PLAN.md §2.3/§2.5/§2.6/§2.7` before the migration | **done** | *this commit* | yes |
 | 2 | Migration — three tenant tables, two enums, RLS, grants | **done** | *this commit* | yes |
 | 3 | Block schema, generated contract, `landing-schema-check` | **done** | *this commit* | yes |
-| 4 | Media library — upload validation, isolation | not started | — | — |
+| 4 | Media library — upload validation, isolation | **done** | *this commit* | yes |
 | 5 | Publish — render, snapshot, pointer, manifest | not started | — | — |
 | 6 | Domains — DNS verification, issuance, redirect | not started | — | — |
 | 7 | The `/studio` panel | not started | — | — |
@@ -120,8 +120,8 @@ empty row is an unmet clause, not an unwritten one.
 | a tenant cannot inject script through any block | — | — |
 | custom domain issues TLS automatically and the old domain redirects | — | — |
 | theme overrides tokens only, never components | — | — |
-| an upload is validated by real content type and size, not by extension | — | — |
-| one tenant's asset path cannot be guessed or reached from another | — | — |
+| an upload is validated by real content type and size, not by extension | `MediaUploadTest` — an HTML file called `logo.png` is refused naming `text/html`; the five types round-trip through the real composed store; the stored extension comes from the detected type, not the filename; empty, 5 MB and 21 hostile SVGs refused | *this commit* |
+| one tenant's asset path cannot be guessed or reached from another | `MediaIsolationTest` — RLS, the two key CHECKs, identical refusals for foreign and absent ids, and a reflection assertion that no public method takes an object key from a caller | *this commit* |
 
 | `§6` after-coding clause | Evidence | Commit |
 | ------------------------ | -------- | ------ |

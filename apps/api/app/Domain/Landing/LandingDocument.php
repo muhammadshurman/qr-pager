@@ -172,6 +172,28 @@ final class LandingDocument
         return array_values(array_unique($found));
     }
 
+    /**
+     * The first block type that references $mediaId, or null.
+     *
+     * §12.2's "in use" state needs the BLOCK's name -- "{name} is used by the {block}
+     * block. Remove it there first." -- because "this image is in use" leaves the tenant
+     * hunting for where.
+     */
+    public function blockUsing(string $mediaId): ?BlockType
+    {
+        $mediaId = strtolower($mediaId);
+
+        foreach ($this->blocks as $block) {
+            $document = new self([$block], [], ['title' => null, 'description' => null, 'og_image' => null]);
+
+            if (in_array($mediaId, $document->mediaReferences(), true)) {
+                return $block['type'];
+            }
+        }
+
+        return null;
+    }
+
     /** Is this document worth publishing at all? §12.1's empty state. */
     public function isEmpty(): bool
     {
