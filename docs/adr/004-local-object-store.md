@@ -17,17 +17,24 @@ ADR-002 promised. The mail half was closed the same day (`439e8d3`: Mailpit, plu
 could not be closed, for a reason that is not a scheduling one: **MinIO's image cannot be
 pulled.**
 
-`PROJECT_INSTRUCTIONS.md §1` now carries a clause under the locked-stack table, and it is the
-clause this ADR is measured against. In summary — the byte-for-byte text is mirrored into the
-repo copy in its own commit, and the canonical copy is rank 2 — a local stand-in:
+`PROJECT_INSTRUCTIONS.md §1` carries a clause under the locked-stack table, and it is the clause
+this ADR is measured against. **Verbatim**, as mirrored into the repo copy on 2026-10-28:
 
-1. is **locked to the production service's API**;
-2. must be **anonymously pullable by a fresh clone holding no credentials**;
-3. must **run from a pinned tag**;
-4. is **proven by a round trip through the production client library**, not by a port check.
+> **Local stand-ins for production services are locked to an interface, not a vendor.** Production is what the table above names and never changes without an ADR. The local stand-in for a production service must speak that service's API, be pullable anonymously from a public registry by a fresh clone holding no credentials, and run from a pinned tag — never `latest`. When a named stand-in stops meeting those conditions, that is an ADR superseding the row, written with the measurement that forced it, not a substitution made in passing. A stand-in is development and test infrastructure only: nothing under `apps/` may depend on which one is running, and a test that proves a stand-in works must round-trip through the production client library, never check that a port is open.
 
-Condition 2 is what MinIO fails. Condition 3 is what the one remaining current MinIO packaging
-fails. That is the whole of this ADR's reason to exist.
+Numbered for reference below, a stand-in must: **(1)** speak the production service's API;
+**(2)** be pullable anonymously from a public registry by a fresh clone holding no credentials;
+**(3)** run from a pinned tag, never `latest`; **(4)** be proven by a round trip through the
+production client library, never by a port check. And two clauses that are not conditions on the
+service but on us: **nothing under `apps/` may depend on which stand-in is running**, and a named
+stand-in that stops meeting the conditions is **an ADR superseding the row, written with the
+measurement that forced it** — which is what this document is, rather than a substitution made in
+passing.
+
+**Condition 2 is what MinIO fails.** Condition 3 is what the one remaining current MinIO
+packaging fails. That is the whole of this ADR's reason to exist. Condition 1 is why the
+replacement needed no vendor argument: §1 locks an **interface**, and S3 is the interface on both
+sides of the line.
 
 ### The measurement that forced it
 
@@ -77,7 +84,7 @@ Instruments, one per condition, plus two that `§1` implies rather than states:
 | **pull** | `docker pull` with `DOCKER_CONFIG` = an empty `config.json` (condition 2). The sizes quoted below are `docker image inspect --format '{{.Size}}'`, so they are comparable **with each other** and not with the `SIZE` column of `docker images`, which prints a larger number for the same image on this host — 399 MB against inspect's 99,351,173 bytes for `bitnamilegacy/minio` (Docker 29.6.1). Size decided nothing here; it is quoted because a 1.6 GB stand-in is a cost a fresh clone pays |
 | **pinned tag** | the Docker Hub / `cgr.dev` tag listing, looking for a version tag of the kind every other image here already uses — `postgres:16-alpine`, `redis:7-alpine`, `axllent/mailpit:v1.32.0` (condition 3) |
 | **round trip** | PUT, GET **with the bytes compared by sha256**, LIST, DELETE through `league/flysystem-aws-s3-v3` + `aws/aws-sdk-php` — the production client library, against the running container (conditions 1 and 4). 4KB of `random_bytes` plus a NUL, a `0xff` and a PNG signature, because a stand-in that mangles non-UTF-8 content passes a "hello world" probe and fails a logo upload |
-| **negative control** | the same round trip with a **wrong secret**, which MUST fail. A stand-in that accepts any signature makes a green round trip prove nothing — the vacuous-pass shape this project has paid for before (`R-059`, and `R-054`'s "the control never failed") |
+| **negative control** | the same round trip with a **wrong secret**, which MUST fail. A stand-in that accepts any signature makes a green round trip prove nothing — the vacuous-pass shape this project has paid for before (`R-059`, and `R-054`'s "the control never failed"). ⚠ **STANDING CONDITION, not a one-off check for this ADR** — see the Decision |
 | **feature probe** | the twelve S3 behaviours Task 7's media library will actually use: ContentType round trip, `mimeType()`, `fileSize`/`lastModified`, a **20MB multipart** `writeStream`, `readStream` of it, prefix listing with a delimiter, `copy`, `move`, a **presigned GET** fetched over HTTP, `setVisibility`/`visibility`, an **unsigned** GET being refused, and `deleteDirectory` |
 
 | Candidate | Anonymous pull | Pinned tag | Round trip | Wrong secret refused | Feature probe |
@@ -175,6 +182,29 @@ Why this one, against the measurement and not against taste:
 4. It needs **no volume, no mounted config file and no post-start admin step**: one image, one
    command, two environment variables, one published port.
 
+### The wrong-secret refusal is a standing condition, not a check this ADR happened to run
+
+`§1` requires a round trip through the production client library. **This ADR adds, for every
+future stand-in of a service that authenticates: the round trip must be paired with a refusal —
+the same round trip with a wrong secret, which must fail — and the refusal lives in the suite,
+beside the round trip, not in a measurement session.**
+
+The reason is measured and it is the single finding that chose this service: `adobe/s3mock` and
+an unconfigured `chrislusf/seaweedfs` each completed the **entire** round trip — bucket, put, get
+with the bytes compared, list, delete — while signing with `definitely-not-the-secret`. Nothing
+in a green round trip distinguishes those two from a service that verifies signatures. So:
+
+- **A stand-in that cannot refuse is not a stand-in**, whatever its round trip says. A candidate
+  whose refusal cannot be switched on at all is rejected at that point, before the feature probe
+  is worth running.
+- **The refusal is asserted in the suite**, for whichever stand-in is in use.
+  `LocalObjectStoreTest` carries it for the object store: a wrong secret must answer
+  `SignatureDoesNotMatch`, and an unsigned request must answer `403`.
+- **Scope, stated so this is not read wider than it is measured.** It applies where the
+  production service authenticates and the stand-in can. Mailpit is deliberately the opposite —
+  `MP_SMTP_AUTH_ACCEPT_ANY`, because the local catcher has no credential to check — so the mail
+  test proves a delivered message instead, and ADR-002's row is unaffected by this clause.
+
 **MinIO is not rejected on merit.** It was the right choice when ADR-002 was written and it is
 still the better reference for one behaviour — see the ACL trap below. It is rejected because
 it is **no longer obtainable** under `§1`'s own conditions, which is a registry fact rather than
@@ -203,10 +233,11 @@ decision (`§3`: do not re-litigate).
   object ACLs as the mechanism for a published asset** — the mechanism is the bucket policy and
   CloudFront. This is the one place where a green local test could mislead, and it is written
   down rather than left to be discovered.
-- `PROJECT_INSTRUCTIONS.md §1`'s Object-storage row still reads "MinIO locally — see
-  `docs/adr/002-storage-and-mail.md`". The pointer chain is **§1 → ADR-002 → ADR-004**, which is
-  the mechanism ADRs exist for; `§1` is rank 2 and editing it is Muhammad's call, not a
-  builder's.
+- `PROJECT_INSTRUCTIONS.md §1`'s Object-storage row now reads "S3
+  (`league/flysystem-aws-s3-v3`); **SeaweedFS locally** — see `docs/adr/004-local-object-store.md`"
+  and points **straight here**, not through ADR-002 (rank 2, Muhammad's text, mirrored into the
+  repo copy on 2026-10-28). ADR-002 keeps the mail row and keeps its own pointer at this document
+  for the object-storage half.
 - `PLAN.md §3` row 13 (Terraform) is unchanged: the S3 bucket and SES identity are production,
   and nothing here touches them. Task 12's ASVS mapping is unchanged for the same reason.
 - **If this image ever becomes unpullable**, the instruments above are the replacement

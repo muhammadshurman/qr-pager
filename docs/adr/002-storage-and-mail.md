@@ -33,8 +33,9 @@ from the start. They were lost when §1 was written.
 > answers `404`, while `minio/warp` in the same namespace answers `200`. **The production
 > column is untouched**, and so is everything else here. The rest of this ADR is left exactly
 > as it was written, including the Consequences below: where they say *MinIO*, read the service
-> `ADR-004` names. `PROJECT_INSTRUCTIONS.md §1` still points here, which is the chain
-> §1 → ADR-002 → ADR-004.
+> `ADR-004` names. `PROJECT_INSTRUCTIONS.md §1`'s Object-storage row now points **straight at
+> `ADR-004`** (rank 2, mirrored 2026-10-28) and no longer through this document; the
+> Transactional-mail row still points here, and that half of this ADR is untouched.
 
 Both are chosen because the infrastructure is already AWS (`§1 › IaC`), so they
 need no new vendor, no new secret store and no new egress path. The same IAM and
