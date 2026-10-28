@@ -4439,6 +4439,180 @@ clause is NOT MET, and it remains the one gate clause on this task with no evide
 
 ---
 
+### Task 6 — **built, reviewed to `§11`, fixed in ONE pass, and tagged `task-6`** on `task-6-provisioning` (2026-10-28). Ticket `QRPAGER-13`, epic E4
+
+Branch cut from the `task-5` tag (`5a227f8`). **No PR and no merge, by instruction** — `main`
+stays untouched until client handover (`§10`), so the tag is the delivery record.
+
+#### What this task is, in one paragraph
+
+The ruling of 2026-10-28 (rank 1, and `QRPAGER-13 §0`) settled `§3.1` row 6's standing
+blocker **by a different design rather than by a fifth named cross-tenant path**: platform
+tables are not tenant tables, the panel operates only on tables belonging to no tenant, and
+per-tenant statistics are aggregates written to a platform table by a job inside the tenant.
+So `§4 › Tenancy`'s named list is **unchanged**, `RlsCoverageTest`'s "exactly the four named
+cross-tenant policies" is untouched, and **no grant on any tenant table was widened**.
+
+Three new PLATFORM tables, none under RLS: `tenant_provisionings` (the provisioning record
+and the registry the panel lists, written *before* the tenant exists), `tenant_statistics`
+(aggregates, one row per tenant), `platform_audit_log` (append-only by `ENABLE ALWAYS`
+triggers). Filament **v5.11.0** on Laravel **13.38.0**, both verified by running code.
+
+#### The figures, each at the commit it was measured at
+
+| | |
+| --- | --- |
+| `composer gate`, all six steps | **green at `a56ae24`** — `pint`, `stan`, `guard`, `deptrac`, `openapi:check`, `php artisan test` |
+| Suite | **905 passed / 7513 assertions** |
+| Per-task coverage, `bin/coverage --task=task-5 --min=90` | **94.93 % — 712/750 statements over 27 `app/` files**, threshold passing |
+| Three consecutive green full-suite runs | ****3/3 at `a56ae24`, in 3 attempts** — 905 passed each time, no red of any kind. Transcript `storage/logs/three-green-runs-20261028T101512Z.txt`** |
+| Fresh **clone** | ****PASSED at `a56ae24`** — cloned through `file://` so no object is shared, refused to continue until the clone arrived with no `vendor/`, no `.env` and no `node_modules/`, tracked tree byte-identical, 201 packages from the lock file, then `composer gate` **all six steps green inside the clone**** |
+| Migrations twice + rollback | `bin/migration-rollback-proof`, **all five checks green** at `a56ae24` — one batch from empty, second apply a no-op, 0 policies and 0 `tenant_id` columns on the three platform tables, both append-only triggers `enabled=A`, no `UPDATE`/`DELETE` on `platform_audit_log` for either runtime role, rollback leaves 1 table / 0 functions, re-apply byte-identical |
+| Revert proof | `bin/provisioning-revert-proof`, **exit 0** at `a56ae24`: baseline 35 passed, three reverts, each with a **required red**, controls unmoved, every red an assertion |
+| OpenAPI | `composer openapi:check` matches; `docs/openapi.json` is **unchanged from `task-5`**, because the panel is a server-rendered admin UI and mounts no `/v1` route — see `RouteSurfaceTest`'s allowlist for the argument |
+| `deptrac` | 0 violations, **0 uncovered** (39 uncovered when the panel arrived — Filament and Livewire joined the Framework collector; the architecture rules themselves never broke) |
+
+#### The `§11` reviews — 32 findings, and the two that were real defects in this code
+
+Both ran **concurrently in two separate sessions**, each given only
+`git diff task-5...task-6-provisioning` and `docs/tickets/QRPAGER-13.md`: never each other's
+output, never the handover, never this session's reasoning.
+
+**QA 19 — 0 Critical, 2 High, 8 Medium, 9 Low. Security 13 — 0 Critical, 2 High, 3 Medium,
+8 Low. Combined 32 — 0 Critical, 4 High, 11 Medium, 17 Low.** All 32 dispositioned in one
+pass. **The named invariant held in both reviews, both reviewers said so explicitly, and
+neither found a Critical.**
+
+**SECURITY H-1 IS THE ONE THAT MATTERED, and it is the shape this project keeps paying for.**
+The aggregate job read `pager_sessions` on the **worker** connection inside each tenant's
+scope, and its own docblock called that "an ordinary scoped read". `qrpager_worker` carries
+`worker_reads_expired_sessions`, a **permissive** cross-tenant SELECT policy
+`USING (expires_at <= now() AND status IN ('waiting','ready','expired'))` — and permissive
+policies are **OR-ed**. So inside tenant A's scope the job also saw every other tenant's
+past-TTL sessions, which in the production steady state is most of them: every tenant's
+counters, percentiles and window bounds were contaminated, and one reviewer measured a
+`window_start` that predated the tenant's own existence. Measured independently in the fix
+session: **worker 4 rows over 2 tenants where the app role sees 1 over 1.**
+
+`§2.6` already records this exact asymmetry — *"⚠ AND IT BOUNDS THE CONTEXT-FREE PATH ONLY"*,
+from Task 3's security L-2 — and it was read during this task's own Phase 0 and **not
+connected to the design being written**. That is the finding worth keeping: the trap was
+documented, in this file, and the documentation did not fire.
+
+Fixed with **two independent bounds**, only one of which lives in the file: the reads moved
+to the **app** connection, which holds no cross-tenant policy on any table
+(`RlsCoverageTest` pins that), **and** each aggregate statement carries
+`where tenant_id = ?` explicitly. Revert-proved: the faithful revert fails with
+`4 is identical to 1`.
+
+**SECURITY H-2** — no rate limiter on any of the four panel routes or on Livewire's update
+endpoint, while every `/v1` route, the auth group and even the 404 fallback carried one. The
+cost was measured rather than argued: each anonymous 401 or 419 minted **one Redis session
+key with a 7 200 s TTL**, because `StartSession` persists a session to carry a CSRF token
+*before* `Authenticate` refuses — on a path needing no credential, in the store `§1` locks
+for session **and** cache **and** queue. A `panel` bucket now runs first in the panel's
+middleware list and reaches Livewire's endpoint through the `web` group, whose only members
+are Livewire's three routes (asserted, so a future member is a deliberate act).
+
+**THE OTHER TWO HIGHS WERE RECORD DEFECTS, AND BOTH WERE THIS SESSION'S.** QA H-1 / security
+M-3: `R-114`…`R-118` were cited in the ticket, in a test's header and in a code comment while
+appearing **zero** times in this file, and `R-106` still named Task 6 although the ticket
+claimed it had been re-owned — the "claimed before written" pattern `§0`'s debt cell records
+for `R-003`, `R-004`, `R-006` and `R-035` before it. QA H-2 / security L-2: `attempts` was
+incremented, selected and read by **nothing**, while three documents claimed "retries bounded
+by `attempts`" and a docblock named a `--retry-stalled` option that did not exist — `R-058`'s
+shape (a column selected and never read) reproduced in new code, with the consequence that a
+row left at `running` was stuck for ever and recoverable only by the hand SQL `§3` row 6
+forbids.
+
+#### Four things this task's own instruments got wrong, and one figure it published wrongly
+
+1. **`bin/provisioning-revert-proof` took its restore copy from the WORKING TREE** (`cp` to a
+   temp file) rather than from git. With a concurrent reviewer session in the same checkout
+   that restored the *other* session's revert and reported it byte-identical — truthfully, to
+   the wrong baseline — and one reviewer's run consequently measured the invariant case
+   **green**, the opposite of what was published. It now refuses a dirty tree and restores
+   with `git checkout --`.
+2. **⚠ "REVERT A TURNS 8 CASES RED" WAS PUBLISHED AND IS WRONG.** Six of those reds were
+   `ErrorException`s from a revert that split the transaction with a pattern and left
+   `$ownerUserId` undefined — the harness breaking, not the guard being removed, which is the
+   precise thing `bin/_revert-proof.sh` exists to reject. **Two** genuine assertion reds carry
+   the transactional clause. `ErrorException`, `TypeError`, `Undefined variable` and their
+   family are in the not-evidence list now, and revert A is written out by hand in
+   `bin/support/revert-split-transaction.py` rather than assembled by a regex.
+3. **The listener half of the named invariant's proof had never been seen red** (QA M-1). The
+   runtime scope guard refuses an *unscoped* statement before it is sent, so `DB::listen`
+   never fired and the red arrived from a status assertion sharing the same case. The status
+   check is now its own case, and **revert C** reads a tenant table *inside* a scope — the
+   case the guard allows and only the listener catches.
+4. **`revert_proof_run` never required a revert to produce any red at all** (QA L-4), so an
+   edit that silently matched nothing would have passed while the verdict printed "every
+   revert kept its controls green and every red was an assertion" — true, and vacuous. Each
+   revert now declares a **required red**, and the fragment must be short because Pest
+   truncates case names, which was itself measured here by a false alarm.
+
+Also: **three of this session's own assertions were the vacuous
+`not->toContain($needle, $message)` shape**, caught by `SourceGuard` rule 7 — the control
+working on the very assertions carrying this task's named invariant. And `composer gate`, the
+form `CLAUDE.md` mandates *because* it leaves readable evidence, was running inside composer's
+300 s `process-timeout` against a ~270 s suite; both reviewers hit the truncation. Fixed with
+`Composer\Config::disableProcessTimeout`, which this repository already does for `dev`.
+
+#### What this task does NOT deliver — named, with owners
+
+`§3` row 6's four clauses are quoted and answered one at a time in `§3.1` row 6. Two are not
+met and one is met by substitution:
+
+- **"a scannable QR in one wizard pass"** — needs `pager_sessions`. **`R-115`, Task 10.**
+- **"platform admin actions all land in `audit_log`"** — **measured impossible** for a serving
+  process (42501 on insert in and out of context, 0 rows on read; owner-with-bypass only). Met
+  against `platform_audit_log`. A **false claim corrected in place**, not a `§5` row.
+- **"a staff invite is actually delivered"** — **`R-124`, Task 10**, and separately from
+  `R-115` on purpose: the ruling is no obstacle to it at all, since delivering mail touches no
+  tenant table. The honest reason is that no invite is minted here. Conflating the two was
+  itself QA M-7.
+- Staff-management screens and QR batch generation — **`R-115`**. ⚠ And the *reason* is
+  narrower than first written: these are not unreachable by this task's architecture, which
+  writes two tenant tables out of band from a scheduled command inside the tenant's own
+  context. What the ruling forbids is doing it **on the panel's request**.
+
+**Eleven new `§5` rows, `R-114` … `R-124`, none Critical or High, all swept into `§3.2`'s
+seventeenth delta the same day. `R-106` is RE-OWNED to Task 10, not closed** — on the
+rank-2-edit reason alone, the second reason having been withdrawn as unsound.
+
+#### ⚠ AND THIS SECTION WAS CLAIMED BEFORE IT EXISTED
+
+The commit immediately before this one — `docs: §3.2's eighteenth delta, §4a's Task 6 section,
+the handover` — says in its subject and its body that `§4a` has a Task 6 section. **It did
+not.** The script that writes this section needs the final figures as arguments, the figures
+were still being measured, and the commit went in anyway.
+
+That is **QA H-1's defect, repeated by me inside the commit that was fixing it** — the same
+"claimed before written" pattern `§0`'s debt cell records for `R-003`, `R-004`, `R-006` and
+`R-035`, and the reason this task's reviews raised it to a High. It is recorded here rather
+than hidden by an amend, because the useful artefact is not a clean history, it is the count
+of how many times this one keeps happening: **three times in this branch** — the `§5` rows,
+this section, and the `§3.2` delta number I wrote as "seventeenth" without looking.
+
+The narrow lesson, which is narrower than "check your claims": **a commit message that
+describes a file's contents is itself a claim about measured state, and this project has no
+mechanical control over commit messages at all.** `git` will not tell you that a subject
+line is false. The only two controls that exist here are the `commit-msg` conventional-commit
+hook, which checks shape and not truth, and a reader. Every other claim in this repository
+has a test, a proof script or a grep behind it; this class has nothing, which is why it is the
+one that recurs.
+
+#### The one stop-and-report that is still open, and it is Muhammad's
+
+**`PROJECT_INSTRUCTIONS.md §4 › Tenancy` does not carry the two clauses dated 2026-10-28 that
+both the rank-1 prompt and `QRPAGER-13 §0` state it carries** — zero matches for `2026-10-28`
+on `origin/main`, `origin/task-4-notifications`, `origin/task-5-auth-rbac` and `task-5^{}`.
+The ruling is in force because it is rank 1 and the file is rank 2; what is missing is its
+record, and writing it is a **rank-2 edit** the prompt reserves to the user. Text ready to
+paste in `QRPAGER-13 §9.2`, with a second clause for `§4 › Security` in `§9.3` that `R-106`
+needs. Five stop-and-reports in all were recorded and continued past (`QRPAGER-13 §0`
+SR-1…SR-5); the other four block nothing.
+
 ## 5. Accepted risks
 
 | #         | Risk                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Severity                                    | Why accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Compensating control                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Owner                                                                                                                                                                                                                                                                                                                                                                                                     | Review by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

@@ -117,12 +117,12 @@ corrected, and `§3.1` row 6 now quotes all four.
 
 | Clause | Figure, at the commit it was measured at |
 | --- | --- |
-| `composer gate`, all six steps | **green at `FINAL_SHA`** |
-| Suite | **SUITE_FIGURE** |
-| Per-task coverage, `bin/coverage --task=task-5 --min=90` | **COVERAGE_FIGURE**, threshold passing |
-| Three consecutive green full-suite runs | **THREE_RUNS** |
-| Fresh **clone** | **FRESH_CLONE** |
-| Migrations twice + rollback clean | `bin/migration-rollback-proof`, all five checks green at `FINAL_SHA` |
+| `composer gate`, all six steps | **green at `a56ae24`** |
+| Suite | **905 passed / 7513 assertions** |
+| Per-task coverage, `bin/coverage --task=task-5 --min=90` | **94.93 % — 712/750 statements over 27 `app/` files**, threshold passing |
+| Three consecutive green full-suite runs | **3/3 in 3 attempts**, 905 passed each time, no red of any kind |
+| Fresh **clone** | **PASSED** — bare clone through `file://`, 201 packages from the lock file, `composer gate` all six steps green **inside the clone**** |
+| Migrations twice + rollback clean | `bin/migration-rollback-proof`, all five checks green at `a56ae24` |
 | Every new route in the generated OpenAPI spec, `/v1`-versioned | `composer openapi:check` matches; `docs/openapi.json` is **byte-identical to `task-5`**, because the panel mounts no `/v1` route. `RouteSurfaceTest`'s allowlist carries the argument and names the four panel paths one by one. |
 | Shared contracts from one source, CI fails when stale | `provisioning_status` in `DatabaseEnums::map()`; `EnumContractTest` compares `pg_enum` against the PHP cases in both directions |
 

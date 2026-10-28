@@ -1,0 +1,24 @@
+fresh-clone-proof: test(api): drive the form's own consent rule, which had no test at a56ae24
+
+=== clone through file:// so no object is shared
+
+=== the clone arrived with nothing the gate needs pre-installed
+no vendor/, no .env, no node_modules — the clone is bare
+
+=== the clone's tracked tree is byte-identical to this commit's
+tree 5437cf00557d24009f11b78d786b84da10d4b46a
+
+=== composer install, from the repository's own lock file
+host composer cache: present (a cache, not a source — it costs time, not correctness)
+packages installed: 201
+
+=== the three commands CLAUDE.md says a fresh clone needs, and nothing else
+cp .env.example .env · php artisan key:generate · docker compose is already up
+
+=== composer gate, in the clone
+gate: all six steps green. Full output: /tmp/qrpager-fresh-clone-TKeNIw/clone/apps/api/storage/logs/gate-20261028T102745Z.log
+
+fresh-clone-proof: PASSED at a56ae24
+  Tests:    905 passed (7513 assertions)
+  gate log: /tmp/qrpager-fresh-clone-TKeNIw/gate.log
+  (clone removed; pass --keep to inspect it)

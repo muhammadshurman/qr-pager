@@ -1,0 +1,14 @@
+# THREE CONSECUTIVE GREEN FULL-SUITE RUNS
+#
+# Commit:  a56ae24
+# Machine: /home/lenovo/code/qr-pager/apps/api, Linux 6.18.54.1-microsoft-standard-WSL2
+# Needed:  3 consecutive, giving up after 12 attempts
+# Rule:    R-092's 08006 and its claim-shortfall family do not block, and do not
+#          count either -- a red of any kind RESETS the consecutive counter.
+#
+run 1  | a56ae24 | start 10:15:12Z | exit=0 | Tests:    905 passed (7513 assertions) | no failures | streak 1/3
+run 2  | a56ae24 | start 10:19:12Z | exit=0 | Tests:    905 passed (7513 assertions) | no failures | streak 2/3
+run 3  | a56ae24 | start 10:23:24Z | exit=0 | Tests:    905 passed (7513 assertions) | no failures | streak 3/3
+
+three-green-runs: PASSED -- 3 consecutive green runs at a56ae24, in 3 attempt(s).
+  transcript: /home/lenovo/code/qr-pager/apps/api/storage/logs/three-green-runs-20261028T101512Z.txt
