@@ -79,6 +79,80 @@ services:
       timeout: 3s
       retries: 20
 
+  # ADR-002's local stack, added 2026-10-28 -- SIX TASKS LATE, which is R-125.
+  #
+  # ADR-002's Decision table has said "MinIO in compose.yaml" and "Mailpit in compose.yaml"
+  # since 2026-10-25, its Consequences say "compose.yaml gains MinIO and Mailpit", and
+  # PROJECT_INSTRUCTIONS.md §1 (rank 2) points at that ADR as the reason it need not say more.
+  # Neither service was ever here. Measured 2026-10-28: services were postgres, redis and
+  # frankenphp; `grep -ci minio compose.yaml` returned 0.
+  #
+  # It blocked nothing for five tasks because nothing sent mail or stored an object -- and then
+  # it made a GATE CLAUSE UNPROVABLE: §3 row 6's fourth clause names "the local mail catcher"
+  # as its instrument, and Task 6 could not have met it on this machine even with an invite to
+  # send. That is why this is its own commit on its own branch rather than part of Task 7:
+  # Task 7 would otherwise be building on infrastructure introduced in its own diff.
+  #
+  # BOTH BIND TO 127.0.0.1 ONLY, which ADR-002 requires of them in the same words it uses for
+  # Postgres and Redis. Neither carries a volume: a mail catcher and a local object store hold
+  # test fixtures, and a fixture that survives a `docker compose down -v` is cross-run shared
+  # state of exactly the kind TestCase::RESETTABLE exists to prevent one layer down.
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    # 1025 is SMTP (what Laravel's mailer connects to), 8025 is the HTTP API and UI (what a
+    # test reads a delivered message back out of). ADR-002's clause is "asserted against the
+    # local mail catcher", and only the second port can satisfy it: SMTP proves a message was
+    # ACCEPTED, the API proves one EXISTS. Mail::fake() proves neither, which the ticket says
+    # in those words.
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      # Mailpit's own readiness endpoint. wget, not curl: the image is Alpine-based and
+      # ships busybox wget, which is why this is not the `curl -f` a reader might expect.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8025/readyz || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ⚠ MinIO IS NOT HERE, AND THAT IS A STOP-AND-REPORT RATHER THAN AN OMISSION (R-125).
+  #
+  # ADR-002 names **MinIO** specifically. Measured 2026-10-28, from this environment:
+  #
+  #   docker manifest inspect minio/minio:latest
+  #     errors: denied: requested access to the resource is denied
+  #             unauthorized: authentication required
+  #   minio/mc:latest                      -> the same two errors
+  #   quay.io/minio/minio:latest           -> unresolvable
+  #   minio/minio:RELEASE.2024-01-16...    -> unresolvable
+  #
+  # It is an AUTHORISATION gate, not a missing tag: MinIO's official images now require
+  # credentials this project does not have. The control that says the registry path itself is
+  # fine: `redis:7-alpine` and `axllent/mailpit:v1.32.0` both resolve from the same shell.
+  #
+  # TWO DECISIONS ARE NEEDED AND NEITHER IS A BUILDER'S (§1: "no substitution without a
+  # written ADR"; §8: stop and report):
+  #
+  #   1. WHICH IMAGE. `chainguard/minio:latest` and `bitnamilegacy/minio:latest` both resolve.
+  #      The software is still MinIO, so this is arguably packaging rather than substitution --
+  #      like postgres:16-alpine against postgres:16 -- but `bitnamilegacy` is Bitnami's
+  #      archived namespace and `chainguard` publishes no pinned tag this project could pin to
+  #      in the way every other image here is pinned. Either choice is a change to ADR-002's
+  #      Decision table.
+  #   2. THE DRIVER DOES NOT EXIST EITHER. ADR-002 names `league/flysystem-aws-s3-v3`, and
+  #      neither it nor `aws/aws-sdk-php` is in composer.json. So a MinIO ROUND TRIP -- the only
+  #      test shape worth having, matching Postgres's and Redis's -- needs a new PRODUCTION
+  #      dependency added before the task that uses it. A port-reachability check instead would
+  #      be the weak assertion this project refuses.
+  #
+  # Adding an unpullable service would break `docker compose up -d` for every clone, including
+  # the fresh-clone gate, so nothing is added rather than something broken. The mail half IS
+  # delivered above, because that is the half that made a gate clause unprovable.
+
+
   # The pinned runtime (Q7), behind a profile so `docker compose up -d` still starts
   # only Postgres and Redis -- the suite needs those two and nothing else, and building
   # an image to run `php artisan test` would be a gate that depends on a Docker build.
