@@ -805,10 +805,20 @@ The point of column grants is that over-broad SQL cannot leak what the role was 
 - **No role gets `DELETE` on `landing_pages`.** A tenant has exactly one page row (`UNIQUE (tenant_id)`),
   so deleting it is not an editing operation — it is the removal of the object every other row points at.
   Emptying the page is `status = 'draft'` with an empty document, which is an `UPDATE` the grant allows.
-- **`media_assets` has no `UPDATE` grant for anyone.** Every column on it describes bytes that are already
-  in the object store — the key, the detected type, the size, the checksum, the dimensions — so an update
-  would be a row that no longer describes its object. Replacing an image is a new row and a new key, which
-  is also what makes the old key still valid for a page that was published against it.
+- **`media_assets` has no `UPDATE` grant for either role that serves traffic.** Every column on it
+  describes bytes that are already in the object store — the key, the detected type, the size, the
+  checksum, the dimensions — so an update would be a row that no longer describes its object. Replacing an
+  image is a new row and a new key, which is also what makes the old key still valid for a page that was
+  published against it.
+  **⚠ `qrpager_owner` KEEPS `UPDATE`, and that is a narrowed claim rather than an exception.** Revoking it
+  from the owner was tried and taken back out on 2026-10-28, because the suite caught what it broke:
+  deleting a `tenants` row makes Postgres take `SELECT 1 FROM ONLY media_assets x WHERE $1 = tenant_id FOR
+  KEY SHARE OF x` on every referencing table, and **`FOR KEY SHARE` requires the `UPDATE` privilege, not
+  merely `SELECT`** — so `delete from tenants` answered `42501: permission denied for table media_assets`
+  from the owner connection and `AuditLogImmutabilityTest` went red. Measured directly afterwards: as
+  owner with `UPDATE` revoked the bare `FOR KEY SHARE` statement answered `permission denied`; the grant
+  was restored and the identical statement answered `(0 rows)`. The honest rule is therefore "no role that
+  can serve a request holds `UPDATE` on `media_assets`", which `GrantMatrixTest` states in those words.
 - **⚠ `qrpager_worker` gets NOTHING on all three, and the ticket said otherwise.** `QRPAGER-14 §6.1` reads
   "`worker` gets `SELECT` on `tenant_domains` and `landing_pages` (the verification and issuance polling
   commands run as the worker)". That parenthetical is the premise, and the premise does not survive

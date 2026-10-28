@@ -349,14 +349,14 @@ return new class extends Migration
         SQL);
 
         // ================================================================================
-        // THE TWO REVOKES, WITHOUT WHICH TWO OF THIS TASK'S STATED RULES ARE ONLY NEARLY TRUE
+        // ONE REVOKE, AND THE ONE THAT WAS TRIED AND TAKEN BACK OUT
         // ================================================================================
         //
         // qrpager_owner OWNS these tables, so Postgres grants it every privilege
-        // implicitly and `GRANT`ing nothing to it achieves nothing. "No role gets DELETE on
-        // landing_pages" and "no role gets UPDATE on media_assets" are therefore false of
-        // the owner until they are revoked, and a rule that is false of one of the three
-        // roles is the dead-control shape §4a records four of.
+        // implicitly and `GRANT`ing nothing to it achieves nothing. "No role gets DELETE
+        // on landing_pages" is therefore false of the owner until it is revoked, and a
+        // rule that is false of one of the three roles is the dead-control shape §4a
+        // records four of.
         //
         // MEASURED 2026-10-28 before relying on it, because an implicit privilege sounds
         // like one a revoke cannot touch: has_table_privilege('qrpager_owner',
@@ -364,15 +364,33 @@ return new class extends Migration
         // TRUNCATE is a separate privilege and still answers `t`, which is what keeps
         // TestCase's per-test cleanup working.
         //
-        // THE LIMIT, stated rather than left to be found: the owner can re-grant to itself,
-        // because it owns the table. This bounds ACCIDENT -- an owner-connection code path
-        // that issues one of these statements gets 42501 instead of silently succeeding --
-        // and it is not a defence against a compromised owner, which would simply run DDL.
-        // qrpager_app and qrpager_worker cannot run DDL at all (§4 › Tenancy), so for the
-        // two roles that serve traffic the revoke is absolute.
+        // ⚠ `REVOKE UPDATE ON media_assets FROM qrpager_owner` WAS HERE AND IS GONE,
+        // because it broke referential integrity and the suite caught it. Deleting a
+        // `tenants` row makes Postgres take a row lock on every referencing table --
+        // `SELECT 1 FROM ONLY media_assets x WHERE $1 = tenant_id FOR KEY SHARE OF x` --
+        // and **`FOR KEY SHARE` requires the UPDATE privilege**, not just SELECT. So with
+        // UPDATE revoked, `delete from tenants` answered `42501: permission denied for
+        // table media_assets` from the OWNER connection, and AuditLogImmutabilityTest's
+        // "it survives a tenant being deleted" went red.
+        //
+        // Measured directly afterwards rather than inferred from the test: as owner, with
+        // UPDATE revoked, `SELECT 1 FROM ONLY media_assets … FOR KEY SHARE` answered
+        // `permission denied`; the GRANT was restored and the identical statement
+        // answered `(0 rows)`.
+        //
+        // So the rule NARROWS rather than being worked around: no role that serves
+        // traffic holds UPDATE on media_assets -- qrpager_app and qrpager_worker are
+        // granted none and cannot run DDL to give themselves any -- and the owner keeps
+        // it because referential integrity needs it. GrantMatrixTest states it in exactly
+        // those terms, so the claim and the schema cannot drift.
+        //
+        // THE LIMIT OF THE REMAINING REVOKE, stated rather than left to be found: the
+        // owner can re-grant to itself, because it owns the table. It bounds ACCIDENT --
+        // an owner-connection code path that issues a DELETE gets 42501 instead of
+        // silently succeeding -- and it is no defence against a compromised owner, which
+        // would simply run DDL.
         DB::unprepared(<<<'SQL'
             REVOKE DELETE ON landing_pages FROM qrpager_owner;
-            REVOKE UPDATE ON media_assets  FROM qrpager_owner;
         SQL);
     }
 

@@ -134,11 +134,22 @@ it('states Task 7 grants as exact column sets, with the three absences that are 
         expect(Schema::hasTablePrivilege($role, 'landing_pages', 'DELETE'))->toBeFalse();
     }
 
-    // NO UPDATE ON media_assets FOR ANYONE. Every column describes bytes already in the
-    // object store, so an update leaves a row that no longer describes its object.
+    // NO UPDATE ON media_assets FOR EITHER ROLE THAT SERVES TRAFFIC. Every column
+    // describes bytes already in the object store, so an update leaves a row that no
+    // longer describes its object.
+    //
+    // ⚠ THE OWNER KEEPS IT, AND THAT IS A NARROWED CLAIM RATHER THAN AN EXCEPTION.
+    // Revoking UPDATE from the owner was tried and taken back out: deleting a `tenants`
+    // row makes Postgres take `SELECT … FROM ONLY media_assets … FOR KEY SHARE`, that
+    // lock requires the UPDATE privilege and not merely SELECT, and the delete answered
+    // 42501 from the owner connection. Measured, and recorded in the migration. The
+    // assertion below is the honest form: the roles that cannot run DDL hold none.
     foreach (['qrpager_app', 'qrpager_worker'] as $role) {
         expect(Schema::grantedColumns($role, 'media_assets', 'UPDATE'))->toBe([]);
     }
+
+    expect(Schema::hasTablePrivilege('qrpager_owner', 'media_assets', 'UPDATE'))
+        ->toBeTrue('the owner needs UPDATE for the FOR KEY SHARE lock referential integrity takes');
 
     // NOTHING AT ALL FOR THE WORKER on any of the three -- SR-3 again, per column this
     // time, because the table-level list above would still pass if a single column were

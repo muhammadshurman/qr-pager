@@ -107,7 +107,7 @@ it('exposes exactly the three public reads its docblock describes', function ():
     }
 });
 
-it('is called from exactly the seven lines, in four files, that pass a server-derived id', function (): void {
+it('is called from exactly the nine lines, in five files, that pass a server-derived id', function (): void {
     // Each of these was read at Task 5's QA review and again here. What makes each one
     // safe is named, because the list is worthless if the next person only counts it:
     //
@@ -119,11 +119,31 @@ it('is called from exactly the seven lines, in four files, that pass a server-de
     //   AuthenticatedTenantResolver:167  sole(), no tenant input at all
     //   RequestPrincipal:85  the tenant RequireTenantScope already resolved and verified
     //
+    // TWO JOINED AT TASK 7, and both were read before this list was updated, which is
+    // what the failure message below asks of whoever changes it:
+    //
+    //   AuthenticatedMembership:53  in(), with $userId from the guard's own
+    //                               getAuthIdentifier() and $selected from the
+    //                               SERVER-SIDE session -- the identical pair
+    //                               AuthenticatedTenantResolver:162 passes, and it is
+    //                               re-verified against the live membership set on every
+    //                               call rather than believed
+    //   AuthenticatedMembership:54  sole(), no tenant input at all, the same shape as
+    //                               AuthenticatedTenantResolver:167
+    //
+    // The new caller exists because Task 7's tenant-scoped panel needs the ROLE as well
+    // as the tenant (D1 restricts editing to `owner` and `manager`), and widening
+    // TenantResolver's shape would have touched four surfaces built on it at Tasks 2-5.
+    // It adds NO new way to name a tenant: both arguments come from the same two places
+    // the resolver's already do.
+    //
     // NONE takes a tenant from request input. `PagerIdorTest` drives five caller-supplied
     // tenant shapes at the staff surface and requires 404 from each, which is the runtime
     // half of the same statement.
     expect(membershipCallSites())->toBe([
         'app/Platform/Auth/ActiveTenant.php:111',
+        'app/Platform/Auth/AuthenticatedMembership.php:53',
+        'app/Platform/Auth/AuthenticatedMembership.php:54',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:150',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:162',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:167',

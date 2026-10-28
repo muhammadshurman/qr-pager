@@ -227,8 +227,12 @@ grep -qE 'grant qrpager_app users.is_platform_admin INSERT' "$before" \
 # And SR-3: qrpager_worker is granted NOTHING on any of the three. The ticket's §6.1
 # granted it SELECT on two of them to serve a polling sweep that §4 › Tenancy does not
 # allow and that was therefore never built.
+# qrpager_owner:media_assets:UPDATE is NOT in this list, and its absence is the record of
+# a revoke that was tried and taken back out: FOR KEY SHARE -- the lock referential
+# integrity takes when a referenced tenants row is deleted -- requires UPDATE, so revoking
+# it from the owner made `delete from tenants` answer 42501. The migration carries the
+# measurement.
 for spec in 'qrpager_owner:landing_pages:DELETE' \
-            'qrpager_owner:media_assets:UPDATE' \
             'qrpager_worker:landing_pages:SELECT' \
             'qrpager_worker:media_assets:SELECT' \
             'qrpager_worker:tenant_domains:SELECT' \
