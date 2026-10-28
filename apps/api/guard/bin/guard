@@ -41,6 +41,9 @@ $violations = array_merge(
     // caller named explicit paths, so pointing the guard at one fixture still reports only
     // that fixture -- which is how every rule-N test in RepoGuardTest works.
     $explicitPaths ? [] : $guard->scanCanonicalDocs(),
+    // Rule 9 takes no path argument either: its subject is `.github/workflows`, which is
+    // neither PHP nor inside this guard's root. Same skip when explicit paths are named.
+    $explicitPaths ? [] : $guard->scanWorkflowTriggers(),
 );
 
 if ($violations === []) {
@@ -48,7 +51,15 @@ if ($violations === []) {
     // "across 6 scanned path(s)" for a run that opened nothing.
     $files = count($guard->scannedFiles($paths));
     $count = count($paths);
-    fwrite(STDOUT, "repo guard: C1 and C2 hold across {$files} file(s) in {$count} path(s).\n");
+
+    // Rules 8 and 9 read files that are not in $paths -- markdown two levels up, and the
+    // workflow directory. The line used to name C1 and C2 only, which understated what a
+    // green run had established; it now names what it checked and counts what it opened,
+    // because "C1 and C2 hold" was also true of the run that read no workflow at all.
+    $workflows = $explicitPaths ? 0 : count($guard->workflowFiles());
+    $also = $explicitPaths ? '' : ", C7 and rules 9-10 across {$workflows} workflow(s)";
+
+    fwrite(STDOUT, "repo guard: C1 and C2 hold across {$files} file(s) in {$count} path(s){$also}.\n");
 
     exit(0);
 }
@@ -62,6 +73,8 @@ foreach ($violations as $violation) {
 fwrite(STDERR, "\nC1: app.tenant_id and app.bypass_tenant are the only GUCs.\n");
 fwrite(STDERR, "C2: always select set_config(name, value, true) -- third argument a literal true.\n");
 fwrite(STDERR, "C7: one task table only, in docs/PLAN.md; one BLUEPRINT.md, nowhere else.\n");
+fwrite(STDERR, "Rule 9: every pushed branch is evaluated -- on.push.branches includes ** (R-126).\n");
+fwrite(STDERR, "Rule 10: object ACLs are not the application's to set -- ADR-004; a bucket policy instead.\n");
 fwrite(STDERR, "All three are locked in PROJECT_INSTRUCTIONS.md §3; a change there comes first.\n");
 
 exit(1);

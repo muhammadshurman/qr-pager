@@ -126,6 +126,91 @@ final class SourceGuard
     public const DUPLICATE_CANONICAL_DOC = 'duplicate-canonical-doc';
 
     /**
+     * Rule 9: a workflow that runs on push must not carry a branch pattern that can
+     * exclude a pushed branch.
+     *
+     * WHAT THIS IS FOR. `.github/workflows/ci.yml` triggered on `branches: [main,
+     * 'task-*']`, and the branch this rule arrived on -- `infra-local-mail-and-object-store`
+     * -- matches neither, so NOTHING RAN ON IT. Measured 2026-10-28:
+     * `gh run list --branch infra-local-mail-and-object-store` returns no rows, while the
+     * same command for `task-6-provisioning` returns runs on every commit. Two commits had
+     * already landed, one of which added a test that fails when its service is absent, and
+     * the first verdict on either would have arrived on the PULL REQUEST into `main` -- after
+     * the work, in public, which is exactly the condition the 2026-10-26 trigger change (then
+     * `main` plus tags only) was made to remove. It removed it for `task-*` and left it for
+     * every other name.
+     *
+     * A GREEN LOCAL GATE AND A GREEN CI ARE TWO DIFFERENT CLAIMS, and this is the second one
+     * being absent rather than failing. `R-126`.
+     *
+     * The rule is a text parse rather than a YAML load, because `guard/bin/guard` boots
+     * nothing and loads no autoloader -- the same reason GUCS is hard-coded. It FAILS CLOSED:
+     * a trigger it cannot read is a violation, because the alternative is a guard passing on
+     * a file it did not understand (rule 6's lesson, R-029's shape).
+     *
+     * NOT FLAGGED: a workflow with no `push:` trigger at all. A scheduled or
+     * `workflow_dispatch` job is a different decision, and flagging it would make this rule
+     * the kind nobody keeps. The directory-level clause below is what stops that from
+     * becoming a loophole.
+     */
+    public const WORKFLOW_EXCLUDES_PUSHED_BRANCH = 'workflow-excludes-pushed-branch';
+
+    /** The workflow directory, relative to the REPOSITORY root -- not to `apps/api`. */
+    public const WORKFLOW_DIR = '.github/workflows';
+
+    /** The only branch pattern that cannot exclude a pushed branch. */
+    public const EVERY_BRANCH = '**';
+
+    /**
+     * Rule 10: the application never makes a stored object public through an ACL.
+     *
+     * `ADR-004` measured this and it is the one place the local stand-in is MORE PERMISSIVE
+     * THAN PRODUCTION. SeaweedFS honours object ACLs, so `->setVisibility('public')` returns
+     * 200 locally; MinIO answers `NotImplemented`; and a current S3 bucket with ownership
+     * enforced answers `AccessControlListNotSupported`. So a Task 7 media path written against
+     * the stand-in can be green here and broken in production -- on the published-asset path,
+     * which is the one `ADR-002` calls "an explicit, per-path decision in Task 7, never a
+     * bucket-wide setting".
+     *
+     * Documented was not enough: `ADR-002`'s own MinIO row was documented for six tasks while
+     * the service was absent (`R-125`). This makes the divergence UNREACHABLE instead -- the
+     * mechanism is a bucket policy and CloudFront, decided in Terraform (`PLAN.md §3` row 13),
+     * and the application does not get to express it.
+     *
+     * SCOPED TO THE APPLICATION, which is `§1`'s own wording ("nothing under `apps/` may
+     * depend on which one is running"): `app/` and `routes/`. NOT `config/`, where the local
+     * `public` disk legitimately declares `'visibility' => 'public'` for a filesystem that has
+     * no ACLs at all, and not `tests/`, where a test proving the refusal has to be able to
+     * make the call.
+     *
+     * THE LIMIT, stated rather than left to be discovered: the bare third-argument form
+     * `put($path, $contents, 'public')` is NOT matched, because `'public'` is also the name of
+     * a disk in this repository and a rule that flagged it would flag `Storage::disk('public')`
+     * -- rule 1's own lesson about flagging the documentation of the thing you enforce. What is
+     * matched is every form that names the mechanism: the call, the flysystem constant, the
+     * option key, and S3's canned ACL values.
+     */
+    public const PUBLIC_OBJECT_VISIBILITY = 'public-object-visibility';
+
+    /** S3's canned ACLs. Any of them in application code is rule 10's subject. */
+    public const CANNED_ACLS = [
+        'public-read',
+        'public-read-write',
+        'authenticated-read',
+        'bucket-owner-read',
+        'bucket-owner-full-control',
+        'aws-exec-read',
+        'log-delivery-write',
+    ];
+
+    /**
+     * The paths rule 10 applies to: application code, relative to `apps/api`.
+     *
+     * @var list<string>
+     */
+    public const APPLICATION_PATHS = ['app/', 'routes/'];
+
+    /**
      * The documents that must exist exactly once, relative to the REPOSITORY root.
      *
      * Not `self::PATHS`, which is relative to `apps/api` and lists PHP directories. These
@@ -621,7 +706,10 @@ final class SourceGuard
      */
     private function scanFile(string $relative, string $source): array
     {
-        $violations = $this->scanVacuousAssertions($relative, $source);
+        $violations = array_merge(
+            $this->scanVacuousAssertions($relative, $source),
+            $this->scanObjectVisibility($relative, $source),
+        );
         $allowed = array_merge(self::GUCS, $this->frameworkAppConfigKeys());
 
         foreach ($this->stringLiterals($source) as [$text, $line]) {
@@ -970,6 +1058,411 @@ final class SourceGuard
         }
 
         return $violations;
+    }
+
+    /**
+     * Rule 9, over every workflow in the repository.
+     *
+     * Two clauses:
+     *   (a) per file -- a `push:` trigger whose `branches:` list does not include `**`, or
+     *       which carries a `branches-ignore:` at all, can exclude a pushed branch;
+     *   (b) over the directory -- at least one workflow must run on every pushed branch,
+     *       because a repository whose only CI is triggered by tags and pull requests has
+     *       the same hole without any pattern being wrong.
+     *
+     * @return list<Violation>
+     */
+    public function scanWorkflowTriggers(string $relativeDir = self::WORKFLOW_DIR): array
+    {
+        $files = $this->workflowFiles($relativeDir);
+
+        if ($files === []) {
+            // Rule 6's shape: nothing read is not a pass.
+            return [new Violation(
+                self::WORKFLOW_EXCLUDES_PUSHED_BRANCH,
+                $relativeDir,
+                1,
+                'holds no workflow file, so no push is evaluated by anything -- and a guard that '
+                .'reported a pass for a directory it found empty would be asserting nothing',
+            )];
+        }
+
+        $violations = [];
+        $anyRunsOnEveryBranch = false;
+
+        foreach ($files as $relative => $path) {
+            $source = (string) file_get_contents($path);
+            $trigger = $this->pushTrigger($source);
+
+            foreach ($this->scanWorkflowSource($relative, $source) as $violation) {
+                $violations[] = $violation;
+            }
+
+            if ($trigger['readable'] && $trigger['push'] && $trigger['branches'] === null && $trigger['ignore'] === null) {
+                $anyRunsOnEveryBranch = true;
+            }
+
+            if ($trigger['readable'] && $trigger['push'] && $trigger['ignore'] === null
+                && $trigger['branches'] !== null && in_array(self::EVERY_BRANCH, $trigger['branches'], true)) {
+                $anyRunsOnEveryBranch = true;
+            }
+        }
+
+        if (! $anyRunsOnEveryBranch) {
+            $violations[] = new Violation(
+                self::WORKFLOW_EXCLUDES_PUSHED_BRANCH,
+                $relativeDir,
+                1,
+                'no workflow here runs on every pushed branch, so a branch outside whatever patterns '
+                .'are configured can be merged having never been evaluated -- which is R-126, measured '
+                .'on this repository',
+            );
+        }
+
+        return $violations;
+    }
+
+    /**
+     * Every workflow in the directory, keyed by path relative to the repository root.
+     *
+     * `.fixture` files are not matched, which is why rule 9's own fixtures can live in the
+     * tree without being read as workflows -- the same reason the repo fixtures are not `.php`.
+     *
+     * Public because `guard/bin/guard` reports the COUNT in its success line: a rule whose
+     * pass does not say what it read is the vacuous pass rule 6 exists for.
+     *
+     * @return array<string, string>
+     */
+    public function workflowFiles(string $relativeDir = self::WORKFLOW_DIR): array
+    {
+        $directory = $this->repositoryRoot().'/'.$relativeDir;
+        $files = [];
+
+        foreach (['yml', 'yaml'] as $extension) {
+            foreach (glob($directory.'/*.'.$extension) ?: [] as $path) {
+                $files[$relativeDir.'/'.basename($path)] = $path;
+            }
+        }
+
+        ksort($files);
+
+        return $files;
+    }
+
+    /**
+     * Rule 9 against one workflow's text.
+     *
+     * @return list<Violation>
+     */
+    public function scanWorkflowSource(string $relative, string $source): array
+    {
+        $trigger = $this->pushTrigger($source);
+
+        if (! $trigger['readable']) {
+            return [new Violation(
+                self::WORKFLOW_EXCLUDES_PUSHED_BRANCH,
+                $relative,
+                1,
+                'its trigger could not be read, so whether a pushed branch reaches CI cannot be '
+                .'established from it. This rule fails CLOSED rather than assuming the permissive case',
+            )];
+        }
+
+        if (! $trigger['push']) {
+            return [];
+        }
+
+        $violations = [];
+
+        if ($trigger['ignore'] !== null) {
+            $violations[] = new Violation(
+                self::WORKFLOW_EXCLUDES_PUSHED_BRANCH,
+                $relative,
+                $trigger['line'],
+                'carries branches-ignore ['.implode(', ', $trigger['ignore']).'] on its push trigger; '
+                .'anything it names is a pushed branch that reaches no CI',
+            );
+        }
+
+        if ($trigger['branches'] !== null && ! in_array(self::EVERY_BRANCH, $trigger['branches'], true)) {
+            $violations[] = new Violation(
+                self::WORKFLOW_EXCLUDES_PUSHED_BRANCH,
+                $relative,
+                $trigger['line'],
+                'runs on push only for ['.implode(', ', $trigger['branches']).'], so a branch named '
+                .'anything else is pushed, reviewed and merged without a verdict. Use '
+                .self::EVERY_BRANCH.' -- tag and pull_request triggers are unaffected',
+            );
+        }
+
+        return $violations;
+    }
+
+    /**
+     * The push trigger of one workflow, read from its text.
+     *
+     * `readable` is false when there is no top-level `on:` key at all -- the one case where
+     * this parser cannot say anything, and therefore the one it refuses rather than guesses.
+     * `branches` and `ignore` are null when the key is absent, which in Actions means every
+     * branch; an empty list is distinct from an absent one and is kept as one.
+     *
+     * Deliberately a line parser over the shapes GitHub accepts (`on: push`,
+     * `on: [push, pull_request]`, a block mapping with inline or block sequences) rather than
+     * a YAML load: this guard loads no autoloader, which is also why rule 1 hard-codes GUCS.
+     *
+     * @return array{readable: bool, push: bool, branches: ?list<string>, ignore: ?list<string>, line: int}
+     */
+    private function pushTrigger(string $source): array
+    {
+        $lines = preg_split('/\R/', $source) ?: [];
+
+        $result = ['readable' => false, 'push' => false, 'branches' => null, 'ignore' => null, 'line' => 1];
+
+        $inOn = false;
+        $keyIndent = null;
+        $inPush = false;
+        $collecting = null;
+
+        foreach ($lines as $number => $raw) {
+            $line = rtrim($raw);
+            $text = trim($line);
+
+            if ($text === '' || str_starts_with($text, '#')) {
+                continue;
+            }
+
+            $indent = strlen($line) - strlen(ltrim($line));
+
+            if ($indent === 0) {
+                $inPush = false;
+                $collecting = null;
+                $keyIndent = null;
+                $inOn = preg_match('/^(on|"on"|\x27on\x27)\s*:/', $text) === 1;
+
+                if (! $inOn) {
+                    continue;
+                }
+
+                $result['readable'] = true;
+                $result['line'] = $number + 1;
+                $value = trim((string) preg_replace('/^[^:]*:/', '', $text));
+
+                // `on: push` or `on: [push, pull_request]` -- no filters can exist.
+                if ($value !== '' && ! str_starts_with($value, '#')) {
+                    $result['push'] = $this->mentionsPush($value);
+                    $inOn = false;
+                }
+
+                continue;
+            }
+
+            if (! $inOn) {
+                continue;
+            }
+
+            $keyIndent ??= $indent;
+
+            if ($indent === $keyIndent) {
+                $collecting = null;
+                $inPush = preg_match('/^push\s*:/', $text) === 1;
+
+                if ($inPush) {
+                    $result['push'] = true;
+                    $result['line'] = $number + 1;
+                }
+
+                continue;
+            }
+
+            if (! $inPush) {
+                continue;
+            }
+
+            if (preg_match('/^(branches|branches-ignore)\s*:(.*)$/', $text, $match) === 1) {
+                $key = $match[1] === 'branches' ? 'branches' : 'ignore';
+                $inline = trim($match[2]);
+                $result['line'] = $number + 1;
+
+                if ($inline !== '' && ! str_starts_with($inline, '#')) {
+                    $result[$key] = $this->flowList($inline);
+                    $collecting = null;
+
+                    continue;
+                }
+
+                $result[$key] = [];
+                $collecting = $key;
+
+                continue;
+            }
+
+            if ($collecting !== null && str_starts_with($text, '- ')) {
+                $result[$collecting][] = $this->scalar(substr($text, 2));
+
+                continue;
+            }
+
+            // Any other key inside push: ends a sequence we were collecting.
+            if (preg_match('/^[A-Za-z_-]+\s*:/', $text) === 1) {
+                $collecting = null;
+            }
+        }
+
+        return $result;
+    }
+
+    /** Does an `on:` scalar or flow list mention push? */
+    private function mentionsPush(string $value): bool
+    {
+        foreach ($this->flowList($value) as $event) {
+            if ($event === 'push') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * A YAML flow list or bare scalar as a list of unquoted strings.
+     *
+     * @return list<string>
+     */
+    private function flowList(string $value): array
+    {
+        $value = trim($value);
+
+        if (str_starts_with($value, '[')) {
+            $value = trim($value, '[]');
+        }
+
+        $items = [];
+
+        foreach (explode(',', $value) as $item) {
+            $item = $this->scalar($item);
+
+            if ($item !== '') {
+                $items[] = $item;
+            }
+        }
+
+        return $items;
+    }
+
+    /** One YAML scalar, unquoted and with a trailing comment removed. */
+    private function scalar(string $value): string
+    {
+        $value = trim($value);
+        $value = (string) preg_replace('/\s+#.*$/', '', $value);
+
+        return trim(trim($value), "\"\x27");
+    }
+
+    /**
+     * Rule 10 against one application file.
+     *
+     * Tokens, not string literals: the subject is a METHOD NAME and a class constant as
+     * well as option values, and rule 1's literal scan cannot see either.
+     *
+     * @return list<Violation>
+     */
+    public function scanObjectVisibility(string $relative, string $source): array
+    {
+        $application = false;
+
+        foreach (self::APPLICATION_PATHS as $prefix) {
+            if (str_starts_with($relative, $prefix)) {
+                $application = true;
+
+                break;
+            }
+        }
+
+        if (! $application) {
+            return [];
+        }
+
+        $violations = [];
+        $tokens = token_get_all($source);
+
+        foreach ($tokens as $index => $token) {
+            if (! is_array($token)) {
+                continue;
+            }
+
+            [$id, $text, $line] = $token;
+
+            if ($id === T_STRING && $text === 'setVisibility') {
+                $violations[] = new Violation(
+                    self::PUBLIC_OBJECT_VISIBILITY,
+                    $relative,
+                    $line,
+                    'calls setVisibility, which is an object ACL on S3. The local stand-in honours '
+                    .'ACLs and production does not (ADR-004): a published asset is a bucket policy '
+                    .'and CloudFront, decided in Terraform, never a call from here',
+                );
+
+                continue;
+            }
+
+            if ($id === T_STRING && $text === 'Visibility' && $this->followedByDoubleColon($tokens, $index)) {
+                $violations[] = new Violation(
+                    self::PUBLIC_OBJECT_VISIBILITY,
+                    $relative,
+                    $line,
+                    'names the flysystem Visibility constant, which reaches S3 as an object ACL '
+                    .'(ADR-004). Public visibility is decided in Terraform, not from here',
+                );
+
+                continue;
+            }
+
+            if ($id !== T_CONSTANT_ENCAPSED_STRING) {
+                continue;
+            }
+
+            $value = substr($text, 1, -1);
+
+            if ($value === 'visibility') {
+                $violations[] = new Violation(
+                    self::PUBLIC_OBJECT_VISIBILITY,
+                    $relative,
+                    $line,
+                    'passes a visibility option to a filesystem call, which on the s3 disk is an '
+                    .'object ACL (ADR-004)',
+                );
+
+                continue;
+            }
+
+            if ($value === 'ACL' || in_array($value, self::CANNED_ACLS, true)) {
+                $violations[] = new Violation(
+                    self::PUBLIC_OBJECT_VISIBILITY,
+                    $relative,
+                    $line,
+                    "names the S3 ACL [{$value}] directly; ADR-004 keeps object ACLs out of the "
+                    .'application entirely, because the stand-in accepts them and production refuses them',
+                );
+            }
+        }
+
+        return $violations;
+    }
+
+    /** Is the next significant token after $index a `::`? */
+    private function followedByDoubleColon(array $tokens, int $index): bool
+    {
+        for ($i = $index + 1, $count = count($tokens); $i < $count; $i++) {
+            $token = $tokens[$i];
+
+            if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            return is_array($token) && $token[0] === T_DOUBLE_COLON;
+        }
+
+        return false;
     }
 
     /**

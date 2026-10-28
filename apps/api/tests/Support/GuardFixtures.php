@@ -35,6 +35,18 @@ final class GuardFixtures
         return (string) file_get_contents(base_path(self::path($name)));
     }
 
+    /** One rule 9 fixture: a workflow trigger, read as text the way the guard reads it. */
+    public static function workflow(string $name): string
+    {
+        return (string) file_get_contents(base_path("guard/fixtures/ci/{$name}.yml.fixture"));
+    }
+
+    /** One rule 10 fixture: application source, scanned under an `app/` path. */
+    public static function application(string $name): string
+    {
+        return (string) file_get_contents(base_path("guard/fixtures/visibility/{$name}.php.fixture"));
+    }
+
     /** @return list<Violation> */
     public static function violations(string $name, string $rule): array
     {

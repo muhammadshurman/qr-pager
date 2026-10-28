@@ -1,0 +1,18 @@
+# The PASSING shape, written in YAML's block-sequence form rather than the flow form the real
+# workflow uses -- so rule 9's parser is proven to accept both and the real file's `['**']` is
+# not the only spelling it understands.
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags: ['task-*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo nothing
