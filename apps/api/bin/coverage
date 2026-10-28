@@ -162,6 +162,16 @@ echo
 # truncating under each other.
 docker run --rm \
   --network host \
+  `# AS THE HOST USER, because this container WRITES INTO THE MOUNTED REPOSITORY.`\
+  `# Running as root left storage/framework/testing/disks/.../livewire-tmp owned by`\
+  `# root, and the next HOST run of the suite died on it --`\
+  `# "Failed to open directory: Permission denied" -- which looks like a test failure`\
+  `# and is a leftover from a tool. Measured on 2026-10-28, and cleaning it needed`\
+  `# another container because the host user could not remove it either.`\
+  --user "$(id -u):$(id -g)" \
+  `# Composer and PHP want somewhere writable for a home directory; without this they`\
+  `# fall back to / and warn on every run.`\
+  -e HOME=/tmp \
   -v "$(cd ../.. && pwd)":/repo \
   -w /repo/apps/api \
   -e APP_ENV=testing \

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Features\Landing;
 
 use App\Domain\Landing\CertificateIssuer;
+use App\Domain\Landing\DnsChallenge;
 use App\Domain\Landing\DnsVerifier;
 use App\Domain\Landing\DomainStatus;
 use App\Platform\Database\DriverError;
@@ -146,7 +147,7 @@ final class TenantDomains
             return [
                 'name' => $this->dns->recordName((string) $row->hostname),
                 'type' => 'TXT',
-                'value' => SystemDnsVerifier::PREFIX.$row->verification_token,
+                'value' => DnsChallenge::value((string) $row->verification_token),
             ];
         });
     }

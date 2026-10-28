@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Landing;
 
+use App\Domain\Landing\DnsChallenge;
 use App\Domain\Landing\DnsVerifier;
 use Illuminate\Support\Facades\Storage;
 
@@ -36,7 +37,7 @@ final class FixtureDnsVerifier implements DnsVerifier
 
     public function recordName(string $hostname): string
     {
-        return SystemDnsVerifier::LABEL.'.'.$hostname;
+        return DnsChallenge::recordName($hostname);
     }
 
     public function verify(string $hostname, string $token): bool
@@ -51,10 +52,9 @@ final class FixtureDnsVerifier implements DnsVerifier
             return false;
         }
 
-        foreach ((array) $zone[$name] as $value) {
-            if (hash_equals(SystemDnsVerifier::PREFIX.$token, (string) $value)) {
-                return true;
-            }
+        // The same comparison the system driver uses, because it is the same object.
+        if (DnsChallenge::matches((array) $zone[$name], $token)) {
+            return true;
         }
 
         $this->lastFailure = 'a TXT record exists at '.$name

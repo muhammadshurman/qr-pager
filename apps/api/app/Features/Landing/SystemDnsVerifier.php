@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Landing;
 
+use App\Domain\Landing\DnsChallenge;
 use App\Domain\Landing\DnsVerifier;
 
 /**
@@ -21,15 +22,11 @@ use App\Domain\Landing\DnsVerifier;
  */
 final class SystemDnsVerifier implements DnsVerifier
 {
-    public const LABEL = '_qrpager-challenge';
-
-    public const PREFIX = 'qrpager-verification=';
-
     private ?string $lastFailure = null;
 
     public function recordName(string $hostname): string
     {
-        return self::LABEL.'.'.$hostname;
+        return DnsChallenge::recordName($hostname);
     }
 
     public function verify(string $hostname, string $token): bool
@@ -56,18 +53,11 @@ final class SystemDnsVerifier implements DnsVerifier
             return false;
         }
 
-        foreach ($records as $record) {
-            $values = $record['entries'] ?? [$record['txt'] ?? ''];
-
-            foreach ((array) $values as $value) {
-                // hash_equals, because this compares a secret the tenant was given
-                // against one presented back. A timing side channel here is not much of
-                // an attack, and writing the comparison the other way in the one place
-                // this project compares a token would be a pattern worth copying wrongly.
-                if (hash_equals(self::PREFIX.$token, (string) $value)) {
-                    return true;
-                }
-            }
+        // ONE comparison, in DnsChallenge, shared with the local driver. The two drivers
+        // differ only in where the TXT values come from, which is the only thing a driver
+        // should differ in.
+        if (DnsChallenge::matches(self::values($records), $token)) {
+            return true;
         }
 
         $this->lastFailure = 'a TXT record exists at '.$this->recordName($hostname)
@@ -79,5 +69,27 @@ final class SystemDnsVerifier implements DnsVerifier
     public function lastFailure(): ?string
     {
         return $this->lastFailure;
+    }
+
+    /**
+     * The TXT strings in a dns_get_record result.
+     *
+     * `entries` is the full set of strings in a record and `txt` is them concatenated;
+     * a record may carry either depending on the resolver, so both are read.
+     *
+     * @param  list<array<string, mixed>>  $records
+     * @return list<string>
+     */
+    private static function values(array $records): array
+    {
+        $values = [];
+
+        foreach ($records as $record) {
+            foreach ((array) ($record['entries'] ?? [$record['txt'] ?? '']) as $value) {
+                $values[] = (string) $value;
+            }
+        }
+
+        return $values;
     }
 }
