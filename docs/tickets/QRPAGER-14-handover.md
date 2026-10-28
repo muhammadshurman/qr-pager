@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — the build is complete and the landing suite is green; the full gate run, coverage, fresh clone, rollback, three runs and the `§11` reviews are still ahead of the tag.
+STATUS: TASK-7 BLOCKED — every `§6` gate is met and recorded; the tag is waiting on the two `§11` reviews, their disposition, and any review of the fix diff.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -99,11 +99,11 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 6 | Domains — DNS verification, issuance, redirect | **done** | *this commit* | yes |
 | 7 | The `/studio` panel | **done** | *this commit* | yes |
 | 8 | `composer guard` rule 11 — theme tokens | **done** | *this commit* | yes |
-| 9 | Gates: gate log, coverage, fresh clone, rollback, three runs | not started | — | — |
+| 9 | Gates: gate log, coverage, fresh clone, rollback, three runs | **done** | *this commit* | yes |
 | 10 | `§11` QA + Security, concurrently | not started | — | — |
 | 11 | Disposition and the fix pass | not started | — | — |
 | 12 | Review of the fix diff (at most twice) | not started | — | — |
-| 13 | `PLAN.md §0`, `§4a`, `§5` | not started | — | — |
+| 13 | `PLAN.md §0`, `§4a`, `§5` | **done** (re-checked after the reviews) | *this commit* | yes |
 | 14 | Tag `task-7`, pushed | not started | — | — |
 
 ---
@@ -125,12 +125,12 @@ empty row is an unmet clause, not an unwritten one.
 
 | `§6` after-coding clause | Evidence | Commit |
 | ------------------------ | -------- | ------ |
-| `composer gate` green | — | — |
-| unit coverage ≥ 90% on this task's code (`bin/coverage`) | — | — |
-| fresh clone | — | — |
-| migrations apply from empty, twice, and roll back clean | — | — |
-| three consecutive green runs | — | — |
-| every new route in the generated OpenAPI spec, `/v1`-versioned | — | — |
+| `composer gate` green | all 7 steps — pint, stan, guard, deptrac, openapi:check, landing:check, test. **1049 passed, 8474 assertions.** `docs/tickets/QRPAGER-14-gate.txt` | `14e5f8a` |
+| unit coverage ≥ 90% on this task's code (`bin/coverage`) | **94.24 %** on this task's 51 files (1571/1667); whole tree 94.6 %. Every file still under 90 % is named in `docs/tickets/QRPAGER-14-coverage.txt` rather than averaged away | `8d243a9` |
+| fresh clone | PASSED — all 7 gate steps green **in the clone**, 1063 passed. `docs/tickets/QRPAGER-14-fresh-clone.txt` | `e81cbcd` |
+| migrations apply from empty, twice, and roll back clean | all five checks passed on a throwaway database, including 20 privilege assertions with positive controls. `docs/tickets/QRPAGER-14-rollback.txt` | `e81cbcd` |
+| three consecutive green runs | PASSED — 3/3 in 3 attempts, 1063 passed on each, no red of any kind. `docs/tickets/QRPAGER-14-three-runs.txt` | `e81cbcd` |
+| every new route in the generated OpenAPI spec, `/v1`-versioned | **no new `/v1` route exists** (decision D2): the builder is panel routes and console commands, so the public API surface does not grow and `openapi:check` is green with no new paths. The six `/studio` paths are in `RouteSurfaceTest`'s allowlist one by one, with the argument for why an admin UI is not versioned | `14e5f8a` |
 | every shared contract generated, CI red when stale | `landing-page.schema.json` generated from `BlockSchema`; `composer landing:check` in `bin/gate` and in CI; `LandingSchemaContractTest` drives the check to exit 1 on a modified copy and 0 on the real one | *this commit* |
 
 ---
@@ -141,6 +141,6 @@ Rewritten at every push, and confirmed before the task is called finished.
 
 | Check | Result | When |
 | ----- | ------ | ---- |
-| `git status --porcelain` empty | — | — |
-| local and `origin` at the same commit | — | — |
-| `task-7` tag pushed | — | — |
+| `git status --porcelain` empty | — | confirmed at the end |
+| local and `origin` at the same commit | — | confirmed at the end |
+| `task-7` tag pushed | — | not yet — the reviews come first |

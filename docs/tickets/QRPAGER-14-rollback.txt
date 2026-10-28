@@ -2,40 +2,112 @@
 MIGRATIONS APPLY FROM EMPTY, TWICE, AND ROLL BACK CLEAN (§6)
 ================================================================================
 
-Commit:   8d243a9 + the bin/migration-rollback-proof change in this commit
-Run at:   2026-10-28
-Command:  bin/migration-rollback-proof            (apps/api)
-Database: qrpager_rollback_proof -- created for the run and dropped afterwards,
-          never qrpager_test, so one rollback really does go back to EMPTY
-Result:   all five checks passed
-
-  1. migrations apply from EMPTY, in one batch
-  2. a second apply is a no-op
-  3. this task's objects are present -- the three tables with rls=t force=t,
-     their six policies, and the privilege block below
-  4. migrate:rollback leaves ONE table (migrations) and no functions
-  5. a re-apply returns a BYTE-IDENTICAL schema fingerprint
-
-⚠ WHAT THE POSITIVE CONTROL CAUGHT, because it is the point of having one.
-The first version of Task 7's privilege block asked has_table_privilege() for
-every privilege. That function answers `f` for a COLUMN-level grant -- it asks
-only about the table-level one -- so:
-
-    has_table_privilege     ('qrpager_app','media_assets','INSERT')  ->  f
-    has_any_column_privilege('qrpager_app','media_assets','INSERT')  ->  t
-
-Every one of the worker's absence checks would therefore have answered `f` for
-a worker holding a column-level grant on every column: the control passing
-while the thing it forbids was true. The positive control failed loudly
-("qrpager_app does NOT hold INSERT on media_assets -- the absence checks above
-are vacuous") and the block now uses has_any_column_privilege for the column
-privileges and keeps has_table_privilege for DELETE, which has no column form.
-
-That is the same shape the script's own DELETE comment already recorded for
-passkeys, arriving from the other direction.
+⚠ AND THE FIRST VERSION OF THIS FILE WAS TRUNCATED, which is worth recording
+where the evidence is. It was captured through `| tail -40`, so 97 of the run's
+137 lines -- including 12 of the 20 privilege assertions it exists to show --
+were never written down. CLAUDE.md's own words: "A gate you cannot read
+afterwards is a gate you have to re-run to learn anything from." The run below
+is the complete, unedited output.
 
 ================================================================================
 
+migration-rollback-proof: using the psql inside the compose postgres service
+migration-rollback-proof: database [qrpager_rollback_proof] on 127.0.0.1
+
+=== 1. apply from empty, one batch ===
+
+   INFO  Preparing database.  
+
+  Creating migration table ...................................... 25.32ms DONE
+
+   INFO  Running migrations.  
+
+  2026_10_25_150000_create_global_tables ........................ 62.17ms DONE
+  2026_10_25_150100_create_tenant_tables ....................... 201.14ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 12.39ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ............... 12.52ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 5.37ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 4.57ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 4.15ms DONE
+  2026_10_28_120000_create_auth_contract ........................ 78.86ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 4.69ms DONE
+  2026_10_28_140000_narrow_auth_grants ........................... 4.75ms DONE
+  2026_10_28_150000_create_platform_tables ...................... 78.10ms DONE
+  2026_10_28_160000_create_landing_tables ...................... 113.95ms DONE
+
+distinct batches: 1 (expected 1)
+
+=== 2. a second apply is a no-op ===
+
+   INFO  Nothing to migrate.  
+
+
+=== 3. this task's objects are present ===
+fingerprint lines: 829
+grant lines for this task's tables: 67
+grant qrpager_app passkeys.created_at INSERT
+grant qrpager_app passkeys.created_at SELECT
+grant qrpager_app passkeys.credential INSERT
+grant qrpager_app passkeys.credential SELECT
+grant qrpager_app passkeys.credential_id INSERT
+grant qrpager_app passkeys.credential_id SELECT
+grant qrpager_app passkeys.id INSERT
+grant qrpager_app passkeys.id SELECT
+grant qrpager_app passkeys.last_used_at SELECT
+grant qrpager_app passkeys.last_used_at UPDATE
+grant qrpager_app passkeys.name INSERT
+grant qrpager_app passkeys.name SELECT
+grant qrpager_app passkeys.name UPDATE
+grant qrpager_app passkeys.updated_at INSERT
+grant qrpager_app passkeys.updated_at SELECT
+grant qrpager_app passkeys.updated_at UPDATE
+grant qrpager_app passkeys.user_id INSERT
+grant qrpager_app passkeys.user_id SELECT
+grant qrpager_app personal_access_tokens.abilities INSERT
+grant qrpager_app personal_access_tokens.abilities SELECT
+grant qrpager_app personal_access_tokens.created_at INSERT
+grant qrpager_app personal_access_tokens.created_at SELECT
+grant qrpager_app personal_access_tokens.expires_at INSERT
+grant qrpager_app personal_access_tokens.expires_at SELECT
+grant qrpager_app personal_access_tokens.id INSERT
+grant qrpager_app personal_access_tokens.id SELECT
+grant qrpager_app personal_access_tokens.last_used_at SELECT
+grant qrpager_app personal_access_tokens.last_used_at UPDATE
+grant qrpager_app personal_access_tokens.name INSERT
+grant qrpager_app personal_access_tokens.name SELECT
+grant qrpager_app personal_access_tokens.token INSERT
+grant qrpager_app personal_access_tokens.token SELECT
+grant qrpager_app personal_access_tokens.tokenable_id INSERT
+grant qrpager_app personal_access_tokens.tokenable_id SELECT
+grant qrpager_app personal_access_tokens.tokenable_type INSERT
+grant qrpager_app personal_access_tokens.tokenable_type SELECT
+grant qrpager_app personal_access_tokens.updated_at INSERT
+grant qrpager_app personal_access_tokens.updated_at SELECT
+grant qrpager_app personal_access_tokens.updated_at UPDATE
+grant qrpager_app users.is_platform_admin SELECT
+grant qrpager_app users.password INSERT
+grant qrpager_app users.password UPDATE
+grant qrpager_app users.remember_token INSERT
+grant qrpager_app users.remember_token UPDATE
+grant qrpager_app users.two_factor_confirmed_at INSERT
+grant qrpager_app users.two_factor_confirmed_at SELECT
+grant qrpager_app users.two_factor_confirmed_at UPDATE
+grant qrpager_app users.two_factor_recovery_codes INSERT
+grant qrpager_app users.two_factor_recovery_codes UPDATE
+grant qrpager_app users.two_factor_secret INSERT
+grant qrpager_app users.two_factor_secret UPDATE
+qrpager_owner DELETE on landing_pages: f (expected f)
+qrpager_worker SELECT on landing_pages: f (expected f)
+qrpager_worker SELECT on media_assets: f (expected f)
+qrpager_worker SELECT on tenant_domains: f (expected f)
+qrpager_worker INSERT on landing_pages: f (expected f)
+qrpager_worker INSERT on media_assets: f (expected f)
+qrpager_worker INSERT on tenant_domains: f (expected f)
+qrpager_worker UPDATE on landing_pages: f (expected f)
+qrpager_worker UPDATE on media_assets: f (expected f)
+qrpager_worker UPDATE on tenant_domains: f (expected f)
+qrpager_app UPDATE on media_assets: f (expected f)
+qrpager_app SELECT on landing_pages: t (expected t)
 qrpager_app UPDATE on landing_pages: t (expected t)
 qrpager_app SELECT on media_assets: t (expected t)
 qrpager_app INSERT on media_assets: t (expected t)
@@ -56,18 +128,18 @@ no UPDATE or DELETE on platform_audit_log for either runtime role
 
    INFO  Rolling back migrations.  
 
-  2026_10_28_160000_create_landing_tables ....................... 41.43ms DONE
-  2026_10_28_150000_create_platform_tables ...................... 17.01ms DONE
-  2026_10_28_140000_narrow_auth_grants ........................... 5.17ms DONE
-  2026_10_28_130000_create_two_factor_reader ..................... 4.54ms DONE
-  2026_10_28_120000_create_auth_contract ........................ 14.94ms DONE
-  2026_10_27_120100_create_pager_token_resolver .................. 4.47ms DONE
-  2026_10_27_120000_narrow_worker_session_policies ............... 5.22ms DONE
-  2026_10_25_150400_protect_audit_log ............................ 5.07ms DONE
-  2026_10_25_150300_grant_runtime_role_privileges ................ 9.05ms DONE
-  2026_10_25_150200_enable_row_level_security ................... 23.68ms DONE
-  2026_10_25_150100_create_tenant_tables ........................ 34.48ms DONE
-  2026_10_25_150000_create_global_tables ........................ 13.09ms DONE
+  2026_10_28_160000_create_landing_tables ....................... 37.83ms DONE
+  2026_10_28_150000_create_platform_tables ...................... 16.78ms DONE
+  2026_10_28_140000_narrow_auth_grants ........................... 5.55ms DONE
+  2026_10_28_130000_create_two_factor_reader ..................... 4.06ms DONE
+  2026_10_28_120000_create_auth_contract ........................ 11.71ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 4.02ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 5.76ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 4.60ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 7.63ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 22.87ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 29.43ms DONE
+  2026_10_25_150000_create_global_tables ........................ 14.00ms DONE
 
 tables left: 1 (expected 1, the migrations table)
 functions left: 0 (expected 0 -- the resolver and the audit trigger are both dropped)
@@ -76,5 +148,3 @@ functions left: 0 (expected 0 -- the resolver and the audit trigger are both dro
 schema identical after rollback and re-apply
 
 migration-rollback-proof: all five checks passed on [qrpager_rollback_proof].
-
-[exited with code 0]
