@@ -1,4 +1,4 @@
-STATUS: TASK-7 BLOCKED — every `§6` gate is met and recorded; the tag is waiting on the two `§11` reviews, their disposition, and any review of the fix diff.
+STATUS: TASK-7 BLOCKED — both `§11` reviews are in (29 findings) and dispositioned in one pass; the tag is waiting on the fix diff's own review and a re-run of the gates.
 
 # QRPAGER-14 — Task 7 handover
 
@@ -75,6 +75,24 @@ recorded certificate.**
 
 ---
 
+## 2a. ⚠ THE NAMED INVARIANT FAILED AT REVIEW AND HOLDS AFTER THE FIX PASS
+
+The `§11` security review falsified two of its three clauses on measured evidence, and both were
+reproduced in this session before the verdict was accepted. The QA review, running concurrently,
+concluded the invariant HELD — the two disagreed, and the security review was right.
+
+1. **No tenant-authored value can inject script — FAILED.** `SvgPolicy::refuse()` ended in
+   `walk($root)`, and `walk()` applies the attribute allow-list to its argument's CHILDREN. The root
+   `<svg>`'s own attributes were never examined, so `<svg xmlns="…" onload="…">` was accepted,
+   stored, and copied by a publish to the published site with `ContentType: image/svg+xml`. All 21
+   hostile fixtures put their payload on a child. **Fixed:** the walk starts at the DOCUMENT, which
+   also makes the processing-instruction rule reachable for the only position a PI is written in.
+2. **An unpublished draft is not reachable — FAILED.** `unpublish()` deleted `index.html` and left
+   `manifest.json` (which carries the checksum) and `{checksum}.html` in the CDN-served prefix.
+   **Fixed:** the whole prefix is deleted, and the re-publish round trip is asserted so "recoverable"
+   is measured rather than assumed.
+3. **One tenant's media cannot be reached or guessed — HELD**, in both reviews, with no way found in.
+
 ## 3. The named invariant this task ships on
 
 > **An unpublished draft is not reachable, no tenant-authored value can inject script or
@@ -100,8 +118,8 @@ limit`, this is the only clause that blocks `task-7` once the review cap is reac
 | 7 | The `/studio` panel | **done** | *this commit* | yes |
 | 8 | `composer guard` rule 11 — theme tokens | **done** | *this commit* | yes |
 | 9 | Gates: gate log, coverage, fresh clone, rollback, three runs | **done** | *this commit* | yes |
-| 10 | `§11` QA + Security, concurrently | not started | — | — |
-| 11 | Disposition and the fix pass | not started | — | — |
+| 10 | `§11` QA + Security, concurrently | **done** — 29 findings: QA 18 (0C 2H 7M 9L) · Security 11 (1C 2H 4M 4L) | — | — |
+| 11 | Disposition and the fix pass | **done** — 22 fixed with a regression test, 7 into `§5` (`R-134`…`R-140`) | *this commit* | yes |
 | 12 | Review of the fix diff (at most twice) | not started | — | — |
 | 13 | `PLAN.md §0`, `§4a`, `§5` | **done** (re-checked after the reviews) | *this commit* | yes |
 | 14 | Tag `task-7`, pushed | not started | — | — |

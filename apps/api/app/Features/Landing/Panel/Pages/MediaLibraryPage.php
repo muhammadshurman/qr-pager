@@ -9,6 +9,7 @@ use App\Features\Landing\MediaRejected;
 use App\Platform\Http\TenantPanelAccess;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
@@ -71,7 +72,14 @@ class MediaLibraryPage extends Page
             return;
         }
 
-        $name = $this->upload->getClientOriginalName();
+        // THE SAME REDUCTION THE STORED NAME GETS. The raw client filename used to go
+        // straight into a notification title, and Filament renders a title with
+        // `sanitizeHtml()` -- an allow-list sanitiser, not `e()` -- so `<b>x</b>.png`
+        // rendered as markup. Self-inflicted only (the notification is flashed to the
+        // uploader's own session), but the stored value and the displayed value were
+        // two different values, which is the part worth fixing. Found by the §11
+        // security review, 2026-10-28.
+        $name = MediaLibrary::safeName((string) $this->upload->getClientOriginalName());
 
         try {
             // The BYTES, read once and handed to the one boundary. The client's
@@ -100,6 +108,15 @@ class MediaLibraryPage extends Page
 
     public function delete(string $assetId): void
     {
+        // SHAPE-CHECKED BEFORE IT REACHES A uuid COLUMN -- R-110's shape, found here by
+        // both §11 reviewers. `where('id', 'not-a-uuid')` raises 22P02, so a malformed
+        // id answered differently from an unknown one. The refusal is now identical.
+        if (! Str::isUuid($assetId)) {
+            Notification::make()->title('That image is not in your library')->danger()->send();
+
+            return;
+        }
+
         try {
             app(MediaLibrary::class)->delete(TenantPanelAccess::tenantId(), $assetId);
         } catch (MediaRejected $e) {

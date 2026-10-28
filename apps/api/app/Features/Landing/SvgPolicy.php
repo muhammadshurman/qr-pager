@@ -139,7 +139,30 @@ final class SvgPolicy
             return 'its root element is not an SVG';
         }
 
-        return self::walk($root);
+        // ⚠ THE DOCUMENT, NOT THE ROOT ELEMENT, AND THAT ONE WORD WAS A CRITICAL.
+        //
+        // This read `self::walk($root)`. `walk()` iterates its argument's CHILDREN and
+        // applies `element()` -- the only caller of the attribute allow-list -- to each
+        // one. So the root `<svg>`'s own attributes were never examined, and
+        // `<svg xmlns="..." onload="alert(document.domain)">` was accepted, stored, and
+        // copied by a publish to `sites/{hostname}/assets/{32 hex}.svg` with
+        // `ContentType: image/svg+xml`. Navigating to that URL runs the script in the
+        // published site's origin -- which is exactly what this class's docblock says it
+        // exists to prevent, and which made the task's named invariant false by the most
+        // direct route available. Found by the §11 security review on 2026-10-28; all 21
+        // hostile fixtures put their payload on a CHILD, so none of them could catch it.
+        //
+        // Walking the DOCUMENT fixes a second hole in the same line. A processing
+        // instruction belongs BEFORE the root, as a sibling of it: an xml declaration,
+        // then an xml-stylesheet instruction, then the svg element. A walk that starts
+        // at the root never visits one, so the PI refusal below was unreachable for the
+        // only position a PI is actually written in. (The instruction is described in
+        // words and not written out, because a literal `?` followed by `>` inside a PHP
+        // comment CLOSES THE PHP TAG -- which this file has now cost twice.)
+        //
+        // The document's children are the PI(s), any comment, and the root element, so
+        // `element($root)` now runs with everything else unchanged.
+        return self::walk($document);
     }
 
     /** Depth-first over the whole tree. The first refusal wins. */

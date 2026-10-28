@@ -75,7 +75,13 @@ final class PublishedSite
             // behind a CHECK constraint, or is built from a slug that carries its own.
             // This refuses the case that constraint is ever relaxed, because a key built
             // from a bad hostname is a write outside this tenant's prefix.
-            throw new \InvalidArgumentException('a site key cannot be built from that hostname');
+            //
+            // ⚠ PublishFailed AND NOT InvalidArgumentException. Every other refusal on
+            // the publish path is a PublishFailed, which LandingBuilderPage turns into
+            // §12.1's "Publish failed — your live page is unchanged". This one escaped
+            // to a 500, so the one guard that fires when a constraint has been relaxed
+            // was also the one that told the tenant nothing. Found by the §11 QA review.
+            throw new PublishFailed('your site address is not one we can publish to');
         }
 
         return self::PREFIX.'/'.$hostname;

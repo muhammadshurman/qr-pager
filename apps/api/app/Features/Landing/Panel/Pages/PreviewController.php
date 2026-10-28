@@ -11,6 +11,7 @@ use App\Features\Landing\MediaLibrary;
 use App\Platform\Http\TenantPanelAccess;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * `/studio/preview` — the draft, rendered, for the tenant who owns it and nobody else.
@@ -83,6 +84,15 @@ class PreviewController
     {
         $tenantId = TenantPanelAccess::tenantId();
 
+        // SHAPE-CHECKED BEFORE IT REACHES A uuid COLUMN. `where('id', 'not-a-uuid')`
+        // raises Postgres 22P02, so a malformed id answered differently from an unknown
+        // one -- R-110's shape, which this project closed once already for a bearer
+        // token. Both §11 reviewers found it here. 404 is the same answer an unknown id
+        // gets, which is §11.2's IDOR rule.
+        if (! Str::isUuid($asset)) {
+            abort(404);
+        }
+
         // Resolved from a row inside the tenant's own scope -- the id is checked against
         // media_assets, so another tenant's uuid answers 404 rather than bytes.
         $bytes = $library->bytes($tenantId, $asset);
@@ -96,22 +106,40 @@ class PreviewController
 
         return response($bytes)->withHeaders(array_merge(self::headers(), [
             'Content-Type' => $contentType,
-            // An SVG served inline from this origin is a document, and this origin holds
-            // the panel's session. SvgPolicy has already refused anything executable, and
-            // this is the second half: the browser is told not to sniff, and a strict CSP
-            // for this one response removes scripting even if both were wrong.
-            'X-Content-Type-Options' => 'nosniff',
+            // TIGHTER THAN THE DOCUMENT'S, deliberately: an image needs no images.
             'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; sandbox",
         ]));
     }
 
-    /** @return array<string, string> */
+    /**
+     * The headers every preview response carries.
+     *
+     * ⚠ THE CSP AND `nosniff` WERE ON THE ASSET RESPONSE AND NOT ON THE DOCUMENT, which
+     * was the asymmetry the §11 security review found: the document is the tenant's own
+     * draft rendered to HTML and served from the APPLICATION origin -- the one that
+     * carries the `/studio` and `/platform` session cookies -- while the image embedded
+     * in it got the stricter treatment. The only thing standing between an escaping
+     * defect and session-scoped script execution was Blade's `{{ }}`, which contradicts
+     * decision D5's "two independent halves" everywhere else in this task.
+     *
+     * `default-src 'none'` with `img-src 'self'` and `style-src 'unsafe-inline'` is what
+     * the rendered page actually needs: its own images, its own inline stylesheet, and
+     * nothing else -- no script of any origin, no frame, no fetch. `frame-ancestors
+     * 'none'` keeps the draft out of an iframe, which `X-Frame-Options` says again for
+     * anything that does not read CSP.
+     *
+     * @return array<string, string>
+     */
     private static function headers(): array
     {
         return [
             'Cache-Control' => (string) config('landing.preview_cache_control'),
             'X-Robots-Tag' => 'noindex, nofollow',
             'Referrer-Policy' => 'no-referrer',
+            'X-Content-Type-Options' => 'nosniff',
+            'X-Frame-Options' => 'DENY',
+            'Content-Security-Policy' => "default-src 'none'; img-src 'self'; "
+                ."style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
         ];
     }
 }

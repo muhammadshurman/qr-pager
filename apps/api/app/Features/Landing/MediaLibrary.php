@@ -59,7 +59,15 @@ final class MediaLibrary
      *
      *   - the object write throwing rolls the row back -> no row, no object;
      *   - a commit failing after the object write leaves an ORPHAN OBJECT -> a key in
-     *     the store with no row, which `media:orphans` reports and which nothing reads.
+     *     the store with no row, which nothing reads and NOTHING REPORTS.
+     *
+     * ⚠ THIS USED TO SAY "which `media:orphans` reports". That command does not exist --
+     * it was named in two docblocks and in the ticket and was never written, so an
+     * accepted residual rested on a compensating control that was not there. Found by
+     * the §11 QA review on 2026-10-28, which is §4a's most-recorded defect shape: a
+     * record claiming a thing before the thing exists. The residual is now R-136, with
+     * an owner, and the citation is gone rather than the command being invented in a
+     * fix pass.
      *
      * The reverse order would risk the one state that actually breaks something: a row
      * pointing at bytes that are not there, which a publish would then fail on.
@@ -274,8 +282,13 @@ final class MediaLibrary
      * It is never used to build a path -- the key's leaf is CSPRNG -- so this is about
      * what a panel renders and a log might carry, not about traversal. Anything outside
      * a conservative set becomes an underscore, and the result is bounded to the column.
+     *
+     * PUBLIC since the §11 security review: the panel used the RAW client filename in a
+     * notification title, and Filament renders a title through `sanitizeHtml()` -- an
+     * allow-list sanitiser rather than `e()` -- so the stored value and the DISPLAYED
+     * value were two different values. One reduction, one call site each.
      */
-    private static function safeName(string $name): string
+    public static function safeName(string $name): string
     {
         $name = (string) preg_replace('/[^\w .\-()]+/u', '_', $name);
         $name = trim($name) === '' ? 'image' : trim($name);

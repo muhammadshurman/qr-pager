@@ -145,9 +145,24 @@ it('refuses every hostile SVG, each for a reason naming the construct', function
     $tenant = $this->makeTenant();
 
     foreach (ImageFixtures::hostileSvgs() as $what => $bytes) {
-        $refusal = rejection(fn () => library()->store($tenant, 'logo.svg', $bytes));
+        // ⚠ THE POLICY IS DRIVEN DIRECTLY FIRST, and that is the half the §11 security
+        // review found missing. Going only through store() lets ANOTHER control satisfy
+        // the assertion: `stylesheet instruction` was refused by the CONTENT-TYPE gate,
+        // because libmagic answers `text/xml` for a buffer that starts with that
+        // instruction, so SvgPolicy's own processing-instruction rule was never
+        // consulted -- and the rule turned out to be unreachable for the position a PI
+        // is actually written in. A refusal from the wrong control is a green test for a
+        // dead one, which is the shape §4a records four of.
+        $this->assertNotNull(
+            SvgPolicy::refuse($bytes),
+            "SvgPolicy accepted an SVG carrying a {$what}",
+        );
 
-        $this->assertNotNull($refusal, "an SVG carrying a {$what} was accepted");
+        // And end to end, through the real upload path.
+        $this->assertNotNull(
+            rejection(fn () => library()->store($tenant, 'logo.svg', $bytes)),
+            "the media library stored an SVG carrying a {$what}",
+        );
     }
 
     expect(withTenant($tenant, fn () => DB::table('media_assets')->count()))->toBe(0);

@@ -17,11 +17,13 @@
 
         @if ($domains === [])
             <p>
-                Your page is live at <strong>{{ $this->platformHostname() }}</strong>.
+                Your page is live at <strong>{{ $this->platformFallback() }}</strong>.
                 Add your own domain to use it instead.
             </p>
         @else
-            <p>Your page is published to <strong>{{ $this->platformHostname() }}</strong>.</p>
+            <p>Your page is published to <strong>{{ $this->liveHostname() }}</strong>.</p>
+            <p class="text-sm">The platform always keeps
+                <strong>{{ $this->platformFallback() }}</strong> for you.</p>
         @endif
     </div>
 

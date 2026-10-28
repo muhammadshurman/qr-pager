@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\Support\ImageFixtures;
 use Tests\Support\LandingFixtures;
+use Tests\Support\RecordingDisk;
 
 /*
  * §3 row 7, clause 1: "publish produces a statically rendered, CDN-cached page".
@@ -247,7 +248,17 @@ it('writes a manifest naming what is live', function (): void {
         ->and($manifest['assets'])->toHaveCount(1);
 });
 
-it('takes the page down on unpublish, leaving the snapshot unreachable rather than deleted', function (): void {
+it('takes the whole site down on unpublish, not just the pointer', function (): void {
+    // ⚠ THIS CASE USED TO ASSERT THE OPPOSITE OF WHAT IT NOW ASSERTS, and the sentence
+    // it asserted was false. It said the snapshot "stays: it is immutable, nobody can
+    // reach it without the pointer" -- but `manifest.json` survived too, and its body
+    // carries the checksum, so it IS a pointer. The §11 security review found that an
+    // unpublished page was still fetchable in two hops: GET /manifest.json for the name,
+    // GET /{checksum}.html for the page.
+    //
+    // "Deleting it would make an unpublish unrecoverable" was wrong as well: the draft
+    // is still in the database, so a re-publish renders the same bytes. The round trip
+    // is asserted in LandingDraftUnreachableTest.
     $tenant = $this->makeTenant(slug: 'down');
 
     pages()->saveDraft($tenant, LandingFixtures::fullPage());
@@ -255,18 +266,63 @@ it('takes the page down on unpublish, leaving the snapshot unreachable rather th
 
     pages()->unpublish($tenant);
 
-    // The POINTER is gone, which is what makes the page unreachable -- the CDN maps Host
-    // to the prefix and serves index.html.
-    expect(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeFalse()
-        // The snapshot stays: it is immutable, nobody can reach it without the pointer,
-        // and deleting it would make an unpublish unrecoverable.
+    expect(MediaLibrary::disk()->allFiles(PublishedSite::root($published->hostname)))->toBe([])
+        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeFalse()
         ->and(MediaLibrary::disk()->exists(PublishedSite::snapshot($published->hostname, $published->checksum)))
-        ->toBeTrue();
+        ->toBeFalse();
 
     $state = pages()->state($tenant);
 
     expect($state['status'])->toBe(LandingPageStatus::Draft)
         ->and($state['published_hostname'])->toBeNull();
+});
+
+it('holds no database transaction open while it writes to the object store', function (): void {
+    // THE §11 QA REVIEW'S SECOND HIGH, as a control rather than as a comment.
+    //
+    // publish() used to run end to end inside one withTenant(), which is one
+    // transaction, so the backend sat idle through up to 27 object-store operations --
+    // against `idle_in_transaction_session_timeout = 15s` for qrpager_app
+    // (config/tenancy.php). Past that, Postgres terminates the connection and the final
+    // UPDATE fails AFTER the pointer write has switched the live page.
+    //
+    // The disk is wrapped in a recorder that reads DB::transactionLevel() at the moment
+    // of each write. Nothing is faked: the recorder DELEGATES to the real s3 disk, so
+    // every assertion in the rest of this file still holds while it is installed.
+    $tenant = $this->makeTenant(slug: 'notx');
+    $asset = (new MediaLibrary)->store($tenant, 'room.png', ImageFixtures::png());
+
+    pages()->saveDraft($tenant, LandingFixtures::fullPage($asset));
+
+    $real = MediaLibrary::disk();
+    $levels = [];
+    $recorder = new RecordingDisk($real, function (string $operation) use (&$levels): void {
+        $levels[] = $operation.'@'.DB::connection('pgsql')->transactionLevel();
+    });
+
+    Storage::set('s3', $recorder);
+
+    try {
+        pages()->publish($tenant);
+    } finally {
+        Storage::forgetDisk('s3');
+    }
+
+    // Every write and copy happened at transaction level 0.
+    expect($levels)->not->toBe([], 'the recorder saw no object writes at all');
+
+    foreach ($levels as $seen) {
+        expect($seen)->toEndWith('@0', "an object operation ran inside a transaction: {$seen}");
+    }
+
+    // The positive control for the recorder: it really does observe a non-zero level
+    // when one is open, so "@0" everywhere is a measurement and not a broken probe.
+    $inside = null;
+    withTenant($tenant, function () use (&$inside): void {
+        $inside = DB::connection('pgsql')->transactionLevel();
+    });
+
+    expect($inside)->toBeGreaterThan(0);
 });
 
 it('publishes to the active custom domain once there is one', function (): void {

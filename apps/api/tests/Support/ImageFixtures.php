@@ -82,6 +82,28 @@ final class ImageFixtures
         $open = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">';
 
         return [
+            // ⚠ THE ROOT ELEMENT'S OWN ATTRIBUTES. The first version of SvgPolicy walked
+            // the root's CHILDREN and never examined the root itself, so every one of
+            // these was ACCEPTED, stored, and copied to the published site with
+            // ContentType: image/svg+xml -- where navigating to it runs the script in
+            // the tenant's own origin. The 21 cases this list started with all put their
+            // payload on a CHILD, so not one of them could catch it. Found by the §11
+            // security review, 2026-10-28, as this task's only Critical.
+            'root onload' => '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect/></svg>',
+            'root onmouseover' => '<svg xmlns="http://www.w3.org/2000/svg" onmouseover="alert(1)"><rect/></svg>',
+            'root style' => '<svg xmlns="http://www.w3.org/2000/svg" style="background:url(https://evil.test/x)"><rect/></svg>',
+            'root href' => '<svg xmlns="http://www.w3.org/2000/svg" href="https://evil.test"><rect/></svg>',
+            'root unknown attribute' => '<svg xmlns="http://www.w3.org/2000/svg" data-x="1"><rect/></svg>',
+            // ⚠ A PROCESSING INSTRUCTION BEFORE THE ROOT, which is where one actually
+            // goes. `stylesheet instruction` below is the same construct WITHOUT an XML
+            // declaration in front of it -- and libmagic answers `text/xml` for that
+            // buffer, so it was refused by the content-type gate and SvgPolicy's own PI
+            // rule was never consulted. With the declaration present libmagic answers
+            // `image/svg+xml` and the PI reached the store. A green test for a control
+            // that never ran.
+            'stylesheet instruction after an xml declaration' => '<'.'?xml version="1.0"?'.'>'
+                .'<'.'?xml-stylesheet type="text/css" href="https://evil.test/x.css"?'.'>'
+                .'<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>',
             'script element' => $open.'<script>alert(1)</script></svg>',
             'script in defs' => $open.'<defs><script>alert(1)</script></defs></svg>',
             'event handler' => $open.'<rect width="10" height="10" onload="alert(1)"/></svg>',

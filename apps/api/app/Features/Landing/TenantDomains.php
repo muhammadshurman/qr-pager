@@ -43,6 +43,22 @@ use Illuminate\Support\Str;
  */
 final class TenantDomains
 {
+    /**
+     * At most this many domains per tenant.
+     *
+     * ⚠ THERE WAS NO BOUND HERE AT ALL, and `hostname` is unique across the WHOLE
+     * platform. So one tenant's owner could claim an unlimited number of hostnames --
+     * including a competitor's real domain -- permanently, at the panel's request rate,
+     * and no path exists to release one. R-129 accepts the enumeration oracle of the
+     * global index; it never considered the index plus an unbounded, irreversible
+     * `add()`. Found by the §11 QA review, 2026-10-28.
+     *
+     * Eight, because a restaurant with an apex, a `www`, a legacy domain and a couple of
+     * campaign hostnames is a real shape, and forty is not. The residual -- no release
+     * path, so a typo is permanent -- is R-138.
+     */
+    public const MAX_DOMAINS = 8;
+
     public function __construct(
         private readonly DnsVerifier $dns,
         private readonly CertificateIssuer $certificates,
@@ -68,6 +84,12 @@ final class TenantDomains
         $id = (string) Str::uuid7();
 
         return withTenant($tenantId, function () use ($tenantId, $id, $hostname): string {
+            if (DB::table('tenant_domains')->count() >= self::MAX_DOMAINS) {
+                throw new DomainRefused(
+                    'you already have '.self::MAX_DOMAINS.' domains; remove one to add another'
+                );
+            }
+
             try {
                 DB::table('tenant_domains')->insert([
                     'id' => $id,
@@ -119,13 +141,21 @@ final class TenantDomains
             $hostname = (string) $row->hostname;
 
             return match ($status) {
-                DomainStatus::PendingDns, DomainStatus::Failed => $this->checkDns($domainId, $hostname, (string) $row->verification_token),
+                DomainStatus::PendingDns => $this->checkDns($domainId, $hostname, (string) $row->verification_token),
                 DomainStatus::DnsVerified => $this->requestCertificate($domainId, $hostname),
                 DomainStatus::CertificatePending => $this->activateIfIssued($tenantId, $domainId, $hostname),
-                // Terminal for this function. `active` is where a domain is meant to
-                // end up, and `redirecting` is a superseded domain that is still doing
-                // its job -- neither is advanced by a poll.
-                DomainStatus::Active, DomainStatus::Redirecting => $status,
+                // Nothing to advance. `active` is where a domain is meant to end up, and
+                // `redirecting` is a superseded domain still doing its job.
+                //
+                // ⚠ `failed` IS HERE AND USED TO SHARE THE pending_dns ARM, which was a
+                // transition the enum's own table forbids: `allows()[failed]` permits
+                // only `failed -> pending_dns`, and checkDns() on success writes
+                // `dns_verified`. Nothing in this application ever writes `failed` -- a
+                // DNS check that fails leaves the row at `pending_dns` with a reason,
+                // which is what §6.6's table prescribes -- so the arm was unreachable
+                // AND wrong, and the §11 QA review found both. The state is now a
+                // documented no-op and its unreachability is R-137.
+                DomainStatus::Active, DomainStatus::Redirecting, DomainStatus::Failed => $status,
             };
         });
     }
@@ -185,6 +215,8 @@ final class TenantDomains
             return DomainStatus::PendingDns;
         }
 
+        $this->assertTransition(DomainStatus::PendingDns, DomainStatus::DnsVerified);
+
         DB::table('tenant_domains')->where('id', $domainId)->update([
             'status' => DomainStatus::DnsVerified->value,
             'dns_verified_at' => $now,
@@ -199,6 +231,8 @@ final class TenantDomains
     private function requestCertificate(string $domainId, string $hostname): DomainStatus
     {
         $this->certificates->request($hostname);
+
+        $this->assertTransition(DomainStatus::DnsVerified, DomainStatus::CertificatePending);
 
         $now = now();
 
@@ -236,7 +270,11 @@ final class TenantDomains
             ->where('id', '!=', $domainId)
             ->first();
 
+        $this->assertTransition(DomainStatus::CertificatePending, DomainStatus::Active);
+
         if ($previous !== null) {
+            $this->assertTransition(DomainStatus::Active, DomainStatus::Redirecting);
+
             DB::table('tenant_domains')->where('id', $previous->id)->update([
                 'status' => DomainStatus::Redirecting->value,
                 'redirects_to_domain_id' => $domainId,
@@ -261,6 +299,29 @@ final class TenantDomains
         $this->republish($tenantId, $previous === null ? null : (string) $previous->hostname, $hostname);
 
         return DomainStatus::Active;
+    }
+
+    /**
+     * Every status write in this class goes through the enum's own table first.
+     *
+     * ⚠ THE TABLE USED TO BE DECORATIVE, which the §11 QA review measured: nothing in
+     * production called `DomainStatus::allowsMoveTo()`, `advance()` re-implemented the
+     * transitions in a `match`, and the only reader was a test comparing the table to a
+     * literal copy of itself. That is a change-detector, not a control -- and it could
+     * not catch the service diverging from the table, which it already had (the `failed`
+     * arm wrote `dns_verified`, a move the table forbids).
+     *
+     * So the table is now the guard, which is what `TenantProvisioning` already does
+     * with `ProvisioningStatus` one task over. A divergence is an exception here rather
+     * than a row in an impossible state.
+     */
+    private function assertTransition(DomainStatus $from, DomainStatus $to): void
+    {
+        if (! $from->allowsMoveTo($to)) {
+            throw new DomainRefused(
+                'that domain cannot move from '.$from->value.' to '.$to->value
+            );
+        }
     }
 
     /**

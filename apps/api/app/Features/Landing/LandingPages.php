@@ -97,15 +97,48 @@ final class LandingPages
     /**
      * Publish the draft. See the class docblock for the order and why it is that order.
      *
+     * ================================================================================
+     * THE OBJECT WRITES ARE OUTSIDE THE TRANSACTION, AND THAT IS A FIX, NOT A STYLE
+     * ================================================================================
+     *
+     * This method used to run end to end inside ONE `withTenant()`, which is one
+     * transaction (`helpers.php`). Between the `media_assets` SELECT and the final
+     * `UPDATE` the backend then sat idle for the whole duration of up to 27 object-store
+     * operations -- 24 server-side copies of objects up to 5 MB each, plus three writes,
+     * plus SDK retries. `config/tenancy.php` sets `idle_in_transaction_session_timeout`
+     * to **15s** for `qrpager_app`. Exceed it and Postgres terminates the connection, so
+     * the final `UPDATE` fails AFTER the pointer write has already switched the live
+     * page -- the one divergence this class's docblock calls a rare residual, reached
+     * instead by an ordinary configured timeout. It also held one of the role's forty
+     * connections for the whole publish, which is the exact cost `RequireTenantScope`'s
+     * docblock cites as the reason this project refuses request-scoped transactions.
+     *
+     * Found by the `§11` QA review on 2026-10-28. There are now THREE phases:
+     *
+     *   1. one SHORT transaction  -- read the draft, validate it, resolve the hostname
+     *                                and the asset keys. Needs a tenant scope; touches
+     *                                no network.
+     *   2. NO transaction         -- copy the assets, render, write the snapshot, the
+     *                                manifest and then the pointer. Touches no database.
+     *   3. one SHORT transaction  -- write the row.
+     *
+     * The guarantees are unchanged, because the ORDER is unchanged: the pointer write is
+     * still the switch and the database is still the last word. Phase 1 or 2 failing
+     * leaves the live page and the row on the previous publish; the residual is still
+     * phase 3 failing after the pointer write, and it is still self-healing because a
+     * re-publish of the same document renders the same bytes.
+     *
      * @throws PublishFailed
      */
     public function publish(string $tenantId): PublishedPage
     {
-        return withTenant($tenantId, function () use ($tenantId): PublishedPage {
+        // ---- PHASE 1: one short transaction, no network inside it. ----------------
+        /** @var array{document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
+        $plan = withTenant($tenantId, function () use ($tenantId): array {
             $row = $this->row($tenantId);
 
-            // 1. The STORED draft is re-validated, never trusted. An asset it referenced
-            //    can have been deleted and the schema can have been narrowed by a deploy.
+            // The STORED draft is re-validated, never trusted. An asset it referenced
+            // can have been deleted and the schema can have been narrowed by a deploy.
             try {
                 $document = LandingDocument::fromStored(
                     $this->decode($row->draftDocument),
@@ -119,20 +152,15 @@ final class LandingPages
                 throw new PublishFailed('your page has no blocks yet, so there is nothing to publish');
             }
 
-            // 2. The in-scope variant: this closure is already inside withTenant().
-            $hostname = $this->hostnameInScope($tenantId);
-            $tenantName = (string) DB::table('tenants')->where('id', $tenantId)->value('name');
-
-            // 3. One query for every referenced asset, bounded at 24 by the document cap.
             $references = $document->mediaReferences();
 
+            // One query for every referenced asset, bounded at 24 by the document cap.
             $assets = DB::table('media_assets')
                 ->whereIn('id', $references === [] ? ['00000000-0000-0000-0000-000000000000'] : $references)
                 ->pluck('object_key', 'id')
                 ->all();
 
-            $assetUrls = [];
-            $copied = [];
+            $keys = [];
 
             foreach ($references as $id) {
                 if (! isset($assets[$id])) {
@@ -142,44 +170,59 @@ final class LandingPages
                     throw new PublishFailed('an image this page uses is no longer in your library');
                 }
 
-                $privateKey = (string) $assets[$id];
-                $destination = PublishedSite::asset($hostname, $privateKey);
-
-                if (! $this->media->copyObject($privateKey, $destination)) {
-                    throw new PublishFailed('an image could not be copied to your site; nothing was published');
-                }
-
-                $assetUrls[$id] = PublishedSite::assetUrl($privateKey);
-                $copied[] = $destination;
+                $keys[$id] = (string) $assets[$id];
             }
 
-            // 4.
-            $html = $this->renderer->render($document, $hostname, $tenantName, $assetUrls);
-            $checksum = hash('sha256', $html);
+            return [
+                'document' => $document,
+                'hostname' => $this->hostnameInScope($tenantId),
+                'tenantName' => (string) DB::table('tenants')->where('id', $tenantId)->value('name'),
+                'assets' => $keys,
+            ];
+        });
 
-            $this->write(PublishedSite::snapshot($hostname, $checksum), $html, 'text/html; charset=utf-8');
+        $document = $plan['document'];
+        $hostname = $plan['hostname'];
 
-            // 5.
-            $manifest = [
+        // ---- PHASE 2: no transaction, no database. --------------------------------
+        $assetUrls = [];
+        $copied = [];
+
+        foreach ($plan['assets'] as $id => $privateKey) {
+            $destination = PublishedSite::asset($hostname, $privateKey);
+
+            if (! $this->media->copyObject($privateKey, $destination)) {
+                throw new PublishFailed('an image could not be copied to your site; nothing was published');
+            }
+
+            $assetUrls[$id] = PublishedSite::assetUrl($privateKey);
+            $copied[] = $destination;
+        }
+
+        $html = $this->renderer->render($document, $hostname, $plan['tenantName'], $assetUrls);
+        $checksum = hash('sha256', $html);
+
+        $this->write(PublishedSite::snapshot($hostname, $checksum), $html, 'text/html; charset=utf-8');
+
+        $this->write(
+            PublishedSite::manifest($hostname),
+            (string) json_encode([
                 'hostname' => $hostname,
                 'checksum' => $checksum,
                 'published_at' => now()->toIso8601String(),
                 'bytes' => strlen($html),
                 'assets' => array_values($assetUrls),
-            ];
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+            'application/json',
+        );
 
-            $this->write(
-                PublishedSite::manifest($hostname),
-                (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
-                'application/json',
-            );
+        // THE SWITCH.
+        $this->write(PublishedSite::pointer($hostname), $html, 'text/html; charset=utf-8');
 
-            // 6. THE SWITCH.
-            $this->write(PublishedSite::pointer($hostname), $html, 'text/html; charset=utf-8');
+        // ---- PHASE 3: one short transaction. The database is the last word. -------
+        $publishedAt = now();
 
-            // 7. The database is the last word.
-            $publishedAt = now();
-
+        withTenant($tenantId, function () use ($tenantId, $document, $checksum, $hostname, $publishedAt): void {
             DB::table('landing_pages')->where('tenant_id', $tenantId)->update([
                 'status' => LandingPageStatus::Published->value,
                 'published_document' => $this->encode($document->toArray()),
@@ -188,24 +231,38 @@ final class LandingPages
                 'published_at' => $publishedAt,
                 'updated_at' => $publishedAt,
             ]);
-
-            return new PublishedPage(
-                $hostname,
-                $checksum,
-                strlen($html),
-                $copied,
-                $publishedAt->toIso8601String(),
-            );
         });
+
+        return new PublishedPage(
+            $hostname,
+            $checksum,
+            strlen($html),
+            $copied,
+            $publishedAt->toIso8601String(),
+        );
     }
 
     /**
-     * Take the page down: the pointer is deleted and the row returns to `draft`.
+     * Take the page down: the WHOLE site prefix is deleted and the row returns to `draft`.
      *
-     * The snapshot and the assets are LEFT IN PLACE on purpose. They are immutable and
-     * unreachable without the pointer, deleting them would make an unpublish
-     * unrecoverable, and `media:orphans` is what reports anything the store is holding
-     * that nothing references.
+     * ⚠ IT USED TO DELETE THE POINTER ALONE, and the comment here said the snapshot was
+     * "immutable and unreachable without the pointer". **The manifest IS a pointer.**
+     * `sites/{hostname}/manifest.json` carries the checksum in its body and survived,
+     * in the same prefix the CDN maps Host onto -- so after an unpublish,
+     * `GET /manifest.json` handed anyone the name of `GET /{checksum}.html`, which
+     * served the page in full, with its assets still beside it under `/assets/`. That is
+     * the first clause of this task's named invariant -- "an unpublished draft is not
+     * reachable" -- failing by a route nothing tested. Found by the §11 security review
+     * on 2026-10-28.
+     *
+     * Deleting the snapshots costs nothing, which is the part the old comment had
+     * backwards: the DRAFT is still in the database, so a re-publish renders the same
+     * bytes and produces the same checksum. `LandingDraftUnreachableTest` asserts that
+     * round trip, so "recoverable" is a measured property rather than a reason to leave
+     * a page serving after it was taken down.
+     *
+     * The tenant's own library under `media/{tenant}/` is NOT touched: this takes the
+     * site down, it does not delete their images.
      */
     public function unpublish(string $tenantId): void
     {
@@ -216,7 +273,9 @@ final class LandingPages
                 return;
             }
 
-            MediaLibrary::disk()->delete(PublishedSite::pointer($row->publishedHostname));
+            // The whole prefix, pointer and manifest and every snapshot and every copied
+            // asset -- everything the CDN would serve for this hostname.
+            MediaLibrary::disk()->deleteDirectory(PublishedSite::root($row->publishedHostname));
 
             DB::table('landing_pages')->where('tenant_id', $tenantId)->update([
                 'status' => LandingPageStatus::Draft->value,
@@ -281,6 +340,21 @@ final class LandingPages
     public function hostname(string $tenantId): string
     {
         return withTenant($tenantId, fn (): string => $this->hostnameInScope($tenantId));
+    }
+
+    /**
+     * `{slug}.{platform_domain}`, ALWAYS -- whatever custom domain exists.
+     *
+     * `hostname()` answers "where is this page served", which is a different question
+     * and a different answer once a custom domain is active. §12.3's "none" state needs
+     * this one, and the panel method that served it was named for this and returned
+     * that (the §11 QA review).
+     */
+    public function platformHostname(string $tenantId): string
+    {
+        $slug = withTenant($tenantId, static fn () => DB::table('tenants')->where('id', $tenantId)->value('slug'));
+
+        return $slug.'.'.config('landing.platform_domain');
     }
 
     /**

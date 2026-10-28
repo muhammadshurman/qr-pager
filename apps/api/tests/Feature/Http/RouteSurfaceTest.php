@@ -88,7 +88,9 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         '/platform/audit-log',
         '/platform/logout',
         '/platform/restaurants',
-        // FIVE MORE JOINED AT TASK 7, from the SECOND panel. `/studio` is the
+        // SIX MORE JOINED AT TASK 7, from the SECOND panel. (The comment said FIVE and
+        // listed six, which the §11 QA review counted -- this allowlist's whole value is
+        // that a reader counts it.) `/studio` is the
         // TENANT-scoped builder (QRPAGER-14 decision D1, SR-1): the 2026-10-28 ruling
         // puts tenant content out of the platform panel's reach, so the builder, its
         // media library and its domains are a panel of their own whose every user is a
@@ -101,12 +103,20 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         // NOT UNDER /v1, and the argument above applies unchanged -- these are
         // server-rendered admin pages with no API consumers.
         //
-        // NONE OF THEM IS PUBLIC. All five sit behind the panel's `web` guard and
-        // Filament's Authenticate, AND every page overrides canAccess() while the
-        // preview resolves its tenant from the session -- because
-        // `POST /livewire-<hash>/update` runs neither (Task 6's security M-1).
-        // StudioPanelInvariantTest drives every one of them anonymously and as all five
-        // Task 5 principals.
+        // NONE OF THEM IS PUBLIC. All six sit behind the panel's `web` guard and
+        // Filament's Authenticate -- the preview included, which it was NOT until the
+        // §11 security review: it was registered with `routes()` rather than
+        // `authenticatedRoutes()`, and Filament applies the auth middleware to only the
+        // second. ReviewFixesTest now reads every /studio route's middleware off the
+        // router and asserts Authenticate is on it.
+        //
+        // And every page overrides canAccess() while the preview re-resolves its tenant,
+        // because `POST /livewire-<hash>/update` runs neither (Task 6's security M-1).
+        // StudioPanelInvariantTest drives every route anonymously, as a platform admin,
+        // as staff, and as owner and manager for the positive control -- four of Task
+        // 5's five principals. The fifth, a KDS device token, is a BEARER credential on
+        // the stateless /v1 surface and carries no session, so it cannot reach a panel
+        // route at all; DeviceTokenOnAuthSurfaceTest owns that boundary.
         '/studio',
         '/studio/domains',
         '/studio/logout',

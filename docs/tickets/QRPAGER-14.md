@@ -165,7 +165,10 @@ CONSTRAINT media_assets_key_is_unguessable
 
 So a row cannot name another tenant's prefix even with RLS disabled, and the leaf name is 32
 hex characters of CSPRNG — 128 bits, the same bar `§4 › Data` sets for the QR token. The
-reverse direction (a key in the store with no row) is what `media:orphans` reports.
+reverse direction (a key in the store with no row) is reported by nothing — `media:orphans` was
+named here and in two docblocks and was never written, which the `§11` QA review found. The
+residual is `PLAN.md R-136`; the citation is removed rather than the command being invented in a
+fix pass.
 
 ### 2. The block schema has ONE source, shared with Task 11's renderer
 

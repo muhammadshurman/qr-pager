@@ -76,7 +76,7 @@ main{max-width:64rem;margin:0 auto;padding:0 1rem}
 section{padding:var(--space-section,3rem) 0;border-bottom:1px solid var(--color-muted,#dddddd)}
 section:last-child{border-bottom:0}
 h1,h2,h3{font-family:var(--font-heading,system-ui,sans-serif);line-height:1.2;margin:0 0 .5rem}
-h1{font-size:var(--size-heading,2rem)}
+h1,section:first-of-type h2{font-size:var(--size-heading,2rem)}
 a{color:var(--color-accent,#0b5fff)}
 a:focus-visible,button:focus-visible{outline:3px solid var(--color-accent,#0b5fff);outline-offset:2px}
 img{max-width:100%;height:auto;border-radius:var(--radius-small,.25rem);display:block}
@@ -93,6 +93,22 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 </style>
 </head>
 <body>
+{{--
+    ⚠ EXACTLY ONE h1, WHATEVER BLOCKS THE TENANT CHOSE.
+
+    The h1 used to live inside the `hero` case alone. `hero` is not required and blocks
+    REPEAT (BlockSchema says two galleries is a legitimate page), so a page built from a
+    gallery and a contact block had ZERO h1 and opened at h2 -- a skipped level -- and a
+    page with two heroes had TWO. §12's accessibility bar is not waived for this task,
+    and the §11 QA review found that the "one h1, no skipped level" assertion was only
+    ever run against a single fixture that happened to have one hero.
+
+    So the page's own h1 is here, before any block: the SEO title, or the restaurant's
+    name. It is visually hidden when a hero follows, because the hero's heading is what
+    a sighted reader sees as the title -- and that heading is now an h2, so the outline
+    is h1 → h2 for every possible document rather than for one of them.
+--}}
+<h1 @class(['sr' => $heroFirst])>{{ $title }}</h1>
 <main>
 @foreach ($blocks as $block)
 @php($f = $block['fields'])
@@ -103,7 +119,7 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 @if ($f['image'] !== null)
 <img src="{{ $asset($f['image']) }}" alt="{{ $f['heading'] }}" loading="lazy">
 @endif
-<h1>{{ $f['heading'] }}</h1>
+<h2>{{ $f['heading'] }}</h2>
 @if ($f['subheading'] !== null)<p>{{ $f['subheading'] }}</p>@endif
 @if ($f['cta_label'] !== null && $f['cta_url'] !== null)
 <a class="cta" href="{{ $f['cta_url'] }}" rel="noopener noreferrer nofollow">{{ $f['cta_label'] }}</a>

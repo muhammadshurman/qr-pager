@@ -151,6 +151,34 @@ function dangerousConstructs(string $html): array
     return array_values(array_unique($found));
 }
 
+it('has a detector that actually fires, which every assertion below depends on', function (): void {
+    // ⚠ WITHOUT THIS CASE THE WHOLE FILE IS VACUOUS. Every injection assertion here is
+    // `assertSame([], dangerousConstructs($html))`. If loadHTML ever failed, an XPath
+    // changed, or a clause were edited wrong, all 46 payloads x 2 cases would pass in
+    // silence. The neighbours each guard against exactly this -- StudioPanelInvariantTest
+    // enumerates its routes first, ThemeTokenTest accepts all twelve tokens, MediaUploadTest
+    // stores a clean SVG -- and this file had no such control until the §11 QA review
+    // pointed out that it was the one asserting the task's named invariant.
+    expect(dangerousConstructs('<p>hello &lt;script&gt;</p>'))->toBe([]);
+
+    foreach ([
+        '<script>alert(1)</script>' => '<script>',
+        '<img src=x onerror=alert(1)>' => 'img[onerror]',
+        '<a href="javascript:alert(1)">x</a>' => 'a[href=scheme]',
+        '<meta http-equiv="refresh" content="0;url=https://evil.test">' => 'meta[http-equiv]',
+        '<div style="background:url(https://evil.test/x)">x</div>' => 'div[style=css]',
+        '<iframe src="https://evil.test"></iframe>' => '<iframe>',
+        '<object data="x"></object>' => '<object>',
+        '<form action="x"></form>' => '<form>',
+        '<base href="https://evil.test/">' => '<base>',
+    ] as $html => $expected) {
+        // assertContains and not expect()->toContain($needle, $message): that matcher is
+        // VARIADIC, so the message becomes a second needle. Guard rule 7 exists for the
+        // negated form of this and this file has now paid for the positive form twice.
+        $this->assertContains($expected, dangerousConstructs($html), "the detector missed {$html}");
+    }
+});
+
 it('fuzzes every text field the schema has, so the sweep cannot go stale', function (): void {
     // THE COMPLETENESS CHECK, and it is first because every case below depends on it.
     // A field added to BlockSchema and not to LandingFixtures' path list would be a field

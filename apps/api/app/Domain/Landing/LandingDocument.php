@@ -75,6 +75,32 @@ final class LandingDocument
 
         $document = new self($blocks, $theme, $seo);
 
+        // ⚠ THE 256 KB BOUND IS CHECKED HERE, AND IT WAS NOT. §6.5 says "every bound is
+        // a validator rule with a test, not a comment", and this one was a column CHECK
+        // and a number in the generated contract and nothing in between. Measured by the
+        // §11 QA review: 24 menu_highlights blocks, each at the schema's own maxima with
+        // 4-byte characters, is accepted by every rule above and encodes to 370,087
+        // bytes -- so the tenant met `landing_pages_draft_is_bounded` as a raw 23514
+        // instead of §12.1's "{Field} can't be published: {reason}", and the panel's
+        // save() catch never fired.
+        //
+        // Measured on the ENCODED form, because that is what the column stores and what
+        // the CHECK counts. The same encoder flags LandingPages uses, for the same
+        // reason the schema check is a byte diff: two encodings would disagree about the
+        // bound by exactly the escaping they differ in.
+        $encoded = json_encode(
+            $document->toArray(),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        );
+
+        if (strlen((string) $encoded) > BlockSchema::MAX_DOCUMENT_BYTES) {
+            throw new LandingDocumentInvalid(
+                'document',
+                'is '.strlen((string) $encoded).' bytes; the limit is '
+                .BlockSchema::MAX_DOCUMENT_BYTES.' bytes',
+            );
+        }
+
         // THE DOCUMENT-LEVEL CAP, checked over the whole document rather than inferred
         // from the per-list bounds, which sum to more than it. This is the number §6.5's
         // cost argument rests on: a publish copies one asset per reference, so the cost of

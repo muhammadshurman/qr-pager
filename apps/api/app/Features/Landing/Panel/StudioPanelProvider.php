@@ -103,10 +103,28 @@ class StudioPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
-            // The preview, inside the panel's own route group so it inherits exactly the
-            // middleware above -- session, CSRF, the limiter and Authenticate -- rather
-            // than a second stack in routes/web.php that could drift from this one.
-            ->routes(function (): void {
+            // ⚠ authenticatedRoutes() AND NOT routes(), WHICH IS WHERE THIS STARTED.
+            //
+            // Filament registers `$panel->getRoutes()` OUTSIDE the group that applies
+            // `getAuthMiddleware()` (vendor/filament/filament/routes/web.php), so a
+            // preview registered with `routes()` got the middleware stack above and
+            // NOT `Authenticate` -- while this docblock claimed it got both. Verified
+            // with `php artisan route:list --path=studio`: the page routes listed
+            // Filament\Http\Middleware\Authenticate and the two preview routes did not.
+            //
+            // There was no way in: PreviewController calls TenantPanelAccess::tenantId(),
+            // which aborts 403, and four cases drive that. But every other panel route
+            // was double-layered and this one was single-layered, the written record
+            // said otherwise, and no test could tell a 403 from the controller apart
+            // from a 401 from the middleware -- so a refactor that moved the guard would
+            // have opened the draft with the suite still green. Found by the §11
+            // security review, 2026-10-28; StudioPanelInvariantTest now reads the
+            // middleware list off the router and asserts it.
+            //
+            // A second consequence closed with it: with Authenticate absent,
+            // $request->user() resolved through config('auth.defaults.guard') rather
+            // than this panel's declared authGuard('web'). They coincide today.
+            ->authenticatedRoutes(function (): void {
                 // Named `preview`, not `studio.preview`: Filament prefixes a panel's
                 // routes with `filament.{panel id}.`, so the full names are
                 // `filament.studio.preview` and `filament.studio.preview.asset`.

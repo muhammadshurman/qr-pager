@@ -34,6 +34,10 @@ final class LandingRenderer
 
         return View::make('landing.page', [
             'blocks' => $document->toArray()['blocks'],
+            // Whether the first block is a hero, which decides only whether the page's
+            // own h1 is visible or visually hidden -- never whether it EXISTS. See the
+            // template: exactly one h1 for every possible document (§11 QA review).
+            'heroFirst' => ($document->toArray()['blocks'][0]['type'] ?? null) === 'hero',
             'themeStyle' => ThemeStylesheet::declarations($document->theme),
             'tenantName' => $tenantName,
             'title' => $seo['title'] ?? $tenantName,

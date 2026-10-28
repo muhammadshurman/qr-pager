@@ -54,6 +54,22 @@ return [
         */
         'panel' => [
             'per_ip' => ['attempts' => 240, 'seconds' => 60],
+            // ⚠ A PER-TENANT HALF, ADDED AT TASK 7, and the comment this replaces said
+            // there was "no tenant dimension available on this surface at all". That was
+            // true of the PLATFORM panel, whose users hold no membership. It is false of
+            // `/studio`, where every user holds exactly one and `TenantResolver` answers
+            // on every request -- so §4 › Edge & ops' "per IP AND per tenant" was being
+            // half-met on a surface that could meet it. Found by the §11 security review
+            // on 2026-10-28 (R-123 widened).
+            //
+            // 600 and not 240: this bucket meters Livewire's update endpoint, so an
+            // ordinary editing session is many requests, and a tenant's whole staff may
+            // share one. It is well above a person typing and well below what a script
+            // needs to make the upload and publish paths expensive.
+            //
+            // The platform panel is unaffected: a platform admin resolves to no tenant,
+            // so only the per-IP half applies there, which is what it had before.
+            'per_tenant' => ['attempts' => 600, 'seconds' => 60],
         ],
 
         /*

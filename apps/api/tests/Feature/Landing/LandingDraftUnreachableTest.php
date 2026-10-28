@@ -154,16 +154,47 @@ it('refuses to preview a draft that no longer validates, rather than rendering p
         ->and($response->getContent())->not->toContain('Welcome to Olive');
 });
 
-it('stops being reachable again after an unpublish', function (): void {
+it('leaves NOTHING fetchable under the hostname after an unpublish', function (): void {
+    // ⚠ THIS CASE USED TO ASSERT ONLY THAT THE POINTER WAS GONE, and that was the first
+    // clause of the named invariant failing by a second route. `unpublish()` deleted
+    // `index.html` and left `manifest.json` -- whose body carries the checksum -- and
+    // `{checksum}.html`, both in `sites/{hostname}/`, which IS the prefix the CDN maps
+    // Host onto. So `GET /manifest.json` handed you the name of the page the tenant had
+    // just taken down, and `GET /{checksum}.html` served it in full.
+    //
+    // The old comment beside it said the snapshot was "unreachable without the pointer".
+    // The manifest IS a pointer. Found by the §11 security review, 2026-10-28.
     $tenant = $this->makeTenant(slug: 'taken-down');
     $pages = new LandingPages;
+    $asset = (new MediaLibrary)->store($tenant, 'room.png', ImageFixtures::png());
 
-    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+    $pages->saveDraft($tenant, LandingFixtures::fullPage($asset));
     $published = $pages->publish($tenant);
 
-    expect(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeTrue();
+    $root = PublishedSite::root($published->hostname);
+
+    expect(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeTrue()
+        ->and(MediaLibrary::disk()->exists(PublishedSite::manifest($published->hostname)))->toBeTrue()
+        ->and(MediaLibrary::disk()->allFiles($root))->not->toBe([]);
 
     $pages->unpublish($tenant);
 
-    expect(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeFalse();
+    // THE WHOLE PREFIX, not one key. Anything left here is served by the CDN to anyone
+    // who asks for its name, and the manifest is how they learn the names.
+    expect(MediaLibrary::disk()->allFiles($root))->toBe([])
+        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($published->hostname)))->toBeFalse()
+        ->and(MediaLibrary::disk()->exists(PublishedSite::manifest($published->hostname)))->toBeFalse()
+        ->and(MediaLibrary::disk()->exists(PublishedSite::snapshot($published->hostname, $published->checksum)))
+        ->toBeFalse();
+
+    // The private library is untouched: an unpublish takes the SITE down and does not
+    // delete the tenant's images.
+    expect((new MediaLibrary)->count($tenant))->toBe(1);
+
+    // And re-publishing restores it, which is what makes deleting the snapshot safe:
+    // the draft is still there, so the same bytes are regenerated.
+    $again = $pages->publish($tenant);
+
+    expect($again->checksum)->toBe($published->checksum)
+        ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($again->hostname)))->toBeTrue();
 });

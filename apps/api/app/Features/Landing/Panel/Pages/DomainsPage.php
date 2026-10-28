@@ -12,6 +12,7 @@ use App\Features\Landing\TenantDomains;
 use App\Platform\Http\TenantPanelAccess;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Str;
 
 /**
  * `/studio/domains` — custom domains and TLS (§12.3).
@@ -48,15 +49,34 @@ class DomainsPage extends Page
         return app(TenantDomains::class)->all(TenantPanelAccess::tenantId());
     }
 
-    /** §12.3's "none" state: the platform hostname a page is live at from its first publish. */
-    public function platformHostname(): string
+    /**
+     * Where this tenant's page is actually served: the active custom domain if there is
+     * one, else the platform hostname.
+     *
+     * ⚠ RENAMED FROM platformHostname(), which stated a guarantee it did not make: it
+     * delegates to LandingPages::hostname(), which returns the CUSTOM hostname once one
+     * is active. §12.3's "none"-state copy was correct only because that branch is
+     * unreachable with an active domain -- accidental rather than enforced -- and the
+     * line below it was mislabelled. Found by the §11 QA review.
+     */
+    public function liveHostname(): string
     {
         return app(LandingPages::class)->hostname(TenantPanelAccess::tenantId());
+    }
+
+    /** The platform hostname, always -- `{slug}.{platform_domain}`, whatever else exists. */
+    public function platformFallback(): string
+    {
+        return app(LandingPages::class)->platformHostname(TenantPanelAccess::tenantId());
     }
 
     /** @return array{name: string, type: string, value: string} */
     public function challenge(string $domainId): array
     {
+        if (! Str::isUuid($domainId)) {
+            throw new DomainRefused('that domain is not on your account');
+        }
+
         return app(TenantDomains::class)->challenge(TenantPanelAccess::tenantId(), $domainId);
     }
 
@@ -95,6 +115,15 @@ class DomainsPage extends Page
     public function advance(string $domainId): void
     {
         $tenantId = TenantPanelAccess::tenantId();
+
+        // R-110's shape again: a non-uuid reaching a uuid column raises 22P02, so a
+        // malformed id answered differently from an unknown one. Both §11 reviewers
+        // found it; the refusal is now the same one a foreign id gets.
+        if (! Str::isUuid($domainId)) {
+            Notification::make()->title('That domain is not on your account')->danger()->send();
+
+            return;
+        }
 
         try {
             $status = app(TenantDomains::class)->advance($tenantId, $domainId);
