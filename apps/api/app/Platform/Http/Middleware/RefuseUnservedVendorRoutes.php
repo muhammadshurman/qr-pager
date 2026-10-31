@@ -36,13 +36,44 @@ use Symfony\Component\HttpFoundation\Response;
  * caller can generate unlimited 500s, and `§4 › Edge & ops` wants load shed before that
  * matters), and the simple fact that an endpoint with no feature behind it is surface.
  *
- * TWO MORE ARE REFUSED FOR THE SAME REASON, though neither was a 500: Livewire's
- * `upload-file` and `preview-file`. **This panel has no file upload at all** — branding
- * assets are the part of the wizard the ruling removes (`QRPAGER-13 §0` SR-2, `R-116`), and
- * the ticket's `§5` calls uploads "an attack surface: type, size, content sniffing, and
- * where they are stored". A temporary-file-upload endpoint with no form behind it is that
- * surface with none of the validation. `upload-file` answered 419 behind CSRF, which is a
- * control and not a reason to keep an endpoint nobody uses.
+ * ONE MORE IS REFUSED FOR THE SAME REASON, though it was never a 500: Livewire's
+ * `preview-file`. A temporary-file endpoint with nothing behind it is that surface with
+ * none of the validation, and nothing in this application calls `temporaryUrl()` — the
+ * studio's media page renders no preview of the file being uploaded
+ * (`resources/views/studio/media.blade.php`). If a preview is ever wanted, this is the
+ * pattern to remove, in the commit that adds it.
+ *
+ * ================================================================================
+ * ⚠ `upload-file` WAS REFUSED HERE TOO, AND THAT WAS A DEFECT FOR THE WHOLE OF TASK 7
+ * ================================================================================
+ *
+ * Both upload paths were refused at Task 6 on the argument that **"this panel has no file
+ * upload at all"** — true of the platform panel, and not a sentence this middleware is in
+ * a position to say. **It is a PREPENDED GLOBAL middleware**: the section below argues for
+ * exactly that, and the cost of it is here. It refuses a path for every panel this
+ * application will ever mount, so the claim stopped being true the moment a second panel
+ * arrived with a form behind it.
+ *
+ * Task 7 mounted that second panel and gave it `/studio/media`, whose `<input type="file"
+ * wire:model="upload">` is Livewire's ordinary upload path: `WithFileUploads::_startUpload`
+ * hands the browser a signed URL for THIS route (`FILESYSTEM_DISK=local` and no
+ * `config/livewire.php`, so `FileUploadConfiguration::isUsingS3()` is false), the browser
+ * POSTs the file to it, and this middleware answered the 404 below. **So the one validated
+ * upload surface in the product could not receive a file from a browser, for the whole of
+ * Task 7** — measured 2026-10-31 as `404 application/problem+json` at that POST, and
+ * recorded in `PLAN.md §4a`.
+ *
+ * The suite was green because the only driver was `Livewire::test()->set('upload', ...)`,
+ * which makes the temporary file IN PROCESS and never reaches this middleware, while
+ * `RouteSurfaceTest` asserted that 404 as CORRECT BEHAVIOUR — a test pinning a defect.
+ * `StudioMediaUploadTest` crosses the endpoint over HTTP and is the case that goes red if
+ * this pattern ever comes back.
+ *
+ * `R-116` asked for the removal "in the same commit that adds the first validated upload".
+ * The upload landed at Task 7 and the removal did not, which is the whole of the defect.
+ * The fix is NOT to point the temporary disk at S3 to get around the route: that makes the
+ * browser PUT raw bytes straight into the bucket before anything has read them, which is
+ * the one thing `MediaLibraryPage` exists to prevent.
  *
  * ================================================================================
  * WHY A GLOBAL MIDDLEWARE AND NOT A ROUTE
@@ -76,7 +107,10 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * NOTHING ELSE IS REFUSED HERE. `livewire-<hash>/update` is how every Filament table,
  * modal and form talks to the server; refusing it would leave a panel that renders and does
- * nothing. The script and stylesheet routes are how it loads at all.
+ * nothing. `livewire-<hash>/upload-file` is how the studio's media library receives a file,
+ * and it refuses an unsigned caller itself — `abort_unless(hasValidRelativeSignature(),
+ * 401)` — so serving it again opened no unauthenticated write. The script and stylesheet
+ * routes are how the panel loads at all.
  */
 final class RefuseUnservedVendorRoutes
 {
@@ -94,8 +128,9 @@ final class RefuseUnservedVendorRoutes
         '#^filament/exports/[^/]+/download$#',
         // No import action either, same table story.
         '#^filament/imports/[^/]+/failed-rows/download$#',
-        // No file upload in this panel at all: branding is R-116's, in another task.
-        '#^livewire-[0-9a-f]{8}/upload-file$#',
+        // Nothing in this application renders a preview of a temporary upload: there is
+        // no `temporaryUrl()` caller. `upload-file` is deliberately NOT here. It is how
+        // /studio/media receives a file, and refusing it broke that page (see above).
         '#^livewire-[0-9a-f]{8}/preview-file/.*$#',
     ];
 

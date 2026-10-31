@@ -140,9 +140,14 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // Two are Filament's export/import download routes, and they are REFUSED rather than
     // served: both answered 500 to an anonymous GET, because they read `exports` and
     // `imports`, tables this application never created. RefuseUnservedVendorRoutes answers
-    // the ordinary 404 for them and for Livewire's two file-upload paths. They still appear
-    // in the ROUTE TABLE, which is what this case reads, so they are allowed here and
-    // their refusal is asserted in the case below.
+    // the ordinary 404 for them and for Livewire's `preview-file`. They still appear in the
+    // ROUTE TABLE, which is what this case reads, so they are allowed here and their
+    // refusal is asserted in the case below.
+    //
+    // `upload-file` was refused with `preview-file` until 2026-10-31 and is now SERVED: it
+    // is the endpoint /studio/media receives a file on, and refusing it meant the page
+    // could not work in a browser for the whole of Task 7. The case below asserts it is
+    // served, which is the other half of asserting the three refusals.
     $vendorPatterns = [
         '#^/livewire-[0-9a-f]{8}/#',
         '#^/filament/(exports|imports)/#',
@@ -176,7 +181,7 @@ it('keeps the Livewire prefix pattern matching the real routes, so the allowance
     // THE OTHER HALF OF THE PATTERN ABOVE. A pattern allowance is only honest while it
     // still matches what it was written for: if Livewire changed its prefix scheme, the
     // case above would stop excluding those routes and fail loudly -- but the matcher in
-    // RefuseUnservedVendorRoutes would silently stop refusing the upload endpoints, which
+    // RefuseUnservedVendorRoutes would silently stop refusing the preview endpoint, which
     // is a guard going quiet rather than failing. That is the defect class §4a records four
     // instances of, so it is closed from this side.
     $livewire = array_values(array_filter(
@@ -192,12 +197,19 @@ it('keeps the Livewire prefix pattern matching the real routes, so the allowance
     }
 });
 
-it('refuses the four vendor routes it mounts and does not serve', function (): void {
+it('refuses the three vendor routes it mounts and does not serve', function (): void {
     // Two of these answered 500 to an ANONYMOUS GET before this was fixed, reading tables
-    // that were never created; the other two are file-upload endpoints for a panel with no
-    // file upload. All four answer the same 404 problem document an unknown path gets --
-    // the same one deliberately, because a distinct status or body would tell a scanner the
+    // that were never created; the third is a temporary-file preview endpoint with no
+    // caller. All three answer the same 404 problem document an unknown path gets -- the
+    // same one deliberately, because a distinct status or body would tell a scanner the
     // path is special, and the refusal would become the disclosure.
+    //
+    // ⚠ THERE WERE FOUR, AND THE FOURTH WAS A DEFECT THIS CASE PINNED AS CORRECT.
+    // `upload-file` was refused on the argument that the panel had no file upload; the
+    // guard is a prepended GLOBAL middleware, Task 7 then gave /studio/media a file input,
+    // and this case asserted the 404 that broke it. A test that pins a defect as correct
+    // behaviour is the defect, so the positive assertion at the end of this case is now
+    // part of it: that path must be SERVED. StudioMediaUploadTest drives the upload itself.
     $prefix = '';
 
     foreach (publicRouteUris() as $uri) {
@@ -218,12 +230,11 @@ it('refuses the four vendor routes it mounts and does not serve', function (): v
     // moment it is added to the guard.
     $patterns = RefuseUnservedVendorRoutes::patterns();
 
-    expect($patterns)->toHaveCount(4, 'the guard\'s pattern list changed; the samples below must follow');
+    expect($patterns)->toHaveCount(3, 'the guard\'s pattern list changed; the samples below must follow');
 
     $samples = [
         ['get', '/filament/exports/1/download'],
         ['get', '/filament/imports/1/failed-rows/download'],
-        ['post', $prefix.'/upload-file'],
         ['get', $prefix.'/preview-file/anything'],
     ];
 
@@ -248,9 +259,21 @@ it('refuses the four vendor routes it mounts and does not serve', function (): v
             ->and($response->headers->get('Content-Type'))->toContain('application/problem+json');
     }
 
-    // And the routes the panel DOES need are untouched: refusing those would leave a panel
-    // that renders and does nothing.
+    // And the routes the panels DO need are untouched: refusing those would leave a panel
+    // that renders and does nothing, which is what happened to /studio/media.
     expect($this->get($prefix.'/livewire.js')->getStatusCode())->toBe(200);
+
+    // THE UPLOAD ENDPOINT IS SERVED, asserted here rather than only in the count above: a
+    // count tells you the list changed, and this tells you WHICH WAY. An unsigned POST is
+    // refused by Livewire's own `abort_unless(hasValidRelativeSignature(), 401)`, so 401 is
+    // the endpoint answering for itself; 404 would mean the guard is intercepting it again
+    // and the media library is broken in a browser with the suite still green.
+    $upload = $this->post($prefix.'/upload-file');
+
+    expect($upload->getStatusCode())
+        ->toBe(401, 'the Livewire upload endpoint is refused again: /studio/media cannot receive a file')
+        ->and(array_filter($patterns, static fn (string $p): bool => preg_match($p, ltrim($prefix.'/upload-file', '/')) === 1))
+        ->toBe([], 'upload-file is back in the guard\'s pattern list');
 });
 
 it('loads the passkey harness page only outside production', function (): void {
