@@ -84,6 +84,7 @@ for required in \
     vitest.config.ts playwright.config.ts \
     packages/tokens/generated/tokens.css packages/tokens/generated/tokens.ts \
     apps/api/config/design-tokens.php \
+    packages/tokens/generated/contrast.json packages/tokens/generated/contrast.md \
     packages/contracts/src/generated/status.ts \
     packages/tokens/fonts/fonts.css \
     packages/tokens/fonts/plus-jakarta-sans-latin.woff2 \
