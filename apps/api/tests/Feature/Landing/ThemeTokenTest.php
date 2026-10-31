@@ -235,7 +235,13 @@ it('can emit none of the order-ready screen\'s three properties, for any input',
     foreach ([$hostile, $forged, array_merge($hostile, $forged)] as $theme) {
         $css = ThemeStylesheet::declarations($theme);
         foreach ($protected as $property) {
-            expect($css)->not->toContain($property, "the emitter produced {$property}");
+            // ⚠ NOT `expect($css)->not->toContain($property, $message)`, and `composer guard`
+            // caught exactly that here: Pest's `toContain` is VARIADIC, so a message passed
+            // as a second argument is read as another NEEDLE and the assertion becomes
+            // "does not contain BOTH" -- which a message that never appears makes trivially
+            // true. The guard rule exists for this and found it in the very test written to
+            // close a vacuity finding.
+            expect(str_contains($css, $property))->toBeFalse("the emitter produced {$property}");
         }
         // And it never produces a rule, whatever it was given.
         expect($css)->not->toContain('{')
