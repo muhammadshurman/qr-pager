@@ -642,10 +642,67 @@ grep -rn 'emptyState\|placeholder(' apps/api/app/Features/Provisioning/Panel app
 | `/studio/media` | **unexamined** | tenant scope | **unexamined** |
 | `/studio/preview` | n/a | tenant scope | **unexamined** |
 
-**"Unexamined" is the honest word and is used deliberately:** I have not driven those screens
-with their data source down, and asserting a verdict now is the shape `R-156` was filed for —
-*a verdict asserted in the same commit that wrote it*. The walk is where each cell gets a
-measured value.
+**"Unexamined" was the honest word and is now spent:** the walk ran on 2026-11-01 and every
+*source down* cell has a measured value. `PanelWalkTest` is the instrument — the APP connection
+is pointed at a **closed port** and its cached PDO dropped, so the next read fails to CONNECT.
+That is the service being unreachable rather than a mocked exception, which is the same
+distinction `bin/deps` draws between an audit that found nothing and one that could not run.
+
+### 6.1a The walk, run — what every screen actually does with its database down
+
+**All seven screens behave identically, and the uniformity is the first finding:**
+
+| | measured |
+| --- | --- |
+| status | **503** on all seven — "come back", not "something broke". Already right. |
+| content type | **`application/problem+json`** |
+| body | `{"type":"https://qrpager.dev/problems/unavailable","title":"The service is temporarily unable to handle the request.","status":503,"instance":"<path>"}` — 157–172 bytes |
+| disclosure | **NONE**, at `APP_DEBUG=true`: no SQLSTATE, no `QueryException`, no `PDOException`, no `qrpager_app`, no `qrpager_owner`, no libpq connect message, no stack trace, no framework path, no credential field name |
+
+**The disclosure half is the clause `ProblemRenderer` exists for and it holds.** Measured at
+`7f1c8f6`, before that renderer existed, the same failure produced an HTML page of **862,104
+bytes** carrying the SQL and a role name. Nine needles were driven across all seven screens and
+none appears.
+
+**⚠ THE PRESENTATION HALF IS THE FINDING.** A panel screen is an HTML surface a person
+navigates to, and it answers an RFC 7807 document — correct for `/v1`, **raw JSON in a
+restaurant owner's browser**. Against `§6`'s third column: *"that it is us, not them, and
+whether to wait or retry"* — the title says the first and **nothing says the second**, and
+"temporarily unable to handle the request" is API vocabulary, not a sentence the reader `SR-2`'s
+clause names would parse.
+
+`PanelWalkTest` pins the current body EXACTLY, so fixing the presentation must change that case
+— which is how a reviewer finds the note beside it. Any HTML branch has to carry the
+non-disclosure measurement with it, because `ProblemRenderer` is registered for **all** requests
+deliberately and an HTML error page is the shape that once leaked 862 kB.
+
+### 6.1b And the walk found a `§12` breach nobody had looked for — fixed in the same pass
+
+`§12`: *"a reviewer cannot name the UI framework from a screenshot."* **It was false in the one
+place a screenshot always shows.** Every page of both panels rendered
+
+```
+<title>Media - Laravel</title>
+```
+
+because `Panel::getBrandName()` falls back to `config('app.name')`
+(`HasBrandName.php:21`) and `.env.example` ships `APP_NAME=Laravel`.
+
+**Fixed with `->brandName((string) config('app.brand'))` on both providers**, and `app.brand` is
+a NEW key rather than a change to `app.name` for a measured reason: `config/cache.php:121`,
+`config/session.php:132` and `config/database.php:175` each derive a **storage prefix** from
+`app.name` through `Str::slug`, and `TwoFactorController` uses it as the **TOTP issuer label**.
+Renaming it would move the session cookie, the cache prefix and the Redis prefix in one commit —
+a deploy concern on surfaces Task 5 owns — in order to fix a title. **That coupling is itself a
+defect and is recorded with an owner rather than fixed here.** "QR Pager" is not a new name:
+`config/scramble.php` already calls the API *"QR Pager API"*, with the same reasoning written
+beside it.
+
+⚠ And `/studio/preview` carries the **tenant's** title, measured as `Tenant 01a19423` from the
+fixture's own tenant name — correctly NOT our brand, because that page is the restaurant's. The
+first version of the assertion required the brand on every titled page and reddened on exactly
+that, which is why the subject list is now derived structurally (a `Filament\Pages\BasePage`
+action) rather than from the route prefix.
 
 ### 6.2 The two breaches already located, and what they cost
 

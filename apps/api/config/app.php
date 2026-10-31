@@ -17,6 +17,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Brand — what a PERSON sees, which `name` above is not
+    |--------------------------------------------------------------------------
+    |
+    | ⚠ MEASURED §12 BREACH, 2026-11-01 (QRPAGER-23). `§12` requires that *"a reviewer
+    | cannot name the UI framework from a screenshot"*, and every Filament panel page
+    | rendered `<title>Media - Laravel</title>`: `Panel::getBrandName()` falls back to
+    | `config('app.name')` (`HasBrandName.php:21`), and `.env.example` ships
+    | `APP_NAME=Laravel`. The framework's name was in the browser tab of every screenshot
+    | of every admin screen.
+    |
+    | A SEPARATE KEY, AND NOT A CHANGE TO `name`, for a measured reason: `app.name` is not
+    | only a display string here. `config/cache.php:121`, `config/session.php:132` and
+    | `config/database.php:175` all derive a STORAGE PREFIX from it through `Str::slug`,
+    | and `TwoFactorController` uses it as the TOTP issuer label. Renaming it would move
+    | the session cookie, the cache prefix and the Redis prefix in one commit — a deploy
+    | concern on surfaces Task 5 owns — to fix a title. That coupling is itself a defect
+    | and is recorded with an owner rather than fixed here.
+    |
+    | So this key is what the panels show, both providers read it, and `PanelBrandTest`
+    | asserts the rendered title carries it and does not carry the framework's name.
+    | "QR Pager" is not a new name: `config/scramble.php` already calls the API
+    | "QR Pager API", with the same reasoning written beside it.
+    |
+    */
+
+    'brand' => env('APP_BRAND', 'QR Pager'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

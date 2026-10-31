@@ -92,6 +92,16 @@ class PlatformPanelProvider extends PanelProvider
             //     `ViteManifestNotFoundException` at render time, not a styling difference.
             //     Read from `HasTheme::getTheme()`, not from documentation.
             ->viteTheme('resources/css/filament/platform/theme.css')
+            // ⚠ WITHOUT THIS, EVERY PAGE OF THIS PANEL RENDERED `<title>… - Laravel</title>`.
+            // `Panel::getBrandName()` falls back to `config('app.name')`, and `.env.example`
+            // ships `APP_NAME=Laravel` — so `§12`'s *"a reviewer cannot name the UI framework
+            // from a screenshot"* was false in the one place a screenshot always shows: the
+            // browser tab. Measured 2026-11-01 on `/studio/media`: `Media - Laravel`.
+            //
+            // `app.brand` and NOT `app.name`: that key also feeds the session cookie, the
+            // cache prefix and the Redis prefix through `Str::slug`, and the TOTP issuer
+            // label. See config/app.php for the measurement and the finding.
+            ->brandName((string) config('app.brand'))
             // (b) THE FACE -- and ⚠ `provider:` IS NOT OPTIONAL, which is the sharp edge.
             //     Measured in `HasFont::getFontProvider()`: with a custom family and no
             //     provider, the default is **`BunnyFontProvider`**, which emits
