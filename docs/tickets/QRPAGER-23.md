@@ -948,32 +948,42 @@ an oversight.
 
 ## 10. The branch, and the one explanation its history gets
 
-**Ruled 2026-10-31, and the ruling replaced the earlier instruction rather than qualifying it:** the
-deviation is *"accepted and is better than my instruction"* — `main`'s `PLAN.md` being 81 commits behind
-makes it the wrong base for a state-file edit, and `task-8b-precoding` off `d8c9652` is correct.
-**The `main` cherry-pick and the revert are dropped entirely — moot.**
+**Ruled 2026-10-31, twice, and the second ruling supersedes the first.**
 
-**So `c6fbba0` stays on `main` as the record of where the answers were first written, and nothing is
-reverted.** The sequence, pending only on the tag:
+**First:** the deviation of holding this work on `task-8b-precoding` rather than `main` was *"accepted and
+is better than my instruction"* — `main`'s `PLAN.md` is 81 commits behind the live one, so it is the wrong
+base for a state-file edit. The `main` cherry-pick and revert are **dropped, moot**; `c6fbba0` stays on
+`main` as the record of where the `§3` answers were first written.
 
-1. `task-8a` is tagged at **`d8c9652`** — it waits on an Actions run id for the head sha and one review
-   round of its fix diff, neither of which is 8b's.
+**Second, and this is the one that let the task start:** `§6`'s order rule is deviated from —
+**8b proceeds in parallel with the one outstanding review round on 8a's fix diff**, rather than waiting
+for the tag. The ruling, its reason (speed, chosen knowingly), its single cost (if the fix-diff review
+forces a code change in 8a, this branch rebases) and the condition that makes it safe are recorded in
+**`PLAN §0.0`**, committed before the first implementation commit.
+
+**The condition, because it governs every commit on this branch:** never edit a line that
+`a1f1263..d8c9652` changed. Additive only — new gate steps, new `ARTEFACTS` entries, new assertions, new
+files. For the 67 files that diff touched, and especially for the ones it **created** (where every line is
+a changed line), the move is a **sibling file**, not a modification. A scope item that cannot be done
+additively is a stop-and-report.
+
+**The sequence, pending only on the tag:**
+
+1. `task-8a` is tagged at **`d8c9652`** — CI run **#151** reports SUCCESS for that sha, so `§5`'s CI
+   clause is discharged for it; what remains is the fix diff's first review round.
 2. **`task-8b-panel-restyle` is cut FROM THE TAG.**
-3. The `task-8b-precoding` commits **fast-forward onto it — no rebase, because the base is the same
-   commit.** `task-8b-precoding` is branched off `d8c9652`, which is the commit the tag will name, so the
-   two histories share a base by construction rather than by luck.
-4. **The `task-8b-precoding` branch name is retired.** It was a holding name for the interval between the
-   `§3` answers and the tag, and it has no meaning after step 3.
+3. These commits **fast-forward onto it — no rebase**, because the base is the same commit:
 
 ```
-$ git merge-base --is-ancestor task-8b-precoding origin/task-8a-design-system; echo $?
-# non-zero: precoding is AHEAD of 8a, which is the point
 $ git merge-base task-8b-precoding origin/task-8a-design-system
-d8c96521baf033e2e70b9b4feb8a45d61c1e3e8d          # the shared base = the expected tag commit
+d8c96521baf033e2e70b9b4feb8a45d61c1e3e8d          # == 8a's head == the expected tag commit
 ```
 
-**Why this is written down rather than left to the moment.** A branch that appears, carries two commits
-and vanishes is the kind of history that gets reconstructed wrongly a month later. One explanation, in
-the ticket, so the name needs no archaeology: it existed because the `§3` answers had to be committed
-before the tag existed, and the state file they edit lives on an unmerged branch.
+4. **The `task-8b-precoding` name is retired.** It was a holding name for the interval between the `§3`
+   answers and the tag, and it means nothing after step 3.
 
+**Why this is written down rather than left to the moment.** A branch that appears, carries a task's work
+and vanishes is the kind of history that gets reconstructed wrongly a month later. One explanation, here,
+so the name needs no archaeology: it exists because the `§3` answers had to be committed before the tag
+existed, the state file they edit lives on an unmerged branch, and a ruling then let the implementation
+proceed on the same base rather than wait.
