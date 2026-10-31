@@ -142,21 +142,42 @@ describe('the exit-code hazard checker', () => {
    * FAILED IN CI while passing locally. A gate step slow enough to time out reports red
    * for the wrong reason, which is the one thing a gate must not do.
    *
-   * It is one awk pass now and runs in ~0.05 s. The bound below is 60x that, so it cannot
-   * flake on a loaded runner -- but it CANNOT be met by a per-line subprocess loop, which
-   * is the regression it exists to stop.
+   * It is one awk pass now and runs in ~0.05 s. The bound below is 60x that and CANNOT be
+   * met by a per-line subprocess loop, which is the regression it exists to stop.
+   *
+   * ⚠ AND IT IS THE BEST OF THREE RUNS, NOT ONE RUN, BECAUSE THE BOUND FLAKED. Its own
+   * comment used to say 60x "so it cannot flake on a loaded runner" -- and then it measured
+   * **34,225 ms** on 2026-10-31, when this suite ran concurrently with `composer gate`'s
+   * `php artisan test`. The checker's own time, measured three times immediately afterwards
+   * on the same machine, was **0.05 s** each. So the reasoning was wrong in the way `F10`
+   * already records one level over: *"a loaded host turned a passing timeout proof into a
+   * red at 27.6 s"*. WALL-CLOCK ON A SHARED MACHINE IS NOT A MEASUREMENT OF THE CODE.
+   *
+   * THE BOUND IS NOT RAISED, and that is the point. A per-line subprocess loop measured
+   * 4.35 s locally and 6.67 s on a runner, so a bound generous enough to absorb 34 s would
+   * PASS the regression -- the assertion would still be green and would mean nothing. What
+   * changes is the STATISTIC: three runs, and the fastest is the one judged. Contention
+   * severe enough to inflate one run rarely inflates all three, while a per-line loop is
+   * slow in every run by construction. The other two elapsed times are reported in the
+   * failure message, so a future red says whether it was the code or the host.
    */
   it(
     'completes in well under the timeout, so a per-line subprocess loop cannot return',
     () => {
-      const started = Date.now()
-      const { status } = runChecker([])
-      const elapsed = Date.now() - started
-      expect(status).toBe(0)
+      const elapsed = []
+      for (let run = 0; run < 3; run++) {
+        const started = Date.now()
+        const { status } = runChecker([])
+        elapsed.push(Date.now() - started)
+        expect(status).toBe(0)
+      }
+      const fastest = Math.min(...elapsed)
       expect(
-        elapsed,
-        `the checker took ${String(elapsed)}ms; it was 6670ms on a runner when it spawned ` +
-          `two processes per line, which timed out the suite`,
+        fastest,
+        `the checker's FASTEST of three runs took ${String(fastest)}ms (all three: ` +
+          `${elapsed.join(', ')}ms). It was 6670ms on a runner when it spawned two ` +
+          `processes per line, which timed out the suite; one awk pass is ~50ms. Three ` +
+          `slow runs mean the code; one slow run means the host.`,
       ).toBeLessThan(3000)
     },
     SPAWN_TIMEOUT,
