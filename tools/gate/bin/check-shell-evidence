@@ -66,87 +66,49 @@ fi
 
 findings=0
 scanned=0
-
-report() {
-    printf '  %s:%s  %s\n     %s\n' "$1" "$2" "$3" "$4" >&2
-    findings=$((findings + 1))
-}
+strict=""
+scan=()
 
 for f in "${targets[@]}"; do
     [ -f "$f" ] || continue
     # bash scripts only: a .mjs gate script reads a spawn result rather than $?.
-    head -1 "$f" | grep -qE '^#!.*\b(bash|sh)\b' || [ "$fixture_mode" = "1" ] || continue
-    scanned=$((scanned + 1))
-
-    # (1) pipefail, for an executable script. A sourced helper inherits its caller's.
-    if [ -x "$f" ] || [ "$fixture_mode" = "1" ]; then
-        # Comments stripped first. The fixture's own prose named the option, which the
-        # grep matched -- so the fixture proved the rule was unprovable, which is the
-        # fixture doing its job.
-        #
-        # ⚠ AND THIS IS A HERE-STRING RATHER THAN A PIPE, BECAUSE THE PIPE VERSION WAS
-        # BROKEN BY THE VERY OPTION THIS SCRIPT ENFORCES. `sed … | grep -q` has grep exit
-        # as soon as it matches; sed then takes SIGPIPE and exits 141; and `set -o
-        # pipefail` makes 141 the PIPELINE's status. So a file that DID set pipefail was
-        # reported as not setting it -- measured on apps/api/bin/migration-rollback-proof,
-        # which has it on line 26. The checker was broken by its own rule, which is the
-        # best possible argument for the rule.
-        stripped="$(sed 's/#.*$//' "$f")"
-        if ! grep -qE 'set -[a-zA-Z]*o[a-zA-Z]* pipefail|set -o pipefail' <<<"$stripped"; then
-            report "$f" 1 "no 'set -o pipefail'" \
-                "an executable script must set it, or a pipeline's status is its LAST stage's"
-        fi
+    if [ "$fixture_mode" != "1" ]; then
+        head -1 "$f" | grep -qE '^#!.*\b(bash|sh)\b' || continue
     fi
-
-    # (2) and (3) the $? reads.
-    prev=""
-    n=0
-    while IFS= read -r line || [ -n "$line" ]; do
-        n=$((n + 1))
-        # Strip a whole-line comment, so this file's own prose does not trip it.
-        code="${line%%#*}"
-        # ⚠ AND STRIP SINGLE-QUOTED CONTENT, which this script needed for ITSELF: its own
-        # `case` patterns are written `*'|'*` and its own messages are single-quoted
-        # strings containing `$?`, so the first version reported two hazards in its own
-        # source. Inside single quotes a shell performs NO expansion, so a `$?` there is
-        # literal text and a `|` is a literal character -- neither is what this rule is
-        # about.
-        #
-        # DOUBLE quotes are deliberately NOT stripped: they interpolate, so `echo "exit=$?"`
-        # is a real read and is exactly the shape being caught.
-        code="$(printf '%s' "$code" | sed "s/'[^']*'/''/g")"
-        case "$code" in
-            *'$?'*)
-                case "$code" in
-                    *'|'*)
-                        report "$f" "$n" '$? on a line containing a pipe' \
-                            'use ${PIPESTATUS[0]}, or run the command without a pipe and capture $? on the next line' ;;
-                esac
-                case "$code" in
-                    *'$('*)
-                        report "$f" "$n" '$? on a line containing a command substitution' \
-                            'the substitution runs FIRST and resets $?; capture the status into a variable before building the message' ;;
-                esac
-                # ⚠ THE PREVIOUS LINE CONTAINING A PIPE, not merely ENDING in one -- and
-                # the first version of this rule only caught the ending case, which missed
-                # the exact mistake that motivated the whole script:
-                #
-                #     node … --check | tail -5
-                #     echo "exit=$?"
-                #
-                # The pipeline is complete on its own line, so nothing is continued; $? is
-                # still tail's. `||` is masked out first, since it contains a pipe and is
-                # not one.
-                prev_pipe="${prev//||/__OR__}"
-                case "$prev_pipe" in
-                    *'|'*)
-                        report "$f" "$n" '$? after a line containing a pipe' \
-                            'the status belongs to the pipeline LAST stage; use ${PIPESTATUS[0]}' ;;
-                esac ;;
-        esac
-        prev="$code"
-    done < "$f"
+    scanned=$((scanned + 1))
+    scan+=("$f")
+    # An EXECUTABLE script must enable pipefail. A sourced helper has no status of its own
+    # and inherits its caller's options -- `_revert-proof.sh` is the one such file and it is
+    # non-executable, which is how this tells.
+    if [ -x "$f" ] || [ "$fixture_mode" = "1" ]; then
+        strict="${strict}${f}"$'\n'
+    fi
 done
+
+if [ "$scanned" = "0" ]; then
+    echo "shell evidence: nothing to scan -- the target list is empty, which is not a pass" >&2
+    exit 1
+fi
+
+# ⚠ ONE awk PASS, NOT ONE SUBPROCESS PER LINE. The previous form ran `printf | sed` for
+# every line of every script: 3100 lines, 6200 processes, 4.35 s locally and 6.67 s on a
+# GitHub runner -- which is past Vitest's 5 s default, so the test driving this checker
+# FAILED IN CI while passing locally. A gate step slow enough to time out reports red for
+# the wrong reason. The analysis itself is unchanged and lives in lib/shell-evidence.awk.
+awk_out="$(awk -v strictlist="$strict" -f "$(dirname "$0")/../lib/shell-evidence.awk" "${scan[@]}")"
+awk_status=$?
+if [ "$awk_status" != "0" ]; then
+    echo "shell evidence: the awk pass itself failed (exit $awk_status)" >&2
+    exit 1
+fi
+
+while IFS=$'\t' read -r a b c d; do
+    if [ "$a" = "FINDINGS" ]; then
+        findings="$b"
+        continue
+    fi
+    printf '  %s:%s  %s\n     %s\n' "$a" "$b" "$c" "$d" >&2
+done <<<"$awk_out"
 
 if [ "$findings" = "0" ]; then
     echo "shell evidence: $scanned script(s) scanned, no exit-code hazard."

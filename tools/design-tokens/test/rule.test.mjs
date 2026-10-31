@@ -85,33 +85,159 @@ function runChecker(args) {
 }
 
 describe('the exit-code hazard checker', () => {
-  it('passes on the real tree, having actually scanned something', () => {
-    const { status, out } = runChecker([])
-    expect(status).toBe(0)
-    // Not vacuous: a glob that matched nothing would also "pass".
-    const scanned = /(\d+) script\(s\) scanned/.exec(out)
-    expect(scanned, out).not.toBeNull()
-    expect(Number(scanned[1])).toBeGreaterThanOrEqual(20)
-  })
+  // ⚠ AN EXPLICIT TIMEOUT, AND IT IS NOT A WORKAROUND. These three cases SPAWN A REAL
+  // PROCESS, which the 5 s default is not written for -- it is a unit-test default. The
+  // slowness that made this fail in CI is fixed at the cause (see the performance case
+  // below), so the headroom here is for runner variance rather than for a slow checker.
+  const SPAWN_TIMEOUT = 30_000
 
-  it('FAILS on the committed bad fixture, naming all five hazards', () => {
-    const { status, out } = runChecker(['--fixture'])
+  it(
+    'passes on the real tree, having actually scanned something',
+    () => {
+      const { status, out } = runChecker([])
+      expect(status).toBe(0)
+      // Not vacuous: a glob that matched nothing would also "pass", which is why the
+      // script itself now refuses an empty target list.
+      const scanned = /(\d+) script\(s\) scanned/.exec(out)
+      expect(scanned, out).not.toBeNull()
+      expect(Number(scanned[1])).toBeGreaterThanOrEqual(20)
+    },
+    SPAWN_TIMEOUT,
+  )
+
+  it(
+    'FAILS on the committed bad fixture, naming all five hazards',
+    () => {
+      const { status, out } = runChecker(['--fixture'])
+      expect(status).toBe(1)
+      expect(out).toContain("no 'set -o pipefail'")
+      expect(out).toContain('$? on a line containing a pipe')
+      expect(out).toContain('$? on a line containing a command substitution')
+      expect(out).toContain('$? after a line containing a pipe')
+      expect((out.match(/bad-evidence\.sh\.fixture:/g) ?? []).length).toBe(5)
+    },
+    SPAWN_TIMEOUT,
+  )
+
+  it(
+    'does not fire on the legitimate shapes the same fixture carries',
+    () => {
+      const { out } = runChecker(['--fixture'])
+      for (const line of ['31', '35', '37']) {
+        expect(out).not.toContain(`bad-evidence.sh.fixture:${line}`)
+      }
+    },
+    SPAWN_TIMEOUT,
+  )
+
+  /**
+   * ⚠ A PERFORMANCE ASSERTION, because slowness here was a CORRECTNESS failure.
+   *
+   * The checker stripped comments and quotes with `printf | sed` PER LINE: 3100 lines
+   * across the scanned scripts, so 6200 subprocesses. That measured 4.35 s locally and
+   * 6.67 s on a GitHub runner -- past Vitest's 5 s default -- so the first case above
+   * FAILED IN CI while passing locally. A gate step slow enough to time out reports red
+   * for the wrong reason, which is the one thing a gate must not do.
+   *
+   * It is one awk pass now and runs in ~0.05 s. The bound below is 60x that, so it cannot
+   * flake on a loaded runner -- but it CANNOT be met by a per-line subprocess loop, which
+   * is the regression it exists to stop.
+   */
+  it(
+    'completes in well under the timeout, so a per-line subprocess loop cannot return',
+    () => {
+      const started = Date.now()
+      const { status } = runChecker([])
+      const elapsed = Date.now() - started
+      expect(status).toBe(0)
+      expect(
+        elapsed,
+        `the checker took ${String(elapsed)}ms; it was 6670ms on a runner when it spawned ` +
+          `two processes per line, which timed out the suite`,
+      ).toBeLessThan(3000)
+    },
+    SPAWN_TIMEOUT,
+  )
+
+  it('refuses an empty target list rather than reporting a pass', () => {
+    // The checker's own vacuity guard. A filter that matched nothing used to print
+    // "0 script(s) scanned" and exit 0, which is the shape every other guard in this task
+    // exists to prevent.
+    const { status, out } = runChecker(['/dev/null'])
     expect(status).toBe(1)
-    // Each of the five shapes, by its own message -- so the fixture cannot pass on four.
-    expect(out).toContain("no 'set -o pipefail'")
-    expect(out).toContain('$? on a line containing a pipe')
-    expect(out).toContain('$? on a line containing a command substitution')
-    expect(out).toContain('$? after a line containing a pipe')
-    expect((out.match(/bad-evidence\.sh\.fixture:/g) ?? []).length).toBe(5)
+    expect(out).toContain('nothing to scan')
   })
 
-  it('does not fire on the legitimate shapes the same fixture carries', () => {
-    // The fixture ends with `status=$?` after a plain command, `${PIPESTATUS[0]}` after a
-    // pipeline, and an `if cmd; then`. A rule that flagged those would be disabled.
-    const { out } = runChecker(['--fixture'])
-    for (const line of ['31', '35', '37']) {
-      expect(out).not.toContain(`bad-evidence.sh.fixture:${line}`)
+  /**
+   * The analysis lives in an awk program, and GitHub's ubuntu-latest runner has **mawk**
+   * as `awk` while this machine has gawk. A GNU-only construct would pass here and fail
+   * there -- the same "works on the builder's machine" shape the fresh-clone proof exists
+   * for, one tool down.
+   */
+  it('uses no GNU-only awk construct', () => {
+    // ⚠ COMMENTS STRIPPED FIRST, and this is the THIRD check in this task to need that:
+    // the fixture's prose once satisfied the pipefail grep, the CI parity test's "no pnpm
+    // version" assertion matched the workflow's own explanatory comment, and this one
+    // matched the awk program's comment saying it deliberately avoids ENDFILE. A check
+    // that reads its own documentation as evidence is a check that is right by accident.
+    const awkProgram = readFileSync(
+      join(HERE, '..', '..', 'gate', 'lib', 'shell-evidence.awk'),
+      'utf8',
+    ).replace(/^\s*#.*$/gm, '')
+    for (const gnuOnly of [
+      'ENDFILE',
+      'BEGINFILE',
+      'gensub',
+      'asort',
+      'asorti',
+      'systime',
+      'strftime',
+      'IGNORECASE',
+      'RT',
+      'FIELDWIDTHS',
+      '--re-interval',
+    ]) {
+      expect(awkProgram, `${gnuOnly} is a GNU extension and the runner has mawk`).not.toContain(
+        gnuOnly,
+      )
     }
+    // And it finalises the last file in END rather than with ENDFILE, which is how the
+    // portable form is recognisable.
+    expect(awkProgram).toMatch(/END\s*\{[\s\S]*flush_file/)
+  })
+
+  it('gives the same verdict under mawk as under gawk, where mawk is installed', () => {
+    // Verified against mawk 1.3.4 in-session: 5 findings on the fixture, 0 on the real
+    // tree, identical to gawk. Run here too when mawk is present, and reported rather
+    // than silently skipped when it is not -- a skip that looks like a pass is the thing
+    // this suite is built against.
+    let mawk = true
+    try {
+      execFileSync('mawk', ['-W', 'version'], { stdio: 'ignore' })
+    } catch {
+      mawk = false
+    }
+    if (!mawk) {
+      expect(mawk, 'mawk is not installed here; portability is asserted statically above').toBe(
+        false,
+      )
+      return
+    }
+    const repo = HERE.replace(/tools\/design-tokens\/test\/?$/, '')
+    const run = (bin) =>
+      execFileSync(
+        bin,
+        [
+          '-v',
+          'strictlist=tools/gate/fixtures/bad-evidence.sh.fixture\n',
+          '-f',
+          'tools/gate/lib/shell-evidence.awk',
+          'tools/gate/fixtures/bad-evidence.sh.fixture',
+        ],
+        { cwd: repo, encoding: 'utf8' },
+      )
+    expect(run('mawk')).toBe(run('awk'))
+    expect(run('mawk')).toContain('FINDINGS\t5')
   })
 })
 
