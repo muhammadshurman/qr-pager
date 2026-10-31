@@ -125,6 +125,49 @@ Everything else behaves:
 | `text-xs` · `text-base` · `text-lg` | token sizes |
 | `bg-paper` · `text-ink` · `bg-brand` · `text-13` · `rounded-16` | token-named utilities compile |
 
+#### Re-measured after the pin — both toolchains, and one figure of mine was wrong
+
+Ruled 2026-10-31: *"those figures [were] measured against a parent that is about to change, which this
+project does not accept as a figure. Pin first, then re-run the three candidates and the two byte counts,
+and report both sets with the versions beside them."*
+
+**Pinned, installed, re-run. The two toolchains are byte-identical, and that is the result.**
+
+| | `tailwindcss` | candidates | Filament theme untouched | with the `@theme` block |
+| --- | --- | --- | --- | --- |
+| workspace (`node_modules/.pnpm`) | **4.3.3** | 28 | **734,389** | **722,971** |
+| panel (`apps/api/node_modules`) | **4.3.3** | 28 | **734,389** | **722,971** |
+
+| candidate | workspace | panel |
+| --- | --- | --- |
+| `bg-red-500` | **ABSENT** | **ABSENT** |
+| `text-sm` | `font-size: var(--text-sm)` | `font-size: var(--text-sm)` |
+| `p-5` | `padding: calc(var(--spacing) * 5)` | `padding: calc(var(--spacing) * 5)` |
+
+Identical in every cell. And the two installs are the same bytes, not merely the same version string:
+
+```
+$ cmp apps/api/node_modules/tailwindcss/index.css    node_modules/.pnpm/tailwindcss@4.3.3/…/index.css
+$ cmp apps/api/node_modules/tailwindcss/dist/lib.mjs node_modules/.pnpm/tailwindcss@4.3.3/…/dist/lib.mjs
+   (both silent — identical)
+```
+
+**⚠ AND THE RE-MEASUREMENT CAUGHT AN INVALID FIGURE OF MINE.** This file previously read
+*"722,971 bytes, against 734,094 for the untouched Filament theme — about 11 KB of default palette
+gone."* **Those two numbers were never comparable.** 722,971 came from a run passing **28** candidates;
+734,094 came from an earlier run passing **12**. A compiled-CSS byte count is a function of the candidate
+set as well as the theme, so pairing them measured the candidate list as much as the palette. The correct
+pair, both at 28 candidates, is **734,389 → 722,971 = 11,418 bytes removed**. The conclusion survives
+(~11 KB), the pairing did not.
+
+That is the same defect one layer down from the one this delta was raised about: *a figure measured
+against a parent that has since changed is not a figure* — and a byte count measured against a different
+candidate set is not the same byte count. Recorded rather than quietly corrected.
+
+**What the pin was worth, stated precisely.** `^4.0.0` resolves to **4.3.3 today**, so the caret was not
+*wrong* — it was *unpinned*, and the figures happened to agree. The pin's value is that they will still
+agree at the next `npm install`, which is the whole content of `§6`'s fresh-clone clause. See `§9.4`.
+
 #### The one exception, and it is measurably forced
 
 **`text-sm` could not be made absent and did not need to be:** Filament `@apply`s `text-sm` itself, so the
@@ -162,7 +205,65 @@ but nothing *stops* `p-5`.
 | **colour** | **1 — the redesign works.** `bg-red-500` and every other default family compile to nothing | the `@theme` block; no source rule needed for colour |
 | **type** | **1 — the redesign works**, by the second limb: the name must exist because Filament applies it, and its value is a token | as above |
 | **radius** | **1 — the redesign works**, same shape as type | as above |
-| **spacing** | **2 — measurably unavailable.** The vendor's CSS forces the bare key; the bare key enables every multiple | `§8` is satisfied by the strongest mechanism *available*: **a `§5` row carrying the measurement above, plus a source rule over the files we author, proven on a bad fixture** |
+| **spacing** | **2 — measurably unavailable.** The vendor's CSS forces the bare key; the bare key enables every multiple | `§8` is satisfied by the strongest mechanism *available*, and that is **stronger than a source rule** — see `§0.1` below |
+
+#### 0.1 The spacing mechanism — ruled, and stronger than the source rule I proposed
+
+**Ruled 2026-10-31.** The `§5` row stands, and the exclusivity proof is accepted — *"no value of
+`--spacing` fixes it: any bare key generates every multiple, so `p-5` = 20px exists whatever we set."*
+**Verified on the panel's own pinned toolchain, four values:**
+
+```
+$ --spacing: 4px      -> p-5 EMITS padding: calc(var(--spacing) * 5);
+$ --spacing: 1px      -> p-5 EMITS padding: calc(var(--spacing) * 5);
+$ --spacing: 0.25rem  -> p-5 EMITS padding: calc(var(--spacing) * 5);
+$ --spacing: 0        -> p-5 EMITS padding: calc(var(--spacing) * 5);
+$ nine named steps, bare key omitted
+      -> FAILS: The --spacing(…) function requires that the `--spacing` theme variable exists
+```
+
+**But the ruling corrects my instrument, and the correction is the important part.** I proposed a source
+rule over the files we author. That is **not** the strongest mechanism available, because it misses a
+value entering through
+
+* a **Filament component we configure** rather than author,
+* a **plugin**, or
+* a **class string built at runtime**.
+
+**The mechanism is an assertion over the COMPILED panel CSS: every spacing value resolves to one of the
+nine approved steps, with an allowlist of exactly the three vendor call sites — by their VALUE, and with
+a HARD COUNT of 3.** The compiled assertion catches all three leaks the source rule misses, because by
+then every path has become CSS.
+
+**The allowlist, measured — and the count is the property that matters:**
+
+```
+$ grep -rhoE -- '--spacing\([0-9]+\)' apps/api/vendor/filament/*/resources/css/ | sort | uniq -c
+      2 --spacing(8)
+      1 --spacing(7)
+   → count = 3
+```
+
+| site | value |
+| --- | --- |
+| `support/resources/css/utilities.css:777` `margin-block` | `--spacing(8)` |
+| `support/resources/css/utilities.css:779` `margin-top` | `--spacing(8)` |
+| `forms/resources/css/components/date-time-picker.css:68` `grid-cols` | `--spacing(7)` |
+
+**The hard count of 3 is there so the vendor's exposure cannot grow silently** — the same mechanism as
+8a's hard count of twelve themeable names, which makes any thirteenth fail. A Filament patch that adds a
+fourth `--spacing(…)` site, or changes `7` to some other off-scale multiplier, reddens the gate and gets
+read rather than absorbed. An allowlist by *value* rather than by *file path* is deliberate: a vendor
+refactor that moves the call to another file must not silently widen the allowance.
+
+**The source rule is kept as well, not replaced.** It fails earlier and it names the file, which the
+compiled assertion cannot — a compiled-CSS failure says *a 20px padding exists*, not *which Blade template
+wrote `p-5`*. Two instruments, different jobs: one for the authoring moment, one for the artefact.
+
+**So the `§5` row carries:** the exclusivity measurement above (four `--spacing` values and the omitted-key
+build failure), the three vendor line numbers and their values, the hard count, and the review-by that
+re-tests them against a later Filament. It is a row because the residual cannot be removed, not because
+nothing was built for it.
 
 **`§8` forbids choosing a patch over a redesign; it does not require a redesign the vendor makes
 impossible.** For three of the four namespaces there is no patch — the shape is gone. For spacing the
@@ -747,12 +848,36 @@ it. **Every figure in SR-1 was measured with the workspace's 4.3.3**, which mean
 panel CSS I measured not the panel CSS a fresh clone produces. That is the fresh-clone class, and 8a
 already paid for it twice (the `.gitignore` guard's floor, and `mawk` versus `gawk`).
 
-**My call: pin it, do not carry a row.** `apps/api/package.json` pins `tailwindcss` and
-`@tailwindcss/vite` to the workspace's exact versions, with a gate-checked assertion that **the two
-`package.json` files name the same `tailwindcss` version** — one source for the toolchain, mechanically.
+**My call: pin it, do not carry a row — and the call was confirmed and the pin is DONE.**
+`apps/api/package.json` now pins both to the workspace's exact version:
+
+```
+$ grep -E '"(tailwindcss|@tailwindcss/vite)"' apps/api/package.json
+        "@tailwindcss/vite": "4.3.3",
+        "tailwindcss": "4.3.3",
+$ cd apps/api && npm install && node -p "require('./node_modules/tailwindcss/package.json').version"
+4.3.3
+```
+
 A `§5` row would carry a known drift forward for the life of the project when the fix is one line and the
 check is three; the `playwright` precedent in 8a is the same argument (*"its browser build is tied to the
 package version, so a range re-downloads a different Chromium"*).
+
+**What the pin was actually worth, measured rather than asserted:** `^4.0.0` resolves to **4.3.3 today**,
+so the caret was **not wrong — it was unpinned**, and every `SR-1` figure happened to be measured against
+the version the panel would have resolved anyway. `SR-1`'s re-measurement confirms the two toolchains are
+**byte-identical**, including `index.css` and `dist/lib.mjs` compared with `cmp`. So the pin changed no
+figure; it changed whether the figures survive the next `npm install`, which is the whole content of
+`§6`'s fresh-clone clause.
+
+**Still owed by the implementation commit:** the gate-checked assertion that **the two `package.json`
+files name the same `tailwindcss` version**. One source for the toolchain, mechanically — without it the
+pin is a fact about today rather than a control.
+
+**`vite` is deliberately NOT pinned**, and the asymmetry is a decision: `apps/api`'s Vite builds the
+Laravel assets and the workspace's builds the Next apps; they are genuinely separate toolchains that need
+not move together. Tailwind is different because **one `@theme` block must mean the same thing in both
+builds**.
 
 **What I am not deciding:** whether `vite` should be pinned the same way. `apps/api`'s Vite builds the
 Laravel assets and the workspace's builds the Next apps; they are genuinely separate toolchains and a
@@ -762,33 +887,34 @@ an oversight.
 
 ---
 
-## 10. Where this document lives, and where it will live
+## 10. The branch, and the one explanation its history gets
 
-Ruled 2026-10-31: *"a reviewer handed `git diff task-8a...task-8b` must see the answers, which is how 8a's
-own reviewers read them. So when you cut `task-8b-panel-restyle` from the `task-8a` tag, cherry-pick
-`c6fbba0` onto it as its first commit and revert it on `main`, and say so in the ticket. One doc, one
-home."*
+**Ruled 2026-10-31, and the ruling replaced the earlier instruction rather than qualifying it:** the
+deviation is *"accepted and is better than my instruction"* — `main`'s `PLAN.md` being 81 commits behind
+makes it the wrong base for a state-file edit, and `task-8b-precoding` off `d8c9652` is correct.
+**The `main` cherry-pick and the revert are dropped entirely — moot.**
 
-**The sequence, which is pending only on the tag:**
+**So `c6fbba0` stays on `main` as the record of where the answers were first written, and nothing is
+reverted.** The sequence, pending only on the tag:
 
-1. `task-8a` is tagged (it waits on an Actions run id for the head sha and one review round of its fix
-   diff — neither is 8b's).
-2. `task-8b-panel-restyle` is cut **from that tag**.
-3. `c6fbba0` — and the `task-8b-precoding` commits that follow it — are cherry-picked on as the branch's
-   first commits.
-4. `c6fbba0` is **reverted on `main`**, so the document has one home.
-
-**Why the work is on `task-8b-precoding` in the interim rather than on `main`.** `c6fbba0` was a **new
-file**, so `main` could hold it safely. This round also edits **`PLAN.md`**, and `main`'s copy of that file
-is **81 commits behind** the live one on `task-8a-design-system`:
+1. `task-8a` is tagged at **`d8c9652`** — it waits on an Actions run id for the head sha and one review
+   round of its fix diff, neither of which is 8b's.
+2. **`task-8b-panel-restyle` is cut FROM THE TAG.**
+3. The `task-8b-precoding` commits **fast-forward onto it — no rebase, because the base is the same
+   commit.** `task-8b-precoding` is branched off `d8c9652`, which is the commit the tag will name, so the
+   two histories share a base by construction rather than by luck.
+4. **The `task-8b-precoding` branch name is retired.** It was a holding name for the interval between the
+   `§3` answers and the tag, and it has no meaning after step 3.
 
 ```
-$ git log --oneline origin/main..task-8a-design-system -- docs/PLAN.md | wc -l
-81
+$ git merge-base --is-ancestor task-8b-precoding origin/task-8a-design-system; echo $?
+# non-zero: precoding is AHEAD of 8a, which is the point
+$ git merge-base task-8b-precoding origin/task-8a-design-system
+d8c96521baf033e2e70b9b4feb8a45d61c1e3e8d          # the shared base = the expected tag commit
 ```
 
-Editing the project's state file on a base 81 commits stale would fork it, which is a worse outcome than
-an interim branch. `task-8b-precoding` is branched off **`d8c9652`** — the commit `task-8a` is expected to
-tag — so if the tag lands there these commits apply to `task-8b-panel-restyle` with no rebase at all, and
-if a review round moves the tag it is one rebase. **Say the word if you would rather they sat somewhere
-else; it is a docs-only branch and costs nothing to move.**
+**Why this is written down rather than left to the moment.** A branch that appears, carries two commits
+and vanishes is the kind of history that gets reconstructed wrongly a month later. One explanation, in
+the ticket, so the name needs no archaeology: it existed because the `§3` answers had to be committed
+before the tag existed, and the state file they edit lives on an unmerged branch.
+

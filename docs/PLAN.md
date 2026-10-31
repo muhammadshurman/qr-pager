@@ -78,6 +78,37 @@ all three → `1`. Until then the clause binds from `QRPAGER-23 §0`, which quot
 `§3` answers and screen walk are written against that text — stated in `docs/tickets/QRPAGER-23.md §0`
 as `SR-2` rather than assumed.
 
+#### (a2) ⚠ WHERE THIS FILE ACTUALLY LIVES, and why `R-001`'s doc exception does not describe it
+
+Added 2026-10-31 by Task 8b's pre-coding gate, because it was discovered by trying to follow the rule.
+
+**`R-001`'s settled exception says a documentation-only commit — `docs/**`, including this file — goes
+straight to `main`, no branch, no PR. That does not describe the STATE FILE.** The authoritative copy of
+`docs/PLAN.md` lives on an **unmerged task branch**, not on `main`:
+
+```
+$ git log --oneline origin/main..task-8a-design-system -- docs/PLAN.md | wc -l
+81
+```
+
+**Eighty-one commits to this file that `main` has never seen.** `main` is reserved until client handover
+(`§10`), the task branches are not merged by instruction, and every task since Task 3 has updated `§0` and
+`§4a` on its own branch. So **whoever reads `PLAN.md` on `main` reads a record four tasks old** — Task 3's
+— while believing they are reading the file whose own header calls itself *"the only place that states
+current state"*.
+
+**The consequence that bites, and it is why this is a note rather than a shrug:** a `PLAN` edit made on
+`main` in good faith, following `R-001` to the letter, would **fork the state file** — two divergent
+copies of the one document this project uses to answer *where are we*. Task 8b's `§3` answers hit exactly
+this and held the edit on a task branch instead (`QRPAGER-23 §10`).
+
+**The honest reading of `R-001`'s exception, until it is amended:** it is sound for a doc that is *about*
+a moment (an evidence transcript, a ticket's answers) and unsound for a doc that *is* the project's
+state. The exception's own stated reason — *"`§0` in particular has to be editable the moment state
+changes"* — is the argument for editing `§0` on whichever branch holds the live copy, which is the
+opposite of what its letter says. **Amending it is a rank-2-adjacent call and is Muhammad's**; what is
+recorded here is the measurement and the trap, so the next person to follow the rule reads this first.
+
 #### (b) Cannot be checked from here — what to look at, and the right answer
 
 **W-0 · ⚠ REVOKE THE GITHUB PAT PASTED INTO THE SESSION ON 2026-10-26. Delete this item once done.**
