@@ -10,7 +10,7 @@ import {
   ORDER_READY,
   colourProperty,
   protectedProperties,
-  ratioTo2dp,
+  orderReadyPairs,
   resolveOrderReady,
 } from '@qrpager/tokens'
 
@@ -293,17 +293,24 @@ describe('clause 2 -- the order-ready pair is UNREACHABLE from a tenant theme', 
     }
   })
 
-  it('states the three AAA ratios from the source, as arithmetic', () => {
+  it('states the three AAA ratios, QUOTED from the generated table', () => {
     // §12 requires AAA on this screen. Because D4 fixes the pair in the token source it is
     // arithmetic over two values rather than a browser measurement -- which is why it is
     // asserted here and not left to R-118's browser harness.
-    expect(ratioTo2dp(resolveOrderReady('ready-ink'), resolveOrderReady('ready-field'))).toBe(15.55)
-    expect(ratioTo2dp(resolveOrderReady('ready-signal'), resolveOrderReady('ready-field'))).toBe(
-      9.73,
-    )
-    expect(ratioTo2dp(resolveOrderReady('ready-field'), resolveOrderReady('ready-signal'))).toBe(
-      9.73,
-    )
+    //
+    // ⚠ 15.54 / 9.72 / 9.72, AND THIS FILE SAID 15.55 / 9.73 / 9.73. Raw: 15.545990… and
+    // 9.729662…. Under the stated convention -- TRUNCATE at two decimals, never round up,
+    // because every contrast threshold is a MINIMUM -- both floor rather than round. The
+    // figures are read from orderReadyPairs() now instead of three literals typed here,
+    // which is the mechanism; the expected values stay explicit because they are the gate
+    // clause. All three clear AAA's 7.0 either way, so no conclusion changes.
+    const pairs = orderReadyPairs()
+    expect(pairs.map((p) => [p.fg, p.bg, p.ratio])).toEqual([
+      ['--ready-ink', '--ready-field', 15.54],
+      ['--ready-signal', '--ready-field', 9.72],
+      ['--ready-field', '--ready-signal', 9.72],
+    ])
+    for (const p of pairs) expect(p.pass).toBe(true)
   })
 
   it('names exactly three order-ready colours, so the set cannot grow unnoticed', () => {

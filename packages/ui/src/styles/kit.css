@@ -22,6 +22,34 @@
 
 /* ------------------------------------------------------------------ foundations */
 
+/*
+ * ⚠ THE THEMED SURFACE ESTABLISHES THE GROUND, AND IT DID NOT UNTIL 2026-10-31.
+ *
+ * This stylesheet styled components and never set the document's own ink-on-paper, so
+ * anything rendered inside `ThemeProvider` without a landing template inherited the user
+ * agent's black-on-white: `#000000` on `#FFFFFF`. The browser check caught it by comparing
+ * the engine's resolved pair against the generated table and getting the UA default back.
+ *
+ * It mattered more than it looks. The whole contrast table is computed for `ink` on
+ * `paper`/`surface`/`surface-2`; if the page's real ground is the UA default, every figure
+ * in that table describes a pair the product never renders. A card's own background was
+ * token-driven, which is exactly why this was invisible — the card looked right and the
+ * text inside it was not the colour anybody measured.
+ *
+ * `[data-theme]` is the hook because that is what `ThemeProvider` sets, so the element
+ * carrying the theme is the element carrying the ground. The font follows `lang`, which the
+ * same component sets on the same element.
+ */
+[data-theme] {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-latin);
+}
+
+[data-theme]:lang(ar) {
+  font-family: var(--font-arabic);
+}
+
 .qr-visually-hidden {
   position: absolute;
   width: 1px;
@@ -55,6 +83,26 @@
 /* ---------------------------------------------------------------------- button */
 
 .qr-button {
+  /*
+   * ⚠ appearance: none, AND WITHOUT IT EVERY BUTTON RENDERED THE WRONG COLOUR.
+   *
+   * Measured in Chromium: with the default `appearance: auto`, the engine renders a
+   * `<button>` with its NATIVE widget appearance and BLENDS the author background over it.
+   * `background-color: var(--color-brand)` (#0B6B4F) came out as rgb(174, 202, 194); the
+   * danger fill #96351A came out as rgb(214, 186, 179); and the label resolved to
+   * rgb(72, 72, 72) instead of #FFFFFF.
+   *
+   * That is worse than a cosmetic bug. The entire contrast table is computed for the token
+   * values, so if the engine renders something else, every figure in it describes a pair the
+   * product never shows -- a palette measured to AAA and rendered at something nobody
+   * checked. It was invisible to every source-level and jsdom test, because both see the
+   * DECLARATION; only a real engine resolves the blend.
+   *
+   * Found by the browser check comparing the engine's resolved pair against the generated
+   * table, which is the one thing that could have found it.
+   */
+  appearance: none;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -97,8 +145,21 @@
   color: var(--color-brand);
 }
 
+/*
+ * ⚠ THE FILL IS alert-INK, NOT alert-FILL, and the generated contrast table is why.
+ *
+ * The approval allows `alert-fill` for "fills and >= 24px text only". This label is
+ * `--size-16`, which is not large text, so its bar is AA's 4.5 and not 3.0 -- and
+ * `surface` on `alert-fill` is 3.68: a pass for a 24px label and a FAILURE for this one.
+ * It escaped the first report because a role-against-background table has no row for text
+ * ON a fill.
+ *
+ * `surface` on `alert-ink` is 7.44 light and 5.82 dark. So the PAIRING changed and no value
+ * did: both tokens are approved and nothing new was invented. generated/contrast.md keeps
+ * `alert-fill`'s own bound stated, so a future use cannot rediscover this.
+ */
 .qr-button--danger {
-  background-color: var(--color-alert-fill);
+  background-color: var(--color-alert-ink);
   color: var(--color-surface);
 }
 
@@ -155,6 +216,9 @@
 }
 
 .qr-field__input {
+  /* The same reason as .qr-button above: a native text field blends the author background
+     with the engine's own widget rendering. */
+  appearance: none;
   min-block-size: var(--target-min);
   padding-inline: var(--space-12);
   padding-block: var(--space-8);
@@ -168,7 +232,7 @@
 
 .qr-field__error {
   font-size: var(--size-13);
-  /* alert-INK, not alert-fill: the fill is 3.33:1 on paper and fails 4.5:1 as body text,
+  /* alert-INK, not alert-fill: the fill is 3.32:1 on paper and fails 4.5:1 as body text,
      which the token source states rather than leaving to be discovered in a review. */
   color: var(--color-alert-ink);
   margin: 0;
@@ -336,6 +400,7 @@
 }
 
 .qr-ready__acknowledge {
+  appearance: none;
   min-inline-size: var(--target-min);
   min-block-size: var(--target-min);
   padding-inline: var(--space-32);

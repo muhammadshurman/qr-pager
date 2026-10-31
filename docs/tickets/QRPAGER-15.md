@@ -249,23 +249,55 @@ Every dark value is a mix of two **approved** tokens. Nothing invents a hue.
 | `alert-fill` | `#E4572E` | `#E4572E` | `= alert-fill` (approved) |
 | `alert-ink` | `#96351A` | `#E4572E` | `= alert-fill` (approved), promoted to the text role |
 
-**Every bar met, against all three backgrounds in each theme** (condition 4 asserts these):
+**⚠ THE BARS TABLE IS NOW GENERATED, AND THAT IS A CORRECTION. The first version of this
+section covered `ink`, `ink-mid` and `border-strong` only, and three defects hid behind the
+roles it did not list** — dark `alert-ink` failing AA on two of three dark backgrounds,
+`border-strong` clearing its bar by 0.02 and 0.01, and the danger button's label on a fill,
+a shape no role-against-background table has a row for at all. The table below is quoted
+from **`packages/tokens/generated/contrast.md`**, which the generator emits and
+`pnpm tokens:check` keeps current; **42 pairs, 0 failures**.
 
-| role | bar | LIGHT: paper / surface / surface-2 | DARK: paper / surface / surface-2 |
+**Figures are TRUNCATED at two decimals, never rounded up**: every threshold is a minimum,
+so flooring can only understate compliance while rounding up can overstate it. Every
+derived role is solved against **bar + 0.10** headroom, because a value clearing a minimum
+by 0.01 moves with the mix implementation.
+
+| role | bar | LIGHT paper / surface / surface-2 | DARK paper / surface / surface-2 |
 | --- | --- | --- | --- |
-| `ink` | ≥ 7.0 AAA | 14.85 / 16.43 / 13.63 | 15.55 / 12.61 / 10.44 |
-| `ink-mid` | ≥ 4.6 | 5.17 / 5.72 / 4.74 | 6.94 / 5.63 / 4.66 |
-| `border-strong` | ≥ 3.0 (1.4.11) | 3.29 / 3.64 / 3.02 | 4.49 / 3.64 / 3.01 |
+| `ink` | ≥ 7.0 | 14.85 / 16.42 / 13.63 | 15.54 / 12.60 / 10.43 |
+| `ink-mid` | ≥ 4.5 | 5.16 / 5.71 / 4.74 | 6.94 / 5.62 / 4.65 |
+| `alert-ink` | ≥ 4.5 | 6.73 / 7.44 / 6.17 | 7.18 / 5.82 / 4.82 |
+| `brand` | ≥ 4.5 | 5.87 / 6.50 / 5.39 | 9.72 / 7.89 / 6.53 |
+| `border-strong` | ≥ 3.0 | 3.53 / 3.90 / 3.24 | 4.79 / 3.88 / 3.21 |
+| `hairline` | — decorative | 1.28 / 1.42 / 1.18 | 2.07 / 1.68 / 1.39 |
 
-**The three order-ready ratios, computed from the token source — arithmetic, no browser:**
+**Text ON a fill** — the shape the first table had no row for:
+
+| pair | bar | LIGHT | DARK |
+| --- | --- | --- | --- |
+| `surface` on `brand` | ≥ 4.5 | 6.50 | 7.89 |
+| `surface` on `alert-ink` | ≥ 4.5 | 7.44 | 5.82 |
+| `surface` on `alert-fill` | ≥ 3.0 | 3.68 | 3.78 |
+
+`surface` on `alert-fill` is **3.68** and the approval allows that token for *"fills and
+≥ 24px text only"* — so it is a pass for a 24px label and a **failure** for the danger
+button's `--size-16` one. The button's fill is `alert-ink`; both tokens are approved and
+only the PAIRING changed. The last row stays in the table to keep `alert-fill`'s own bound
+stated.
+
+**The three order-ready ratios, quoted from the generated table — arithmetic, no browser.
+⚠ 15.54 / 9.72 / 9.72 AND NOT 15.55 / 9.73 / 9.73:** the raw values are 15.545990… and
+9.729662…, which the prompt and the approval comment both carried in their rounded-up form.
+All three clear AAA's 7.0 by a wide margin either way, so no conclusion changes — but a
+published figure that rounds up against a minimum is exactly what the convention removes.
 
 | pair | ratio | bar |
 | --- | --- | --- |
-| `paper` on `ready-field` | **15.55:1** | AAA ✅ |
-| `signal` on `ready-field` | **9.73:1** | AAA ✅ |
-| `ready-field` on `signal` | **9.73:1** | AAA ✅ |
+| `--ready-ink` on `--ready-field` | **15.54:1** | AAA ✅ |
+| `--ready-signal` on `--ready-field` | **9.72:1** | AAA ✅ |
+| `--ready-field` on `--ready-signal` | **9.72:1** | AAA ✅ |
 
-These match the rank-1 prompt's three figures exactly.
+They differ from the rank-1 prompt's three figures by one hundredth each, in the only direction the convention allows.
 
 ### 2.4 Two figures in the approval comment that my arithmetic does not reproduce
 
@@ -273,8 +305,15 @@ Reported rather than silently adjusted, and neither changes a conclusion the app
 
 | pair | approval comment | computed here | note |
 | --- | --- | --- | --- |
-| `ink` on `paper` | 14.86:1 | **14.85:1** | 14.8528 — a rounding direction, not a disagreement |
-| `alert-fill` on `paper` | 3.44:1 | **3.33:1** | a real difference. The comment's claim — *"the fill fails 4.5:1 as text"* — holds either way, and `alert-fill` stays restricted to fills and ≥24px text |
+| `ink` on `paper` | 14.86:1 | **14.85** | 14.8528 — rounds up in the comment |
+| `alert-fill` on `paper` | 3.44:1 | **3.32** | a real difference; raw 3.329999… . The comment's own claim that the fill fails 4.5:1 as text holds either way |
+| `paper` on `ready-field` | 15.55:1 | **15.54** | raw 15.545990… |
+| `signal` on `ready-field` | 9.73:1 | **9.72** | raw 9.729662… |
+| `signal` on `paper` | 1.60:1 | **1.59** | raw 1.597793… |
+
+**All five are the same defect: a figure typed by hand and rounded up against a minimum.**
+That is why `generated/contrast.json` now exists and why every test and document quotes it
+rather than anybody's arithmetic.
 
 ### 2.5 `packages/contracts` — the generated TS status mirror
 

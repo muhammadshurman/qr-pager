@@ -29,25 +29,30 @@ import { fileURLToPath } from 'node:url'
 
 import {
   COLOUR_ROLES,
+  FILL_PAIRS,
+  FOREGROUND_ROLES,
   ELEVATION,
   FOCUS,
   FONTS,
   MIX_COLOUR_SPACE,
+  BARS,
+  HEADROOM,
   MOTION,
   ORDER_READY,
-  ORDER_READY_PAIRS,
   RADIUS,
   SPACING,
   TARGET_MIN_PX,
   THEMES,
   TYPE_SCALE,
   colourProperty,
+  contrastFailures,
+  contrastPairs,
   describeRule,
+  orderReadyPairs,
   protectedProperties,
   resolveColour,
   resolveOrderReady,
 } from '../src/source.ts'
-import { ratioTo2dp } from '../src/color.ts'
 
 const PKG = join(fileURLToPath(new URL('..', import.meta.url)))
 const REPO = join(PKG, '..', '..')
@@ -126,10 +131,9 @@ function scaleBlock(indent = '  ') {
 
 export function buildCss() {
   const banner = BANNER_LINES.map((l) => (l === '' ? ' *' : ` * ${l}`)).join('\n')
-  const ratios = ORDER_READY_PAIRS.map(
-    (p) =>
-      ` *   --${p.fg} on --${p.bg} = ${ratioTo2dp(resolveOrderReady(p.fg), resolveOrderReady(p.bg)).toFixed(2)}:1  (${p.what})`,
-  ).join('\n')
+  const ratios = orderReadyPairs()
+    .map((p) => ` *   ${p.fg} on ${p.bg} = ${p.ratio.toFixed(2)}:1  (${p.what})`)
+    .join('\n')
 
   return `/*
 ${banner}
@@ -140,8 +144,9 @@ ${banner}
  *
  *   ${protectedProperties().join('  ')}
  *
- * Their ratios, computed from the source by WCAG 2.1 relative luminance -- arithmetic,
- * not a browser measurement, which is only possible because D4 fixes the pair:
+ * Their ratios, computed from the source by WCAG 2.1 relative luminance and FLOORED at two
+ * decimals -- arithmetic, not a browser measurement, which is only possible because D4
+ * fixes the pair. The full table for every other pair is generated/contrast.md:
  *
 ${ratios}
  *
@@ -378,6 +383,153 @@ ${TYPE_SCALE.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
 `
 }
 
+// ------------------------------------------------------------------------ contrast table
+
+/**
+ * ================================================================================
+ * THE CANONICAL CONTRAST TABLE. GENERATED, SO NOBODY TRANSCRIBES A RATIO AGAIN.
+ * ================================================================================
+ *
+ * Three figures this project published were wrong, and all three were wrong the same way:
+ * typed by hand, and rounded UP against a MINIMUM bar.
+ *
+ *     paper on ready-field    raw 15.545990…   published 15.55   floored 15.54
+ *     signal on ready-field   raw  9.729662…   published  9.73   floored  9.72
+ *     alert-fill on paper     raw  3.329999…   published  3.33   floored  3.32
+ *
+ * (The first two were also wrong in the approval comment. `signal on paper`, 1.597793…,
+ * was published as 1.60 and floors to 1.59.)
+ *
+ * So the table is emitted rather than written: `contrast.json` is what the tests read and
+ * `contrast.md` is what a human reads, and both come from `contrastPairs()`. A figure in a
+ * Jira comment or in PLAN.md is now a quote from this artefact rather than from anybody's
+ * arithmetic — and `tokens:check` fails if the artefact and the source disagree.
+ */
+export function buildContrastJson() {
+  const rows = contrastPairs()
+  const ready = orderReadyPairs()
+  const failures = contrastFailures()
+
+  return `${JSON.stringify(
+    {
+      $generated: 'packages/tokens/scripts/generate.mjs from packages/tokens/src/source.ts',
+      $doNotEdit:
+        'Run `pnpm tokens:generate`. `pnpm tokens:check` byte-diffs this file against the source.',
+      convention: {
+        formula: 'WCAG 2.1 relative luminance',
+        rounding:
+          'TRUNCATED at two decimals (floored), never rounded up: every threshold is a MINIMUM, so flooring can only understate compliance and rounding up can overstate it',
+        colourSpace: MIX_COLOUR_SPACE,
+      },
+      bars: BARS,
+      headroom: HEADROOM,
+      headroomReason:
+        'a value clearing a minimum by 0.01 moves with the mix implementation, the rounding convention and the transfer function precision -- every derived role is solved against bar + headroom',
+      orderReady: {
+        note: 'outside theming (D4): these take no theme, so there is one set of figures and not two',
+        pairs: ready,
+      },
+      pairs: rows,
+      failures,
+      summary: {
+        pairs: rows.length,
+        orderReadyPairs: ready.length,
+        failures: failures.length,
+        themes: THEMES,
+      },
+    },
+    null,
+    2,
+  )}\n`
+}
+
+export function buildContrastMarkdown() {
+  const rows = contrastPairs()
+  const ready = orderReadyPairs()
+  const failures = contrastFailures()
+
+  const table = (subset) =>
+    [
+      '| fg | bg | fg hex | bg hex | ratio | bar | target | margin over bar | verdict |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      ...subset.map((r) => {
+        const bar = r.bar === null ? '—' : r.bar.toFixed(1)
+        const target = r.target === null ? '—' : r.target.toFixed(2)
+        const margin =
+          r.marginOverBar === null
+            ? '—'
+            : `${r.marginOverBar >= 0 ? '+' : ''}${r.marginOverBar.toFixed(2)}`
+        const verdict = r.bar === null ? 'no bar — decorative' : r.pass ? '✅' : '❌ FAILS'
+        const note = r.rendered ? '' : ' *(not rendered — bound stated only)*'
+        return `| \`${r.fg}\` | \`${r.bg}\` | \`${r.fgHex}\` | \`${r.bgHex}\` | **${r.ratio.toFixed(2)}** | ${bar} | ${target} | ${margin} | ${verdict}${note} |`
+      }),
+    ].join('\n')
+
+  return `<!--
+GENERATED FILE -- DO NOT EDIT.
+
+Emitted from packages/tokens/src/source.ts by packages/tokens/scripts/generate.mjs.
+\`pnpm tokens:check\` byte-diffs it against what the source produces right now.
+
+Quote THIS FILE rather than re-deriving a figure. Three published figures were wrong
+because they were typed by hand and rounded up against a minimum bar.
+-->
+
+# Contrast — the canonical table
+
+| | |
+| --- | --- |
+| Formula | WCAG 2.1 relative luminance |
+| Rounding | **truncated at two decimals (floored), never rounded up** |
+| Why | every threshold is a MINIMUM, so flooring can only ever understate compliance; rounding up can overstate it, and a raw 4.4996 presented as \`4.50\` against a 4.5 bar reads as a pass and is not one |
+| Mix colour space | \`${MIX_COLOUR_SPACE}\` |
+| Bars | AAA text ${BARS.aaaText.toFixed(1)} · AA text ${BARS.aaText.toFixed(1)} · AA large text and non-text ${BARS.aaLarge.toFixed(1)} |
+| Headroom | **+${HEADROOM.toFixed(2)}** over the bar. A value clearing a minimum by 0.01 moves with the mix implementation and the rounding convention, so every derived role is solved against \`bar + headroom\` |
+| Pairs | **${String(rows.length)}** across ${String(THEMES.length)} themes, plus ${String(ready.length)} order-ready |
+| Failures | **${String(failures.length)}** |
+
+## The order-ready screen — outside theming (D4)
+
+One set of figures and not two: these resolve with no theme argument, so there is no second
+declaration that could differ.
+
+| fg | bg | fg hex | bg hex | ratio | bar | target | verdict | what |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+${ready
+  .map(
+    (p) =>
+      `| \`${p.fg}\` | \`${p.bg}\` | \`${p.fgHex}\` | \`${p.bgHex}\` | **${p.ratio.toFixed(2)}** | ${p.bar.toFixed(1)} | ${p.target.toFixed(2)} | ${p.pass ? '✅' : '❌ FAILS'} | ${p.what} |`,
+  )
+  .join('\n')}
+
+## Light
+
+${table(rows.filter((r) => r.theme === 'light'))}
+
+## Dark
+
+${table(rows.filter((r) => r.theme === 'dark'))}
+
+## What each foreground role is
+
+${Object.entries(FOREGROUND_ROLES)
+  .map(
+    ([role, spec]) => `- \`${role}\` — ${spec.what}${spec.kind === null ? '' : ` (${spec.kind})`}`,
+  )
+  .join('\n')}
+
+### Text on a fill
+
+A role-against-background table has no row for this shape, and that is where the danger
+button's defect hid: its label is \`--size-16\`, so its bar is AA's ${BARS.aaText.toFixed(1)} and not large
+text's ${BARS.aaLarge.toFixed(1)}. \`surface\` on \`alert-fill\` is 3.68 — a pass for a 24px label and a failure
+for this one — so the button's fill is \`alert-ink\`. Both tokens are approved; only the
+pairing changed, and no new value was invented.
+
+${FILL_PAIRS.map((p) => `- \`${p.fg}\` on \`${p.bg}\` — ${p.what}`).join('\n')}
+`
+}
+
 // --------------------------------------------------------------------------------- main
 
 /** The three artefacts: where each goes and what produces it. */
@@ -392,6 +544,16 @@ export const ARTEFACTS = [
     path: join(REPO, 'apps', 'api', 'config', 'design-tokens.php'),
     build: buildPhp,
     what: 'the PHP config Filament consumes in 8b (D5)',
+  },
+  {
+    path: join(PKG, 'generated', 'contrast.json'),
+    build: buildContrastJson,
+    what: 'the canonical contrast table the tests read',
+  },
+  {
+    path: join(PKG, 'generated', 'contrast.md'),
+    build: buildContrastMarkdown,
+    what: 'the canonical contrast table a human reads',
   },
 ]
 

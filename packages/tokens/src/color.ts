@@ -94,8 +94,8 @@ export function luminance(hex: string): number {
 /**
  * The WCAG 2.1 contrast ratio between two colours, unrounded.
  *
- * Unrounded deliberately: every caller rounds at the point it reports, so a bar check and a
- * printed figure cannot disagree about the same pair. `ratioTo2dp` is what tests assert.
+ * Unrounded deliberately: every caller reduces it at the point it reports, so a bar check
+ * and a printed figure cannot disagree about the same pair.
  */
 export function contrast(a: string, b: string): number {
   const la = luminance(a)
@@ -105,7 +105,34 @@ export function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/** The contrast ratio to two decimal places -- the form every assertion and table uses. */
-export function ratioTo2dp(a: string, b: string): number {
-  return Math.round(contrast(a, b) * 100) / 100
+/**
+ * ================================================================================
+ * THE ROUNDING CONVENTION, STATED ONCE: TRUNCATE AT TWO DECIMALS. NEVER ROUND UP.
+ * ================================================================================
+ *
+ * Every contrast figure this project publishes or asserts goes through this function.
+ *
+ * WHY FLOORING AND NOT ROUNDING. Every contrast threshold is a MINIMUM — AA is "at least
+ * 4.5:1", AAA "at least 7:1", 1.4.11 "at least 3:1". Rounding half-up can therefore
+ * publish a figure that OVERSTATES compliance: a raw 3.2999 presented as "3.33" against a
+ * 3:1 bar is harmless, but a raw 4.4996 presented as "4.50" against a 4.5 bar reads as a
+ * pass and is not one. Flooring can only ever understate, which is the safe direction for
+ * a minimum.
+ *
+ * ⚠ IT CHANGED THREE FIGURES THIS PROJECT HAD ALREADY PUBLISHED, which is the whole reason
+ * the convention is now written down and mechanised rather than carried in someone's head:
+ *
+ *     paper on ready-field   raw 15.545990…   round 15.55   FLOOR 15.54
+ *     signal on paper        raw  1.597793…   round  1.60   FLOOR  1.59
+ *     alert-fill on paper    raw  3.329999…   round  3.33   FLOOR  3.32
+ *
+ * The first two were in the approval comment and the third was in this task's own report.
+ * All three were hand-transcribed, and hand-transcription is the defect behind all of them
+ * — which is why `generated/contrast.json` now exists and why the tests read it rather than
+ * a number anybody typed.
+ */
+export function ratioFloor2(a: string, b: string): number {
+  // The multiply-floor-divide has to be done on the ratio itself, not on a pre-rounded
+  // value, or the floor would be applied to something already rounded up.
+  return Math.floor(contrast(a, b) * 100) / 100
 }

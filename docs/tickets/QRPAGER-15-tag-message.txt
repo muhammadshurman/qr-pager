@@ -45,8 +45,10 @@ GATE CLAUSES MET, WITH THE FIGURE
       one; all three rules fire on the bad TSX fixture and none on the good one. Includes
       the Tailwind arbitrary forms text-[#fff] and p-[13px] (D3).
 §5  AAA on the order-ready screen ................................ MET
-      15.55:1, 9.73:1, 9.73:1 — computed from the token source as arithmetic, and measured
-      again in Chromium under BOTH themes.
+      15.54, 9.72, 9.72 — quoted from packages/tokens/generated/contrast.md, and measured
+      again in Chromium under BOTH themes. NOT 15.55 / 9.73 / 9.73: raw 15.545990… and
+      9.729662…, which both the prompt and the approval comment carried rounded UP. The
+      convention is truncation, because every threshold is a minimum.
 §5  RTL mirrors correctly ........................................ MET
       Per component, under en and ar. Icons declare directionality individually; progress
       mirrors its origin while reporting the same aria-valuenow; the timer and prices stay
@@ -92,16 +94,19 @@ GATE CLAUSES NOT MET — EACH WITH ITS ROW AND OWNER
     reviewer can check, rather than a judgement about a screenshot.
     Owner: Muhammad, as the §3.1 row 8 audit already records. No new §5 row.
 
-(2) §5 — "WCAG AA across the kit", in the sense of EVERY rendered pair in a browser.
-    PARTIALLY MEASURED. What is measured in Chromium: body text on a card, secondary text
-    on the ground, the input's border against its fill, and the order-ready triple — in
-    both themes. What is measured as ARITHMETIC over the token source: ink, ink-mid and
-    border-strong against all three backgrounds in both themes, plus the restricted tokens.
-    What is NOT measured: every component's every state in a browser, because several
-    states have no screen to render on until Tasks 9 and 10 build them.
-    → A §5 row is OWED here, owner Task 8b (QRPAGER-23) for the panel's share and Task 9
-      for the PWA's. It is NOT written yet, because §11 says Medium and Low findings go to
-      §5 with an owner and a date AFTER the reviews — writing the row now would pre-empt a
+(2) §5 — "WCAG AA across the kit".
+    NOW MET AS A TABLE RATHER THAN A SAMPLE, and the upgrade is worth stating because the
+    first version of this clause was a three-role spot check that hid three defects.
+    packages/tokens/generated/contrast.md carries 42 PAIRS — every text and boundary role
+    against every background, in both themes, plus text-on-fill — with 0 failures, each
+    clearing bar + 0.10 headroom. The tests read that artefact; nothing transcribes a ratio.
+    WHAT IS STILL NOT MEASURED IN A BROWSER: every component's every state, because several
+    states have no screen to render on until Tasks 9 and 10 build them. Four representative
+    pairs plus the order-ready triple are measured in Chromium in both themes, and the
+    engine is asserted to resolve each token to the hex the table was computed from.
+    → Owner for the remaining browser coverage: Task 9 (QRPAGER-16) and Task 10 for their
+      own screens; Task 8b for the panel. No §5 row is written yet, because §11 puts
+      Medium/Low dispositions AFTER the reviews and writing one now would pre-empt a
       reviewer who may frame it differently.
 
 (3) §7 — "Branch pushed, CI green."
@@ -151,12 +156,21 @@ TWO FIGURES IN THE APPROVAL COMMENT THAT DO NOT REPRODUCE
 
 Reported rather than adjusted. Neither changes a conclusion that comment drew.
 
-  ink on paper        comment 14.86:1   computed 14.85:1   (14.8528 — a rounding direction)
-  alert-fill on paper comment  3.44:1   computed  3.33:1   (a real difference; the comment's
-                                                            own claim that the fill fails
-                                                            4.5:1 as text holds either way)
+  ink on paper          comment 14.86:1   computed 14.85   raw 14.8527964…
+  alert-fill on paper   comment  3.44:1   computed  3.32   raw  3.3299680…
+  paper on ready-field  comment 15.55:1   computed 15.54   raw 15.5459903…
+  signal on ready-field comment  9.73:1   computed  9.72   raw  9.7296620…
+  signal on paper       comment  1.60:1   computed  1.59   raw  1.5977934…
 
-The three order-ready ratios match the approved figures exactly.
+ALL FIVE ARE ONE DEFECT: a figure typed by hand and rounded UP against a MINIMUM bar. Two
+of them were in this task's own report before being caught.
+
+The convention is now stated and mechanised: TRUNCATE at two decimals, never round up,
+because every contrast threshold is "at least" and flooring can only ever understate
+compliance. packages/tokens/generated/contrast.json is emitted from the token source and
+every test and document quotes it. No conclusion in the approval comment changes: all three
+order-ready ratios still clear AAA's 7.0 by a wide margin, and alert-fill still fails
+4.5:1 as small text.
 
 ===============================================================================
 WHAT THE TESTS CAUGHT BEFORE ANY REVIEWER
@@ -183,6 +197,40 @@ QRPAGER-15 §8 asks for:
     every unfocused element in Chromium. Replaced, and the source-level half moved to a
     scan that can fail.
 
+AND FOUR MORE, found by building the generated contrast table rather than spot-checking:
+
+  - DARK alert-ink FAILED AA on two of three dark backgrounds (3.78 and 3.13 against a 4.5
+    bar). It was `= approved alert-fill`, and alert-ink is a TEXT role. Escaped because the
+    bars table covered three roles.
+  - border-strong cleared 3:1 by 0.02 (light) and 0.01 (dark) — the brittleness already
+    refused for ink-mid, applied to one role and not the other. Raised to 3.24 and 3.21.
+  - THE DANGER BUTTON's label was surface-on-alert-fill at 3.68 against a 4.5 bar: the
+    approval allows alert-fill for ">= 24px text only" and the label is --size-16. No
+    role-against-background table has a row for text ON a fill. The fill is alert-ink now;
+    both tokens are approved and only the pairing changed.
+  - EVERY BUTTON RENDERED THE WRONG COLOUR in Chromium: without `appearance: none` the
+    engine blends the author background with its native widget rendering, so #0B6B4F came
+    out as rgb(174,202,194) and the label as rgb(72,72,72) instead of #FFFFFF. The whole
+    contrast table would have described pairs the product never shows. Invisible to every
+    source-level and jsdom test, because both see the declaration.
+  - and kit.css never set the document's own ink-on-paper, so anything inside ThemeProvider
+    without a landing template inherited the UA's black-on-white.
+
+TWO HARNESS DEFECTS IN THE BROWSER SUITE ITSELF, both of which could have produced a false
+PASS rather than only a false failure — which matters because these are the only checks in
+the project that can see a computed style at all:
+
+  - `goto(file://…)` + `addStyleTag()` left four buttons at the UA pair while every
+    observable said the author rules had won (parsed, matched, parsedOk, variables
+    resolving). The same CSS through `setContent` resolves correctly. The sequence is gone.
+  - `setAttribute('data-theme', …)` after load invalidated PARTIALLY: the custom properties
+    updated to the dark values while the element's computed color and background stayed
+    light. A dark-theme assertion could have agreed with a light-theme reading. The theme is
+    parsed with the document now.
+  - the vacuity guard passed through both, because it checked one background on a non-widget
+    element. It now checks a section, a native button AND a native input, and asserts the
+    theme under test actually took.
+
 ===============================================================================
 FIGURES, AT THE HEAD COMMIT
 ===============================================================================
@@ -194,6 +242,8 @@ FIGURES, AT THE HEAD COMMIT
   Playwright                 44 passed, 2 skipped (the motion-preference complements)
   Fresh-clone proof          GREEN — all 9 steps in a clone sharing nothing with the tree
   Three consecutive runs     see docs/tickets/QRPAGER-15-three-runs.txt
+  Contrast table             42 pairs, 0 failures, every row ≥ bar + 0.10 headroom
+                             packages/tokens/generated/contrast.md
   composer gate              see docs/tickets/QRPAGER-15-gate-php.txt
   Font payload               3 files, 45,304 bytes (budget 64 KB, asserted)
   Next apps                  both build, 102 kB First Load JS, statically prerendered

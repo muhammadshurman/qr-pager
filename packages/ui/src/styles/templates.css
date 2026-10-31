@@ -87,6 +87,10 @@
 }
 
 .qr-lp__cta {
+  /* An <a> is not a native widget, so this is belt-and-braces rather than a fix -- but the
+     kit's rule for buttons is `appearance: none` and a CTA that looks like a button should
+     not depend on which element it happens to be. */
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;

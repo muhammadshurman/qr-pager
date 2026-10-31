@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
 import { expect, test, type Page } from '@playwright/test'
 
@@ -23,48 +22,164 @@ import { expect, test, type Page } from '@playwright/test'
 
 const REPO = join(import.meta.dirname, '..')
 
-/** The real stylesheets, with kit.css's @import dropped because tokens.css is injected. */
-function stylesheets(): string[] {
+/**
+ * The fixture, with the REAL stylesheets substituted into it at run time.
+ *
+ * ⚠ SUBSTITUTED, NOT INJECTED, AND THAT IS A CORRECTION TO THIS HARNESS. It used
+ * `page.goto(file://…)` followed by `page.addStyleTag()` per sheet, and under that four
+ * `<button>` elements computed Chromium's UA colours — `rgb(239,239,239)` on `rgb(0,0,0)` —
+ * while every observable said the author rules should win: the rules were parsed (CSSOM
+ * `.style.backgroundColor` read back `var(--color-brand)`), matched
+ * (`el.matches('.qr-button--primary')` true), valid (CDP `parsedOk` true, not disabled),
+ * and the custom property resolved on the element itself. A literal injected afterwards at
+ * the same specificity did not apply either, while the same declaration by `#id` did.
+ *
+ * The same CSS and markup through `setContent` resolve correctly: `#FFFFFF` on `#0B6B4F`.
+ * So the product stylesheet was never wrong — this harness was, and the cause sits below
+ * this code in the engine's handling of that load-then-inject sequence. It is not diagnosed
+ * further, because the fix removes the sequence.
+ *
+ * WHY IT MATTERS MORE THAN THE SYMPTOM. These are the only checks in the project that can
+ * see a computed style at all — `R-118` exists because jsdom cannot. A harness that
+ * produced a false FAILURE could equally have produced a false PASS, and a false pass here
+ * would have certified a palette the engine never renders.
+ */
+function fixtureHtml(theme: 'light' | 'dark'): string {
   const tokens = readFileSync(join(REPO, 'packages/tokens/generated/tokens.css'), 'utf8')
+  // kit.css's @import of tokens.css and fonts.css is dropped: tokens is substituted beside
+  // it, and the @font-face rules need no network for a contrast or geometry measurement.
   const kit = readFileSync(join(REPO, 'packages/ui/src/styles/kit.css'), 'utf8').replace(
     /@import[^;]+;/g,
     '',
   )
-  return [tokens, kit]
+  const html = readFileSync(join(REPO, 'browser/fixtures/kit.html'), 'utf8')
+
+  if (!html.includes('<!--STYLES-->')) {
+    throw new Error('browser/fixtures/kit.html has no <!--STYLES--> placeholder to substitute')
+  }
+  if (!html.includes('data-theme="light"')) {
+    throw new Error('browser/fixtures/kit.html must carry data-theme="light" to substitute')
+  }
+
+  return (
+    html
+      .replace('<!--STYLES-->', `<style>${tokens}</style>\n<style>${kit}</style>`)
+      // ⚠ THE THEME GOES INTO THE MARKUP, NOT ONTO THE LIVE DOCUMENT, and that is the second
+      // correction to this harness. It used `setAttribute('data-theme', …)` after load, and
+      // Chromium's invalidation after that was PARTIAL: measured in the dark theme, the
+      // custom properties on the element had updated to the dark values
+      // (`--color-surface: #1D3028`, `--color-alert-ink: #E99176`) while the element's
+      // computed `color` and `background-color` were still the LIGHT ones
+      // (`rgb(255,255,255)` on `rgb(150,53,26)`). Some elements recalculated and some did
+      // not, in the same document.
+      //
+      // That is a false-PASS generator, not just a false failure: a dark-theme assertion
+      // comparing against light-theme computed values can agree with the wrong table row and
+      // report a palette as verified in a theme it was never measured in. Parsing the
+      // attribute with the document removes the dynamic invalidation entirely.
+      .replace('data-theme="light"', `data-theme="${theme}"`)
+  )
 }
 
 async function openKit(page: Page, theme: 'light' | 'dark' = 'light') {
-  await page.goto(pathToFileURL(join(REPO, 'browser/fixtures/kit.html')).href)
-  for (const css of stylesheets()) await page.addStyleTag({ content: css })
-  await page.evaluate((t) => {
-    document.documentElement.setAttribute('data-theme', t)
-  }, theme)
-  // The fixture must actually have styled: a check against an unstyled page would pass
-  // vacuously on the 44px floor and fail confusingly on contrast.
-  const bg = await page.locator('#card').evaluate((el) => getComputedStyle(el).backgroundColor)
-  expect(bg, 'the stylesheets did not apply -- every check below would be meaningless').not.toBe(
-    'rgba(0, 0, 0, 0)',
+  await page.setContent(fixtureHtml(theme))
+
+  // THE VACUITY GUARD, and it is wider than it was. It used to check that one background
+  // was not transparent, which the broken harness PASSED: the card was token-styled while
+  // four buttons were not. So it now checks a token-driven value on an element of each kind
+  // this suite measures, because "the stylesheets applied" turned out to be true of some
+  // elements and false of others.
+  const applied = await page.evaluate(() => {
+    const read = (sel: string) => {
+      const el = document.querySelector(sel)
+      if (!el) return null
+      const s = getComputedStyle(el)
+      return { bg: s.backgroundColor, color: s.color }
+    }
+    return {
+      theme: document.documentElement.getAttribute('data-theme'),
+      brand: getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim(),
+      card: read('#card'),
+      button: read('#primary'),
+      input: read('#name'),
+    }
+  })
+
+  expect(applied.theme, 'the fixture is not in the theme under test').toBe(theme)
+  expect(applied.brand, 'the token stylesheet did not apply').not.toBe('')
+  // The theme actually took: brand is the one role whose value differs between themes by a
+  // whole hue (#0B6B4F light, #3DDC97 dark), so this cannot pass in the wrong theme.
+  expect(applied.brand, `the ${theme} theme did not take`).toBe(
+    theme === 'light' ? '#0B6B4F' : '#3DDC97',
   )
+  expect(applied.card?.bg, 'the card is unstyled').not.toBe('rgba(0, 0, 0, 0)')
+  // The UA button pair. If this is what a button computes, the author rules lost and every
+  // contrast figure below would describe a pair the page does not render.
+  expect(
+    `${applied.button?.bg ?? ''} / ${applied.button?.color ?? ''}`,
+    'a native button resolved to the user-agent pair -- the author rules did not win',
+  ).not.toBe('rgb(239, 239, 239) / rgb(0, 0, 0)')
+  expect(applied.input?.bg, 'the input is unstyled').not.toBe('rgba(0, 0, 0, 0)')
+
   return page
 }
 
-/** WCAG 2.1 relative luminance, in the browser's own resolved rgb() terms. */
-function ratioFromRgb(a: [number, number, number], b: [number, number, number]): number {
-  const lin = (c: number) => {
-    const s = c / 255
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+/**
+ * ⚠ THERE IS NO CONTRAST FORMULA IN THIS FILE, AND THERE WAS ONE.
+ *
+ * It carried its own `ratioFromRgb` — a second implementation of WCAG 2.1 relative
+ * luminance, in a file whose job is to measure a browser. That is the duplicated-logic
+ * shape this project has paid for repeatedly (QA H-1; guard rule 11c parses `ThemeTokens`
+ * rather than copying it), and it is worse here than usual: two implementations of the same
+ * formula can disagree about a pass, and the one in the browser suite would have been the
+ * one nobody noticed drifting.
+ *
+ * So the arithmetic lives in `packages/tokens` and is emitted to
+ * `packages/tokens/generated/contrast.json`. What this file does instead is the half only a
+ * browser can do: assert that the ENGINE resolves each token to the hex the source says,
+ * and then read that pair's verdict out of the table. The engine proves the wiring; the
+ * table proves the ratio.
+ */
+const CONTRAST = JSON.parse(
+  readFileSync(join(REPO, 'packages/tokens/generated/contrast.json'), 'utf8'),
+) as {
+  bars: { aaaText: number; aaText: number; aaLarge: number }
+  headroom: number
+  orderReady: {
+    pairs: { fg: string; bg: string; fgHex: string; bgHex: string; ratio: number; pass: boolean }[]
   }
-  const lum = ([r, g, bb]: [number, number, number]) =>
-    0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(bb)
-  const la = lum(a)
-  const lb = lum(b)
-  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+  pairs: {
+    theme: string
+    fg: string
+    bg: string
+    fgHex: string
+    bgHex: string
+    ratio: number
+    bar: number | null
+    pass: boolean
+  }[]
 }
 
 function parseRgb(value: string): [number, number, number] {
   const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(value)
   expect(m, `could not parse a colour from ${value}`).not.toBeNull()
   return [Number(m![1]), Number(m![2]), Number(m![3])]
+}
+
+/** The engine's resolved `rgb(…)` as the upper-case `#RRGGBB` the token source emits. */
+function toHex(value: string): string {
+  const [r, g, b] = parseRgb(value)
+  return `#${[r, g, b]
+    .map((c) => Math.round(c).toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()}`
+}
+
+/** One row of the generated table, by theme and roles. Fails loudly if it is absent. */
+function tableRow(theme: string, fg: string, bg: string) {
+  const row = CONTRAST.pairs.find((r) => r.theme === theme && r.fg === fg && r.bg === bg)
+  expect(row, `${theme} ${fg} on ${bg} is not in the generated contrast table`).toBeDefined()
+  return row!
 }
 
 // ============================================================ 1. the visible focus ring
@@ -135,11 +250,15 @@ test.describe('R-118 clause 1 -- a visible focus ring', () => {
       }
     })
 
-    const ring = parseRgb(measured.outline)
-    expect(ring).not.toEqual(parseRgb(measured.background))
-    // 3:1 against the control's own fill, which is what makes a focus indicator perceivable
-    // under WCAG 1.4.11 -- the same bar border-strong exists for.
-    expect(ratioFromRgb(ring, parseRgb(measured.background))).toBeGreaterThanOrEqual(3)
+    // The ring must differ from what it sits on: a 2px ring in the background colour is a
+    // compliant declaration and an invisible ring. The RATIO is not recomputed here --
+    // `--color-brand` against `--color-surface` is a row in the generated table, and the
+    // formula lives in one place.
+    expect(toHex(measured.outline)).not.toBe(toHex(measured.background))
+    const row = tableRow('light', 'brand', 'surface')
+    expect(toHex(measured.outline)).toBe(row.fgHex)
+    expect(toHex(measured.background)).toBe(row.bgHex)
+    expect(row.ratio).toBeGreaterThanOrEqual(CONTRAST.bars.aaLarge + CONTRAST.headroom)
   })
 })
 
@@ -172,22 +291,28 @@ test.describe('R-118 clause 2 -- a measured 44px minimum touch target', () => {
 
 // ================================================================== 3. resolved contrast
 
-test.describe('R-118 clause 3 -- WCAG contrast, resolved by the engine', () => {
+test.describe('R-118 clause 3 — the engine resolves the tokens the table was computed from', () => {
   for (const theme of ['light', 'dark'] as const) {
-    test(`body text clears AAA on a card in the ${theme} theme`, async ({ page }) => {
+    test(`body text on a card resolves to the table's pair in the ${theme} theme`, async ({
+      page,
+    }) => {
       await openKit(page, theme)
-      const pair = await page.locator('#card').evaluate((el) => {
+      const measured = await page.locator('#card').evaluate((el) => {
         const s = getComputedStyle(el)
         return { color: s.color, background: s.backgroundColor }
       })
-      const ratio = ratioFromRgb(parseRgb(pair.color), parseRgb(pair.background))
-      // The arithmetic in packages/tokens says 16.43 (light) and 12.61 (dark). This is the
-      // same pair measured through the engine, so it also proves the CSS wires the tokens
-      // the token tests assert.
-      expect(ratio).toBeGreaterThanOrEqual(7)
+
+      // The engine resolved --color-ink and --color-surface. If these match the table's
+      // hexes then the CSS is wired to the tokens the arithmetic was done on -- which is
+      // the thing a browser can establish and the token tests cannot.
+      const row = tableRow(theme, 'ink', 'surface')
+      expect(toHex(measured.color)).toBe(row.fgHex)
+      expect(toHex(measured.background)).toBe(row.bgHex)
+      expect(row.pass).toBe(true)
+      expect(row.ratio).toBeGreaterThanOrEqual(CONTRAST.bars.aaaText + CONTRAST.headroom)
     })
 
-    test(`secondary text clears AA in the ${theme} theme`, async ({ page }) => {
+    test(`secondary text resolves to the table's pair in the ${theme} theme`, async ({ page }) => {
       await openKit(page, theme)
       await page.evaluate(() => {
         const p = document.createElement('p')
@@ -196,30 +321,52 @@ test.describe('R-118 clause 3 -- WCAG contrast, resolved by the engine', () => {
         p.textContent = 'hint'
         document.querySelector('.qr-field')!.append(p)
       })
-      const pair = await page.locator('#hint').evaluate((el) => ({
-        color: getComputedStyle(el).color,
-        background: getComputedStyle(document.body).backgroundColor,
-      }))
-      // The hint sits on the page ground. The token tests say 5.17 (light) / 6.94 (dark);
-      // the bar is AA's 4.5, and ink-mid was raised to clear 4.6 against the hardest
-      // background (approval condition 3).
-      const bg =
-        pair.background === 'rgba(0, 0, 0, 0)'
-          ? await page.evaluate(() =>
-              getComputedStyle(document.documentElement).getPropertyValue('--color-paper').trim(),
-            )
-          : pair.background
-      const resolved = bg.startsWith('#')
-        ? ([
-            Number.parseInt(bg.slice(1, 3), 16),
-            Number.parseInt(bg.slice(3, 5), 16),
-            Number.parseInt(bg.slice(5, 7), 16),
-          ] as [number, number, number])
-        : parseRgb(bg)
-      expect(ratioFromRgb(parseRgb(pair.color), resolved)).toBeGreaterThanOrEqual(4.5)
+      const colour = await page.locator('#hint').evaluate((el) => getComputedStyle(el).color)
+
+      const row = tableRow(theme, 'ink-mid', 'paper')
+      expect(toHex(colour)).toBe(row.fgHex)
+      expect(row.pass).toBe(true)
+      expect(row.ratio).toBeGreaterThanOrEqual(CONTRAST.bars.aaText + CONTRAST.headroom)
     })
 
-    test(`the order-ready pair is AAA and IDENTICAL in the ${theme} theme`, async ({ page }) => {
+    test(`the control border resolves to border-strong in the ${theme} theme`, async ({ page }) => {
+      await openKit(page, theme)
+      const measured = await page.locator('#name').evaluate((el) => {
+        const s = getComputedStyle(el)
+        return { border: s.borderTopColor, background: s.backgroundColor }
+      })
+
+      // THE CLAUSE border-strong EXISTS FOR (WCAG 1.4.11). hairline would be 1.28 here and
+      // this input would have had no perceivable boundary.
+      const row = tableRow(theme, 'border-strong', 'surface')
+      expect(toHex(measured.border)).toBe(row.fgHex)
+      expect(toHex(measured.background)).toBe(row.bgHex)
+      expect(row.pass).toBe(true)
+      expect(row.ratio).toBeGreaterThanOrEqual(CONTRAST.bars.aaLarge + CONTRAST.headroom)
+    })
+
+    test(`the DANGER button's label clears AA on its fill in the ${theme} theme`, async ({
+      page,
+    }) => {
+      // ⚠ A REGRESSION TEST FOR A DEFECT THE FIRST REPORT MISSED. The fill was
+      // `alert-fill`, and `surface` on `alert-fill` is 3.68 — a pass for the >= 24px text
+      // the approval allows it for, and a FAILURE for this button's --size-16 label. It
+      // escaped because a role-against-background table has no row for text ON a fill.
+      // The fill is `alert-ink` now: 7.44 light, 5.82 dark.
+      await openKit(page, theme)
+      const measured = await page.locator('#danger').evaluate((el) => {
+        const s = getComputedStyle(el)
+        return { color: s.color, background: s.backgroundColor }
+      })
+
+      const row = tableRow(theme, 'surface', 'alert-ink')
+      expect(toHex(measured.color)).toBe(row.fgHex)
+      expect(toHex(measured.background)).toBe(row.bgHex)
+      expect(row.pass).toBe(true)
+      expect(row.ratio).toBeGreaterThanOrEqual(CONTRAST.bars.aaText + CONTRAST.headroom)
+    })
+
+    test(`the order-ready pair is IDENTICAL under the ${theme} theme`, async ({ page }) => {
       await openKit(page, theme)
       const measured = await page.locator('#ready').evaluate((el) => {
         const s = getComputedStyle(el)
@@ -234,36 +381,34 @@ test.describe('R-118 clause 3 -- WCAG contrast, resolved by the engine', () => {
         }
       })
 
-      // D4, measured in the engine rather than argued from the source: outside theming
-      // means these resolve to the same bytes under both themes.
-      expect(parseRgb(measured.field)).toEqual([10, 31, 23])
-      expect(parseRgb(measured.ink)).toEqual([242, 244, 241])
-      expect(parseRgb(measured.reference)).toEqual([61, 220, 151])
+      // D4, measured in the engine: outside theming means these resolve to the same bytes
+      // under both themes. The hexes come from the table, so there is no literal here either.
+      const ready = Object.fromEntries(
+        CONTRAST.orderReady.pairs.flatMap((p) => [
+          [p.fg, p.fgHex],
+          [p.bg, p.bgHex],
+        ]),
+      ) as Record<string, string>
 
-      expect(ratioFromRgb(parseRgb(measured.ink), parseRgb(measured.field))).toBeGreaterThanOrEqual(
-        7,
-      )
-      expect(
-        ratioFromRgb(parseRgb(measured.reference), parseRgb(measured.field)),
-      ).toBeGreaterThanOrEqual(7)
-      expect(
-        ratioFromRgb(parseRgb(measured.ackInk), parseRgb(measured.ackBg)),
-      ).toBeGreaterThanOrEqual(7)
+      expect(toHex(measured.field)).toBe(ready['--ready-field'])
+      expect(toHex(measured.ink)).toBe(ready['--ready-ink'])
+      expect(toHex(measured.reference)).toBe(ready['--ready-signal'])
+      expect(toHex(measured.ackBg)).toBe(ready['--ready-signal'])
+      expect(toHex(measured.ackInk)).toBe(ready['--ready-field'])
+
+      for (const p of CONTRAST.orderReady.pairs) {
+        expect(p.pass, `${p.fg} on ${p.bg} fails its AAA target`).toBe(true)
+        expect(p.ratio).toBeGreaterThanOrEqual(CONTRAST.bars.aaaText + CONTRAST.headroom)
+      }
     })
   }
 
-  test('the control border clears 3:1 against its adjacent colour (WCAG 1.4.11)', async ({
-    page,
-  }) => {
-    await openKit(page)
-    const pair = await page.locator('#name').evaluate((el) => ({
-      border: getComputedStyle(el).borderTopColor,
-      background: getComputedStyle(el).backgroundColor,
-    }))
-    // THE CLAUSE border-strong EXISTS FOR. hairline would be 1.29:1 here and this input
-    // would have had no perceivable boundary. Found at the dark theme's approval and it bit
-    // the light theme too.
-    expect(ratioFromRgb(parseRgb(pair.border), parseRgb(pair.background))).toBeGreaterThanOrEqual(3)
+  // Not async: this one reads the generated artefact and opens no page. The table's own
+  // verdict is asserted in this job too, so the browser gate fails on a palette regression
+  // even if the Vitest project were skipped.
+  test('every barred pair in the generated table passes, in both themes', () => {
+    const failures = CONTRAST.pairs.filter((r) => r.bar !== null && !r.pass)
+    expect(failures.map((r) => `${r.theme} ${r.fg} on ${r.bg} = ${String(r.ratio)}`)).toEqual([])
   })
 })
 

@@ -14,12 +14,13 @@
  *
  *   --ready-field  --ready-ink  --ready-signal
  *
- * Their ratios, computed from the source by WCAG 2.1 relative luminance -- arithmetic,
- * not a browser measurement, which is only possible because D4 fixes the pair:
+ * Their ratios, computed from the source by WCAG 2.1 relative luminance and FLOORED at two
+ * decimals -- arithmetic, not a browser measurement, which is only possible because D4
+ * fixes the pair. The full table for every other pair is generated/contrast.md:
  *
- *   --ready-ink on --ready-field = 15.55:1  (the page text)
- *   --ready-signal on --ready-field = 9.73:1  (the order number)
- *   --ready-field on --ready-signal = 9.73:1  (the acknowledge button)
+ *   --ready-ink on --ready-field = 15.54:1  (the page text)
+ *   --ready-signal on --ready-field = 9.72:1  (the order number)
+ *   --ready-field on --ready-signal = 9.72:1  (the acknowledge button)
  *
  * Every dark value is a mix of two APPROVED tokens in srgb-8bit-component-linear-round-half-up.
  */
@@ -36,7 +37,7 @@
   --color-surface: #FFFFFF; /* = approved 'surface' */
   --color-surface-2: #E7EBE6; /* = approved 'surface-2' */
   --color-hairline: #D3DAD2; /* = approved 'hairline' */
-  --color-border-strong: #7D8981; /* mix(hairline, ink, 44%) in srgb-8bit-component-linear-round-half-up */
+  --color-border-strong: #77847C; /* mix(hairline, ink, 47%) in srgb-8bit-component-linear-round-half-up */
   --color-ink: #10231B; /* = approved 'ink' */
   --color-ink-mid: #5A6A62; /* = approved 'ink-mid' */
   --color-brand: #0B6B4F; /* = approved 'brand' */
@@ -101,13 +102,13 @@
   --color-surface: #1D3028; /* mix(ready-field, paper, 8%) in srgb-8bit-component-linear-round-half-up */
   --color-surface-2: #2A3D36; /* mix(ready-field, paper, 14%) in srgb-8bit-component-linear-round-half-up */
   --color-hairline: #42524B; /* mix(ready-field, paper, 24%) in srgb-8bit-component-linear-round-half-up */
-  --color-border-strong: #798580; /* mix(ready-field, paper, 48%) in srgb-8bit-component-linear-round-half-up */
+  --color-border-strong: #7E8A84; /* mix(ready-field, paper, 50%) in srgb-8bit-component-linear-round-half-up */
   --color-ink: #F2F4F1; /* = approved 'paper' */
   --color-ink-mid: #9DA7A1; /* mix(ink-mid, paper, 44%) in srgb-8bit-component-linear-round-half-up */
   --color-brand: #3DDC97; /* = approved 'signal' */
   --color-signal: #3DDC97; /* = approved 'signal' */
   --color-alert-fill: #E4572E; /* = approved 'alert-fill' */
-  --color-alert-ink: #E4572E; /* = approved 'alert-fill' */
+  --color-alert-ink: #E99176; /* mix(alert-fill, paper, 37%) in srgb-8bit-component-linear-round-half-up */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -118,13 +119,13 @@
     --color-surface: #1D3028; /* mix(ready-field, paper, 8%) in srgb-8bit-component-linear-round-half-up */
     --color-surface-2: #2A3D36; /* mix(ready-field, paper, 14%) in srgb-8bit-component-linear-round-half-up */
     --color-hairline: #42524B; /* mix(ready-field, paper, 24%) in srgb-8bit-component-linear-round-half-up */
-    --color-border-strong: #798580; /* mix(ready-field, paper, 48%) in srgb-8bit-component-linear-round-half-up */
+    --color-border-strong: #7E8A84; /* mix(ready-field, paper, 50%) in srgb-8bit-component-linear-round-half-up */
     --color-ink: #F2F4F1; /* = approved 'paper' */
     --color-ink-mid: #9DA7A1; /* mix(ink-mid, paper, 44%) in srgb-8bit-component-linear-round-half-up */
     --color-brand: #3DDC97; /* = approved 'signal' */
     --color-signal: #3DDC97; /* = approved 'signal' */
     --color-alert-fill: #E4572E; /* = approved 'alert-fill' */
-    --color-alert-ink: #E4572E; /* = approved 'alert-fill' */
+    --color-alert-ink: #E99176; /* mix(alert-fill, paper, 37%) in srgb-8bit-component-linear-round-half-up */
   }
 }
 

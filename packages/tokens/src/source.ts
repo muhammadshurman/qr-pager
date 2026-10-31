@@ -46,7 +46,7 @@
  * package** -- if any appears, the design has drifted from the decision (QRPAGER-15 §6,
  * trap 5).
  */
-import { mix, type Hex } from './color.ts'
+import { mix, ratioFloor2, type Hex } from './color.ts'
 
 // ---------------------------------------------------------------------------------------
 // The eleven approved colours. The ONLY typed hexes in this package.
@@ -115,8 +115,8 @@ export const COLOUR_ROLES = {
       kind: 'mix',
       from: 'hairline',
       to: 'ink',
-      amount: 0.44,
-      why: 'control and input boundaries, >= 3:1 against every light background (WCAG 1.4.11). Added 2026-10-31, condition 6',
+      amount: 0.47,
+      why: 'control and input boundaries (WCAG 1.4.11). RAISED from 44% to 47% on 2026-10-31: at 44% the worst background gave 3.02, a 0.02 margin over the 3:1 bar -- the same brittleness that had already been refused for ink-mid, applied to one role and not the other. 47% gives 3.24 on the hardest light background',
     },
     ink: { kind: 'approved', token: 'ink', why: 'body and headings' },
     'ink-mid': { kind: 'approved', token: 'ink-mid', why: 'secondary text only' },
@@ -164,8 +164,8 @@ export const COLOUR_ROLES = {
       kind: 'mix',
       from: 'ready-field',
       to: 'paper',
-      amount: 0.48,
-      why: 'control and input boundaries, >= 3:1 against every dark background (WCAG 1.4.11). Added 2026-10-31, condition 6',
+      amount: 0.5,
+      why: 'control and input boundaries (WCAG 1.4.11). RAISED from 48% to 50% on 2026-10-31: 48% gave 3.01 on the worst background, a 0.01 margin. 49% would have given exactly 3.10 -- clearing the 3.1 target by 0.00, which is worse than the margin being complained about -- so 50% was taken, at 3.21 on the hardest dark background',
     },
     ink: { kind: 'approved', token: 'paper', why: 'the role swap: paper becomes the text colour' },
     'ink-mid': {
@@ -187,9 +187,11 @@ export const COLOUR_ROLES = {
       why: 'unchanged -- a fill is read against its own text, not against the ground, so the theme does not move it. 4.67:1 on the dark ground',
     },
     'alert-ink': {
-      kind: 'approved',
-      token: 'alert-fill',
-      why: 'alert-ink is 2.31:1 on the dark ground; alert-fill is 4.67:1, so the FILL becomes the text role',
+      kind: 'mix',
+      from: 'alert-fill',
+      to: 'paper',
+      amount: 0.37,
+      why: 'DERIVED, and it was `= approved alert-fill` until 2026-10-31. alert-ink itself is 2.31 on the dark ground, so the fill was promoted to the text role -- but alert-ink is a TEXT role, so its bar is 4.5, and alert-fill measured 4.66 / 3.78 / 3.13 against the three dark backgrounds: it FAILED AA on two of the three. It escaped because the bars table covered ink, ink-mid and border-strong only. 37% gives 4.82 on the hardest dark background',
     },
   },
 } as const satisfies Record<Theme, Record<string, ColourRule>>
@@ -254,6 +256,136 @@ export const ORDER_READY_PAIRS = [
   bg: keyof typeof ORDER_READY
   bar: number
   what: string
+}[]
+
+// ---------------------------------------------------------------------------------------
+// THE CONTRAST CONTRACT. Every pair the kit renders, its bar, and why that bar.
+// ---------------------------------------------------------------------------------------
+
+/**
+ * ================================================================================
+ * WHY THIS TABLE IS DECLARED RATHER THAN SPOT-CHECKED
+ * ================================================================================
+ *
+ * The task's first report carried a "every bar met" table covering `ink`, `ink-mid` and
+ * `border-strong`. Three defects hid behind the roles it did not list:
+ *
+ *   - dark `alert-ink` is a TEXT role at 4.5, and measured 3.78 and 3.13 on two of the
+ *     three dark backgrounds. It was outside the table, so nothing looked at it.
+ *   - `border-strong` cleared its bar by 0.02 and 0.01, a brittleness that had already
+ *     been refused for `ink-mid` — the rule was applied to one role and not the other.
+ *   - the danger button renders its label ON a fill, and no "role against background"
+ *     table has a row for that shape at all.
+ *
+ * So the table is now the SOURCE and the figures are derived from it, rather than the
+ * figures being written down and a table assembled from whichever ones someone remembered.
+ * `generated/contrast.json` is emitted from these declarations, and the tests read that
+ * file — nobody transcribes a ratio by hand anywhere.
+ *
+ * TOTALITY IS MECHANICAL: `contrastPairs()` below produces the cross product of every
+ * declared foreground role with every declared background, so a role added to
+ * `COLOUR_ROLES` with a `bar` appears in the table without anyone remembering to add it.
+ */
+
+/** The WCAG 2.1 minimums. Each is "at least", which is why figures are floored. */
+export const BARS = {
+  /** Body text, AAA. */
+  aaaText: 7.0,
+  /** Text below 24px (or 18.66px bold), AA. */
+  aaText: 4.5,
+  /** Text at or above 24px, AA — and non-text contrast under 1.4.11. */
+  aaLarge: 3.0,
+} as const
+
+/**
+ * The headroom required over a bar, on top of the bar itself.
+ *
+ * A value that clears a minimum by 0.01 moves with the mix implementation, the rounding
+ * convention and the sRGB transfer function's own precision — this project's `F10` shape,
+ * where a figure is only right under the method that produced it. Every derived role is
+ * solved against `bar + HEADROOM`, and the generated table reports both margins so neither
+ * can be eyeballed again.
+ */
+export const HEADROOM = 0.1
+
+export type PairKind = 'text-aaa' | 'text-aa' | 'large-text' | 'non-text'
+
+/** The bar a kind of pair has to clear, before headroom. */
+export function barFor(kind: PairKind): number {
+  switch (kind) {
+    case 'text-aaa':
+      return BARS.aaaText
+    case 'text-aa':
+      return BARS.aaText
+    case 'large-text':
+    case 'non-text':
+      return BARS.aaLarge
+  }
+}
+
+/**
+ * Foreground roles that are checked against EVERY background, with the kind of pair each
+ * forms. A role here cannot be forgotten: the cross product is computed, not listed.
+ *
+ * `hairline` has `null` and is reported without a bar — it is decorative separation only,
+ * which is itself the finding of 2026-10-31: at 1.28 light and 2.07 dark it qualifies as
+ * neither text nor a non-text boundary, so `border-strong` exists.
+ */
+export const FOREGROUND_ROLES = {
+  ink: { kind: 'text-aaa', what: 'body and headings' },
+  'ink-mid': { kind: 'text-aa', what: 'secondary text only' },
+  'alert-ink': { kind: 'text-aa', what: 'alert and validation text' },
+  brand: { kind: 'text-aa', what: 'quiet button label and link text' },
+  'border-strong': { kind: 'non-text', what: "an interactive control's only boundary" },
+  hairline: { kind: null, what: 'decorative separation only — never a control boundary' },
+} as const satisfies Record<string, { kind: PairKind | null; what: string }>
+
+/** The three surfaces text and boundaries sit on. */
+export const BACKGROUND_ROLES = ['paper', 'surface', 'surface-2'] as const
+
+/**
+ * Text ON a fill — the shape a role-against-background table has no row for, and the one
+ * the danger button's defect hid in.
+ *
+ * ⚠ THE DANGER BUTTON'S FILL IS `alert-ink`, NOT `alert-fill`, AND THAT IS THIS TABLE'S
+ * DOING. The approval allows `alert-fill` for *"fills and >= 24px text only"*, and the
+ * button's label is `--size-16` — not large text, so its bar is 4.5 and not 3.0.
+ * `surface` on `alert-fill` is **3.68**: a pass for a 24px label and a failure for this
+ * one. `surface` on `alert-ink` is 7.44 light and 5.82 dark, so the PAIRING changed rather
+ * than any value — both tokens are approved and no new one was invented.
+ *
+ * `alert-fill` is therefore rendered by nothing in this kit. It stays in the token set
+ * because it is an approved value, and the last row below keeps its bound stated so a
+ * future use cannot rediscover this.
+ */
+export const FILL_PAIRS = [
+  {
+    fg: 'surface',
+    bg: 'brand',
+    kind: 'text-aa',
+    what: 'primary button label on its fill',
+    rendered: true,
+  },
+  {
+    fg: 'surface',
+    bg: 'alert-ink',
+    kind: 'text-aa',
+    what: 'danger button label on its fill',
+    rendered: true,
+  },
+  {
+    fg: 'surface',
+    bg: 'alert-fill',
+    kind: 'large-text',
+    what: 'alert-fill carries TEXT only at >= 24px — the approval\u2019s own bound, stated so a future use cannot rediscover the danger button\u2019s defect',
+    rendered: false,
+  },
+] as const satisfies readonly {
+  fg: ColourRole
+  bg: ColourRole
+  kind: PairKind
+  what: string
+  rendered: boolean
 }[]
 
 // ---------------------------------------------------------------------------------------
@@ -342,6 +474,116 @@ export function resolveTheme(theme: Theme): Record<ColourRole, Hex> {
     out[role] = resolveColour(theme, role)
   }
   return out
+}
+
+/** One row of the canonical contrast table. */
+export interface ContrastRow {
+  readonly theme: Theme
+  readonly fg: ColourRole
+  readonly bg: ColourRole
+  readonly fgHex: Hex
+  readonly bgHex: Hex
+  /** Floored at two decimals. Never rounded up — see `ratioFloor2`. */
+  readonly ratio: number
+  readonly kind: PairKind | null
+  readonly bar: number | null
+  readonly target: number | null
+  /** `ratio - bar`, floored. Null when the pair has no bar. */
+  readonly marginOverBar: number | null
+  readonly pass: boolean
+  readonly what: string
+  /** False for a pair that is declared to bound a token the kit does not render. */
+  readonly rendered: boolean
+}
+
+function row(
+  theme: Theme,
+  fg: ColourRole,
+  bg: ColourRole,
+  kind: PairKind | null,
+  what: string,
+  rendered: boolean,
+): ContrastRow {
+  const fgHex = resolveColour(theme, fg)
+  const bgHex = resolveColour(theme, bg)
+  const ratio = ratioFloor2(fgHex, bgHex)
+  const bar = kind === null ? null : barFor(kind)
+  const target = bar === null ? null : Math.round((bar + HEADROOM) * 100) / 100
+  return {
+    theme,
+    fg,
+    bg,
+    fgHex,
+    bgHex,
+    ratio,
+    kind,
+    bar,
+    target,
+    marginOverBar: bar === null ? null : Math.round((ratio - bar) * 100) / 100,
+    // A pair with no bar cannot fail; a pair with one must clear bar + HEADROOM.
+    pass: target === null ? true : ratio >= target,
+    what,
+    rendered,
+  }
+}
+
+/**
+ * EVERY pair, in both themes — the cross product plus the fill pairs.
+ *
+ * This is what `generated/contrast.json` is emitted from and what the tests read. Nothing
+ * downstream transcribes a ratio, which is the point: three published figures were wrong
+ * because they were typed by hand.
+ */
+export function contrastPairs(): ContrastRow[] {
+  const rows: ContrastRow[] = []
+  for (const theme of THEMES) {
+    for (const fg of Object.keys(FOREGROUND_ROLES) as (keyof typeof FOREGROUND_ROLES)[]) {
+      const spec = FOREGROUND_ROLES[fg]
+      for (const bg of BACKGROUND_ROLES) {
+        rows.push(row(theme, fg, bg, spec.kind, spec.what, true))
+      }
+    }
+    for (const pair of FILL_PAIRS) {
+      rows.push(row(theme, pair.fg, pair.bg, pair.kind, pair.what, pair.rendered))
+    }
+  }
+  return rows
+}
+
+/** The order-ready pairs, which take no theme because the screen is outside theming (D4). */
+export function orderReadyPairs(): {
+  fg: string
+  bg: string
+  fgHex: Hex
+  bgHex: Hex
+  ratio: number
+  bar: number
+  target: number
+  pass: boolean
+  what: string
+}[] {
+  return ORDER_READY_PAIRS.map((p) => {
+    const fgHex = resolveOrderReady(p.fg)
+    const bgHex = resolveOrderReady(p.bg)
+    const ratio = ratioFloor2(fgHex, bgHex)
+    const target = Math.round((p.bar + HEADROOM) * 100) / 100
+    return {
+      fg: `--${p.fg}`,
+      bg: `--${p.bg}`,
+      fgHex,
+      bgHex,
+      ratio,
+      bar: p.bar,
+      target,
+      pass: ratio >= target,
+      what: p.what,
+    }
+  })
+}
+
+/** Every row that does not clear its target. The gate asserts this is empty. */
+export function contrastFailures(): ContrastRow[] {
+  return contrastPairs().filter((r) => !r.pass)
 }
 
 /** Human-readable derivation for one role, for the generated artefacts' comments. */

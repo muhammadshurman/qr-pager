@@ -4,14 +4,23 @@
     <meta charset="utf-8" />
     <title>Kit — browser checks</title>
     <!--
-      NO stylesheet link, deliberately. The test injects the REAL generated token file and
-      the REAL kit stylesheet with addStyleTag, read from disk at run time.
+      THE STYLESHEETS ARE SUBSTITUTED HERE, at the placeholder below, from the REAL files on
+      disk at run time. No copy is committed beside this fixture: a resolved copy would be
+      another artefact that could go stale, and a stale one would make these checks measure
+      last week's CSS while reporting on today's.
 
-      A resolved copy committed beside this file would be a fourth generated artefact that
-      could go stale, and a stale one would make these four checks measure last week's CSS
-      while reporting on today's. Reading the real files means there is nothing to keep
-      current.
+      ⚠ AND THEY ARE SUBSTITUTED RATHER THAN INJECTED, WHICH IS A CORRECTION. The harness
+      used `page.goto(file://…)` and then `page.addStyleTag()` per sheet. Under that, four
+      `<button>` elements resolved to Chromium's UA colours -- `rgb(239,239,239)` on
+      `rgb(0,0,0)` -- while the rules were present, parsed, matched (`el.matches()` true,
+      `parsedOk` true in CDP) and the custom properties resolved. The same CSS and the same
+      markup through `setContent` resolve correctly: `#FFFFFF` on `#0B6B4F`.
+
+      The product CSS was never wrong; the harness was. That matters more than the symptom:
+      a harness that reports a false FAILURE can equally report a false PASS, and these are
+      the only checks in the project that can see a computed style at all.
     -->
+    <!--STYLES-->
   </head>
   <body>
     <main id="main">
