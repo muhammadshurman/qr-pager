@@ -436,19 +436,32 @@ export const TARGET_MIN_PX = 44
  * No CDN request anywhere: `§12`'s cold-3G bar is a gate clause, a third-party font request
  * is a dependency on someone else's uptime, and on a page a customer reaches by scanning a
  * QR code it also discloses their IP to that third party.
+ *
+ * ⚠ `files` IS A LIST, AND IT USED TO BE A SINGULAR `file` NAMING A FILE THAT DOES NOT
+ * EXIST. The arabic entry said `tajawal-arabic.woff2`; the faces on disk are
+ * `-400` and `-700`, because Tajawal is not a variable font and two weights are two files.
+ * The name was emitted into `apps/api/config/design-tokens.php` and into nothing that
+ * opens it, so every staleness check agreed the artefact was CURRENT -- which it was.
+ * `tokens:check` can only prove an artefact matches its source; it cannot prove the source
+ * is true of the disk. `artefacts.test.ts` is the check that was missing: every file path
+ * named in every generated artefact must resolve.
+ *
+ * A list is also the shape the fact has: Plus Jakarta Sans is variable and serves one file
+ * for both weights, Tajawal serves one per weight. A singular `file` could only ever have
+ * been right for one of the two families.
  */
 export const FONTS = {
   latin: {
     family: 'Plus Jakarta Sans',
     license: 'OFL-1.1',
     subset: 'latin',
-    file: 'plus-jakarta-sans-latin.woff2',
+    files: ['plus-jakarta-sans-latin.woff2'],
   },
   arabic: {
     family: 'Tajawal',
     license: 'OFL-1.1',
     subset: 'arabic',
-    file: 'tajawal-arabic.woff2',
+    files: ['tajawal-arabic-400.woff2', 'tajawal-arabic-700.woff2'],
   },
   // The fallback stack. No quoted family, so no emitted value ever carries a quote --
   // the same property Task 7's ThemeTokens::STACKS relies on.

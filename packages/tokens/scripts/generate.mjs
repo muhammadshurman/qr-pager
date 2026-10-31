@@ -197,6 +197,124 @@ ${cssBlock('dark', '    ')}
 `
 }
 
+// ------------------------------------------------------------------ Tailwind's own theme
+
+/**
+ * ================================================================================
+ * THE @theme BLOCK. IT REPLACES TAILWIND'S DEFAULT SCALES RATHER THAN SITTING BESIDE THEM.
+ * ================================================================================
+ *
+ * ⚠ CLAUSE 1 OF THE NAMED INVARIANT FELL TWICE IN THIS TASK, so `QRPAGER-15 §8` requires a
+ * redesign and not a third patch: *"if a clause of the named invariant falls a second time,
+ * the second fix is not a patch on the state that was found -- it is a redesign that makes
+ * the whole shape impossible."*
+ *
+ * The two falls: `padding: var(--space-16) 9px` passed because the value check early-returned
+ * on "contains a `var()`"; and then `bg-red-500 p-4 text-sm` passed `lint:es` AND
+ * `lint:tokens`, because the lint rule only ever knew about Tailwind's square-bracket escape
+ * hatch (`text-[#fff]`, `p-[13px]`) and cannot see the DEFAULT PALETTE AND SCALES -- which
+ * `@import 'tailwindcss'` leaves entirely reachable, including `--text-sm` at 14px, a size
+ * that is not on the approved scale at all.
+ *
+ * A pattern that rejects default-theme-backed utilities would be the third patch. It would
+ * also be a SECOND SOURCE for Tailwind's default theme: a list of every colour, spacing step
+ * and type size Tailwind ships, maintained by hand, going stale at the next minor version.
+ *
+ * SO THE SHAPE IS REMOVED INSTEAD. Each namespace is cleared with `--<namespace>-*: initial`
+ * and repopulated from the token source, so `bg-red-500`, `p-5` and `text-sm` COMPILE TO
+ * NOTHING -- there is no utility to write. Measured against tailwindcss 4.3.3 in
+ * `tools/design-tokens/test/theme.test.mjs`, which is the proof `§6` trap 1 asks for.
+ *
+ * `@theme reference`, not plain `@theme`, and the modifier is load-bearing: plain `@theme`
+ * emits every variable into `:root`, which would be a SECOND DECLARATION of
+ * `--color-paper` beside `generated/tokens.css`'s -- the `§6.2` defect this whole package
+ * exists to prevent, and it would also break the dark theme, because a `:root` declaration
+ * emitted by Tailwind would not follow `[data-theme='dark']`. Under `reference` nothing is
+ * emitted and each utility resolves `var(--color-paper, var(--color-paper))`, so the value
+ * comes from `tokens.css` and the theme attribute still decides it.
+ *
+ * Every entry is therefore `var(<the token property>)` and NO LITERAL APPEARS IN THIS FILE.
+ *
+ * WHAT IS DELIBERATELY NOT CLEARED: breakpoints, containers, animations and easings.
+ * Those are layout structure rather than design-token values, `§12` names colour, spacing
+ * and font size, and `md:` is not a hard-coded hex.
+ *
+ * WHAT IS DELIBERATELY NOT ADDED: the three `--ready-*` properties. The order-ready screen
+ * is authored in `kit.css` and takes no utility, so giving it a `bg-ready-field` would widen
+ * the surface `D4` exists to keep narrow for no gain.
+ */
+export function buildThemeCss() {
+  const banner = BANNER_LINES.map((l) => (l === '' ? ' *' : ` * ${l}`)).join('\n')
+  const roles = Object.keys(COLOUR_ROLES.light)
+
+  const entries = (comment, pairs) =>
+    [`  /* ${comment} */`, ...pairs.map(([k, v]) => `  ${k}: var(${v});`)].join('\n')
+
+  return `/*
+${banner}
+ *
+ * TAILWIND'S THEME, REPLACED. Each namespace is cleared and repopulated from the token
+ * source, so a default-theme utility -- bg-red-500, p-5, text-sm -- compiles to NOTHING.
+ * There is no utility to write, which is why this is a redesign and not a lint pattern.
+ *
+ * \`reference\`: no variable is emitted here, so this is not a second declaration of any
+ * property generated/tokens.css already declares, and [data-theme='dark'] still decides
+ * the value. Every entry below is a var() reference; no literal appears in this file.
+ */
+
+@theme reference {
+  /*
+   * The clears. \`initial\` removes a whole namespace, which is what makes the default
+   * palette and the default scales cease to exist rather than merely be discouraged.
+   *
+   * \`--tracking-*\` and \`--leading-*\` are cleared and NOT repopulated: the approved set
+   * carries no letter-spacing and no line-height token, so every value Tailwind ships for
+   * them is a decision nobody approved. \`tracking-wide\` was the one default utility that
+   * survived the first version of this block, found by the bad fixture.
+   */
+  --color-*: initial;
+  --spacing: initial;
+  --spacing-*: initial;
+  --text-*: initial;
+  --tracking-*: initial;
+  --leading-*: initial;
+  --font-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --blur-*: initial;
+
+${entries(
+  'The approved palette, and nothing else. Both themes resolve through tokens.css.',
+  roles.map((role) => [colourProperty(role), colourProperty(role)]),
+)}
+
+${entries(
+  `The approved spacing scale: ${SPACING.join(' ')}. No in-between step exists.`,
+  SPACING.map((n) => [`--spacing-${n}`, `--space-${n}`]),
+)}
+
+${entries(
+  `The approved type scale: ${TYPE_SCALE.join(' ')} -- one ratio, no in-between sizes.`,
+  TYPE_SCALE.map((n) => [`--text-${n}`, `--size-${n}`]),
+)}
+
+${entries(
+  `The approved radii: ${RADIUS.join(' ')}.`,
+  RADIUS.map((n) => [`--radius-${n}`, `--radius-${n}`]),
+)}
+
+${entries('The two self-hosted families, subset, no CDN request anywhere.', [
+  ['--font-latin', '--font-latin'],
+  ['--font-arabic', '--font-arabic'],
+])}
+
+${entries('One elevation, approved 2026-10-31.', [['--shadow-card', '--elevation-card']])}
+}
+`
+}
+
 // ----------------------------------------------------------------------------------- TS
 
 export function buildTs() {
@@ -365,18 +483,18 @@ ${TYPE_SCALE.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
     'target_min_px' => ${TARGET_MIN_PX},
 
     'fonts' => [
-        'latin' => [
-            'family' => '${FONTS.latin.family}',
-            'license' => '${FONTS.latin.license}',
-            'subset' => '${FONTS.latin.subset}',
-            'file' => '${FONTS.latin.file}',
-        ],
-        'arabic' => [
-            'family' => '${FONTS.arabic.family}',
-            'license' => '${FONTS.arabic.license}',
-            'subset' => '${FONTS.arabic.subset}',
-            'file' => '${FONTS.arabic.file}',
-        ],
+${['latin', 'arabic']
+  .map(
+    (key) => `        '${key}' => [
+            'family' => '${FONTS[key].family}',
+            'license' => '${FONTS[key].license}',
+            'subset' => '${FONTS[key].subset}',
+            'files' => [
+${FONTS[key].files.map((f) => `                '${f}',`).join('\n')}
+            ],
+        ],`,
+  )
+  .join('\n')}
         'fallback' => '${FONTS.fallback}',
     ],
 ];
@@ -536,6 +654,11 @@ ${FILL_PAIRS.map((p) => `- \`${p.fg}\` on \`${p.bg}\` — ${p.what}`).join('\n')
 export const ARTEFACTS = [
   { path: join(PKG, 'generated', 'tokens.css'), build: buildCss, what: 'CSS custom properties' },
   {
+    path: join(PKG, 'generated', 'theme.css'),
+    build: buildThemeCss,
+    what: "Tailwind's theme, REPLACED by the token set so the default scales cease to exist",
+  },
+  {
     path: join(PKG, 'generated', 'tokens.ts'),
     build: buildTs,
     what: 'TypeScript values and types',
@@ -555,10 +678,32 @@ export const ARTEFACTS = [
     build: buildContrastMarkdown,
     what: 'the canonical contrast table a human reads',
   },
+  /**
+   * ⚠ THE TICKET'S COPY, AND IT WAS AN UNCHECKED ONE. `docs/tickets/QRPAGER-15-contrast-table.md`
+   * carried the banner *"GENERATED FILE -- DO NOT EDIT"* and the sentence *"`pnpm tokens:check`
+   * byte-diffs it against what the source produces right now"*, and it was in no array any
+   * checker walked -- so a figure edited there, a planted 19.99 AAA row for instance, passed
+   * `lint`, `tokens:check`, every Vitest case and every Playwright case.
+   *
+   * It is the SAME bytes as `generated/contrast.md` by construction rather than by
+   * agreement: one `build`, two paths. A reader finds the table where the ticket's evidence
+   * list points, and the gate proves it is the table.
+   */
+  {
+    path: join(REPO, 'docs', 'tickets', 'QRPAGER-15-contrast-table.md'),
+    build: buildContrastMarkdown,
+    what: "the ticket's evidence copy of the same table -- one build, two paths",
+  },
 ]
 
-function run() {
-  const check = process.argv.includes('--check')
+/**
+ * Generate, or `--check`, and RETURN the exit status rather than calling `process.exit`.
+ *
+ * Returning the status is what lets a test drive both modes in-process -- which is the only
+ * way they count towards `§6`'s coverage clause, since a spawned process is instrumented by
+ * nothing. The CLI at the bottom of this file is what turns the status into an exit code.
+ */
+export function run({ check = false } = {}) {
   const stale = []
 
   for (const artefact of ARTEFACTS) {
@@ -603,7 +748,7 @@ function run() {
   if (check) {
     if (stale.length === 0) {
       console.log(`tokens: all ${ARTEFACTS.length} generated artefacts are current.`)
-      process.exit(0)
+      return 0
     }
     console.error('\ntokens: STALE generated artefact(s). Run `pnpm tokens:generate`.\n')
     for (const s of stale) {
@@ -613,8 +758,11 @@ function run() {
         console.error(`    file contains  : ${String(s.actual).trim()}`)
       }
     }
-    process.exit(1)
+    return 1
   }
+  return 0
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) run()
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  process.exit(run({ check: process.argv.includes('--check') }))
+}

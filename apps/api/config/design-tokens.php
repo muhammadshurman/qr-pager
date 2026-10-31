@@ -127,13 +127,18 @@ return [
             'family' => 'Plus Jakarta Sans',
             'license' => 'OFL-1.1',
             'subset' => 'latin',
-            'file' => 'plus-jakarta-sans-latin.woff2',
+            'files' => [
+                'plus-jakarta-sans-latin.woff2',
+            ],
         ],
         'arabic' => [
             'family' => 'Tajawal',
             'license' => 'OFL-1.1',
             'subset' => 'arabic',
-            'file' => 'tajawal-arabic.woff2',
+            'files' => [
+                'tajawal-arabic-400.woff2',
+                'tajawal-arabic-700.woff2',
+            ],
         ],
         'fallback' => 'system-ui, sans-serif',
     ],
