@@ -507,3 +507,12 @@ describe('OrderReady -- outside theming (D4)', () => {
     expect(html).not.toMatch(/rgba?\(|hsla?\(|oklch\(/i)
   })
 })
+
+describe('StateView’s retry label', () => {
+  it('falls back to "Try again" when the caller supplies no label', () => {
+    // The `??` arm: §12 owns the copy, and a retryable state with no label still needs a
+    // button a user can read.
+    inTheme(<StateView state="error" title="Something went wrong" onRetry={() => undefined} />)
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+})

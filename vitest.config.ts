@@ -57,12 +57,37 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary'],
       reportsDirectory: './coverage',
-      // What this task ADDS. apps/* are skeletons with no logic yet (their screens are
-      // Tasks 9, 10 and 11), and a generated file's coverage measures its generator.
+      /**
+       * What this task ADDS. `apps/*` are skeletons with no logic yet (their screens are
+       * Tasks 9, 10 and 11), and a generated file's coverage measures its generator.
+       *
+       * ⚠ THE DENOMINATOR WAS WRONG, AND THE NUMBER WAS THEREFORE NOT ABOUT THIS TASK.
+       * `96.73%` was measured over `packages/tokens/src`, `packages/ui/src` and
+       * `tools/design-tokens/*.mjs` -- and it omitted about 990 lines of this task's own
+       * code:
+       *
+       *   packages/tokens/scripts/generate.mjs   620 lines  the generator for five artefacts
+       *   packages/tokens/scripts/fetch-fonts.mjs 241 lines
+       *   tools/design-tokens/bin/scan-css.mjs   129 lines  the CSS half of the lint rule
+       *
+       * `§6` asks for coverage "on code this task added", so a figure measured over a
+       * subset of it is not that figure, whatever its value. The three are included now and
+       * the number below is re-measured over the whole set.
+       *
+       * `tools/gate/bin/*` stays OUT, with the reason stated rather than left implicit:
+       * `gate.mjs` is a process runner that exports no unit, and covering it would mean
+       * running the gate inside its own coverage pass. Its step list is asserted by
+       * `tools/gate/test/ci-parity.test.mjs` instead -- in both directions, against both
+       * halves of CI -- which is a stronger claim about it than a line count.
+       * `check-shell-evidence` and the three proof scripts are shell, which v8 cannot
+       * instrument at all; `rule.test.mjs` drives them as processes.
+       */
       include: [
         'packages/tokens/src/**/*.ts',
+        'packages/tokens/scripts/*.mjs',
         'packages/ui/src/**/*.{ts,tsx}',
         'tools/design-tokens/*.mjs',
+        'tools/design-tokens/bin/*.mjs',
       ],
       exclude: ['**/generated/**', '**/*.d.ts', '**/index.ts', 'packages/tokens/src/fonts/**'],
       thresholds: {

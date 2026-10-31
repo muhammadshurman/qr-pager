@@ -12,7 +12,10 @@
       "bytes": 27348,
       "sha256": "153fc85b70298beeb1d61a5f723331649e7f23bb77302a66e61cb3e2fbdb5e79",
       "source": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2",
-      "weights": ["400", "600"]
+      "weights": [
+        "400",
+        "600"
+      ]
     },
     {
       "family": "Tajawal",
@@ -22,7 +25,9 @@
       "bytes": 8932,
       "sha256": "6c9081fd00db08800850fa7d214593aa94992be5159e97557aa60197252cb95a",
       "source": "https://fonts.gstatic.com/s/tajawal/v12/Iura6YBj_oCad4k1nzSBC45I.woff2",
-      "weights": ["400"]
+      "weights": [
+        "400"
+      ]
     },
     {
       "family": "Tajawal",
@@ -32,7 +37,9 @@
       "bytes": 9024,
       "sha256": "fa5e72326681abee3a4952be582e1c2c2abb27932ef262610c078ce89541f919",
       "source": "https://fonts.gstatic.com/s/tajawal/v12/Iurf6YBj_oCad4k1l4qkHrRpiYlJ.woff2",
-      "weights": ["700"]
+      "weights": [
+        "700"
+      ]
     }
   ]
 }

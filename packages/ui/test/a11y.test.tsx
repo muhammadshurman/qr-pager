@@ -306,3 +306,49 @@ describe('nextId', () => {
     expect(nextId('x')).toBe('x-1')
   })
 })
+
+/**
+ * The two wrap branches, both directions, and the one that is easy to forget: Shift+Tab with
+ * focus OUTSIDE the container. A trap that only handles "focus is on the first element"
+ * lets a user who clicked outside tab straight out of the dialog -- which is the failure a
+ * trap exists to prevent, by the back door, and is the same family as defect 6 in `§4a`.
+ */
+describe('useFocusTrap wraps in both directions', () => {
+  it('sends Tab from the LAST element back to the first', () => {
+    render(<Dialog open />)
+    document.getElementById('last')!.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement?.id).toBe('first')
+  })
+
+  it('sends Shift+Tab from the FIRST element to the last', () => {
+    render(<Dialog open />)
+    document.getElementById('first')!.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement?.id).toBe('last')
+  })
+
+  it('sends Shift+Tab from OUTSIDE the container to the last element', () => {
+    // `!container.contains(activeEl)`: the arm that catches a user who clicked outside.
+    render(<Dialog open />)
+    document.getElementById('outside')!.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement?.id).toBe('last')
+  })
+
+  it('leaves a Tab in the MIDDLE of the sequence alone', () => {
+    // The else arm: the browser's own sequencing is correct between first and last, and a
+    // trap that preventDefault()ed every Tab would break it.
+    render(<Dialog open />)
+    document.getElementById('middle')!.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement?.id).toBe('middle')
+  })
+
+  it('ignores a key that is not Tab', () => {
+    render(<Dialog open />)
+    document.getElementById('last')!.focus()
+    fireEvent.keyDown(document, { key: 'ArrowDown' })
+    expect(document.activeElement?.id).toBe('last')
+  })
+})

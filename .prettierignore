@@ -6,6 +6,14 @@ packages/tokens/generated/
 packages/contracts/src/generated/
 apps/api/config/design-tokens.php
 
+# The same rule for the font artefacts, which `fetch-fonts.mjs` writes. ⚠ THESE WERE NOT
+# LISTED, and Prettier had reformatted `fonts.css` -- rewrapping every `unicode-range` --
+# so the committed file was NOT what the generator emits. Nothing caught it, because the
+# fetch script needs the network and is therefore not a gate step, so there is no byte diff
+# to go red. `fonts.test.ts` now asserts the equality in-process instead, which only means
+# something if the formatter is out of the way.
+packages/tokens/fonts/
+
 # Fixtures that are deliberately wrong. The no-hard-coded-values rule is proven on these,
 # so formatting them is formatting the evidence.
 tools/design-tokens/fixtures/

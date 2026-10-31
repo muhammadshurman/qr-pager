@@ -4,6 +4,13 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import {
+  assignFileNames,
+  buildFontsCss,
+  buildProvenance,
+  parseFaces,
+  weightDeclaration,
+} from '../scripts/fetch-fonts.mjs'
 import { FONTS } from '../src/source.ts'
 
 const PKG = join(import.meta.dirname, '..')
@@ -28,16 +35,18 @@ const REPO = join(PKG, '..', '..')
 
 const fontsCss = () => readFileSync(join(FONT_DIR, 'fonts.css'), 'utf8')
 
+interface FontFace {
+  readonly family: string
+  readonly file: string
+  readonly bytes: number
+  readonly sha256: string
+  readonly weights: readonly string[]
+}
+
 interface Provenance {
   readonly license: string
   readonly totalBytes: number
-  readonly faces: readonly {
-    readonly family: string
-    readonly file: string
-    readonly bytes: number
-    readonly sha256: string
-    readonly weights: readonly string[]
-  }[]
+  readonly faces: readonly FontFace[]
 }
 
 const provenance = (): Provenance =>
@@ -171,5 +180,111 @@ describe('no stylesheet in the workspace reaches a third-party origin', () => {
         /fonts\.(?:googleapis|gstatic)\.com|use\.typekit|fonts\.bunny\.net/i,
       )
     }
+  })
+})
+
+/**
+ * ================================================================================
+ * THE FETCH SCRIPT'S PURE HALF — PARSE, DEDUPLICATE, NAME
+ * ================================================================================
+ *
+ * ⚠ QA #10, and the measurement is worth keeping: `fetch-fonts.mjs` is 241 lines and was
+ * outside the coverage denominator AND unimportable, because it ran `await main()` at the
+ * top level -- so importing it fetched from fonts.googleapis.com and wrote into the
+ * package. Nothing in it could be covered at all.
+ *
+ * The entry point is guarded now and the logic is in exported functions. The NETWORK half
+ * is still not unit-tested and is not pretended to be: `fetch-fonts.mjs` is deliberately
+ * not a gate step, because a gate step that needs the network fails for reasons that have
+ * nothing to do with the code. What the cases above assert is the PROPERTIES of what it
+ * wrote, over the real committed artefacts; what these assert is the decisions it makes.
+ *
+ * The parse runs against a COMMITTED css2 response rather than a live one, for the same
+ * reason.
+ */
+describe('fetch-fonts: parse, deduplicate, name', () => {
+  const css2 = readFileSync(join(PKG, 'fixtures', 'css2-response.css.fixture'), 'utf8')
+
+  it('parses every COMPLETE face and rejects an incomplete one', () => {
+    const faces = parseFaces(css2)
+    // Six real blocks in the fixture, and the last has NO unicode-range, so it must be
+    // dropped -- the range is what decides which glyphs a browser fetches. Counted from the
+    // declarations rather than from `split('@font-face')`, which also counts the fixture's
+    // own comment explaining what it holds. (That is the "a check read its own
+    // documentation" shape this task has already paid for three times.)
+    const blocks = [...css2.matchAll(/@font-face\s*\{/g)]
+    expect(blocks).toHaveLength(6)
+    expect(faces).toHaveLength(5)
+    // And the dropped one is the one without a range, named so the rejection is specific.
+    expect(faces.map((f) => f.url).join(' ')).not.toContain('no-range.woff2')
+    for (const face of faces) {
+      expect(face.weight).toMatch(/^\d+$/)
+      expect(face.url).toMatch(/^https:\/\/fonts\.gstatic\.com\/.*\.woff2$/)
+      expect(face.range.length).toBeGreaterThan(5)
+    }
+  })
+
+  it('finds the face WANTED matches on, by weight and by range marker', () => {
+    // The script selects on both. Plus Jakarta Sans publishes a latin-ext block at the same
+    // weight, and picking by weight alone would fetch the wrong subset.
+    const faces = parseFaces(css2)
+    const latin400 = faces.find((f) => f.weight === '400' && f.range.includes('U+0000-00FF'))
+    const ext400 = faces.find((f) => f.weight === '400' && f.range.includes('U+0100-02BA'))
+    expect(latin400).toBeDefined()
+    expect(ext400).toBeDefined()
+    expect(latin400!.range).not.toBe(ext400!.range)
+  })
+
+  it('declares a weight RANGE for a variable face and a single weight for a static one', () => {
+    // Defect 7's fix, as an assertion: Plus Jakarta Sans is one file for 400 and 600.
+    expect(weightDeclaration(['400', '600'])).toBe('400 600')
+    expect(weightDeclaration(['400'])).toBe('400')
+    // Order-independent, and the span is first-to-last rather than a join of all of them.
+    expect(weightDeclaration(['700', '400', '500'])).toBe('400 700')
+  })
+
+  it('appends the weight only when a family resolved to SEVERAL files — the A1 defect', () => {
+    /**
+     * This is where `tajawal-arabic-400.woff2` and `-700.woff2` come from, and therefore why
+     * `FONTS.arabic.files` had to become a LIST. `WANTED` names one base file per family;
+     * a variable font dedupes to one entry and KEEPS that name, a static one produces two
+     * and each gets its weights appended.
+     *
+     * The token source said `tajawal-arabic.woff2` -- the base name, which this function
+     * never emits for a family with two distinct files. One assertion, and it is the one
+     * that makes the old value impossible rather than merely wrong.
+     */
+    const named = assignFileNames([
+      { file: 'plus-jakarta-sans-latin.woff2', weights: ['400', '600'], sha256: 'a' },
+      { file: 'tajawal-arabic.woff2', weights: ['400'], sha256: 'b' },
+      { file: 'tajawal-arabic.woff2', weights: ['700'], sha256: 'c' },
+    ] as never[]) as unknown as { file: string }[]
+
+    expect(named.map((e) => e.file)).toEqual([
+      // One entry for this base name: kept as-is.
+      'plus-jakarta-sans-latin.woff2',
+      // Two entries: each gets its weights, which is the only reason the `-400`/`-700`
+      // files on disk are called that.
+      'tajawal-arabic-400.woff2',
+      'tajawal-arabic-700.woff2',
+    ])
+    expect(named.map((e) => e.file)).not.toContain('tajawal-arabic.woff2')
+  })
+
+  it('emits the fonts.css the repository actually carries, byte for byte', () => {
+    // The strongest assertion available about a builder whose output is committed: rebuild
+    // it from the committed PROVENANCE and compare to the committed stylesheet. A change to
+    // either side that is not a change to both fails here.
+    // The builder is plain JavaScript, so its parameter is inferred as `any`; the cast is
+    // to the shape PROVENANCE.json actually holds rather than away from a check.
+    const faces: readonly FontFace[] = provenance().faces
+    expect(buildFontsCss(faces as unknown[])).toBe(fontsCss())
+  })
+
+  it('emits the PROVENANCE.json the repository actually carries, byte for byte', () => {
+    const p = provenance()
+    expect(buildProvenance(p.faces as unknown[], p.totalBytes)).toBe(
+      readFileSync(join(FONT_DIR, 'PROVENANCE.json'), 'utf8'),
+    )
   })
 })
