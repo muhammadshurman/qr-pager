@@ -84,22 +84,29 @@
 
 .qr-button {
   /*
-   * ⚠ appearance: none, AND WITHOUT IT EVERY BUTTON RENDERED THE WRONG COLOUR.
+   * `appearance: none`, so a native widget's own painting cannot participate in the
+   * button's colour. It stays because normalising that is correct regardless of the
+   * question below.
    *
-   * Measured in Chromium: with the default `appearance: auto`, the engine renders a
-   * `<button>` with its NATIVE widget appearance and BLENDS the author background over it.
-   * `background-color: var(--color-brand)` (#0B6B4F) came out as rgb(174, 202, 194); the
-   * danger fill #96351A came out as rgb(214, 186, 179); and the label resolved to
-   * rgb(72, 72, 72) instead of #FFFFFF.
+   * ⚠ THIS COMMENT CLAIMED "WITHOUT IT EVERY BUTTON RENDERED THE WRONG COLOUR", WITH THREE
+   * MEASURED BLEND VALUES, AND THE CLAIM DOES NOT REPRODUCE. The QA reviewer measured
+   * identical pairs with and without the declaration; re-measured here over four cells --
+   * {appearance:none, appearance:auto} x {goto(file://)+addStyleTag, setContent}, over both
+   * fills and a non-widget control -- Chromium 156.0.8078.4 resolves
+   * rgb(11, 107, 79) on rgb(255, 255, 255) in every one of them. Transcript:
+   * `docs/tickets/QRPAGER-15-appearance-probe.txt`.
    *
-   * That is worse than a cosmetic bug. The entire contrast table is computed for the token
-   * values, so if the engine renders something else, every figure in it describes a pair the
-   * product never shows -- a palette measured to AAA and rendered at something nobody
-   * checked. It was invisible to every source-level and jsdom test, because both see the
-   * DECLARATION; only a real engine resolves the blend.
+   * The likeliest reading, and it is a reading rather than a measurement: the blend was the
+   * LOAD-THEN-INJECT harness defect, found in the same sitting, and one cause was written
+   * against both. `PLAN §4a` records that defect's measured pair as
+   * rgb(174, 201, 193) / rgb(73, 73, 73) "varying in its last bit between runs" -- within
+   * one unit of the rgb(174, 202, 194) this comment named.
    *
-   * Found by the browser check comparing the engine's resolved pair against the generated
-   * table, which is the one thing that could have found it.
+   * WHAT IS NOT IN DOUBT is the consequence, and it is why the control exists: the contrast
+   * table is computed for the TOKEN values, so an engine that renders something else makes
+   * every figure in it describe a pair the product never shows. `browser/a11y.spec.ts`
+   * asserts the engine resolves every button to the EXACT pair the table was computed from,
+   * with three proofs that the assertion fails. Any blend, whatever its cause, reddens that.
    */
   appearance: none;
 
