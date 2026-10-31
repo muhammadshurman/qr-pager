@@ -175,6 +175,19 @@ jobs:
       # tests/Feature/Landing/LandingSchemaContractTest.php.
       - run: composer landing:check
 
+      # ⚠ THIS STEP WAS MISSING, and the comment in the `frontend` job below asserted it was
+      # here. Task 8a's generated TS status mirror is the PHP-SOURCED half of §6.2: the enum
+      # registry in `apps/api/app/Domain` is its one source, `php artisan contracts:export`
+      # emits `packages/contracts/src/generated/status.ts`, and this byte-diffs the committed
+      # file against what the enums produce right now. It is the only one of this task's five
+      # generated artefacts whose source is PHP, so it belongs in this job and nowhere else
+      # -- and it ran in `apps/api/bin/gate` and on no runner.
+      #
+      # `tools/gate/test/ci-parity.test.mjs` now covers THIS job against `apps/api/bin/gate`
+      # in both directions, so the hole cannot reopen quietly. Proven to fail with the step
+      # removed.
+      - run: composer contracts:check
+
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
 
@@ -420,16 +433,32 @@ jobs:
       - run: pnpm run typecheck
 
       # §6.2's shared contracts, the TypeScript-sourced half. The token set lives in
-      # TypeScript, so Node emits the CSS custom properties, the TS values AND the PHP config
-      # Filament consumes in 8b (D5) -- and this byte-diffs all three against what the source
-      # produces right now. The PHP-sourced half (the TS status mirror) is
+      # TypeScript, so Node emits the CSS custom properties, Tailwind's @theme block, the TS
+      # values, the contrast table in two formats, the ticket's evidence copy of it AND the
+      # PHP config Filament consumes in 8b (D5) -- and this byte-diffs all of them against
+      # what the source produces right now. The PHP-sourced half (the TS status mirror) is
       # `composer contracts:check` in the `gates` job above, because its source is the PHP
       # enum registry.
       #
-      # Each of the three is proven to fail on a deliberately stale file, with the exit code
-      # read directly rather than through a pipe.
-      - name: The three generated token artefacts are not stale
+      # ⚠ THAT LAST SENTENCE WAS FALSE WHEN IT WAS WRITTEN. `composer contracts:check` was in
+      # `apps/api/bin/gate` and in NO step of the `gates` job, so this comment described a
+      # control that did not exist -- found independently by both §11 reviewers. The step is
+      # there now and `ci-parity.test.mjs` asserts the PHP gate and that job carry the same
+      # steps, which is the mechanism that makes a comment like this one checkable.
+      #
+      # Each artefact is proven to fail on a deliberately stale file, with the exit code read
+      # directly rather than through a pipe.
+      - name: The generated token artefacts are not stale
         run: pnpm run tokens:check
+
+      # §11.7's dependency clause, and it existed nowhere before this fix. The first run
+      # returned five advisories -- 2 high, 3 moderate -- against a diff that adds 3,184
+      # lockfile lines. `--audit-level low` so no severity is filtered out silently. The two
+      # `overrides` in pnpm-workspace.yaml that close today's five carry their advisory ids
+      # and the measurement that an override was the only instrument available (next@15.5.28
+      # hard-pins postcss 8.4.31 and §1 locks Next 15).
+      - name: Known CVEs in the dependency tree — §11.7
+        run: pnpm run audit
 
       # §6's "unit coverage >= 90% on code this task added", with Vitest as ADR-003 names.
       # The thresholds are in vitest.config.ts, so a run below them exits non-zero here.

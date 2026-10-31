@@ -30,6 +30,7 @@ const read = (p) => readFileSync(join(REPO, p), 'utf8')
 
 const workflow = read('.github/workflows/ci.yml')
 const frontendJob = workflow.slice(workflow.indexOf('  frontend:'), workflow.indexOf('  runtime:'))
+const gatesJob = workflow.slice(workflow.indexOf('  gates:'), workflow.indexOf('  frontend:'))
 
 /** Every `['pnpm', [...]]` step the gate script runs, as the command line it becomes. */
 function gateSteps() {
@@ -173,5 +174,107 @@ describe('the workspace gate and CI run the same steps', () => {
     // A committed artefact that disagrees with its generator is the quietest kind of wrong,
     // and this is the step that makes it loud on the runner.
     expect(frontendJob).toContain('git status --porcelain')
+  })
+})
+
+/**
+ * ================================================================================
+ * AND THE SAME FOR THE PHP HALF: `apps/api/bin/gate` AGAINST THE `gates` JOB
+ * ================================================================================
+ *
+ * ⚠ THE CHECK ABOVE WAS SCOPED TO THE FRONTEND JOB, so nothing mechanically caught the PHP
+ * gate drifting from CI -- and it had already drifted. `composer contracts:check` was step
+ * seven of `apps/api/bin/gate` and a step of NO CI job, while the comment at the frontend
+ * job's `tokens:check` asserted it was *"in the `gates` job above"*. Both §11 reviewers
+ * found it independently (QA #4 and Security L-1), which is a fair measure of how visible a
+ * comment is as a control.
+ *
+ * Same mechanism, same two directions, and the parser reads each side's own list: the
+ * `steps=(…)` array in the bash gate, and the `composer …` run lines in the job.
+ *
+ * `php artisan test` is in both and is matched like any other step. The job's COVERAGE run
+ * (`php artisan test --coverage --min=90`) is provisioning-shaped in the other direction --
+ * it is CI asserting a §6 clause the local gate does not need to re-run -- so it is named in
+ * `PHP_CI_ONLY` rather than pattern-matched, exactly as `PROVISIONING` is above.
+ */
+
+/** Every step in `apps/api/bin/gate`'s `steps=(...)` array, as the command line it runs. */
+function phpGateSteps() {
+  const gate = read('apps/api/bin/gate')
+  const block = /steps=\(([\s\S]*?)\n\)/.exec(gate)
+  expect(block, 'apps/api/bin/gate has no `steps=(...)` array to read').not.toBeNull()
+  return block[1]
+    .split('\n')
+    .map((line) => line.replace(/#.*$/, '').trim().replace(/^"|"$/g, ''))
+    .filter((line) => line !== '')
+}
+
+/**
+ * Steps that legitimately exist only on the runner, each with its reason. Named rather than
+ * pattern-matched, so a new CI-only step has to be justified here.
+ */
+const PHP_CI_ONLY = [
+  // Provisioning: the local gate runs in an installed, bootstrapped tree.
+  'composer install',
+  'php artisan db:bootstrap',
+  'php artisan key:generate',
+  'php artisan migrate',
+  // §6's coverage clause. The local gate's `php artisan test` is the same suite; running it
+  // twice locally for the coverage number would double the slowest step of the gate.
+  'php artisan test --coverage',
+]
+
+/** Every `composer …` / `php artisan …` command line the gates job runs. */
+function phpCiSteps() {
+  return [...gatesJob.matchAll(/^\s*(?:- )?(?:run: )?((?:composer|php artisan) [^\n|>]*)$/gm)]
+    .map((m) => m[1].trim())
+    .filter((line) => !PHP_CI_ONLY.some((p) => line.startsWith(p)))
+}
+
+describe('the PHP gate and CI’s gates job run the same steps', () => {
+  it('reads a non-empty step list from each, so the comparison is not vacuous', () => {
+    expect(phpGateSteps().length).toBeGreaterThanOrEqual(8)
+    expect(phpCiSteps().length).toBeGreaterThanOrEqual(8)
+    expect(gatesJob).toContain('Pint, PHPStan, Pest')
+  })
+
+  it('has every PHP GATE step in the gates job', () => {
+    const ci = phpCiSteps()
+    const missing = phpGateSteps().filter((step) => !ci.some((line) => line.startsWith(step)))
+    expect(
+      missing,
+      'these `apps/api/bin/gate` steps are not run by CI, so the runner never checks them',
+    ).toEqual([])
+  })
+
+  it('has every gates-job composer step in the PHP GATE', () => {
+    const gate = phpGateSteps()
+    const missing = phpCiSteps().filter((line) => !gate.some((step) => line.startsWith(step)))
+    expect(
+      missing,
+      'these CI steps are not in `apps/api/bin/gate`, so a developer cannot reproduce a ' +
+        'red locally',
+    ).toEqual([])
+  })
+
+  it('runs contracts:check — the step that was missing, named explicitly', () => {
+    // The class is covered by the two directions above; this is the instance, by name, so a
+    // reader of a failure knows which defect it is. §6.2's PHP-sourced generated artefact.
+    expect(phpGateSteps()).toContain('composer contracts:check')
+    expect(gatesJob).toContain('composer contracts:check')
+  })
+
+  it('declares every composer script both sides name, so neither can invent one', () => {
+    // A step list is only as good as the scripts behind it: `composer frobnicate` in the
+    // gate and in CI would pass both directions above and fail on every run.
+    const composer = JSON.parse(read('apps/api/composer.json'))
+    for (const step of [...phpGateSteps(), ...phpCiSteps()]) {
+      if (!step.startsWith('composer ')) continue
+      const script = step.slice('composer '.length).split(' ')[0]
+      expect(
+        composer.scripts[script],
+        `composer.json declares no \`${script}\` script`,
+      ).toBeDefined()
+    }
   })
 })
