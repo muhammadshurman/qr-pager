@@ -9,6 +9,7 @@ use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
 use App\Platform\Http\Middleware\RateLimit;
+use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
@@ -68,6 +69,38 @@ class StudioPanelProvider extends PanelProvider
             // configuration error Filament resolves by whichever provider ran last.
             ->id('studio')
             ->path('studio')
+            // ================================================================================
+            // THE RESTYLE'S REGISTRATIONS (Task 8b). §12's Tasks 6-7 EXEMPTION EXPIRES HERE.
+            // ================================================================================
+            //
+            // The docblock above says this panel is "restyled from the approved tokens in
+            // Task 8, which is where the tokens first exist". They exist now, so it is.
+            //
+            // (a) THE COMPILED THEME. `viteTheme()`'s argument is resolved through
+            //     `app(Vite::class)` -- the MANIFEST -- so this exact path must also appear in
+            //     `vite.config.js`'s Laravel plugin `input` array. Absent there it is a
+            //     `ViteManifestNotFoundException` at render time, not a styling difference.
+            //     Read from `HasTheme::getTheme()`, not from documentation.
+            ->viteTheme('resources/css/filament/studio/theme.css')
+            // (b) THE FACE -- and ⚠ `provider:` IS NOT OPTIONAL, which is the sharp edge.
+            //     Measured in `HasFont::getFontProvider()`: with a custom family and no
+            //     provider, the default is **`BunnyFontProvider`**, which emits
+            //     `<link rel="preconnect" href="https://fonts.bunny.net">` and a stylesheet
+            //     from that host. So the obvious fix for `§9.1`'s CDN font -- just call
+            //     `->font()` with the approved family -- would have RE-ADDED a third-party
+            //     font request to this very surface from a different file, while the commit
+            //     message said it removed one. `LocalFontProvider` with no URL emits the empty
+            //     string, which is correct here: the `@font-face` rules arrive inside the
+            //     theme CSS above, self-hosted and same-origin from `packages/tokens/fonts/`.
+            //
+            //     The family is READ FROM THE GENERATED TOKEN CONFIG and never typed -- a
+            //     second copy of a token value is the `§6.2` second-source defect. The cast
+            //     would turn a missing key into `''` silently, so `PanelFontOriginTest`
+            //     asserts the rendered `--font-family` is the approved family EXACTLY.
+            ->font(
+                (string) config('design-tokens.fonts.latin.family'),
+                provider: LocalFontProvider::class,
+            )
             ->authGuard('web')
             // EXPLICIT, never discovered. `discoverPages()` takes a directory, so the
             // set of pages would be whatever happens to be in it -- and

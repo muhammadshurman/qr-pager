@@ -93,6 +93,7 @@
         "landing:check": "bin/landing-schema-check",
         "contracts": "@php artisan contracts:export",
         "contracts:check": "bin/contracts-check",
+        "assets": "bin/assets",
         "gate": [
             "Composer\\Config::disableProcessTimeout",
             "bin/gate"

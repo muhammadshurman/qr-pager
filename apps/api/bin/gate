@@ -76,6 +76,13 @@ steps=(
   "composer openapi:check"
   "composer landing:check"
   "composer contracts:check"
+  # ⚠ BEFORE THE SUITE, AND THAT ORDER IS THE WHOLE REASON IT IS HERE. Task 8b's
+  # ->viteTheme() makes public/build/manifest.json a PREREQUISITE of every test that
+  # renders a panel page, and public/build is git-ignored. Measured with it moved aside:
+  # PlatformPanelAccessibilityTest went 13 passed -> 7 failed, each failure a generic 500
+  # body naming nothing. bin/assets also checks the manifest against the themes the
+  # providers register, which a successful build does NOT do.
+  "composer assets"
   "php artisan test"
 )
 

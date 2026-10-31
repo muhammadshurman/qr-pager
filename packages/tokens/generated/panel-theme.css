@@ -1,0 +1,132 @@
+/*
+ * GENERATED FILE -- DO NOT EDIT.
+ *
+ * Emitted from packages/tokens/src/source.ts by packages/tokens/scripts/generate.mjs.
+ * Run `pnpm tokens:generate` to refresh it. `pnpm tokens:check` byte-diffs this file
+ * against what the source produces right now and fails the gate when they differ.
+ *
+ * Editing this file by hand produces a value that disagrees with the single source and
+ * is reverted by the next generate -- which is the second-source defect §6.2 forbids.
+ *
+ * THE FILAMENT PANELS' THEME. A SIBLING of generated/theme.css, never a replacement.
+ *
+ * generated/theme.css CLEARS the palette, spacing, type and radius namespaces. That removes
+ * Filament's own stylesheet, because Filament CONSUMES the default theme: three --spacing(…)
+ * calls and @applyd defaults including rounded-md and bg-gray-50. Measured in
+ * QRPAGER-23 §0 SR-1. So the panels REDEFINE instead of clearing: the name survives, the
+ * value becomes a token, and Filament cannot tell the difference.
+ *
+ * `gray` is NOT cleared. Filament's own @theme inline declares --color-gray-*: var(--gray-*)
+ * from the provider's ->colors(), and that block runs first; clearing gray here would wipe
+ * FILAMENT's entry rather than Tailwind's.
+ *
+ * Every value below is a var() reference to a property generated/tokens.css declares. No
+ * literal appears in this file.
+ */
+
+/*
+ * The clears and the re-supplies. A plain @theme, because none of these names is declared by
+ * generated/tokens.css, so emitting them is not a second declaration of anything.
+ */
+@theme {
+  --color-amber-*: initial;
+  --color-blue-*: initial;
+  --color-cyan-*: initial;
+  --color-emerald-*: initial;
+  --color-fuchsia-*: initial;
+  --color-green-*: initial;
+  --color-indigo-*: initial;
+  --color-lime-*: initial;
+  --color-mauve-*: initial;
+  --color-mist-*: initial;
+  --color-neutral-*: initial;
+  --color-olive-*: initial;
+  --color-orange-*: initial;
+  --color-pink-*: initial;
+  --color-purple-*: initial;
+  --color-red-*: initial;
+  --color-rose-*: initial;
+  --color-sky-*: initial;
+  --color-slate-*: initial;
+  --color-stone-*: initial;
+  --color-taupe-*: initial;
+  --color-teal-*: initial;
+  --color-violet-*: initial;
+  --color-yellow-*: initial;
+  --color-zinc-*: initial;
+
+  /* The one default-palette name Filament's own CSS still references directly. */
+  --color-sky-400: var(--color-signal);
+
+  /* ⚠ CLEARED, then repopulated. Without the clear, Tailwind's own off-scale sizes
+     survive -- text-9xl and the rest -- and §12's "one ratio, no in-between sizes"
+     would be true of what the panel AUTHORS and false of what it can compile. */
+  --text-*: initial;
+  --text-xs: var(--size-13);
+  --text-sm: var(--size-13);
+  --text-base: var(--size-16);
+  --text-lg: var(--size-20);
+  --text-xl: var(--size-20);
+  --text-2xl: var(--size-28);
+  --text-3xl: var(--size-44);
+
+  /* ⚠ CLEARED, then repopulated -- same reason as the type scale. The BARE key is
+     re-supplied too: Filament @applies plain `rounded`, which reads --radius, and
+     the wildcard clear takes the bare key with it. */
+  --radius-*: initial;
+  --radius-sm: var(--radius-8);
+  --radius-md: var(--radius-8);
+  --radius-lg: var(--radius-16);
+  --radius-xl: var(--radius-24);
+  --radius-full: 9999px;
+  --radius-none: 0;
+  --radius: var(--radius-8);
+
+  /* The approved scales under their own names, for panel-authored utilities. */
+  --text-13: var(--size-13);
+  --text-16: var(--size-16);
+  --text-20: var(--size-20);
+  --text-28: var(--size-28);
+  --text-44: var(--size-44);
+  --text-64: var(--size-64);
+  --text-96: var(--size-96);
+  --radius-8: var(--radius-8);
+  --radius-16: var(--radius-16);
+  --radius-24: var(--radius-24);
+  --spacing-4: var(--space-4);
+  --spacing-8: var(--space-8);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-24: var(--space-24);
+  --spacing-32: var(--space-32);
+  --spacing-48: var(--space-48);
+  --spacing-64: var(--space-64);
+  --spacing-96: var(--space-96);
+
+  /* ⚠ THE BARE SPACING KEY, REDEFINED AND NEVER CLEARED — the one forced exception.
+     Filament calls --spacing(8) twice and --spacing(7) once, so the key must exist;
+     and in Tailwind v4 its existence is what enables the dynamic p-<n> utility, so
+     p-5 = 20px compiles whatever value this holds. Four values were measured and all
+     four generate it; omitting the key fails the build. Enforced instead by a
+     compiled-CSS assertion with a hard count of the vendor's three call sites. */
+  --spacing: var(--space-4);
+}
+
+/*
+ * The token palette, as REFERENCE entries so nothing is emitted: generated/tokens.css already
+ * declares every one of these, and a plain @theme here would be a second declaration of it —
+ * the §6.2 defect — as well as self-referential.
+ */
+@theme reference {
+  --color-paper: var(--color-paper);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-hairline: var(--color-hairline);
+  --color-border-strong: var(--color-border-strong);
+  --color-ink: var(--color-ink);
+  --color-ink-mid: var(--color-ink-mid);
+  --color-brand: var(--color-brand);
+  --color-signal: var(--color-signal);
+  --color-alert-fill: var(--color-alert-fill);
+  --color-alert-ink: var(--color-alert-ink);
+}

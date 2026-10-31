@@ -293,6 +293,44 @@ jobs:
         working-directory: .
         run: docker compose -f compose.yaml up -d --wait mailpit objectstore
 
+      # ================================================================================
+      # apps/api's OWN FRONT-END TOOLCHAIN, AND WHY THE PHP JOB SUDDENLY NEEDS NODE
+      # ================================================================================
+      #
+      # Task 8b registers `->viteTheme('resources/css/filament/<panel>/theme.css')` on both
+      # panel providers. `Panel::viteTheme()` resolves that path through `app(Vite::class)`,
+      # i.e. through `public/build/manifest.json` -- which is git-ignored. So from 8b onward
+      # EVERY TEST THAT RENDERS A PANEL PAGE needs the assets built first.
+      #
+      # MEASURED locally with `public/build` moved aside: `PlatformPanelAccessibilityTest`
+      # went from 13 passed to **7 failed, 6 passed**, and every failure was a generic 500
+      # problem+json body -- `{"title":"The request could not be completed.","status":500}` --
+      # in tests about tabindex, badges and empty-state copy. Not one of them named the
+      # cause. That is why this is a step and not a note in a README.
+      #
+      # This is apps/api's SECOND npm tree (ADR-003 keeps it out of the pnpm workspace), so
+      # it is `npm ci` from `apps/api/package-lock.json` and not pnpm. `--ignore-scripts`
+      # matches `composer setup`.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          # The same hazard the `frontend` job documents at length, for the same reason:
+          # setup-node v5 caches automatically when a `packageManager` field is present, and
+          # the ROOT package.json carries `pnpm@12.16.1` -- so the action would resolve pnpm
+          # to compute a cache path, in a job where corepack never runs, and fail with
+          # `Unable to locate executable file: pnpm`. apps/api/package.json has no
+          # packageManager field of its own, which is exactly why the root one is reached.
+          package-manager-cache: false
+
+      - name: Install apps/api's npm tree, with its lockfile as the authority
+        run: npm ci --ignore-scripts
+
+      # Builds the two panel themes AND checks the manifest names every theme the panel
+      # providers register -- which a successful build does NOT do, because dropping a theme
+      # from `vite.config.js`'s input array still builds. Proven: with the studio theme
+      # removed from that array the build reported success and this step exited 1.
+      - run: composer assets
+
       - name: Tests against real Postgres and Redis, Mailpit and the object store
         run: php artisan test
 

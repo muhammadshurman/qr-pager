@@ -54,6 +54,10 @@ import {
   resolveOrderReady,
 } from '../src/source.ts'
 
+// Task 8b, ADDITIVE: the Filament panels' own theme. A sibling of generated/theme.css,
+// never a change to it -- see that module's header and QRPAGER-23 §0 SR-1.
+import { buildPanelTheme } from './panel-theme.mjs'
+
 const PKG = join(fileURLToPath(new URL('..', import.meta.url)))
 const REPO = join(PKG, '..', '..')
 
@@ -648,6 +652,22 @@ ${FILL_PAIRS.map((p) => `- \`${p.fg}\` on \`${p.bg}\` — ${p.what}`).join('\n')
 `
 }
 
+// ------------------------------------------------------------- the panel theme (Task 8b)
+
+/**
+ * ADDITIVE. Hands the token source's own exports to `panel-theme.mjs`, so neither this file
+ * nor that one carries a second copy of any scale.
+ */
+export function buildPanelThemeCss() {
+  return buildPanelTheme({
+    colourRoles: COLOUR_ROLES,
+    spacing: SPACING,
+    radius: RADIUS,
+    typeScale: TYPE_SCALE,
+    banner: BANNER_LINES.map((l) => (l === '' ? ' *' : ` * ${l}`)).join('\n'),
+  })
+}
+
 // --------------------------------------------------------------------------------- main
 
 /** The three artefacts: where each goes and what produces it. */
@@ -693,6 +713,17 @@ export const ARTEFACTS = [
     path: join(REPO, 'docs', 'tickets', 'QRPAGER-15-contrast-table.md'),
     build: buildContrastMarkdown,
     what: "the ticket's evidence copy of the same table -- one build, two paths",
+  },
+  /**
+   * Task 8b, ADDITIVE. The Filament panels cannot use generated/theme.css: Filament's own
+   * stylesheet CONSUMES the default theme that file clears, so clearing it removes the
+   * framework's CSS (QRPAGER-23 §0 SR-1, measured three ways). This artefact REDEFINES
+   * instead of clearing. A new entry rather than an edit, which is PLAN §0.0's condition.
+   */
+  {
+    path: join(PKG, 'generated', 'panel-theme.css'),
+    build: buildPanelThemeCss,
+    what: "the Filament panels' Tailwind theme -- redefines rather than clears",
   },
 ]
 

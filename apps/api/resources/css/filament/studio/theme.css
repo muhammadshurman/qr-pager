@@ -1,0 +1,40 @@
+/*
+ * The studio panel's Filament theme. Task 8b.
+ *
+ * ⚠ NOTE ON THE PROSE BELOW, BECAUSE IT COST A BUILD: a glob written the natural way --
+ * app slash Features slash star slash Panel -- contains the two characters that CLOSE a CSS
+ * block comment, so the comment ends mid-sentence and the rest of the paragraph is parsed as
+ * CSS. That is how this file first failed to compile (reported as "Unterminated string" on a
+ * later apostrophe, nine lines from the actual cause). Globs in this file therefore appear
+ * only inside the @source strings at the bottom, never in prose. comment-terminators.test.mjs
+ * asserts that for every authored stylesheet.
+ *
+ * ⚠ THE @source GLOBS AT THE BOTTOM ARE THE PART THAT SILENTLY BREAKS. The stub written by
+ * make:filament-theme points both of them at app/Filament, and this repository has no such
+ * directory -- its panels live under the deptrac-enforced feature layout, so this one is
+ * under app/Features/Landing/Panel. A class Tailwind never scans emits NO UTILITY, so a
+ * wrong glob produces a silently unstyled panel rather than an error.
+ *
+ * Tailwind arrives through the Filament theme imported below, which carries source(none), so
+ * NOTHING is auto-scanned: every scanned path is one of the two at the bottom, by design.
+ */
+
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+/*
+ * The token source, and the panels Tailwind theme. panel-theme.css REDEFINES Tailwind
+ * namespaces rather than clearing them, because the Filament stylesheet CONSUMES the default
+ * theme -- QRPAGER-23 §0 SR-1, measured three ways.
+ */
+@import '../../../../../../packages/tokens/generated/tokens.css';
+@import '../../../../../../packages/tokens/generated/panel-theme.css';
+
+/*
+ * The self-hosted faces. NOT a CDN: the bunny() helper that fetched Instrument Sans from
+ * fonts.bunny.net is removed in this task -- third-party, off-direction, and the Filament
+ * default face, so it also failed "a reviewer cannot name the UI framework".
+ */
+@import '../../../../../../packages/tokens/fonts/fonts.css';
+
+@source '../../../../app/Features/Landing/Panel/**/*';
+@source '../../../../resources/views/studio/**/*';
