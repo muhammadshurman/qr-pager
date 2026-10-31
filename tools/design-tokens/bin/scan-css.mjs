@@ -28,6 +28,11 @@ const EXEMPT_PREFIXES = [
   // once, there.
   'packages/tokens/src',
   'packages/tokens/generated',
+  // Task 8b: the panel palette, written by the same generator for `browser/panel.spec.ts`.
+  // Exempt for the reason stated just above -- it is a generated OUTPUT of the token source,
+  // so a rule forbidding literals in it forbids the single source itself. `tokens:check`
+  // byte-diffs it and `PanelPaletteTest` holds it to what the panel actually serves.
+  'browser/fixtures/panel-palette.css',
   // Deliberately-wrong files. The rule is PROVEN on them by the test, which runs the
   // scanner at them on purpose; sweeping them in the ordinary pass would make `pnpm lint`
   // permanently red.

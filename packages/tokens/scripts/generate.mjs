@@ -56,7 +56,14 @@ import {
 
 // Task 8b, ADDITIVE: the Filament panels' own theme. A sibling of generated/theme.css,
 // never a change to it -- see that module's header and QRPAGER-23 §0 SR-1.
-import { buildPanelTheme } from './panel-theme.mjs'
+import { buildPanelTheme, buildFilamentPalette, FILAMENT_PALETTE_SOURCES } from './panel-theme.mjs'
+
+// Task 8b, ADDITIVE, and SEPARATE import statements on purpose: SR-4's ladders are mixes of
+// APPROVED tokens, so the builder needs the approved values and the token source's own mixer.
+// Declared here rather than merged into the import block above because `task-8b-precoding`
+// may not edit a line `a1f1263..d8c9652` changed (PLAN.md §0.0), and that block is one of them.
+import { mix } from '../src/color.ts'
+import { APPROVED } from '../src/source.ts'
 
 const PKG = join(fileURLToPath(new URL('..', import.meta.url)))
 const REPO = join(PKG, '..', '..')
@@ -455,6 +462,45 @@ ${protectedProperties()
 ${THEMES.map((t) => `        '${t}' => [\n${theme(t)}\n        ],`).join('\n')}
     ],
 
+    /*
+     * SR-4, ruled 2026-11-01: the Filament colour families, as ELEVEN-SHADE LADDERS.
+     *
+     * ->colors() is Filament's only sanctioned colour extension point and it wants eleven
+     * shades per family. Handed a single hex it keeps ONLY THE HUE -- Color::generatePalette()
+     * imposes its own lightness and chroma at every shade -- so the approved value appears
+     * nowhere, two approved colours 1.4 degrees apart collapse into one family, and the
+     * resolved dark pair measured 3.43:1, which fails the AA gate clause.
+     *
+     * So each ladder is DERIVED, by the mechanism the dark theme was already approved under:
+     * one formula, two caps, the approved value held EXACTLY at its family's anchor shade, and
+     * every other entry a mix of two approved tokens. The anchor is per-family and carries the
+     * ruling -- danger is built from alert-ink because FILL_PAIRS names that as the
+     * danger fill, and warning sits at shade 400 because alert-fill's own approval bounds
+     * it to text at >= 24px. The reasons are in packages/tokens/scripts/panel-theme.mjs.
+     *
+     * Filament does the WCAG arithmetic itself over whatever it is given, so the assertion
+     * that matters is on ITS resolved pair: panel-palette.test.mjs drives
+     * ButtonComponentColorMap over every family and requires >= 4.5 in both modes.
+     */
+    'filament_palette' => [
+${Object.entries(buildFilamentPalette(mix, APPROVED))
+  .map(
+    ([
+      family,
+      ladder,
+    ]) => `        // ${family} <- ${FILAMENT_PALETTE_SOURCES[family].token} @${FILAMENT_PALETTE_SOURCES[family].anchor}: ${FILAMENT_PALETTE_SOURCES[family].why}
+        '${family}' => [
+${Object.entries(ladder)
+  .map(
+    ([shade, hex]) =>
+      `            ${shade} => '${hex}',${Number(shade) === FILAMENT_PALETTE_SOURCES[family].anchor ? ' // the approved value, exactly' : ''}`,
+  )
+  .join('\n')}
+        ],`,
+  )
+  .join('\n')}
+    ],
+
     'space' => [
 ${SPACING.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
     ],
@@ -502,6 +548,63 @@ ${FONTS[key].files.map((f) => `                '${f}',`).join('\n')}
         'fallback' => '${FONTS.fallback}',
     ],
 ];
+`
+}
+
+/**
+ * ================================================================================
+ * THE PANEL PALETTE AS A CSS BLOCK, FOR THE BROWSER CHECKS — R-118, 8b's SHARE
+ * ================================================================================
+ *
+ * Filament emits `--primary-600: oklch(…)` and the rest into the document head at render
+ * time, from `AssetManager::renderStyles()`. `browser/panel.spec.ts` measures computed styles
+ * on Filament's own markup, so it needs those properties — and it runs in Node, with no
+ * Laravel to render them.
+ *
+ * So the SAME ladders that reach `design-tokens.php` also reach here, from one builder. Two
+ * artefacts, one source: `pnpm tokens:check` byte-diffs both, and `PanelPaletteTest` asserts
+ * the panel's own emitted block carries these same values — so the fixture cannot describe a
+ * palette the panel does not serve.
+ *
+ * ⚠ HEX RATHER THAN oklch, AND THE EQUIVALENCE IS ASSERTED RATHER THAN ARGUED. Filament
+ * converts to oklch on the way out; this file holds the approved hex, which is what the token
+ * source stores. A browser resolves both to the same computed colour, and "resolves to the
+ * same" is exactly the kind of claim this project does not take on trust -- so
+ * `PanelPaletteTest` drives the conversion over all 66 values and compares.
+ */
+export function buildPanelPaletteCss() {
+  const palette = buildFilamentPalette(mix, APPROVED)
+  const banner = BANNER_LINES.map((l) => ` * ${l}`.trimEnd()).join('\n')
+
+  const families = Object.entries(palette)
+    .map(([family, ladder]) => {
+      const source = FILAMENT_PALETTE_SOURCES[family]
+      const rows = Object.entries(ladder)
+        .map(
+          ([shade, hex]) =>
+            `  --${family}-${shade}: ${hex};${Number(shade) === source.anchor ? ' /* the approved value, exactly */' : ''}`,
+        )
+        .join('\n')
+
+      return `  /* ${family} <- ${source.token} @${source.anchor}: ${source.why} */\n${rows}`
+    })
+    .join('\n\n')
+
+  return `/*
+${banner}
+ *
+ * THE FILAMENT PANEL PALETTE, for browser/panel.spec.ts. Filament emits these properties into
+ * the document head at render time; a Node harness has no Laravel to do that, so the same
+ * builder that writes apps/api/config/design-tokens.php writes them here too.
+ *
+ * SR-4: each family is an eleven-shade ladder derived from ONE approved token, held exactly at
+ * its anchor shade, every other entry a mix of two approved tokens. The reasons per family are
+ * in packages/tokens/scripts/panel-theme.mjs.
+ */
+
+:root {
+${families}
+}
 `
 }
 
@@ -720,6 +823,13 @@ export const ARTEFACTS = [
    * framework's CSS (QRPAGER-23 §0 SR-1, measured three ways). This artefact REDEFINES
    * instead of clearing. A new entry rather than an edit, which is PLAN §0.0's condition.
    */
+  {
+    // R-118, 8b's share: the palette as a CSS block, so the browser checks can measure the
+    // panel's own colours without a Laravel render. Same builder as the PHP config.
+    path: join(REPO, 'browser', 'fixtures', 'panel-palette.css'),
+    build: buildPanelPaletteCss,
+    what: 'the panel palette, for the browser checks',
+  },
   {
     path: join(PKG, 'generated', 'panel-theme.css'),
     build: buildPanelThemeCss,

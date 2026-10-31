@@ -1,0 +1,65 @@
+<!doctype html>
+<!--
+  THE FILAMENT PANEL'S OWN MARKUP, for R-118's four computed-style clauses — 8b's share.
+
+  ⚠ EVERY CLASS STRING BELOW IS COPIED FROM A REAL RENDER AND IS HELD TO IT BY A TEST.
+  `PanelAccessibilityFixtureTest` fetches `/platform/restaurants` as a platform admin and
+  asserts each `data-fixture` element's class list appears in that document — so this file
+  cannot drift into describing markup Filament no longer emits, which would make every
+  measurement below true of nothing.
+
+  The button's list is the interesting one. Filament resolves the SHADES ITSELF, from the
+  palette, by running WCAG arithmetic over it — and then emits the chosen shades AS CLASSES:
+  `fi-bg-color-600`, `fi-text-color-0`. So this markup is also the record of what
+  `ButtonComponentColorMap` decided, and `PanelPaletteTest` asserts the same pair in PHP.
+
+  THE STYLESHEETS ARE SUBSTITUTED AT THE PLACEHOLDER, from the real files on disk at run
+  time: the generated palette block and the COMPILED panel theme out of apps/api's own build.
+  No copy is committed beside this fixture — a resolved copy is another artefact that can go
+  stale, and a stale one would measure last week's CSS while reporting on today's.
+
+  ⚠ SUBSTITUTED AND NOT INJECTED. `kit.html` carries the long form of this correction: under
+  `page.goto(file://…)` + `page.addStyleTag()`, author rules did not win over Chromium's UA
+  stylesheet even though every observable said they should. The same CSS through `setContent`
+  resolves correctly. A harness that reports a false failure can report a false pass.
+-->
+<html lang="en" dir="ltr" class="fi">
+  <head>
+    <meta charset="utf-8" />
+    <title>Panel — browser checks</title>
+    <!--STYLES-->
+  </head>
+  <body class="fi-body fi-panel-platform fi-body-has-navigation fi-body-has-topbar">
+    <main>
+      <button
+        data-fixture="primary-button"
+        id="primary-button"
+        type="button"
+        class="fi-ac-btn-action fi-btn fi-size-md  fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0"
+      >
+        <span class="fi-btn-label">New restaurant</span>
+      </button>
+
+      <button
+        data-fixture="icon-button"
+        id="icon-button"
+        type="button"
+        class="fi-icon-btn fi-size-md fi-topbar-open-sidebar-btn"
+      >
+        <span class="fi-sr-only">Open sidebar</span>
+      </button>
+
+      <input data-fixture="input" id="input" class="fi-input fi-input-has-inline-prefix" />
+
+      <table>
+        <thead>
+          <tr>
+            <th data-fixture="header-cell" id="header-cell" class="fi-ta-header-cell fi-ta-header-cell-name">
+              Name
+            </th>
+          </tr>
+        </thead>
+      </table>
+    </main>
+  </body>
+</html>

@@ -449,6 +449,27 @@ jobs:
         # point: this job's whole claim is that a FRESH CLONE gets what the builder had.
         run: pnpm install --frozen-lockfile
 
+      # ================================================================================
+      # apps/api's ASSETS, FOR THE PANEL BROWSER CHECKS — R-118, 8b's share
+      # ================================================================================
+      #
+      # `browser/panel.spec.ts` measures R-118's four computed-style clauses against the
+      # COMPILED panel theme, read out of `apps/api/public/build` through the manifest. That
+      # directory is git-ignored, so this job has none until it is built -- and the spec
+      # THROWS rather than skipping when it is absent, naming `composer assets`.
+      #
+      # ⚠ A SECOND npm INSTALL IN A SECOND JOB, deliberately, and the alternative was worse.
+      # The build belongs to `apps/api`, which `ADR-003` keeps out of the pnpm workspace, so
+      # the `gates` job already does this. Moving the Playwright step there instead would put
+      # pnpm, corepack and a browser download into the PHP job to avoid ~20 seconds of npm
+      # here. The manifest CHECK stays in `gates`, where `composer assets` owns it; this is
+      # only the bytes the browser needs.
+      - name: apps/api's compiled panel theme, which the panel browser checks measure
+        working-directory: apps/api
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
       - name: Playwright's Chromium, at the version `playwright` pins
         # The package is an exact 1.64.1 and the browser build is tied to it, so this
         # installs the one browser the suite was verified against. --with-deps brings the

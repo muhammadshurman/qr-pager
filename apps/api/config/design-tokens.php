@@ -75,6 +75,113 @@ return [
         ],
     ],
 
+    /*
+     * SR-4, ruled 2026-11-01: the Filament colour families, as ELEVEN-SHADE LADDERS.
+     *
+     * ->colors() is Filament's only sanctioned colour extension point and it wants eleven
+     * shades per family. Handed a single hex it keeps ONLY THE HUE -- Color::generatePalette()
+     * imposes its own lightness and chroma at every shade -- so the approved value appears
+     * nowhere, two approved colours 1.4 degrees apart collapse into one family, and the
+     * resolved dark pair measured 3.43:1, which fails the AA gate clause.
+     *
+     * So each ladder is DERIVED, by the mechanism the dark theme was already approved under:
+     * one formula, two caps, the approved value held EXACTLY at its family's anchor shade, and
+     * every other entry a mix of two approved tokens. The anchor is per-family and carries the
+     * ruling -- danger is built from alert-ink because FILL_PAIRS names that as the
+     * danger fill, and warning sits at shade 400 because alert-fill's own approval bounds
+     * it to text at >= 24px. The reasons are in packages/tokens/scripts/panel-theme.mjs.
+     *
+     * Filament does the WCAG arithmetic itself over whatever it is given, so the assertion
+     * that matters is on ITS resolved pair: panel-palette.test.mjs drives
+     * ButtonComponentColorMap over every family and requires >= 4.5 in both modes.
+     */
+    'filament_palette' => [
+        // primary <- brand @600: the approved brand, on the shade a primary button uses
+        'primary' => [
+            50 => '#E9EFEB',
+            100 => '#D5E3DC',
+            200 => '#ACCBC0',
+            300 => '#84B3A4',
+            400 => '#5C9B88',
+            500 => '#33836B',
+            600 => '#0B6B4F', // the approved value, exactly
+            700 => '#0C5B43',
+            800 => '#0D4A37',
+            900 => '#0E3A2B',
+            950 => '#0F3125',
+        ],
+        // danger <- alert-ink @600: FILL_PAIRS names this as the danger fill, with surface as its label
+        'danger' => [
+            50 => '#EEECE8',
+            100 => '#E6DCD6',
+            200 => '#D6BAB0',
+            300 => '#C6998B',
+            400 => '#B67865',
+            500 => '#A65640',
+            600 => '#96351A', // the approved value, exactly
+            700 => '#77311A',
+            800 => '#592D1A',
+            900 => '#3A291B',
+            950 => '#2B271B',
+        ],
+        // success <- signal @600: the approved signal colour
+        'success' => [
+            50 => '#EBF3ED',
+            100 => '#DBF1E6',
+            200 => '#BBEDD6',
+            300 => '#9CE9C6',
+            400 => '#7CE4B6',
+            500 => '#5DE0A7',
+            600 => '#3DDC97', // the approved value, exactly
+            700 => '#33B27B',
+            800 => '#28875E',
+            900 => '#1E5D42',
+            950 => '#194834',
+        ],
+        // warning <- alert-fill @400: alert-fill carries small text on no shade, by its own approval
+        'warning' => [
+            50 => '#F1EEE9',
+            100 => '#F0D8CE',
+            200 => '#ECAD99',
+            300 => '#E88263',
+            400 => '#E4572E', // the approved value, exactly
+            500 => '#C54F2B',
+            600 => '#A64828',
+            700 => '#874026',
+            800 => '#693923',
+            900 => '#4A3120',
+            950 => '#3A2D1F',
+        ],
+        // info <- ink-mid @600: no approved info colour exists; informational emphasis is neutral
+        'info' => [
+            50 => '#ECEEEB',
+            100 => '#DFE2DF',
+            200 => '#C4CAC6',
+            300 => '#AAB2AD',
+            400 => '#8F9A94',
+            500 => '#75827B',
+            600 => '#5A6A62', // the approved value, exactly
+            700 => '#495A52',
+            800 => '#384A42',
+            900 => '#273931',
+            950 => '#1F3129',
+        ],
+        // gray <- ink-mid @600: the approved mid-neutral, ramped between paper and ink
+        'gray' => [
+            50 => '#ECEEEB',
+            100 => '#DFE2DF',
+            200 => '#C4CAC6',
+            300 => '#AAB2AD',
+            400 => '#8F9A94',
+            500 => '#75827B',
+            600 => '#5A6A62', // the approved value, exactly
+            700 => '#495A52',
+            800 => '#384A42',
+            900 => '#273931',
+            950 => '#1F3129',
+        ],
+    ],
+
     'space' => [
         4 => '0.25rem',
         8 => '0.5rem',

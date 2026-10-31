@@ -38,5 +38,11 @@
  */
 @import '../../../../../../packages/tokens/fonts/fonts.css';
 
+/*
+ * R-118 clause 2: the 44px minimum touch target, on Filament's own controls. ONE file for
+ * both panels -- the selector list and its reasoning must not exist twice.
+ */
+@import '../targets.css';
+
 @source '../../../../app/Features/Provisioning/Panel/**/*';
 @source '../../../../resources/views/platform/**/*';

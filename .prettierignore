@@ -3,6 +3,7 @@
 # diff nobody authored -- and "the formatter did it" is indistinguishable from "the source
 # changed" in a byte diff.
 packages/tokens/generated/
+browser/fixtures/panel-palette.css
 packages/contracts/src/generated/
 apps/api/config/design-tokens.php
 

@@ -38,10 +38,10 @@ foreach($l["packages"] as $p){ if($p["name"]==="filament/filament"||$p["name"]==
 
 `§0` says never silently resolve a conflict. **Four.** Three were raised before any code and
 **all three were ruled on 2026-10-31**, each recorded below with the measurement it produced.
-**SR-4 was raised on 2026-11-01, during implementation, and is OPEN** — it could not have been
-raised earlier, because it is a property of Filament's colour system that only reading its
-resolver revealed, and the pre-coding reading had measured the theming mechanism rather than
-the palette one.
+**SR-4 was raised on 2026-11-01, during implementation, and was RULED the same day** — it could
+not have been raised earlier, because it is a property of Filament's colour system that only
+reading its resolver revealed, and the pre-coding reading had measured the theming mechanism
+rather than the palette one.
 
 **SR-1's ruling overturned my reading, and the record says so rather than quietly adopting it:** I
 reported the redesign as unavailable; it was available, and I had attempted it in the wrong direction.
@@ -351,7 +351,7 @@ correction states plainly that **the walk's subject list is derived from that ta
 a walk measured against a typed inventory is the same defect one layer up. The derivation becomes a
 gate-checked assertion with the first implementation commit, together with the other tables (§8.2).
 
-### SR-4 — OPEN. `->colors()` CANNOT CARRY AN APPROVED VALUE, and the default fails AA in dark mode
+### SR-4 — RULED: the derived ladder, with `alert-ink` as `danger`'s partner. `->colors()` cannot carry an approved value
 
 Raised 2026-11-01, mid-implementation. **This blocks the colour half of the restyle and nothing
 else** — `->viteTheme()`, `->font()`, the panel theme, the lint rule and the ladder migration are
@@ -416,16 +416,59 @@ own text, not against the ground"*, and its approved text partner is `alert-ink`
 either a tuned mix toward `ink` on its dark shades or an explicit `dark:text` partner, and that is a
 second decision inside the first.
 
-**THE QUESTION.** Adopt (c) — generate an 11-shade ladder per Filament family from the approved
-value by the ruled mix, anchored at 600, and add a gate assertion that Filament's own resolver
-clears AA for every family it resolves? And if so, how should `danger`'s dark pair be closed:
-tune its mix, or give it `alert-ink` as an explicit partner?
+**THE RULING (2026-11-01).** (c), and for `danger` *"use `alert-ink` as the explicit text
+partner rather than tuning a mix to scrape over 4.5; that token has existed for this exact
+purpose since 8a, where alert deliberately carries two values. Assert the resulting pair."*
 
-**Until it is ruled, neither provider calls `->colors()`**, so both panels keep
-`ColorManager::DEFAULT_COLORS` — `primary => Amber`. The panel is therefore correctly themed for
-type, spacing, radius and face, and **wrong for colour**, which is a visible half-finished state
-rather than a hidden one. `R-118`'s four computed-style clauses are not measurable until this is
-ruled, because the colours they would measure are not the final ones.
+#### SR-4 as built, and what the measurement changed about the ruling's own shape
+
+`FILL_PAIRS` in 8a's token source had already decided it, which the ruling's wording points
+straight at: *"danger button label on its fill"* is `surface` on **`alert-ink`**, and `alert-fill`
+is marked `large-text` — *"alert-fill carries TEXT only at >= 24px, the approval's own bound,
+stated so a future use cannot rediscover the danger button's defect"*. So `danger` is **built from
+`alert-ink`**: that is what "the explicit text partner" means in an API that chooses its own text
+shade.
+
+**ONE FORMULA, TWO CAPS, SIX ANCHORS.** The anchor shade holds the approved value exactly;
+lighter shades mix toward `paper`, darker toward `ink`, linearly in the shade number. Driven
+through Filament's own `ButtonComponentColorMap` at its own 4.5 bar:
+
+| family | from | anchor | light | dark |
+| --- | --- | --- | --- | --- |
+| `primary` | `brand` | 600 | **6.50** | **6.50** |
+| `danger` | `alert-ink` | 600 | **7.54** | **7.54** |
+| `success` | `signal` | 600 | **5.15** | **6.12** |
+| `warning` | `alert-fill` | **400** | **5.89** | **5.89** |
+| `info` | `ink-mid` | 600 | **5.71** | **5.71** |
+| `gray` | `ink-mid` | 600 | **5.71** | **5.71** |
+
+Against the one-liner's **3.43 FAIL** in dark, and a light background on shade 400 that is in no
+approved set.
+
+**TWO THINGS THE MEASUREMENT DECIDED THAT THE RULING LEFT OPEN:**
+
+* **`warning` anchors at 400, not 600, and that is the approval being honoured rather than worked
+  around.** At 600 the resolver put white on `alert-fill` and measured **3.68 — the same failure
+  `danger` had.** `alert-fill`'s own approval bounds it to text at ≥ 24px, and Filament's
+  notification text is 13–16px, so the approved value must NOT be the shade a small label sits
+  on. At 400 it stays in the ladder, the resolver reaches past it for the fill, and the pair is
+  5.89. Anchor 500 was measured too (4.87) and rejected for the same reason the dark theme's
+  mixes were raised twice on 2026-10-31: this project does not ship a ratio that scrapes its bar.
+* **`info` is the neutral ramp, identical to `gray`, deliberately.** The approved palette has no
+  informational colour. Anchoring on `brand` would make an info badge indistinguishable from a
+  primary one; inventing a hue is the in-between-value invention `§12` forbids one category over.
+  Measured, our panels request `info` **nowhere** — `->danger()`, `->success()` and `->warning()`
+  are the three they use — so the collapse has no visible consequence today, and a screen that
+  needs a distinct informational colour is a palette question for a human.
+
+**The two caps are the only tuned numbers.** `DARK_CAP` was found by measurement, not taste: with
+no cap, a ladder anchored on `ink` was **the same value at 600, 700, 800, 900 and 950** — five
+shades, one colour — because mixing a token toward itself is a no-op. `panel-palette.test.mjs`
+drives that uncapped ladder and asserts the collapse, so the cap cannot be removed as decoration.
+
+**And `border-strong` is not an eligible anchor**, which the builder throws on: it is itself a
+`mix(hairline, ink, 47%)`, so anchoring on it would put a mix of a mix in the panel with no single
+approved value behind it. Found by trying it while choosing `info`.
 
 
 ---

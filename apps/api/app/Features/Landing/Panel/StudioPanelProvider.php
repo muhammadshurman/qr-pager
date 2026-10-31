@@ -22,6 +22,7 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use RuntimeException;
 
 /**
  * ================================================================================
@@ -92,6 +93,33 @@ class StudioPanelProvider extends PanelProvider
             // cache prefix and the Redis prefix through `Str::slug`, and the TOTP issuer
             // label. See config/app.php for the measurement and the finding.
             ->brandName((string) config('app.brand'))
+            // ================================================================================
+            // SR-4's RULING: ELEVEN SHADES PER FAMILY, DERIVED FROM THE APPROVED TOKENS
+            // ================================================================================
+            //
+            // ⚠ NOT `->colors(['primary' => <the approved brand>])`, AND THE ONE-LINER IS
+            // WORSE THAN IT
+            // LOOKS. `ColorManager::getColors()` passes a STRING through
+            // `Color::generatePalette()`, which keeps only the HUE -- lightness and chroma are
+            // Filament's own constants at every shade. Measured: the approved value appears at
+            // NO shade; `ink` and `brand` are 1.4 degrees of hue apart and
+            // produce indistinguishable ladders; and driven through Filament's own resolver it
+            // put the light background on shade 400 and gave a dark pair of **3.43:1**, which
+            // fails WCAG AA for text and is a gate clause.
+            //
+            // The ladders are GENERATED into `design-tokens.php` from the approved tokens by
+            // the mechanism 8a's dark theme was approved under -- one formula, two caps, the
+            // approved value held exactly at its family's anchor shade, every other entry a mix
+            // of two approved tokens. The anchors carry the ruling: `danger` is built from
+            // `alert-ink` because `FILL_PAIRS` names that as the danger fill with `surface` as
+            // its label, and `warning` sits at shade 400 because `alert-fill`'s own approval
+            // bounds it to text at >= 24px. `panel-palette.test.mjs` drives Filament's resolver
+            // over every family and requires >= 4.5 in BOTH modes, which is the assertion the
+            // ruling asked for; `PanelPaletteTest` asserts the rendered panel emits them.
+            //
+            // READ FROM THE GENERATED CONFIG, never typed: a second copy of 66 colour values
+            // is the §6.2 second-source defect at the worst possible scale.
+            ->colors($this->approvedColours())
             // (b) THE FACE -- and ⚠ `provider:` IS NOT OPTIONAL, which is the sharp edge.
             //     Measured in `HasFont::getFontProvider()`: with a custom family and no
             //     provider, the default is **`BunnyFontProvider`**, which emits
@@ -178,5 +206,32 @@ class StudioPanelProvider extends PanelProvider
                 Route::get('preview/asset/{asset}', [PreviewController::class, 'asset'])
                     ->name('preview.asset');
             });
+    }
+
+    /**
+     * The approved Filament palettes, read from the generated token config.
+     *
+     * Typed here rather than inline so PHPStan sees the shape `Panel::colors()` wants without
+     * a cast that would hide a config key going missing. A missing or malformed palette is a
+     * THROW and not a silent fallback: Filament would otherwise quietly use
+     * `ColorManager::DEFAULT_COLORS` -- amber, red, blue -- and the panel would look restyled
+     * while carrying none of the approved values, which is the dead-control shape §4a records.
+     *
+     * @return array<string, array<int, string>>
+     */
+    private function approvedColours(): array
+    {
+        $palette = config('design-tokens.filament_palette');
+
+        if (! is_array($palette) || $palette === []) {
+            throw new RuntimeException(
+                'design-tokens.filament_palette is missing. Run `pnpm tokens:generate`; '
+                .'without it Filament falls back to its own default families and the panel '
+                .'renders amber where the brand should be.'
+            );
+        }
+
+        /** @var array<string, array<int, string>> $palette */
+        return $palette;
     }
 }

@@ -235,3 +235,201 @@ ${tokenColours.join('\n')}
 }
 `
 }
+
+/**
+ * ================================================================================
+ * THE FILAMENT COLOUR FAMILIES — `SR-4`, RULED 2026-11-01
+ * ================================================================================
+ *
+ * `->colors()` is Filament's only sanctioned colour extension point and it wants **eleven
+ * shades per family for six families**. The approved palette has one brand, one signal and
+ * one alert pair. Neither horn was available as stated, and the one-liner is worse than it
+ * looks — measured in `vendor/`:
+ *
+ *   `ColorManager::getColors()` passes a STRING through `Color::generatePalette()`, and that
+ *   function keeps **only the hue**. Lightness and chroma are Filament's own constants at
+ *   every shade, so `brand #0B6B4F` appears at NO shade; `ink` (hue 165.122) and `brand`
+ *   (166.529) are 1.4° apart and produce indistinguishable ladders; and a chroma below 0.03
+ *   collapses to grey. Driven through Filament's own resolver, `->colors(['primary' =>
+ *   '#0B6B4F'])` put the light background on shade **400** — a value in no approved set —
+ *   and gave a dark pair of **3.43:1, which fails WCAG AA for text** and is a gate clause.
+ *
+ * THE RULING: a ladder DERIVED from the approved value, by the mechanism 8a's dark theme was
+ * already approved under — `mix(from, to, amount%) in srgb-8bit-component-linear-round-half-up`,
+ * generated, never typed.
+ *
+ * ONE FORMULA, TWO CAPS, AND NOTHING ELSE. The anchor shade holds the approved value
+ * EXACTLY; lighter shades mix toward `paper` and darker shades toward `ink`, linearly in the
+ * shade number:
+ *
+ *     s < anchor:  mix(base, paper, (anchor - s) / (anchor - 50)  * LIGHT_CAP)
+ *     s > anchor:  mix(base, ink,   (s - anchor) / (950 - anchor) * DARK_CAP)
+ *
+ * The two caps are the only tuned numbers in this file and each has a reason: `LIGHT_CAP`
+ * stops shade 50 reaching `paper` itself, where a tint would be indistinguishable from the
+ * page; `DARK_CAP` stops shade 950 reaching `ink`, where the darkest shades would flat-line
+ * into one value. Measured: with no dark cap, an `ink`-anchored ladder was IDENTICAL from 600
+ * to 950 — five shades, one colour — which is how that cap was found rather than chosen.
+ *
+ * ⚠ AND THE ANCHOR SHADE IS PER-FAMILY, WHICH IS THE PART THAT CARRIES THE RULING. Filament
+ * does the WCAG arithmetic itself: `ButtonComponentColorMap` runs `calculateContrastRatio`
+ * over the whole palette at the 4.5 bar and picks bg/hover/text from candidate triplets.
+ * Moving the anchor moves which shade the approved value sits on, and therefore which shade
+ * the resolver reaches for — WITHOUT inventing a value, because every entry is still a mix
+ * of two approved tokens. `panel-palette.test.mjs` asserts the resolver's own resolved pair
+ * clears AA for every family, which is the assertion the ruling asked for.
+ */
+
+/** The shades Filament's palettes carry. Its resolver indexes these by number. */
+export const FILAMENT_SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]
+
+/** Stops shade 50 from reaching `paper`, where a tint is invisible against the page. */
+export const LIGHT_CAP = 0.96
+
+/**
+ * Stops shade 950 from reaching `ink`.
+ *
+ * Found by measurement rather than taste: with no cap, a ladder anchored on `ink` was the
+ * SAME VALUE at 600, 700, 800, 900 and 950, because mixing a token toward itself is a no-op.
+ */
+export const DARK_CAP = 0.8
+
+/**
+ * Which approved token each Filament family is built from, and at which shade it sits.
+ *
+ * ⚠ EVERY ROW IS A DESIGN DECISION WITH A MEASUREMENT, so every row carries its reason and
+ * the ratio Filament's own resolver produced for it. These are not interchangeable.
+ */
+export const FILAMENT_PALETTE_SOURCES = {
+  /**
+   * The brand, at the canonical anchor. Filament's light-mode button asks for shade 600, so
+   * the approved value is literally what a primary button renders. 6.50:1 in both modes.
+   */
+  primary: {
+    token: 'brand',
+    anchor: 600,
+    why: 'the approved brand, on the shade a primary button uses',
+  },
+
+  /**
+   * ⚠ `alert-ink` AND NOT `alert-fill`, which is the ruling's own instruction and which 8a's
+   * `FILL_PAIRS` had already decided: *"danger button label on its fill"* is `surface` on
+   * **`alert-ink`**, and `alert-fill` is marked `large-text` — *"alert-fill carries TEXT only
+   * at >= 24px — the approval's own bound, stated so a future use cannot rediscover the
+   * danger button's defect"*. Anchoring `danger` on the fill would have rediscovered it:
+   * measured, `alert-fill` at 600 gives a dark pair of **3.68, FAIL**, while `alert-ink`
+   * gives **7.54 in both modes**. The token existed for exactly this.
+   */
+  danger: {
+    token: 'alert-ink',
+    anchor: 600,
+    why: 'FILL_PAIRS names this as the danger fill, with surface as its label',
+  },
+
+  /** The signal colour, at the canonical anchor. 5.15 light / 6.12 dark. */
+  success: { token: 'signal', anchor: 600, why: 'the approved signal colour' },
+
+  /**
+   * ⚠ ANCHORED AT 400, AND THAT IS THE APPROVAL BEING HONOURED RATHER THAN WORKED AROUND.
+   * `alert-fill`'s own approval bounds it to text at >= 24px, and Filament's notification and
+   * badge text is 13-16px — so the approved value must NOT be the shade a small label sits
+   * on. At anchor 600 the resolver put white on it and measured **3.68, FAIL**; at 400 the
+   * approved value stays in the ladder, the resolver reaches past it to a darker shade for
+   * the fill, and the pair is **5.89 in both modes**.
+   *
+   * 500 was measured too and gives 4.87 — a 0.37 margin over the bar. 400 was taken for the
+   * same reason the dark theme's mixes were raised twice on 2026-10-31: this project does not
+   * ship a ratio that scrapes its bar.
+   */
+  warning: {
+    token: 'alert-fill',
+    anchor: 400,
+    why: 'alert-fill carries small text on no shade, by its own approval',
+  },
+
+  /**
+   * ⚠ THE APPROVED PALETTE HAS NO INFORMATIONAL COLOUR, so `info` is the NEUTRAL ramp — the
+   * same ladder as `gray`, deliberately and identically.
+   *
+   * The two alternatives were both a collapse: anchoring on `brand` makes an info badge
+   * indistinguishable from a primary one, and inventing a hue is the in-between-value
+   * invention `§12` forbids one category over. Measured, our panels request `info` NOWHERE
+   * (`->danger()`, `->success()` and `->warning()` are the three they use), so the collapse
+   * has no visible consequence today. A screen that needs a distinct informational colour is
+   * a PALETTE question for a human, not a value for this file to choose.
+   */
+  info: {
+    token: 'ink-mid',
+    anchor: 600,
+    why: 'no approved info colour exists; informational emphasis is neutral',
+  },
+
+  /**
+   * The chrome. `gray` is what Filament paints surfaces, borders and body text with, and its
+   * own `@theme inline` maps `--color-gray-*` onto whatever this supplies — which is why
+   * `panel-theme.css` must NOT clear the `gray` family (see (1) in this file's header).
+   *
+   * Anchored on `ink-mid`, the approved mid-neutral, so the ramp runs from near-`paper` at 50
+   * to near-`ink` at 950 and every step is a mix of two approved tokens.
+   */
+  gray: {
+    token: 'ink-mid',
+    anchor: 600,
+    why: 'the approved mid-neutral, ramped between paper and ink',
+  },
+}
+
+/**
+ * The eleven-shade ladder for one family.
+ *
+ * @param {(from: string, to: string, amount: number) => string} mix the token source's own mixer
+ * @param {Record<string, string>} approved the approved tokens, by name
+ * @param {{token: string, anchor: number}} source one row of FILAMENT_PALETTE_SOURCES
+ * @returns {Record<number, string>} shade -> hex
+ */
+export function buildFilamentLadder(mix, approved, source) {
+  const base = approved[source.token]
+
+  if (typeof base !== 'string') {
+    throw new Error(
+      `[tokens] FILAMENT_PALETTE_SOURCES names '${source.token}', which is not an approved ` +
+        'token. Every shade must be a mix of APPROVED values -- a derived role would be a mix ' +
+        'of a mix, and an unknown name would silently produce no ladder at all.',
+    )
+  }
+
+  const first = FILAMENT_SHADES[0]
+  const last = FILAMENT_SHADES[FILAMENT_SHADES.length - 1]
+  const ladder = {}
+
+  for (const shade of FILAMENT_SHADES) {
+    if (shade === source.anchor) {
+      ladder[shade] = base
+      continue
+    }
+
+    ladder[shade] =
+      shade < source.anchor
+        ? mix(base, approved.paper, ((source.anchor - shade) / (source.anchor - first)) * LIGHT_CAP)
+        : mix(base, approved.ink, ((shade - source.anchor) / (last - source.anchor)) * DARK_CAP)
+  }
+
+  return ladder
+}
+
+/**
+ * Every family's ladder.
+ *
+ * @param {(from: string, to: string, amount: number) => string} mix
+ * @param {Record<string, string>} approved
+ * @returns {Record<string, Record<number, string>>}
+ */
+export function buildFilamentPalette(mix, approved) {
+  const palette = {}
+
+  for (const [family, source] of Object.entries(FILAMENT_PALETTE_SOURCES)) {
+    palette[family] = buildFilamentLadder(mix, approved, source)
+  }
+
+  return palette
+}
