@@ -95,9 +95,10 @@ describe('the dependency licence inventory', () => {
     // The ticket's old table had 13 rows; the tree has over two hundred packages, and that
     // gap IS the finding. A bound, not an exact count: the total varies with the platform's
     // optional dependencies.
-    expect(licences.size, 'the pnpm store walk found nothing -- run `pnpm install`').toBeGreaterThan(
-      200,
-    )
+    expect(
+      licences.size,
+      'the pnpm store walk found nothing -- run `pnpm install`',
+    ).toBeGreaterThan(200)
     // And the four packages the review named are present, by name, so a walk that silently
     // missed the interesting ones is visible here.
     const names = [...licences.keys()].map((k) => k.slice(0, k.lastIndexOf('@')))
@@ -213,7 +214,8 @@ describe('the dependency licence inventory', () => {
       for (const pkg of row.packages) {
         for (const [key, licence] of licences) {
           if (key.slice(0, key.lastIndexOf('@')) !== pkg) continue
-          if (licence !== family) wrong.push(`${key} declares ${licence}, dispositioned as ${family}`)
+          if (licence !== family)
+            wrong.push(`${key} declares ${licence}, dispositioned as ${family}`)
         }
       }
     }

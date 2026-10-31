@@ -70,10 +70,9 @@ describe("§6.1's disjointness table", () => {
     const row = /themeable names \(all 12\) \|([^|]*)\|/.exec(section)
     expect(row, "the ticket has no 'themeable names (all 12)' row").not.toBeNull()
     const listed = [...row[1].matchAll(/`([^`]+)`/g)].map((m) => m[1]).sort()
-    expect(
-      listed,
-      "the ticket's themeable-name list disagrees with ThemeTokens::NAMES",
-    ).toEqual([...names].sort())
+    expect(listed, "the ticket's themeable-name list disagrees with ThemeTokens::NAMES").toEqual(
+      [...names].sort(),
+    )
   })
 
   it('names every property those twelve can produce, through the real transform', () => {
@@ -170,7 +169,8 @@ describe("§4.3's version table", () => {
           continue
         }
         checked += 1
-        if (actual !== stated) wrong.push(`${name}: ticket says ${stated}, package.json pins ${actual}`)
+        if (actual !== stated)
+          wrong.push(`${name}: ticket says ${stated}, package.json pins ${actual}`)
       }
     }
 
@@ -240,15 +240,17 @@ describe("§2.3's final-values table", () => {
         continue
       }
       checked += 1
-      if (actual.light !== light) wrong.push(`${role} light: table ${light}, source ${actual.light}`)
+      if (actual.light !== light)
+        wrong.push(`${role} light: table ${light}, source ${actual.light}`)
       if (actual.dark !== dark) wrong.push(`${role} dark: table ${dark}, source ${actual.dark}`)
     }
 
     // Every role the source has must appear, so a row cannot be dropped to pass.
     expect(checked, 'too few rows matched -- the table shape changed').toBe(truth.size)
-    expect(wrong, "these cells of the ticket's final-values table disagree with the source").toEqual(
-      [],
-    )
+    expect(
+      wrong,
+      "these cells of the ticket's final-values table disagree with the source",
+    ).toEqual([])
   })
 
   it('states the DERIVATION each role actually has, mix percentage included', async () => {
@@ -263,9 +265,7 @@ describe("§2.3's final-values table", () => {
       // the compiled regex -- so it matched the section's first line and every derivation
       // was then checked against prose. Found by the check failing on two roles whose
       // rows were correct.
-      const row = section
-        .split('\n')
-        .find((line) => line.startsWith(`| \`${role}\` | \``))
+      const row = section.split('\n').find((line) => line.startsWith(`| \`${role}\` | \``))
       expect(row, `no final-values row for ${role}`).toBeDefined()
       for (const [label, rule] of [
         ['light', actual.lightRule],
@@ -281,7 +281,7 @@ describe("§2.3's final-values table", () => {
         }
       }
     }
-    expect(wrong, "these derivations in the ticket disagree with the source").toEqual([])
+    expect(wrong, 'these derivations in the ticket disagree with the source').toEqual([])
   })
 
   it('no longer presents the superseded values as current', () => {
