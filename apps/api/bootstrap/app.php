@@ -212,11 +212,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // ALSO GLOBAL, and also prepended, because it has to run before routing: Task 6's
         // Filament install added two vendor routes that answered 500 to an ANONYMOUS GET
         // (`/filament/exports/{export}/download` and the imports equivalent, both reading
-        // tables this application never created) plus two Livewire file-upload endpoints
-        // for a panel that has no file upload. Competing routes would have worked only
-        // while this application's routes are registered before the package's, and nothing
-        // pins that order -- a global middleware does not care. See the class for the
-        // measurement and for why the Livewire prefix is a pattern rather than a literal.
+        // tables this application never created) plus Livewire's `preview-file`, which
+        // nothing in this application has a caller for. Competing routes would have worked
+        // only while this application's routes are registered before the package's, and
+        // nothing pins that order -- a global middleware does not care. See the class for
+        // the measurement and for why the Livewire prefix is a pattern rather than a
+        // literal.
+        //
+        // ⚠ IT REFUSED `upload-file` TOO UNTIL 2026-10-31, on the argument that the panel
+        // had no file upload -- which BEING GLOBAL is exactly what it was not entitled to
+        // assume: Task 7 mounted a second panel whose media page is Livewire's ordinary
+        // upload path, and the page could not receive a file for the whole of that task.
+        // The lesson belongs here rather than only in the class: a path list in a global
+        // middleware is a claim about every panel the application will ever mount.
         $middleware->prepend(RefuseUnservedVendorRoutes::class);
 
         // LIVEWIRE'S UPDATE ENDPOINT, metered through the one group it belongs to
