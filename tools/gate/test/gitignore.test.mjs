@@ -187,11 +187,33 @@ describe('.gitignore directory patterns', () => {
       }
     }
 
-    // A bound, so a walk that found no nested directory at all cannot report no offenders.
+    /**
+     * ⚠ THE NON-VACUITY GUARD IS ABOUT THE WALKER, NOT A COUNT OF CANDIDATES, AND THE
+     * FRESH-CLONE PROOF IS WHAT TAUGHT ME THAT. The first version asserted
+     * `examined >= 4` -- and `examined` counts nested directories matching an unanchored
+     * pattern, which in this working tree means `apps/api/build`, `apps/web/.next`,
+     * `apps/site/.next` and four `node_modules`. NONE OF THOSE IS TRACKED. A fresh clone
+     * has no `build/` and no `.next/` until something builds them, so the walk found 3 and
+     * the assertion failed at `1bcc9f3` -- a test that depended on the builder's machine
+     * having run a build, inside the one suite the fresh-clone proof exists to protect.
+     *
+     * So the walker proves itself against something the REPOSITORY guarantees: a tracked
+     * nested directory. `packages/ui/src/styles` is one and it is not optional -- `kit.css`
+     * and `templates.css` live in it and four other tests read them. If the walker cannot
+     * descend to it, it cannot have examined anything else either, which is the property
+     * the floor was reaching for.
+     *
+     * Zero candidates in a fresh clone is a real and correct state, so the count is
+     * reported rather than bounded.
+     */
+    expect(
+      directoriesNamed('styles'),
+      'the directory walk cannot reach a tracked nested directory, so it examined nothing',
+    ).toContain('packages/ui/src/styles')
     expect(
       examined,
-      'no nested directory was examined -- the walk is broken',
-    ).toBeGreaterThanOrEqual(4)
+      'candidates examined (0 is legitimate in a fresh clone, which has no build outputs)',
+    ).toBeGreaterThanOrEqual(0)
     expect(
       offenders,
       'these unanchored patterns ignore a directory the repository is tracking. Anchor them ' +
