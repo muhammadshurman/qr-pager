@@ -36,8 +36,12 @@ foreach($l["packages"] as $p){ if($p["name"]==="filament/filament"||$p["name"]==
 
 ## 0. Stop-and-reports, raised before any code
 
-`§0` says never silently resolve a conflict. Three were raised. **All three were ruled on 2026-10-31
-before any implementation commit, and each ruling is recorded below with the measurement it produced.**
+`§0` says never silently resolve a conflict. **Four.** Three were raised before any code and
+**all three were ruled on 2026-10-31**, each recorded below with the measurement it produced.
+**SR-4 was raised on 2026-11-01, during implementation, and is OPEN** — it could not have been
+raised earlier, because it is a property of Filament's colour system that only reading its
+resolver revealed, and the pre-coding reading had measured the theming mechanism rather than
+the palette one.
 
 **SR-1's ruling overturned my reading, and the record says so rather than quietly adopting it:** I
 reported the redesign as unavailable; it was available, and I had attempted it in the wrong direction.
@@ -346,6 +350,82 @@ against a tagged task, and `R-115`'s own review-by already requires Task 10's ga
 correction states plainly that **the walk's subject list is derived from that table, never hand-listed** —
 a walk measured against a typed inventory is the same defect one layer up. The derivation becomes a
 gate-checked assertion with the first implementation commit, together with the other tables (§8.2).
+
+### SR-4 — OPEN. `->colors()` CANNOT CARRY AN APPROVED VALUE, and the default fails AA in dark mode
+
+Raised 2026-11-01, mid-implementation. **This blocks the colour half of the restyle and nothing
+else** — `->viteTheme()`, `->font()`, the panel theme, the lint rule and the ladder migration are
+all landed and green without it.
+
+**The conflict.** `§12` says the panel is restyled from the approved tokens at Task 8, and the
+approved palette has **one** brand, **one** signal and **one** alert-fill. Filament's only
+sanctioned colour extension point is `->colors()`, and it wants **eleven shades per family** for
+six families. Neither horn is available as stated: feeding it the approved value discards the
+value, and inventing the other ten is the in-between-value invention `§12` forbids.
+
+**Measured, in `vendor/`, not reasoned.** `ColorManager::getColors()` passes a STRING through
+`Color::generatePalette()`, and that function (`Color.php:667`) keeps **only the hue**:
+
+```
+brand #0B6B4F -> oklch(0.47 0.094 166.529)
+  generated 500 => oklch(0.68270588235294 0.17009090909091 166.529)
+  generated 600 => oklch(0.59782352941176 0.16913636363636 166.529)
+```
+
+Lightness and chroma are Filament's fixed constants at every shade. Three consequences, each
+measured:
+
+1. **The approved value appears at NO shade.** `#0B6B4F` is lightness 0.47 / chroma 0.094; the
+   nearest generated entries are 700 (0.515 / 0.149) and 800 (0.446 / 0.123).
+2. **Two approved colours collapse into one family.** `ink` is hue 165.122 and `brand` is 166.529
+   — **1.4° apart** — so their generated ladders are indistinguishable.
+3. **Chroma below 0.03 collapses to zero.** `paper #F2F4F1` is chroma 0.004, so its whole ladder
+   is grey. (That one happens to suit `gray`.)
+
+**And the shades are not decorative — they are the input to Filament's own WCAG arithmetic.**
+`ButtonComponentColorMap` takes the whole palette, runs `Color::calculateContrastRatio` over it
+at `WCAG_AA_TEXT` (4.5), and picks bg/hover/text per component from candidate triplets
+(`ButtonComponent.php:43-48`: `lightBackground(600, 500)`, `lightBackground(400, 300, 500)`,
+`darkBackground(600, 500, 700)`). ⚠ A **missing** shade is not an error: `probeTextLightness`
+does `$this->palette[$textShade] ?? 'oklch(1 0 0)'`, so a partial ladder silently resolves to
+white — the dead-control shape `§4a` records four instances of.
+
+**The three options, with what each actually produced when driven through that resolver.**
+
+| | what it does | Filament's resolved light bg | light contrast | dark contrast |
+| --- | --- | --- | --- | --- |
+| (a) | `->colors(['primary' => '#0B6B4F'])` — the one-liner | shade **400**, a value in no approved set | 7.18 | **3.43 — FAILS AA** |
+| (b) | eleven explicit values per family | — | — | — |
+| (c) | a ladder DERIVED by one rule from the approved value | shade **600** = **`#0B6B4F` exactly** | **6.50** | **6.50** |
+
+(b) is refused on sight: 66 values nobody has approved, which is exactly what `§12`'s "one ratio,
+no in-between sizes" forbids one category over.
+
+**(c) is the recommendation, and it is inside a mechanism that was already approved.** 8a's dark
+theme was approved on the rule *`mix(from, to, amount%) in srgb-8bit-component-linear-round-half-up`*,
+with the derivation stated per role. The ladder is the same move: **shade 600 is the approved value
+itself** (it is what Filament's light-mode button asks for), lighter shades mix toward `paper`,
+darker toward `ink`. One rule, two endpoints, both approved — not eleven decisions. Measured over
+the generated ladder: monotonic in luminance across 50..950 for every family, `brand-600` at
+5.87:1 on `paper` and 5.46:1 on `brand-50`.
+
+**What (c) does NOT settle, stated rather than glossed.** Driven through the same resolver,
+`alert-fill`'s derived ladder gives a dark pair of **3.68** — below the 4.5 text bar. That is not a
+defect in the rule: the token source already says of `alert-fill` that *"a fill is read against its
+own text, not against the ground"*, and its approved text partner is `alert-ink`. So `danger` needs
+either a tuned mix toward `ink` on its dark shades or an explicit `dark:text` partner, and that is a
+second decision inside the first.
+
+**THE QUESTION.** Adopt (c) — generate an 11-shade ladder per Filament family from the approved
+value by the ruled mix, anchored at 600, and add a gate assertion that Filament's own resolver
+clears AA for every family it resolves? And if so, how should `danger`'s dark pair be closed:
+tune its mix, or give it `alert-ink` as an explicit partner?
+
+**Until it is ruled, neither provider calls `->colors()`**, so both panels keep
+`ColorManager::DEFAULT_COLORS` — `primary => Amber`. The panel is therefore correctly themed for
+type, spacing, radius and face, and **wrong for colour**, which is a visible half-finished state
+rather than a hidden one. `R-118`'s four computed-style clauses are not measurable until this is
+ruled, because the colours they would measure are not the final ones.
 
 
 ---

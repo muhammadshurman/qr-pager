@@ -58,6 +58,47 @@ lands at `d8c9652`: `task-8b-panel-restyle` is cut from it, these commits **fast
 rebase**, and the holding name retires. The branch history's one explanation is
 `docs/tickets/QRPAGER-23.md §10`.
 
+### 0.2 ⚠ OPEN STOP-AND-REPORT — `QRPAGER-23 SR-4`, raised 2026-11-01, blocks 8b's COLOUR half only
+
+**What is landed and green:** both panels' `->viteTheme()` and `->font()` with an explicit
+`LocalFontProvider` (the CDN font is gone, proven over the compiled assets and the rendered HTML),
+`packages/tokens/generated/panel-theme.css` as a sibling of 8a's theme, the panel asset build and the
+`apps/api` dependency controls as gate steps, the panel lint rule, and 32 off-ladder spacing classes
+moved onto the approved ladder with the rendered size unchanged. `composer gate` 10/10,
+`pnpm gate` 12/12.
+
+**What is blocked:** `->colors()` on either provider, and therefore `R-118`'s four computed-style
+clauses — the colours they would measure are not the final ones until this is ruled.
+
+**The finding, in one line:** Filament's only sanctioned colour extension point either DISCARDS the
+approved value or demands eleven values per family that nobody has approved — and its one-line form
+produces a dark-mode button at **3.43:1**, which fails WCAG AA for text.
+
+`Color::generatePalette()` keeps only the HUE of the hex it is given; lightness and chroma are
+Filament's own constants at every shade. So `brand #0B6B4F` appears at no shade, `ink` (hue 165.122)
+and `brand` (hue 166.529) produce indistinguishable ladders, and a chroma below 0.03 collapses to
+grey. The shades are not decorative: `ButtonComponentColorMap` runs `calculateContrastRatio` over the
+whole palette at the 4.5 bar and picks bg/hover/text from it, and a MISSING shade silently becomes
+white rather than erroring.
+
+**The recommendation is inside an already-approved mechanism.** Derive an 11-shade ladder per family
+from the approved value by 8a's ruled `mix(from, to, amount%) in
+srgb-8bit-component-linear-round-half-up`, anchored so that **shade 600 is the approved value itself**
+— which is the shade Filament's light-mode button asks for. Driven through Filament's own resolver,
+that puts `#0B6B4F` on the button in both modes at **6.50:1**, against the one-liner's shade-400 pick
+and its failing dark pair.
+
+**And one thing it does not settle, stated rather than glossed:** `alert-fill`'s derived ladder gives
+a dark pair of **3.68**, below the bar. The token source already says a fill *"is read against its own
+text, not against the ground"* and names `alert-ink` as its partner, so `danger` needs either a tuned
+mix or an explicit text partner — a second decision inside the first.
+
+**The full measurement, the comparison table and the exact question are in
+`docs/tickets/QRPAGER-23.md §0 SR-4`.** Until it is ruled both panels keep
+`ColorManager::DEFAULT_COLORS` (`primary => Amber`), so the panel is correctly themed for type,
+spacing, radius and face and **visibly wrong for colour** — a half-finished state anyone can see
+rather than one hidden behind a passing gate.
+
 ### 0.1 Waiting on Muhammad — the standing list
 
 Written 2026-10-26 because these were being carried **verbally**, surfacing only when somebody remembered
