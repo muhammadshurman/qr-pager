@@ -234,20 +234,35 @@ which this task implements:
 
 Every dark value is a mix of two **approved** tokens. Nothing invents a hue.
 
-| role | LIGHT | DARK | dark derivation |
-| --- | --- | --- | --- |
-| `paper` | `#F2F4F1` | `#0A1F17` | `= ready-field` (approved) |
-| `surface` | `#FFFFFF` | `#1D3028` | `mix(ready-field, paper, 8%)` |
-| `surface-2` | `#E7EBE6` | `#2A3D36` | `mix(ready-field, paper, 14%)` |
-| `hairline` | `#D3DAD2` | `#42524B` | `mix(ready-field, paper, 24%)` — **decorative only** |
-| `border-strong` | `#7D8981` | `#798580` | light `mix(hairline, ink, 44%)`; dark `mix(ready-field, paper, 48%)` |
-| `ink` | `#10231B` | `#F2F4F1` | `= paper` (approved) |
-| `ink-mid` | `#5A6A62` | `#9DA7A1` | `mix(ink-mid, paper, 44%)` |
-| `brand` | `#0B6B4F` | `#3DDC97` | `= signal` (approved) |
-| `signal` | `#3DDC97` | `#3DDC97` | `= signal` (approved) |
-| `ready-field` | `#0A1F17` | `#0A1F17` | `= ready-field` (approved) — **outside theming, D4** |
-| `alert-fill` | `#E4572E` | `#E4572E` | `= alert-fill` (approved) |
-| `alert-ink` | `#96351A` | `#E4572E` | `= alert-fill` (approved), promoted to the text role |
+**⚠ THREE CELLS OF THIS TABLE WERE SUPERSEDED AND ARE CORRECTED IN PLACE (QA #6).** It
+carried `border-strong`'s **first** solution — light `#7D8981` at 44% and dark `#798580` at
+48%, the pair that cleared 3:1 by 0.02 and 0.01 — and dark `alert-ink` as `= alert-fill`
+`#E4572E`, **which is the shipped AA breach the generated table then found at 3.78 and
+3.13**. All three were replaced in the code the same day and this table was not updated, so
+it contradicted its own ratios table twenty lines below. Hand-typed, read by nothing: the
+fifth instance of the shape in this round.
+
+**`tools/gate/test/ticket-tables.test.mjs` now checks every cell below against
+`resolveColour()` and `describeRule()`**, so a value corrected in the source and not here
+reddens the gate.
+
+| role | LIGHT | DARK | light derivation | dark derivation |
+| --- | --- | --- | --- | --- |
+| `paper` | `#F2F4F1` | `#0A1F17` | `= paper` (approved) | `= ready-field` (approved) |
+| `surface` | `#FFFFFF` | `#1D3028` | `= surface` (approved) | `mix(ready-field, paper, 8%)` |
+| `surface-2` | `#E7EBE6` | `#2A3D36` | `= surface-2` (approved) | `mix(ready-field, paper, 14%)` |
+| `hairline` | `#D3DAD2` | `#42524B` | `= hairline` (approved) | `mix(ready-field, paper, 24%)` — **decorative only** |
+| `border-strong` | `#77847C` | `#7E8A84` | `mix(hairline, ink, 47%)` | `mix(ready-field, paper, 50%)` |
+| `ink` | `#10231B` | `#F2F4F1` | `= ink` (approved) | `= paper` (approved) |
+| `ink-mid` | `#5A6A62` | `#9DA7A1` | `= ink-mid` (approved) | `mix(ink-mid, paper, 44%)` |
+| `brand` | `#0B6B4F` | `#3DDC97` | `= brand` (approved) | `= signal` (approved) |
+| `signal` | `#3DDC97` | `#3DDC97` | `= signal` (approved) | `= signal` (approved) |
+| `alert-fill` | `#E4572E` | `#E4572E` | `= alert-fill` (approved) | `= alert-fill` (approved) |
+| `alert-ink` | `#96351A` | `#E99176` | `= alert-ink` (approved) | `mix(alert-fill, paper, 37%)` |
+
+**`ready-field` is no longer a row here**, and that is the redesign rather than an omission:
+the order-ready colours stopped being theme roles (defect 1) and live in the `--ready-*`
+namespace, emitted once outside both theme blocks. `§6.1`'s table is where they are listed.
 
 **⚠ THE BARS TABLE IS NOW GENERATED, AND THAT IS A CORRECTION. The first version of this
 section covered `ink`, `ink-mid` and `border-strong` only, and three defects hid behind the
@@ -378,7 +393,7 @@ All `devDependencies`, none reaching a browser.
 | `typescript` | **6.0.3** | Apache-2.0 | the latest **under 6.1.0** — see the binding constraint in `§7` |
 | `vitest`, `@vitest/coverage-v8` | 5.0.5 | MIT | engines `^22.12.0 \|\| ^24 \|\| >=26` — the Node constraint |
 | `vite` | 8.3.5 | MIT | engines `^20.19.0 \|\| >=22.12.0` |
-| `eslint` | 10.14.0 | MIT | current major |
+| `eslint` | **10.13.0** | MIT | ⚠ **NOT 10.14.0, and this row said 10.14.0 (Security L-7).** 10.14.0 was published 0 days before this task and `pnpm 12`'s minimum-release-age window refused it; the exclusion pnpm wrote by itself was removed and the dependency moved back. The reasoning is in `pnpm-workspace.yaml`; this row was simply not updated, and `ticket-tables.test.mjs` now checks every row here against the pin |
 | `typescript-eslint` | 8.72.1 | MIT | peer `typescript >=4.8.4 <6.1.0` — **this is what pins TypeScript** |
 | `prettier` | 3.9.10 | MIT | current |
 | `playwright` | **1.64.1, pinned exactly** | Apache-2.0 | its browser build is tied to the package version |
@@ -392,8 +407,41 @@ verified cache stale, and CI then tests against a browser nobody verified. Insta
 the **Linux** build from inside WSL — a browser installed by the Windows Node is the wrong
 platform and cannot be driven from WSL.
 
-**CVEs.** No advisory is asserted from memory. `pnpm audit` is run as part of the gate and its
-output is committed with the gate evidence; a non-empty result is a finding, not a note.
+**CVEs. ⚠ THIS PARAGRAPH SAID `pnpm audit` WAS ALREADY RUN AS PART OF THE GATE AND ITS
+OUTPUT COMMITTED. IT WAS NOT (Security H-2), and the sentence is corrected here in the same
+change that builds the control.** It was in `tools/gate/bin/gate.mjs`, root `package.json`,
+`ci.yml`, `apps/api/bin/gate` and no evidence file. Run for the first time on 2026-10-31 it
+returned **five advisories — 2 high, 3 moderate** — against a diff that adds 3,184 lockfile
+lines with no CVE gate behind them. The absent control was the durable half of the finding.
+
+**What exists now:**
+
+* `pnpm audit --audit-level low` is **gate step seven** (`tools/gate/bin/gate.mjs`) and a
+  **CI step** of the frontend job. `low`, so no severity is filtered out silently. The
+  CI-parity test asserts both, in both directions.
+* Output committed at `docs/tickets/QRPAGER-15-audit.txt`, with the exit code read directly.
+* **All five are CLOSED by two `overrides` in `pnpm-workspace.yaml`**, each a range rather
+  than a pin so a later patch is taken without editing the file again:
+  `postcss >= 8.5.23` closes `GHSA-6g55-p6wh-862q` (high), `GHSA-r28c-9q8g-f849` (high),
+  `GHSA-qx2v-qp2m-jg93` and `GHSA-fxqj-rqcc-2cmp` — four advisories, all postcss reached
+  through `next` in both apps; `minimatch >= 11.0.1` closes `GHSA-g3hv-75wg-m249`
+  (moderate), reached through `eslint` on 33 paths.
+* **An override was the only instrument, measured rather than assumed:** `next@15.5.28`
+  hard-pins `"postcss": "8.4.31"` — an exact version — and 15.5.28 is the latest 15.x,
+  which is what `§1` locks. No bump inside the lock closes it.
+* **Verified after the override:** `pnpm audit` → *"No known vulnerabilities found"*, exit 0;
+  both Next apps build, statically prerendered, **102 kB First Load JS — the same figure as
+  before**; the full `pnpm gate` green.
+* **One consequence recorded rather than discovered later:** minimatch 11 relicensed from
+  ISC to **Blue Oak 1.0.0**, so closing that advisory introduced a licence family the tree
+  did not previously carry. It is dispositioned in
+  `docs/contracts/dependency-licences.json`.
+
+**Licences, over the whole tree rather than a hand-typed row per package.** The tables in
+`§4.1` and `§4.3` name the dependencies this task CHOSE; they are not an inventory.
+`docs/contracts/dependency-licences.json` is, and `tools/gate/test/licences.test.mjs`
+enumerates the installed store and fails on a licence family in neither its allow-list nor
+its dispositions — see `§4.5`.
 
 ### 4.4 The rest of `§11.4`'s checklist, against this task's actual surface
 
@@ -407,6 +455,42 @@ output is committed with the gate evidence; a non-empty result is a finding, not
 * **rate limit** — no endpoint added, so nothing to limit.
 * **log redaction / secrets** — this task logs nothing and holds no secret. No `.env` key is
   added. The generated artefacts contain colour and length literals only.
+
+### 4.5 Licences over the WHOLE tree — Security L-6, and `§10`'s inherited obligation
+
+**⚠ `§4.3`'s table listed 13 packages and said they were all MIT or Apache-2.0. The
+installed tree is 229 packages and four licence families are neither.** Measured
+2026-10-31 on linux-x64:
+
+| family | count | packages | reached through |
+| --- | --- | --- | --- |
+| MIT | 173 | — | — |
+| Apache-2.0 | 23 | — | — |
+| ISC · BSD-2 · BSD-3 · 0BSD · MIT-0 | 22 | — | permissive, functionally MIT |
+| **Blue Oak 1.0.0** | 4 | `minimatch`, `lru-cache`, … | ⚠ **arrived with this task's own minimatch override** — minimatch 11 relicensed from ISC |
+| **MPL-2.0** | 4 | `lightningcss`, `lightningcss-linux-x64-gnu` | Tailwind v4, **build-time only** |
+| **LGPL-3.0-or-later** | 1 | `@img/sharp-libvips-linux-x64` | `sharp` → Next.js image optimiser, **build-time and server-side** |
+| **CC-BY-4.0** | 1 | `caniuse-lite` | `next` → `browserslist`, **build-time DATA** |
+| **CC0-1.0** | 1 | `mdn-data` | the CSS tooling, **build-time DATA** |
+
+None of the four is a problem. All four were **unexamined**, which is the finding — and
+`§10` is why it matters past this repository: the client receives it by **Transfer
+Ownership**, so this inventory becomes an obligation they inherit, not only ours.
+
+**The disposition for each, with its reach and its obligation, is in
+`docs/contracts/dependency-licences.json`.** The one condition worth repeating here because
+it is a future trap rather than a present fact: **LGPL's relinking requirement is discharged
+only while libvips stays an unmodified, dynamically-loaded, unbundled binary.** A future task
+producing a single-file or statically-linked artefact containing it has to answer that
+again; Next.js 15's output does not.
+
+**The control, not the table:** `tools/gate/test/licences.test.mjs` enumerates the installed
+pnpm store and fails if any licence family is in neither the allow-list nor the dispositions,
+and separately refuses GPL/AGPL/SSPL/BUSL/UNLICENSED outright — a decision taken in advance
+rather than an argument had when a dependency arrives. A licence-FAMILY list rather than a
+per-package one, because the per-package list differs by platform (`-linux-x64-gnu` versus
+`-darwin-arm64`) and would be red on one machine and green on another, which is the
+"works on the builder's machine" shape the fresh-clone proof exists for.
 
 ---
 
@@ -461,11 +545,21 @@ names**, `ThemeTokens::property()` maps a name to a CSS custom property by a pur
 transform, and **the three properties the order-ready screen reads are outside the image of
 that function over that list.**
 
+**⚠ THE THIRD ROW BELOW WAS WRONG AND IS CORRECTED IN PLACE (Security L-4).** It read
+`--color-ready-field` `--color-paper` `--color-signal` — the namespace this round's own
+**defect 1** removed, when the order-ready colours stopped being theme roles. Two of those
+three names are now in NEITHER set. The table was hand-typed and nothing read it, which is
+the shape five findings in this round shared. **`tools/gate/test/ticket-tables.test.mjs`
+now checks every row of this table against its source** — the themeable names parsed out of
+`ThemeTokens::NAMES`, the produced properties pushed through the real transform, the
+protected set parsed out of `ORDER_READY` — and re-derives the intersection rather than
+quoting the last row.
+
 | | |
 | --- | --- |
 | themeable names (all 12) | `color.background` `color.surface` `color.text` `color.muted` `color.accent` `color.accent_text` `font.heading` `font.body` `radius.small` `radius.large` `space.section` `size.heading` |
 | the properties they can produce | `--color-background` `--color-surface` `--color-text` `--color-muted` `--color-accent` `--color-accent-text` `--font-heading` `--font-body` `--radius-small` `--radius-large` `--space-section` `--size-heading` |
-| the properties the order-ready screen reads | `--color-ready-field` `--color-paper` `--color-signal` |
+| the properties the order-ready screen reads | `--ready-field` `--ready-ink` `--ready-signal` |
 | intersection | **empty** |
 
 **Three assertions, each of which can fail, and none of which is a clamp:**
@@ -481,6 +575,17 @@ that function over that list.**
    `var()`, a `url()`, an embedded newline — and the output is asserted to contain none of
    the three protected properties. `accepts()` refuses an unknown name, so an invented one is
    dropped rather than passed through.
+
+   **⚠ WHERE THIS LIVES, CORRECTED (Security L-5).** This sentence described a PHP test and
+   no file under `apps/api` contained those three property names — the review measured it.
+   The property *was* covered, on the TypeScript side, by `invariant.test.tsx`, which parses
+   this PHP rather than driving it. So the claim pointed at a layer that did not hold the
+   control. **Both halves exist now:** the PHP case this sentence describes is
+   `ThemeTokenTest` › *"can emit none of the order-ready screen's three properties, for any
+   input"*, which drives all twelve allow-listed names plus twelve forged ones through the
+   real emitter with the protected list **parsed from `packages/tokens/src/source.ts`** and
+   asserts the output contains none of them — and the TypeScript assertions below are
+   unchanged. A claim about where a control lives is now true where it is made.
 3. **The rendered pair is unchanged, and identical in both themes.** The order-ready
    component is rendered with a hostile theme applied to its ancestor — every one of the 12
    properties set to an attacking value — and its resolved colour pair is asserted to be

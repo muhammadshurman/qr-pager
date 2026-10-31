@@ -179,3 +179,72 @@ it('names every token in the generated contract, so Task 11 reads the same list'
     expect(array_keys($theme['properties']))->toBe(array_keys(ThemeTokens::NAMES))
         ->and($theme['additionalProperties'])->toBeFalse();
 });
+
+it('can emit none of the order-ready screen\'s three properties, for any input', function (): void {
+    /**
+     * ⚠ THIS CASE WAS CLAIMED AND DID NOT EXIST. `QRPAGER-15 §6.1` asserted that hostile
+     * names and values *"are driven through `ThemeStylesheet::declarations()` ... and the
+     * output is asserted to contain none of the three protected properties"*. Measured by
+     * the security review: no file under `apps/api` contained those names at all. The
+     * property WAS covered -- on the TypeScript side, by `invariant.test.tsx`, which parses
+     * this PHP -- so the claim pointed at a layer that did not hold the control.
+     *
+     * Security L-5. The sentence is corrected in the ticket AND the case it described is
+     * written here, because this is the layer the emitter lives in and `§5.1` clause 2 is
+     * about what the emitter can produce.
+     *
+     * THE PROTECTED LIST IS PARSED FROM THE TOKEN SOURCE, never copied. A hard-coded list
+     * of three here would pass forever after a fourth was added, which is the duplicated-
+     * list shape `guard` rule 11c already exists to prevent.
+     */
+    $source = (string) file_get_contents(dirname(base_path(), 2).'/packages/tokens/src/source.ts');
+    $block = [];
+    preg_match('/export const ORDER_READY = \{([^}]*)\}/', $source, $block);
+    expect($block[1] ?? null)->not->toBeNull('ORDER_READY could not be parsed from the token source');
+
+    $names = [];
+    preg_match_all("/'([a-z0-9-]+)'\s*:/", (string) $block[1], $names);
+    $protected = array_map(static fn (string $n): string => '--'.$n, $names[1] ?? []);
+
+    expect($protected)->toHaveCount(3)
+        ->and($protected)->toBe(['--ready-field', '--ready-ink', '--ready-signal']);
+
+    /**
+     * Every shape a tenant could try, including names that SPELL a protected property and
+     * values carrying every character that could end a declaration or start a rule.
+     */
+    $hostile = [];
+    foreach (array_keys(ThemeTokens::NAMES) as $name) {
+        $hostile[$name] = '#0a1f17';
+    }
+    $forged = [
+        'ready.field' => '#ff00ff',
+        'ready.ink' => '#ff00ff',
+        'ready.signal' => '#ff00ff',
+        'color.ready_field' => '#ff00ff',
+        'color.ready-field' => '#ff00ff',
+        'READY.FIELD' => '#ff00ff',
+        'color.accent' => '#fff;--ready-field:#ff00ff',
+        'color.surface' => '#fff} .qr-ready{background:#ff00ff',
+        'color.text' => "#fff\n--ready-ink:#ff00ff",
+        'color.muted' => 'var(--ready-signal)',
+        'color.background' => 'url(x);--ready-field:#ff00ff',
+        'font.body' => "system'--ready-ink:#f0f",
+    ];
+
+    foreach ([$hostile, $forged, array_merge($hostile, $forged)] as $theme) {
+        $css = ThemeStylesheet::declarations($theme);
+        foreach ($protected as $property) {
+            expect($css)->not->toContain($property, "the emitter produced {$property}");
+        }
+        // And it never produces a rule, whatever it was given.
+        expect($css)->not->toContain('{')
+            ->and($css)->not->toContain('}')
+            ->and($css)->not->toContain('@');
+    }
+
+    // Non-vacuous: the same emitter DOES produce a themeable property for a legitimate
+    // value, so "contains none of the three" is not true of an always-empty output.
+    expect(ThemeStylesheet::declarations(['color.accent' => '#0b5fff']))
+        ->toContain('--color-accent:#0b5fff');
+});

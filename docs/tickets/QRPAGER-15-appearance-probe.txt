@@ -1,0 +1,66 @@
+QRPAGER-15 — QA #3: the "every button rendered the wrong colour" claim, re-measured
+==================================================================================
+
+WHAT THE RECORD CLAIMS (kit.css's .qr-button comment, PLAN §4a, and the Jira comment
+of 2026-10-31 17:53): "Without appearance: none, Chromium renders a <button> with its
+native widget appearance and BLENDS the author background over it: #0B6B4F came out as
+rgb(174,202,194), #96351A as rgb(214,186,179), the label as rgb(72,72,72) instead of
+#FFFFFF."
+
+WHAT THE QA REVIEWER MEASURED: identical pairs with and without appearance: none.
+
+RE-MEASURED HERE, 2026-10-31, and the reviewer is right — it does not reproduce.
+Four cells: {appearance:none, appearance:auto} x {goto(file://)+addStyleTag, setContent},
+over the primary fill, the danger fill and a non-widget element as a control.
+
+Platform: Linux 6.18.54.1-microsoft-standard-WSL2 (WSL2)   Playwright: 1.64.1
+Chromium cache: chromium-1248 chromium_headless_shell-1248 ffmpeg-1013 
+
+--- transcript ---
+chromium 156.0.8078.4 | goto(file://) + addStyleTag | appearance:none | button.probe     appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:none | button.probe     appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:none | button.danger    appearance=none  bg=rgb(150, 53, 26)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:none | section.plain    appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | goto(file://) + addStyleTag | appearance:auto (DEFAULT) | button.probe     appearance=auto  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:auto (DEFAULT) | button.probe     appearance=auto  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:auto (DEFAULT) | button.danger    appearance=auto  bg=rgb(150, 53, 26)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:auto (DEFAULT) | section.plain    appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | goto(file://) + addStyleTag | appearance:none | button.probe     appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:none | button.probe     appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:none | button.danger    appearance=none  bg=rgb(150, 53, 26)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:none | section.plain    appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | goto(file://) + addStyleTag | appearance:auto (DEFAULT) | button.probe     appearance=auto  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:auto (DEFAULT) | button.probe     appearance=auto  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:auto (DEFAULT) | button.danger    appearance=auto  bg=rgb(150, 53, 26)     fg=rgb(255, 255, 255)
+chromium 156.0.8078.4 | setContent | appearance:auto (DEFAULT) | section.plain    appearance=none  bg=rgb(11, 107, 79)     fg=rgb(255, 255, 255)
+  4 failed
+  4 passed (3.0s)
+
+--- reading ---
+Every cell resolves to rgb(11, 107, 79) on rgb(255, 255, 255) for the primary fill and
+rgb(150, 53, 26) on rgb(255, 255, 255) for the danger fill, with appearance=auto giving
+the same values as appearance=none, under both load sequences. NO BLEND APPEARS.
+
+SO THE CLAIM IS CORRECTED IN PLACE rather than defended. Two readings are consistent
+with everything else in the record and this transcript cannot separate them:
+
+  (a) the blend was the LOAD-THEN-INJECT harness defect and was attributed to
+      'appearance' by mistake. PLAN §4a records the harness defect separately, with the
+      measured pair rgb(174,201,193) / rgb(73,73,73) 'varying in its last bit between
+      runs' -- which is within one unit of the rgb(174,202,194) this claim names. Two
+      defects found in the same sitting, one cause written against both.
+
+  (b) something about the original page -- the full kit stylesheet, a filter, an
+      opacity, a transition mid-flight -- participated, and the minimal probe above
+      does not carry it.
+
+WHAT IS NOT IN DOUBT, AND IS THE LIVE CONTROL: browser/a11y.spec.ts asserts the ENGINE
+resolves every button to the EXACT pair the contrast table was computed from, with three
+proofs that the assertion fails (stylesheet withheld, wrong theme, the historical
+sequence pinned as an invariant). Any blend, whatever its cause, reddens that. The
+finding that matters survives; its stated CAUSE did not, and 'appearance: none' stays
+because normalising a native widget's styling is correct regardless of this question.
+
+The probe is a transcript rather than a committed test, deliberately: an assertion that
+Chromium does NOT blend is a test of the browser, and the exact-pair assertion above is
+the test of our code. The spec file that produced this is in the commit message.
