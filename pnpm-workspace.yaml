@@ -32,3 +32,45 @@ onlyBuiltDependencies: []
 #
 # If this list ever regains an entry, the question to ask is why the version is needed,
 # not how to silence the warning.
+
+# =====================================================================================
+# THE CVE OVERRIDES. §11.7, and `pnpm audit` is now a gate step and a CI step.
+# =====================================================================================
+#
+# ⚠ THERE WAS NO CVE CONTROL AT ALL, and this diff introduces 3,184 lockfile lines. The
+# ticket's §4.3 claimed `pnpm audit` "is run as part of the gate and its output is
+# committed"; it was in `tools/gate/bin/gate.mjs`, root `package.json`, `ci.yml`,
+# `apps/api/bin/gate` and no evidence file. Run for the first time on 2026-10-31 it
+# returned FIVE advisories -- 2 high, 3 moderate.
+#
+# Both overrides are RANGES, not pins, so a later patch is taken automatically rather than
+# needing this file edited again.
+#
+#   postcss: >=8.5.23   closes four advisories, all of them postcss reached through `next`
+#                       in BOTH apps: GHSA-6g55-p6wh-862q (high), GHSA-r28c-9q8g-f849
+#                       (high), GHSA-qx2v-qp2m-jg93, GHSA-fxqj-rqcc-2cmp. The patched floor
+#                       is >= 8.5.23.
+#
+#                       AN OVERRIDE IS THE ONLY INSTRUMENT HERE, and that is measured rather
+#                       than assumed: next@15.5.28 HARD-PINS `"postcss": "8.4.31"` -- an
+#                       exact version, not a range -- and 15.5.28 is the latest 15.x, which
+#                       is what `§1` locks. So no bump inside the lock closes it and
+#                       `@tailwindcss/postcss` already resolves 8.5.32 on its own, meaning
+#                       the tree carried TWO postcss majors-in-practice side by side.
+#                       Resolved: 8.5.32 everywhere, next included.
+#
+#   minimatch: >=11.0.1 closes GHSA-g3hv-75wg-m249 (moderate), minimatch reached through
+#                       `eslint` on 33 paths. Resolved: 11.0.3.
+#
+# VERIFIED, not assumed: `pnpm audit` → "No known vulnerabilities found", exit 0 read
+# directly; both Next apps build, statically prerendered, 102 kB First Load JS -- the same
+# figure as before the override; and the full `pnpm gate` is green. Evidence:
+# `docs/tickets/QRPAGER-15-audit.txt`.
+#
+# The exposure these four were is worth stating so a future reader can weigh a revert:
+# postcss is BUILD-TIME here and every stylesheet it parses is repo-authored, so the
+# attacker-controlled input the advisories need does not exist in this repo today. That is
+# why the finding was High and not Critical. The durable half was the absent control.
+overrides:
+  postcss: '>=8.5.23'
+  minimatch: '>=11.0.1'

@@ -67,6 +67,14 @@ const steps = [
   ['pnpm', ['run', 'format:check']],
   ['pnpm', ['run', 'typecheck']],
   ['pnpm', ['run', 'tokens:check']],
+  // §11.7's dependency clause, and it DID NOT EXIST. The ticket's §4.3 said `pnpm audit`
+  // "is run as part of the gate and its output is committed" and it was in no script, no
+  // workflow and no evidence file -- while the first run returned five advisories (2 high,
+  // 3 moderate) against a diff that adds 3,184 lockfile lines. `--audit-level low` so
+  // nothing is filtered out silently: every severity is a finding, which is what that
+  // section says. The two overrides that close today's five are in pnpm-workspace.yaml
+  // with their advisory ids and the reason an override was the only instrument.
+  ['pnpm', ['run', 'audit']],
   ['pnpm', ['exec', 'vitest', 'run', '--coverage']],
   ['pnpm', ['exec', 'playwright', 'test']],
   ['pnpm', ['--filter', '@qrpager/web', 'run', 'build']],
