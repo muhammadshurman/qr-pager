@@ -83,6 +83,12 @@ steps=(
   # body naming nothing. bin/assets also checks the manifest against the themes the
   # providers register, which a successful build does NOT do.
   "composer assets"
+  # Known CVEs in apps/api's OWN npm tree -- the half of §11.7 that stopped at the pnpm
+  # workspace. `pnpm audit` reads pnpm-lock.yaml and licences.test.mjs walks the pnpm
+  # store, so 92 packages under apps/api were covered by neither. The licence half is
+  # ApiNpmLicenceTest, in the suite below; this is the network call, which an assertion
+  # cannot be. Fails closed on an unreachable registry: an unmeasured tree is not a pass.
+  "composer deps"
   "php artisan test"
 )
 

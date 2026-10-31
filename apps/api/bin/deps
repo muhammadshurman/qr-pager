@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Known CVEs in apps/api's OWN npm tree — QRPAGER-23 §9.2a.
+#
+# ================================================================================
+# THE HOLE THIS CLOSES, AND WHY IT EXISTED
+# ================================================================================
+#
+# Task 8a's §11.7 work built two dependency controls, and BOTH stop at the pnpm workspace:
+# `pnpm audit` reads `pnpm-lock.yaml`, and `tools/gate/test/licences.test.mjs` walks
+# `node_modules/.pnpm`. `apps/api` is deliberately not a workspace member (ADR-003), so it
+# carries its own `package-lock.json` and its own flat `node_modules` -- and 92 packages
+# were covered by neither.
+#
+# Found by running the §11 checklists over this task's own diff rather than by a review,
+# which is the only reason it was found before the panel build started depending on that
+# tree. `ApiNpmLicenceTest` closes the licence half from the PHP suite, holding apps/api's
+# tree to the SAME `docs/contracts/dependency-licences.json` the workspace check uses. This
+# script closes the CVE half, because an audit is a network call and not an assertion.
+#
+# `--audit-level=low` so no severity is filtered out silently, matching `pnpm run audit`.
+# Measured 2026-11-01: 0 vulnerabilities over 143 dependencies (5 prod, 98 dev, 91 optional).
+#
+# ================================================================================
+# IT FAILS CLOSED, WHICH IS THE PART AN AUDIT STEP USUALLY GETS WRONG
+# ================================================================================
+#
+# `npm audit` exits non-zero for a found advisory AND for a network failure, and the two are
+# not the same event: the first is a finding, the second is an UNMEASURED tree, which must
+# not read as a pass. So the summary is parsed from `--json` and the step refuses unless it
+# can actually see a vulnerability count.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+if [ ! -d node_modules ]; then
+  echo "deps: apps/api/node_modules is absent, so there is no tree to audit." >&2
+  echo "deps: run 'npm install --ignore-scripts' in apps/api (or 'composer setup')." >&2
+  exit 1
+fi
+
+report="$(npm audit --json 2>/dev/null)"
+status=$?
+
+if [ -z "$report" ]; then
+  echo "deps: npm audit produced no report (exit ${status}) -- the tree is UNMEASURED, not clean." >&2
+  exit 1
+fi
+
+printf '%s' "$report" | php -r '
+$report = json_decode((string) stream_get_contents(STDIN), true);
+
+if (! is_array($report)) {
+    fwrite(STDERR, "deps: the audit report is not readable JSON -- the tree is UNMEASURED.\n");
+    exit(1);
+}
+
+$counts = $report["metadata"]["vulnerabilities"] ?? null;
+
+if (! is_array($counts) || ! array_key_exists("total", $counts)) {
+    fwrite(STDERR, "deps: the audit report carries no vulnerability count -- the tree is UNMEASURED.\n");
+    exit(1);
+}
+
+$deps = $report["metadata"]["dependencies"]["total"] ?? 0;
+
+if ((int) $deps < 20) {
+    fwrite(STDERR, "deps: the audit saw only {$deps} dependencies, which is too few to be this tree.\n");
+    exit(1);
+}
+
+printf("deps: %d dependencies audited\n", $deps);
+
+foreach ($counts as $severity => $n) {
+    if ($severity === "total") {
+        continue;
+    }
+    printf("deps:   %-9s %d\n", $severity, $n);
+}
+
+if ((int) $counts["total"] > 0) {
+    fwrite(STDERR, "deps: {$counts["total"]} advisory/advisories in apps/api/node_modules. Run `npm audit` for the detail.\n");
+    exit(1);
+}
+
+echo "deps: no known advisory at any severity\n";
+exit(0);
+' || exit 1

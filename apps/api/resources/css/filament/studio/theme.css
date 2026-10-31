@@ -13,7 +13,9 @@
  * make:filament-theme points both of them at app/Filament, and this repository has no such
  * directory -- its panels live under the deptrac-enforced feature layout, so this one is
  * under app/Features/Landing/Panel. A class Tailwind never scans emits NO UTILITY, so a
- * wrong glob produces a silently unstyled panel rather than an error.
+ * wrong glob produces a silently unstyled panel rather than an error -- which is why
+ * panel-theme.test.mjs resolves every @source glob below and requires it to match at least
+ * one real file. Proven by pointing one at the stub path: it reddens naming the glob.
  *
  * Tailwind arrives through the Filament theme imported below, which carries source(none), so
  * NOTHING is auto-scanned: every scanned path is one of the two at the bottom, by design.

@@ -94,6 +94,7 @@
         "contracts": "@php artisan contracts:export",
         "contracts:check": "bin/contracts-check",
         "assets": "bin/assets",
+        "deps": "bin/deps",
         "gate": [
             "Composer\\Config::disableProcessTimeout",
             "bin/gate"

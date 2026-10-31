@@ -331,6 +331,14 @@ jobs:
       # removed from that array the build reported success and this step exited 1.
       - run: composer assets
 
+      # The CVE half of §9.2a, over the tree `npm ci` just installed. `pnpm run audit` in
+      # the `frontend` job reads `pnpm-lock.yaml` and reaches none of this, which is the
+      # hole: 92 packages under apps/api were in neither control. The licence half is
+      # `ApiNpmLicenceTest` in the suite below, holding this tree to the SAME
+      # `docs/contracts/dependency-licences.json` the workspace check uses -- one policy,
+      # two trees, because a second allow-list diverges silently on the first new family.
+      - run: composer deps
+
       - name: Tests against real Postgres and Redis, Mailpit and the object store
         run: php artisan test
 
