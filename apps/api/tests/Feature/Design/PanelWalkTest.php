@@ -298,7 +298,13 @@ it('leaks nothing from any panel screen with its database unreachable', function
             $this->actingAs($admin);
         }
 
-        $body = withSourceDown(fn (): string => (string) $this->get($uri)->getContent());
+        // ⚠ ACCEPT: text/html, so the sweep runs over the HTML page and not only over the
+        // document. The HTML branch is the shape that leaked 862,104 bytes at `7f1c8f6`,
+        // so it is the branch this case has to cover -- a disclosure sweep that only ever
+        // read JSON would have been true of the safe half.
+        $body = withSourceDown(
+            fn (): string => (string) $this->get($uri, ['Accept' => 'text/html'])->getContent()
+        );
 
         foreach (walkLeaks() as $needle => $what) {
             if (stripos($body, $needle) !== false) {
@@ -314,36 +320,160 @@ it('leaks nothing from any panel screen with its database unreachable', function
     expect($found)->toBe([]);
 });
 
-it('records the measured source-down body, which is problem+json on an HTML surface', function (): void {
+it('answers a panel screen with an HTML page and the API with the document', function (): void {
     /*
-     * ⚠ THE WALK'S FINDING, pinned as a measurement so the fix can be judged against it.
+     * ⚠ THE WALK'S FINDING, FIXED — and this case is the one a reviewer should read first.
      *
-     * A panel screen is an HTML surface a person navigates to. With the database
-     * unreachable it answers an RFC 7807 document -- correct for `/v1`, and raw JSON in a
-     * restaurant owner's browser. `§6`'s third column asks the screen to say "it is us, not
-     * them, and whether to wait or retry"; the title says the first and nothing says the
-     * second.
+     * The walk measured all seven panel screens answering a database outage with
+     * `application/problem+json`: correct for `/v1`, raw JSON in a restaurant owner's
+     * browser, and silent on `§6`'s "whether to wait or retry". `PanelProblemPage` now
+     * renders the SAME problem as HTML for panel paths only.
      *
-     * This case asserts the CURRENT shape exactly. When the presentation is fixed it must
-     * change, and changing it is how a reviewer finds this note -- which is the point:
-     * `ProblemRenderer` is registered for ALL requests deliberately, because an HTML error
-     * page was once 862,104 bytes carrying the SQL and a role name. Any HTML branch has to
-     * carry the non-disclosure case above with it.
+     * THE PROPERTY THAT MAKES THAT SAFE is asserted by the disclosure case above, run over
+     * the HTML body: `PanelProblemPage` never sees the throwable. It takes a `Problem` —
+     * already the sanitised document — and the view takes four scalars from it. An HTML
+     * error page is the shape that leaked 862,104 bytes at `7f1c8f6`, which is why
+     * `ProblemRenderer` is registered for every request, and why the branch is placed AFTER
+     * that renderer rather than beside it.
      */
     LandingFixtures::bucket();
 
     $this->actingAs(walkAdmin());
 
-    $response = withSourceDown(fn () => $this->get('/platform'));
+    $panel = withSourceDown(fn () => $this->get('/platform', ['Accept' => 'text/html']));
 
-    expect($response->headers->get('content-type'))->toContain('application/problem+json');
+    expect($panel->status())->toBe(503)
+        ->and((string) $panel->headers->get('content-type'))->toContain('text/html');
 
-    $document = json_decode((string) $response->getContent(), true);
+    $html = (string) $panel->getContent();
 
-    expect($document)->toBe([
-        'type' => 'https://qrpager.dev/problems/unavailable',
-        'title' => 'The service is temporarily unable to handle the request.',
-        'status' => 503,
-        'instance' => '/platform',
-    ]);
+    expect($html)->toContain('<!DOCTYPE html>')
+        // The type's own fixed title, verbatim -- not a new sentence invented per reason,
+        // which is how a friendly error page becomes §4.2's oracle.
+        ->and($html)->toContain('The service is temporarily unable to handle the request.')
+        // §6's third column, both halves: it is us, and what to do.
+        ->and($html)->toContain('This is on our side, not yours.')
+        ->and($html)->toContain('Wait a minute and reload this page.')
+        // The product, never the framework -- the same §12 clause as the panel titles.
+        ->and($html)->toContain('QR Pager')
+        ->and(str_contains($html, 'Laravel'))->toBeFalse('the error page names the framework')
+        // ⚠ AND IT DEPENDS ON NO ASSET MANIFEST. The page that exists for things being
+        // unavailable must not need the thing that is most often unavailable: a build.
+        ->and(str_contains($html, '/build/'))->toBeFalse('the error page loads a built asset');
+
+    // ⚠ THE API SURFACE IS UNTOUCHED, which is the half that would be easy to break. `/v1`
+    // is not a panel path, so an API client -- even one sending Accept: text/html -- still
+    // gets the document the spec publishes.
+    $api = $this->get('/v1/does-not-exist', ['Accept' => 'text/html']);
+
+    expect((string) $api->headers->get('content-type'))->toContain('application/problem+json')
+        ->and($api->json('type'))->toBe('https://qrpager.dev/problems/not-found');
+});
+
+it('builds the error page from tokens, with the seven literals it declares', function (): void {
+    /*
+     * ⚠ THE ERROR VIEW IS OUTSIDE BOTH LINT SCANNERS, and this case is why that is not a
+     * gap. `scan-panel.mjs` derives its subjects from the panel themes' `@source` globs --
+     * the set Tailwind scans -- and this page deliberately uses NO Tailwind: it must render
+     * when the asset build is the thing that is unavailable. `scan-css.mjs` exempts
+     * `apps/api` by name. So nothing would have looked at it.
+     *
+     * Adding it to a theme's `@source` would be wrong (Tailwind would scan a file with no
+     * utilities in it) and adding an exception to the scanner's subject derivation would
+     * weaken the one-source story it is built on. So the property is asserted here, in the
+     * layer the file lives in, which is also where a reader of the view will look.
+     */
+    $view = (string) file_get_contents(resource_path('views/errors/panel-problem.blade.php'));
+
+    // Comments out, so prose explaining a value is not read as the value.
+    $code = (string) preg_replace(['/\{\{--[\s\S]*?--\}\}/', '#/\*[\s\S]*?\*/#'], ' ', $view);
+
+    expect($code)->not->toMatch('/#[0-9a-f]{3,8}\b/i');
+
+    // Every colour, length and size comes through config(), so the token source stays the
+    // one source even on the page that cannot load a stylesheet.
+    foreach ([
+        'design-tokens.colours.light.paper',
+        'design-tokens.colours.dark.paper',
+        'design-tokens.space.32',
+        'design-tokens.radius.16',
+        'design-tokens.size.28',
+        'design-tokens.fonts.latin.family',
+    ] as $key) {
+        expect($code)->toContain("config('{$key}')");
+    }
+
+    // THE DECLARED EXCEPTIONS, as an exact set rather than a pattern that walks past the
+    // next one. Seven values, each named, and not one of them is a colour, a spacing step
+    // or a font size -- the three categories §12 names:
+    //
+    //   0, 0        a reset. `0` is in the lint rule's own KEYWORD_SAFE list, with the
+    //               reason written there: "it carries no unit to get wrong and no scale
+    //               to belong to".
+    //   1.2, 1.5    unitless line-heights. A ratio, not a length.
+    //   100vh       full-viewport centring. A viewport unit is not a step on any ladder.
+    //   1px solid   the hairline border. `1px` is the ONE physical-pixel length the system
+    //               admits, for the reason patterns.mjs gives: it is a device pixel rather
+    //               than a spacing step, and the approved elevation is written in the same
+    //               units. The colour is a var().
+    //   42rem       the measure -- maximum line length. The token set has no measure
+    //               scale, so this is the one genuinely new value on the page, and it is
+    //               declared here rather than left for a reviewer to find.
+    //
+    // ⚠ This list was first written as four from memory of the file and the assertion
+    // reddened on the two `0`s and `100vh`. The expected set is now the MEASURED one.
+    $magnitudes = [];
+    preg_match_all('/:\s*([^;{}]*\d[^;{}]*);/', $code, $matches, PREG_SET_ORDER);
+
+    foreach ($matches as $match) {
+        $value = trim($match[1]);
+
+        if (str_contains($value, '{{')) {
+            continue;
+        }
+
+        $magnitudes[] = $value;
+    }
+
+    sort($magnitudes);
+
+    expect($magnitudes)->toBe(['0', '0', '1.2', '1.5', '100vh', '1px solid var(--hairline)', '42rem']);
+});
+
+it('gives a JSON client on a panel path the document, not the page', function (): void {
+    // ⚠ THE CASE THE CONTENT NEGOTIATION EXISTS FOR, and the one an "is it a panel path"
+    // check alone would get wrong. Every write either panel makes arrives at
+    // `POST /livewire-<hash>/update`, which is a panel path -- a client that got an HTML
+    // page there would show the reader nothing at all. Measured from Livewire's own bundle
+    // (`livewire.esm.js`): it sends `Accept: application/json` and `X-Livewire: 1`.
+    //
+    // ⚠ AND BOTH GUARDS ARE NEEDED, which a single case could not show. Removing
+    // `expectsJson()` left every assertion in this file GREEN, because `acceptsHtml()`
+    // already refuses `Accept: application/json` -- a redundant check no test can
+    // distinguish is the dead-control shape `§4a` records. The second row below is the
+    // case that separates them: an XHR client sending `Accept: */*` ACCEPTS html, so
+    // `acceptsHtml()` says yes and only `expectsJson()` refuses it.
+    LandingFixtures::bucket();
+
+    $this->actingAs(walkAdmin());
+
+    foreach ([
+        'Livewire' => ['Accept' => 'application/json', 'X-Livewire' => '1'],
+        'an XHR client sending */*' => ['Accept' => '*/*', 'X-Requested-With' => 'XMLHttpRequest'],
+    ] as $client => $headers) {
+        $response = withSourceDown(fn () => $this->get('/platform', $headers));
+
+        $type = (string) $response->headers->get('content-type');
+
+        // str_contains() AND NOT `toContain($needle, $message)`. FOURTH time in this task:
+        // toContain is variadic over needles and takes no message in EITHER form, so the
+        // sentence became a second needle and this case failed on its own message while
+        // the code was correct. The guard refuses the silent negated form only, by a
+        // documented decision that still holds -- so the discipline is simply never to
+        // write a message on this matcher.
+        expect($response->status())->toBe(503, "{$client} got {$response->status()}")
+            ->and(str_contains($type, 'application/problem+json'))
+            ->toBeTrue("{$client} got {$type} instead of the document")
+            ->and($response->json('status'))->toBe(503);
+    }
 });

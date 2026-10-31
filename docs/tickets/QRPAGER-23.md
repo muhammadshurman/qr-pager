@@ -671,10 +671,45 @@ whether to wait or retry"* — the title says the first and **nothing says the s
 "temporarily unable to handle the request" is API vocabulary, not a sentence the reader `SR-2`'s
 clause names would parse.
 
-`PanelWalkTest` pins the current body EXACTLY, so fixing the presentation must change that case
-— which is how a reviewer finds the note beside it. Any HTML branch has to carry the
-non-disclosure measurement with it, because `ProblemRenderer` is registered for **all** requests
-deliberately and an HTML error page is the shape that once leaked 862 kB.
+**FIXED in the same task.** `PanelProblemPage` renders the same problem as **HTML for panel
+paths only** — 503 `text/html`, the type's own fixed title, and `§6`'s missing half: *"This is on
+our side, not yours. Nothing you did caused it and nothing is lost. Wait a minute and reload this
+page."*
+
+⚠ **WHY THAT IS SAFE IS THE ONLY INTERESTING QUESTION ABOUT IT, and the answer is structural
+rather than careful.** `ProblemRenderer` is registered for **all** requests deliberately, because
+HTML was the worst leak — measured at `7f1c8f6`, an HTML-rendered `QueryException` was **862,104
+bytes** carrying the statement and the bound uuid. So:
+
+* the `Problem` is produced FIRST, by the same renderer, and only then handed to the page;
+* **`PanelProblemPage` never sees the throwable.** It takes a `Problem` — a `ProblemType` case
+  and a path — and the view takes four scalars from it. There is no code path from an exception
+  to an HTML body;
+* the disclosure sweep runs over the **HTML** body, with `Accept: text/html`, at
+  `APP_DEBUG=true`. Proven by injecting `$error->getMessage()` into the response: the sweep
+  reddens.
+
+**And it introduces no new distinction.** `§4.2`: a refusal may say what to do, never what exists.
+The title is the enum's own string, verbatim. The *what to do* sentence is chosen by **status
+class** — one for 5xx, one for 4xx — never by reason, so a 404 and a 403 that already read alike
+still read alike. A sentence per `ProblemType` case is how a friendly error page becomes an
+oracle.
+
+**Three things the content negotiation has to get right, each driven:**
+
+| client | gets | why |
+| --- | --- | --- |
+| a browser on `/platform` | the HTML page | the reader this clause is about |
+| Livewire (`Accept: application/json`, `X-Livewire: 1`, measured from `livewire.esm.js`) | the document | every panel write arrives at `POST /livewire-<hash>/update`; a page there shows the reader nothing |
+| an XHR client sending `Accept: */*` | the document | ⚠ `*/*` **accepts html**, so `acceptsHtml()` says yes and only `expectsJson()` refuses it — removing that guard left every other assertion GREEN, which is the dead-control shape, so this row exists to separate them |
+| anything on `/v1` | the document | `/v1` is not a panel path, so the spec's media type is unchanged |
+
+The page depends on **no asset manifest, no stylesheet and no Livewire component** — asserted,
+because the page that exists for things being unavailable must not need the thing that is most
+often unavailable. Its colours, lengths and sizes come from `config('design-tokens.…')`; the seven
+literals it does carry are declared and asserted as an exact set (two `0`s, two unitless
+line-heights, `100vh`, the `1px` hairline, and `42rem` as the measure — the one value the token
+set has no scale for).
 
 ### 6.1b And the walk found a `§12` breach nobody had looked for — fixed in the same pass
 

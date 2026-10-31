@@ -18,6 +18,7 @@ use App\Platform\Http\Middleware\RefuseUnservedVendorRoutes;
 use App\Platform\Http\Middleware\RequireTenantScope;
 use App\Platform\Http\Middleware\ResolvePrincipal;
 use App\Platform\Http\Middleware\ShedLoad;
+use App\Platform\Http\PanelProblemPage;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
@@ -30,6 +31,7 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -411,7 +413,23 @@ return Application::configure(basePath: dirname(__DIR__))
         // Registered rather than conditional on expectsJson(): the clause is about what
         // a body carries, and .env.example ships APP_DEBUG=true, so a renderer that
         // steps aside in debug satisfies the words and not the property.
-        $exceptions->render(fn (Throwable $error, Request $request) => app(ProblemRenderer::class)
-            ->render($error, $request)
-            ->toResponse());
+        //
+        // ⚠ AND SINCE TASK 8b, THE PANEL SCREENS GET THE SAME DOCUMENT AS HTML. §6's third
+        // column asks a *source down* screen to say "it is us, not them, and whether to
+        // wait"; the walk measured all seven panel screens answering 503 problem+json,
+        // which is raw JSON in a restaurant owner's browser.
+        //
+        // THE ORDER IS LOAD-BEARING: the Problem is produced FIRST, by the same renderer,
+        // and only then handed to the page. PanelProblemPage never sees the throwable, so
+        // there is no path from an exception to an HTML body -- which is the property that
+        // makes an HTML branch safe here at all, measured at 7f1c8f6 as 862,104 bytes
+        // carrying the SQL. PanelWalkTest drives nine disclosure needles over the HTML.
+        $exceptions->render(function (Throwable $error, Request $request): SymfonyResponse {
+            $problem = app(ProblemRenderer::class)->render($error, $request);
+            $page = app(PanelProblemPage::class);
+
+            return $page->wants($request)
+                ? $page->respond($problem)
+                : $problem->toResponse();
+        });
     })->create();
