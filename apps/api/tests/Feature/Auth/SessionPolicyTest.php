@@ -33,7 +33,7 @@ use Illuminate\Support\Str;
 function makeUserWithPassword(string $password = 'correct-horse-battery-staple'): array
 {
     $id = (string) Str::uuid7();
-    $email = 'staff-'.substr(str_replace('-', '', $id), 0, 12).'@example.test';
+    $email = 'staff-'.str_replace('-', '', $id).'@example.test';
 
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $id,

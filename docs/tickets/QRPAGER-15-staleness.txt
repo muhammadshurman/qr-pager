@@ -1,0 +1,53 @@
+ARTEFACT STALENESS — every generated artefact, two forms each
+=============================================================
+
+Checker: pnpm tokens:check  (node --experimental-strip-types scripts/generate.mjs --check)
+
+  packages/tokens/generated/tokens.css
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+  packages/tokens/generated/theme.css
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+  packages/tokens/generated/tokens.ts
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+  packages/tokens/generated/contrast.json
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+  packages/tokens/generated/contrast.md
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+  apps/api/config/design-tokens.php
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+  docs/tickets/QRPAGER-15-contrast-table.md
+    PASS  staled by one character -> exit 1 (expected 1)
+    PASS  deleted -> exit 1 (expected 1)
+
+  packages/contracts/src/generated/status.ts  (the PHP-sourced half)
+  Checker: composer contracts:check  (apps/api/bin/contracts-check)
+    PASS  staled by one character -> exit 1 (expected non-zero)
+    PASS  restored -> exit 0 (expected 0), so the checker is not simply always red
+
+  pnpm tokens:check on the clean tree
+    PASS  clean tree -> exit 0 (expected 0)
+
+RESULT: 17/17 proofs passed.
+
+Working tree after:
+ M apps/api/tests/Feature/Auth/AuthGrantNarrowingTest.php
+ M apps/api/tests/Feature/Auth/AuthUnitGapsTest.php
+ M apps/api/tests/Feature/Auth/MemberConcurrencyTest.php
+ M apps/api/tests/Feature/Auth/MembersTest.php
+ M apps/api/tests/Feature/Auth/MembershipEnumerationTest.php
+ M apps/api/tests/Feature/Auth/PasskeyTest.php
+ M apps/api/tests/Feature/Auth/PlatformAdminIsNotABypassTest.php
+ M apps/api/tests/Feature/Auth/RoleMatrixTest.php
+ M apps/api/tests/Feature/Auth/SessionPolicyTest.php
+ M apps/api/tests/Feature/Auth/TwoFactorTest.php
+ M apps/api/tests/TestCase.php
+ M docs/tickets/QRPAGER-15-three-runs.txt
+ M tools/gate/bin/gate.mjs
+?? apps/api/tests/Feature/TestFixtureUniquenessTest.php
+?? docs/tickets/QRPAGER-15-staleness.txt

@@ -243,7 +243,7 @@ it('reads no membership for an impossible user id, and refuses to pick between t
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $orphan,
         'name' => 'Orphan',
-        'email' => 'orphan-'.substr(str_replace('-', '', $orphan), 0, 12).'@example.test',
+        'email' => 'orphan-'.str_replace('-', '', $orphan).'@example.test',
     ]);
 
     expect($reader->for($orphan))->toBe([])
@@ -278,7 +278,7 @@ it('verifies a password through the function, and spends a comparison on a miss'
     $credentials = app(UserCredentials::class);
 
     $id = (string) Str::uuid7();
-    $email = 'creds-'.substr(str_replace('-', '', $id), 0, 12).'@example.test';
+    $email = 'creds-'.str_replace('-', '', $id).'@example.test';
 
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $id,
@@ -301,7 +301,7 @@ it('verifies a password through the function, and spends a comparison on a miss'
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $passkeyOnly,
         'name' => 'Passkey Only',
-        'email' => 'pkonly-'.substr(str_replace('-', '', $passkeyOnly), 0, 12).'@example.test',
+        'email' => 'pkonly-'.str_replace('-', '', $passkeyOnly).'@example.test',
     ]);
 
     $pkEmail = (string) DB::connection('pgsql_owner')->table('users')
@@ -328,7 +328,7 @@ it('reports no second factor for an impossible id, an unknown user, or an undecr
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $id,
         'name' => 'Broken 2FA',
-        'email' => 'broken-'.substr(str_replace('-', '', $id), 0, 12).'@example.test',
+        'email' => 'broken-'.str_replace('-', '', $id).'@example.test',
         'two_factor_secret' => 'this is not a valid encrypted payload',
         'two_factor_recovery_codes' => 'neither is this',
     ]);
@@ -346,7 +346,7 @@ it('reports no second factor for an impossible id, an unknown user, or an undecr
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $plain,
         'name' => 'No 2FA',
-        'email' => 'no2fa-'.substr(str_replace('-', '', $plain), 0, 12).'@example.test',
+        'email' => 'no2fa-'.str_replace('-', '', $plain).'@example.test',
     ]);
 
     expect($secrets->for($plain))->toBe(['secret' => null, 'recovery_codes' => [], 'confirmed' => false]);
@@ -462,7 +462,7 @@ it('constructs the platform-admin principal for a tenant it has no membership in
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $admin,
         'name' => 'Platform Admin',
-        'email' => 'arm-admin-'.substr(str_replace('-', '', $admin), 0, 12).'@example.test',
+        'email' => 'arm-admin-'.str_replace('-', '', $admin).'@example.test',
         'is_platform_admin' => true,
     ]);
 
@@ -499,7 +499,7 @@ it('constructs the platform-admin principal for a tenant it has no membership in
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $nobody,
         'name' => 'No Memberships',
-        'email' => 'arm-nobody-'.substr(str_replace('-', '', $nobody), 0, 12).'@example.test',
+        'email' => 'arm-nobody-'.str_replace('-', '', $nobody).'@example.test',
     ]);
 
     $plain = User::query()->findOrFail($nobody);

@@ -34,7 +34,7 @@ use Illuminate\Support\Str;
 function existingAccount(): array
 {
     $id = (string) Str::uuid7();
-    $email = 'member-'.substr(str_replace('-', '', $id), 0, 12).'@example.test';
+    $email = 'member-'.str_replace('-', '', $id).'@example.test';
 
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $id,

@@ -41,7 +41,7 @@ use Illuminate\Support\Str;
 function makePlatformAdmin(string $password = 'correct-horse-battery-staple'): array
 {
     $id = (string) Str::uuid7();
-    $email = 'admin-'.substr(str_replace('-', '', $id), 0, 12).'@example.test';
+    $email = 'admin-'.str_replace('-', '', $id).'@example.test';
 
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $id,

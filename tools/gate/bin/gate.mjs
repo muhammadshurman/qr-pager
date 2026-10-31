@@ -74,6 +74,15 @@ const steps = [
   // nothing is filtered out silently: every severity is a finding, which is what that
   // section says. The two overrides that close today's five are in pnpm-workspace.yaml
   // with their advisory ids and the reason an override was the only instrument.
+  //
+  // ⚠ AND THIS IS THE ONE GATE STEP THAT NEEDS THE NETWORK, which is worth stating because
+  // this repository argues the other way elsewhere: `fetch-fonts.mjs` is deliberately NOT a
+  // gate step, on the grounds that "a gate step that needs the network fails for reasons
+  // that have nothing to do with the code". An advisory database is not something a
+  // repository can carry, so there is no offline form of this check -- and the §11 review
+  // that found the control missing required it as a gate step AND a CI step, not as one or
+  // the other. So the trade-off is taken deliberately: a registry outage reddens this gate,
+  // and the failure says so rather than looking like a code defect.
   ['pnpm', ['run', 'audit']],
   ['pnpm', ['exec', 'vitest', 'run', '--coverage']],
   ['pnpm', ['exec', 'playwright', 'test']],

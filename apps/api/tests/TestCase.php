@@ -466,7 +466,32 @@ abstract class TestCase extends BaseTestCase
             'name' => 'Acting Staff',
             // Lower-cased: users_email_is_lowercase is a CHECK constraint, and a 23514
             // from a test helper is the least useful place to discover it (R-007).
-            'email' => 'acting-'.substr(str_replace('-', '', $userId), 0, 12).'@example.test',
+            //
+            // ⚠ THE WHOLE UUID, AND IT USED TO BE substr(…, 0, 12). THAT COLLIDED, AND IT
+            // REDDENED 15 TESTS WITH ONE IDENTITY.
+            //
+            // A v7 UUID's first 48 bits are a MILLISECOND TIMESTAMP, and 12 hex characters
+            // are exactly those 48 bits. ramsey/uuid's v7 is monotonic: inside one
+            // millisecond it keeps the timestamp and increments a counter in the tail, so
+            // two UUIDs generated in the same millisecond share their first twelve
+            // characters EXACTLY. Measured: over 200 consecutive `Str::uuid7()` calls this
+            // expression produced **2 distinct emails and 198 collisions**.
+            //
+            // It survived Tasks 5, 6 and 7 because each test takes ~0.2s, so consecutive
+            // acting users usually land in different milliseconds. Under a loaded machine
+            // the scheduling bunches them and `users_email_unique` raises 23505 — which is
+            // what happened on 2026-10-31: 15 failures, every one of them this constraint
+            // on one address, `acting-01a1932b11bf@example.test`, whose prefix decodes to
+            // 18:13:55.775.
+            //
+            // The fix takes the WHOLE uuid, so the email's uniqueness rests on the UUID's
+            // own uniqueness and on nothing about where its entropy sits. Taking the LAST
+            // twelve would have worked too and is rejected deliberately: it would rest on
+            // ramsey's counter living in the tail, which is an implementation detail this
+            // repository has no business depending on. 19 call sites across 11 files had
+            // the same expression; all 19 are changed, and `TestFixtureUniquenessTest`
+            // asserts the property rather than the spelling.
+            'email' => 'acting-'.str_replace('-', '', $userId).'@example.test',
         ]);
 
         withTenant($tenantId, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
@@ -573,7 +598,7 @@ abstract class TestCase extends BaseTestCase
         DB::connection('pgsql_owner')->table('users')->insert([
             'id' => $userId,
             'name' => 'Seeded Staff',
-            'email' => 'staff-'.substr(str_replace('-', '', $userId), 0, 12).'@example.test',
+            'email' => 'staff-'.str_replace('-', '', $userId).'@example.test',
         ]);
 
         withTenant($tenantId, function () use ($tenantId, $userId, $session): void {

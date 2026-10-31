@@ -81,7 +81,7 @@ it('refuses the app role the platform-admin flag at INSERT as well as at UPDATE'
 
     $state = $this->sqlStateOf(fn () => DB::insert(
         'insert into users (id, name, email, password, is_platform_admin) values (?, ?, ?, ?, true)',
-        [$id, 'Escalated', 'escalated-'.substr(str_replace('-', '', $id), 0, 10).'@example.test', Hash::make('x')],
+        [$id, 'Escalated', 'escalated-'.str_replace('-', '', $id).'@example.test', Hash::make('x')],
     ));
 
     expect($state)->toBe('42501', 'the app role can write users.is_platform_admin at INSERT time');
@@ -95,7 +95,7 @@ it('refuses the app role the platform-admin flag at INSERT as well as at UPDATE'
 
     DB::insert(
         'insert into users (id, name, email, password) values (?, ?, ?, ?)',
-        [$allowed, 'Ordinary', 'ordinary-'.substr(str_replace('-', '', $allowed), 0, 10).'@example.test', Hash::make('x')],
+        [$allowed, 'Ordinary', 'ordinary-'.str_replace('-', '', $allowed).'@example.test', Hash::make('x')],
     );
 
     expect(DB::connection('pgsql_owner')->table('users')->where('id', $allowed)->exists())->toBeTrue();

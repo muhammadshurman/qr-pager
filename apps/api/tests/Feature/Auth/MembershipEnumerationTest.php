@@ -40,7 +40,7 @@ function enumerationFixture(TenantRole $role = TenantRole::Owner): string
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $userId,
         'name' => 'Enumeration Fixture',
-        'email' => 'enum-'.substr(str_replace('-', '', $userId), 0, 12).'@example.test',
+        'email' => 'enum-'.str_replace('-', '', $userId).'@example.test',
         'password' => Hash::make('correct-horse-battery-staple'),
         'two_factor_secret' => encrypt('ENUMERATIONSECRET'),
         'two_factor_confirmed_at' => now(),

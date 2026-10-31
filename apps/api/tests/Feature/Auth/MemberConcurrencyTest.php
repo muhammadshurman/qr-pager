@@ -40,7 +40,7 @@ function extraOwner(string $tenantId, TenantRole $role = TenantRole::Owner): str
     DB::connection('pgsql_owner')->table('users')->insert([
         'id' => $userId,
         'name' => 'Second Owner',
-        'email' => 'owner-'.substr(str_replace('-', '', $userId), 0, 12).'@example.test',
+        'email' => 'owner-'.str_replace('-', '', $userId).'@example.test',
     ]);
 
     withTenant($tenantId, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
