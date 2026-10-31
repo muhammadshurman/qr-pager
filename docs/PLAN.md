@@ -41,6 +41,43 @@ exactly what to look at and what the right answer looks like.
 So **the repo copy is complete**; every rank-2 edit this project has approved is in it. What is unverified
 is the *other* copy, which is W-1.
 
+**⚠ CORRECTED 2026-10-31 BY TASK 8b's PRE-CODING GATE: the repo copy is NOT complete, and the sentence
+above was true only of the edits this project had approved *in the repo first*.** `§12` is missing the
+**2026-10-30 clause on users with no technical background** — *"The admin and studio panels are used by
+people with no technical background … A screen that is correct, accessible and still requires explanation
+is rejected."* It exists verbatim in the **claude.ai Project instructions** and binds; what is missing is
+its record. Measured in the repo: six distinctive phrases of it, **zero hits each**, and
+`git log --follow -- docs/PROJECT_INSTRUCTIONS.md` shows **no 2026-10-30 edit at all**.
+
+```
+for p in "no technical background" "neither reads documentation" "unaided on the first attempt" \
+         "requires explanation is rejected" "system vocabulary" "unexplained identifier"; do
+  printf '%-36s %s\n' "$p" "$(grep -rl "$p" --include='*.md' --include='*.php' --include='*.json' . \
+    | grep -v node_modules | tr '\n' ' ')"
+done
+```
+
+**THE PROCESS DEFECT, which is the part worth carrying rather than the missing paragraph.** This is the
+**second** divergence between the two copies, and the two point in **opposite directions**: `W-1` records
+the Project copy running *behind* the repo (27 paragraphs, `§11`'s Relay rule and Round limit among them),
+and this one is the repo running behind the Project copy. **The repo file is the source and the Project
+copy is the mirror, so an edit made in the mirror first is the defect** — a rank-2 clause that lives only
+in the mirror is one paste away from never having existed, and a task can be judged against a standard its
+own repository cannot show it.
+
+**The paste is Muhammad's (rank 2).** `§12` is pasted wholesale from the Project copy, and **verified by
+grep rather than by reading** — after it, `§12` must contain all three of:
+
+```
+grep -c 'The admin and studio panels are used by people with no technical background' docs/PROJECT_INSTRUCTIONS.md
+grep -c 'Where that bar applies, and when'                                            docs/PROJECT_INSTRUCTIONS.md
+grep -c '^- \*\*Order.\*\*'                                                            docs/PROJECT_INSTRUCTIONS.md
+```
+
+all three → `1`. Until then the clause binds from `QRPAGER-23 §0`, which quotes it in full, and Task 8b's
+`§3` answers and screen walk are written against that text — stated in `docs/tickets/QRPAGER-23.md §0`
+as `SR-2` rather than assumed.
+
 #### (b) Cannot be checked from here — what to look at, and the right answer
 
 **W-0 · ⚠ REVOKE THE GITHUB PAT PASTED INTO THE SESSION ON 2026-10-26. Delete this item once done.**
@@ -2048,7 +2085,59 @@ Login (passkey-first) · Active pager board · Pager detail (mark ready, renotif
 
 ### 4.3 Filament admin (Tasks 6–7)
 
-Platform dashboard · Restaurants list · **Create-restaurant wizard** (identity → branding → staff → QR batch → publish) · Restaurant detail (branding, domains, staff, QR batches, usage) · **Landing page builder** (block canvas, media library, SEO panel, theme tokens, preview, publish) · Audit log viewer · Platform settings.
+**⚠ CORRECTED IN PLACE 2026-10-31 BY TASK 8b's PRE-CODING GATE. This line listed eight screens; the
+panels serve SEVEN routes, and five of the eight were wrong.** `R-127` recorded one of them — the landing
+builder, which the 2026-10-28 ruling makes impossible as a platform screen. Measuring the rest found four
+more. The superseded line is kept at the end, because a page inventory that quietly changes is a page
+inventory nobody can audit.
+
+**The screens that exist, derived from the router rather than listed:**
+
+```
+cd apps/api && php artisan route:list --json | python3 -c "
+import json,sys
+rs=json.load(sys.stdin)
+for p in ['platform','studio']:
+    print('===',p); [print(' /'+u,n) for u,n in sorted({(r['uri'],r.get('name') or '') for r in rs
+        if r['uri']==p or r['uri'].startswith(p+'/')})]"
+```
+
+| route | screen | panel | task |
+| --- | --- | --- | --- |
+| `/platform` | Platform dashboard | platform | 6 |
+| `/platform/restaurants` | Restaurants list, **with a three-field provision-request modal** (`Action::make('provision')`, label *New restaurant*: name, address, owner's email) | platform | 6 |
+| `/platform/audit-log` | Audit log viewer | platform | 6 |
+| `/studio` | Landing page builder (block canvas, SEO, theme tokens) | **studio** | 7 |
+| `/studio/media` | Media library | **studio** | 7 |
+| `/studio/domains` | Custom domains | **studio** | 7 |
+| `/studio/preview` | Published-page preview | **studio** | 7 |
+
+plus a `logout` route on each panel. **`§12`'s walk subject list is DERIVED from that table, never
+hand-listed** — a walk measured against a typed inventory is the same defect one layer up.
+
+**What the superseded line got wrong, and where each item actually lives — measured, and NOT ONE IS
+UNOWNED, so this correction adds no `§5` row:**
+
+| the old line said | determination | owner |
+| --- | --- | --- |
+| **Create-restaurant wizard** *(identity → branding → staff → QR batch → publish)* | the **capability exists on another surface** — the provision-request modal above — but the five-step shape never did. Its missing steps are each owned elsewhere: QR batch and staff by `R-115`, branding by `R-116` (**closed** 2026-10-31, ruled not worth building) | corrected here |
+| **Restaurant detail** *(branding, domains, staff, QR batches, usage)* | **no route**, and `RestaurantResource` is `->recordActions([])`. Every constituent is owned: staff + QR batches `R-115`, branding `R-116` (closed), domains `/studio/domains` (Task 7, tenant panel), usage the dashboard's aggregates | corrected here |
+| **QR batches** | **no surface anywhere** — the only `QrCode` hits in `app/` are 2FA's `twoFactorQrCodeSvg()`. Already recorded as not delivered | **`R-115` · Task 10** |
+| **Platform settings** | **no route, and no requirement**: the string appears in this inventory line and **nowhere else** in `PLAN`, any ticket or any gate clause. It was an inventory artefact, not an unbuilt screen | corrected here |
+| **Landing page builder** as a *platform* screen | `R-127` — tenant content cannot be a platform-panel screen (`§4 › Tenancy`); Task 7 built it at `/studio` | corrected here |
+
+**And the question this measurement was asked to settle: Task 6's gate was NOT discharged on an empty
+claim.** `§3` row 6 names *"restaurant create wizard end-to-end … QR batch generation + printable
+sheets"*, and `§4a`'s Task 6 record carries a **What this task does NOT deliver** section naming *"a
+scannable QR in one wizard pass"*, *"staff-management screens and QR batch generation"* and the invite
+delivery, each with an owner (`R-115`, `R-124`, Task 10). **The shortfall was declared when the tag was
+applied, not discovered now** — so there is nothing to file against a tagged task, and Task 8b builds none
+of it (`QRPAGER-23 §2`: *new panel features → Nobody*).
+
+*The superseded line, kept verbatim:* Platform dashboard · Restaurants list · **Create-restaurant wizard**
+(identity → branding → staff → QR batch → publish) · Restaurant detail (branding, domains, staff, QR
+batches, usage) · **Landing page builder** (block canvas, media library, SEO panel, theme tokens, preview,
+publish) · Audit log viewer · Platform settings.
 
 ### 4.4 Public tenant landing page (Task 11)
 
