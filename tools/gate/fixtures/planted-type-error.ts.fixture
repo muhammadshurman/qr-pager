@@ -1,0 +1,23 @@
+/*
+ * A DELIBERATELY ILL-TYPED FILE. Copied into `browser/` by
+ * tools/gate/test/typecheck-coverage.test.mjs, which asserts `tsc -p tsconfig.json`
+ * rejects it, and removed again.
+ *
+ * ⚠ WHY THIS FIXTURE EXISTS. `pnpm run typecheck` was `pnpm -r --no-bail run typecheck`,
+ * which walks the WORKSPACE PACKAGES. The root TypeScript project -- the `browser` glob
+ * (708 lines), `vitest.config.ts` and `playwright.config.ts` -- is a member of no package,
+ * so it was type-checked by nothing: a planted error there passed `typecheck` AND `lint`.
+ * Those 708 lines are the only code in the repository that can read a computed style, which
+ * makes them all four clauses of `R-118`.
+ *
+ * The error below is TS2345 (argument of type X is not assignable to parameter of type Y).
+ * It is not a syntax error on purpose: a syntax error would also be caught by the parser
+ * inside ESLint, so it would not distinguish "the project is type-checked" from "the file
+ * is parsed".
+ */
+
+function needsANumber(value: number): number {
+  return value + 1
+}
+
+export const planted = needsANumber('this is a string, not a number')

@@ -1,22 +1,73 @@
+# =====================================================================================
+# EVERY DIRECTORY PATTERN HERE IS EITHER ANCHORED OR MARKED `# any-depth`
+# =====================================================================================
+#
+# ⚠ THIS FILE HAS NOW GOT ANCHORING WRONG TWICE, IN OPPOSITE DIRECTIONS.
+#
+#   Task 0, bug 1: `/build/` was anchored to the repository root, so `apps/api/build/` --
+#   the PHPStan tmpDir -- was committed, 678 cache files. Fixed by UNANCHORING it. `PLAN.md`
+#   records it as "do not repeat".
+#
+#   Task 8a: `storage/` was UNANCHORED, so it also matched `apps/api/storage/`. The root
+#   `storage/` is the workspace gate's log directory; `apps/api/storage/` is Laravel's, with
+#   its own tracked `.gitignore` files inside it, and a new file written there would have
+#   been silently unaddable.
+#
+# `§7`: *"Never fix the same bug twice. If it recurs, the regression test was missing."* So
+# this gets the GUARD and not just the anchor -- `tools/gate/test/gitignore.test.mjs`, which
+# fails if any directory pattern is unanchored without the marker, and fails if a marker is
+# applied to a pattern that does not need one.
+#
+# THE MARKER IS THE INTENT, WRITTEN WHERE THE PATTERN IS. "Anchored as intended" is not
+# something a checker can infer -- both of the bugs above were a correct pattern for one
+# reading of the intent -- so the intent is declared beside each pattern and the checker
+# holds the declaration to the tree.
+
 .env
 .env.*
 !.env.example
 *.log
 .DS_Store
+
+# any-depth: the PHPStan tmpDir is `apps/api/build`, which is exactly what Task 0's
+# anchored `/build/` missed. This one must match below the root.
 build/
+
+# any-depth: pnpm with `hoist=false` puts a node_modules in EVERY package, not only the
+# root -- four of them in this tree today.
 node_modules/
+
+# any-depth: an editor directory appears wherever the editor was opened, including inside
+# a vendored dependency.
 .idea/
 .vscode/
 
-# The frontend workspace (Task 8a, ADR-003).
-.pnpm-store/
-coverage/
+# ---------------------------------------- the frontend workspace (Task 8a, ADR-003)
+
+# Anchored: pnpm's content-addressable store is configured once, at the root.
+/.pnpm-store/
+
+# Anchored: one coverage run, one directory, written by the root vitest config.
+/coverage/
+
+# any-depth: `next build` writes into each app -- apps/web/.next and apps/site/.next.
 .next/
 out/
-*.tsbuildinfo
-test-results/
-playwright-report/
-blob-report/
 
-# The workspace gate's own logs, the sibling of apps/api/storage/logs.
-storage/
+*.tsbuildinfo
+
+# Anchored: Playwright's reporters are configured at the root and write there.
+/test-results/
+/playwright-report/
+/blob-report/
+
+# ⚠ ANCHORED, AND THE ANCHOR IS THE FIX. Unanchored, this also matched
+# `apps/api/storage/` -- Laravel's, which carries tracked `.gitignore` files of its own.
+# The root `storage/` is the workspace gate's log directory, the sibling of
+# `apps/api/storage/logs`.
+/storage/
+
+# The planted TS2345 the root-project typecheck proof writes and removes
+# (tools/gate/test/typecheck-coverage.test.mjs). Ignored so a crashed run cannot leave an
+# untracked file that reddens CI's clean-tree assertion instead of the thing under test.
+/browser/planted-type-error.generated.ts
