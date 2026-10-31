@@ -81,20 +81,36 @@ class DomainsPage extends Page
      * Nothing was disclosed (the message is identical for malformed, unknown and
      * foreign), but a 500 is not an answer.
      *
-     * @return array{name: string, type: string, value: string}
+     * ⚠ AND IT RETURNS **null** RATHER THAN A BLANK RECORD, WHICH IS `R-154` (QRPAGER-23
+     * §6.2). It used to return `['name' => '', 'type' => 'TXT', 'value' => '']` on both
+     * non-success paths, and `domains.blade.php` rendered that straight into the
+     * definition list: **a tenant was shown `Name: ` / `Type: TXT` / `Value: ` and told to
+     * copy it into their DNS**. The empty case and the source-down case were the same
+     * fabricated record, and neither said anything was wrong.
+     *
+     * `null` is not a smaller lie, it is the absence of one: the template can then say we
+     * cannot show the record, which is `§6`'s *source down* screen — it is us, not them,
+     * and whether to wait.
+     *
+     * ⚠ THE ORACLE PROPERTY IS PRESERVED EXACTLY, and that is why this returns ONE null
+     * rather than distinguishing the paths. `§4.2`: a refusal may say what to do, never
+     * what exists. A malformed id, an id belonging to another tenant and an id that does
+     * not exist all return the same `null` and the template says the same sentence —
+     * which is the equality `ReviewFixesTest`'s *"refuses the challenge for another
+     * tenants domain, in the same words as one that does not exist"* pins one layer down.
+     *
+     * @return array{name: string, type: string, value: string}|null
      */
-    public function challenge(string $domainId): array
+    public function challenge(string $domainId): ?array
     {
-        $empty = ['name' => '', 'type' => 'TXT', 'value' => ''];
-
         if (! Str::isUuid($domainId)) {
-            return $empty;
+            return null;
         }
 
         try {
             return app(TenantDomains::class)->challenge(TenantPanelAccess::tenantId(), $domainId);
         } catch (DomainRefused) {
-            return $empty;
+            return null;
         }
     }
 

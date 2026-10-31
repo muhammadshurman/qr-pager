@@ -59,14 +59,27 @@
 
                         @php($challenge = $this->challenge($domain->id))
 
-                        <dl class="text-sm space-y-4">
-                            <div><dt class="inline font-medium">Name:</dt>
-                                <dd class="inline"><code>{{ $challenge['name'] }}</code></dd></div>
-                            <div><dt class="inline font-medium">Type:</dt>
-                                <dd class="inline"><code>{{ $challenge['type'] }}</code></dd></div>
-                            <div><dt class="inline font-medium">Value:</dt>
-                                <dd class="inline"><code>{{ $challenge['value'] }}</code></dd></div>
-                        </dl>
+                        {{-- R-154: a MISSING record is said, never rendered as a blank one.
+                             challenge() used to return name '' / type TXT / value '' on both
+                             its non-success paths, and this list printed that -- a tenant was
+                             shown an empty row and told to copy it into their DNS. The
+                             sentence is the same for every reason the record is unavailable,
+                             which keeps §4.2's rule: say what to do, never what exists. --}}
+                        @if ($challenge === null)
+                            <p>We cannot show the DNS record for {{ $domain->hostname }} right
+                                now. This is on our side, not yours. Reload this page in a
+                                minute; if it keeps happening, remove the domain and add it
+                                again.</p>
+                        @else
+                            <dl class="text-sm space-y-4">
+                                <div><dt class="inline font-medium">Name:</dt>
+                                    <dd class="inline"><code>{{ $challenge['name'] }}</code></dd></div>
+                                <div><dt class="inline font-medium">Type:</dt>
+                                    <dd class="inline"><code>{{ $challenge['type'] }}</code></dd></div>
+                                <div><dt class="inline font-medium">Value:</dt>
+                                    <dd class="inline"><code>{{ $challenge['value'] }}</code></dd></div>
+                            </dl>
+                        @endif
 
                         @if ($domain->lastError !== null)
                             <p class="text-danger-700 dark:text-danger-400">

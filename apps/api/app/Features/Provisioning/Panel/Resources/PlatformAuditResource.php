@@ -63,12 +63,45 @@ class PlatformAuditResource extends Resource
                 TextColumn::make('action')->label('Action')->searchable()->sortable(),
                 TextColumn::make('actor_user_id')->label('Actor')->placeholder('System')->searchable(),
                 TextColumn::make('subject_type')->label('Subject')->placeholder('—'),
-                TextColumn::make('subject_id')->label('Subject id')->placeholder('—'),
+                // ⚠ TWO BREACHES IN ONE COLUMN, both fixed here and both PRESENTATION
+                // (QRPAGER-23 §6.2). It was `->label('Subject id')` printing a bare uuid7:
+                // a system-vocabulary label, and 36 characters of noise in a table column.
+                //
+                // The VALUE is kept, because an audit log a reader cannot correlate with
+                // another screen is an audit log they cannot investigate with. What changes
+                // is how much of it is in their way: eight characters on screen, the whole
+                // value in the tooltip and on the clipboard. `copyable()` is what makes the
+                // truncation safe -- a prefix nobody can retrieve the rest of would be
+                // strictly worse than the noise it replaced.
+                TextColumn::make('subject_id')
+                    ->label('Reference')
+                    ->placeholder('—')
+                    ->limit(8)
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->copyable()
+                    ->copyMessage('Reference copied'),
                 TextColumn::make('ip_address')->label('From')->placeholder('—'),
             ])
             // Newest first, which is the only order an audit log is ever read in.
             ->defaultSort('id', 'desc')
+            // ⚠ AN EMPTY STATE WITH NO NEXT ACTION WAS §4.1's FIRST HALF, and this is the
+            // one screen where the honest next action is "none, and here is why" rather
+            // than a button.
+            //
+            // §6's table wants the next action as the action's own name — which works for
+            // the restaurant list, where `New restaurant` exists. It cannot work here: the
+            // audit log is APPEND-ONLY and written by the application, never by the reader,
+            // so there is no verb to offer and inventing one would be §6.3's "a screen
+            // needing a new verb is a finding, not licence to build".
+            //
+            // So the description does the one useful thing left: it tells the reader to
+            // stop waiting on this screen. Without it, "Nothing recorded yet" reads as
+            // either a filter they cannot find or a system that is not recording.
             ->emptyStateHeading('Nothing recorded yet')
+            ->emptyStateDescription(
+                'This log fills itself as people sign in and restaurants are provisioned. '
+                .'Nothing has happened yet, so there is nothing to do here.'
+            )
             ->recordActions([])
             ->toolbarActions([]);
     }
