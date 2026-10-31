@@ -116,14 +116,53 @@ describe('the workspace gate and CI run the same steps', () => {
     expect(code).not.toMatch(/version:\s*['"]?\d+\.\d+/)
   })
 
-  it('does NOT use setup-node’s own pnpm cache input, which cannot work here', () => {
-    // `cache: pnpm` makes the action run `pnpm store path` as part of setup-node -- before
-    // corepack has put pnpm on the runner. The store is cached in its own step after
-    // corepack instead, which is why that step exists.
+  it('disables setup-node automatic package-manager cache -- what broke the job', () => {
+    // ⚠ THE REGRESSION TEST FOR THE FAILURE THIS JOB ACTUALLY HAD, and the shape is
+    // worth keeping because nobody wrote the offending line -- it is a DEFAULT.
+    //
+    // setup-node v5.0.0 made dependency caching AUTOMATIC when package.json carries a
+    // valid `packageManager` field. From the action's own action.yml:
+    // `package-manager-cache` has `default: true`, described as "disable automatic caching
+    // based on the package manager field in package.json". Ours is "pnpm@12.16.1", so the
+    // action resolved pnpm to compute a cache directory and died:
+    //
+    //     Resolved .nvmrc as 22
+    //     Found in cache @ /opt/hostedtoolcache/node/22.23.4/x64
+    //     Error: Unable to locate executable file: pnpm.
+    //
+    // because corepack provisions pnpm in the NEXT step.
+    //
+    // So this asserts the OPT-OUT IS PRESENT, not merely that `cache:` is absent. The
+    // first version of this test checked only the latter and would have passed the broken
+    // job -- `cache:` never was in the file, which is exactly why the first diagnosis of
+    // this failure was wrong.
     const setupNode = frontendJob.slice(frontendJob.indexOf('actions/setup-node'))
-    const untilNextStep = setupNode.slice(0, setupNode.indexOf('      - name:'))
-    expect(untilNextStep).not.toMatch(/cache:\s*['"]?pnpm/)
+    const inputs = setupNode.slice(0, setupNode.indexOf('      - name:'))
+
+    expect(
+      inputs,
+      'setup-node v5 caches automatically when packageManager is set, and pnpm does not ' +
+        'exist until corepack runs -- package-manager-cache: false is required',
+    ).toMatch(/package-manager-cache:\s*false/)
+    // And the explicit input stays unset: it resolves the store at the same wrong moment.
+    expect(inputs).not.toMatch(/\n\s+cache:\s*['"]?pnpm/)
+    // The store IS cached, in its own step after corepack -- the only order in which the
+    // path can be resolved at all.
     expect(frontendJob).toContain('pnpm store path --silent')
+    expect(frontendJob.indexOf('corepack enable')).toBeLessThan(
+      frontendJob.indexOf('pnpm store path --silent'),
+    )
+  })
+
+  it('provisions pnpm BEFORE anything that needs it on PATH', () => {
+    // The ordering the failure was about, as an assertion rather than a comment.
+    const corepack = frontendJob.indexOf('corepack enable')
+    expect(corepack).toBeGreaterThan(-1)
+    for (const m of frontendJob.matchAll(/^\s*(?:- )?(?:run: )?(pnpm [^\n|>]*)$/gm)) {
+      expect(m.index, `"${m[1].trim()}" runs before corepack has provisioned pnpm`).toBeGreaterThan(
+        corepack,
+      )
+    }
   })
 
   it('installs with the lockfile as the authority', () => {
