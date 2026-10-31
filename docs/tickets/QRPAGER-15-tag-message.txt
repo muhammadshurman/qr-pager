@@ -1,6 +1,18 @@
 Task 8a — design system: workspace, approved direction, tokens, UI kit, templates
 
-⚠ DRAFT. NOT YET APPLIED, AND THAT IS A RULING RATHER THAN AN OMISSION.
+⚠ STILL NOT APPLIED, AND NOW FOR ONE REASON ONLY: §5's "AND CI RUNS IT AS A SECOND JOB"
+is NOT MET, and the only evidence that clause accepts is an Actions run for the HEAD SHA
+reporting success, by run id and conclusion. Neither §11 reviewer could discharge it either
+-- no gh, no token, private repository, so the API answers 404. Everything else this message
+said was waiting on is done.
+
+UPDATED 2026-10-31 AFTER BOTH §11 REVIEWS AND THE ONE FIX PASS THEY PRODUCED.
+24 findings -- QA 14 (0 Critical, 2 High, 9 Medium, 3 Low) and Security 10 (0 Critical,
+2 High, 1 Medium, 7 Low), four raised by both reviewers and merged, two QA items raised to
+High by ruling, one carried as #15. 20 FIXED with a regression test proven red without the
+fix, 3 CORRECTED IN PLACE, 1 to §5 as R-171. The full disposition is in PLAN §4a.
+
+The original draft note follows, because its reasoning is why this file exists at all:
 
 The rank-1 prompt's order of work said to tag at the green gate. Muhammad corrected it in
 place on 2026-10-31: the tag moves to AFTER both §11 reviews and after every Critical and
@@ -61,31 +73,102 @@ GATE CLAUSES MET, WITH THE FIGURE
       tools/gate/bin/fresh-clone-proof: GREEN, all gate steps, in a clone sharing no object
       with the working tree.
 §5  ...AND CI RUNS IT AS A SECOND JOB .......................... NOT MET
-      The job exists and is configured, and Muhammad reports the run RED. See (3) below.
-      This is the one clause a local run cannot discharge.
+      THE ONLY CLAUSE STILL UNMET, and the only one a local run cannot discharge. The job
+      exists and is configured; three causes have been found and fixed since this line was
+      written (lint:shell missing from the job, setup-node v5's automatic package-manager
+      cache, and the $? checker slow enough to time out the suite on the runner), and the
+      fix round added two more steps to it -- `composer contracts:check` in the gates job
+      and `pnpm audit` in the frontend job. None of that is the evidence this clause wants.
+      See (3) below.
 §5  TS status mirror generated, CI fails when stale ............... MET
 §5  CSS-vars AND PHP config generated, CI fails when either stale . MET
-      Four generated artefacts in all, each proven to fail on a deliberately stale file
-      with the exit code read directly rather than through a pipe.
+      SEVEN generated artefacts now, each proven to fail on a deliberately stale file with
+      the exit code read directly rather than through a pipe. Two were added by the fix
+      round: packages/tokens/generated/theme.css (the @theme block that replaces Tailwind's
+      default scales) and docs/tickets/QRPAGER-15-contrast-table.md -- which carried the
+      "GENERATED -- DO NOT EDIT" banner and was in NO array any checker walked, so a planted
+      19.99 AAA figure passed lint, 370 Vitest and 64 Playwright (QA #5). One `build`, two
+      paths, so it is the same bytes by construction rather than by agreement.
+      ⚠ AND ONE DEFECT THE SAME WORK FOUND: Prettier had reformatted packages/tokens/fonts/
+      fonts.css, rewrapping every unicode-range, so the committed file was NOT what its
+      generator emits -- and nothing caught it, because the fetch script needs the network
+      and is therefore not a gate step, so there is no byte diff to go red. That directory
+      is in .prettierignore now and both font artefacts are asserted byte-identical to
+      their builders.
 §5  Three landing templates, from tokens, fillable from the schema  MET
       The test READS docs/contracts/landing-page.schema.json at run time and asserts both
       directions — no schema type unrendered, no type invented — plus every required field,
       a minimum-fields page, an empty page, and an unresolvable media id rendering nothing.
 §7  Coverage ≥ 90% on what this task adds ........................ MET
-      96.41% statements, 90.9% branches, 97.82% functions, 98.26% lines (Vitest).
+      92.18% statements, 90.67% branches, 98.23% functions, 93.05% lines (Vitest).
+      ⚠ AND THE EARLIER FIGURE WAS NOT ABOUT THE RIGHT SET (QA #10). 96.73% was measured
+      over packages/tokens/src, packages/ui/src and tools/design-tokens/*.mjs, which left
+      about 990 lines of this task's own code out of the DENOMINATOR: generate.mjs (620),
+      fetch-fonts.mjs (241) and bin/scan-css.mjs (129). §6 asks for coverage "on code this
+      task added", so the number was never about that, whatever its value. Re-measured over
+      the whole of it the honest figure was 59.44 / 70.37 / 60.84 / 60.03 -- so the three
+      were essentially uncovered. They are covered now, and not by line-count tests: each
+      builder is asserted against the SOURCE's own computation, buildTs's output is handed
+      to tsc and buildPhp's to `php -l` AND `php -r 'require'`. The figure above is over the
+      larger denominator.
+      tools/gate/bin/* stays out with the reason stated: gate.mjs exports no unit and
+      covering it means running the gate inside its own coverage pass; its step list is
+      asserted by the parity test in both directions against BOTH halves of CI, which is a
+      stronger claim than a line count.
 §7  Every component's states defined ............................. MET
       empty / loading / error / offline / permission-denied, in one implementation.
 §7  Lint, typecheck, tests green in BOTH halves .................. MET
 §7  All previous tasks' suites still pass ........................ MET
 §5.1 THE NAMED INVARIANT ......................................... MET, BOTH CLAUSES
-      Clause 1: no component carries a hard-coded colour, spacing or font size — the lint
-      rule, plus the same property asserted over the real sources.
-      Clause 2: no tenant-supplied theme value can reach the order-ready pair — an
-      UNREACHABILITY proof in five independent assertions, with NO clamp anywhere.
+      AND BOTH FELL ONCE MORE IN REVIEW BEFORE THEY HELD, which is stated here because this
+      record asserted them early twice and a reviewer falsified it both times.
+
+      Clause 1 -- no component carries a hard-coded colour, spacing or font size.
+      ⚠ FELL A SECOND TIME (Security M-1): the lint rule cannot see Tailwind's DEFAULT
+      palette and scales, which are live in both apps. Measured: text-[#fff] and p-[13px]
+      exit 1, but `bg-red-500 p-4 text-sm` gives lint:es 0 AND lint:tokens 0 -- there was no
+      @theme block anywhere, so `@import 'tailwindcss'` left the full default theme
+      reachable, including --text-sm at 14px, which is not on the approved type scale.
+      §8 therefore required the REDESIGN and not a third patch: a generated `@theme
+      reference` block CLEARS each namespace and repopulates it from the token source, so
+      those utilities compile to NOTHING -- there is no bg-red-500 to write. A pattern
+      rejecting them would have been the patch AND a second source for Tailwind's default
+      theme. Proven both directions against the real app stylesheet through Tailwind's own
+      compiler: 17 default-theme utilities emit nothing, every token-backed one emits with a
+      var() value, and with the import removed 15 of them compile again.
+
+      Clause 2 -- no tenant-supplied theme value can reach the order-ready pair.
+      ⚠ ASSERTED NOWHERE IN THE LAYER PRESENTED AS ITS PROOF (Security H-1, merged with QA
+      #15). The five "independent assertions" covered name-set disjointness, the transform
+      over all twelve names, a single declaration outside both theme blocks, that hostile
+      values are not inlined into markup, and the no-clamp scan. NONE read which custom
+      property .qr-ready actually uses, and no test read apps/web or apps/site CSS at all.
+      Measured: substituting `.qr-ready { background-color: var(--color-surface) }` left
+      lint:tokens 0, typecheck 0 and ALL 370 Vitest green; only Playwright reddened, and
+      incidentally. The attack: a tenant sets color.surface to #0A1F17 -- an allow-listed
+      name with an allow-listed value, refused by nothing -- and the pair on the one screen
+      with an AAA bar collapses toward 1:1, which is D4's exact excluded failure.
+      Assertion (4) was the vacuous one and is REPLACED rather than supplemented: it put the
+      hostile style on the PARENT of .qr-ready and asserted .qr-ready's markup carried no
+      hex, which it never would. A vacuous assertion is worse than none, because it reads as
+      coverage. The new (4) extracts every colour declaration inside every .qr-ready* rule
+      in every stylesheet the screen can be rendered under -- the list WALKED from
+      packages/ui/src/styles and apps/*/app rather than written out -- and asserts each names
+      a member of protectedProperties(), with a floor on the declarations examined. (4b)
+      asserts WHY the apps' own files are vacuous. (4c) keeps the render and is no longer the
+      carrier. Still an UNREACHABILITY proof, and still NO clamp anywhere.
+      The PHP side's claim was also corrected (Security L-5): §6.1 said hostile values are
+      driven through ThemeStylesheet::declarations() in PHP, and no file under apps/api
+      contained those property names. ThemeTokenTest has the case now, with the protected
+      list PARSED from the token source.
 
 ===============================================================================
 GATE CLAUSES NOT MET — EACH WITH ITS ROW AND OWNER
 ===============================================================================
+
+⚠ UPDATED AFTER BOTH §11 REVIEWS. Item (3) is the ONLY one still blocking the tag; the
+others have an owner and neither reviewer disputed any of them. ONE NEW ITEM, (8), is the
+single §5 row the 24 findings produced.
 
 (1) §5 / §7 — "A reviewer cannot name the UI framework from a screenshot."
     NOT MET AS A MEASURED CLAUSE, BY DESIGN, and this is not a shortfall discovered late.
@@ -108,9 +191,14 @@ GATE CLAUSES NOT MET — EACH WITH ITS ROW AND OWNER
     pairs plus the order-ready triple are measured in Chromium in both themes, and the
     engine is asserted to resolve each token to the hex the table was computed from.
     → Owner for the remaining browser coverage: Task 9 (QRPAGER-16) and Task 10 for their
-      own screens; Task 8b for the panel. No §5 row is written yet, because §11 puts
-      Medium/Low dispositions AFTER the reviews and writing one now would pre-empt a
-      reviewer who may frame it differently.
+      own screens; Task 8b for the panel.
+    ⚠ AND THE REVIEWS FOUND THE GAP ONE LEVEL OUT, WHICH THIS LINE DID NOT ANTICIPATE
+      (QA #7, raised to High): the 42-pair table and the browser walk covered the KIT, and
+      the three landing TEMPLATES -- a gate clause of their own -- had no pair check at all,
+      only a VOCABULARY check. A brand-on-alert-ink rule at 1.14:1 inside a template passed
+      lint, 370 Vitest and 64 Playwright. The pairs are DERIVED now, from both stylesheets
+      and the rendered DOM, for every template and every kit component, in both themes.
+      So no §5 row for this clause after all: the part that was measurable was measured.
 
 (3) §5 / §7 — "The workspace builds, lints and tests from a fresh clone, AND CI RUNS IT AS
     A SECOND JOB."
@@ -188,6 +276,28 @@ GATE CLAUSES NOT MET — EACH WITH ITS ROW AND OWNER
     Owner: Task 8b (QRPAGER-23) for R-127 and R-154; R-141 stays as the row describes.
     R-156 and R-157 are process records from Task 7 and need no code.
 
+(8) §5 — security response headers on both frontend origins. → R-171, NEW.
+    apps/web and apps/site ship with poweredByHeader: false and NO headers(): no CSP, no
+    nosniff, no Referrer-Policy, no X-Frame-Options, no Permissions-Policy, on either
+    origin -- and until this row, no §5 row, no gate clause and no out-of-scope line.
+    Security L-3.
+    WHY IT MATTERS IS WHICH ORIGIN: §3 row 9(b) requires apps/site to load NO third-party
+    script, and Task 3 puts the raw QR token in the URL FRAGMENT, where any script on that
+    origin reads location.hash. A CSP is what makes "no third-party script" an enforced
+    property of the origin rather than a property of what we happened to write.
+    NOT BUILT HERE, and the reason is §8 rather than scope: both apps are statically
+    prerendered with no route handler, middleware or server action, so the headers land AT
+    THE EDGE -- and the clause they satisfy is "a captured response carries them", with no
+    deployed environment to capture one from. A headers() block committed now would also be
+    in the wrong place on this architecture: next.config.mjs's headers() applies only to
+    responses Next itself serves, which for a static export is `next start` in development
+    and nothing in production. Green locally, absent where it matters -- R-126's shape.
+    R-135 is the precedent and the same argument, one surface over.
+    Owner: Task 13 (QRPAGER-20) for the mechanism, Task 12 (QRPAGER-19) for the CSP's
+    content, and the two should be fixed in one change because they are one response-header
+    policy over two surfaces. Review by 2026-12-06 -- the same date as R-135, because
+    splitting them would let one be fixed and the other forgotten.
+
 (7) §12.1's copy table, and per-screen specification.
     NOT DONE, AND NOT 8a's. The approval comment says it: "Per-screen specification. §12
     still requires purpose, all states, content inventory and exact copy written before
@@ -217,27 +327,39 @@ order-ready ratios still clear AAA's 7.0 by a wide margin, and alert-fill still 
 4.5:1 as small text.
 
 ===============================================================================
-THE TEST COUNT, ACCOUNTED FOR — 308 -> 304 -> 357
+THE TEST COUNT, ACCOUNTED FOR — 308 -> 304 -> 370 -> 516
 ===============================================================================
 
 §8: "a fix must not narrow an existing assertion; if narrowing is unavoidable it is
 stated in the commit message." A test count that falls without an accounting is the shape
 that let Task 7's last invariant failure survive a full review.
 
-MEASURED PER FILE, by running the 8cf61ca test files and the current ones and comparing
-case counts rather than reasoning about the diff:
+⚠ AND THIS TABLE WAS 13 BEHIND AND OMITTED ci-parity.test.mjs ENTIRELY (QA #11). It said
+357 while the suite ran 370: ci-parity.test.mjs was created at 5f08a1d with 9 cases and
+rule.test.mjs grew to 71 at 525eefb, and the table was not re-measured. A test-count table
+that omits a file is worse than no table, because the omission reads as the file not
+existing. Re-measured per file with --reporter=json:
 
-    file                                   8cf61ca   3abacd7   now
-    packages/contracts/test/mirror              13        13    13
-    packages/tokens/test/contrast               41        37    85
-    packages/tokens/test/fonts                  11        11    11
-    packages/tokens/test/properties             13        13    13
-    packages/ui/test/a11y                       24        24    24
-    packages/ui/test/invariant                  11        11    13
-    packages/ui/test/kit                        80        80    80
-    packages/ui/test/templates                  47        47    47
-    tools/design-tokens/test/rule               68        68    71
-    TOTAL                                      308       304   357
+    file                                 8cf61ca  3abacd7  a1f1263  fix diff
+    packages/contracts/test/mirror            13       13       13        13
+    packages/tokens/test/artefacts             -        -        -         3  new, A1
+    packages/tokens/test/contrast             41       37       85        85
+    packages/tokens/test/fonts                11       11       11        17  +6
+    packages/tokens/test/generate              -        -        -        21  new, D
+    packages/tokens/test/properties           13       13       13        13
+    packages/ui/test/a11y                     24       24       24        29  +5
+    packages/ui/test/invariant                11       11       13        18  +5
+    packages/ui/test/kit                      80       80       80        81  +1
+    packages/ui/test/pairs                     -        -        -         5  new, A3
+    packages/ui/test/templates                47       47       47        61  +14
+    tools/design-tokens/test/rule             68       68       71       123  +52
+    tools/design-tokens/test/theme             -        -        -         5  new, B1
+    tools/gate/test/ci-parity                  -        -        9        14  +5
+    tools/gate/test/gitignore                  -        -        -         7  new, B4
+    tools/gate/test/licences                   -        -        -         7  new, L-6
+    tools/gate/test/ticket-tables              -        -        -        11  new, C
+    tools/gate/test/typecheck-coverage         -        -        -         3  new, A2
+    TOTAL                                    308      304      370       516
 
 So the whole 308 -> 304 was ONE file: contrast.test.ts, 41 -> 37, which was rewritten
 wholesale when the generated table was introduced. Every other suite was untouched.
@@ -248,28 +370,28 @@ WHAT HAPPENED TO THE 41, case by case:
     a hundredth under the floor convention. "ready-signal on ready-field is exactly 9.73:1"
     became "--ready-signal on --ready-field is exactly 9.72:1", and so on.
   - 6 "X resolves to exactly #HEX" cases became 3 hex cases plus one case asserting the
-    four UNCHANGED roles together ("left dark ink-mid and the surface ladder where they
-    were"). All six hexes are still asserted; the grouping changed because only three
-    roles moved.
-  - 9 cases were CONSOLIDATED into the generated table's seven structural cases: exists
-    and is not empty, agrees with a live computation, zero failures, states the convention,
-    covers every foreground against every background, headroom on every barred row, a bar
-    for every role that carries text.
+    four UNCHANGED roles together. All six hexes are still asserted; the grouping changed
+    because only three roles moved.
+  - 9 cases were CONSOLIDATED into the generated table's seven structural cases.
   - 8 EXACT PER-PAIR FIGURES became structural assertions, and THAT WAS A NARROWING. The
     old file said light ink-mid is exactly 5.17 / 5.72 / 4.74; the new one said the table
     has no failures and every row clears bar + headroom. That is a weaker claim about any
     individual pair: a palette change keeping every row above its bar would have passed.
 
 IT WAS AVOIDABLE, SO IT IS UNDONE RATHER THAN DECLARED. All 42 pairs are now pinned to
-exact literals, in both directions -- no row in the table may be unpinned and no pin may
-reference a row the table does not have. contrast.test.ts is 85 cases.
+exact literals, in both directions. contrast.test.ts is 85 cases.
 
 AND THE LITERALS ARE NOT THE HAND-TRANSCRIPTION ITEM 3 REMOVED. The distinction is which
 direction the number travels. A DOCUMENT quoting a ratio someone computed in their head is
 a second source that drifts silently. A TEST holding the expected value IS the pin: it is
 supposed to fail when the value changes. The literals were emitted from the artefact rather
-than typed, and tokens:check ties the artefact to the source, so three independent things
-must agree before a figure ships.
+than typed, and tokens:check ties the artefact to the source.
+
+ONE NARROWING IN THE FIX ROUND, RESTORED RATHER THAN DECLARED. Deriving the required-field
+assertions from the schema (QA #8) would have dropped the gallery caption's alt-text
+assertion, because `gallery` marks no field required in the committed schema. It is its own
+case now, framed correctly: alt text is an accessibility property this kit owns, not a
+schema requirement. Nothing else in the fix round narrowed an assertion.
 
 ===============================================================================
 WHAT THE TESTS CAUGHT BEFORE ANY REVIEWER
@@ -307,11 +429,15 @@ AND FOUR MORE, found by building the generated contrast table rather than spot-c
     approval allows alert-fill for ">= 24px text only" and the label is --size-16. No
     role-against-background table has a row for text ON a fill. The fill is alert-ink now;
     both tokens are approved and only the pairing changed.
-  - EVERY BUTTON RENDERED THE WRONG COLOUR in Chromium: without `appearance: none` the
-    engine blends the author background with its native widget rendering, so #0B6B4F came
-    out as rgb(174,202,194) and the label as rgb(72,72,72) instead of #FFFFFF. The whole
-    contrast table would have described pairs the product never shows. Invisible to every
-    source-level and jsdom test, because both see the declaration.
+  - ⚠ RETRACTED BY RE-MEASUREMENT (QA #3), AND THE RETRACTION IS THE RECORD. This item
+    said: "EVERY BUTTON RENDERED THE WRONG COLOUR in Chromium: without `appearance: none`
+    the engine blends the author background with its native widget rendering, so #0B6B4F
+    came out as rgb(174,202,194) and the label as rgb(72,72,72) instead of #FFFFFF."
+    It does NOT reproduce. Four cells, Chromium 156.0.8078.4, all resolving
+    rgb(11, 107, 79) on rgb(255, 255, 255) -- see the closing section of this file and
+    docs/tickets/QRPAGER-15-appearance-probe.txt. The likeliest reading is that the blend
+    was the load-then-inject HARNESS defect two items below, and one cause was written
+    against both. `appearance: none` stays; the claim about why does not.
   - and kit.css never set the document's own ink-on-paper, so anything inside ThemeProvider
     without a landing template inherited the UA's black-on-white.
 
@@ -334,17 +460,59 @@ the project that can see a computed style at all:
 FIGURES, AT THE HEAD COMMIT
 ===============================================================================
 
-  pnpm gate                  all 9 steps green
-  Vitest                     308 tests, 9 files
-  Coverage                   96.41% statements / 90.9% branches / 97.82% functions /
-                             98.26% lines  (thresholds 90%)
-  Playwright                 44 passed, 2 skipped (the motion-preference complements)
-  Fresh-clone proof          GREEN — all 9 steps in a clone sharing nothing with the tree
+  pnpm gate                  all 11 steps green  (the eleventh is `pnpm audit`, which
+                             did not exist before the fix round)
+  Vitest                     516 tests, 18 files
+  Coverage                   92.18% statements / 90.67% branches / 98.23% functions /
+                             93.05% lines  (thresholds 90%), over a denominator about
+                             990 lines LARGER than the one 96.73% was measured on
+  Playwright                 64 passed
+  Generated artefacts        7, each byte-diffed by tokens:check and each proven to fail
+                             on a deliberately stale file
+  pnpm audit                 "No known vulnerabilities found", exit 0  (was 5 advisories:
+                             2 high, 3 moderate, with no control at all)
+  Dependency licences        229 packages, 10 families, 4 dispositioned, 0 refused
+  Fresh-clone proof          see docs/tickets/QRPAGER-15-fresh-clone.txt
   Three consecutive runs     see docs/tickets/QRPAGER-15-three-runs.txt
-  Contrast table             42 pairs, 0 failures, every row ≥ bar + 0.10 headroom
-                             packages/tokens/generated/contrast.md
+  Contrast table             42 pairs, 0 failures, every row >= bar + 0.10 headroom
+                             packages/tokens/generated/contrast.md, and the ticket's
+                             evidence copy is the same bytes by construction
   composer gate              see docs/tickets/QRPAGER-15-gate-php.txt
   Font payload               3 files, 45,304 bytes (budget 64 KB, asserted)
-  Next apps                  both build, 102 kB First Load JS, statically prerendered
+  Next apps                  both build, 102 kB First Load JS, statically prerendered --
+                             unchanged by the postcss override
 
 No PR and no merge: main stays untouched until client handover (§10).
+
+===============================================================================
+WHAT THE §11 REVIEWS FOUND, AND WHERE THE DISPOSITION LIVES
+===============================================================================
+
+24 findings. QA 14 -- 0 Critical, 2 High, 9 Medium, 3 Low. Security 10 -- 0 Critical,
+2 High, 1 Medium, 7 Low. Four were raised by BOTH reviewers and are merged, with the merge
+stated so the counts reconcile; two QA items were RAISED to High by ruling; one the QA
+reviewer named without filing is carried as #15.
+
+  20 FIXED, each with a regression test proven red without the fix
+   3 CORRECTED IN PLACE (§0) -- QA #6, QA #11 and QA #3, plus Security H-2's false claim
+     about the audit, corrected in the same change that built the control
+   1 to §5 with an owner and a date -- R-171, item (8) above
+
+The finding-by-finding disposition, with every proof, is PLAN §4a:
+"Task 8a — the two §11 reviews of 2026-10-31, and the ONE fix pass they produced".
+
+ONE CLAIM IN THIS RECORD DID NOT SURVIVE RE-MEASUREMENT (QA #3) and is corrected rather
+than defended: "every button rendered the wrong colour without appearance: none" does NOT
+reproduce. Four cells -- {appearance:none, appearance:auto} x {goto+addStyleTag,
+setContent}, over both fills and a non-widget control -- all resolve rgb(11, 107, 79) on
+rgb(255, 255, 255) in Chromium 156.0.8078.4. Transcript:
+docs/tickets/QRPAGER-15-appearance-probe.txt. The likeliest reading is that the blend was
+the load-then-inject HARNESS defect found in the same sitting, and one cause was written
+against both: this record's own figure for that defect is rgb(174, 201, 193) /
+rgb(73, 73, 73) "varying in its last bit between runs", within one unit of the
+rgb(174, 202, 194) the claim named. What is not in doubt is the consequence, which is why
+the control exists -- the contrast table is computed for the TOKEN values, so an engine
+rendering something else makes every figure in it describe a pair the product never shows.
+browser/a11y.spec.ts asserts the engine resolves every button to the EXACT pair the table
+was computed from, with three proofs the assertion fails. Any blend, whatever its cause,
+reddens that.
