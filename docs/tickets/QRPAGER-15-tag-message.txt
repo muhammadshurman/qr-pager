@@ -57,9 +57,12 @@ GATE CLAUSES MET, WITH THE FIGURE
       EXACTLY 0ms in a real browser, with the spinner's animation removed outright, and a
       positive control asserting 160ms without the preference so a zero cannot come from a
       stylesheet that never loaded.
-§5  Workspace builds, lints, tests from a FRESH CLONE; CI second job  MET
-      tools/gate/bin/fresh-clone-proof: GREEN. CI job `frontend`, reading the Node major
-      from .nvmrc via node-version-file.
+§5  Workspace builds, lints, tests from a FRESH CLONE ............ MET
+      tools/gate/bin/fresh-clone-proof: GREEN, all gate steps, in a clone sharing no object
+      with the working tree.
+§5  ...AND CI RUNS IT AS A SECOND JOB .......................... NOT MET
+      The job exists and is configured, and Muhammad reports the run RED. See (3) below.
+      This is the one clause a local run cannot discharge.
 §5  TS status mirror generated, CI fails when stale ............... MET
 §5  CSS-vars AND PHP config generated, CI fails when either stale . MET
       Four generated artefacts in all, each proven to fail on a deliberately stale file
@@ -109,12 +112,40 @@ GATE CLAUSES NOT MET — EACH WITH ITS ROW AND OWNER
       Medium/Low dispositions AFTER the reviews and writing one now would pre-empt a
       reviewer who may frame it differently.
 
-(3) §7 — "Branch pushed, CI green."
-    HALF MET AND HALF UNVERIFIABLE FROM HERE. The branch is pushed. CI's conclusion lives
-    on GitHub and this environment has no `gh` and no token — which is exactly why W-3 was
-    a standing item on §0.1 rather than a check any session could run, and why Task 2's CI
-    verdict was reported by Muhammad rather than read from a session.
-    Owner: Muhammad. The same route as W-3.
+(3) §5 / §7 — "The workspace builds, lints and tests from a fresh clone, AND CI RUNS IT AS
+    A SECOND JOB."
+    ⚠ NOT MET, AND THIS LINE PREVIOUSLY UNDERSTATED IT. It said "half met and half
+    unverifiable from here", which was true only while no run existed. A run now exists and
+    MUHAMMAD REPORTS IT RED — a configuration failure, not a code failure — so the clause is
+    not unverifiable, it is FAILING. A gate clause with a red verdict is not met, whatever a
+    local gate says.
+    ⚠ AND A LOCAL `pnpm gate` CANNOT STAND IN FOR IT. That is the whole content of the
+    clause: `R-126` is the §5 row recording that a branch produced NO CI verdict at all and
+    that this looks identical to "no news" on a branch page, and `W-14` records one CI red
+    that was never findable in the tree. "A green local gate and a green CI are two
+    different claims."
+    THE ONLY EVIDENCE THIS CLAUSE ACCEPTS: an Actions run for the HEAD commit reporting
+    success, recorded by RUN ID and SHA. Not a screenshot, not a local run, not an inference
+    from the workflow parsing.
+    WHAT WAS FIXED IN RESPONSE, and what was not:
+      - `lint:shell` was MISSING from the frontend job. Found by a parity check written for
+        this, not by the run: it was added to `pnpm gate` and to the `lint` script and never
+        to the workflow, so the $? hazard checker ran locally and not on the runner. That is
+        R-126's shape one step over.
+      - the pnpm store is now cached in its own step, after corepack, because setup-node's
+        own `cache: pnpm` input shells out to `pnpm store path` BEFORE corepack has put pnpm
+        on the runner. The job never had that input; the cache is an addition, not a fix.
+      - a committed parity test now fails if a gate step is absent from CI, if the Node
+        version is hard-coded instead of read from .nvmrc, if a pnpm version appears
+        anywhere in the job, or if `cache: pnpm` is added to setup-node. All four proven.
+      - NOT FIXED, because it could not be reproduced: the reported cause was setup-node's
+        `cache: 'pnpm'`, and that input is not in the file and never was. `grep -n cache`
+        over the workflow returns only the pre-existing Composer cache in the `gates` job
+        and two Docker build flags. Verified locally instead: `pnpm install
+        --frozen-lockfile` holds, the lockfile is current, and the gate is green in a fresh
+        clone. The actual failing step is still unidentified.
+    Owner: Muhammad, by the W-3 route — `gh` is absent, no token is set, and the repository
+    is private, so an unauthenticated API call answers 404. Measured, not assumed.
 
 (4) R-118 — the admin panel's share of the four accessibility clauses.
     NOT MET HERE, AND CORRECTLY SO. R-118's own resolution requires the figures be taken

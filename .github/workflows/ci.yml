@@ -342,6 +342,24 @@ jobs:
           corepack prepare --activate
           pnpm --version
 
+      # THE PNPM STORE CACHE, AND WHY IT IS A SEPARATE STEP RATHER THAN setup-node's OWN
+      # `cache: pnpm` INPUT. That input makes the action shell out to `pnpm store path` to
+      # find the directory to cache -- and it runs as part of setup-node, which is BEFORE
+      # corepack has put pnpm on the runner. So the convenient form cannot work in a
+      # corepack-provisioned job at all; the store path has to be resolved after pnpm
+      # exists, which is here.
+      #
+      # It also keeps the pnpm version single-sourced: nothing in this job names a version,
+      # and `corepack prepare --activate` reads `packageManager` from package.json.
+      - name: Resolve the pnpm store path, now that pnpm exists
+        run: echo "STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
       - name: Install, with the lockfile as the authority
         # --frozen-lockfile so CI cannot silently resolve a different tree than the one that
         # was verified. A lockfile that disagrees with package.json fails here, which is the
@@ -361,6 +379,17 @@ jobs:
       # the one format where colours actually live unchecked. Both readers share one pattern
       # list (tools/design-tokens/patterns.mjs) and both are proven on committed fixtures.
       - run: pnpm run lint:tokens
+
+      # ⚠ THIS STEP WAS MISSING, and the gap is the reason the parity check below it now
+      # exists. `lint:shell` was added to `pnpm gate` and to the `lint` script and never to
+      # this job, so the $? hazard checker ran locally and not in CI -- which is the
+      # "a green local gate and a green CI are two different claims" shape `R-126` is about,
+      # one step over.
+      #
+      # tools/gate/bin/check-shell-evidence: every executable script must `set -o pipefail`
+      # and no `$?` may be read after a pipe or a command substitution. Proven to fail on
+      # tools/gate/fixtures/bad-evidence.sh.fixture.
+      - run: pnpm run lint:shell
 
       - run: pnpm run format:check
 

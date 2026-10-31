@@ -42,10 +42,14 @@ export default defineConfig({
       },
       {
         test: {
-          name: 'design-tokens-rule',
-          root: './tools/design-tokens',
+          // Both tool packages: the design-token rule and the gate's own checks. One
+          // project rather than two, because they share an environment and neither has a
+          // config of its own -- and a `tools/*/test` glob means a third tool package's
+          // tests are picked up without editing this file.
+          name: 'tools',
+          root: './tools',
           environment: 'node',
-          include: ['test/**/*.test.mjs'],
+          include: ['*/test/**/*.test.mjs'],
         },
       },
     ],
