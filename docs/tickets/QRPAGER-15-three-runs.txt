@@ -1,39 +1,35 @@
 three-green-runs (frontend workspace)
-  commit:  4b71c197f2c065873c5440a4f15bab63329dfd61
+  commit:  f7177edaf95003af6df468895497506a8d6025c2
   runs:    3, consecutive -- a red stops the loop
 
-  ⚠ THE WORKING TREE IS DIRTY. Three runs at a commit mean nothing if the tree
-    changes under them, so this is reported rather than ignored:
-       M docs/tickets/QRPAGER-15-three-runs.txt
-
-===== run 1 of 3, started 2026-10-31T18:13:28Z =====
+===== run 1 of 3, started 2026-10-31T18:35:04Z =====
       Tests  516 passed (516)
 Statements   : 92.18% ( 602/653 )
 Branches     : 90.67% ( 389/429 )
 Functions    : 98.23% ( 167/170 )
 Lines        : 93.05% ( 536/576 )
   64 passed (3.0s)
-gate: all 11 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T181328Z.log
+gate: all 11 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T183504Z.log
   run 1: GREEN
 
-===== run 2 of 3, started 2026-10-31T18:14:13Z =====
+===== run 2 of 3, started 2026-10-31T18:35:49Z =====
       Tests  516 passed (516)
 Statements   : 92.18% ( 602/653 )
 Branches     : 90.67% ( 389/429 )
 Functions    : 98.23% ( 167/170 )
 Lines        : 93.05% ( 536/576 )
-  64 passed (3.2s)
-gate: all 11 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T181413Z.log
+  64 passed (3.3s)
+gate: all 11 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T183549Z.log
   run 2: GREEN
 
-===== run 3 of 3, started 2026-10-31T18:14:57Z =====
+===== run 3 of 3, started 2026-10-31T18:36:37Z =====
       Tests  516 passed (516)
 Statements   : 92.18% ( 602/653 )
 Branches     : 90.67% ( 389/429 )
 Functions    : 98.23% ( 167/170 )
 Lines        : 93.05% ( 536/576 )
-  64 passed (3.0s)
-gate: all 11 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T181458Z.log
+  64 passed (3.8s)
+gate: all 11 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T183637Z.log
   run 3: GREEN
 
-three-green-runs: 3 of 3 GREEN, consecutive, at 4b71c197f2c065873c5440a4f15bab63329dfd61
+three-green-runs: 3 of 3 GREEN, consecutive, at f7177edaf95003af6df468895497506a8d6025c2
