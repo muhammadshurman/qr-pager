@@ -10,8 +10,8 @@
     "lint": "pnpm run lint:es && pnpm run lint:tokens && pnpm run format:check",
     "lint:es": "eslint .",
     "lint:tokens": "node tools/design-tokens/bin/scan-css.mjs",
-    "format:check": "prettier --check .",
-    "format": "prettier --write .",
+    "format:check": "prettier --check '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'",
+    "format": "prettier --write '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'",
     "typecheck": "pnpm -r --no-bail run typecheck",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
     "@qrpager/eslint-plugin-design-tokens": "workspace:*",
     "@types/node": "22.20.5",
     "@vitest/coverage-v8": "5.0.5",

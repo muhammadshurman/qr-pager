@@ -83,6 +83,49 @@ export const PATTERNS = [
   },
   {
     rule: 'no-raw-color',
+    id: 'style-object-color',
+    where: 'js',
+    /**
+     * A colour in an inline style object.
+     *
+     * ⚠ ADDED BECAUSE THE RULE HAD A HOLE HERE. The hex pattern above catches
+     * `style={{ color: '#10231B' }}` -- but only because the VALUE happens to be a hex.
+     * `style={{ color: 'white' }}` carries no hex, no colour function and no digit, so
+     * every other pattern in this file accepted it. A named colour is outside the approved
+     * palette by definition, and an inline style is the one form that reaches the DOM
+     * without passing through any CSS file.
+     *
+     * Found by the bad fixture's own expectation not being met, which is the third time
+     * these fixtures have caught the rule rather than the rule catching them.
+     */
+    styleProperties: [
+      'color',
+      'backgroundColor',
+      'background',
+      'borderColor',
+      'borderTopColor',
+      'borderRightColor',
+      'borderBottomColor',
+      'borderLeftColor',
+      'borderInlineColor',
+      'borderBlockColor',
+      'outlineColor',
+      'fill',
+      'stroke',
+      'caretColor',
+      'textDecorationColor',
+      'columnRuleColor',
+      'accentColor',
+      'boxShadow',
+      'textShadow',
+    ],
+    colourGuard: true,
+    message:
+      'hard-coded colour in an inline style ({{match}}). Use var(--color-…). An inline style ' +
+      'is the one form that reaches the DOM without passing through any CSS file.',
+  },
+  {
+    rule: 'no-raw-color',
     id: 'tailwind-arbitrary-color',
     where: 'both',
     // D3, and QRPAGER-15 §5 names this form: text-[#fff]. Tailwind's square-bracket escape
@@ -131,13 +174,36 @@ export const PATTERNS = [
     // An inline style object is a component carrying its own value with extra steps, and it
     // is the one form that reaches the DOM without passing through any CSS file.
     styleProperties: [
-      'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
-      'marginBlock', 'marginInline', 'marginBlockStart', 'marginBlockEnd',
-      'marginInlineStart', 'marginInlineEnd',
-      'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-      'paddingBlock', 'paddingInline', 'paddingBlockStart', 'paddingBlockEnd',
-      'paddingInlineStart', 'paddingInlineEnd',
-      'gap', 'rowGap', 'columnGap', 'inset', 'top', 'right', 'bottom', 'left',
+      'margin',
+      'marginTop',
+      'marginRight',
+      'marginBottom',
+      'marginLeft',
+      'marginBlock',
+      'marginInline',
+      'marginBlockStart',
+      'marginBlockEnd',
+      'marginInlineStart',
+      'marginInlineEnd',
+      'padding',
+      'paddingTop',
+      'paddingRight',
+      'paddingBottom',
+      'paddingLeft',
+      'paddingBlock',
+      'paddingInline',
+      'paddingBlockStart',
+      'paddingBlockEnd',
+      'paddingInlineStart',
+      'paddingInlineEnd',
+      'gap',
+      'rowGap',
+      'columnGap',
+      'inset',
+      'top',
+      'right',
+      'bottom',
+      'left',
     ],
     message:
       'hard-coded spacing in an inline style ({{match}}). Use var(--space-…) or a token class.',
@@ -168,8 +234,7 @@ export const PATTERNS = [
     id: 'style-object-font-size',
     where: 'js',
     styleProperties: ['fontSize', 'lineHeight', 'letterSpacing'],
-    message:
-      'hard-coded type value in an inline style ({{match}}). Use var(--size-…).',
+    message: 'hard-coded type value in an inline style ({{match}}). Use var(--size-…).',
   },
 ]
 
@@ -231,7 +296,9 @@ const DIGIT_WITH_UNIT =
  * it. The shorthand is split FIRST now, and every part is judged on its own.
  */
 export function valueIsAcceptable(rawValue) {
-  const value = String(rawValue).trim().replace(/\s*!important\s*$/i, '')
+  const value = String(rawValue)
+    .trim()
+    .replace(/\s*!important\s*$/i, '')
 
   if (value === '') return true
   if (KEYWORD_SAFE.test(value)) return true
@@ -242,7 +309,10 @@ export function valueIsAcceptable(rawValue) {
 
   // A comma-separated list at one level -- `font-family: a, b` -- likewise.
   if (value.includes(',') && !/^(?:var|calc|clamp|min|max|round)\(/i.test(value)) {
-    const commaParts = value.split(',').map((p) => p.trim()).filter(Boolean)
+    const commaParts = value
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean)
     if (commaParts.length > 1) return commaParts.every((part) => valueIsAcceptable(part))
   }
 
@@ -271,6 +341,36 @@ export function valueIsAcceptable(rawValue) {
 
   // Anything left carrying a digit is a hard-coded magnitude.
   return !/\d/.test(value)
+}
+
+/**
+ * Is this value acceptable for a COLOUR property?
+ *
+ * A separate judgement from `valueIsAcceptable`, deliberately. That function asks "is this a
+ * magnitude typed at the use site", and a colour is not a magnitude -- `white` carries no
+ * digit at all and would sail through it. For a colour the question is the opposite way
+ * round: an ALLOW-LIST, because the approved palette is eleven values and anything not
+ * named by a token is outside it by definition.
+ */
+export function colourValueIsAcceptable(rawValue) {
+  const value = String(rawValue).trim()
+  if (value === '') return true
+  if (/^(?:currentcolor|transparent|inherit|initial|unset|revert|none)$/i.test(value)) return true
+
+  // A shorthand like a box-shadow: every part must be acceptable, and a bare length or
+  // keyword inside one is fine -- what must not appear is a colour that is not a token.
+  const parts = splitTopLevel(value)
+  if (parts.length > 1) {
+    return parts.every((part) => colourValueIsAcceptable(part) || valueIsAcceptable(part))
+  }
+
+  // A token reference, with its fallback judged too.
+  const varRef = value.match(/^var\(\s*--[a-z0-9-]+\s*(?:,([\s\S]*))?\)$/i)
+  if (varRef) return varRef[1] === undefined || colourValueIsAcceptable(varRef[1])
+
+  // Anything else -- a hex, a colour function, a named colour -- is a colour decided at the
+  // use site.
+  return false
 }
 
 /** Every rule id this file defines, so a reader cannot silently apply a subset. */

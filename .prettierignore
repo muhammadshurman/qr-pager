@@ -15,4 +15,11 @@ node_modules/
 coverage/
 .next/
 apps/api/
+
+# ⚠ ALL MARKDOWN, not just docs/. Prettier reformatted CLAUDE.md on its first run --
+# *emphasis* to _emphasis_ and a reflowed table -- which is a diff nobody authored in a
+# file that is this repository's agent entry point. The project's prose is written by hand
+# and reviewed by hand; a formatter's opinion about it is noise in every future diff and
+# would make a real edit hard to see.
+*.md
 docs/

@@ -60,12 +60,7 @@ export default defineConfig({
         'packages/ui/src/**/*.{ts,tsx}',
         'tools/design-tokens/*.mjs',
       ],
-      exclude: [
-        '**/generated/**',
-        '**/*.d.ts',
-        '**/index.ts',
-        'packages/tokens/src/fonts/**',
-      ],
+      exclude: ['**/generated/**', '**/*.d.ts', '**/index.ts', 'packages/tokens/src/fonts/**'],
       thresholds: {
         lines: 90,
         functions: 90,

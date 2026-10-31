@@ -12,7 +12,6 @@ import {
   protectedProperties,
   resolveColour,
   resolveOrderReady,
-  resolveTheme,
   type ColourRole,
   type Theme,
 } from '../src/source.ts'
@@ -97,9 +96,9 @@ describe('the order-ready screen -- AAA, computed from the source', () => {
   it('clears AAA on every pair the source declares', () => {
     expect(ORDER_READY_PAIRS).toHaveLength(3)
     for (const pair of ORDER_READY_PAIRS) {
-      expect(contrast(resolveOrderReady(pair.fg), resolveOrderReady(pair.bg))).toBeGreaterThanOrEqual(
-        pair.bar,
-      )
+      expect(
+        contrast(resolveOrderReady(pair.fg), resolveOrderReady(pair.bg)),
+      ).toBeGreaterThanOrEqual(pair.bar)
     }
   })
 
@@ -133,11 +132,9 @@ describe('the order-ready screen -- AAA, computed from the source', () => {
   })
 
   it('is the approved pair, not merely self-consistent', () => {
-    expect(Object.keys(ORDER_READY).map((n) => resolveOrderReady(n as keyof typeof ORDER_READY))).toEqual([
-      '#0A1F17',
-      '#F2F4F1',
-      '#3DDC97',
-    ])
+    expect(
+      Object.keys(ORDER_READY).map((n) => resolveOrderReady(n as keyof typeof ORDER_READY)),
+    ).toEqual(['#0A1F17', '#F2F4F1', '#3DDC97'])
   })
 })
 
@@ -169,11 +166,9 @@ describe('every derived value clears its bar, in BOTH themes -- condition 4', ()
     '%s %s is >= %s:1 against paper, surface and surface-2 -- exactly %s',
     (theme, role, bar, expected) => {
       const fg = resolveColour(theme as Theme, role as ColourRole)
-      const measured = BACKGROUNDS.map((bg) =>
-        ratioTo2dp(fg, resolveColour(theme as Theme, bg)),
-      )
+      const measured = BACKGROUNDS.map((bg) => ratioTo2dp(fg, resolveColour(theme as Theme, bg)))
       expect(measured).toEqual(expected)
-      for (const ratio of measured) expect(ratio).toBeGreaterThanOrEqual(bar as number)
+      for (const ratio of measured) expect(ratio).toBeGreaterThanOrEqual(bar)
     },
   )
 
@@ -199,16 +194,21 @@ describe('hairline is decorative only, and border-strong is why -- condition 6',
   it.each([
     ['light', 1.29],
     ['dark', 2.08],
-  ])('%s hairline is %s:1 on its ground -- below 3:1, so never a control boundary', (theme, expected) => {
-    const t = theme as Theme
-    expect(ratioTo2dp(resolveColour(t, 'hairline'), resolveColour(t, 'paper'))).toBe(expected)
-    expect(contrast(resolveColour(t, 'hairline'), resolveColour(t, 'paper'))).toBeLessThan(3)
-  })
+  ])(
+    '%s hairline is %s:1 on its ground -- below 3:1, so never a control boundary',
+    (theme, expected) => {
+      const t = theme as Theme
+      expect(ratioTo2dp(resolveColour(t, 'hairline'), resolveColour(t, 'paper'))).toBe(expected)
+      expect(contrast(resolveColour(t, 'hairline'), resolveColour(t, 'paper'))).toBeLessThan(3)
+    },
+  )
 
   it.each([['light'], ['dark']])('%s border-strong clears 3:1 where hairline does not', (theme) => {
     const t = theme as Theme
     for (const bg of BACKGROUNDS) {
-      expect(contrast(resolveColour(t, 'border-strong'), resolveColour(t, bg))).toBeGreaterThanOrEqual(3)
+      expect(
+        contrast(resolveColour(t, 'border-strong'), resolveColour(t, bg)),
+      ).toBeGreaterThanOrEqual(3)
     }
   })
 })

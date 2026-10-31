@@ -6,7 +6,7 @@
  * `style={{ fontSize: 13 }}` and a CSS chunk in a template literal are all TypeScript as far
  * as any tool is concerned, and all three put a literal on the screen.
  */
-import { patternsFor, valueIsAcceptable } from './patterns.mjs'
+import { colourValueIsAcceptable, patternsFor, valueIsAcceptable } from './patterns.mjs'
 
 const JS_PATTERNS = patternsFor('js')
 
@@ -38,17 +38,22 @@ function checkStyleProperty(context, property, pattern) {
         : null
   if (key === null || !pattern.styleProperties.includes(key)) return
 
+  // A colour property is judged by an ALLOW-LIST and a magnitude property by "is there a
+  // number with a unit in it". Using one judgement for both is what let `color: 'white'`
+  // through: it carries no digit, so the magnitude check accepted it.
+  const acceptable = pattern.colourGuard === true ? colourValueIsAcceptable : valueIsAcceptable
+
   const value = property.value
   // A number is always a magnitude: React turns `fontSize: 13` into `font-size: 13px`.
   if (value.type === 'Literal' && typeof value.value === 'number' && value.value !== 0) {
     context.report({
       node: value,
-      message: pattern.message.replace('{{match}}', `${key}: ${value.value}`),
+      message: pattern.message.replace('{{match}}', `${key}: ${String(value.value)}`),
     })
     return
   }
   if (value.type === 'Literal' && typeof value.value === 'string') {
-    if (!valueIsAcceptable(value.value)) {
+    if (!acceptable(value.value)) {
       context.report({
         node: value,
         message: pattern.message.replace('{{match}}', `${key}: ${value.value}`),

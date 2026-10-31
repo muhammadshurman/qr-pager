@@ -54,11 +54,7 @@ export default tseslint.config(
   // does NOT apply to packages/tokens/src, which is the file that DEFINES the values: a rule
   // forbidding literals in the single source would forbid the single source.
   {
-    files: [
-      'packages/ui/**/*.{ts,tsx}',
-      'apps/web/**/*.{ts,tsx}',
-      'apps/site/**/*.{ts,tsx}',
-    ],
+    files: ['packages/ui/**/*.{ts,tsx}', 'apps/web/**/*.{ts,tsx}', 'apps/site/**/*.{ts,tsx}'],
     plugins: { '@qrpager/design-tokens': designTokens },
     rules: {
       '@qrpager/design-tokens/no-raw-color': 'error',
@@ -67,12 +63,38 @@ export default tseslint.config(
     },
   },
 
-  // Config and generator scripts are Node, not browser code, and are not components.
+  // Plain JavaScript: the ESLint plugin, the CSS scanner and the token generator.
+  //
+  // TYPE-AWARE RULES ARE OFF HERE, not suppressed per error. They are .mjs on purpose --
+  // an ESLint plugin is loaded by ESLint itself, and the token generator is run by `node
+  // --experimental-strip-types` -- so they belong to no tsconfig project and the type-aware
+  // rules have nothing to read. Leaving them on produced a parse error per file, which is
+  // the shape of a rule that is not actually running.
   {
-    files: ['**/*.config.{ts,mts,mjs,js}', '**/scripts/**/*.{ts,mts,mjs}', 'tools/**/*.mjs'],
+    files: ['**/*.mjs', '**/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { parserOptions: { projectService: false } },
+    rules: {
+      'no-console': 'off',
+      'no-undef': 'off',
+    },
+  },
+
+  // Config files and the generator: Node, not browser code, and not components.
+  {
+    files: [
+      '*.config.ts',
+      'playwright.config.ts',
+      'vitest.config.ts',
+      '**/scripts/**/*.{ts,mts}',
+      'browser/**/*.ts',
+    ],
     rules: {
       'no-console': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
+      // A browser test reads resolved values out of an engine; the engine's own types are
+      // `string` and the assertions narrow them at run time.
+      '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
 

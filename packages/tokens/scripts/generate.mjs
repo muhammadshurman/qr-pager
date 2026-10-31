@@ -28,7 +28,6 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
-  APPROVED,
   COLOUR_ROLES,
   ELEVATION,
   FOCUS,
@@ -197,8 +196,7 @@ ${cssBlock('dark', '    ')}
 
 export function buildTs() {
   const banner = BANNER_LINES.map((l) => (l === '' ? ' *' : ` * ${l}`)).join('\n')
-  const theme = (t) =>
-    roles.map((r) => `  '${r}': '${resolveColour(t, r)}',`).join('\n')
+  const theme = (t) => roles.map((r) => `  '${r}': '${resolveColour(t, r)}',`).join('\n')
 
   return `/*
 ${banner}
@@ -234,17 +232,23 @@ export const TARGET_MIN = ${TARGET_MIN_PX}
  * there is no per-theme variant of it anywhere.
  */
 export const ORDER_READY_COLOURS = {
-${Object.keys(ORDER_READY).map((n) => `  '${n}': '${resolveOrderReady(n)}',`).join('\n')}
+${Object.keys(ORDER_READY)
+  .map((n) => `  '${n}': '${resolveOrderReady(n)}',`)
+  .join('\n')}
 } as const
 
 /** The CSS custom properties the order-ready screen reads, and nothing else. */
 export const PROTECTED_PROPERTIES = [
-${protectedProperties().map((p) => `  '${p}',`).join('\n')}
+${protectedProperties()
+  .map((p) => `  '${p}',`)
+  .join('\n')}
 ] as const
 
 /** Every CSS custom property this package emits. */
 export const ALL_PROPERTIES = [
-${protectedProperties().map((p) => `  '${p}',`).join('\n')}
+${protectedProperties()
+  .map((p) => `  '${p}',`)
+  .join('\n')}
 ${roles.map((r) => `  '${colourProperty(r)}',`).join('\n')}
 ${SPACING.map((n) => `  '--space-${n}',`).join('\n')}
 ${RADIUS.map((n) => `  '--radius-${n}',`).join('\n')}
@@ -302,11 +306,15 @@ return [
      * tenant_landing_pages.theme can produce any of these property names.
      */
     'order_ready' => [
-${Object.keys(ORDER_READY).map((n) => `        '--${n}' => '${resolveOrderReady(n)}',`).join('\n')}
+${Object.keys(ORDER_READY)
+  .map((n) => `        '--${n}' => '${resolveOrderReady(n)}',`)
+  .join('\n')}
     ],
 
     'protected_properties' => [
-${protectedProperties().map((p) => `        '${p}',`).join('\n')}
+${protectedProperties()
+  .map((p) => `        '${p}',`)
+  .join('\n')}
     ],
 
     'colours' => [
@@ -368,7 +376,11 @@ ${TYPE_SCALE.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
 /** The three artefacts: where each goes and what produces it. */
 export const ARTEFACTS = [
   { path: join(PKG, 'generated', 'tokens.css'), build: buildCss, what: 'CSS custom properties' },
-  { path: join(PKG, 'generated', 'tokens.ts'), build: buildTs, what: 'TypeScript values and types' },
+  {
+    path: join(PKG, 'generated', 'tokens.ts'),
+    build: buildTs,
+    what: 'TypeScript values and types',
+  },
   {
     path: join(REPO, 'apps', 'api', 'config', 'design-tokens.php'),
     build: buildPhp,
@@ -385,10 +397,13 @@ function run() {
     const rel = relative(REPO, artefact.path)
 
     if (check) {
-      let actual = null
+      /** @type {string | null} */
+      let actual
       try {
         actual = readFileSync(artefact.path, 'utf8')
       } catch {
+        // A missing file is staleness, not an error to propagate: a fresh clone of a branch
+        // that forgot to commit the artefact looks exactly like this.
         actual = null
       }
       if (actual === null) {

@@ -7,7 +7,13 @@ import tseslint from 'typescript-eslint'
 import { describe, expect, it } from 'vitest'
 
 import plugin from '../index.mjs'
-import { PATTERNS, RULE_IDS, patternsFor, valueIsAcceptable } from '../patterns.mjs'
+import {
+  PATTERNS,
+  RULE_IDS,
+  colourValueIsAcceptable,
+  patternsFor,
+  valueIsAcceptable,
+} from '../patterns.mjs'
 import { scanSource } from '../bin/scan-css.mjs'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -30,19 +36,23 @@ const fixture = (name) => readFileSync(join(HERE, '..', 'fixtures', name), 'utf8
 /** Lint a source string with the three rules, through the real ESLint Linter. */
 function lint(code, filename = 'component.tsx') {
   const linter = new Linter()
-  return linter.verify(code, {
-    files: ['**/*.tsx', '**/*.ts'],
-    languageOptions: {
-      parser: tseslint.parser,
-      parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' },
+  return linter.verify(
+    code,
+    {
+      files: ['**/*.tsx', '**/*.ts'],
+      languageOptions: {
+        parser: tseslint.parser,
+        parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' },
+      },
+      plugins: { '@qrpager/design-tokens': plugin },
+      rules: {
+        '@qrpager/design-tokens/no-raw-color': 'error',
+        '@qrpager/design-tokens/no-raw-spacing': 'error',
+        '@qrpager/design-tokens/no-raw-font-size': 'error',
+      },
     },
-    plugins: { '@qrpager/design-tokens': plugin },
-    rules: {
-      '@qrpager/design-tokens/no-raw-color': 'error',
-      '@qrpager/design-tokens/no-raw-spacing': 'error',
-      '@qrpager/design-tokens/no-raw-font-size': 'error',
-    },
-  }, filename)
+    filename,
+  )
 }
 
 describe('the rule exists in one place and both readers see all of it', () => {
@@ -58,8 +68,8 @@ describe('the rule exists in one place and both readers see all of it', () => {
   it('applies every pattern through one reader or the other, so none is orphaned', () => {
     // A pattern nobody applies is a pattern that silently stopped working. Exact counts,
     // never a range: a `toBeGreaterThan` here would pass on a list that had shrunk.
-    expect(PATTERNS).toHaveLength(10)
-    expect(patternsFor('js')).toHaveLength(7)
+    expect(PATTERNS).toHaveLength(11)
+    expect(patternsFor('js')).toHaveLength(8)
     expect(patternsFor('css')).toHaveLength(8)
 
     const applied = new Set([
@@ -106,23 +116,21 @@ describe('the ESLint half fails on the committed bad fixture', () => {
     ['m-[1.5rem]', 'no-raw-spacing'],
     ['text-[13px]', 'no-raw-font-size'],
   ])('catches %s under %s', (needle, rule) => {
-    const hits = messages.filter(
-      (m) => m.message.includes(needle) && m.ruleId.endsWith(rule),
-    )
+    const hits = messages.filter((m) => m.message.includes(needle) && m.ruleId.endsWith(rule))
     expect(hits.length).toBeGreaterThan(0)
   })
 
   it.each([
     ['color: #10231B', 'no-raw-color'],
+    ['backgroundColor: white', 'no-raw-color'],
+    ['borderColor: rgb(1,2,3)', 'no-raw-color'],
     ['fontSize: 13', 'no-raw-font-size'],
     ['padding: 13px', 'no-raw-spacing'],
     ['marginTop: 24', 'no-raw-spacing'],
     ['gap: 1.5rem', 'no-raw-spacing'],
     ['lineHeight: 19', 'no-raw-font-size'],
   ])('catches the inline style %s under %s', (needle, rule) => {
-    const hits = messages.filter(
-      (m) => m.message.includes(needle) && m.ruleId.endsWith(rule),
-    )
+    const hits = messages.filter((m) => m.message.includes(needle) && m.ruleId.endsWith(rule))
     expect(hits.length).toBeGreaterThan(0)
   })
 })
@@ -144,13 +152,15 @@ describe('the CSS half', () => {
     expect([...fired].sort()).toEqual(['no-raw-color', 'no-raw-font-size', 'no-raw-spacing'])
 
     const ids = new Set(findings.map((f) => f.id))
-    expect([...ids].sort()).toEqual([
-      'css-font-size-declaration',
-      'css-spacing-declaration',
-      'color-function',
-      'hex',
-      'named-color',
-    ].sort())
+    expect([...ids].sort()).toEqual(
+      [
+        'css-font-size-declaration',
+        'css-spacing-declaration',
+        'color-function',
+        'hex',
+        'named-color',
+      ].sort(),
+    )
   })
 
   it('catches a shorthand whose parts are MIXED, which it once did not', () => {
@@ -169,8 +179,48 @@ describe('the CSS half', () => {
   })
 
   it('does not fire on a value named inside a comment', () => {
-    const findings = scanSource('/* #0B6B4F rgb(1,2,3) white 13px */ .a { color: var(--x); }', 'c.css')
+    const findings = scanSource(
+      '/* #0B6B4F rgb(1,2,3) white 13px */ .a { color: var(--x); }',
+      'c.css',
+    )
     expect(findings).toEqual([])
+  })
+})
+
+describe('colourValueIsAcceptable -- an allow-list, not a digit check', () => {
+  it.each([
+    'var(--color-ink)',
+    'currentColor',
+    'transparent',
+    'inherit',
+    'var(--color-ink, var(--color-paper))',
+    // The approved elevation, as the token it is. There is exactly ONE elevation in the
+    // system, so a component names it rather than rebuilding it.
+    'var(--elevation-card)',
+  ])('accepts %s', (v) => {
+    expect(colourValueIsAcceptable(v)).toBe(true)
+  })
+
+  it.each([
+    'white',
+    'black',
+    'red',
+    '#fff',
+    '#10231B',
+    'rgb(1,2,3)',
+    'oklch(62% 0.1 160)',
+    // A literal hidden in a fallback renders when the token is absent.
+    'var(--color-ink, #fff)',
+    'var(--color-ink, white)',
+    // ⚠ MY FIRST EXPECTATION HAD THIS IN THE ACCEPTED LIST AND THE RULE WAS RIGHT, NOT ME.
+    // A box-shadow re-typed at the use site is a second source for the one approved
+    // elevation, even when its colour part is a token: `2px` is not on the spacing scale
+    // and `0 1px 2px` is the elevation's own composition. The acceptable form is
+    // `var(--elevation-card)`, above.
+    '0 1px 2px var(--color-hairline)',
+    '0 2px 8px var(--color-ink)',
+  ])('refuses %s', (v) => {
+    expect(colourValueIsAcceptable(v)).toBe(false)
   })
 })
 

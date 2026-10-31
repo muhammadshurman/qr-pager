@@ -385,7 +385,5 @@ export function allProperties(): string[] {
  * property a tenant theme can produce.
  */
 export function protectedProperties(): OrderReadyProperty[] {
-  return (Object.keys(ORDER_READY) as (keyof typeof ORDER_READY)[]).map(
-    (name) => `--${name}` as OrderReadyProperty,
-  )
+  return (Object.keys(ORDER_READY) as (keyof typeof ORDER_READY)[]).map((name) => `--${name}`)
 }

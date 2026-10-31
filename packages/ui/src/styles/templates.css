@@ -1,0 +1,329 @@
+/*
+ * The three landing templates' stylesheet.
+ *
+ * Token references only -- `pnpm lint:tokens` scans this file. Logical properties
+ * throughout, so RTL is the `dir` attribute rather than a second stylesheet.
+ *
+ * The three templates share this file and differ by their root class. One stylesheet means
+ * one place a contrast pair can be wrong, and the contrast test checks the pairs rather than
+ * three copies of them.
+ */
+
+.qr-lp {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-latin);
+  font-size: var(--size-16);
+}
+
+/* Arabic is a launch language, not a later addition: the font follows the lang attribute. */
+.qr-lp:lang(ar),
+[lang='ar'] .qr-lp {
+  font-family: var(--font-arabic);
+}
+
+.qr-lp__mark {
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-24);
+  padding-block: var(--space-16);
+  border-block-end: 1px solid var(--color-hairline);
+}
+
+.qr-lp__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-64);
+  padding-block-end: var(--space-64);
+}
+
+.qr-lp__heading {
+  font-size: var(--size-28);
+  color: var(--color-ink);
+  margin-block: 0 var(--space-16);
+}
+
+.qr-lp__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--color-brand);
+  /* An underline, not colour alone: brand on paper is 5.87:1, which passes AA as text but
+     tells a colour-blind reader nothing about which words are a link. */
+  text-decoration: underline;
+  min-block-size: var(--target-min);
+}
+
+/* ------------------------------------------------------------------------- hero */
+
+.qr-lp__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.qr-lp__hero-image {
+  inline-size: 100%;
+  block-size: auto;
+  object-fit: cover;
+  max-block-size: var(--space-96);
+}
+
+.qr-lp__hero-body {
+  padding-inline: var(--space-24);
+}
+
+.qr-lp__hero-heading {
+  font-size: var(--size-44);
+  line-height: 1.1;
+  margin-block: 0 var(--space-12);
+}
+
+.qr-lp__hero-sub {
+  font-size: var(--size-20);
+  color: var(--color-ink-mid);
+  margin: 0;
+  max-inline-size: 60ch;
+}
+
+.qr-lp__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  margin-block-start: var(--space-24);
+  padding-inline: var(--space-32);
+  padding-block: var(--space-12);
+  font-size: var(--size-16);
+  border-radius: var(--radius-8);
+  background-color: var(--color-brand);
+  /* surface on brand: 6.50:1, AA. */
+  color: var(--color-surface);
+  text-decoration: none;
+}
+
+.qr-lp__cta:focus-visible {
+  outline: var(--focus-width) solid var(--color-ink);
+  outline-offset: var(--focus-offset);
+}
+
+/* ------------------------------------------------------------------------ steps */
+
+.qr-lp__steps,
+.qr-lp__menu,
+.qr-lp__gallery,
+.qr-lp__hours,
+.qr-lp__contact {
+  padding-inline: var(--space-24);
+}
+
+.qr-lp__steps-list {
+  display: grid;
+  gap: var(--space-24);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.qr-lp__step {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-16);
+  padding: var(--space-24);
+}
+
+.qr-lp__step-title {
+  font-size: var(--size-20);
+  margin-block: 0 var(--space-8);
+}
+
+.qr-lp__step-body {
+  color: var(--color-ink-mid);
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------------- menu */
+
+.qr-lp__menu-list,
+.qr-lp__gallery-list,
+.qr-lp__contact-list,
+.qr-lp__footer-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qr-lp__menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.qr-lp__menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding-block: var(--space-12);
+  border-block-end: 1px solid var(--color-hairline);
+}
+
+.qr-lp__menu-image {
+  inline-size: var(--space-64);
+  block-size: var(--space-64);
+  object-fit: cover;
+  border-radius: var(--radius-8);
+  flex: none;
+}
+
+.qr-lp__menu-text {
+  flex: 1 1 auto;
+}
+
+.qr-lp__menu-name {
+  margin: 0;
+}
+
+.qr-lp__menu-description {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+  margin: 0;
+}
+
+.qr-lp__menu-price {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  /* margin-inline-START, so the price sits away from the name in both directions. `left`
+     would put it on the wrong side in Arabic. */
+  margin-inline-start: auto;
+}
+
+/* ---------------------------------------------------------------------- gallery */
+
+.qr-lp__gallery-list {
+  display: grid;
+  gap: var(--space-8);
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+}
+
+.qr-lp__figure {
+  margin: 0;
+}
+
+.qr-lp__gallery-image {
+  inline-size: 100%;
+  block-size: auto;
+  object-fit: cover;
+  border-radius: var(--radius-8);
+}
+
+.qr-lp__caption {
+  font-size: var(--size-13);
+  color: var(--color-ink-mid);
+  margin-block-start: var(--space-4);
+}
+
+/* ------------------------------------------------------------------------ hours */
+
+.qr-lp__address {
+  font-style: normal;
+  color: var(--color-ink);
+  margin-block-end: var(--space-16);
+}
+
+.qr-lp__hours-list {
+  margin: 0;
+}
+
+.qr-lp__hours-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-block: var(--space-8);
+  border-block-end: 1px solid var(--color-hairline);
+}
+
+.qr-lp__hours-day {
+  color: var(--color-ink);
+}
+
+.qr-lp__hours-value {
+  margin: 0;
+  color: var(--color-ink-mid);
+  font-variant-numeric: tabular-nums;
+}
+
+.qr-lp__coords {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+/* ----------------------------------------------------------------------- footer */
+
+.qr-lp__footer {
+  padding-inline: var(--space-24);
+  padding-block: var(--space-32);
+  border-block-start: 1px solid var(--color-hairline);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+.qr-lp__footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  margin-block-start: var(--space-12);
+}
+
+.qr-lp__footer-text {
+  margin: 0;
+}
+
+/* ------------------------------------------------- the three arrangements differ */
+
+/* CLASSIC: one column, the builder's own order, a readable measure. */
+.qr-lp--classic .qr-lp__main {
+  max-inline-size: 48rem;
+  /* margin-inline auto centres in both directions; `margin-left: auto` would not. */
+  margin-inline: auto;
+}
+
+/* EDITORIAL: a banded section and a full-measure gallery. */
+.qr-lp--editorial .qr-lp__band {
+  background-color: var(--color-surface-2);
+  padding-block: var(--space-48);
+}
+
+.qr-lp--editorial .qr-lp__wide {
+  max-inline-size: 100%;
+}
+
+.qr-lp--editorial .qr-lp__main {
+  gap: var(--space-48);
+}
+
+/* COMPACT: practical information first, tighter rhythm, phone-first measure. */
+.qr-lp--compact .qr-lp__main {
+  gap: var(--space-32);
+  max-inline-size: 32rem;
+  margin-inline: auto;
+}
+
+.qr-lp--compact .qr-lp__practical {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-16);
+  padding-block: var(--space-24);
+  margin-inline: var(--space-16);
+}
+
+.qr-lp--compact .qr-lp__hero-heading {
+  font-size: var(--size-28);
+}

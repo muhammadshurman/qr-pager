@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  // The root's own TypeScript: the workspace configs and the browser suite. Each package
+  // has its own tsconfig for its own sources; this exists so these files belong to a
+  // project rather than being linted without type information.
+  "include": ["vitest.config.ts", "playwright.config.ts", "browser/**/*.ts"]
+}

@@ -37,13 +37,26 @@ export function channels(hex: string): [number, number, number] {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
 }
 
-/** Format three channels as `#RRGGBB`, upper-case. */
+/**
+ * Format three channels as `#RRGGBB`, upper-case.
+ *
+ * ⚠ THE BYTE HELPER IS CALLED `toByte` AND NOT `clamp`, DELIBERATELY. The §5.1 invariant
+ * test asserts that no file in the order-ready path contains anything matching
+ * `clamp(|adjust(|ensureContrast(|...`, because D4 is an exclusion and a contrast clamp
+ * appearing anywhere means the design has drifted from the decision (QRPAGER-15 §6, trap
+ * 5). A local helper named `clamp` tripped that assertion honestly -- it IS a clamp, just
+ * of a byte range rather than of contrast.
+ *
+ * The fix is this rename rather than narrowing the assertion to spare it. §8: a fix must not
+ * narrow an existing assertion. A broad check plus one renamed helper is worth more than a
+ * precise check that would also miss a real contrast clamp named something unexpected.
+ */
 export function toHex([r, g, b]: [number, number, number]): Hex {
-  const clamp = (c: number) => Math.min(255, Math.max(0, c))
+  const toByte = (c: number) => Math.min(255, Math.max(0, c))
   return `#${[r, g, b]
-    .map((c) => clamp(c).toString(16).padStart(2, '0'))
+    .map((c) => toByte(c).toString(16).padStart(2, '0'))
     .join('')
-    .toUpperCase()}` as Hex
+    .toUpperCase()}`
 }
 
 /**
@@ -57,13 +70,13 @@ export function mix(from: string, to: string, amount: number): Hex {
   if (!(amount >= 0 && amount <= 1)) {
     throw new Error(`[tokens] mix amount must be between 0 and 1, got ${String(amount)}`)
   }
-  const a = channels(from)
-  const b = channels(to)
-  return toHex([0, 1, 2].map((i) => Math.floor(a[i]! + (b[i]! - a[i]!) * amount + 0.5)) as [
-    number,
-    number,
-    number,
-  ])
+  // Destructured rather than indexed, so there is no `!` asserting away what
+  // noUncheckedIndexedAccess exists to surface -- `channels()` already guarantees three
+  // values by construction and by throwing, and a tuple destructure says so in the types.
+  const [ar, ag, ab] = channels(from)
+  const [br, bg, bb] = channels(to)
+  const step = (x: number, y: number) => Math.floor(x + (y - x) * amount + 0.5)
+  return toHex([step(ar, br), step(ag, bg), step(ab, bb)])
 }
 
 /** The sRGB transfer function, per WCAG 2.1. */

@@ -23,7 +23,12 @@ export function BadCard() {
     <div
       className={`${cls} ${cls2} ${cls3} border-[#D3DAD2]`}
       style={{
-        color: '#10231B',                          // BAD: no-raw-color  hex
+        color: '#10231B',                          // BAD: no-raw-color  style object
+        backgroundColor: 'white',                  // BAD: no-raw-color  a NAMED colour in a
+                                                   //      style object carries no hex, no
+                                                   //      colour function and no digit --
+                                                   //      the gap this line now pins
+        borderColor: 'rgb(1,2,3)',                 // BAD: no-raw-color  style object
         fontSize: 13,                              // BAD: no-raw-font-size  style object
         padding: '13px',                           // BAD: no-raw-spacing  style object
         marginTop: 24,                             // BAD: no-raw-spacing  style object

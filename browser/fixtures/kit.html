@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kit — browser checks</title>
+    <!--
+      NO stylesheet link, deliberately. The test injects the REAL generated token file and
+      the REAL kit stylesheet with addStyleTag, read from disk at run time.
+
+      A resolved copy committed beside this file would be a fourth generated artefact that
+      could go stale, and a stale one would make these four checks measure last week's CSS
+      while reporting on today's. Reading the real files means there is nothing to keep
+      current.
+    -->
+  </head>
+  <body>
+    <main id="main">
+      <button class="qr-button qr-button--primary" id="primary">
+        <span class="qr-button__label">Primary</span>
+      </button>
+      <button class="qr-button qr-button--secondary" id="secondary">
+        <span class="qr-button__label">Secondary</span>
+      </button>
+      <button class="qr-button qr-button--quiet" id="quiet">
+        <span class="qr-button__label">Quiet</span>
+      </button>
+      <button class="qr-button qr-button--danger" id="danger">
+        <span class="qr-button__label">Danger</span>
+      </button>
+
+      <div class="qr-field">
+        <label class="qr-field__label" for="name">Name</label>
+        <input class="qr-field__input" id="name" />
+      </div>
+
+      <div class="qr-progress" id="progress">
+        <span
+          class="qr-progress__fill"
+          id="fill"
+          style="transform: scaleX(0.4); transform-origin: left"
+        ></span>
+      </div>
+
+      <span class="qr-spinner" id="spinner" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="24" height="24">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" />
+        </svg>
+      </span>
+
+      <p class="qr-timer"><span class="qr-timer__value" dir="ltr" id="timer">04:12</span></p>
+
+      <span class="qr-badge" data-status="ready" data-tone="ready" id="badge">Ready</span>
+
+      <section class="qr-card" id="card">
+        <h2 class="qr-card__title">Card</h2>
+        <p>Body</p>
+      </section>
+
+      <section class="qr-ready" id="ready" data-state="fresh">
+        <h1 class="qr-ready__heading" id="ready-heading">Your order is ready</h1>
+        <p class="qr-ready__reference" id="ready-reference" dir="ltr">A-114</p>
+        <p class="qr-ready__instruction" id="ready-instruction">Come to the counter</p>
+        <button class="qr-ready__acknowledge" id="ready-ack">On my way</button>
+      </section>
+    </main>
+  </body>
+</html>

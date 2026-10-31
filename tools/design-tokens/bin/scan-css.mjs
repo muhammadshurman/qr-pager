@@ -9,7 +9,7 @@
  * Exit 1 on any finding, with file:line:column and the matched text, so a failure names
  * what to change rather than that something is wrong somewhere.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patternsFor, valueIsAcceptable } from '../patterns.mjs'
@@ -21,26 +21,38 @@ const CSS_PATTERNS = patternsFor('css')
  * Paths this rule does not apply to, each with the reason. An exemption without a reason is
  * how a rule stops covering the thing it was written for.
  */
-const EXEMPT = [
+const EXEMPT_PREFIXES = [
   // The token source and its generated outputs ARE the values. A rule forbidding literals
-  // in the file that defines them would forbid the single source itself.
+  // in the file that defines them would forbid the single source itself -- and the approved
+  // elevation `0 1px 2px rgba(16, 35, 27, 0.06)` genuinely is a colour function, decided
+  // once, there.
   'packages/tokens/src',
   'packages/tokens/generated',
   // Deliberately-wrong files. The rule is PROVEN on them by the test, which runs the
   // scanner at them on purpose; sweeping them in the ordinary pass would make `pnpm lint`
   // permanently red.
   'tools/design-tokens/fixtures',
-  // Not this workspace.
+  // The Laravel half. Not this workspace, and `composer guard` rule 11 covers it.
   'apps/api',
-  'node_modules',
-  '.next',
-  'coverage',
-  '.git',
 ]
+
+/**
+ * Directory names skipped at ANY depth.
+ *
+ * ⚠ THIS WAS A ROOT-RELATIVE PREFIX LIST AND IT LEAKED. `node_modules` as a prefix matches
+ * only the root's own, and pnpm with `hoist=false` puts a `node_modules` inside EVERY
+ * package -- so the first real run reported 69 findings in jsdom's default stylesheet and in
+ * the token file reached through a workspace symlink. A linter that reports its own
+ * dependencies' code has no signal left in it.
+ */
+const EXEMPT_SEGMENTS = ['node_modules', '.next', 'coverage', 'dist', '.git', 'out']
 
 function isExempt(path) {
   const rel = relative(ROOT, path).split(sep).join('/')
-  return EXEMPT.some((e) => rel === e || rel.startsWith(`${e}/`))
+  if (rel === '' || rel.startsWith('..')) return false
+  const segments = rel.split('/')
+  if (segments.some((segment) => EXEMPT_SEGMENTS.includes(segment))) return true
+  return EXEMPT_PREFIXES.some((e) => rel === e || rel.startsWith(`${e}/`))
 }
 
 function cssFiles(dir, found = []) {
@@ -48,7 +60,10 @@ function cssFiles(dir, found = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
     if (isExempt(full)) continue
-    const st = statSync(full)
+    // lstat, not stat: pnpm links a workspace dependency into its consumer's
+    // node_modules, and following that link walks the same file twice under two names.
+    const st = lstatSync(full)
+    if (st.isSymbolicLink()) continue
     if (st.isDirectory()) cssFiles(full, found)
     else if (/\.css$/i.test(entry)) found.push(full)
   }
