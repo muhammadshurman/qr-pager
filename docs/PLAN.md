@@ -6061,6 +6061,84 @@ owner and a date, whatever its severity.
 
 ---
 
+#### FOUR DEFECTS THIS ROUND'S OWN GATE AND EVIDENCE FOUND, after the 24 findings
+
+None came from a reviewer. All four are recorded because each is a shape this project has
+named before, and three of them were in the machinery that writes evidence — which is where
+a defect is most expensive, because it makes a green verdict unreliable rather than wrong.
+
+**1 · A fixture email built from a UUID's TIMESTAMP collided 198 times in 200.** The PHP
+gate reported **15 failed / 1084 passed**, and every failure carried ONE identity:
+`users_email_unique` on `acting-01a1932b11bf@example.test`. **That prefix decodes to
+18:13:55.775 — it IS a millisecond timestamp.** Nineteen call sites across eleven test files
+built a *"unique"* address as `substr(str_replace('-', '', $uuid), 0, 12)`, and a v7 UUID's
+first 48 bits are the millisecond timestamp while twelve hex characters are exactly those 48
+bits. **ramsey/uuid's v7 is MONOTONIC:** inside one millisecond it keeps the timestamp and
+increments a counter in the tail, so two UUIDs made in the same millisecond share those
+twelve characters **exactly**. Measured: 200 consecutive `Str::uuid7()` calls through that
+expression gave **2 distinct emails and 198 collisions**. It survived Tasks 5, 6 and 7
+because each test takes about 0.2s, so consecutive fixtures usually landed in different
+milliseconds; bunch them and the constraint raises 23505.
+**Fixed at all 19 sites — the WHOLE uuid**, so uniqueness rests on the UUID's own uniqueness
+and not on where its entropy sits. Taking the LAST twelve would also have worked and is
+rejected deliberately: it would rest on ramsey's counter living in the tail, which is an
+implementation detail this repository has no business depending on. `TestFixtureUniquenessTest`
+asserts the **property**, with the truncated form asserted to collide from the same loop so
+the case records the defect as well as the fix, plus a scan over every test file because a
+new file copying the expression from a neighbour is how it reached nineteen.
+**`R-049`'s argument is that an unidentified flake is the most expensive defect shape on this
+branch, so this one is identified by mechanism and gets a test rather than a row.** It is NOT
+`R-092`'s claim-shortfall family, and `QRPAGER-15 §0.1`'s working rule for this branch is
+that every other red blocks. ⚠ *And the scan flagged itself on its first run — its pattern
+lives in a double-quoted string, which comment-stripping does not reach. That is the FOURTH
+instance in this task of a check reading its own text as evidence.*
+
+**2 · The shell checker's performance assertion flaked at 34,225 ms.** Its own comment said
+the 3000 ms bound was 60× the measured 0.048 s *"so it cannot flake on a loaded runner"*.
+Measured three times immediately afterwards on the same machine: **0.05 s each**. The 34 s
+run was concurrent with `composer gate`'s `php artisan test`. **Wall clock on a shared
+machine is not a measurement of the code**, which is `F10`'s shape one level over — that row
+records *"a loaded host turned a passing timeout proof into a red at 27.6 s"*.
+**The bound is NOT raised, and that is the point:** a per-line subprocess loop measured
+4.35 s locally and 6.67 s on a runner, so a bound generous enough to absorb 34 s would PASS
+the regression and the assertion would mean nothing. What changed is the **statistic** —
+three runs, fastest judged, all three reported in the failure message so a future red says
+whether it was the code or the host.
+
+**3 · The script writing the frontend gate's transcript hit the `$?` hazard this task
+mechanised.** It put an `echo` between `pnpm gate` and the read, so the transcript said
+*"exit code, read DIRECTLY: 0"* for a run that had exited 1 — in the file that is
+`check-shell-evidence`'s own evidence. The read is on the line after the command now and the
+transcript states which form it used rather than claiming directness. `check-shell-evidence`
+scans executable scripts in the repository and this one lived in a scratch directory, which
+is exactly the gap: the rule is mechanised for committed scripts and not for the hand that
+writes a transcript.
+
+**4 · The `.gitignore` guard's own non-vacuity floor counted BUILD OUTPUTS.** It asserted
+`examined >= 4`, where `examined` counts nested directories matching an unanchored pattern —
+in this working tree `apps/api/build`, both apps' `.next` and four `node_modules`, **none of
+which is tracked**. A fresh clone has no `build/` and no `.next/`, so the walk found 3 and
+the fresh-clone proof went red. **A test that depended on the builder's machine having run a
+build, inside the one suite the fresh-clone proof exists to protect** — `§6` verbatim: *"a
+pass that depends on something only present on the builder's machine is not a pass."* The
+floor is about the WALKER now and proves itself against `packages/ui/src/styles`, which is
+tracked, nested and not optional. Zero candidates in a fresh clone is a real and correct
+state, so the count is reported rather than bounded.
+
+#### The evidence, at the fix round's end
+
+| Artefact | Result |
+| --- | --- |
+| `pnpm gate` | **all 11 steps green** — `docs/tickets/QRPAGER-15-gate-frontend.txt` |
+| `composer gate` | **all 8 steps green, 1101 passed, 9076 assertions** — `-gate-php.txt`, whose header carries the 15-failure red that preceded it with its exact identity |
+| Three consecutive runs | **3 of 3 GREEN** at `f7177ed`, identical figures each run — `-three-runs.txt` |
+| Fresh clone | **GREEN**, all 11 steps, at `1b38260`, in a clone sharing no object with the working tree — `-fresh-clone.txt` |
+| Artefact staleness | **17/17** — seven artefacts staled by one character AND deleted, plus the PHP-sourced mirror in both forms and a clean-tree control — `-staleness.txt` |
+| `pnpm audit` | **No known vulnerabilities found**, exit 0 — `-audit.txt`, with the five advisories it replaced |
+| The `appearance` re-measurement | four cells, Chromium 156.0.8078.4 — `-appearance-probe.txt` |
+
+---
+
 ## 5. Accepted risks
 
 | #         | Risk                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Severity                                    | Why accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Compensating control                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Owner                                                                                                                                                                                                                                                                                                                                                                                                     | Review by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

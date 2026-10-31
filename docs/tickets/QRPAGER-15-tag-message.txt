@@ -472,8 +472,13 @@ FIGURES, AT THE HEAD COMMIT
   pnpm audit                 "No known vulnerabilities found", exit 0  (was 5 advisories:
                              2 high, 3 moderate, with no control at all)
   Dependency licences        229 packages, 10 families, 4 dispositioned, 0 refused
-  Fresh-clone proof          see docs/tickets/QRPAGER-15-fresh-clone.txt
-  Three consecutive runs     see docs/tickets/QRPAGER-15-three-runs.txt
+  composer gate              all 8 steps green, 1101 passed, 9076 assertions
+  Fresh-clone proof          GREEN at 1b38260, all 11 steps, in a clone sharing no object
+                             with the working tree
+  Three consecutive runs     3 of 3 GREEN at f7177ed, identical figures each run
+  Artefact staleness         17/17 -- seven artefacts staled by one character AND deleted,
+                             plus the PHP-sourced status mirror in both forms and a
+                             clean-tree control so the checker is not simply always red
   Contrast table             42 pairs, 0 failures, every row >= bar + 0.10 headroom
                              packages/tokens/generated/contrast.md, and the ticket's
                              evidence copy is the same bytes by construction
@@ -483,6 +488,38 @@ FIGURES, AT THE HEAD COMMIT
                              unchanged by the postcss override
 
 No PR and no merge: main stays untouched until client handover (§10).
+
+===============================================================================
+FOUR DEFECTS THIS ROUND'S OWN GATE AND EVIDENCE FOUND, AFTER THE 24 FINDINGS
+===============================================================================
+
+None came from a reviewer, and three were in the machinery that WRITES evidence -- where a
+defect is most expensive, because it makes a green verdict unreliable rather than wrong.
+
+  1. A fixture email built from a v7 UUID's TIMESTAMP collided 198 times in 200. The PHP
+     gate reported 15 failed / 1084 passed with ONE identity: users_email_unique on
+     acting-01a1932b11bf@example.test, whose prefix decodes to 18:13:55.775. Nineteen call
+     sites across eleven files truncated a monotonic v7 UUID to its 48 timestamp bits.
+     Fixed at all 19 sites and pinned by TestFixtureUniquenessTest, which asserts the
+     property AND asserts the truncated form collides from the same loop.
+     ⚠ And the scan flagged itself on its first run -- the FOURTH instance in this task of
+     a check reading its own text as evidence.
+
+  2. The shell checker's performance assertion flaked at 34,225 ms, against a 3000 ms bound
+     its own comment called unflakeable. Measured three times immediately afterwards:
+     0.05 s each. F10's shape -- wall clock on a shared machine is not a measurement of the
+     code. The bound is NOT raised (a bound absorbing 34 s would pass the regression); the
+     STATISTIC changed to best-of-three, with all three times in the failure message.
+
+  3. The script writing the frontend gate's transcript HIT THE $? HAZARD THIS TASK
+     MECHANISED -- an echo between `pnpm gate` and the read, so the transcript reported
+     exit 0 for a run that exited 1, in check-shell-evidence's own evidence file.
+
+  4. The .gitignore guard's non-vacuity floor counted BUILD OUTPUTS -- apps/api/build, both
+     apps' .next, four node_modules, none of them tracked. A fresh clone has none of those,
+     so the fresh-clone proof went red: a test depending on the builder's machine having
+     run a build, inside the one suite that proof exists to protect. The floor is about the
+     WALKER now and rests on a tracked nested directory.
 
 ===============================================================================
 WHAT THE §11 REVIEWS FOUND, AND WHERE THE DISPOSITION LIVES
