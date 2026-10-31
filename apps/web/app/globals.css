@@ -1,0 +1,9 @@
+/*
+ * The app's one stylesheet entry. Tailwind v4 (D3) plus the kit, which itself imports the
+ * generated tokens and the self-hosted @font-face rules.
+ *
+ * Nothing is declared here. A value typed into this file would be a value outside the single
+ * source, and `pnpm lint:tokens` scans it.
+ */
+@import 'tailwindcss';
+@import '@qrpager/ui/kit.css';

@@ -15,6 +15,10 @@
  */
 
 @import '@qrpager/tokens/tokens.css';
+/* The @font-face rules for the two self-hosted families. Every url() in that file is
+   relative, so this is the last link in a chain that reaches no third party -- asserted by
+   packages/tokens/test/fonts.test.ts rather than left to this comment. */
+@import '@qrpager/tokens/fonts.css';
 
 /* ------------------------------------------------------------------ foundations */
 

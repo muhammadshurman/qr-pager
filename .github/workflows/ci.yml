@@ -298,6 +298,117 @@ jobs:
       - name: Unit coverage on the code this branch adds
         run: php artisan test --coverage --min=90
 
+  frontend:
+    name: Frontend workspace — lint, types, Vitest, Playwright, build
+    runs-on: ubuntu-latest
+
+    # ADR-003: "CI gains a second job for the frontend workspace." A SECOND JOB and not a
+    # step in `gates`, for two reasons. It needs neither Postgres nor Redis, so bolting it on
+    # would make every frontend failure wait for a database to come up; and a PHP failure and
+    # a TypeScript failure must be distinguishable at a glance on the branch page, which is
+    # the same argument apps/api/bin/gate's header makes about one log for both halves.
+    #
+    # The gate itself is `pnpm gate` (tools/gate/bin/gate.mjs), the sibling of
+    # apps/api/bin/gate. The steps below are listed individually rather than calling it,
+    # because GitHub's UI then names the failing step -- `pnpm gate` is the form for a human
+    # at a terminal, who gets one readable log file instead.
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # ⚠ THE NODE VERSION COMES FROM .nvmrc, NEVER FROM A LITERAL HERE.
+      #
+      # QRPAGER-15 §7.4: a version verified in a session and not written down is a version
+      # the next fresh clone does not get. Two sources for the Node version -- one in
+      # .nvmrc for a developer and one hard-coded in this file for CI -- is the duplicated
+      # -list shape this project has already paid for twice (QA H-1, and guard rule 11c,
+      # which parses ThemeTokens rather than copying it). `node-version-file` makes .nvmrc
+      # the only place the number appears.
+      #
+      # The floor is Vitest 5's, not Next's: vitest's engines field is
+      # `^22.12.0 || ^24.0.0 || >=26.0.0`, which excludes Node 23 and 25, while next@15.5.28
+      # asks only for >=20. package.json's `engines` states the same floor and .npmrc sets
+      # engine-strict, so a clone on Node 20 is refused at install rather than failing later
+      # somewhere that does not name the cause.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: pnpm, at the version package.json pins
+        # corepack reads "packageManager": "pnpm@12.16.1" from package.json, so the version
+        # is not repeated here either.
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      - name: Install, with the lockfile as the authority
+        # --frozen-lockfile so CI cannot silently resolve a different tree than the one that
+        # was verified. A lockfile that disagrees with package.json fails here, which is the
+        # point: this job's whole claim is that a FRESH CLONE gets what the builder had.
+        run: pnpm install --frozen-lockfile
+
+      - name: Playwright's Chromium, at the version `playwright` pins
+        # The package is an exact 1.64.1 and the browser build is tied to it, so this
+        # installs the one browser the suite was verified against. --with-deps brings the
+        # shared libraries a bare runner does not have.
+        run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm run lint:es
+
+      # The CSS half of the no-hard-coded-values rule. ESLint has no CSS parser here and
+      # Tailwind v4 keeps its theme in CSS, so a rule that only read TypeScript would leave
+      # the one format where colours actually live unchecked. Both readers share one pattern
+      # list (tools/design-tokens/patterns.mjs) and both are proven on committed fixtures.
+      - run: pnpm run lint:tokens
+
+      - run: pnpm run format:check
+
+      - run: pnpm run typecheck
+
+      # §6.2's shared contracts, the TypeScript-sourced half. The token set lives in
+      # TypeScript, so Node emits the CSS custom properties, the TS values AND the PHP config
+      # Filament consumes in 8b (D5) -- and this byte-diffs all three against what the source
+      # produces right now. The PHP-sourced half (the TS status mirror) is
+      # `composer contracts:check` in the `gates` job above, because its source is the PHP
+      # enum registry.
+      #
+      # Each of the three is proven to fail on a deliberately stale file, with the exit code
+      # read directly rather than through a pipe.
+      - name: The three generated token artefacts are not stale
+        run: pnpm run tokens:check
+
+      # §6's "unit coverage >= 90% on code this task added", with Vitest as ADR-003 names.
+      # The thresholds are in vitest.config.ts, so a run below them exits non-zero here.
+      - name: Vitest, with the >= 90% coverage thresholds
+        run: pnpm exec vitest run --coverage
+
+      # R-118's four computed-style clauses: a visible focus ring, a measured 44px target,
+      # resolved contrast, and prefers-reduced-motion actually suppressing motion. All four
+      # are computed styles and jsdom computes none of them, which is why they need a real
+      # browser and why asserting them in Vitest would have been one of the weak assertions
+      # R-118 exists to refuse.
+      - name: The browser checks — R-118's four clauses
+        run: pnpm exec playwright test
+
+      - name: Both Next.js apps build
+        run: |
+          pnpm --filter @qrpager/web run build
+          pnpm --filter @qrpager/site run build
+
+      # A generated artefact or a build output left modified means something in this job
+      # wrote to the tree, and a committed artefact that disagrees with its generator is the
+      # quietest kind of wrong -- the whole reason the staleness checks exist. A clean tree
+      # is the assertion that nothing slipped past them.
+      - name: The working tree is unchanged by this job
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      - name: The gate log, on failure
+        if: failure()
+        run: cat storage/logs/*.log 2>/dev/null || true
+
   runtime:
     name: FrankenPHP runtime — SIGTERM drain and a Redis outage
     runs-on: ubuntu-latest

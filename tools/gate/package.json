@@ -1,0 +1,9 @@
+{
+  "name": "@qrpager/gate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "echo 'no TypeScript in this package' && exit 0"
+  }
+}

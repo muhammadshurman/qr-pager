@@ -385,5 +385,11 @@ export function allProperties(): string[] {
  * property a tenant theme can produce.
  */
 export function protectedProperties(): OrderReadyProperty[] {
-  return (Object.keys(ORDER_READY) as (keyof typeof ORDER_READY)[]).map((name) => `--${name}`)
+  const names = Object.keys(ORDER_READY) as (keyof typeof ORDER_READY)[]
+  // The callback's return type is ANNOTATED rather than asserted. Under this package's own
+  // tsconfig the template literal infers to OrderReadyProperty and a trailing `as` is
+  // flagged as an unnecessary assertion; under Next's compiler the same expression widens
+  // to string. A contextual return type is correct in both and is not an assertion, so
+  // neither tool has anything to complain about.
+  return names.map((name): OrderReadyProperty => `--${name}`)
 }

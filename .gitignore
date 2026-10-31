@@ -17,3 +17,6 @@ out/
 test-results/
 playwright-report/
 blob-report/
+
+# The workspace gate's own logs, the sibling of apps/api/storage/logs.
+storage/
