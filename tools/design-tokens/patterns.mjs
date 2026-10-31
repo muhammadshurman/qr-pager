@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 /**
  * ================================================================================
  * THE FORBIDDEN-VALUE LIST, AND IT EXISTS EXACTLY ONCE
@@ -26,6 +30,66 @@
  * three named categories, because a rule that admits `rgb()` while refusing `#rgb` is a rule
  * with a documented hole in it.
  */
+
+/**
+ * The approved spacing steps, READ FROM THE GENERATED TOKEN ARTEFACT rather than typed.
+ *
+ * ⚠ THIS FILE WAS PURE UNTIL TASK 8b AND THIS IS THE ONE EXCEPTION, with a reason. The
+ * panel rule below has to know which `p-<n>` class names are on the ladder, and the ladder
+ * is `4 8 12 16 24 32 48 64 96` -- nine numbers that appear in prose in three messages in
+ * this file already. A tenth copy as an actual LIST, in the file whose own header says the
+ * forbidden-value list "exists exactly once", would be the duplicated-list shape this
+ * project has paid for twice (QA H-1, and guard rule 11c, which parses `ThemeTokens` rather
+ * than copying it). `packages/tokens/generated/tokens.css` declares `--space-<n>` for
+ * exactly those nine, and `pnpm tokens:check` holds that file to the source.
+ *
+ * ⚠ AND IT IS READ LAZILY, WHICH IS NOT A STYLE CHOICE. `rule.test.mjs` proves the CSS
+ * reader's empty-target-list floor by COPYING `scan-css.mjs` and this file into a temporary
+ * directory with no `packages/` beside them. A read at module load therefore threw ENOENT on
+ * import and took that test down -- found by running it, not by reasoning. Resolving on
+ * first USE keeps this file importable anywhere while still deriving the ladder from the one
+ * source wherever it is actually applied.
+ */
+/**
+ * The spacing steps declared by one stylesheet's text.
+ *
+ * Exported and PURE so the refusal below can be driven in-process. A `throw` reachable only
+ * through a file read is a `throw` nothing tests, and this one is the difference between a
+ * pattern built from the real ladder and one built from a truncated read.
+ *
+ * @param {string} css the generated token stylesheet's text
+ * @param {string} [origin] what to name in the error
+ * @returns {string[]} the step numbers, as strings
+ */
+export function spacingStepsFrom(css, origin = 'packages/tokens/generated/tokens.css') {
+  const steps = [...css.matchAll(/^\s*--space-(\d+)\s*:/gm)].map((m) => m[1])
+
+  if (steps.length < 5) {
+    throw new Error(
+      `patterns.mjs read only ${String(steps.length)} spacing steps from ${origin}. A pattern ` +
+        'built from an incomplete ladder would refuse approved values and admit unapproved ' +
+        'ones, so this fails rather than guessing.',
+    )
+  }
+
+  return steps
+}
+
+let spacingSteps = null
+
+function approvedSpacingSteps() {
+  spacingSteps ??= spacingStepsFrom(
+    readFileSync(
+      join(
+        fileURLToPath(new URL('../../', import.meta.url)),
+        'packages/tokens/generated/tokens.css',
+      ),
+      'utf8',
+    ),
+  )
+
+  return spacingSteps
+}
 
 /**
  * Values that are not design decisions and are therefore never forbidden.
@@ -220,6 +284,70 @@ export const PATTERNS = [
       'hard-coded font size in {{match}}. Use var(--size-…). The approved type scale is ' +
       '13 16 20 28 44 64 96 -- one ratio, with no in-between sizes.',
   },
+  // ------------------------------------------------- the Filament panels (Task 8b)
+  {
+    rule: 'no-raw-spacing',
+    id: 'panel-off-ladder-spacing',
+    where: 'panel',
+    /**
+     * ⚠ THE ENFORCEMENT HALF OF `SR-1`'s ONE MEASURED EXCEPTION.
+     *
+     * The panels cannot clear Tailwind's `--spacing` namespace: in Tailwind v4 the bare
+     * `--spacing` key's EXISTENCE is what enables the dynamic `p-<n>` utility, and Filament
+     * calls the `--spacing(…)` theme function at three sites, so the key must exist and
+     * `p-5` = 20px therefore compiles whatever value it holds. Four values were measured and
+     * all four emitted it. `panel-theme.test.mjs` asserts that exception and counts what
+     * forces it; THIS refuses the thing the exception lets through.
+     *
+     * The numbers are the TOKEN STEPS, not multipliers: under the panel theme `p-4` resolves
+     * to `var(--spacing-4)` -> `var(--space-4)`, an approved 0.25rem. So `p-4` is on the
+     * ladder and `p-5` is not, and the step list is derived above rather than typed.
+     *
+     * Deliberately NOT applied to the apps: their theme clears the namespace outright, so
+     * `p-5` does not compile there at all and a lint rule would be a second mechanism for
+     * something already impossible.
+     */
+    get regex() {
+      return new RegExp(
+        String.raw`\b(?:p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|gap|gap-x|gap-y|space-x|space-y)-(?!(?:${approvedSpacingSteps().join('|')})\b)\d+\b`,
+        'g',
+      )
+    },
+    get message() {
+      return (
+        'off-ladder spacing utility {{match}}. The panel build CANNOT refuse this one -- the ' +
+        'bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). ' +
+        `The approved steps are ${approvedSpacingSteps().join(' ')}.`
+      )
+    },
+  },
+  {
+    rule: 'no-raw-color',
+    id: 'panel-structural-colour',
+    where: 'panel',
+    /**
+     * `bg-white`, `text-white`, `bg-black` and friends in AUTHORED panel code.
+     *
+     * ⚠ THESE ARE DELIBERATELY STILL DEFINED IN THE PANEL THEME, which is why a lint rule is
+     * the only instrument. Measured over the vendor tree: Filament's own CSS `@apply`s
+     * `bg-white` 145 times, `text-white` 77, `ring-white` 56 and `border-white` 50 -- so
+     * clearing `--color-white` removes the framework's stylesheet, which is exactly the
+     * failure `SR-1` ruled on ("redefine, do not clear"). Redefining it to a token was
+     * considered and rejected for this task: Filament pairs `bg-white` with
+     * `dark:bg-gray-<n>`, so the pairs are already theme-aware, and silently repointing 328
+     * vendor sites at a token is a change no server-rendered test can measure -- it needs
+     * R-118's browser harness and a human looking at it.
+     *
+     * So the vendor keeps them and OUR code may not use them: white and black are not among
+     * the eleven approved values, and `bg-white` in dark mode is a light rectangle.
+     */
+    regex:
+      /\b(?:bg|text|border|ring|outline|divide|decoration|fill|stroke|accent|caret|placeholder|shadow|from|via|to)-(?:white|black)\b/g,
+    message:
+      'structural colour utility {{match}} in authored panel code. White and black are not ' +
+      "among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites " +
+      '-- so the theme still defines them; this code must use a token utility instead.',
+  },
   {
     rule: 'no-raw-font-size',
     id: 'tailwind-arbitrary-font-size',
@@ -376,7 +504,12 @@ export function colourValueIsAcceptable(rawValue) {
 /** Every rule id this file defines, so a reader cannot silently apply a subset. */
 export const RULE_IDS = [...new Set(PATTERNS.map((p) => p.rule))]
 
-/** Patterns a given reader must apply. */
+/**
+ * Patterns a given reader must apply.
+ *
+ * Readers: 'js' (ESLint, over .ts/.tsx/.mjs/.js), 'css' (bin/scan-css.mjs), and from Task 8b
+ * 'panel' (bin/scan-panel.mjs, over the Filament panels' authored PHP and Blade).
+ */
 export function patternsFor(reader) {
   return PATTERNS.filter((p) => p.where === 'both' || p.where === reader)
 }

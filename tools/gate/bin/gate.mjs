@@ -63,6 +63,12 @@ const steps = [
   // as having succeeded when it had exited 1; this is the step that stops that depending
   // on anyone remembering the rule. Proven to fail on
   // tools/gate/fixtures/bad-evidence.sh.fixture.
+  // The Filament panels' authored PHP and Blade, Task 8b. A THIRD reader of the one pattern
+  // list: ESLint cannot parse PHP or Blade, and scan-css.mjs exempts apps/api by name. It is
+  // load-bearing where the apps' equivalent is not -- the panel theme must REDEFINE rather
+  // than clear (SR-1), so `p-5` and `bg-white` still compile there and a lint rule is the
+  // only instrument that can refuse them.
+  ['pnpm', ['run', 'lint:panel']],
   ['pnpm', ['run', 'lint:shell']],
   ['pnpm', ['run', 'format:check']],
   ['pnpm', ['run', 'typecheck']],

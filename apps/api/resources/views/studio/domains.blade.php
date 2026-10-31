@@ -12,7 +12,7 @@
     @php($domains = $this->domains())
     @php($statuses = \App\Domain\Landing\DomainStatus::class)
 
-    <div class="fi-section p-4 space-y-3">
+    <div class="fi-section p-4 space-y-12">
         <h2 class="text-base font-semibold">Your address</h2>
 
         @if ($domains === [])
@@ -27,7 +27,7 @@
         @endif
     </div>
 
-    <form wire:submit="add" class="fi-section p-4 space-y-3">
+    <form wire:submit="add" class="fi-section p-4 space-y-12">
         <h2 class="text-base font-semibold">Add a domain</h2>
 
         <label for="hostname" class="block text-sm font-medium">Hostname</label>
@@ -35,23 +35,23 @@
         <input id="hostname" type="text" wire:model="hostname" inputmode="url"
                autocomplete="off" spellcheck="false" placeholder="olive.example.com"
                aria-describedby="hostname-help"
-               class="block w-full rounded-lg border px-3 py-2">
+               class="block w-full rounded-lg border px-12 py-8">
 
         <p id="hostname-help" class="text-sm">
             The hostname only — no https:// and no trailing slash.
         </p>
 
-        <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-4 py-2 rounded-lg">
+        <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg">
             Add domain
         </button>
     </form>
 
     @foreach ($domains as $domain)
-        <div class="fi-section p-4 space-y-3">
+        <div class="fi-section p-4 space-y-12">
             <h2 class="text-base font-semibold">{{ $domain->hostname }}</h2>
 
             {{-- The state is TEXT, never a colour alone (§12's accessibility bar). --}}
-            <div role="status" aria-live="polite" class="space-y-2">
+            <div role="status" aria-live="polite" class="space-y-8">
                 @switch($domain->status)
                     @case($statuses::PendingDns)
                         <p><strong>Waiting for DNS.</strong>
@@ -59,7 +59,7 @@
 
                         @php($challenge = $this->challenge($domain->id))
 
-                        <dl class="text-sm space-y-1">
+                        <dl class="text-sm space-y-4">
                             <div><dt class="inline font-medium">Name:</dt>
                                 <dd class="inline"><code>{{ $challenge['name'] }}</code></dd></div>
                             <div><dt class="inline font-medium">Type:</dt>
@@ -111,7 +111,7 @@
 
             @if (in_array($domain->status, [$statuses::PendingDns, $statuses::DnsVerified, $statuses::CertificatePending, $statuses::Failed], true))
                 <button type="button" wire:click="advance('{{ $domain->id }}')"
-                        class="fi-btn fi-btn-size-md fi-color-primary px-4 py-2 rounded-lg">
+                        class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg">
                     @if ($domain->status === $statuses::CertificatePending)
                         Check again<span class="sr-only"> for {{ $domain->hostname }}</span>
                     @else

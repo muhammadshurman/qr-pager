@@ -13,7 +13,7 @@
     @php($assets = $this->assets())
     @php($full = $this->isFull())
 
-    <form wire:submit="store" class="fi-section p-4 space-y-3">
+    <form wire:submit="store" class="fi-section p-4 space-y-12">
         <h2 class="text-base font-semibold">Add an image</h2>
 
         <label for="media-upload" class="block text-sm font-medium">
@@ -43,12 +43,12 @@
         @enderror
 
         <button type="submit" @disabled($full)
-                class="fi-btn fi-btn-size-md fi-color-primary px-4 py-2 rounded-lg disabled:opacity-50">
+                class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg disabled:opacity-50">
             Upload
         </button>
     </form>
 
-    <div class="fi-section p-4 space-y-3">
+    <div class="fi-section p-4 space-y-12">
         <h2 class="text-base font-semibold">
             Your images ({{ count($assets) }} of {{ \App\Features\Landing\MediaLibrary::MAX_ASSETS }})
         </h2>
@@ -60,23 +60,23 @@
                 <caption class="sr-only">Images in your library</caption>
                 <thead>
                     <tr>
-                        <th scope="col" class="py-2">Name</th>
-                        <th scope="col" class="py-2">Type</th>
-                        <th scope="col" class="py-2">Size</th>
-                        <th scope="col" class="py-2">Dimensions</th>
-                        <th scope="col" class="py-2"><span class="sr-only">Actions</span></th>
+                        <th scope="col" class="py-8">Name</th>
+                        <th scope="col" class="py-8">Type</th>
+                        <th scope="col" class="py-8">Size</th>
+                        <th scope="col" class="py-8">Dimensions</th>
+                        <th scope="col" class="py-8"><span class="sr-only">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($assets as $asset)
                         <tr>
-                            <th scope="row" class="py-2 font-normal">{{ $asset->originalName }}</th>
-                            <td class="py-2">{{ $asset->contentType }}</td>
-                            <td class="py-2">{{ number_format($asset->byteSize / 1024, 1) }} KB</td>
-                            <td class="py-2">
+                            <th scope="row" class="py-8 font-normal">{{ $asset->originalName }}</th>
+                            <td class="py-8">{{ $asset->contentType }}</td>
+                            <td class="py-8">{{ number_format($asset->byteSize / 1024, 1) }} KB</td>
+                            <td class="py-8">
                                 {{ $asset->width !== null ? $asset->width.'x'.$asset->height : 'not measured' }}
                             </td>
-                            <td class="py-2">
+                            <td class="py-8">
                                 <button type="button" wire:click="delete('{{ $asset->id }}')"
                                         class="underline">
                                     Delete<span class="sr-only"> {{ $asset->originalName }}</span>

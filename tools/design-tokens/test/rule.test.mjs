@@ -275,16 +275,24 @@ describe('the rule exists in one place and both readers see all of it', () => {
     ])
   })
 
-  it('applies every pattern through one reader or the other, so none is orphaned', () => {
+  it('applies every pattern through one reader or another, so none is orphaned', () => {
     // A pattern nobody applies is a pattern that silently stopped working. Exact counts,
     // never a range: a `toBeGreaterThan` here would pass on a list that had shrunk.
-    expect(PATTERNS).toHaveLength(11)
+    //
+    // ⚠ THREE READERS FROM TASK 8b, not two. `scan-panel.mjs` reads the Filament panels'
+    // authored PHP and Blade, which ESLint cannot parse and which `scan-css.mjs` exempts by
+    // name. The union below GAINED the third reader rather than loosening: without it the
+    // two panel patterns would be in the list and applied by nobody, which is exactly the
+    // orphan this case exists to refuse.
+    expect(PATTERNS).toHaveLength(13)
     expect(patternsFor('js')).toHaveLength(8)
     expect(patternsFor('css')).toHaveLength(8)
+    expect(patternsFor('panel')).toHaveLength(7)
 
     const applied = new Set([
       ...patternsFor('js').map((p) => p.id),
       ...patternsFor('css').map((p) => p.id),
+      ...patternsFor('panel').map((p) => p.id),
     ])
     expect(applied.size).toBe(PATTERNS.length)
   })
