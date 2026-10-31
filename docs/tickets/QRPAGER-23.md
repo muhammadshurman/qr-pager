@@ -806,6 +806,65 @@ not by a local `composer gate`.
 does for the PHP gate against the `gates` job, so the shape exists and this is one step added to both
 sides of it.
 
+### 9.2a ⚠ AND THE SAME SHAPE ONE LAYER OVER, FOUND BY RUNNING THE §11 CHECKLISTS ON MY OWN DIFF
+
+**Security checklist item 7 (*"any new package: license, maintenance status, known CVEs"*) against
+`task-8b-precoding`'s own commits.** Committing `apps/api/package-lock.json` pinned **85 installed
+packages** into the repository — and they are covered by **neither** of 8a's two dependency controls:
+
+| control | what it walks | sees `apps/api/node_modules`? |
+| --- | --- | --- |
+| `pnpm audit` (gate step 7, CI step) | the pnpm workspace | **No** — `apps/api` is deliberately not a workspace member (`ADR-003`) |
+| `licences.test.mjs` | `node_modules/.pnpm` | **No** — that path is the pnpm store |
+
+```
+$ grep -n 'apps/api' pnpm-workspace.yaml
+2:# `apps/api` is the Laravel half and is deliberately NOT a workspace member
+$ grep -n "node_modules" tools/gate/test/licences.test.mjs | head -1
+48:  const store = join(REPO, 'node_modules', '.pnpm')
+```
+
+**This is `§9.2`'s shape one layer over:** there, a staleness check did not run on the side that consumes
+the artefact; here, the **dependency controls do not run on the side that has the dependencies.** And it
+is `SEC H-2`'s shape from 8a exactly — *the absent control was the durable part*.
+
+**Measured now, so the finding is about the control and not about a live exposure:**
+
+```
+$ cd apps/api && npm audit
+found 0 vulnerabilities
+```
+
+| licence family | count | against 8a's inventory |
+| --- | --- | --- |
+| MIT | 71 | `permissive` |
+| ISC | 7 | `permissive` |
+| Apache-2.0 | 2 | `permissive` |
+| **MPL-2.0** | 2 | `dispositioned` — `lightningcss`, already carried for the same reason |
+| BSD-3-Clause | 1 | `permissive` |
+| 0BSD | 1 | `permissive` |
+| **`(MIT OR CC0-1.0)`** | 1 | **in neither map** — `type-fest@5.10.0`, a dual licence whose *both* halves are known (MIT permissive, CC0-1.0 dispositioned), so it needs a **composite-string disposition**, not a decision |
+
+**No CVE, no refused licence, no secret** — the lockfile's only URLs are `registry.npmjs.org`,
+`github.com`, `opencollective.com` and `tidelift.com`, and it carries no `_auth`, `_authToken`, `password`,
+`token` or `username` key (`grep -c` → 0).
+
+**One drift worth naming:** `lightningcss` is **1.32.0** in the panel tree and the workspace carries
+**1.32.0 and 1.33.0**. Two trees, two resolutions of one transitive dependency — harmless today
+(build-time CSS tooling, MPL-2.0 dispositioned either way) and exactly why `§9.4` pins Tailwind rather
+than trusting a range.
+
+**So the implementation commit owes, as part of `§9.2`:** `npm audit` as a step of `composer gate` and of
+CI's `gates` job with its output committed; `licences.test.mjs` extended to enumerate **both** trees, with
+a composite-licence rule (a string of the form `(A OR B)` is acceptable only when **every** alternative is
+in a map); and the `(MIT OR CC0-1.0)` disposition written. Covered by `ci-parity` both ways, like the
+staleness check beside it.
+
+**And a decision this hands back:** the lockfile could instead be **un-committed**, which closes the gap
+by removal and returns `apps/api` to resolving its ranges at install time. I argued for committing it —
+*a pin without a lockfile is half a pin* — and that argument is unchanged, but it is the reason the gap
+exists, so it is named here rather than defended silently.
+
 ### 9.3 The theme stub's `@source` globs point at a directory this repo does not have
 
 ```
