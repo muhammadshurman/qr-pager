@@ -66,16 +66,23 @@ it('writes nothing to the store when a PREVIEW is rendered', function (): void {
 });
 
 it('refuses the preview to an anonymous caller', function (): void {
-    expect($this->get('/studio/preview')->status())->not->toBe(200);
-    expect($this->get('/studio/preview/asset/'.Str::uuid7())->status())->not->toBe(200);
+    // EXACT, not `not->toBe(200)`: an inequality is satisfied by a 404 from a guard that
+    // should not be there, which is how `upload-file`'s refusal survived this suite for
+    // the whole of Task 7 (`R-116`, `§4a`). 401 is Filament's Authenticate, with no
+    // session to decide anything else from.
+    expect($this->get('/studio/preview')->status())->toBe(401)
+        ->and($this->get('/studio/preview/asset/'.Str::uuid7())->status())->toBe(401);
 });
 
 it('refuses the preview to a staff member and to a platform admin', function (): void {
+    // 403 for both, and the difference from the 401 above is the point: these two ARE
+    // authenticated, and it is `canAccessPanel()` that closes the panel to them -- the
+    // seniority rule for staff (D1) and SR-1 for the platform admin.
     $this->actingForTenant(role: TenantRole::Staff);
-    expect($this->get('/studio/preview')->status())->not->toBe(200);
+    expect($this->get('/studio/preview')->status())->toBe(403);
 
     $this->actingAs(LandingFixtures::platformAdmin());
-    expect($this->get('/studio/preview')->status())->not->toBe(200);
+    expect($this->get('/studio/preview')->status())->toBe(403);
 });
 
 it('shows one tenant nothing of another tenants draft, with no parameter to tamper with', function (): void {

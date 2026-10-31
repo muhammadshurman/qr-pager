@@ -65,11 +65,23 @@ it('gives every mapped 503 a Retry-After, chosen per SQLSTATE', function (): voi
 it('advises no retry on an answer that repeating cannot fix', function (): void {
     // A 409, a 422 and a 500 have no retry interval to advertise, and inventing one would
     // tell a caller that repeating an invalid request might work.
-    foreach ([DriverError::UNIQUE_VIOLATION, DriverError::CHECK_VIOLATION, DriverError::RLS_DENIED] as $sqlstate) {
+    // The status is EXACT per sqlstate rather than `< 500`, which is the same form the
+    // case above uses for the three that DO advise a retry. A range here would have been
+    // satisfied by any 4xx, including one that mapped the wrong way.
+    // PAIRS AND NOT A MAP: these constants are numeric strings ('23505', '42501'), and
+    // PHP coerces a numeric-string array KEY to int -- so a map hands `problemFor(string)`
+    // an int and the case dies in a TypeError rather than asserting. Met while writing it.
+    $statuses = [
+        [DriverError::UNIQUE_VIOLATION, 409],
+        [DriverError::CHECK_VIOLATION, 422],
+        [DriverError::RLS_DENIED, 403],
+    ];
+
+    foreach ($statuses as [$sqlstate, $status]) {
         $response = problemFor($sqlstate)->toResponse();
 
         expect($response->headers->has('Retry-After'))->toBeFalse("{$sqlstate} advised a retry");
-        expect($response->getStatusCode())->toBeLessThan(500);
+        expect($response->getStatusCode())->toBe($status, "{$sqlstate} should be a {$status}");
     }
 });
 

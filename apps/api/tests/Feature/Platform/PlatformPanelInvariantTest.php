@@ -6,6 +6,7 @@ use App\Domain\Database\TenantTables;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Provisioning\Panel\Resources\PlatformAuditResource;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource;
+use App\Features\Provisioning\Panel\Resources\RestaurantResource\Pages\ListRestaurants;
 use App\Models\PlatformAuditEntry;
 use App\Models\TenantProvisioningRecord;
 use App\Models\TenantStatistic;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Tests\Support\LivewireRequest;
 
 /*
  * ================================================================================
@@ -95,6 +97,64 @@ function panelRoutes(): array
     sort($routes);
 
     return array_values($routes);
+}
+
+/** One route as a stable key: the method, and the URI with the APP_KEY hash normalised. */
+function panelRouteKey(string $method, string $uri): string
+{
+    return $method.' '.preg_replace('#^/livewire-[0-9a-f]{8}/#', '/livewire-<hash>/', $uri);
+}
+
+/**
+ * The EXACT status each route answers one principal, measured rather than bounded.
+ *
+ * ⚠ EXACT, BECAUSE THE RANGES THIS REPLACES BOTH PASSED ON A 404. This case used to
+ * assert `toBeLessThan(500)` for a platform admin and `>= 300 and < 500` for an anonymous
+ * caller. A global middleware refusing one of these paths answers 404, which satisfies
+ * both -- so the suite could not see the very defect that shipped in Task 7, where
+ * `RefuseUnservedVendorRoutes` refused an endpoint the product needed and a test asserted
+ * the resulting 404 as correct (`R-116`, `§4a`'s post-tag record). An inequality is the
+ * vacuous-assertion family with a different face. Measured 2026-10-31.
+ *
+ * ⚠ AND `POST /livewire-<hash>/update` IS 404 FOR BOTH PRINCIPALS, INCLUDING THE ADMIN.
+ * That 404 is Livewire's OWN and not an authorization refusal: `RequireLivewireHeaders`
+ * aborts 404 without its header, and `handleUpdate()` aborts again on an empty payload.
+ * A bare POST therefore cannot distinguish "served" from "refused by a global guard" at
+ * all, which is why this file now also sends a REAL update (the case at the end).
+ *
+ * @return array<string,int>
+ */
+function panelExpectations(string $principal): array
+{
+    return match ($principal) {
+        'platform-admin' => [
+            'GET /platform' => 200,
+            'GET /platform/audit-log' => 200,
+            'GET /platform/restaurants' => 200,
+            'POST /platform/logout' => 302,
+            'POST /livewire-<hash>/update' => 404,
+        ],
+        // A tenant's own owner, manager or staff: authenticated, and refused by
+        // canAccessPanel() rather than by the auth layer -- which is why this is 403 and
+        // the anonymous row is 401. The ruling in one status code.
+        'tenant-principal' => [
+            'GET /platform' => 403,
+            'GET /platform/audit-log' => 403,
+            'GET /platform/restaurants' => 403,
+            'POST /platform/logout' => 403,
+            'POST /livewire-<hash>/update' => 404,
+        ],
+        // No session: Filament's Authenticate answers 401 on every document route, and
+        // the logout route refuses for the same reason rather than ending nothing.
+        'anonymous' => [
+            'GET /platform' => 401,
+            'GET /platform/audit-log' => 401,
+            'GET /platform/restaurants' => 401,
+            'POST /platform/logout' => 401,
+            'POST /livewire-<hash>/update' => 404,
+        ],
+        default => [],
+    };
 }
 
 /** The tenant tables a captured statement list touches, as a set. */
@@ -242,16 +302,27 @@ it('reaches NO tenant table on any panel route, as a platform admin', function (
     expect($failures)->toBe([], implode("\n", $failures));
 });
 
-it('answers every panel route without a server error, as a platform admin', function (): void {
+it('answers every panel route the exact status it should, as a platform admin', function (): void {
     // SPLIT OUT OF THE CASE ABOVE (QA M-1). It is a different property -- "the panel works"
     // rather than "the panel touches no tenant table" -- and while the two shared a case, a
     // revert that broke the second was reported by the first. A failure must name which
     // claim it falsified.
+    //
+    // ⚠ IT ASSERTED `toBeLessThan(500)` UNTIL 2026-10-31, which a refusal passes. The
+    // table is exact now, for the reason panelExpectations() gives at length.
     $admin = platformAdmin();
+    $expected = panelExpectations('platform-admin');
 
+    expect($expected)->toHaveCount(count(panelRoutes()), 'the table has no entry for every panel route');
+
+    // The logout POST comes last in the sorted set, AFTER the three document routes, and
+    // it ends the session -- so this loop's order is load-bearing and is stated here
+    // rather than discovered. `actingAs` is re-applied per route, which makes it moot.
     foreach (panelRoutes() as [$method, $uri]) {
+        $key = panelRouteKey($method, $uri);
+
         expect($this->actingAs($admin)->call($method, $uri)->getStatusCode())
-            ->toBeLessThan(500, "{$method} {$uri} answered a server error");
+            ->toBe($expected[$key], "{$key} did not answer the status this panel's table records");
     }
 });
 
@@ -268,8 +339,10 @@ it('answers every panel route to an anonymous caller without reaching a tenant t
 
         $response = $this->call($method, $uri);
 
-        expect($response->getStatusCode())->toBeGreaterThanOrEqual(300, "{$method} {$uri} served an anonymous caller")
-            ->and($response->getStatusCode())->toBeLessThan(500);
+        // EXACT, not ">= 300 and < 500": that range passed on a 404 from a guard, which
+        // is the defect shape §4a's post-tag record for Task 7 is about.
+        expect($response->getStatusCode())
+            ->toBe(panelExpectations('anonymous')[panelRouteKey($method, $uri)], "{$method} {$uri} did not answer the status this panel's table records for an anonymous caller");
 
         $touched = tenantTablesTouched($statements);
 
@@ -279,6 +352,74 @@ it('answers every panel route to an anonymous caller without reaching a tenant t
     }
 
     expect($failures)->toBe([], implode("\n", $failures));
+});
+
+it('serves a REAL Livewire update to a platform admin, and that snapshot to nobody else', function (): void {
+    // ⚠ THE CASE THIS FILE EXISTED WITHOUT UNTIL 2026-10-31. `POST /livewire-<hash>/update`
+    // carries every table search, sort, paginate and modal submit in this panel -- QA M-2
+    // put it in panelRoutes() for exactly that reason -- but a BARE POST to it answers 404
+    // from Livewire itself, so every case that drives it proves only that something
+    // answered. A global middleware refusing the path would pass all of them, which is the
+    // defect that shipped in Task 7 one surface over (`R-116`).
+    //
+    // So this sends a real one, in the browser's sequence: GET the page, read the snapshot
+    // the server embedded in it, post it back with `$refresh` on it.
+    $admin = platformAdmin();
+    $this->actingAs($admin);
+
+    $name = 'REGISTRY-ROW-'.Str::upper(Str::random(6));
+
+    DB::insert(
+        'insert into tenant_provisionings (id, name, slug, owner_email, status, created_at, updated_at)
+         values (?, ?, ?, ?, ?::provisioning_status, now(), now())',
+        [(string) Str::uuid7(), $name, 'reg-'.Str::lower(Str::random(8)), 'o@example.test', 'pending'],
+    );
+
+    $get = $this->get('/platform/restaurants');
+    $html = (string) $get->getContent();
+
+    // THE CONTROL FOR THE NEEDLE BELOW: the registry page must render this row, or
+    // "the update response carries it" proves nothing. `tenant_provisionings` is in
+    // TestCase::RESETTABLE and the table's defaultSort is `created_at desc`, so the row
+    // inserted a moment ago is the only one and is first -- the status is asserted too,
+    // because a 429 from the panel bucket would otherwise read as "the row is missing".
+    // str_contains and not ->toContain($needle, $message): the matcher is VARIADIC, so the
+    // message becomes a second needle and the assertion then fails for its own text.
+    // Guard rule 7 refuses that form, and this case met it while being written.
+    expect($get->getStatusCode())->toBe(200)
+        ->and(str_contains($html, $name))
+        ->toBeTrue('the registry page does not render the row: the needle below would prove nothing');
+
+    $snapshot = LivewireRequest::snapshotFor($html, ListRestaurants::class);
+
+    expect($snapshot)->not->toBe('', 'the registry page embedded no snapshot for its own component');
+
+    $served = $this->postJson(LivewireRequest::updatePath(), LivewireRequest::payload($snapshot), LivewireRequest::HEADERS);
+
+    // 200 AND THE CONTENT. A 200 alone is also what Filament's Topbar answers to anybody,
+    // because it holds nothing worth refusing -- which is how the first version of this
+    // measurement reached a conclusion about the wrong component.
+    expect($served->getStatusCode())->toBe(200, 'the update endpoint did not serve a platform admin: the panel cannot do anything')
+        ->and((string) $served->json('components.0.effects.html'))->toContain($name);
+
+    // AND THE SNAPSHOT IS NOT A BEARER TOKEN: it is signed with APP_KEY and carries no
+    // session, so a replay is the authorization question asked over HTTP rather than
+    // through canAccessPanel(). A tenant owner holds no platform ability (the ruling), and
+    // an anonymous caller holds nothing at all.
+    $this->actingForTenant(role: TenantRole::Owner);
+
+    $replayed = $this->postJson(LivewireRequest::updatePath(), LivewireRequest::payload($snapshot), LivewireRequest::HEADERS);
+
+    expect($replayed->getStatusCode())->toBe(403, 'a replayed admin snapshot was served to a tenant owner')
+        ->and((string) $replayed->json('components.0.effects.html'))->toBe('');
+
+    auth()->logout();
+    session()->flush();
+
+    $anonymous = $this->postJson(LivewireRequest::updatePath(), LivewireRequest::payload($snapshot), LivewireRequest::HEADERS);
+
+    expect($anonymous->getStatusCode())->toBe(403, 'a replayed admin snapshot was served to an anonymous caller')
+        ->and((string) $anonymous->json('components.0.effects.html'))->toBe('');
 });
 
 it('refuses the panel to every tenant principal, with no tenant ability needed to decide', function (
@@ -325,8 +466,11 @@ it('refuses the panel to every tenant principal, with no tenant ability needed t
 
         $response = $this->actingAs($user)->call($method, $uri);
 
-        expect($response->getStatusCode())->toBeGreaterThanOrEqual(400, "{$uri} served a {$role}")
-            ->and($response->getStatusCode())->toBeLessThan(500)
+        // EXACT, not ">= 400 and < 500": that range is satisfied by a 404 from a global
+        // guard, so it could not tell "refused because this principal may not" from
+        // "refused because something broke". 403 is the ruling; see panelExpectations().
+        expect($response->getStatusCode())
+            ->toBe(panelExpectations('tenant-principal')[panelRouteKey($method, $uri)], "{$uri} did not refuse a {$role} the way the table records")
             ->and(tenantTablesTouched($statements))->toBe([], "{$uri} touched a tenant table for a {$role}");
     }
 })->with([

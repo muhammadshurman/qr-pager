@@ -110,7 +110,10 @@ it('refuses an anonymous flood on a panel route, rather than serving it unmetere
     expect($statuses[0])->toBe(401)
         // After it: 429, which is the finding closed.
         ->and($statuses[$limit + 1])->toBe(429)
-        ->and(array_count_values($statuses)[429] ?? 0)->toBeGreaterThanOrEqual(1);
+        // EXACTLY two, not "at least one": the loop makes `$limit + 2` requests, the first
+        // `$limit` are allowed and the last two are not, so the count is knowable and a
+        // limiter that refused early or late passes ">= 1" while failing this.
+        ->and(array_count_values($statuses)[429] ?? 0)->toBe(2);
 });
 
 it('answers the 429 with a problem document and a Retry-After header', function (): void {
