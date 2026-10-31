@@ -41,6 +41,51 @@ function MaybeImage({
   return <img className={className} src={src} alt={alt} loading="lazy" decoding="async" />
 }
 
+/**
+ * ================================================================================
+ * `mailto:` — THE STORED ADDRESS IS PERCENT-ENCODED, PER RFC 6068
+ * ================================================================================
+ *
+ * ⚠ THIS INTERPOLATED THE ADDRESS RAW, and the stored address is tenant-supplied.
+ *
+ * Task 7 validates the field with `filter_var($value, FILTER_VALIDATE_EMAIL)`, which accepts
+ * a QUOTED LOCAL PART. Measured on this repository's PHP 8.4:
+ * `"?subject=hi&body=click"@c.d` passes the validator and is stored.
+ *
+ * Interpolated raw into `mailto:`, the first unencoded `?` ENDS THE ADDRESS and opens the
+ * URI's header section, so the rest is read as `subject=hi&body=click`. A mail client then
+ * composes a message with a tenant-chosen subject and body, which is a tenant writing part
+ * of a message a CUSTOMER is about to send.
+ *
+ * Not XSS -- the attribute is HTML-escaped by React, and it is the tenant's own page. It is
+ * a URI-parsing confusion, and the fix is to encode rather than to re-validate: a sanitiser
+ * at the renderer would be a second opinion about what a valid address is, and `§6.2` is
+ * exactly about not having two.
+ *
+ * THE ENCODING IS RFC 6068's, NOT `encodeURIComponent`'s. RFC 6068 builds the `to` component
+ * from `qchar = unreserved / pct-encoded / some-delims`, and `some-delims` is
+ * `! $ ' ( ) * + , ; : @`. So `@` and `+` stay LITERAL -- `encodeURIComponent` would encode
+ * `@` and break every address -- while `?`, `&`, `#`, `=`, `/`, `%`, `"` and whitespace are
+ * encoded. `,` is encoded too, deliberately: RFC 6068 uses it to separate addresses in a
+ * `to` list and this renders exactly one address.
+ *
+ * The `tel:` sibling eight lines below has reasoned about this class since Task 7 -- its
+ * validator refuses `,` and `;` because a `tel:` URI reads them as a dial pause and a
+ * parameter separator. The email field got none of that reasoning, which is the asymmetry
+ * this closes.
+ */
+const MAILTO_LITERAL = /^[A-Za-z0-9\-._~!$'()*+;:@]$/
+
+export function mailtoHref(address: string): string {
+  let encoded = ''
+  // Iterated by CODE POINT, not by UTF-16 unit, so an internationalised address with an
+  // astral character is encoded as one character rather than as two broken halves.
+  for (const character of address) {
+    encoded += MAILTO_LITERAL.test(character) ? character : encodeURIComponent(character)
+  }
+  return `mailto:${encoded}`
+}
+
 /** An external link. `rel` is set because every one of these is tenant-authored. */
 function ExternalLink({ href, children }: { readonly href: string; readonly children: ReactNode }) {
   return (
@@ -228,7 +273,7 @@ export function Block({ block, resolve, level = 2 }: BlockProps) {
           <ul className="qr-lp__contact-list">
             {f.email !== null && f.email !== undefined && (
               <li>
-                <a className="qr-lp__link" href={`mailto:${f.email}`}>
+                <a className="qr-lp__link" href={mailtoHref(f.email)}>
                   {f.email}
                 </a>
               </li>

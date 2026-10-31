@@ -9,6 +9,7 @@ import {
   BLOCK_TYPES,
   TEMPLATES,
   TEMPLATE_NAMES,
+  mailtoHref,
   type BlockType,
   type LandingBlock,
   type LandingPage,
@@ -224,27 +225,104 @@ describe.each(TEMPLATE_NAMES)('the %s template', (name: TemplateName) => {
   })
 
   it('renders every REQUIRED field of every block as visible text', () => {
-    // The clause that makes "fillable" mean something. A required field the renderer drops
-    // produces a page the builder cannot actually produce.
+    /**
+     * The clause that makes "fillable" mean something. A required field the renderer drops
+     * produces a page the builder cannot actually produce.
+     *
+     * ⚠ THIS WAS VACUOUS AND READ AS COVERAGE. `schemaBlocks()` parses each variant's
+     * `required` array out of the committed contract -- and this case ignored it, looping
+     * instead over a HAND-WRITTEN list of six `[type, text]` pairs whose `type` half was
+     * discarded by the destructuring (`for (const [, text] of required)`). Emptying all six
+     * left 47 of 47 green: the schema's own `required` list drove nothing.
+     *
+     * It is DERIVED now. For every block variant the schema declares, for every field name
+     * that variant marks required, the SAMPLE's value for that field must appear in the
+     * rendered output -- resolved through a small projection per field SHAPE, because a
+     * required field can be a string, a list of rows or a list of images, and "appears as
+     * visible text" means something different for each.
+     *
+     * A field made required in the PHP therefore appears here as a new assertion with no
+     * edit to this file, and a required field the renderer drops fails it.
+     */
     renderTemplate()
-    const required: [BlockType, string][] = [
-      ['hero', 'Qahwa & Co'],
-      ['how_it_works', 'How the pager works'],
-      ['menu_highlights', 'Today'],
-      ['hours_location', 'Find us'],
-      ['hours_location', '12 Rainbow Street, Amman'],
-      ['contact', 'Contact'],
-    ]
-    for (const [, text] of required) {
-      expect(screen.getAllByText(text).length, `missing: ${text}`).toBeGreaterThan(0)
+
+    /** What "rendered" means for one field's sample value, by its shape. */
+    function assertRendered(type: BlockType, field: string): void {
+      const fields = SAMPLE[type].fields as Readonly<Record<string, unknown>>
+      const value = fields[field]
+      expect(
+        value,
+        `the sample for ${type}.${field} is absent, so the schema's required field is untested`,
+      ).toBeDefined()
+
+      if (typeof value === 'string') {
+        expect(
+          screen.getAllByText(value).length,
+          `${name} did not render required ${type}.${field} ("${value}")`,
+        ).toBeGreaterThan(0)
+        return
+      }
+      if (Array.isArray(value)) {
+        // A required list: every row's own strings must be present. `hours` is the live
+        // instance -- `[{ day, hours }]` -- and `images` would be the same shape with a
+        // caption that doubles as alt text.
+        expect(value.length, `the sample for ${type}.${field} is an empty list`).toBeGreaterThan(0)
+        for (const row of value as readonly Record<string, unknown>[]) {
+          for (const [key, cell] of Object.entries(row)) {
+            if (typeof cell !== 'string') continue
+            // A media id is not text; it is rendered as an image, asserted by its caption.
+            if (/^[0-9a-f]{8}-/.test(cell)) continue
+            const found =
+              screen.queryAllByText(cell).length > 0 || screen.queryAllByAltText(cell).length > 0
+            expect(
+              found,
+              `${name} did not render required ${type}.${field}[].${key} ("${cell}")`,
+            ).toBe(true)
+          }
+        }
+        return
+      }
+      throw new Error(`no projection for the shape of ${type}.${field}: ${typeof value}`)
     }
-    // hours is required and is a list: both rows must be present.
-    expect(screen.getByText('Monday')).toBeTruthy()
-    expect(screen.getByText('08:00 - 22:00')).toBeTruthy()
-    // gallery's caption is required on each image and doubles as the alt text.
+
+    let asserted = 0
+    // The committed contract, read here rather than closed over from the describe above:
+    // this block is a different `describe` and the schema is the authority for both.
+    for (const block of schemaBlocks()) {
+      for (const field of block.required) {
+        assertRendered(block.type as BlockType, field)
+        asserted += 1
+      }
+    }
+
+    // The bound that stops the derivation going quiet: the schema marks eight fields
+    // required across six of the seven variants (gallery has none), and that is the exact
+    // number -- §8's "assert exact values, never ranges".
+    expect(asserted, "the schema's required fields drove no assertion").toBe(8)
+  })
+
+  it('renders every gallery caption as ALT TEXT, which no schema field makes required', () => {
+    /**
+     * ⚠ RESTORED RATHER THAN DROPPED, AND THE REASON IS WORTH THE LINE. The hand-written
+     * list the case above replaced also asserted `getByAltText('The counter at opening')`
+     * -- and `gallery` marks NO field required in the committed schema, so the derivation
+     * cannot reach it. Deriving from the schema and stopping there would have narrowed the
+     * suite by exactly this assertion, which is what `§8` forbids doing quietly.
+     *
+     * It belongs here rather than there: an image's alt text is an ACCESSIBILITY property
+     * this kit owns (`§12`), not a schema requirement. The caption doubles as the alt text
+     * because a decorative-looking caption that screen readers cannot reach is the same
+     * image with less information.
+     */
+    renderTemplate()
     expect(screen.getByAltText('The counter at opening')).toBeTruthy()
-    // the footer's text is required.
-    expect(screen.getAllByText('Qahwa & Co').length).toBeGreaterThan(0)
+
+    // And an image with no caption gets no empty alt attribute smuggled in: every rendered
+    // <img> in the gallery has a non-empty alt.
+    const { container } = renderTemplate()
+    for (const img of container.querySelectorAll<HTMLImageElement>('.qr-lp__gallery-image')) {
+      expect(img.getAttribute('alt')?.length ?? 0).toBeGreaterThan(0)
+    }
   })
 
   it('renders a page with ONLY the minimum required fields, every optional omitted', () => {
@@ -411,5 +489,119 @@ describe('the three templates are three, and they differ', () => {
     expect(order.slice(0, 2)).toEqual(['hero', 'how_it_works'])
     // And the footer is last in every arrangement.
     expect(order[order.length - 1]).toBe('footer')
+  })
+})
+
+/**
+ * ================================================================================
+ * `mailto:` — THE STORED ADDRESS CANNOT OPEN THE URI'S HEADER SECTION
+ * ================================================================================
+ *
+ * Security L-2. Task 7 validates the field with `FILTER_VALIDATE_EMAIL`, which accepts a
+ * QUOTED LOCAL PART -- measured on this repository's PHP 8.4,
+ * `"?subject=hi&body=click"@c.d` passes it and is stored. Interpolated raw, the first
+ * unencoded `?` ends the address and the rest is read as mailto headers, so a mail client
+ * composes with a tenant-chosen subject and body.
+ *
+ * The cases below assert the ENCODING, not a re-validation: the renderer having its own
+ * opinion about what a valid address is would be the second source `§6.2` forbids.
+ */
+describe('the mailto href', () => {
+  it('renders the hostile quoted local part INERT -- the exact measured address', () => {
+    const hostile = '"?subject=hi&body=click"@c.d'
+    const href = mailtoHref(hostile)
+
+    // The two characters that do the work are gone from the output.
+    expect(href).not.toContain('?')
+    expect(href).not.toContain('&')
+    // And the header names cannot be read as headers, because the `?` that would start the
+    // header section is now part of the address.
+    expect(href).toBe('mailto:%22%3Fsubject%3Dhi%26body%3Dclick%22@c.d')
+    // Exactly one `mailto:` scheme and exactly one `@`, both literal: the address is still
+    // an address.
+    expect(href.match(/@/g)).toHaveLength(1)
+  })
+
+  it('leaves an ordinary address untouched, so the encoding is not a mangling', () => {
+    // The other half. An encoder that escaped `@` or `+` would satisfy every assertion
+    // above and break every real address -- which is why `encodeURIComponent` is not used:
+    // RFC 6068's `some-delims` keeps `! $ ' ( ) * + , ; : @` literal.
+    expect(mailtoHref('hello@example.test')).toBe('mailto:hello@example.test')
+    expect(mailtoHref('first.last+tag@sub.example.test')).toBe(
+      'mailto:first.last+tag@sub.example.test',
+    )
+    expect(mailtoHref("o'brien@example.test")).toBe("mailto:o'brien@example.test")
+  })
+
+  it('encodes every character RFC 6068 excludes, named one by one', () => {
+    // The set, asserted rather than described. Each of these ends or redirects the URI if
+    // it reaches the output raw.
+    const cases: [string, string][] = [
+      ['?', '%3F'],
+      ['&', '%26'],
+      ['#', '%23'],
+      ['=', '%3D'],
+      ['/', '%2F'],
+      ['%', '%25'],
+      ['"', '%22'],
+      [' ', '%20'],
+      [',', '%2C'],
+      ['<', '%3C'],
+      ['>', '%3E'],
+    ]
+    for (const [raw, encoded] of cases) {
+      expect(mailtoHref(`a${raw}b@c.d`), `${raw} was not encoded`).toBe(`mailto:a${encoded}b@c.d`)
+    }
+  })
+
+  it('encodes a non-ASCII address by code point, not by UTF-16 unit', () => {
+    // An internationalised address, and an astral character: iterating by UTF-16 unit would
+    // emit two broken halves. `for…of` iterates code points.
+    expect(mailtoHref('münchen@example.test')).toBe('mailto:m%C3%BCnchen@example.test')
+    expect(mailtoHref('a\u{1F600}@example.test')).toBe('mailto:a%F0%9F%98%80@example.test')
+  })
+
+  it('puts the encoded href in the rendered DOM, not only in the helper', () => {
+    // The helper could be correct and unused, which is the shape a vacuous assertion takes.
+    const blocks: LandingBlock[] = [
+      { type: 'contact', fields: { heading: 'Contact', email: '"?subject=hi"@c.d' } },
+    ]
+    const { container } = render(
+      <ThemeProvider>
+        <TEMPLATES.classic page={page(blocks)} resolve={resolve} />
+      </ThemeProvider>,
+    )
+    const link = container.querySelector<HTMLAnchorElement>("a[href^='mailto:']")
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute('href')).toBe('mailto:%22%3Fsubject%3Dhi%22@c.d')
+  })
+})
+
+describe('the logo slot — the tenant’s own mark', () => {
+  it.each(TEMPLATE_NAMES)('renders a supplied logo in the %s template’s header', (name) => {
+    // Every template takes an optional `logo` and none of the cases above passed one, so the
+    // present branch of all three was unexercised. §12 makes the restaurant's identity the
+    // thing that varies between tenants, so this is the one slot that matters.
+    const Template = TEMPLATES[name]
+    const { container } = render(
+      <ThemeProvider>
+        <Template page={page()} resolve={resolve} logo={<span data-testid="mark">Qahwa</span>} />
+      </ThemeProvider>,
+    )
+    const header = container.querySelector('header.qr-lp__mark')
+    expect(header, `${name} rendered no header for the logo`).not.toBeNull()
+    expect(header!.querySelector('[data-testid="mark"]')).not.toBeNull()
+  })
+
+  it.each(TEMPLATE_NAMES)('renders NO header when the %s template has no logo', (name) => {
+    // Both branches: a header with nothing in it is an empty landmark, which is worse than
+    // no landmark.
+    const Template = TEMPLATES[name]
+    const { container } = render(
+      <ThemeProvider>
+        <Template page={page()} resolve={resolve} />
+      </ThemeProvider>,
+    )
+    expect(container.querySelector('header.qr-lp__mark')).toBeNull()
   })
 })

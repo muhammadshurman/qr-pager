@@ -4,7 +4,7 @@ import { Block } from './sections.tsx'
 import type { BlockType, LandingBlock, LandingPage, MediaResolver } from './blocks.ts'
 
 export * from './blocks.ts'
-export { Block } from './sections.tsx'
+export { Block, mailtoHref } from './sections.tsx'
 
 /**
  * ================================================================================

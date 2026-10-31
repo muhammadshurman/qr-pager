@@ -47,7 +47,7 @@ const EXEMPT_PREFIXES = [
  */
 const EXEMPT_SEGMENTS = ['node_modules', '.next', 'coverage', 'dist', '.git', 'out']
 
-function isExempt(path) {
+export function isExempt(path) {
   const rel = relative(ROOT, path).split(sep).join('/')
   if (rel === '' || rel.startsWith('..')) return false
   const segments = rel.split('/')
@@ -55,7 +55,7 @@ function isExempt(path) {
   return EXEMPT_PREFIXES.some((e) => rel === e || rel.startsWith(`${e}/`))
 }
 
-function cssFiles(dir, found = []) {
+export function cssFiles(dir, found = []) {
   if (isExempt(dir)) return found
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
@@ -111,19 +111,59 @@ export function scanPaths(paths) {
   return findings
 }
 
-// Run as a script. Imported by the test, which is why the work above is exported.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const explicit = process.argv.slice(2)
+/**
+ * The scan, as a function returning an exit status.
+ *
+ * ⚠ IT RETURNS THE STATUS RATHER THAN CALLING `process.exit`, for the same reason
+ * `generate.mjs`'s `run` does: a spawned process is instrumented by nothing, so the CLI's
+ * own logic -- the empty-target refusal, the finding report, the exit code -- counted
+ * towards no coverage figure at all. `§6` asks for coverage on the code this task adds, and
+ * this file is 129 lines of it. The CLI below turns the status into an exit code, and
+ * `rule.test.mjs` still drives the SCRIPT as a process for the empty-tree proof, because
+ * that proof is about the script's own root resolution.
+ */
+export function main(explicit = []) {
   const targets = explicit.length > 0 ? explicit : cssFiles(ROOT)
+
+  /**
+   * ⚠ AN EMPTY TARGET LIST IS A BROKEN SCANNER, NOT A CLEAN TREE. This printed
+   * "0 CSS file(s) scanned, no hard-coded values." and exited 0 -- so a walk that found
+   * nothing, because `EXEMPT_SEGMENTS` grew a segment that swallowed the tree or because
+   * the walk itself threw past a renamed directory, looked exactly like a pass.
+   *
+   * This is the SAME vacuity shape `check-shell-evidence` was already fixed for in this
+   * task: *"refuses an empty target list instead of printing '0 script(s) scanned' and
+   * exiting 0"*. The sibling was fixed and this one was not, which is why the QA reviewer
+   * could name it from the other's commit message.
+   *
+   * The floor is deliberately not 1. This repository has the two apps' entry stylesheets,
+   * the kit, the templates and the fonts file; a run that sees fewer than four CSS files
+   * has lost something, whatever it is.
+   */
+  const FLOOR = 4
+  if (explicit.length === 0 && targets.length < FLOOR) {
+    console.error(
+      `design tokens: the walk found ${String(targets.length)} CSS file(s), fewer than the ` +
+        `${String(FLOOR)} this workspace is known to carry. A scanner with nothing to scan ` +
+        `cannot report a finding, so this is a FAILURE and not a clean tree.`,
+    )
+    return 1
+  }
+
   const findings = scanPaths(targets)
 
   if (findings.length === 0) {
     console.log(`design tokens: ${targets.length} CSS file(s) scanned, no hard-coded values.`)
-    process.exit(0)
+    return 0
   }
   for (const f of findings) {
     console.error(`${f.file}:${f.line}:${f.column}  ${f.rule}  ${f.message}`)
   }
   console.error(`\ndesign tokens: ${findings.length} finding(s) in ${targets.length} file(s).`)
-  process.exit(1)
+  return 1
+}
+
+// Run as a script. Imported by the test, which is why the work above is exported.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  process.exit(main(process.argv.slice(2)))
 }

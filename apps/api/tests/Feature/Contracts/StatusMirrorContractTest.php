@@ -114,6 +114,136 @@ it('exits 0 on a current file and 1 on a stale one, driven rather than read', fu
     }
 });
 
+/**
+ * Does this TypeScript source DECLARE a second status list? Returns the offending
+ * declaration, or null.
+ *
+ * Extracted from the tree scan below so the detection can be DRIVEN over planted sources
+ * rather than measured once by hand. The §4a record says this check was "proven to still
+ * bite on both planted forms" -- that was a measurement in a session, and a measurement in
+ * a session is not a regression test. The QA review then found a third form it misses.
+ */
+function secondStatusDeclaration(string $source): ?string
+{
+    // Two status values in ONE declaration -- an `as const` array, a union type, or an
+    // OBJECT LITERAL whose KEYS are the statuses. Two and not three: a list with two of
+    // the five is already a second source.
+    //
+    // ⚠ THE OBJECT-LITERAL FORM WAS MISSED ENTIRELY, AND IT IS THE EASIEST ONE TO WRITE.
+    // The pattern matched `[...]` or a line containing `|`, so
+    //
+    //     const TONE = { 'waiting': 'quiet', 'ready': 'loud' }
+    //
+    // carried two of the five status values in a hand-written declaration and matched
+    // neither alternative: no bracket, no pipe. That is a second source in the shape a tone
+    // map, a label map or a sort order actually takes, which is to say the likely one.
+    //
+    // THE DISCRIMINATOR FOR AN OBJECT LITERAL IS THE TYPE ANNOTATION, NOT THE QUOTING, and
+    // the first attempt at this got it wrong. `StatusBadge`'s legitimate tone map is
+    //
+    //     const TONE: Readonly<Record<PagerStatus, 'waiting' | 'ready' | 'done' | 'stopped'>> = {
+    //       waiting: 'waiting', ready: 'ready', completed: 'done', ...
+    //     }
+    //
+    // whose VALUES are two quoted status words -- they are tone names that happen to
+    // collide -- so "contains two quoted status strings" flagged the correct pattern. What
+    // makes it correct is that it is keyed BY THE GENERATED TYPE: the compiler requires an
+    // entry for every status the mirror declares, so the list is DERIVED and a status added
+    // in PHP breaks the build there. An object literal with no such annotation enumerates
+    // the statuses by hand, whatever its keys are quoted as.
+    //
+    // So: for an object literal, the KEYS are counted, and a declaration annotated with one
+    // of the generated type names is exempt. The type names come from the generated mirror,
+    // read from the artefact rather than listed here.
+    $generatedTypes = [];
+    preg_match_all(
+        '/export type (\w+) = \(typeof/',
+        (string) file_get_contents(dirname(base_path(), 2).'/'.StatusMirror::RELATIVE_PATH),
+        $generatedTypes
+    );
+    $typeNames = $generatedTypes[1] ?? [];
+    expect($typeNames)->not->toBeEmpty('no generated type name was parsed out of the mirror');
+
+    $statuses = ['waiting', 'ready', 'completed', 'cancelled', 'expired'];
+
+    $declarations = [];
+    preg_match_all(
+        '/(?:const|type)\s+\w+([^=;]*)=\s*(\[[^\]]*\]|\{[^{}]*\}|[^;\n]*\|[^;\n]*)/',
+        $source,
+        $declarations,
+        PREG_SET_ORDER
+    );
+
+    foreach ($declarations as $match) {
+        $annotation = (string) ($match[1] ?? '');
+        $declaration = (string) ($match[2] ?? '');
+        $isObjectLiteral = str_starts_with(ltrim($declaration), '{');
+
+        // Keyed by a generated type: exhaustiveness comes from the mirror, not from here.
+        foreach ($typeNames as $typeName) {
+            if (str_contains($annotation, $typeName)) {
+                continue 2;
+            }
+        }
+
+        $hits = 0;
+        foreach ($statuses as $value) {
+            // An object literal is judged on its KEYS -- `'waiting':` or `waiting:` --
+            // because its values are arbitrary copy. Everything else is judged on the
+            // quoted literals it carries, which is what an array or a union is made of.
+            $found = $isObjectLiteral
+                ? preg_match('/(?:^|[{,\s])\s*(?:\x27'.$value.'\x27|"'.$value.'"|'.$value.')\s*:/', $declaration) === 1
+                : str_contains($declaration, "'".$value."'");
+            if ($found) {
+                $hits++;
+            }
+        }
+        if ($hits >= 2) {
+            return $declaration;
+        }
+    }
+
+    return null;
+}
+
+it('bites on every planted form of a second status list, and on no legitimate one', function (): void {
+    // THE THREE FORMS THAT MUST FIRE. The first two were measured by hand when the subject
+    // of this check was narrowed; the third is QA #14 and fired on neither.
+    $offending = [
+        'as const array' => "export const STATUSES = ['waiting', 'ready'] as const\n",
+        'union type' => "export type Status = 'waiting' | 'ready' | 'completed'\n",
+        'object literal, quoted keys' => "const TONE = { 'waiting': 'quiet', 'ready': 'loud' }\n",
+        'object literal, multi-line' => "const LABELS = {\n  'waiting': 'Waiting',\n  'expired': 'Expired',\n}\n",
+        // The same enumeration with BARE keys and no annotation: still hand-written, still
+        // a second source, and the form a label map is most naturally typed in.
+        'object literal, bare keys, no annotation' => "const LABELS = {\n  waiting: 'Waiting',\n  ready: 'Ready',\n}\n",
+        // A double-quoted variant, because the quoting style is not the property.
+        'object literal, double-quoted keys' => "const SORT = { \"waiting\": 0, \"ready\": 1 }\n",
+    ];
+    foreach ($offending as $what => $source) {
+        expect(secondStatusDeclaration($source))->not->toBeNull("the {$what} form was not caught");
+    }
+
+    // AND THE LEGITIMATE ONES THAT MUST NOT. A check that fires on the correct pattern gets
+    // disabled, which is the other half of every proof in this repository.
+    $allowed = [
+        // StatusBadge's real tone map: keyed BY the generated type, keys are identifiers.
+        'Record keyed by the generated type' => "const TONE: Readonly<Record<PagerStatus, string>> = {\n  waiting: 'waiting',\n  ready: 'ready',\n}\n",
+        // One value, named for a single legitimate purpose.
+        'a single status value' => "const INITIAL = 'waiting'\n",
+        // The generated type imported and used, with no list of its own.
+        'an import of the generated union' => "import type { PagerStatus } from '@qrpager/contracts'\nconst s: PagerStatus = 'ready'\n",
+        // The real tone map from StatusBadge, verbatim in shape: keyed BY the generated
+        // type, so the compiler -- not this file -- is what requires every status.
+        'the real StatusBadge tone map' => "const TONE: Readonly<Record<PagerStatus, 'waiting' | 'ready' | 'done' | 'stopped'>> = {\n  waiting: 'waiting',\n  ready: 'ready',\n  completed: 'done',\n  cancelled: 'stopped',\n  expired: 'stopped',\n}\n",
+        // A mapped type over the generated union: the same derivation, different syntax.
+        'a mapped type over the union' => "const M: { [K in PagerStatus]: number } = { waiting: 0, ready: 1 }\n",
+    ];
+    foreach ($allowed as $what => $source) {
+        expect(secondStatusDeclaration($source))->toBeNull("the {$what} form was wrongly flagged");
+    }
+});
+
 it('writes no second DECLARATION of a status list outside the generated mirror', function (): void {
     // §6.2's clause from the other side: the generated file is the only place a TypeScript
     // status list may be DECLARED. A hand-written copy elsewhere is the defect ADR-003
@@ -164,25 +294,8 @@ it('writes no second DECLARATION of a status list outside the generated mirror',
                 continue;
             }
 
-            $source = (string) file_get_contents($path);
-
-            // Two status values in ONE declaration -- an `as const` array or a union type.
-            // Two and not three: a list with two of the five is already a second source.
-            $declarations = [];
-            preg_match_all('/(?:const|type)\s+\w+[^=;]*=\s*(\[[^\]]*\]|[^;\n]*\|[^;\n]*)/', $source, $declarations);
-
-            foreach ($declarations[1] ?? [] as $declaration) {
-                $hits = 0;
-                foreach (['waiting', 'ready', 'completed', 'cancelled', 'expired'] as $value) {
-                    if (str_contains((string) $declaration, "'".$value."'")) {
-                        $hits++;
-                    }
-                }
-                if ($hits >= 2) {
-                    $offenders[] = $relative;
-
-                    break;
-                }
+            if (secondStatusDeclaration((string) file_get_contents($path)) !== null) {
+                $offenders[] = $relative;
             }
         }
     }
