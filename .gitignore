@@ -7,3 +7,13 @@ build/
 node_modules/
 .idea/
 .vscode/
+
+# The frontend workspace (Task 8a, ADR-003).
+.pnpm-store/
+coverage/
+.next/
+out/
+*.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/

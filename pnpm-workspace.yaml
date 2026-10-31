@@ -1,0 +1,34 @@
+# ADR-003. The frontend half of the repo, created at Task 8 -- the first task that needs it.
+# `apps/api` is the Laravel half and is deliberately NOT a workspace member: it is a Composer
+# project, and listing it here would invite a package.json that competes with composer.json
+# for ownership of that directory.
+packages:
+  - 'apps/web'
+  - 'apps/site'
+  - 'packages/*'
+  - 'tools/*'
+
+# pnpm 10+ refuses to run a dependency's install scripts unless it is named here. Stated as
+# an empty list rather than omitted, so "no dependency in this workspace runs an install
+# script" is a recorded fact that a reviewer can check, instead of a default nobody chose.
+#
+# playwright is NOT in this list and does not need to be: its browsers are installed by an
+# explicit `playwright install`, never by a postinstall hook, which is why the version is
+# pinned exactly and the cache is verifiable.
+onlyBuiltDependencies: []
+
+# NO minimumReleaseAgeExclude, DELIBERATELY, and pnpm wrote one here once.
+#
+# pnpm 12 applies a default minimum-release-age window: it refuses a package published too
+# recently unless that exact version is excluded here. `pnpm install` added
+# `eslint@10.14.0` to this file BY ITSELF, because 10.14.0 had been published the previous
+# day -- measured: 2026-10-30T14:12:27Z, 0 days before this task.
+#
+# That exclusion was removed and the dependency moved to eslint 10.13.0 (published
+# 2026-10-16, 14 days, which clears the window). A linter published yesterday is precisely
+# what a supply-chain delay exists for, nothing in this task needs 10.14.0, and bypassing
+# a control to get a newer lint rule is a bad trade -- §11.7 is about dependency risk, not
+# dependency recency.
+#
+# If this list ever regains an entry, the question to ask is why the version is needed,
+# not how to silence the warning.

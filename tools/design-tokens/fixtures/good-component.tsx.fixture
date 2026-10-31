@@ -1,0 +1,54 @@
+// DELIBERATELY RIGHT, and this half matters as much as the other.
+//
+// A rule that fires on everything is not a rule either: it gets disabled. Every line below
+// is a shape a real component needs, and NONE of them may produce a finding. Task 7's guard
+// rule 11 fixture carries four legitimate shapes for the same reason.
+
+export function GoodCard({ label }: { label: string }) {
+  // A token reference is the only legitimate way to name a value.
+  const ink = 'var(--color-ink)'
+  const space = 'var(--space-16)'
+
+  // Token-backed utilities. A scale STEP, never a number: `p-4` is the 4th step, not 4px.
+  const cls = 'text-body p-4 gap-2 bg-surface text-ink border-hairline'
+
+  // calc() over tokens is a composition of decisions already taken, not a new one.
+  const half = 'calc(var(--space-16) / 2)'
+
+  // Keywords carry no magnitude.
+  const reset = 'auto'
+  const full = '100%'
+  const zero = 0
+
+  // A hairline border width is a device pixel, not a step on the spacing scale -- which is
+  // also why the approved elevation is written `0 1px 2px`.
+  const hairlineWidth = '1px'
+
+  // An id, a git sha and a URL fragment all contain `#` and none is a colour.
+  const anchor = '#section-overview'
+  const sha = 'commit 049934b'
+
+  // A unitless ratio.
+  const ratio = 1.5
+
+  return (
+    <div
+      className={cls}
+      id={anchor}
+      data-sha={sha}
+      style={{
+        color: ink,
+        padding: space,
+        gap: half,
+        marginTop: zero,
+        inset: reset,
+        width: full,
+        borderWidth: hairlineWidth,
+        lineHeight: 'var(--leading-body)',
+        fontSize: 'var(--size-16)',
+      }}
+    >
+      {label} {ratio}
+    </div>
+  )
+}

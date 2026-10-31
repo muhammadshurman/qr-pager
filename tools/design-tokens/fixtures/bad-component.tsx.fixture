@@ -1,0 +1,37 @@
+// DELIBERATELY WRONG. Every line below must produce at least one finding.
+//
+// `.fixture` rather than `.tsx` so no build, typecheck or ordinary lint pass ever reads it
+// as source -- the same reason guard/fixtures/theme/styles-a-component.php.fixture carries
+// that suffix. The test feeds it to the linter on purpose, with the expected rule per line.
+//
+// An unproven rule is not a rule (QRPAGER-15 §6, trap 1), and the Task 0 hooks plus guard
+// rules 7-11 are the precedent: each was shown red on a file written to make it red.
+
+export function BadCard() {
+  const brand = '#0B6B4F'                         // BAD: no-raw-color  hex
+  const shorthex = '#fff'                         // BAD: no-raw-color  hex
+  const withAlpha = '#0B6B4FCC'                   // BAD: no-raw-color  hex
+  const fn = 'rgb(11, 107, 79)'                   // BAD: no-raw-color  color-function
+  const fn2 = 'oklch(62% 0.1 160)'                // BAD: no-raw-color  color-function
+  const mixed = 'color-mix(in oklab, red, blue)'  // BAD: no-raw-color  color-function
+
+  const cls = 'text-[#fff] p-[13px]'              // BAD: both Tailwind arbitrary forms
+  const cls2 = 'bg-[rgb(0,0,0)] gap-[7px]'        // BAD: both Tailwind arbitrary forms
+  const cls3 = 'text-[13px] m-[1.5rem]'           // BAD: arbitrary type + spacing
+
+  return (
+    <div
+      className={`${cls} ${cls2} ${cls3} border-[#D3DAD2]`}
+      style={{
+        color: '#10231B',                          // BAD: no-raw-color  hex
+        fontSize: 13,                              // BAD: no-raw-font-size  style object
+        padding: '13px',                           // BAD: no-raw-spacing  style object
+        marginTop: 24,                             // BAD: no-raw-spacing  style object
+        gap: '1.5rem',                             // BAD: no-raw-spacing  style object
+        lineHeight: 19,                            // BAD: no-raw-font-size  style object
+      }}
+    >
+      {brand}{shorthex}{withAlpha}{fn}{fn2}{mixed}
+    </div>
+  )
+}
