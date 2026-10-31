@@ -79,13 +79,38 @@ export function mix(from: string, to: string, amount: number): Hex {
   return toHex([step(ar, br), step(ag, bg), step(ab, bb)])
 }
 
-/** The sRGB transfer function, per WCAG 2.1. */
+/**
+ * ================================================================================
+ * THE W3C FORMULA, VERBATIM, IN float64, WITH NO INTERMEDIATE ROUNDING
+ * ================================================================================
+ *
+ * WCAG 2.1 "relative luminance", written as the specification writes it:
+ *
+ *     C_srgb = C_8bit / 255
+ *     C_lin  = C_srgb / 12.92                          if C_srgb <= 0.04045
+ *     C_lin  = ((C_srgb + 0.055) / 1.055) ^ 2.4        otherwise
+ *     L      = 0.2126 R_lin + 0.7152 G_lin + 0.0722 B_lin
+ *
+ * ⚠ NOTHING IS ROUNDED HERE, and that is load-bearing rather than tidy. The reporting
+ * convention is a FLOOR at two decimals (`ratioFloor2`), so the third decimal decides the
+ * published figure: 9.7322 floors to 9.73 and 9.72966 floors to 9.72. A single rounded
+ * intermediate -- a linearised channel, a weighted term, the luminance -- moves that digit.
+ * So every operation below stays in float64 to the end and the only rounding in the module
+ * is the final floor.
+ *
+ * These eight constants and the one threshold are the whole formula. A wrong constant or a
+ * wrong threshold is exactly how a systematic relative error of ~1e-4 appears, and
+ * `contrast.test.ts` pins the function against that: black-on-white must be EXACTLY 21,
+ * the ratio must be symmetric across the whole token set, and three pairs are pinned
+ * against an INDEPENDENT 50-digit decimal computation of the same formula -- which agrees
+ * with this implementation to ten decimal places.
+ */
 function linearise(channel8: number): number {
   const c = channel8 / 255
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
 }
 
-/** Relative luminance, per WCAG 2.1. */
+/** Relative luminance, per WCAG 2.1. No rounding; see the note above. */
 export function luminance(hex: string): number {
   const [r, g, b] = channels(hex)
   return 0.2126 * linearise(r) + 0.7152 * linearise(g) + 0.0722 * linearise(b)

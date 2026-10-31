@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   APPROVED,
+  BACKGROUND_ROLES,
   COLOUR_ROLES,
+  FILL_PAIRS,
+  FOREGROUND_ROLES,
   ORDER_READY,
   colourProperty,
   protectedProperties,
@@ -150,6 +153,109 @@ describe('the focus ring is never removed -- the half a browser cannot measure',
       expect(read(file), `${file} sets a positive tabindex`).not.toMatch(
         /tabIndex[=:]\s*\{?\s*[1-9]/,
       )
+    }
+  })
+})
+
+/**
+ * ================================================================================
+ * THE DERIVATION'S OWN COMPLETENESS — the static half
+ * ================================================================================
+ *
+ * The browser derives every pairing the kit RENDERS and asserts each is in the generated
+ * table. That derivation is only as complete as the fixture it walks, so two things are
+ * checked here, in Node, where they are cheap and run in both halves of CI:
+ *
+ *   1. every `.qr-` class in the kit's stylesheet appears in the browser fixture, so a new
+ *      component cannot be invisible to the walk;
+ *   2. every token used as a `color` is a declared FOREGROUND role and every token used as
+ *      a `background-color` is a declared background or fill — in BOTH stylesheets, which
+ *      is how the landing templates are covered without a browser fixture of their own.
+ *
+ * Together these close the hole the first table had: "text on a fill" escaped because the
+ * rows were roles against backgrounds and nobody thought of that shape. A hand-written
+ * list of pairings has the same defect one level up, so the pairings are derived and the
+ * VOCABULARY is checked for completeness.
+ */
+describe('the pair derivation cannot miss a component', () => {
+  const kitCss = read('packages/ui/src/styles/kit.css').replace(/\/\*[\s\S]*?\*\//g, ' ')
+  const templatesCss = read('packages/ui/src/styles/templates.css').replace(
+    /\/\*[\s\S]*?\*\//g,
+    ' ',
+  )
+  const fixture = read('browser/fixtures/kit.html')
+
+  it('has every kit class in the browser fixture, so the walk sees every component', () => {
+    // Class selectors only, and the base class rather than its state variants: a
+    // `[data-state]` or `:focus-visible` qualifier is a state of a class already listed.
+    const classes = new Set([...kitCss.matchAll(/\.(qr-[a-z0-9_-]+)/g)].map((m) => m[1]!))
+    expect(classes.size).toBeGreaterThan(20)
+
+    const missing = [...classes].filter((c) => !fixture.includes(c)).sort()
+    expect(
+      missing,
+      'these kit classes are styled but absent from browser/fixtures/kit.html, so the ' +
+        'rendered-pair derivation never sees them',
+    ).toEqual([])
+  })
+
+  it('uses no colour token outside the table\u2019s declared vocabulary', () => {
+    // The static analogue of the browser walk, and the only coverage the landing templates
+    // get for this — they have no browser fixture of their own, so a token used as text
+    // there must still be a declared foreground role.
+    // ⚠ THE FILL PAIRS' FOREGROUNDS COUNT TOO, and the first version of this check
+    // omitted them -- so it flagged `--color-surface` used as the primary button's label,
+    // which IS declared, as a role with no bar. `surface` is a foreground in FILL_PAIRS
+    // rather than in FOREGROUND_ROLES, because what it sits on is a fill and not one of
+    // the three backgrounds. Reading both is what makes the vocabulary complete.
+    const foregrounds = new Set<string>([
+      ...Object.keys(FOREGROUND_ROLES),
+      ...FILL_PAIRS.map((p) => p.fg),
+    ])
+    const backgrounds = new Set<string>([
+      ...BACKGROUND_ROLES,
+      // the fills a label is declared to sit on
+      ...FILL_PAIRS.map((p) => p.bg),
+      // and the two non-colour grounds a component may legitimately declare
+      'transparent',
+    ])
+    const protectedNames = new Set(protectedProperties().map((p) => p.replace(/^--/, '')))
+
+    const used = (css: string, property: 'color' | 'background-color') => {
+      const found = new Set<string>()
+      const re = new RegExp(`(?:^|[;{\\s])${property}\\s*:\\s*([^;}]+)`, 'g')
+      for (const m of css.matchAll(re)) {
+        const value = m[1]!.trim()
+        if (value === 'transparent' || value === 'currentcolor' || value === 'inherit') {
+          found.add('transparent')
+          continue
+        }
+        const token = /var\(\s*--(?:color-)?([a-z0-9-]+)\s*\)/.exec(value)
+        if (token) found.add(token[1]!)
+      }
+      return found
+    }
+
+    for (const [name, css] of [
+      ['kit.css', kitCss],
+      ['templates.css', templatesCss],
+    ] as const) {
+      for (const token of used(css, 'color')) {
+        if (token === 'transparent' || protectedNames.has(token)) continue
+        expect(
+          foregrounds.has(token),
+          `${name} uses --color-${token} as TEXT, but it is not a declared foreground role ` +
+            `in the contrast table — so no bar was ever computed for it`,
+        ).toBe(true)
+      }
+      for (const token of used(css, 'background-color')) {
+        if (token === 'transparent' || protectedNames.has(token)) continue
+        expect(
+          backgrounds.has(token),
+          `${name} uses --color-${token} as a BACKGROUND, but it is not a declared ` +
+            `background or fill in the contrast table`,
+        ).toBe(true)
+      }
     }
   })
 })

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# DELIBERATELY WRONG. Every numbered line below must produce a finding.
+#
+# `.fixture` so no shell ever runs it and `git ls-files`'s ordinary pass skips it -- the
+# same suffix convention as guard/fixtures and tools/design-tokens/fixtures.
+#
+# (1) this file never enables the pipefail option -- deliberately, and the phrase is
+#     written this way because naming the option in a comment is what defeated the
+#     first version of the rule.
+set -u
+
+# (2) $? read after a pipe: it is tail's status, which is 0 whatever the command did.
+node ./check.mjs | tail -5
+echo "exit=$?"
+
+# (3) the same on one line.
+node ./check.mjs | tail -5 ; echo "exit=$?"
+
+# (4) $? read on a line carrying a command substitution: the substitution runs FIRST and
+#     resets $? to its own 0.
+node ./check.mjs >/dev/null 2>&1
+printf '  %s exit=%s\n' "$(basename "$0")" "$?"
+
+# (5) and across two lines, after a continued pipeline.
+node ./check.mjs |
+echo "status $?"
+
+# --- legitimate shapes that must NOT fire, so the rule is not merely loud ---
+node ./check.mjs >/dev/null 2>&1
+status=$?
+echo "exit=$status"
+
+node ./check.mjs | tail -5
+echo "exit=${PIPESTATUS[0]}"
+
+if node ./check.mjs >/dev/null 2>&1; then echo ok; else echo bad; fi

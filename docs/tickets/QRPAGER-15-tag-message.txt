@@ -173,6 +173,61 @@ order-ready ratios still clear AAA's 7.0 by a wide margin, and alert-fill still 
 4.5:1 as small text.
 
 ===============================================================================
+THE TEST COUNT, ACCOUNTED FOR — 308 -> 304 -> 357
+===============================================================================
+
+§8: "a fix must not narrow an existing assertion; if narrowing is unavoidable it is
+stated in the commit message." A test count that falls without an accounting is the shape
+that let Task 7's last invariant failure survive a full review.
+
+MEASURED PER FILE, by running the 8cf61ca test files and the current ones and comparing
+case counts rather than reasoning about the diff:
+
+    file                                   8cf61ca   3abacd7   now
+    packages/contracts/test/mirror              13        13    13
+    packages/tokens/test/contrast               41        37    85
+    packages/tokens/test/fonts                  11        11    11
+    packages/tokens/test/properties             13        13    13
+    packages/ui/test/a11y                       24        24    24
+    packages/ui/test/invariant                  11        11    13
+    packages/ui/test/kit                        80        80    80
+    packages/ui/test/templates                  47        47    47
+    tools/design-tokens/test/rule               68        68    71
+    TOTAL                                      308       304   357
+
+So the whole 308 -> 304 was ONE file: contrast.test.ts, 41 -> 37, which was rewritten
+wholesale when the generated table was introduced. Every other suite was untouched.
+
+WHAT HAPPENED TO THE 41, case by case:
+
+  - 18 cases were RENAMED and kept: the describes changed wording and the figures moved by
+    a hundredth under the floor convention. "ready-signal on ready-field is exactly 9.73:1"
+    became "--ready-signal on --ready-field is exactly 9.72:1", and so on.
+  - 6 "X resolves to exactly #HEX" cases became 3 hex cases plus one case asserting the
+    four UNCHANGED roles together ("left dark ink-mid and the surface ladder where they
+    were"). All six hexes are still asserted; the grouping changed because only three
+    roles moved.
+  - 9 cases were CONSOLIDATED into the generated table's seven structural cases: exists
+    and is not empty, agrees with a live computation, zero failures, states the convention,
+    covers every foreground against every background, headroom on every barred row, a bar
+    for every role that carries text.
+  - 8 EXACT PER-PAIR FIGURES became structural assertions, and THAT WAS A NARROWING. The
+    old file said light ink-mid is exactly 5.17 / 5.72 / 4.74; the new one said the table
+    has no failures and every row clears bar + headroom. That is a weaker claim about any
+    individual pair: a palette change keeping every row above its bar would have passed.
+
+IT WAS AVOIDABLE, SO IT IS UNDONE RATHER THAN DECLARED. All 42 pairs are now pinned to
+exact literals, in both directions -- no row in the table may be unpinned and no pin may
+reference a row the table does not have. contrast.test.ts is 85 cases.
+
+AND THE LITERALS ARE NOT THE HAND-TRANSCRIPTION ITEM 3 REMOVED. The distinction is which
+direction the number travels. A DOCUMENT quoting a ratio someone computed in their head is
+a second source that drifts silently. A TEST holding the expected value IS the pin: it is
+supposed to fail when the value changes. The literals were emitted from the artefact rather
+than typed, and tokens:check ties the artefact to the source, so three independent things
+must agree before a figure ships.
+
+===============================================================================
 WHAT THE TESTS CAUGHT BEFORE ANY REVIEWER
 ===============================================================================
 

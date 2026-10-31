@@ -59,6 +59,11 @@ console.log(`gate: full output -> ${log}\n`)
 const steps = [
   ['pnpm', ['run', 'lint:es']],
   ['pnpm', ['run', 'lint:tokens']],
+  // The $? hazard, mechanised. Three evidence readings in one session reported a command
+  // as having succeeded when it had exited 1; this is the step that stops that depending
+  // on anyone remembering the rule. Proven to fail on
+  // tools/gate/fixtures/bad-evidence.sh.fixture.
+  ['pnpm', ['run', 'lint:shell']],
   ['pnpm', ['run', 'format:check']],
   ['pnpm', ['run', 'typecheck']],
   ['pnpm', ['run', 'tokens:check']],

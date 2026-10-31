@@ -144,6 +144,107 @@ describe('the generated contrast table is the source of every figure', () => {
   })
 })
 
+/**
+ * ================================================================================
+ * EVERY PAIR, PINNED TO AN EXACT LITERAL. THE NARROWING THIS UNDOES.
+ * ================================================================================
+ *
+ * ⚠ THE REWRITE THAT INTRODUCED THE GENERATED TABLE NARROWED THIS FILE, and the narrowing
+ * was not declared. Measured per file across the rewrite: every suite was unchanged except
+ * this one, which went **41 cases to 37**, which is the whole 308 -> 304 the gate reported.
+ *
+ * Most of that churn was renaming — the describes changed and the figures moved by a
+ * hundredth under the floor convention — but **eight exact per-pair figures became
+ * structural assertions**. The old file said `light ink-mid` is exactly `5.17, 5.72, 4.74`;
+ * the new one said the artefact has zero failures and every row clears its bar plus
+ * headroom. That is a weaker claim about any INDIVIDUAL pair: a palette change that kept
+ * every row above its bar would have passed silently.
+ *
+ * `§8`: *"a fix must not narrow an existing assertion; if narrowing is unavoidable it is
+ * stated in the commit message."* It was avoidable, so it is undone here rather than
+ * declared: all **42** pairs are pinned to exact literals below.
+ *
+ * AND THIS IS NOT THE HAND-TRANSCRIPTION ITEM 3 REMOVED. The distinction is which
+ * direction the number travels. A DOCUMENT quoting a ratio someone computed in their head
+ * is a second source that drifts silently — that is what `generated/contrast.json` fixed.
+ * A TEST holding the expected value is the pin itself: it is supposed to fail when the
+ * value changes, and that is the only way a figure can be defended at all. These literals
+ * were emitted from the artefact rather than typed, and `tokens:check` keeps the artefact
+ * tied to the source, so there are three independent things to disagree before a wrong
+ * figure ships.
+ */
+describe('every pair in the generated table, pinned to an exact literal', () => {
+  /** theme, foreground role, background role, expected FLOORED ratio. */
+  const EXPECTED: readonly [string, string, string, number][] = [
+    ['light', 'ink', 'paper', 14.85],
+    ['light', 'ink', 'surface', 16.42],
+    ['light', 'ink', 'surface-2', 13.63],
+    ['light', 'ink-mid', 'paper', 5.16],
+    ['light', 'ink-mid', 'surface', 5.71],
+    ['light', 'ink-mid', 'surface-2', 4.74],
+    ['light', 'alert-ink', 'paper', 6.73],
+    ['light', 'alert-ink', 'surface', 7.44],
+    ['light', 'alert-ink', 'surface-2', 6.17],
+    ['light', 'brand', 'paper', 5.87],
+    ['light', 'brand', 'surface', 6.5],
+    ['light', 'brand', 'surface-2', 5.39],
+    ['light', 'border-strong', 'paper', 3.53],
+    ['light', 'border-strong', 'surface', 3.9],
+    ['light', 'border-strong', 'surface-2', 3.24],
+    ['light', 'hairline', 'paper', 1.28],
+    ['light', 'hairline', 'surface', 1.42],
+    ['light', 'hairline', 'surface-2', 1.18],
+    ['light', 'surface', 'brand', 6.5],
+    ['light', 'surface', 'alert-ink', 7.44],
+    ['light', 'surface', 'alert-fill', 3.68],
+    ['dark', 'ink', 'paper', 15.54],
+    ['dark', 'ink', 'surface', 12.6],
+    ['dark', 'ink', 'surface-2', 10.43],
+    ['dark', 'ink-mid', 'paper', 6.94],
+    ['dark', 'ink-mid', 'surface', 5.62],
+    ['dark', 'ink-mid', 'surface-2', 4.65],
+    ['dark', 'alert-ink', 'paper', 7.18],
+    ['dark', 'alert-ink', 'surface', 5.82],
+    ['dark', 'alert-ink', 'surface-2', 4.82],
+    ['dark', 'brand', 'paper', 9.72],
+    ['dark', 'brand', 'surface', 7.89],
+    ['dark', 'brand', 'surface-2', 6.53],
+    ['dark', 'border-strong', 'paper', 4.79],
+    ['dark', 'border-strong', 'surface', 3.88],
+    ['dark', 'border-strong', 'surface-2', 3.21],
+    ['dark', 'hairline', 'paper', 2.07],
+    ['dark', 'hairline', 'surface', 1.68],
+    ['dark', 'hairline', 'surface-2', 1.39],
+    ['dark', 'surface', 'brand', 7.89],
+    ['dark', 'surface', 'alert-ink', 5.82],
+    ['dark', 'surface', 'alert-fill', 3.78],
+  ]
+
+  it('pins all 42 rows, and the table carries no row this list omits', () => {
+    const rows = artefact().pairs
+    // Both directions, so neither list can be a stale subset of the other.
+    expect(EXPECTED).toHaveLength(42)
+    expect(rows).toHaveLength(EXPECTED.length)
+
+    const key = (t: string, f: string, b: string) => `${t}/${f}/${b}`
+    const pinned = new Set(EXPECTED.map(([t, f, b]) => key(t, f, b)))
+    for (const r of rows) {
+      expect(
+        pinned.has(key(r.theme, r.fg, r.bg)),
+        `${key(r.theme, r.fg, r.bg)} is not pinned`,
+      ).toBe(true)
+    }
+  })
+
+  it.each(EXPECTED)('%s %s on %s is exactly %s', (theme, fg, bg, expected) => {
+    const row = artefact().pairs.find((r) => r.theme === theme && r.fg === fg && r.bg === bg)
+    expect(row, `${theme} ${fg} on ${bg} is missing from the table`).toBeDefined()
+    expect(row!.ratio).toBe(expected)
+    // And the same figure from a live computation, so a stale artefact cannot satisfy this.
+    expect(ratioFloor2(row!.fgHex, row!.bgHex)).toBe(expected)
+  })
+})
+
 describe('the eleven approved values are exactly what was approved', () => {
   it('holds the approved hexes verbatim', () => {
     // Typed out from the 2026-10-31 approval comment. This is the ONE place these are
@@ -284,6 +385,104 @@ describe('the restricted tokens the approval singled out', () => {
 
   it('ink on paper is 14.85:1 under both conventions', () => {
     expect(ratioFloor2(APPROVED.ink, APPROVED.paper)).toBe(14.85)
+  })
+})
+
+/**
+ * ================================================================================
+ * THE RATIO FUNCTION IS PINNED, NOT ARGUED
+ * ================================================================================
+ *
+ * Muhammad's longhand gave **9.7322** for `signal` on `ready-field` where this
+ * implementation gives **9.7296620**. A relative gap of ~2.6e-4, and under a FLOOR
+ * convention that gap is load-bearing: 9.7322 floors to **9.73** and 9.7296620 floors to
+ * **9.72**. One of the two published figures is wrong and the digit decides which.
+ *
+ * So the function is pinned rather than the disagreement settled by assertion. Verified
+ * independently in-session against a **50-digit `Decimal`** implementation of the same W3C
+ * formula, which agrees with this float64 one to ten decimal places:
+ *
+ *     Decimal(50):  9.7296620160727043914770110504561502045258896349076
+ *     float64:      9.7296620161
+ *
+ * The three checks below are what catch the ONLY way a systematic ~1e-4 error appears --
+ * a wrong constant or a wrong threshold.
+ */
+describe('the ratio function, pinned', () => {
+  it('gives EXACTLY 21 for black on white', () => {
+    // The formula's fixed point: lum(#FFFFFF) is exactly 1 and lum(#000000) exactly 0, so
+    // (1 + 0.05) / (0 + 0.05) = 21 with no floating-point residue at all. Any wrong
+    // coefficient (they must sum to 1), a wrong 0.055/1.055/12.92, or a wrong 0.04045
+    // threshold moves this off 21 — which is why it is asserted with toBe and not
+    // toBeCloseTo.
+    expect(contrast('#000000', '#FFFFFF')).toBe(21)
+    expect(ratioFloor2('#000000', '#FFFFFF')).toBe(21)
+    expect(luminance('#FFFFFF')).toBe(1)
+    expect(luminance('#000000')).toBe(0)
+    // The weights are a partition of unity; if they were not, white could not be 1.
+    expect(0.2126 + 0.7152 + 0.0722).toBe(1)
+  })
+
+  it('is SYMMETRIC across the whole token set, every ordered pair', () => {
+    // contrast() takes a max and a min, so symmetry is structural -- which is exactly why
+    // it is worth asserting over every pair rather than assumed: a refactor that dropped
+    // the max/min and used (fg + 0.05) / (bg + 0.05) would pass most figures and silently
+    // invert the ones where the foreground is darker.
+    const hexes = [...new Set(Object.values(APPROVED))]
+    expect(hexes.length).toBeGreaterThan(8)
+    let checked = 0
+    for (const a of hexes) {
+      for (const b of hexes) {
+        expect(contrast(a, b)).toBe(contrast(b, a))
+        expect(ratioFloor2(a, b)).toBe(ratioFloor2(b, a))
+        checked += 1
+      }
+    }
+    // Every ordered pair, including a colour against itself.
+    expect(checked).toBe(hexes.length * hexes.length)
+    // And a colour against itself is exactly 1.
+    for (const a of hexes) expect(contrast(a, a)).toBe(1)
+  })
+
+  it('matches an INDEPENDENT 50-digit computation to 10 decimal places', () => {
+    // Computed in-session with Python's `decimal` at 50 digits of precision, from the same
+    // W3C formula written out separately. These are not this implementation's own output
+    // fed back in -- that would prove nothing -- they are a second arithmetic agreeing
+    // with the first, which is what retires the longhand disagreement.
+    const independent: readonly [string, string, number][] = [
+      ['#3DDC97', '#0A1F17', 9.7296620161],
+      ['#F2F4F1', '#0A1F17', 15.5459903411],
+      ['#0A1F17', '#3DDC97', 9.7296620161],
+    ]
+    for (const [a, b, expected] of independent) {
+      expect(contrast(a, b)).toBeCloseTo(expected, 10)
+    }
+    // And the published figure follows from it: 9.7296620… floors to 9.72, never 9.73.
+    expect(ratioFloor2('#3DDC97', '#0A1F17')).toBe(9.72)
+    expect(Math.floor(9.7322 * 100) / 100).toBe(9.73)
+  })
+
+  it('rounds NO intermediate value — the linearised channels are raw float64', () => {
+    // A rounded intermediate is how the third decimal moves, and the floor convention makes
+    // the third decimal decide the published figure. This asserts the property rather than
+    // the comment: a channel whose linearisation had been rounded to, say, 6 places would
+    // make luminance differ from the unrounded composition below.
+    const [r, g, b] = channels('#3DDC97')
+    const lin = (c8: number) => {
+      const c = c8 / 255
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+    }
+    expect(luminance('#3DDC97')).toBe(0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b))
+  })
+
+  it('applies the 0.04045 threshold on the correct side', () => {
+    // Below the threshold the transfer is linear, above it is the power curve. Getting the
+    // boundary wrong is a systematic error concentrated in dark colours -- which is where
+    // every order-ready figure lives.
+    // 10/255 = 0.0392… is below; 11/255 = 0.0431… is above.
+    expect(luminance('#0A0A0A')).toBeCloseTo((10 / 255 / 12.92) * 1, 15)
+    const above = Math.pow((11 / 255 + 0.055) / 1.055, 2.4)
+    expect(luminance('#0B0B0B')).toBeCloseTo(above, 15)
   })
 })
 

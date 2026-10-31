@@ -55,6 +55,66 @@ function lint(code, filename = 'component.tsx') {
   )
 }
 
+import { execFileSync } from 'node:child_process'
+
+/**
+ * ================================================================================
+ * THE $? HAZARD CHECKER IS PROVEN TO FAIL. An unproven guard is not a guard.
+ * ================================================================================
+ *
+ * `tools/gate/bin/check-shell-evidence` is a gate step because three evidence readings in
+ * one session reported a command as having SUCCEEDED when it had exited 1 -- twice with
+ * the wrong figure published before it was caught. In a project whose `§8` is "do not
+ * claim a test passed without showing the output", a harness that misreads an exit code
+ * produces evidence that is wrong in the reassuring direction.
+ *
+ * Driven here as well as in the gate, so CI fails on a regression to the checker itself
+ * and not only on a regression to the scripts it checks.
+ */
+function runChecker(args) {
+  try {
+    const stdout = execFileSync('tools/gate/bin/check-shell-evidence', args, {
+      cwd: HERE.replace(/tools\/design-tokens\/test\/?$/, ''),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return { status: 0, out: stdout }
+  } catch (error) {
+    return { status: error.status, out: `${error.stdout ?? ''}${error.stderr ?? ''}` }
+  }
+}
+
+describe('the exit-code hazard checker', () => {
+  it('passes on the real tree, having actually scanned something', () => {
+    const { status, out } = runChecker([])
+    expect(status).toBe(0)
+    // Not vacuous: a glob that matched nothing would also "pass".
+    const scanned = /(\d+) script\(s\) scanned/.exec(out)
+    expect(scanned, out).not.toBeNull()
+    expect(Number(scanned[1])).toBeGreaterThanOrEqual(20)
+  })
+
+  it('FAILS on the committed bad fixture, naming all five hazards', () => {
+    const { status, out } = runChecker(['--fixture'])
+    expect(status).toBe(1)
+    // Each of the five shapes, by its own message -- so the fixture cannot pass on four.
+    expect(out).toContain("no 'set -o pipefail'")
+    expect(out).toContain('$? on a line containing a pipe')
+    expect(out).toContain('$? on a line containing a command substitution')
+    expect(out).toContain('$? after a line containing a pipe')
+    expect((out.match(/bad-evidence\.sh\.fixture:/g) ?? []).length).toBe(5)
+  })
+
+  it('does not fire on the legitimate shapes the same fixture carries', () => {
+    // The fixture ends with `status=$?` after a plain command, `${PIPESTATUS[0]}` after a
+    // pipeline, and an `if cmd; then`. A rule that flagged those would be disabled.
+    const { out } = runChecker(['--fixture'])
+    for (const line of ['31', '35', '37']) {
+      expect(out).not.toContain(`bad-evidence.sh.fixture:${line}`)
+    }
+  })
+})
+
 describe('the rule exists in one place and both readers see all of it', () => {
   it('defines exactly the three rules the gate clause names', () => {
     expect(RULE_IDS).toEqual(['no-raw-color', 'no-raw-spacing', 'no-raw-font-size'])

@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# ================================================================================
+# THE $? HAZARD, MECHANISED. Three times in one session is a mechanism gap.
+# ================================================================================
+#
+# In one session three evidence readings reported a command as having SUCCEEDED when it had
+# exited 1, and twice the wrong figure was published before being caught:
+#
+#   node … --check | tail -5 ; echo "exit=$?"        -> $? is tail's, always 0
+#   cmd >/dev/null 2>&1 ; echo "$(basename "$F") exit=$?"
+#                                                    -> the substitution runs FIRST and
+#                                                       resets $? to basename's 0
+#
+# Both read a status that belonged to something else, and both looked exactly like a pass.
+# In a project whose §8 is "do not claim a test passed without showing the output", a
+# harness that misreads an exit code is the most expensive defect shape available: it
+# produces evidence that is wrong in the reassuring direction.
+#
+# So the rule stops depending on anyone remembering it. This script is a gate step:
+#
+#   1. every EXECUTABLE bash script must `set -o pipefail`, so a pipeline's status is the
+#      failing stage's rather than the last stage's. A SOURCED helper is exempt -- it has no
+#      status of its own and inherits its caller's options. `_revert-proof.sh` is the one
+#      such file and it is non-executable, which is how this script can tell.
+#   2. no `$?` may appear on a line that also contains a pipe or a command substitution.
+#      `${PIPESTATUS[0]}` is the correct read after a pipeline; capturing into a variable
+#      immediately after a plain command is the correct read otherwise.
+#   3. no `$?` may appear on the line after one ending in `|` or `&&`/`||`, which is the
+#      same mistake spread over two lines.
+#
+# PROVEN TO FAIL on tools/gate/fixtures/bad-evidence.sh.fixture, which carries one instance
+# of each. An unproven guard is not a guard -- the same clause the §12 lint rule and
+# `composer guard` rules 7-11 are held to.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+
+fixture_mode=0
+targets=()
+for arg in "$@"; do
+    case "$arg" in
+        --fixture) fixture_mode=1 ;;
+        *) targets+=("$arg") ;;
+    esac
+done
+
+if [ "$fixture_mode" = "1" ]; then
+    targets=("tools/gate/fixtures/bad-evidence.sh.fixture")
+elif [ "${#targets[@]}" = "0" ]; then
+    # Everything tracked under the two script directories. `git ls-files` rather than a
+    # glob, so an untracked scratch script cannot fail the gate and a tracked one cannot
+    # escape it.
+    while IFS= read -r f; do targets+=("$f"); done < <(git ls-files tools/ apps/api/bin/)
+fi
+
+findings=0
+scanned=0
+
+report() {
+    printf '  %s:%s  %s\n     %s\n' "$1" "$2" "$3" "$4" >&2
+    findings=$((findings + 1))
+}
+
+for f in "${targets[@]}"; do
+    [ -f "$f" ] || continue
+    # bash scripts only: a .mjs gate script reads a spawn result rather than $?.
+    head -1 "$f" | grep -qE '^#!.*\b(bash|sh)\b' || [ "$fixture_mode" = "1" ] || continue
+    scanned=$((scanned + 1))
+
+    # (1) pipefail, for an executable script. A sourced helper inherits its caller's.
+    if [ -x "$f" ] || [ "$fixture_mode" = "1" ]; then
+        # Comments stripped first. The fixture's own prose named the option, which the
+        # grep matched -- so the fixture proved the rule was unprovable, which is the
+        # fixture doing its job.
+        #
+        # ⚠ AND THIS IS A HERE-STRING RATHER THAN A PIPE, BECAUSE THE PIPE VERSION WAS
+        # BROKEN BY THE VERY OPTION THIS SCRIPT ENFORCES. `sed … | grep -q` has grep exit
+        # as soon as it matches; sed then takes SIGPIPE and exits 141; and `set -o
+        # pipefail` makes 141 the PIPELINE's status. So a file that DID set pipefail was
+        # reported as not setting it -- measured on apps/api/bin/migration-rollback-proof,
+        # which has it on line 26. The checker was broken by its own rule, which is the
+        # best possible argument for the rule.
+        stripped="$(sed 's/#.*$//' "$f")"
+        if ! grep -qE 'set -[a-zA-Z]*o[a-zA-Z]* pipefail|set -o pipefail' <<<"$stripped"; then
+            report "$f" 1 "no 'set -o pipefail'" \
+                "an executable script must set it, or a pipeline's status is its LAST stage's"
+        fi
+    fi
+
+    # (2) and (3) the $? reads.
+    prev=""
+    n=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        n=$((n + 1))
+        # Strip a whole-line comment, so this file's own prose does not trip it.
+        code="${line%%#*}"
+        case "$code" in
+            *'$?'*)
+                case "$code" in
+                    *'|'*)
+                        report "$f" "$n" '$? on a line containing a pipe' \
+                            'use ${PIPESTATUS[0]}, or run the command without a pipe and capture $? on the next line' ;;
+                esac
+                case "$code" in
+                    *'$('*)
+                        report "$f" "$n" '$? on a line containing a command substitution' \
+                            'the substitution runs FIRST and resets $?; capture the status into a variable before building the message' ;;
+                esac
+                # ⚠ THE PREVIOUS LINE CONTAINING A PIPE, not merely ENDING in one -- and
+                # the first version of this rule only caught the ending case, which missed
+                # the exact mistake that motivated the whole script:
+                #
+                #     node … --check | tail -5
+                #     echo "exit=$?"
+                #
+                # The pipeline is complete on its own line, so nothing is continued; $? is
+                # still tail's. `||` is masked out first, since it contains a pipe and is
+                # not one.
+                prev_pipe="${prev//||/__OR__}"
+                case "$prev_pipe" in
+                    *'|'*)
+                        report "$f" "$n" '$? after a line containing a pipe' \
+                            'the status belongs to the pipeline LAST stage; use ${PIPESTATUS[0]}' ;;
+                esac ;;
+        esac
+        prev="$code"
+    done < "$f"
+done
+
+if [ "$findings" = "0" ]; then
+    echo "shell evidence: $scanned script(s) scanned, no exit-code hazard."
+    exit 0
+fi
+
+echo >&2
+echo "shell evidence: $findings hazard(s). An exit code read from the wrong command is" >&2
+echo "evidence that is wrong in the reassuring direction." >&2
+exit 1

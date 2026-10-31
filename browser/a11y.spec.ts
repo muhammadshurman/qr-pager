@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { pathToFileURL } from 'node:url'
+
 import { expect, test, type Page } from '@playwright/test'
 
 /**
@@ -81,64 +83,21 @@ function fixtureHtml(theme: 'light' | 'dark'): string {
   )
 }
 
-async function openKit(page: Page, theme: 'light' | 'dark' = 'light') {
-  await page.setContent(fixtureHtml(theme))
-
-  // THE VACUITY GUARD, and it is wider than it was. It used to check that one background
-  // was not transparent, which the broken harness PASSED: the card was token-styled while
-  // four buttons were not. So it now checks a token-driven value on an element of each kind
-  // this suite measures, because "the stylesheets applied" turned out to be true of some
-  // elements and false of others.
-  const applied = await page.evaluate(() => {
-    const read = (sel: string) => {
-      const el = document.querySelector(sel)
-      if (!el) return null
-      const s = getComputedStyle(el)
-      return { bg: s.backgroundColor, color: s.color }
-    }
-    return {
-      theme: document.documentElement.getAttribute('data-theme'),
-      brand: getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim(),
-      card: read('#card'),
-      button: read('#primary'),
-      input: read('#name'),
-    }
-  })
-
-  expect(applied.theme, 'the fixture is not in the theme under test').toBe(theme)
-  expect(applied.brand, 'the token stylesheet did not apply').not.toBe('')
-  // The theme actually took: brand is the one role whose value differs between themes by a
-  // whole hue (#0B6B4F light, #3DDC97 dark), so this cannot pass in the wrong theme.
-  expect(applied.brand, `the ${theme} theme did not take`).toBe(
-    theme === 'light' ? '#0B6B4F' : '#3DDC97',
-  )
-  expect(applied.card?.bg, 'the card is unstyled').not.toBe('rgba(0, 0, 0, 0)')
-  // The UA button pair. If this is what a button computes, the author rules lost and every
-  // contrast figure below would describe a pair the page does not render.
-  expect(
-    `${applied.button?.bg ?? ''} / ${applied.button?.color ?? ''}`,
-    'a native button resolved to the user-agent pair -- the author rules did not win',
-  ).not.toBe('rgb(239, 239, 239) / rgb(0, 0, 0)')
-  expect(applied.input?.bg, 'the input is unstyled').not.toBe('rgba(0, 0, 0, 0)')
-
-  return page
-}
-
 /**
  * ⚠ THERE IS NO CONTRAST FORMULA IN THIS FILE, AND THERE WAS ONE.
  *
  * It carried its own `ratioFromRgb` — a second implementation of WCAG 2.1 relative
  * luminance, in a file whose job is to measure a browser. That is the duplicated-logic
  * shape this project has paid for repeatedly (QA H-1; guard rule 11c parses `ThemeTokens`
- * rather than copying it), and it is worse here than usual: two implementations of the same
- * formula can disagree about a pass, and the one in the browser suite would have been the
+ * rather than copying it), and it is worse here than usual: two implementations of one
+ * formula can disagree about a pass, and the copy in the browser suite would have been the
  * one nobody noticed drifting.
  *
  * So the arithmetic lives in `packages/tokens` and is emitted to
- * `packages/tokens/generated/contrast.json`. What this file does instead is the half only a
- * browser can do: assert that the ENGINE resolves each token to the hex the source says,
- * and then read that pair's verdict out of the table. The engine proves the wiring; the
- * table proves the ratio.
+ * `packages/tokens/generated/contrast.json`. What this file does instead is the half only
+ * a browser can do: assert the ENGINE resolves each token to the hex the table was
+ * computed from, derive the pairs the engine actually paints, and read each verdict out of
+ * the table.
  */
 const CONTRAST = JSON.parse(
   readFileSync(join(REPO, 'packages/tokens/generated/contrast.json'), 'utf8'),
@@ -180,6 +139,162 @@ function tableRow(theme: string, fg: string, bg: string) {
   const row = CONTRAST.pairs.find((r) => r.theme === theme && r.fg === fg && r.bg === bg)
   expect(row, `${theme} ${fg} on ${bg} is not in the generated contrast table`).toBeDefined()
   return row!
+}
+
+/**
+ * ================================================================================
+ * THE VACUITY GUARD. It is the highest-value guard in the task, so it is PROVEN.
+ * ================================================================================
+ *
+ * Extracted from `openKit` so it can be driven against a deliberately broken page. These
+ * are the only checks in the project that can see a computed style -- `R-118` exists
+ * because jsdom cannot -- so this function is the single thing standing between a real
+ * browser check and a false PASS. An unproven guard is not a guard (`QRPAGER-15 §6`,
+ * trap 1), and `assertStylesApplied` is proven in the three cases at the end of this file.
+ *
+ * It checks a token-driven value on an element of EACH KIND the suite measures, because
+ * "the stylesheets applied" turned out to be true of some elements and false of others in
+ * the same document: the earlier harness left four `<button>` elements at Chromium's UA
+ * pair while the card was correctly token-styled, and the old one-background check passed
+ * straight through that.
+ */
+async function assertStylesApplied(page: Page, theme: 'light' | 'dark'): Promise<void> {
+  const applied = await page.evaluate(() => {
+    const read = (sel: string) => {
+      const el = document.querySelector(sel)
+      if (!el) return null
+      const s = getComputedStyle(el)
+      return { bg: s.backgroundColor, color: s.color }
+    }
+    return {
+      theme: document.documentElement.getAttribute('data-theme'),
+      brand: getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim(),
+      card: read('#card'),
+      button: read('#primary'),
+      input: read('#name'),
+    }
+  })
+
+  expect(applied.theme, 'the fixture is not in the theme under test').toBe(theme)
+  expect(applied.brand, 'the token stylesheet did not apply').not.toBe('')
+  // brand is the one role whose value differs between themes by a whole hue, so this
+  // cannot pass in the wrong theme.
+  expect(applied.brand, `the ${theme} theme did not take`).toBe(
+    theme === 'light' ? '#0B6B4F' : '#3DDC97',
+  )
+  expect(applied.card?.bg, 'the card is unstyled').not.toBe('rgba(0, 0, 0, 0)')
+
+  // ⚠ THE BUTTON MUST RESOLVE TO THE EXACT PAIR THE TABLE WAS COMPUTED FROM, and this
+  // check was weaker in its first version: it asserted the button was NOT one known-bad
+  // value, Chromium's plain UA pair `rgb(239,239,239) / rgb(0,0,0)`. The historical
+  // goto+addStyleTag sequence does not produce that pair -- it produces a BLEND of the
+  // author colour with the native widget, `rgb(174,201,194) / rgb(72,72,72)`. So the guard
+  // would have passed the very harness defect it was written for.
+  //
+  // Asserting the RIGHT value instead of excluding one wrong one catches both, and every
+  // other way a button can end up a colour nobody measured. The expected hexes come from
+  // the generated table, not from literals here.
+  const expectedButton = CONTRAST.pairs.find(
+    (r) => r.theme === theme && r.fg === 'surface' && r.bg === 'brand',
+  )
+  expect(
+    expectedButton,
+    'the table has no surface-on-brand row to check the button against',
+  ).toBeDefined()
+  expect(
+    applied.button?.bg === undefined ? '' : toHex(applied.button.bg),
+    'the primary button did not resolve to --color-brand; the author rules did not win',
+  ).toBe(expectedButton!.bgHex)
+  expect(
+    applied.button?.color === undefined ? '' : toHex(applied.button.color),
+    'the primary button label did not resolve to --color-surface',
+  ).toBe(expectedButton!.fgHex)
+
+  expect(applied.input?.bg, 'the input is unstyled').not.toBe('rgba(0, 0, 0, 0)')
+}
+
+async function openKit(page: Page, theme: 'light' | 'dark' = 'light') {
+  await page.setContent(fixtureHtml(theme))
+  await assertStylesApplied(page, theme)
+  return page
+}
+
+/**
+ * ================================================================================
+ * EVERY PAIRING THE KIT ACTUALLY RENDERS, DERIVED FROM THE DOM
+ * ================================================================================
+ *
+ * "Text on a fill" escaped the first table because its rows were roles against
+ * backgrounds, and nobody thought of that shape. A hand-written list of PAIRINGS has the
+ * same defect one level up: the next shape nobody thinks of escapes identically.
+ *
+ * So the pair list is DERIVED. This walks every text-bearing element in the fixture --
+ * which contains every component -- reads its resolved colour, walks its ancestors to the
+ * first non-transparent background, and returns the pairs the engine actually paints. A
+ * component that starts rendering a new pairing appears here without anyone adding it, and
+ * the assertion below fails until that pairing is in the generated table.
+ *
+ * It returns resolved HEXES rather than role names, because the DOM has no idea which
+ * token produced a colour. The reconciliation back to roles is done against the table's
+ * own `fgHex`/`bgHex`, which is what makes a missing pairing nameable.
+ */
+async function renderedPairs(page: Page): Promise<{ fg: string; bg: string; sample: string }[]> {
+  return page.evaluate(() => {
+    const toHex = (value: string): string | null => {
+      const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/.exec(value)
+      if (!m) return null
+      // A fully transparent colour paints nothing, so it is not half of a pair.
+      if (m[4] !== undefined && Number(m[4]) === 0) return null
+      return `#${[m[1], m[2], m[3]]
+        .map((c) => Math.round(Number(c)).toString(16).padStart(2, '0'))
+        .join('')
+        .toUpperCase()}`
+    }
+
+    /** The first ancestor that actually paints a background, including the element itself. */
+    const effectiveBackground = (start: Element): string | null => {
+      let el: Element | null = start
+      while (el) {
+        const hex = toHex(getComputedStyle(el).backgroundColor)
+        if (hex !== null) return hex
+        el = el.parentElement
+      }
+      return null
+    }
+
+    const out = new Map<string, { fg: string; bg: string; sample: string }>()
+    for (const el of document.querySelectorAll<HTMLElement>('*')) {
+      // Only elements that paint TEXT of their own. An element whose text lives entirely
+      // in a child contributes nothing: the child is visited on its own.
+      const ownText = [...el.childNodes].some(
+        (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '',
+      )
+      if (!ownText) continue
+      // Visually hidden content is not read by eye, so a contrast bar does not apply.
+      if (el.classList.contains('qr-visually-hidden')) continue
+
+      const fg = toHex(getComputedStyle(el).color)
+      const bg = effectiveBackground(el)
+      if (fg === null || bg === null) continue
+
+      const key = `${fg}/${bg}`
+      if (!out.has(key)) {
+        // The first class, for a readable failure message. `classList[0]` rather than
+        // splitting `className`: an SVGElement's className is an SVGAnimatedString, not a
+        // string, so the split form was both a type error and wrong for the one element
+        // kind the fixture has inside the logo slot.
+        const firstClass = el.classList.item(0)
+        const id =
+          el.id !== ''
+            ? `#${el.id}`
+            : firstClass !== null
+              ? `.${firstClass}`
+              : el.tagName.toLowerCase()
+        out.set(key, { fg, bg, sample: id })
+      }
+    }
+    return [...out.values()]
+  })
 }
 
 // ============================================================ 1. the visible focus ring
@@ -314,13 +429,10 @@ test.describe('R-118 clause 3 — the engine resolves the tokens the table was c
 
     test(`secondary text resolves to the table's pair in the ${theme} theme`, async ({ page }) => {
       await openKit(page, theme)
-      await page.evaluate(() => {
-        const p = document.createElement('p')
-        p.className = 'qr-field__hint'
-        p.id = 'hint'
-        p.textContent = 'hint'
-        document.querySelector('.qr-field')!.append(p)
-      })
+      // The fixture carries the hint now -- it used to be created here, which produced a
+      // SECOND element with id="hint" once the fixture gained the five states and a
+      // populated field. Playwright's strict mode caught the duplicate; a non-strict
+      // locator would have silently measured whichever came first.
       const colour = await page.locator('#hint').evaluate((el) => getComputedStyle(el).color)
 
       const row = tableRow(theme, 'ink-mid', 'paper')
@@ -409,6 +521,125 @@ test.describe('R-118 clause 3 — the engine resolves the tokens the table was c
   test('every barred pair in the generated table passes, in both themes', () => {
     const failures = CONTRAST.pairs.filter((r) => r.bar !== null && !r.pass)
     expect(failures.map((r) => `${r.theme} ${r.fg} on ${r.bg} = ${String(r.ratio)}`)).toEqual([])
+  })
+})
+
+// ======================= 3b. the pairings, DERIVED rather than listed
+
+test.describe('every pairing the kit RENDERS is in the generated table', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`the ${theme} theme renders no pair the table does not cover`, async ({ page }) => {
+      await openKit(page, theme)
+      const pairs = await renderedPairs(page)
+
+      // Not vacuous: the fixture carries every component and every state, so an empty or
+      // tiny result means the walk is broken rather than the kit being simple.
+      expect(pairs.length).toBeGreaterThanOrEqual(10)
+
+      const known = new Map<string, { bar: number | null; pass: boolean; name: string }>()
+      for (const r of CONTRAST.pairs.filter((r) => r.theme === theme)) {
+        known.set(`${r.fgHex}/${r.bgHex}`, { bar: r.bar, pass: r.pass, name: `${r.fg} on ${r.bg}` })
+      }
+      // The order-ready triple takes no theme, so it is known in both.
+      for (const r of CONTRAST.orderReady.pairs) {
+        known.set(`${r.fgHex}/${r.bgHex}`, { bar: 7, pass: r.pass, name: `${r.fg} on ${r.bg}` })
+      }
+
+      // ⚠ THIS IS THE CLAUSE "text on a fill" ESCAPED. The first table's rows were roles
+      // against backgrounds and nobody thought of that shape; a hand-written list of
+      // pairings would have the same defect one level up. These pairs are DERIVED from
+      // what the engine paints, so the next shape nobody thinks of arrives here as a
+      // missing row rather than as nothing at all.
+      const missing = pairs.filter((x) => !known.has(`${x.fg}/${x.bg}`))
+      expect(
+        missing.map((m) => `${m.fg} on ${m.bg} (first seen at ${m.sample})`),
+        'a pairing the kit renders is absent from the generated contrast table',
+      ).toEqual([])
+
+      // And every rendered pair must actually pass, not merely be present.
+      const failing = pairs
+        .map((x) => ({ ...x, row: known.get(`${x.fg}/${x.bg}`)! }))
+        .filter((x) => x.row.bar !== null && !x.row.pass)
+      expect(
+        failing.map((f) => `${f.row.name} at ${f.sample}`),
+        'a pairing the kit renders fails its bar',
+      ).toEqual([])
+    })
+  }
+
+  test('the two themes together render the number of pairs this task measured', async ({
+    page,
+  }) => {
+    // An exact count, reported so a change is visible rather than absorbed. 13 light + 11
+    // dark = 24 distinct rendered pairs, against 42 DECLARED rows -- the table deliberately
+    // over-covers, which bounds combinations no component renders yet.
+    await openKit(page, 'light')
+    const light = await renderedPairs(page)
+    await openKit(page, 'dark')
+    const dark = await renderedPairs(page)
+    expect({ light: light.length, dark: dark.length }).toEqual({ light: 13, dark: 11 })
+    expect(CONTRAST.pairs).toHaveLength(42)
+  })
+})
+
+// ================================= 4b. the vacuity guard, PROVEN to fail
+
+test.describe('the vacuity guard is proven to fail', () => {
+  test('throws when the component stylesheet is withheld', async ({ page }) => {
+    // THE DETERMINISTIC PROOF. Only the token sheet is present, so the custom properties
+    // resolve while no component rule exists -- which is precisely the state the guard is
+    // for, and the state the OLD one-background check could not distinguish from a styled
+    // page. Deterministic rather than relying on an engine quirk, so it cannot stop
+    // proving anything when a browser version changes.
+    const html = readFileSync(join(REPO, 'browser/fixtures/kit.html'), 'utf8')
+    const tokens = readFileSync(join(REPO, 'packages/tokens/generated/tokens.css'), 'utf8')
+    await page.setContent(html.replace('<!--STYLES-->', `<style>${tokens}</style>`))
+
+    await expect(assertStylesApplied(page, 'light')).rejects.toThrow()
+  })
+
+  test('throws when the page is in the WRONG theme', async ({ page }) => {
+    // The other half of what the guard asserts. Without this, a dark-theme check could run
+    // against a light document and agree with the wrong table row -- which is exactly what
+    // the old setAttribute harness made possible.
+    await page.setContent(fixtureHtml('light'))
+    await expect(assertStylesApplied(page, 'dark')).rejects.toThrow()
+  })
+
+  test('agrees with reality under the historical goto + addStyleTag sequence', async ({ page }) => {
+    // THE MOTIVATING CASE, pinned as an INVARIANT rather than as an expectation about a
+    // browser bug: either the button resolves to the token pair, or the guard throws.
+    // That holds whether or not the engine still mishandles the sequence, so this test
+    // cannot start failing because Chromium was fixed -- and it cannot pass while the
+    // harness silently measures something nobody computed a ratio for.
+    //
+    // Measured on Chrome for Testing 156.0.8078.4: the sequence yields
+    // `rgb(174, 201, 194) / rgb(72, 72, 72)` -- the author colour BLENDED with the native
+    // widget, not the plain UA pair. That is what exposed the guard's first version as too
+    // narrow.
+    const tokens = readFileSync(join(REPO, 'packages/tokens/generated/tokens.css'), 'utf8')
+    const kit = readFileSync(join(REPO, 'packages/ui/src/styles/kit.css'), 'utf8').replace(
+      /@import[^;]+;/g,
+      '',
+    )
+    await page.goto(pathToFileURL(join(REPO, 'browser/fixtures/kit.html')).href)
+    for (const css of [tokens, kit]) await page.addStyleTag({ content: css })
+
+    const row = tableRow('light', 'surface', 'brand')
+    const button = await page.locator('#primary').evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { bg: s.backgroundColor, color: s.color }
+    })
+    const correct = toHex(button.bg) === row.bgHex && toHex(button.color) === row.fgHex
+
+    if (correct) {
+      // The sequence resolved properly on this engine, so the guard must not object.
+      await assertStylesApplied(page, 'light')
+    } else {
+      // It did not, so the guard MUST catch it. This is the assertion that would have
+      // failed before the guard was strengthened.
+      await expect(assertStylesApplied(page, 'light')).rejects.toThrow()
+    }
   })
 })
 
