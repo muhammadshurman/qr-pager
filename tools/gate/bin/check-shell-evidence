@@ -50,7 +50,18 @@ elif [ "${#targets[@]}" = "0" ]; then
     # Everything tracked under the two script directories. `git ls-files` rather than a
     # glob, so an untracked scratch script cannot fail the gate and a tracked one cannot
     # escape it.
-    while IFS= read -r f; do targets+=("$f"); done < <(git ls-files tools/ apps/api/bin/)
+    #
+    # FIXTURES EXCLUDED, and the ordinary pass found that out the hard way: the moment
+    # bad-evidence.sh.fixture was committed, `git ls-files` picked it up and the gate went
+    # red on a file that exists to be red. Same exemption the design-token scanner makes
+    # for tools/design-tokens/fixtures, for the same reason -- a deliberately-wrong file
+    # swept into the normal pass makes the gate permanently red and the rule gets disabled.
+    while IFS= read -r f; do
+        case "$f" in
+            */fixtures/*) continue ;;
+        esac
+        targets+=("$f")
+    done < <(git ls-files tools/ apps/api/bin/)
 fi
 
 findings=0
@@ -94,6 +105,16 @@ for f in "${targets[@]}"; do
         n=$((n + 1))
         # Strip a whole-line comment, so this file's own prose does not trip it.
         code="${line%%#*}"
+        # ⚠ AND STRIP SINGLE-QUOTED CONTENT, which this script needed for ITSELF: its own
+        # `case` patterns are written `*'|'*` and its own messages are single-quoted
+        # strings containing `$?`, so the first version reported two hazards in its own
+        # source. Inside single quotes a shell performs NO expansion, so a `$?` there is
+        # literal text and a `|` is a literal character -- neither is what this rule is
+        # about.
+        #
+        # DOUBLE quotes are deliberately NOT stripped: they interpolate, so `echo "exit=$?"`
+        # is a real read and is exactly the shape being caught.
+        code="$(printf '%s' "$code" | sed "s/'[^']*'/''/g")"
         case "$code" in
             *'$?'*)
                 case "$code" in
