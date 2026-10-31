@@ -1,0 +1,28 @@
+<!--
+  A DELIBERATELY BAD FIXTURE: every class here is a Tailwind DEFAULT-THEME utility, which
+  is the shape that made clause 1 of the named invariant fall a second time.
+
+  ⚠ `p-4` IS NOT HERE AND THAT IS THE POINT OF THIS NOTE. Under the token theme `p-4` is
+  `var(--space-4)` -- 4px, an approved step -- so it is a token-backed utility and lives in
+  the good fixture. It is also a trap worth writing down: the spacing scale is named in PX,
+  so `p-4` is 4px here and was 16px under Tailwind's default `--spacing` multiplier. The
+  utility is legitimate; the number means something different.
+
+  Measured before the @theme block existed: `bg-red-500 p-4 text-sm` gave `lint:es` 0 and
+  `lint:tokens` 0, because the no-hard-coded-values rule knows about the square-bracket
+  escape hatch (`text-[#fff]`, `p-[13px]`) and cannot see a utility whose value comes from
+  Tailwind's own default theme. `--text-sm` is 14px, which is not on the approved type
+  scale (13 16 20 28 44 64 96) at all.
+
+  tools/design-tokens/test/theme.test.mjs compiles this file's candidates against the real
+  app stylesheet and asserts NOTHING is emitted for any of them -- and asserts the
+  token-backed utilities in the good fixture beside it ARE emitted, which is the half that
+  stops the proof passing because the compiler produced nothing at all.
+-->
+<div class="bg-red-500 p-7 text-sm">
+  <p class="text-blue-700 bg-slate-100 p-5 m-3 gap-7">
+    Every one of these is a default-theme utility and must compile to nothing.
+  </p>
+  <span class="rounded-lg shadow-md text-xs font-sans tracking-wide">And these.</span>
+  <button class="bg-emerald-600 text-white px-6 py-2 text-base">Also these.</button>
+</div>

@@ -1,0 +1,18 @@
+<!--
+  The OTHER half of the proof, and it is the half that stops it passing by accident.
+
+  If the @theme block were wrong -- a syntax error, a cleared namespace with nothing put
+  back, a compile that produced no CSS at all -- then "nothing is emitted for bg-red-500"
+  would be true for the uninteresting reason. Every class here is backed by the TOKEN
+  scales and must compile, with a value that resolves through the generated custom
+  properties rather than a literal.
+
+  This is the same two-sided shape the CSS fixtures already use: the bad one stops the rule
+  failing open, the good one stops it being disabled for crying wolf.
+-->
+<div class="bg-paper text-ink p-16 p-4 gap-24">
+  <p class="text-ink-mid text-13">Secondary text, on the approved scale.</p>
+  <span class="bg-surface rounded-16 shadow-card text-16">A card label.</span>
+  <button class="bg-brand text-surface p-24 text-20">A primary action.</button>
+  <em class="font-arabic text-28">Arabic, at an approved size.</em>
+</div>
