@@ -2,6 +2,7 @@
 
 use App\Domain\Http\ProblemType;
 use App\Features\Landing\Console\AdvanceDomainsCommand;
+use App\Features\Contracts\Console\ExportStatusMirrorCommand;
 use App\Features\Landing\Console\ExportLandingSchemaCommand;
 use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
@@ -199,6 +200,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // shape: a scheduler entry would have to name a tenant and there is no "the
         // tenant" at schedule time. SR-3 and R-130 carry the argument.
         AdvanceDomainsCommand::class,
+        // Task 8a's generator for the TypeScript status mirror. NOT scheduled, for the
+        // same reason as ExportLandingSchemaCommand directly above: it enforces nothing on
+        // a timer, it WRITES a committed artifact, and `--check` is what keeps it honest --
+        // bin/gate and CI both run it, so the file cannot go stale without something going
+        // red. DatabaseEnums::map() is its source, so an enum added to that registry
+        // appears in the TypeScript without anyone remembering to add it.
+        ExportStatusMirrorCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request

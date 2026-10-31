@@ -15,10 +15,16 @@
 # excerpt and the frame list on disk.
 #
 # NOT A REPLACEMENT FOR THE THREE COMMANDS in PROJECT_INSTRUCTIONS.md §6 -- it runs
-# them, in the gate's own order, plus the four generated-artifact and architecture steps
-# the tasks since have added (guard, deptrac, openapi:check, and Task 7's
-# landing:check). Running the three by hand stays correct; this is the form that leaves
-# evidence.
+# them, in the gate's own order, plus the five generated-artifact and architecture steps
+# the tasks since have added (guard, deptrac, openapi:check, Task 7's landing:check, and
+# Task 8a's contracts:check). Running the three by hand stays correct; this is the form
+# that leaves evidence.
+#
+# Task 8a's FRONTEND gate is not run from here, deliberately. This script is apps/api's and
+# runs from apps/api; the workspace gate is `pnpm gate` from the repository root, and CI runs
+# the two as separate jobs (ADR-003: "CI gains a second job for the frontend workspace").
+# One script spanning both halves would make a PHP failure and a TypeScript failure
+# indistinguishable in the log, which is the opposite of what this file exists for.
 #
 # The closing line counts the array rather than naming a number, because it said "all six
 # steps green" for the whole of Task 7's build while running seven.
@@ -69,6 +75,7 @@ steps=(
   "composer deptrac"
   "composer openapi:check"
   "composer landing:check"
+  "composer contracts:check"
   "php artisan test"
 )
 
