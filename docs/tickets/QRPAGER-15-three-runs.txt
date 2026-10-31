@@ -1,0 +1,62 @@
+QRPAGER-15 — THREE CONSECUTIVE GREEN FULL-SUITE RUNS (frontend workspace)
+=========================================================================
+
+QRPAGER-15 §7: "Three consecutive green full-suite runs, transcripts committed."
+
+Produced by tools/gate/bin/three-green-runs, the sibling of apps/api/bin/three-green-runs
+and committed for the reason that script's header gives: Task 4 met the same bar by running
+its gate three times by hand and writing the results into a file, and R-043 is the §5 row
+about exactly that shape — a gate clause whose demonstration lives in a session rather than
+in the repository, so nobody can re-run it.
+
+WHAT "CONSECUTIVE" MEANS HERE: one commit, no edits between runs, and a red STOPS the loop
+rather than being retried until it passes. Three greens out of five attempts is not three
+consecutive greens, and the difference is the whole point.
+
+The script also REFUSES to stay quiet about a dirty tree, and that fired on the first
+attempt: three runs at a commit mean nothing if the tree changes under them. The run below
+is on a clean tree.
+
+WHAT IT RUNS is the whole workspace gate — the Vitest projects, the Playwright browser
+suite AND both Next builds. A "full suite" that skipped the browser checks would skip the
+four R-118 clauses this task closes, which are the ones that cannot be asserted anywhere
+else.
+
+The PHP half has its own three-green-runs and its own known intermittent red (R-092);
+mixing them would let one half's flake stop the other's proof.
+
+three-green-runs (frontend workspace)
+  commit:  a8a9619e317c056121fda8aabeb826e048a8cc70
+  runs:    3, consecutive -- a red stops the loop
+
+===== run 1 of 3, started 2026-10-31T14:12:22Z =====
+      Tests  308 passed (308)
+Statements   : 96.41% ( 323/335 )
+Branches     : 90.9% ( 270/297 )
+Functions    : 97.82% ( 90/92 )
+Lines        : 98.26% ( 283/288 )
+  44 passed (2.8s)
+gate: all 9 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T141222Z.log
+  run 1: GREEN
+
+===== run 2 of 3, started 2026-10-31T14:13:04Z =====
+      Tests  308 passed (308)
+Statements   : 96.41% ( 323/335 )
+Branches     : 90.9% ( 270/297 )
+Functions    : 97.82% ( 90/92 )
+Lines        : 98.26% ( 283/288 )
+  44 passed (2.5s)
+gate: all 9 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T141304Z.log
+  run 2: GREEN
+
+===== run 3 of 3, started 2026-10-31T14:13:45Z =====
+      Tests  308 passed (308)
+Statements   : 96.41% ( 323/335 )
+Branches     : 90.9% ( 270/297 )
+Functions    : 97.82% ( 90/92 )
+Lines        : 98.26% ( 283/288 )
+  44 passed (2.8s)
+gate: all 9 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261031T141345Z.log
+  run 3: GREEN
+
+three-green-runs: 3 of 3 GREEN, consecutive, at a8a9619e317c056121fda8aabeb826e048a8cc70
