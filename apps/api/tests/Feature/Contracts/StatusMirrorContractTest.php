@@ -27,8 +27,8 @@ it('mirrors every enum in the registry, so a new one cannot be forgotten', funct
 
     foreach (DatabaseEnums::map() as $type => $class) {
         expect($generated)
-            ->toContain("export const ".strtoupper($type)." = [")
-            ->toContain("'{$type}': ".strtoupper($type).",");
+            ->toContain('export const '.strtoupper($type).' = [')
+            ->toContain("'{$type}': ".strtoupper($type).',');
 
         foreach ($class::values() as $value) {
             expect($generated)->toContain("  '{$value}',");
@@ -114,12 +114,28 @@ it('exits 0 on a current file and 1 on a stale one, driven rather than read', fu
     }
 });
 
-it('writes no second definition of a status anywhere in the workspace', function (): void {
+it('writes no second DECLARATION of a status list outside the generated mirror', function (): void {
     // §6.2's clause from the other side: the generated file is the only place a TypeScript
-    // status list may exist. A hand-written copy elsewhere is the defect ADR-003 describes,
-    // and it would be invisible to the staleness check -- which only watches one path.
+    // status list may be DECLARED. A hand-written copy elsewhere is the defect ADR-003
+    // describes, and it would be invisible to the staleness check, which watches one path.
+    //
+    // ⚠ THE SUBJECT OF THIS ASSERTION WAS NARROWED, and it is stated here rather than done
+    // quietly (QRPAGER-15 §8). It first flagged any file containing three or more pager
+    // status values, and it caught `packages/contracts/test/mirror.test.ts` -- the test that
+    // PINS the generated mirror's contents, which cannot check the values without naming
+    // them. That is the opposite of a second source: it is the thing that would catch one.
+    //
+    // So the subject changed from "the vocabulary appears" to "a second DECLARATION exists",
+    // which is what §6.2 is actually about. Two consequences, both deliberate:
+    //
+    //   - TEST files are out of scope. A test naming a value it asserts on is the same
+    //     allowance the §12 lint rule already makes for tests, and for the same reason.
+    //   - the SHAPE is matched, not the words: a `const … = [` or a `type … =` union
+    //     carrying status literals. `StatusBadge`'s `Record<PagerStatus, …>` tone map keyed
+    //     BY the generated type is the correct pattern and must not fire -- it has no list
+    //     of its own, which is the whole point of the generated type existing.
     $root = dirname(base_path(), 2);
-    $mirror = $root.'/'.StatusMirror::RELATIVE_PATH;
+    $mirror = realpath($root.'/'.StatusMirror::RELATIVE_PATH);
 
     $offenders = [];
     foreach (['packages', 'apps/web', 'apps/site'] as $dir) {
@@ -131,7 +147,7 @@ it('writes no second definition of a status anywhere in the workspace', function
         $files = new RecursiveIteratorIterator(
             new RecursiveCallbackFilterIterator(
                 new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS),
-                static fn (SplFileInfo $f): bool => $f->getFilename() !== 'node_modules'
+                static fn (SplFileInfo $f): bool => ! in_array($f->getFilename(), ['node_modules', '.next'], true)
             )
         );
 
@@ -139,25 +155,37 @@ it('writes no second definition of a status anywhere in the workspace', function
             if (! $file instanceof SplFileInfo || ! in_array($file->getExtension(), ['ts', 'tsx'], true)) {
                 continue;
             }
+
             $path = (string) $file->getRealPath();
-            if ($path === realpath($mirror)) {
+            $relative = str_replace($root.'/', '', $path);
+
+            // The generated mirror itself, and tests, which may name what they assert on.
+            if ($path === $mirror || str_contains($relative, '/test/') || str_contains($relative, '.test.')) {
                 continue;
             }
+
             $source = (string) file_get_contents($path);
-            // A status list is recognisable: two or more pager status values as quoted
-            // literals in one file. Narrow on purpose -- a single word like 'ready' is
-            // ordinary English and would make this fire on copy.
-            $hits = 0;
-            foreach (['waiting', 'completed', 'cancelled', 'expired'] as $value) {
-                if (str_contains($source, "'{$value}'")) {
-                    $hits++;
+
+            // Two status values in ONE declaration -- an `as const` array or a union type.
+            // Two and not three: a list with two of the five is already a second source.
+            $declarations = [];
+            preg_match_all('/(?:const|type)\s+\w+[^=;]*=\s*(\[[^\]]*\]|[^;\n]*\|[^;\n]*)/', $source, $declarations);
+
+            foreach ($declarations[1] ?? [] as $declaration) {
+                $hits = 0;
+                foreach (['waiting', 'ready', 'completed', 'cancelled', 'expired'] as $value) {
+                    if (str_contains((string) $declaration, "'".$value."'")) {
+                        $hits++;
+                    }
                 }
-            }
-            if ($hits >= 3) {
-                $offenders[] = str_replace($root.'/', '', $path);
+                if ($hits >= 2) {
+                    $offenders[] = $relative;
+
+                    break;
+                }
             }
         }
     }
 
-    expect($offenders)->toBe([], 'these files look like a second, hand-written copy of the status enum');
+    expect($offenders)->toBe([], 'these files declare a second, hand-written copy of the status enum');
 });

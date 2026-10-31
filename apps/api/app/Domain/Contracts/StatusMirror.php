@@ -6,7 +6,6 @@ namespace App\Domain\Contracts;
 
 use App\Domain\DatabaseEnum;
 use App\Domain\DatabaseEnums;
-use ReflectionEnum;
 use ReflectionMethod;
 
 /**
@@ -92,7 +91,7 @@ final class StatusMirror
     /**
      * One enum: its values, its type, and its transition table if it has one.
      *
-     * @param  class-string<DatabaseEnum>  $class
+     * @param  class-string<DatabaseEnum&\BackedEnum>  $class
      */
     private static function block(string $type, string $class): string
     {
@@ -144,7 +143,7 @@ final class StatusMirror
      *
      * Returns null when the enum declares no transitions at all.
      *
-     * @param  class-string<DatabaseEnum>  $class
+     * @param  class-string<DatabaseEnum&\BackedEnum>  $class
      * @return array<string, list<string>>|null
      */
     private static function transitions(string $class): ?array
@@ -153,11 +152,9 @@ final class StatusMirror
             return null;
         }
 
-        $method = new ReflectionMethod($class, 'allows');
         $table = [];
 
-        if ($method->isStatic()) {
-            /** @var array<string, list<object>> $raw */
+        if ((new ReflectionMethod($class, 'allows'))->isStatic()) {
             $raw = $class::allows();
             foreach ($raw as $from => $to) {
                 $table[(string) $from] = self::caseValues($to);
@@ -166,24 +163,27 @@ final class StatusMirror
             return $table;
         }
 
-        foreach ((new ReflectionEnum($class))->getCases() as $case) {
-            $instance = $case->getValue();
-            /** @var list<object> $to */
-            $to = $instance->allows();
-            $table[(string) $instance->value] = self::caseValues($to);
+        // The instance form. `cases()` rather than ReflectionEnum: it is the enum's own API,
+        // PHPStan understands it from the `&\UnitEnum` in the registry's type, and it needs
+        // no reflection object at all. ReflectionEnum was the first attempt and PHPStan was
+        // right to refuse it -- `class-string<DatabaseEnum>` promised nothing about enums,
+        // which is the gap the registry's type now closes.
+        foreach ($class::cases() as $case) {
+            $to = $case->allows();
+            $table[(string) $case->value] = self::caseValues($to);
         }
 
         return $table;
     }
 
     /**
-     * @param  list<object>  $cases
+     * @param  array<array-key, \BackedEnum>  $cases
      * @return list<string>
      */
     private static function caseValues(array $cases): array
     {
         return array_values(array_map(
-            static fn (object $case): string => (string) $case->value, // @phpstan-ignore-line
+            static fn (\BackedEnum $case): string => (string) $case->value,
             $cases,
         ));
     }

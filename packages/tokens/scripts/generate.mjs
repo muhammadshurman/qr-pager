@@ -274,7 +274,14 @@ export type ProtectedProperty = (typeof PROTECTED_PROPERTIES)[number]
 
 export function buildPhp() {
   const banner = BANNER_LINES.map((l) => ` * ${l}`.trimEnd()).join('\n')
-  const theme = (t) => roles.map((r) => `        '${r}' => '${resolveColour(t, r)}',`).join('\n')
+  // TWELVE spaces, not eight: these entries are two array levels deep and Laravel Pint's
+  // `array_indentation` fixer reformats anything shallower. A generated file that the
+  // formatter then rewrites can never pass its own byte-diff staleness check -- the
+  // generator emits one thing, `composer pint` emits another, and `pnpm tokens:check` fails
+  // forever. Measured: Pint changed exactly these lines on the first run, so the generator
+  // is corrected rather than the file excluded from formatting.
+  const theme = (t) =>
+    roles.map((r) => `            '${r}' => '${resolveColour(t, r)}',`).join('\n')
 
   return `<?php
 

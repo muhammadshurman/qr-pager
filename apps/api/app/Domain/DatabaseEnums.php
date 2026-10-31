@@ -22,7 +22,22 @@ use App\Domain\Tenancy\TenantStatus;
  */
 final class DatabaseEnums
 {
-    /** @return array<string, class-string<DatabaseEnum>> */
+    /**
+     * @return array<string, class-string<DatabaseEnum&\BackedEnum>>
+     *
+     * ⚠ `&\BackedEnum` ADDED 2026-10-31 BY TASK 8a, and it is a CORRECTION rather than a
+     * widening. `DatabaseEnum`'s own docblock already says it in prose -- "a PHP enum that
+     * is mirrored by a native Postgres enum type" -- and §2.3 says the same; the TYPE just
+     * did not say so, so a caller could not iterate the cases or read `->value` without
+     * PHPStan refusing it. Every value below has been a STRING-BACKED enum since Task 1,
+     * which is why it is `\BackedEnum` and not `\UnitEnum` -- `UnitEnum` carries `name`
+     * but not `value`, and `value` is the whole point of a type that mirrors a Postgres
+     * enum label.
+     *
+     * It was found by the consumer this registry's docblock asks for: generating
+     * packages/contracts needs each class's CASES and their transition tables, which is
+     * exactly what `class-string<DatabaseEnum>` alone cannot express.
+     */
     public static function map(): array
     {
         return [

@@ -1,0 +1,201 @@
+Task 8a — design system: workspace, approved direction, tokens, UI kit, templates
+
+⚠ DRAFT. NOT YET APPLIED, AND THAT IS A RULING RATHER THAN AN OMISSION.
+
+The rank-1 prompt's order of work said to tag at the green gate. Muhammad corrected it in
+place on 2026-10-31: the tag moves to AFTER both §11 reviews and after every Critical and
+High is fixed with a regression test. Three reasons, in his order of weight:
+
+  1. §11's merge rule says it outright — "the task is not done and task-N is not tagged
+     until every Critical and High finding is fixed with a regression test". The ticket's
+     §7 lists the tag last, after the review bullets, and task-6 and task-7 are the
+     precedent in this repo.
+  2. THIS MESSAGE CANNOT BE FINAL BEFORE THE REVIEWS. It must state every gate clause not
+     met with its PLAN.md §5 row, owner and date — and those rows do not exist until the
+     Medium and Low findings are dispositioned. So it is drafted as a committed file and
+     finalised after the dispositions.
+  3. §10 makes the tag the delivery record and there is no PR and no merge behind it. A tag
+     applied at the green gate would make that record point at a commit a review may then
+     prove carries a Critical, with nothing downstream to catch it.
+
+===============================================================================
+BASE, AND IT IS NOT THE TAG
+===============================================================================
+
+Base: 049934b8d95c64742a667597adbacd65b45909b7 — the tip of fix-studio-upload-endpoint,
+three commits past the task-7 tag (61b220f) and UNDER NO TAG OF ITS OWN. Reviewers diff
+049934b...task-8a.
+
+The prompt said task-7 at 61b220f. Measured, that tree carries neither PLAN.md's
+2026-10-31 clauses (grep -c: 0 there, 1 at the base — 165 lines of docs/PLAN.md) nor the
+studio upload fix, and it DOES carry RouteSurfaceTest's assertion that the Livewire
+upload-file 404 is correct behaviour, which PLAN §0 records as a defect. 8a's own green
+gate would have certified it. §6's order rule holds either way: task-7 is green and tagged,
+and 049934b is a descendant of that tag.
+
+===============================================================================
+GATE CLAUSES MET, WITH THE FIGURE
+===============================================================================
+
+§5  A direction is approved in writing ............................ MET
+      Direction B (SERVICE), QRPAGER-15 comment "§2 APPROVAL GATE MET", 2026-10-31.
+§5  Zero hard-coded hex / spacing / font-size, lint rule proven ... MET
+      One pattern list, two readers (ESLint over TS/TSX, a scanner over CSS). Proven on
+      committed BAD and GOOD fixtures: 12 findings on the bad stylesheet, 0 on the good
+      one; all three rules fire on the bad TSX fixture and none on the good one. Includes
+      the Tailwind arbitrary forms text-[#fff] and p-[13px] (D3).
+§5  AAA on the order-ready screen ................................ MET
+      15.55:1, 9.73:1, 9.73:1 — computed from the token source as arithmetic, and measured
+      again in Chromium under BOTH themes.
+§5  RTL mirrors correctly ........................................ MET
+      Per component, under en and ar. Icons declare directionality individually; progress
+      mirrors its origin while reporting the same aria-valuenow; the timer and prices stay
+      dir="ltr" because numbers do not mirror.
+§5  prefers-reduced-motion honoured ............................... MET
+      EXACTLY 0ms in a real browser, with the spinner's animation removed outright, and a
+      positive control asserting 160ms without the preference so a zero cannot come from a
+      stylesheet that never loaded.
+§5  Workspace builds, lints, tests from a FRESH CLONE; CI second job  MET
+      tools/gate/bin/fresh-clone-proof: GREEN. CI job `frontend`, reading the Node major
+      from .nvmrc via node-version-file.
+§5  TS status mirror generated, CI fails when stale ............... MET
+§5  CSS-vars AND PHP config generated, CI fails when either stale . MET
+      Four generated artefacts in all, each proven to fail on a deliberately stale file
+      with the exit code read directly rather than through a pipe.
+§5  Three landing templates, from tokens, fillable from the schema  MET
+      The test READS docs/contracts/landing-page.schema.json at run time and asserts both
+      directions — no schema type unrendered, no type invented — plus every required field,
+      a minimum-fields page, an empty page, and an unresolvable media id rendering nothing.
+§7  Coverage ≥ 90% on what this task adds ........................ MET
+      96.41% statements, 90.9% branches, 97.82% functions, 98.26% lines (Vitest).
+§7  Every component's states defined ............................. MET
+      empty / loading / error / offline / permission-denied, in one implementation.
+§7  Lint, typecheck, tests green in BOTH halves .................. MET
+§7  All previous tasks' suites still pass ........................ MET
+§5.1 THE NAMED INVARIANT ......................................... MET, BOTH CLAUSES
+      Clause 1: no component carries a hard-coded colour, spacing or font size — the lint
+      rule, plus the same property asserted over the real sources.
+      Clause 2: no tenant-supplied theme value can reach the order-ready pair — an
+      UNREACHABILITY proof in five independent assertions, with NO clamp anywhere.
+
+===============================================================================
+GATE CLAUSES NOT MET — EACH WITH ITS ROW AND OWNER
+===============================================================================
+
+(1) §5 / §7 — "A reviewer cannot name the UI framework from a screenshot."
+    NOT MET AS A MEASURED CLAUSE, BY DESIGN, and this is not a shortfall discovered late.
+    PLAN.md §3.1 row 8 already says so: it is one of "two clauses a review CANNOT falsify
+    … depends on which reviewer looks. Keep them as goals; they cannot be what the task
+    ships on." What was done instead is mechanical: packages/ui ships NO runtime dependency
+    beyond React — no component library, no headless-UI kit, no icon package — so there is
+    no framework signature to recognise. That is a property of the dependency list, which a
+    reviewer can check, rather than a judgement about a screenshot.
+    Owner: Muhammad, as the §3.1 row 8 audit already records. No new §5 row.
+
+(2) §5 — "WCAG AA across the kit", in the sense of EVERY rendered pair in a browser.
+    PARTIALLY MEASURED. What is measured in Chromium: body text on a card, secondary text
+    on the ground, the input's border against its fill, and the order-ready triple — in
+    both themes. What is measured as ARITHMETIC over the token source: ink, ink-mid and
+    border-strong against all three backgrounds in both themes, plus the restricted tokens.
+    What is NOT measured: every component's every state in a browser, because several
+    states have no screen to render on until Tasks 9 and 10 build them.
+    → A §5 row is OWED here, owner Task 8b (QRPAGER-23) for the panel's share and Task 9
+      for the PWA's. It is NOT written yet, because §11 says Medium and Low findings go to
+      §5 with an owner and a date AFTER the reviews — writing the row now would pre-empt a
+      reviewer who may frame it differently.
+
+(3) §7 — "Branch pushed, CI green."
+    HALF MET AND HALF UNVERIFIABLE FROM HERE. The branch is pushed. CI's conclusion lives
+    on GitHub and this environment has no `gh` and no token — which is exactly why W-3 was
+    a standing item on §0.1 rather than a check any session could run, and why Task 2's CI
+    verdict was reported by Muhammad rather than read from a session.
+    Owner: Muhammad. The same route as W-3.
+
+(4) R-118 — the admin panel's share of the four accessibility clauses.
+    NOT MET HERE, AND CORRECTLY SO. R-118's own resolution requires the figures be taken
+    "against the token-styled panel, not the default one, so the figures describe what
+    ships" — and the panel is restyled in 8b. 8a's share (the kit) IS closed, in Chromium.
+    Owner: Task 8b (QRPAGER-23). R-118 stays open with its share reduced, not closed.
+
+(5) R-073 — the iOS Web Push validation.
+    NOT 8a's, and now has an owner it did not have. Ruled 2026-10-31 into a ticket of its
+    own, blocked by QRPAGER-15 and BLOCKING Task 9: one unstyled installable route in
+    apps/web. Neither 8a nor 8b, because QRPAGER-23 §2 excludes customer PWA screens in the
+    same words 8a's §3 does. Precondition (b) is answered — cloudflared quick tunnel,
+    Apache-2.0, no account — under one constraint: the hostname is random per run and a
+    Home-Screen install pins its origin, so install → permission → subscribe → receive must
+    happen inside ONE session. Owner: the new ticket; the device run is Muhammad's.
+
+(6) R-127, R-141, R-154 — three §5 rows whose owner column says "Task 8".
+    NOT ADDRESSED, and they belong to 8b rather than 8a:
+      R-127  §4.3's page inventory still lists the landing builder among the Filament admin
+             screens. A rank-3 correction to a page inventory, and §4.3 describes the panel
+             surfaces 8b restyles.
+      R-141  SvgPolicy's false-refusal rate against real design-tool exports is unmeasured.
+             Needs real exports from tools nobody has installed here — a product-input
+             problem, as the row itself says.
+      R-154  /studio/domains renders challenge()'s empty record set as a blank TXT row with
+             no notification. A /studio copy and presentation gap.
+    Owner: Task 8b (QRPAGER-23) for R-127 and R-154; R-141 stays as the row describes.
+    R-156 and R-157 are process records from Task 7 and need no code.
+
+(7) §12.1's copy table, and per-screen specification.
+    NOT DONE, AND NOT 8a's. The approval comment says it: "Per-screen specification. §12
+    still requires purpose, all states, content inventory and exact copy written before
+    each screen is coded. The canvas settles the language; it does not settle a screen."
+    Owner: Task 8b for the panel walk, Tasks 9, 10 and 11 for their own screens.
+
+===============================================================================
+TWO FIGURES IN THE APPROVAL COMMENT THAT DO NOT REPRODUCE
+===============================================================================
+
+Reported rather than adjusted. Neither changes a conclusion that comment drew.
+
+  ink on paper        comment 14.86:1   computed 14.85:1   (14.8528 — a rounding direction)
+  alert-fill on paper comment  3.44:1   computed  3.33:1   (a real difference; the comment's
+                                                            own claim that the fill fails
+                                                            4.5:1 as text holds either way)
+
+The three order-ready ratios match the approved figures exactly.
+
+===============================================================================
+WHAT THE TESTS CAUGHT BEFORE ANY REVIEWER
+===============================================================================
+
+Recorded because each was fixed at the shape rather than the symptom, which is what
+QRPAGER-15 §8 asks for:
+
+  - the order-ready colours were THEME ROLES, so "identical in both themes" was false for
+    two of the three. Redesigned into a --ready-* namespace emitted exactly once.
+  - the lint rule laundered a literal: `padding: var(--space-16) 9px` passed, because the
+    value check early-returned on "contains a var()".
+  - the same rule's shorthand splitter was a regex lookahead that could not see nesting, so
+    clamp(a, b, c) was torn apart and each fragment rejected — found by the GOOD fixture.
+  - the rule accepted `color: 'white'` in an inline style object: no hex, no colour
+    function, no digit. Colour now has its own allow-list judgement.
+  - the CSS scanner walked into node_modules and reported 69 findings in jsdom's own
+    stylesheet, because its exemptions matched root-relative prefixes only.
+  - focusableWithin filtered on offsetParent and getClientRects, so without a layout engine
+    the focus trap trapped NOTHING — the exact failure it exists to prevent.
+  - the first font fetch shipped 27 KB twice: Plus Jakarta Sans is a variable font and
+    Google serves one file for both weights.
+  - one browser check could never have passed: "no element sets outline: none" describes
+    every unfocused element in Chromium. Replaced, and the source-level half moved to a
+    scan that can fail.
+
+===============================================================================
+FIGURES, AT THE HEAD COMMIT
+===============================================================================
+
+  pnpm gate                  all 9 steps green
+  Vitest                     308 tests, 9 files
+  Coverage                   96.41% statements / 90.9% branches / 97.82% functions /
+                             98.26% lines  (thresholds 90%)
+  Playwright                 44 passed, 2 skipped (the motion-preference complements)
+  Fresh-clone proof          GREEN — all 9 steps in a clone sharing nothing with the tree
+  Three consecutive runs     see docs/tickets/QRPAGER-15-three-runs.txt
+  composer gate              see docs/tickets/QRPAGER-15-gate-php.txt
+  Font payload               3 files, 45,304 bytes (budget 64 KB, asserted)
+  Next apps                  both build, 102 kB First Load JS, statically prerendered
+
+No PR and no merge: main stays untouched until client handover (§10).

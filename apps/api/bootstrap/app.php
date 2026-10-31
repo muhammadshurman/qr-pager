@@ -1,8 +1,8 @@
 <?php
 
 use App\Domain\Http\ProblemType;
-use App\Features\Landing\Console\AdvanceDomainsCommand;
 use App\Features\Contracts\Console\ExportStatusMirrorCommand;
+use App\Features\Landing\Console\AdvanceDomainsCommand;
 use App\Features\Landing\Console\ExportLandingSchemaCommand;
 use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
