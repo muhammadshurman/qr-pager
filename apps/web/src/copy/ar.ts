@@ -67,6 +67,8 @@ export const AR: Record<CopyKey, string> = {
   'waiting.next.body':
     'عندما يضع المطبخ طلبك جاهزًا، سينبّه هاتفك وستتحول هذه الشاشة إلى اللون الأخضر. وإن لم تنتبه للتنبيه، ستظل الشاشة تعرضه.',
   'waiting.awake.label': 'إبقاء الشاشة مضاءة',
+  'waiting.awake.on': 'مُشغَّل',
+  'waiting.awake.off': 'مُعطَّل',
   'waiting.awake.unavailable': 'قد تخفت إضاءة شاشتك أثناء الانتظار، لكن التنبيه سيصل على أي حال.',
   'waiting.degraded.title': 'تحديثات الحالة متأخرة',
   'waiting.degraded.body':

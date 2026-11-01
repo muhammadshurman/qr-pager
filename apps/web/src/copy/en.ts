@@ -63,6 +63,8 @@ export const EN = {
   'waiting.next.body':
     'When the kitchen marks your order ready, your phone buzzes and this screen turns green. If you miss it, the screen still shows it.',
   'waiting.awake.label': 'Keep the screen on',
+  'waiting.awake.on': 'On',
+  'waiting.awake.off': 'Off',
   'waiting.awake.unavailable': 'Your screen may dim while you wait. The alert still arrives.',
   'waiting.degraded.title': 'Live updates are running behind',
   'waiting.degraded.body':

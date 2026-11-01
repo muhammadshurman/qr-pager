@@ -32,7 +32,7 @@ describe('the copy catalogue', () => {
     // type, and an EXTRA Arabic key -- a renamed English id leaving its translation behind
     // -- is caught only here.
     expect(ar).toEqual(en)
-    expect(en.length).toBe(60)
+    expect(en.length).toBe(62)
   })
 
   it('has no empty value in either language', () => {

@@ -98,17 +98,35 @@ export function Waiting({
 
       {wake === 'held' ? (
         <div className="pg-awake">
-          <label htmlFor="pg-awake-toggle">{t('waiting.awake.label')}</label>
-          {/* A real checkbox. `§12`'s "no library default look" is about a FRAMEWORK's
-              signature, not about native controls, and a native checkbox is keyboard
-              reachable and screen-reader-labelled with no JavaScript. */}
-          <input
-            id="pg-awake-toggle"
-            className="qr-field__input"
-            type="checkbox"
-            checked={wakeOn}
-            onChange={onToggleWake}
-          />
+          {/*
+            ⚠ THE KIT's BUTTON WITH `aria-pressed`, NOT AN `<input type="checkbox">`, AND THE
+            SECOND REASON IS THE ONE THAT MATTERS.
+
+            The first is `§12`: a bare native checkbox is an unstyled control on an otherwise
+            token-styled screen.
+
+            The second is `§3.1` row 9 clause (c): every interactive element must be at least
+            **44×44 CSS px**, measured from the BOUNDING BOX. A default checkbox renders about
+            13×13, and `min-block-size` does nothing for its inline axis -- so the moment a
+            wake lock actually succeeds on a device, that clause would have failed on the
+            waiting screen. It passed in the browser suite only because the headless engines
+            reject `request('screen')` and the control was never rendered: a latent failure
+            hidden behind an unavailable capability.
+
+            `Button` carries the kit's `min-inline-size`/`min-block-size` floor of
+            `--target-min`, and `aria-pressed` is the ARIA pattern for a toggle -- announced as
+            "pressed"/"not pressed" rather than "checked", which is what a button-shaped
+            control should say.
+          */}
+          <span id="pg-awake-label">{t('waiting.awake.label')}</span>
+          <Button
+            variant="secondary"
+            aria-pressed={wakeOn}
+            aria-labelledby="pg-awake-label"
+            onClick={onToggleWake}
+          >
+            {wakeOn ? t('waiting.awake.on') : t('waiting.awake.off')}
+          </Button>
         </div>
       ) : (
         // ⚠ NO TOGGLE AT ALL. `navigator.wakeLock` is present in all three test engines and

@@ -299,13 +299,13 @@ describe('the waiting screen', () => {
   it('renders NO awake toggle when the lock was refused, and one honest line instead', () => {
     const refused = render(renderState('waiting.degraded', translatorFor('en')))
 
-    expect(refused.container.querySelector('#pg-awake-toggle')).toBeNull()
+    expect(refused.container.querySelector('[aria-pressed]')).toBeNull()
     expect(refused.container.textContent).toContain('Your screen may dim')
     refused.unmount()
 
     const held = render(renderState('waiting.healthy', translatorFor('en')))
 
-    expect(held.container.querySelector('#pg-awake-toggle')).not.toBeNull()
+    expect(held.container.querySelector('[aria-pressed="true"]')).not.toBeNull()
     expect(held.container.textContent).not.toContain('Your screen may dim')
   })
 

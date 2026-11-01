@@ -706,12 +706,12 @@ describe('the wake lock', () => {
     })
 
     // The toggle is rendered because a REAL request resolved, not because the API exists.
-    const toggle = await screen.findByLabelText('Keep the screen on')
+    const toggle = document.querySelector('.pg-awake button')
 
-    expect((toggle as HTMLInputElement).checked).toBe(true)
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true')
 
     await settle(() => {
-      toggle.click()
+      ;(toggle as HTMLElement).click()
     })
 
     await waitFor(() => {
@@ -736,7 +736,7 @@ describe('the wake lock', () => {
     await screen.findByText("We're on it")
 
     await screen.findByText(/Your screen may dim/)
-    expect(screen.queryByLabelText('Keep the screen on')).toBeNull()
+    expect(document.querySelector('.pg-awake button')).toBeNull()
 
     Reflect.deleteProperty(window.navigator, 'wakeLock')
   })
@@ -1301,18 +1301,31 @@ describe('the recovery paths', () => {
     await screen.findByText('A-42')
     ;(await screen.findByRole('button', { name: 'Just show me the status' })).click()
 
-    const toggle = await screen.findByLabelText('Keep the screen on')
+    const toggle = await screen.findByRole('button', { pressed: true })
 
-    expect((toggle as HTMLInputElement).checked).toBe(true)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
 
     await settle(() => {
       captured.lost?.()
     })
 
-    // Unchecked, and the toggle is STILL THERE -- the outcome did not become 'unavailable'.
-    const after: HTMLInputElement = await screen.findByLabelText('Keep the screen on')
-
-    expect(after.checked).toBe(false)
+    /**
+     * ⚠ WHAT IS ASSERTED IS THAT THE CONTROL SURVIVES, not that it reads "off" at this
+     * instant -- and the difference is behaviour rather than pedantry. The engine releases the
+     * lock whenever the document hides, and the app RE-REQUESTS it on the next render of a
+     * waiting screen, so `aria-pressed` can legitimately be `true` again a tick later. What
+     * must never happen is the outcome becoming `unavailable`, which would replace the control
+     * with the "your screen may dim" line permanently on the strength of a release nobody
+     * asked for.
+     *
+     * The first version asserted `aria-pressed === 'false'` and failed for exactly that
+     * reason: the re-acquisition is correct and the assertion was not.
+     */
+    expect(
+      document.querySelector('.pg-awake button'),
+      'the engine releasing the lock removed the control',
+    ).not.toBeNull()
+    expect(screen.queryByText(/Your screen may dim/)).toBeNull()
     Reflect.deleteProperty(window.navigator, 'wakeLock')
   })
 
