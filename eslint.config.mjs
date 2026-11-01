@@ -19,6 +19,14 @@ export default tseslint.config(
       // the rule is right about the pattern and wrong about this file.
       '**/next-env.d.ts',
       '**/coverage/**',
+      // ⚠ GIT-IGNORED, AND IT IS NOT SOURCE. The workspace gate's log directory, and from
+      // Task 9 also the browser container's HOME -- which corepack fills with its own copy
+      // of pnpm. The first lint run after that existed reported findings in
+      // `storage/browsers-home/.cache/node/corepack/.../pnpm.mjs`, i.e. in a vendor's code
+      // fetched by a tool. A linter that reports its own toolchain's source has no signal
+      // left in it, which is the same argument `scan-css.mjs`'s `EXEMPT_SEGMENTS` makes
+      // about `node_modules`.
+      'storage/**',
       '**/dist/**',
       'apps/api/**',
       // Generated. The gate byte-diffs each against its generator's output, so a lint fix

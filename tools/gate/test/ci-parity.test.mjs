@@ -33,11 +33,45 @@ const frontendJob = workflow.slice(workflow.indexOf('  frontend:'), workflow.ind
 const gatesJob = workflow.slice(workflow.indexOf('  gates:'), workflow.indexOf('  frontend:'))
 
 /** Every `['pnpm', [...]]` step the gate script runs, as the command line it becomes. */
+/**
+ * ⚠ COMMENTS ARE STRIPPED BEFORE ANYTHING IS COUNTED, AND THAT IS NOT COSMETIC. The gate's
+ * step array carries long docblocks, and one of them QUOTES THIS FILE'S OWN REGEX -- so an
+ * occurrence count taken over the raw text includes a comment and disagrees with the parse
+ * for a reason that is not a defect. Measured: 14 raw against 13 parsed.
+ */
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+}
+
 function gateSteps() {
   const gate = read('tools/gate/bin/gate.mjs')
   const block = /const steps = \[([\s\S]*?)\n\]/.exec(gate)
   expect(block, 'tools/gate/bin/gate.mjs has no `const steps = [...]` to read').not.toBeNull()
-  return [...block[1].matchAll(/\['pnpm',\s*\[([^\]]*)\]\]/g)].map(
+
+  const body = stripComments(block[1])
+  const parsed = [...body.matchAll(/\['pnpm',\s*\[([^\]]*)\]\]/g)]
+
+  /**
+   * ⚠ THE PARSER MUST SEE EVERY STEP, AND THIS IS WHAT MAKES THAT TRUE RATHER THAN HOPED.
+   *
+   * `[^\]]*` cannot match a step prettier has wrapped across lines, so a long inline flag
+   * list would be INVISIBLE here -- and an invisible step is one CI is no longer required to
+   * run, silently, which is exactly the hole `R-126` and this file's own `contracts:check`
+   * story are about. Measured while adding Task 9's browser step: the multi-line form parsed
+   * to nothing and the parity assertions below still passed.
+   *
+   * So the count is checked against the raw occurrences: if they disagree, a step exists that
+   * this parser cannot read, and that is a failure rather than a smaller list.
+   */
+  const occurrences = [...body.matchAll(/\['pnpm',/g)]
+
+  expect(
+    parsed.length,
+    'a `pnpm` step in gate.mjs is not readable by this parser -- keep each one on a single ' +
+      'line (put long flag lists in a package.json script), or this check stops covering it',
+  ).toBe(occurrences.length)
+
+  return parsed.map(
     (m) =>
       `pnpm ${m[1]
         .split(',')
@@ -56,9 +90,26 @@ function gateSteps() {
 const PROVISIONING = [
   'pnpm --version',
   'pnpm install --frozen-lockfile',
-  'pnpm exec playwright install --with-deps chromium',
+  'pnpm exec playwright install --with-deps',
   'pnpm store path --silent',
 ]
+
+/**
+ * ================================================================================
+ * THE ONE GATE STEP CI RUNS IN A DIFFERENT JOB -- AND IT IS ASSERTED, NOT EXCUSED
+ * ================================================================================
+ *
+ * `pnpm run test:e2e` stands up the REAL Laravel API against the composed Postgres and Redis,
+ * issues a real pager session through the domain service, serves the production build of
+ * `apps/web`, and puts a TLS front in front of both so the origin is a secure context. The
+ * `frontend` job has no PHP, no Postgres and no Redis; the `gates` job has all three.
+ *
+ * ⚠ SO THE STEP MOVES, AND THE ASSERTION BELOW IS WHAT MAKES THAT DIFFERENT FROM VANISHING.
+ * An exception that merely removed it from the comparison would let it leave CI entirely and
+ * nothing would notice -- which is `R-126`'s shape and the reason `PROVISIONING` above is a
+ * named list rather than a pattern. Named here, and required to be present in `gates`.
+ */
+const RUN_IN_THE_GATES_JOB = ['pnpm run test:e2e']
 
 /** Every `pnpm …` command line the frontend job runs, across `run:` scalars and blocks. */
 function ciSteps() {
@@ -78,16 +129,34 @@ describe('the workspace gate and CI run the same steps', () => {
 
   it('has every GATE step in the CI frontend job', () => {
     const ci = ciSteps()
-    const missing = gateSteps().filter((step) => !ci.some((line) => line.startsWith(step)))
+    const missing = gateSteps()
+      .filter((step) => !RUN_IN_THE_GATES_JOB.includes(step))
+      .filter((step) => !ci.some((line) => line.startsWith(step)))
     expect(
       missing,
       'these `pnpm gate` steps are not run by CI, so the runner never checks them',
     ).toEqual([])
   })
 
+  it('runs the one gates-job step in the GATES job, so it has not left CI', () => {
+    // The other half of the exception above. Without this, naming a step here would be a way
+    // to remove it from CI without removing it from the gate.
+    for (const step of RUN_IN_THE_GATES_JOB) {
+      expect(gateSteps(), `${step} is named as a gates-job step but is not in the gate`).toContain(
+        step,
+      )
+      expect(
+        gatesJob,
+        `${step} is named as a gates-job step and the gates job does not run it`,
+      ).toContain(step)
+    }
+  })
+
   it('has every CI pnpm step in the GATE', () => {
     const gate = gateSteps()
-    const missing = ciSteps().filter((line) => !gate.some((step) => line.startsWith(step)))
+    const missing = ciSteps()
+      .filter((line) => !RUN_IN_THE_GATES_JOB.some((step) => line.startsWith(step)))
+      .filter((line) => !gate.some((step) => line.startsWith(step)))
     expect(
       missing,
       'these CI steps are not in `pnpm gate`, so a developer cannot reproduce a red locally',

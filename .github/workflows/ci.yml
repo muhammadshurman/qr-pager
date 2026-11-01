@@ -357,6 +357,48 @@ jobs:
       - name: Unit coverage on the code this branch adds
         run: php artisan test --coverage --min=90
 
+      # ================================================================================
+      # TASK 9's JOURNEY SUITE -- IN THIS JOB, AND THAT IS THE ONE PARITY EXCEPTION
+      # ================================================================================
+      #
+      # `pnpm run test:e2e` is a `pnpm gate` step, and every other `pnpm` gate step runs in
+      # the `frontend` job. This one cannot: it stands up the REAL Laravel API against the
+      # composed Postgres and Redis, issues a REAL pager session through the domain service,
+      # serves the PRODUCTION build of `apps/web` and puts a TLS front in front of both so the
+      # origin is a secure context -- and the `frontend` job has no PHP, no Postgres and no
+      # Redis. This job has all three, already migrated and already bootstrapped by the steps
+      # above.
+      #
+      # ⚠ `tools/gate/test/ci-parity.test.mjs` NAMES IT AND ASSERTS IT IS HERE, so the step
+      # MOVES between jobs rather than quietly leaving CI. A carve-out that only excused it
+      # from the `frontend` job would be the hole `R-126` is about.
+      #
+      # It needs the workspace and the browsers, which this job did not have before.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          # Same hazard the frontend job documents: setup-node v5 caches automatically when a
+          # `packageManager` field is present, and resolving pnpm in a job where corepack has
+          # not run fails with `Unable to locate executable file: pnpm`.
+          package-manager-cache: false
+
+      - name: Provision pnpm from packageManager, never from a literal
+        run: |
+          corepack enable
+          corepack prepare --activate
+
+      - name: Install the workspace, with the lockfile as the authority
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Playwright's three engines, at the version `playwright` pins
+        working-directory: .
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - name: The customer journey, the service worker, one-handed at 390px, and R-100
+        working-directory: .
+        run: pnpm run test:e2e
+
   frontend:
     name: Frontend workspace — lint, types, Vitest, Playwright, build
     runs-on: ubuntu-latest
@@ -493,11 +535,18 @@ jobs:
           npm ci --ignore-scripts
           npm run build
 
-      - name: Playwright's Chromium, at the version `playwright` pins
-        # The package is an exact 1.64.1 and the browser build is tied to it, so this
-        # installs the one browser the suite was verified against. --with-deps brings the
-        # shared libraries a bare runner does not have.
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright's three engines, at the version `playwright` pins
+        # The package is pinned exact and each browser build is tied to it, so this installs
+        # the engines the suite was verified against. --with-deps brings the shared libraries
+        # a bare runner does not have.
+        #
+        # ⚠ ALL THREE AS OF TASK 9, not Chromium alone. `PLAN §3` row 9 requires
+        # *"Playwright E2E green on Chromium, Firefox AND WebKit"*, and `browser/engines.spec.ts`
+        # measures per-engine facts this project depends on -- `Sec-Fetch-Dest` for `R-194`,
+        # the absence of `navigator.vibrate` in two of the three, and `navigator.wakeLock`
+        # being present where the compat data says it does not work. Chromium alone tests the
+        # easy case, which is the argument `QRPAGER-16`'s own 2026-10-25 comment makes.
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - run: pnpm run lint:es
 
@@ -575,7 +624,7 @@ jobs:
       # browser and why asserting them in Vitest would have been one of the weak assertions
       # R-118 exists to refuse.
       - name: The browser checks — R-118's four clauses
-        run: pnpm exec playwright test
+        run: pnpm run test:browser
 
       - name: Both Next.js apps build
         run: |

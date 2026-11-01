@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# =============================================================================
+# `Lighthouse Performance >= 95` -- `§3` ROW 9, BY THE METHOD `§3.1` ROW 9 WRITES
+# =============================================================================
+#
+# The method was written on 2026-11-01, BEFORE this task started, into `§3.1` row 9 and
+# `QRPAGER-16 §4.1`. This script implements exactly it and nothing else. Each part of it is
+# marked below with the clause it comes from, so a reviewer can read the two side by side.
+#
+# ⚠ AND THE WEIGHT IS NOT ON THE SCORE. The method says so in terms: *"Three LOAD-INVARIANT
+# assertions carry it, each derivable from the build rather than from a run."* Those three are
+# `apps/web/test/build-surface.test.ts` -- critical-path transferred bytes under a stated
+# budget, the count of render-blocking requests, and zero third-party origins in the built
+# output. This script produces the score, reports all five runs, and fails only on the
+# MEDIAN, because under `§11`'s round limit a misleading red costs a round and a Lighthouse
+# score moves with the runner.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+RUNS=5
+BAR=95
+
+# TOOL AND VERSION. *"The Lighthouse CLI, pinned exact in the workspace (`save-exact`),
+# driven over the same Chrome for Testing build Playwright already pins. Both versions
+# printed into the report -- a score is a function of its engine and a bare number has no
+# provenance."*
+LH_VERSION="$(node -e 'process.stdout.write(require("./package.json").devDependencies.lighthouse)')"
+
+if ! printf '%s' "$LH_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "lighthouse-proof: lighthouse must be pinned EXACT in package.json, got '${LH_VERSION}'" >&2
+  exit 1
+fi
+
+PW_VERSION="$(node -e 'process.stdout.write(require("./package.json").devDependencies["@playwright/test"])')"
+
+# PAGE. *"The scan landing route `/s/{token}` at a real issued token, served from a production
+# build (`next build` + `next start`), never the dev server."*
+#
+# ⚠ `/s#<token>` AND NOT `/s/<token>`, WHICH IS `SR-1`. The fragment is the shape
+# `PagerToken::qrPayload()` emits and the only one compatible with `§4 › Edge`'s cache clause;
+# the conflict with `§4.1`'s spelling is reported in `docs/tickets/QRPAGER-16.md SR-1`. It
+# makes no difference to the measurement -- a fragment is not sent to the server and
+# Lighthouse loads the same bytes either way -- which is itself worth saying, because it means
+# this figure is not hostage to that ruling.
+BASE="${QRPAGER_E2E_BASE:-}"
+TOKEN="${QRPAGER_LH_TOKEN:-}"
+
+if [ -z "$BASE" ] || [ -z "$TOKEN" ]; then
+  echo "lighthouse-proof: QRPAGER_E2E_BASE and QRPAGER_LH_TOKEN are required." >&2
+  echo "  Run it through 'tools/browsers/bin/lighthouse', which starts the stack, issues a" >&2
+  echo "  real session and passes both. This script does not invent a token: a fabricated" >&2
+  echo "  one renders the INVALID screen, which is a different and much smaller page." >&2
+  exit 1
+fi
+
+URL="${BASE}/s#${TOKEN}"
+
+OUT="${REPO}/storage/lighthouse"
+mkdir -p "$OUT"
+
+# The Chrome Playwright pins. Resolved from the installed browser rather than from a path
+# anybody typed, so the two tools cannot disagree about which engine produced the number.
+CHROME_PATH="$(node -e '
+const { chromium } = require("playwright")
+process.stdout.write(chromium.executablePath())
+')"
+
+if [ ! -x "$CHROME_PATH" ]; then
+  echo "lighthouse-proof: no executable Chrome at ${CHROME_PATH}" >&2
+  exit 1
+fi
+
+CHROME_VERSION="$("$CHROME_PATH" --version 2>/dev/null | head -1)"
+
+echo "lighthouse-proof"
+echo "  lighthouse          ${LH_VERSION}  (pinned exact in package.json)"
+echo "  @playwright/test    ${PW_VERSION}"
+echo "  chrome              ${CHROME_VERSION}"
+echo "  chrome path         ${CHROME_PATH}"
+echo "  toolchain           ${QRPAGER_TOOLCHAIN:-host}"
+echo "  url                 ${BASE}/s#<token redacted>"
+echo "  runs                ${RUNS}, median is the figure, all five reported"
+echo
+
+scores=()
+
+for run in $(seq 1 "$RUNS"); do
+  # COLD, AND COLD MEANS FOUR THINGS. *"A fresh browser profile per run; empty HTTP cache; NO
+  # SERVICE WORKER INSTALLED -- the install is what this task ships, so measuring after it is
+  # measuring the second visit; no prior localStorage."*
+  #
+  # A fresh `--user-data-dir` per run gives all four at once: an empty profile has no cache,
+  # no registered worker and no storage. `--disable-features=...` is NOT used to fake it --
+  # the profile really is new.
+  profile="$(mktemp -d)"
+  report="${OUT}/run-${run}.json"
+
+  # THROTTLING, AS FIGURES AND NEVER AS A PRESET NAME. *"Simulated throttling at RTT 300 ms,
+  # 700 Kbps down, 700 Kbps up, CPU slowdown x4, mobile form factor, screen emulation 390x844
+  # at DPR 3. Preset names move between Lighthouse majors."*
+  # The pinned binary directly, for the reason `tools/browsers/bin/e2e` states: pnpm must not
+  # re-link node_modules in the middle of a measurement.
+  if ! ./node_modules/.bin/lighthouse "$URL" \
+    --only-categories=performance \
+    --output=json \
+    --output-path="$report" \
+    --quiet \
+    --chrome-flags="--headless=new --no-sandbox --user-data-dir=${profile}" \
+    --throttling-method=simulate \
+    --throttling.rttMs=300 \
+    --throttling.throughputKbps=700 \
+    --throttling.requestLatencyMs=300 \
+    --throttling.downloadThroughputKbps=700 \
+    --throttling.uploadThroughputKbps=700 \
+    --throttling.cpuSlowdownMultiplier=4 \
+    --form-factor=mobile \
+    --screenEmulation.mobile \
+    --screenEmulation.width=390 \
+    --screenEmulation.height=844 \
+    --screenEmulation.deviceScaleFactor=3 \
+    --max-wait-for-load=90000 >"${OUT}/run-${run}.log" 2>&1; then
+    echo "lighthouse-proof: run ${run} did not complete. Log: ${OUT}/run-${run}.log" >&2
+    rm -rf "$profile"
+    exit 1
+  fi
+
+  rm -rf "$profile"
+
+  score="$(node -e '
+const report = require(process.argv[1])
+const score = report.categories.performance.score
+if (typeof score !== "number") {
+  console.error("no performance score in the report")
+  process.exit(1)
+}
+// Lighthouse reports 0..1. x100 and FLOORED, never rounded up: the convention this project
+// settled for contrast figures ("a raw 4.4996 presented as 4.50 against a 4.5 bar reads as a
+// pass and is not one") applies to every minimum bar, on every instrument.
+process.stdout.write(String(Math.floor(score * 100)))
+' "$report")"
+
+  scores+=("$score")
+
+  # A SINGLE RUN UNDER 95 REPORTS AND DOES NOT FAIL -- the method says so.
+  if [ "$score" -lt "$BAR" ]; then
+    printf '  run %d  score %3d  (under the %d bar -- reported, not fatal)\n' "$run" "$score" "$BAR"
+  else
+    printf '  run %d  score %3d\n' "$run" "$score"
+  fi
+done
+
+echo
+
+# RUNS AND STATISTIC. *"Five runs; the MEDIAN is the figure; all five are reported. ... A
+# Lighthouse Performance score is bounded at 100 and its noise is two-sided, so best of five
+# would systematically overstate it. Median of five, floored, never the best."*
+median="$(printf '%s\n' "${scores[@]}" | sort -n | sed -n '3p')"
+
+printf 'lighthouse-proof: runs [%s]  MEDIAN %s  bar %s\n' "$(IFS=,; echo "${scores[*]}")" "$median" "$BAR"
+echo "  lighthouse ${LH_VERSION} · ${CHROME_VERSION} · ${QRPAGER_TOOLCHAIN:-host}"
+echo "  reports: ${OUT}/run-{1..${RUNS}}.json"
+
+if [ "$median" -lt "$BAR" ]; then
+  echo "lighthouse-proof: FAILED -- the median is below the bar." >&2
+  exit 1
+fi
+
+echo "lighthouse-proof: green"

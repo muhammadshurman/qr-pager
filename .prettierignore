@@ -32,3 +32,6 @@ apps/api/
 # would make a real edit hard to see.
 *.md
 docs/
+
+# Git-ignored: the gate log directory, and the browser container's HOME (Task 9).
+storage/

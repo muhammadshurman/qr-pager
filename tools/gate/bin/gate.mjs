@@ -91,7 +91,24 @@ const steps = [
   // and the failure says so rather than looking like a code defect.
   ['pnpm', ['run', 'audit']],
   ['pnpm', ['exec', 'vitest', 'run', '--coverage']],
-  ['pnpm', ['exec', 'playwright', 'test']],
+  /**
+   * ⚠ THE KIT AND ENGINE PROJECTS ONLY -- the journey suite is the step after this one.
+   *
+   * These need nothing running: every fixture is loaded from the filesystem with
+   * `setContent`, and `engines.spec.ts` starts its own `node:http` server in process. That is
+   * what keeps them runnable from a fresh clone with nothing built, which is the property
+   * `playwright.config.ts`'s header states and `bin/fresh-clone-proof` relies on.
+   *
+   * ⚠ THE PROJECT FLAGS LIVE IN `package.json`, NOT HERE, AND THAT IS NOT TIDYING. The
+   * parity check reads this array with `/\['pnpm',\s*\[([^\]]*)\]\]/`, which cannot match a
+   * step prettier has wrapped across lines -- so a long inline flag list would be INVISIBLE
+   * to it and CI would stop being required to run this step, silently. One short line here,
+   * the flags in a script both halves share. `ci-parity.test.mjs` now also asserts the parsed
+   * count against the raw occurrence count, so the next parser miss is a failure rather than
+   * a hole.
+   */
+  ['pnpm', ['run', 'test:browser']],
+  ['pnpm', ['run', 'test:e2e']],
   ['pnpm', ['--filter', '@qrpager/web', 'run', 'build']],
   ['pnpm', ['--filter', '@qrpager/site', 'run', 'build']],
 ]
