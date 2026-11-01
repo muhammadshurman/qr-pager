@@ -112,6 +112,34 @@ function contrast(a: [number, number, number], b: [number, number, number]): num
 }
 
 /**
+ * The ratio as this project PUBLISHES it: floored at two decimals, never rounded up.
+ *
+ * ⚠ THIS FILE REPORTED `toFixed(2)` IN BOTH ITS CONTRAST CASES AND THAT IS THE ONE DEFECT
+ * `color.ts`'s rounding note exists to prevent. Its words: *"a raw 4.4996 presented as
+ * '4.50' against a 4.5 bar reads as a pass and is not one"* — and *"every contrast figure
+ * this project publishes or asserts goes through this function"*, which these two did not.
+ * The bar checks were on the raw ratio, so no pair ever passed wrongly; what could overstate
+ * was the FIGURE in the message, which is the part a person reads and transcribes. Flooring
+ * can only understate, which is the safe direction for a minimum.
+ *
+ * `ratioFloor2` itself cannot be called here — it takes two hex strings and this harness
+ * holds engine-converted bytes — so the convention is reimplemented at the same two
+ * decimals, floored on the ratio itself and not on a pre-rounded value.
+ *
+ * NOT A NARROWING OF EITHER CASE: both still compare the RAW ratio against 4.5, and for a
+ * threshold of 4.5 the two agree on every input — `Math.floor(r * 100) / 100 >= 4.5` and
+ * `r >= 4.5` differ only where a value lies strictly between 4.5 and 4.5, which is nowhere.
+ * Measured on the four pairs this task moved: the floored figures are 4.01 / 4.20 / 3.41
+ * for the old pairs and 5.71 / 5.64 / 9.38 / 6.70 for the new, against 4.01 / 4.21 / 3.42
+ * and 5.72 / 5.64 / 9.38 / 6.71 under `toFixed(2)` — four of seven moved, which is how far
+ * this was from being cosmetic. The floored seven are the figures `contrast.json`,
+ * `QRPAGER-15-contrast-table.md` and `§4a` all carry, so the two instruments now agree.
+ */
+function published(ratio: number): string {
+  return (Math.floor(ratio * 100) / 100).toFixed(2)
+}
+
+/**
  * One computed colour string as sRGB bytes, converted BY THE ENGINE.
  *
  * ⚠ THIS REPLACED A PARSER AND THE PARSER WAS WRONG IN THE MOST EXPENSIVE DIRECTION. The
@@ -510,6 +538,28 @@ test.describe('the restyle mirrors under RTL — §3', () => {
 })
 
 test.describe('R-118 clause 3 — the engine resolves an AA pair on the panel', () => {
+  test('publishes every ratio floored, on the three figures that caught the convention', () => {
+    // `color.ts`'s rounding note names three figures this project had already published
+    // wrongly, with their raw values. They are the characterisation of the convention, so
+    // they are what this reporter is held to — a `toFixed(2)` returns the middle column and
+    // the whole point of the note is that the middle column is the wrong answer.
+    //
+    //     raw 15.545990…   round 15.55   FLOOR 15.54
+    //     raw  1.597793…   round  1.60   FLOOR  1.59
+    //     raw  3.329999…   round  3.33   FLOOR  3.32
+    expect(published(15.54599)).toBe('15.54')
+    expect(published(1.597793)).toBe('1.59')
+    expect(published(3.329999)).toBe('3.32')
+
+    // The bar case the note argues from, stated as its own assertion: the figure must not
+    // claim the bar it does not clear.
+    expect(published(4.4996)).toBe('4.49')
+
+    // And a value already at two decimals is unchanged, so flooring costs nothing where
+    // there is nothing to floor.
+    expect(published(4.5)).toBe('4.50')
+  })
+
   test('puts the primary button’s own colours at 4.5 or better', async ({ page }) => {
     await page.setContent(fixtureHtml())
     await assertStylesApplied(page)
@@ -527,7 +577,7 @@ test.describe('R-118 clause 3 — the engine resolves an AA pair on the panel', 
     // resolved through the compiled stylesheet, measured as rendered pixels.
     expect(
       ratio,
-      `the primary button resolved ${pair.text} on ${pair.background} = ${ratio.toFixed(2)}`,
+      `the primary button resolved ${pair.text} on ${pair.background} = ${published(ratio)}`,
     ).toBeGreaterThanOrEqual(4.5)
   })
 })
@@ -650,7 +700,7 @@ test.describe('every colour-family text utility the blades use clears AA', () =>
           if (ratio < 4.5) {
             failures.push(
               `${mode}: ${mode === 'dark' ? u.dark : u.light} at ${pair.size} resolved ` +
-                `${pair.text} on ${pair.background} = ${ratio.toFixed(2)}`,
+                `${pair.text} on ${pair.background} = ${published(ratio)}`,
             )
           }
         }
