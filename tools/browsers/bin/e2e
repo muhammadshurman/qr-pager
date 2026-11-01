@@ -68,13 +68,51 @@ web_pid=""
 tls_pid=""
 tls_api_pid=""
 
+# ⚠ THE WHOLE PROCESS GROUP, AND THEN THE PORTS. BOTH HALVES WERE LEARNED THE HARD WAY.
+#
+# Each server is started in a subshell, so `$!` is the SUBSHELL's pid and `kill` on it leaves
+# the real server running as an orphan. Measured consequence: a later run found port 3099
+# already bound, its own `next start` never took it, the readiness probe passed against the
+# STALE server -- which was serving the previous build's asset manifest against a `.next` that
+# had been rebuilt underneath it -- and 33 of 45 journey cases failed with `400 Bad Request` on
+# every JS chunk. The suite was red for a reason that had nothing to do with the code.
+#
+# `setsid` plus `kill -- -PGID` fixes that for three of the four. It does NOT fix `next start`,
+# which spawns `next-server` in a NEW process group of its own -- so the port stayed held and
+# the NEXT run's port guard refused to start, which is the guard doing its job against a leak
+# the teardown still had.
+#
+# So teardown finishes by freeing the four ports this script actually used, found BY PORT
+# rather than by name: `pkill -f next-server` would reach another project's server on the same
+# machine, and this must only ever take down what it started.
+stop_group() {
+  local pid="$1"
+
+  [ -n "$pid" ] || return 0
+  kill -- "-${pid}" 2>/dev/null || kill "$pid" 2>/dev/null || true
+}
+
+free_port() {
+  local port="$1" pid
+
+  pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+
+  [ -n "$pid" ] || return 0
+  kill "$pid" 2>/dev/null || true
+  sleep 0.3
+  kill -9 "$pid" 2>/dev/null || true
+}
+
 cleanup() {
-  # Both, unconditionally, and before anything else: a left-behind `next start` holds the
-  # port and the NEXT run fails for a reason that has nothing to do with the code.
-  [ -n "$api_pid" ] && kill "$api_pid" 2>/dev/null || true
-  [ -n "$web_pid" ] && kill "$web_pid" 2>/dev/null || true
-  [ -n "$tls_pid" ] && kill "$tls_pid" 2>/dev/null || true
-  [ -n "$tls_api_pid" ] && kill "$tls_api_pid" 2>/dev/null || true
+  stop_group "$api_pid"
+  stop_group "$web_pid"
+  stop_group "$tls_pid"
+  stop_group "$tls_api_pid"
+
+  for port in "$API_PORT" "$WEB_PORT" "$TLS_PORT" "$TLS_API_PORT"; do
+    free_port "$port"
+  done
+
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
