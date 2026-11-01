@@ -1,4 +1,4 @@
-fresh-clone-proof: docs(9): the ticket's inline-script-hash claim, corrected to the measure at 488efa6
+fresh-clone-proof: test(9): the workspace gate transcript at this head — all 13 steps gre at b4e7d82
 
 === clone through file:// so no object is shared
 
@@ -6,7 +6,7 @@ fresh-clone-proof: docs(9): the ticket's inline-script-hash claim, corrected to 
 no vendor/, no .env, no node_modules — the clone is bare
 
 === the clone's tracked tree is byte-identical to this commit's
-tree fab1c6ddc6ec91d3be1c3cf85b78e30bf953faa7
+tree bf134de6048d1f300ad73a27e201479da84b9362
 
 === composer install, from the repository's own lock file
 host composer cache: present (a cache, not a source — it costs time, not correctness)
@@ -20,10 +20,10 @@ cp .env.example .env · php artisan key:generate · docker compose is already up
 (composer install and npm ci above are the two installs; the gate does the build)
 
 === composer gate, in the clone
-gate: all 10 steps green. Full output: /tmp/qrpager-fresh-clone-DQUQWn/clone/apps/api/storage/logs/gate-20261101T144143Z.log
+gate: all 10 steps green. Full output: /tmp/qrpager-fresh-clone-vQPKHU/clone/apps/api/storage/logs/gate-20261101T172024Z.log
 
-fresh-clone-proof: PASSED at 488efa6
+fresh-clone-proof: PASSED at b4e7d82
   Tests:    1172 passed (9942 assertions)
-  gate log: /tmp/qrpager-fresh-clone-DQUQWn/gate.log
+  gate log: /tmp/qrpager-fresh-clone-vQPKHU/gate.log
   (clone removed; pass --keep to inspect it)
 EXIT=0
