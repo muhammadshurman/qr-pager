@@ -318,27 +318,37 @@ describe('the CSP surface -- what R-171 has to cover, derived rather than invent
       ],
       inlineScriptCount: inline.length,
       /**
-       * ⚠ THE HASHES, AND THE TICKET CLAIMED THESE WERE HERE WHEN THEY WERE NOT. `§11` round
-       * one, SEC L-4: `QRPAGER-16 §7` says this artefact emits *"the complete set of origins,
-       * inline-script hashes and connect targets the built app actually needs"*, and it carried
-       * a count and no hashes. The consequence is the one the reviewer named: Task 12 could not
-       * write a hash policy *"from a measurement"* as claimed and would have had to re-derive
-       * them, which is the step most likely to end in `'unsafe-inline'`.
+       * ⚠ THE HASHES ARE **NOT** COMMITTED, AND THE REASON IS A MEASUREMENT RATHER THAN A
+       * PREFERENCE. `§11` round one, SEC L-4, asked for either the hashes or a corrected
+       * sentence; the first attempt emitted them, and `fresh-clone-proof` reddened within the
+       * hour.
        *
-       * `sha256-<base64>`, which is the exact token CSP's `script-src` takes, over the script
-       * element's text content with no trimming -- the byte-for-byte rule the spec uses, so a
-       * value copied from here works unmodified.
+       * MEASURED, same commit, two builds — this machine and a fresh clone of `80e3223`:
+       * **four of the six hashes are identical and exactly two differ.** The two that move are
+       * Next's RSC payload pushes, which carry build-specific content. So a committed hash list
+       * is not merely fragile, it is WRONG on any machine but the one that wrote it — which is
+       * the same defect class as QA C-1, and the CI step added for C-1 is what caught it.
+       *
+       * ⚠ THAT IS THE FINDING TASK 12 ACTUALLY NEEDS, and it is stronger than a hash list: a
+       * `script-src` policy for this page **cannot be static**. It has to be emitted by the
+       * build (hashes computed from the artefact that build produced) or by the edge (a nonce
+       * per response). `R-171`'s acceptance clause is written against that.
+       *
+       * What is pinned here is what is reproducible: the COUNT, and the fact that every inline
+       * script hashes to a well-formed `sha256-` token. The values are recomputed below and
+       * asserted for shape, so the capability is proven without pinning a build artefact.
        */
-      inlineScriptHashes: inline.map(
-        (body) => `sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}`,
-      ),
-      inlineScriptNote:
-        "Next's RSC payload pushes. script-src 'self' alone BREAKS this page, and a nonce " +
-        'is unavailable because the document is a static file with no per-response step. ' +
-        "The choice is per-build hashes or 'unsafe-inline', and it is Task 12's to make -- " +
-        'and the hashes above are what makes the first of those two a measurement rather ' +
-        'than a re-derivation. They change with every build that changes the payload, which ' +
-        'is why this file is byte-compared by this test rather than hand-maintained.',
+      inlineScriptHashesNote:
+        'NOT LISTED HERE, AND MEASURED RATHER THAN OMITTED: across two builds of one commit ' +
+        '(this machine and a fresh clone of 80e3223) four of the six hashes were identical and ' +
+        'exactly two differed — the RSC payload pushes carry build-specific content. A ' +
+        'committed hash list would therefore be wrong on every machine but the one that wrote ' +
+        'it, which `tools/gate/bin/fresh-clone-proof` proved as a CI step within the hour. The ' +
+        'consequence for Task 12 is the useful part: a script-src policy for this page CANNOT ' +
+        'be static — it must be emitted by the build from that build’s own output, or by the ' +
+        'edge as a per-response nonce. `build-surface.test.ts` computes the hashes on every ' +
+        'run and asserts their count and shape, so the capability is proven without pinning a ' +
+        'build artefact.',
       renderBlockingRequests: RENDER_BLOCKING,
       imageOrigins: ['self'],
       fontOrigins: ['self'],
@@ -360,5 +370,24 @@ describe('the CSP surface -- what R-171 has to cover, derived rather than invent
     expect(readFileSync(CSP_SURFACE, 'utf8')).toBe(encoded)
     // And the figure that makes the note above true rather than a guess.
     expect(inline.length).toBe(6)
+
+    /**
+     * The hashes themselves: computed, counted and shape-checked, never committed — see
+     * `inlineScriptHashesNote` above for the two-build measurement that decided that. This is
+     * what makes the note a demonstrated capability rather than a promise to Task 12.
+     */
+    const hashes = inline.map(
+      (body) => `sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}`,
+    )
+
+    expect(hashes).toHaveLength(6)
+    for (const hash of hashes) {
+      expect(hash, 'an inline script did not hash to a well-formed script-src token').toMatch(
+        /^sha256-[A-Za-z0-9+/]{43}=$/,
+      )
+    }
+    // Distinct, because six identical hashes would mean the extraction matched one script six
+    // times — a shape that would pass every assertion above.
+    expect(new Set(hashes).size).toBe(6)
   })
 })

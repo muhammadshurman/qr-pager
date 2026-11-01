@@ -22,15 +22,7 @@
     "the push service endpoint the browser chooses (set by the engine, not by us)"
   ],
   "inlineScriptCount": 6,
-  "inlineScriptHashes": [
-    "sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo=",
-    "sha256-Bv9hoqrrVen0YIByEWoc9BoLDlOhusY1D3FR5yMuGi0=",
-    "sha256-xmzg8R6r8IGTTsmEo9hUGCEHPwH17cLj166q9zQzWww=",
-    "sha256-F6PPNlIJg6NiqGiRjNhTo9wscCPOJOjoS77E6qmYJOw=",
-    "sha256-OaXHtMoICJu1MexjkshakC1SQUOc+qNmfKF1CciyKu4=",
-    "sha256-i/k9dNlim2bw/P4uBE6H5TkwSixGtVIyDp1QCZNZnrE="
-  ],
-  "inlineScriptNote": "Next's RSC payload pushes. script-src 'self' alone BREAKS this page, and a nonce is unavailable because the document is a static file with no per-response step. The choice is per-build hashes or 'unsafe-inline', and it is Task 12's to make -- and the hashes above are what makes the first of those two a measurement rather than a re-derivation. They change with every build that changes the payload, which is why this file is byte-compared by this test rather than hand-maintained.",
+  "inlineScriptHashesNote": "NOT LISTED HERE, AND MEASURED RATHER THAN OMITTED: across two builds of one commit (this machine and a fresh clone of 80e3223) four of the six hashes were identical and exactly two differed — the RSC payload pushes carry build-specific content. A committed hash list would therefore be wrong on every machine but the one that wrote it, which `tools/gate/bin/fresh-clone-proof` proved as a CI step within the hour. The consequence for Task 12 is the useful part: a script-src policy for this page CANNOT be static — it must be emitted by the build from that build’s own output, or by the edge as a per-response nonce. `build-surface.test.ts` computes the hashes on every run and asserts their count and shape, so the capability is proven without pinning a build artefact.",
   "renderBlockingRequests": 2,
   "imageOrigins": [
     "self"
