@@ -118,8 +118,9 @@ want="${1:-all}"
 if [ "$want" = all ] || [ "$want" = reconcile-terminal ]; then
   prove "the reconcile must not register a device for a session that is OVER" \
     "apps/web/src/PagerJourney.tsx" \
-    "    if (screenOf(state.screen) === 'ended') return" \
-    "    // reverted by tools/gate/bin/revert-proof" \
+    "    if (screenOf(state.screen) === 'ended') return
+    if (state.snapshot === null) return" \
+    "    if (state.snapshot === null) return" \
     "test/orchestrator.test.tsx" \
     "does NOT call the subscription endpoint when the session EXPIRED"
 fi
