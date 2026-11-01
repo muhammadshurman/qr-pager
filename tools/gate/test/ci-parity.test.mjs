@@ -114,7 +114,33 @@ describe('the workspace gate and CI run the same steps', () => {
     expect(code, 'a literal pnpm version in the job would be a second source for it').not.toMatch(
       /pnpm@\d/,
     )
-    expect(code).not.toMatch(/version:\s*['"]?\d+\.\d+/)
+
+    // ⚠ `php-version` IS EXCLUDED, AND THIS IS A NARROWING, SAID SO RATHER THAN SLIPPED IN.
+    //
+    // Task 8b had to give this job PHP, because the panel theme's first @import reads
+    // apps/api's composer tree. `setup-php` is then configured the way the `gates` job has
+    // always configured it -- `php-version: '8.4'` -- and the catch-all below matched it.
+    //
+    // The clause's subject is the JS toolchain: `.nvmrc` is the single source for Node and
+    // `packageManager` for pnpm, and a literal of either here would be a second source. PHP
+    // has no equivalent file in this repo: `composer.json` says `^8.3`, which is a MINIMUM
+    // and not the pinned runner version, so it is a different fact rather than the same one
+    // written twice. A `.php-version` + `php-version-file` input was considered and NOT
+    // taken: this session cannot reach the network to confirm that input exists on
+    // `shivammathur/setup-php`, and an input the action ignores would silently pin nothing.
+    //
+    // So the exclusion is narrow -- the literal `php-version` key only -- and the
+    // second-source worry it would otherwise drop is picked up by the next assertion
+    // instead, which is strictly more than the catch-all gave.
+    expect(code.replace(/php-version:.*$/gm, '')).not.toMatch(/version:\s*['"]?\d+\.\d+/)
+
+    const phpPins = [...workflow.matchAll(/php-version:\s*'([^']+)'/g)].map((m) => m[1])
+
+    expect(
+      phpPins.length,
+      'no job provisions PHP, so the agreement below is vacuous',
+    ).toBeGreaterThan(1)
+    expect(new Set(phpPins).size, `the workflow pins PHP at ${phpPins.join(' and ')}`).toBe(1)
   })
 
   it('disables setup-node automatic package-manager cache -- what broke the job', () => {
@@ -168,6 +194,56 @@ describe('the workspace gate and CI run the same steps', () => {
 
   it('installs with the lockfile as the authority', () => {
     expect(frontendJob).toContain('pnpm install --frozen-lockfile')
+  })
+
+  it('installs apps/api’s composer tree in any job that builds its assets', () => {
+    /*
+     * ⚠ THE JOB COULD NOT PASS, AND THE REASON WAS AN ORDER NOBODY STATED. Task 8b gave the
+     * frontend job `npm ci && npm run build` in `apps/api`, because `browser/panel.spec.ts`
+     * measures the COMPILED panel theme. But the first line of each panel theme is
+     *
+     *     @import '../../../../vendor/filament/filament/resources/css/theme.css'
+     *
+     * and `/vendor` is git-ignored. Measured by moving `apps/api/vendor` aside: the build
+     * dies on module resolution. The same missing tree reds four `panel-theme.test.mjs`
+     * cases in that job's own Vitest step, which compiles the same entrypoint.
+     *
+     * THREE ENVIRONMENTS GOT THIS WRONG THE SAME WAY -- this job, `apps/api/bin/fresh-clone-proof`
+     * and `tools/gate/bin/fresh-clone-proof` -- so it is one root cause with three faces, and
+     * this is the clause that keeps the CI face shut. The two scripts carry their own.
+     */
+    for (const [name, job] of [
+      ['frontend', frontendJob],
+      ['gates', gatesJob],
+    ]) {
+      const buildsApiAssets =
+        /working-directory: apps\/api[\s\S]{0,400}?npm run build/.test(job) ||
+        /composer assets/.test(job)
+
+      if (!buildsApiAssets) {
+        continue
+      }
+
+      expect(
+        /composer install/.test(job),
+        `the ${name} job builds apps/api's assets and never installs its composer tree. ` +
+          "The panel theme's first @import reads vendor/filament, which is git-ignored, so " +
+          'the build cannot resolve it.',
+      ).toBe(true)
+
+      // And PHP has to be on the runner before composer can run at all.
+      expect(
+        /shivammathur\/setup-php/.test(job),
+        `the ${name} job runs composer with no PHP provisioned`,
+      ).toBe(true)
+    }
+
+    // NOT VACUOUS: at least one job must actually build those assets, or the loop above
+    // skipped everything and proved nothing.
+    expect(
+      /working-directory: apps\/api[\s\S]{0,400}?npm run build/.test(frontendJob) ||
+        /composer assets/.test(gatesJob),
+    ).toBe(true)
   })
 
   it('asserts the working tree is unchanged by the job', () => {

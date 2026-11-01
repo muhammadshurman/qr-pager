@@ -8,6 +8,7 @@ use App\Features\Provisioning\Panel\Pages\PlatformDashboardPage;
 use App\Features\Provisioning\Panel\Resources\PlatformAuditResource;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Panel\ApprovedPalette;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -20,7 +21,6 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use RuntimeException;
 
 /**
  * The platform admin panel. Filament 5.11.0 on Laravel 13.38.0, both verified in-session.
@@ -129,7 +129,14 @@ class PlatformPanelProvider extends PanelProvider
             //
             // READ FROM THE GENERATED CONFIG, never typed: a second copy of 66 colour values
             // is the §6.2 second-source defect at the worst possible scale.
-            ->colors($this->approvedColours())
+            // ⚠ A CLOSURE, NOT A CALL. `panel()` runs on EVERY boot, so throwing here
+            // stopped `php artisan --version` itself when the generated config was
+            // absent -- measured -- which coupled the queue worker, the scheduler and
+            // every console command to a CSS artefact. Filament evaluates a closure when
+            // it first resolves colours, i.e. on a panel render, so a panel request
+            // still fails closed and loudly and nothing else does. ApprovedPalette's
+            // docblock carries the measurement and why fail-closed is kept.
+            ->colors(ApprovedPalette::families(...))
             // (b) THE FACE -- and ⚠ `provider:` IS NOT OPTIONAL, which is the sharp edge.
             //     Measured in `HasFont::getFontProvider()`: with a custom family and no
             //     provider, the default is **`BunnyFontProvider`**, which emits
@@ -143,7 +150,7 @@ class PlatformPanelProvider extends PanelProvider
             //
             //     The family is READ FROM THE GENERATED TOKEN CONFIG and never typed -- a
             //     second copy of a token value is the `§6.2` second-source defect. The cast
-            //     would turn a missing key into `''` silently, so `PanelFontOriginTest`
+            //     would turn a missing key into `''` silently, so `PanelThemeTest`
             //     asserts the rendered `--font-family` is the approved family EXACTLY.
             ->font(
                 (string) config('design-tokens.fonts.latin.family'),
@@ -207,32 +214,5 @@ class PlatformPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
-    }
-
-    /**
-     * The approved Filament palettes, read from the generated token config.
-     *
-     * Typed here rather than inline so PHPStan sees the shape `Panel::colors()` wants without
-     * a cast that would hide a config key going missing. A missing or malformed palette is a
-     * THROW and not a silent fallback: Filament would otherwise quietly use
-     * `ColorManager::DEFAULT_COLORS` -- amber, red, blue -- and the panel would look restyled
-     * while carrying none of the approved values, which is the dead-control shape §4a records.
-     *
-     * @return array<string, array<int, string>>
-     */
-    private function approvedColours(): array
-    {
-        $palette = config('design-tokens.filament_palette');
-
-        if (! is_array($palette) || $palette === []) {
-            throw new RuntimeException(
-                'design-tokens.filament_palette is missing. Run `pnpm tokens:generate`; '
-                .'without it Filament falls back to its own default families and the panel '
-                .'renders amber where the brand should be.'
-            );
-        }
-
-        /** @var array<string, array<int, string>> $palette */
-        return $palette;
     }
 }

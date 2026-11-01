@@ -12,7 +12,7 @@
     @php($domains = $this->domains())
     @php($statuses = \App\Domain\Landing\DomainStatus::class)
 
-    <div class="fi-section p-4 space-y-12">
+    <div class="fi-section p-16 space-y-12">
         <h2 class="text-base font-semibold">Your address</h2>
 
         @if ($domains === [])
@@ -27,7 +27,7 @@
         @endif
     </div>
 
-    <form wire:submit="add" class="fi-section p-4 space-y-12">
+    <form wire:submit="add" class="fi-section p-16 space-y-12">
         <h2 class="text-base font-semibold">Add a domain</h2>
 
         <label for="hostname" class="block text-sm font-medium">Hostname</label>
@@ -41,13 +41,13 @@
             The hostname only — no https:// and no trailing slash.
         </p>
 
-        <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg">
+        <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
             Add domain
         </button>
     </form>
 
     @foreach ($domains as $domain)
-        <div class="fi-section p-4 space-y-12">
+        <div class="fi-section p-16 space-y-12">
             <h2 class="text-base font-semibold">{{ $domain->hostname }}</h2>
 
             {{-- The state is TEXT, never a colour alone (§12's accessibility bar). --}}
@@ -124,7 +124,7 @@
 
             @if (in_array($domain->status, [$statuses::PendingDns, $statuses::DnsVerified, $statuses::CertificatePending, $statuses::Failed], true))
                 <button type="button" wire:click="advance('{{ $domain->id }}')"
-                        class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg">
+                        class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
                     @if ($domain->status === $statuses::CertificatePending)
                         Check again<span class="sr-only"> for {{ $domain->hostname }}</span>
                     @else

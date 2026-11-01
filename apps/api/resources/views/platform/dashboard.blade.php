@@ -19,7 +19,7 @@
 <x-filament-panels::page>
     @php($summary = $this->summary())
 
-    <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl class="grid grid-cols-1 gap-16 sm:grid-cols-2 lg:grid-cols-4">
         @foreach ([
             ['Restaurants', $summary->restaurantsTotal, 'Every provisioning record, whatever its state.'],
             ['Active', $summary->restaurantsActive, 'Provisioned and running.'],

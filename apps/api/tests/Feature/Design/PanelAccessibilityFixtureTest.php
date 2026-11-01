@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
 use App\Models\User;
+use App\Platform\Panel\PanelRoutes;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\LandingFixtures;
@@ -102,14 +103,12 @@ it('carries only class lists the panel really renders', function (): void {
 
     $rendered = '';
 
-    foreach ([
-        '/platform',
-        '/platform/restaurants',
-        '/platform/audit-log',
-        '/studio',
-        '/studio/media',
-        '/studio/domains',
-    ] as $uri) {
+    // ⚠ DERIVED, NOT LISTED -- the §11 QA round's M-4, same reason as PanelTargetTest.
+    $chrome = PanelRoutes::chrome();
+
+    expect($chrome)->toHaveCount(6);
+
+    foreach (array_keys($chrome) as $uri) {
         if (str_starts_with($uri, '/studio')) {
             $this->actingForTenant(tenantId: $tenant, role: TenantRole::Owner);
         } else {

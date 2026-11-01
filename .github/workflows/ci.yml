@@ -464,6 +464,29 @@ jobs:
       # pnpm, corepack and a browser download into the PHP job to avoid ~20 seconds of npm
       # here. The manifest CHECK stays in `gates`, where `composer assets` owns it; this is
       # only the bytes the browser needs.
+      # ⚠ PHP AND COMPOSER FIRST, AND THAT ORDER IS THE WHOLE ROOT CAUSE. The first line of
+      # each panel theme is
+      # `@import '../../../../vendor/filament/filament/resources/css/theme.css'`, and
+      # `/vendor` is git-ignored -- so `npm run build` here CANNOT resolve its first import
+      # without apps/api's composer tree. This step shipped without it and the job could not
+      # pass: measured by moving `apps/api/vendor` aside, the build dies on module
+      # resolution. The same missing tree reds four `panel-theme.test.mjs` cases in the
+      # Vitest step below, which compiles that same entrypoint.
+      #
+      # `ci-parity.test.mjs` now asserts that any job building apps/api's assets also
+      # installs its composer tree, proven red against the version of this file that did not.
+      - name: PHP 8.4, for apps/api's composer tree
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, bcmath, curl, zip, xml
+          coverage: none
+          tools: composer:v2
+
+      - name: apps/api's composer tree, which the panel theme imports from
+        working-directory: apps/api
+        run: composer install --no-interaction --no-progress --prefer-dist
+
       - name: apps/api's compiled panel theme, which the panel browser checks measure
         working-directory: apps/api
         run: |

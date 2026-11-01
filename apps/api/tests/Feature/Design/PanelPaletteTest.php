@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\User;
+use App\Platform\Panel\ApprovedPalette;
 use Filament\Facades\Filament;
 use Filament\Support\Colors\Color;
 use Filament\Support\View\Components\BadgeComponent;
@@ -236,9 +237,48 @@ it('emits the approved value into the rendered panel, where a browser reads it',
         expect($html)->toMatch('/--'.$family.'-'.$anchor.':\s*'.preg_quote($oklch, '/').';/');
     }
 
-    // And Filament's own defaults are gone: amber is what `primary` was.
+    // ⚠ MATCHED WITH \s* LIKE ITS SIBLING FIFTEEN LINES ABOVE, because this assertion was
+    // VACUOUS: the emitted form carries no space after the colon, so the needle
+    // `--primary-50: oklch(…);` was absent from the document whether amber was registered or
+    // not. Measured both ways. The same file documents the no-space fact and works around it
+    // in the positive case -- and then the negative case was written in the other form,
+    // which is how a check that cannot fail gets past its own author.
     foreach (Color::Amber as $shade => $value) {
-        expect(str_contains($html, "--primary-{$shade}: {$value};"))
-            ->toBeFalse("the panel still emits Filament's amber at primary-{$shade}");
+        expect($html)
+            ->not->toMatch('/--primary-'.$shade.':\s*'.preg_quote((string) $value, '/').';/');
     }
+});
+
+it('fails CLOSED and loudly when the generated palette is absent — L-3, S-7', function (): void {
+    /*
+     * ⚠ TWO FINDINGS IN ONE CASE, and they pull in opposite directions.
+     *
+     * L-3: `approvedColours()` was a 15-line method duplicated BYTE-IDENTICALLY in both
+     * providers, and its throw had no test at all. It is now one accessor in
+     * `App\Platform\Panel\ApprovedPalette` — the only namespace both features may import,
+     * because `deptrac` rule 2 forbids Platform from importing a feature and a helper inside
+     * one feature would be a feature-to-feature edge.
+     *
+     * S-7: the throw used to happen in `panel()`, which runs on EVERY boot — measured, with
+     * the config key renamed `php artisan --version` itself printed the exception, so a
+     * missing CSS artefact stopped the queue worker that delivers the order-ready push, the
+     * scheduler and every console command. The providers now pass the accessor as a CLOSURE,
+     * which Filament evaluates when it first resolves colours.
+     *
+     * Fail-closed is KEPT, because the alternative is Filament silently using amber — the
+     * dead-control shape §4a records four instances of. What changed is the blast radius.
+     */
+    config(['design-tokens.filament_palette' => null]);
+
+    expect(fn (): array => ApprovedPalette::families())
+        ->toThrow(RuntimeException::class, 'design-tokens.filament_palette is missing');
+
+    // An empty array is the other shape a partial config takes, and it must not pass.
+    config(['design-tokens.filament_palette' => []]);
+
+    expect(fn (): array => ApprovedPalette::families())->toThrow(RuntimeException::class);
+
+    // THE KEY IS NAMED ONCE. The constant and the message must agree, or the sentence tells
+    // the operator to fix a key that is not the one being read.
+    expect(ApprovedPalette::CONFIG_KEY)->toBe('design-tokens.filament_palette');
 });

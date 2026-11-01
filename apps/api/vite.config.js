@@ -19,7 +19,7 @@ import tailwindcss from '@tailwindcss/vite';
  *
  * The faces now arrive through `packages/tokens/fonts/fonts.css`, whose every `url()` is
  * relative, so Vite emits the woff2 into this app's own build and serves it same-origin.
- * `PanelFontOriginTest` asserts the rendered panel HTML requests no third-party font host,
+ * `PanelThemeTest` asserts the rendered panel HTML requests no third-party font host,
  * rather than trusting this comment.
  */
 export default defineConfig({

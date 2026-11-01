@@ -34,8 +34,25 @@
  * recorded in PLAN.md §5 with an owner rather than quietly taken.
  */
 
-/* Standalone controls: a floor on the height, never a size. */
-.fi-btn,
+/*
+ * ⚠ `.fi-btn` GETS BOTH AXES, and the §11 QA round's L-2 is why: this file gave six
+ * selectors `min-height` only while `browser/panel.spec.ts` is titled "at least 44px in
+ * BOTH directions". Nothing measured was under the bar — `#primary-button` is 112px wide —
+ * but a short-label button ("OK", an icon-less close) would be, and `PanelTargetTest` only
+ * asks whether a covered selector matches, never which axis.
+ *
+ * The other five keep height only, deliberately: `.fi-input` and `.fi-select-input` are
+ * full-width by layout, and a 44px floor on `.fi-ta-header-cell-sort-btn`,
+ * `.fi-sidebar-item-btn` or `.fi-dropdown-list-item` would distort a narrow table column or
+ * a text row. `R-174` now records the axis as part of the stated exception rather than
+ * leaving the spec's title broader than the rule.
+ */
+.fi-btn {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+}
+
+/* Standalone controls: a floor on the height only — see the note above. */
 .fi-input,
 .fi-select-input,
 .fi-sidebar-item-btn,

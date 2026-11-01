@@ -85,8 +85,22 @@ php artisan db:bootstrap      # roles, the database, and the per-role ALTER ROLE
 php artisan migrate --database=pgsql_owner    # migrations run as the owner, never as the app role
 ```
 
-`php artisan test` runs both of those itself, so a fresh clone needs only
-`cp .env.example .env`, `php artisan key:generate` and `docker compose up -d`.
+`php artisan test` runs both of those itself. ⚠ **BUT A FRESH CLONE NEEDS TWO INSTALLS AND THE
+ORDER IS NOT NEGOTIABLE**, which this file said otherwise until 2026-11-01:
+
+```
+composer install                      # vendor/ — the panel theme's FIRST @import reads it
+npm ci --ignore-scripts                # node_modules/ — vite, tailwind 4.3.3
+cp .env.example .env && php artisan key:generate
+docker compose up -d
+```
+
+`bin/gate` then runs `composer assets`, which builds `public/build` — and `->viteTheme()` makes
+that manifest a **prerequisite of every test that renders a panel page**. Measured with
+`public/build` moved aside: `PlatformPanelAccessibilityTest` goes **13 passed → 7 failed**, and
+the failures are *Task 6* cases about tabindex and badges, each a generic 500 that names nothing.
+The build reads the composer tree and the suite reads the build; a clone that installs one and
+not the other fails in a way that names neither. `bin/fresh-clone-proof` proves the whole chain.
 
 **And one more, which this file used to omit:** from the repo root,
 

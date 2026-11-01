@@ -9,6 +9,7 @@ use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Panel\ApprovedPalette;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -22,7 +23,6 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-use RuntimeException;
 
 /**
  * ================================================================================
@@ -58,7 +58,7 @@ use RuntimeException;
  *
  * No `->colors()` and no `->font()`: inventing a palette now would be inventing a token
  * set to satisfy a standard that does not exist yet. What is NOT waived is accessibility,
- * and `StudioPanelAccessibilityTest` states honestly what can be asserted from a
+ * and `StudioAccessibilityTest` states honestly what can be asserted from a
  * server-rendered response and what genuinely needs a browser (R-118's precedent).
  */
 class StudioPanelProvider extends PanelProvider
@@ -119,7 +119,14 @@ class StudioPanelProvider extends PanelProvider
             //
             // READ FROM THE GENERATED CONFIG, never typed: a second copy of 66 colour values
             // is the §6.2 second-source defect at the worst possible scale.
-            ->colors($this->approvedColours())
+            // ⚠ A CLOSURE, NOT A CALL. `panel()` runs on EVERY boot, so throwing here
+            // stopped `php artisan --version` itself when the generated config was
+            // absent -- measured -- which coupled the queue worker, the scheduler and
+            // every console command to a CSS artefact. Filament evaluates a closure when
+            // it first resolves colours, i.e. on a panel render, so a panel request
+            // still fails closed and loudly and nothing else does. ApprovedPalette's
+            // docblock carries the measurement and why fail-closed is kept.
+            ->colors(ApprovedPalette::families(...))
             // (b) THE FACE -- and ⚠ `provider:` IS NOT OPTIONAL, which is the sharp edge.
             //     Measured in `HasFont::getFontProvider()`: with a custom family and no
             //     provider, the default is **`BunnyFontProvider`**, which emits
@@ -133,7 +140,7 @@ class StudioPanelProvider extends PanelProvider
             //
             //     The family is READ FROM THE GENERATED TOKEN CONFIG and never typed -- a
             //     second copy of a token value is the `§6.2` second-source defect. The cast
-            //     would turn a missing key into `''` silently, so `PanelFontOriginTest`
+            //     would turn a missing key into `''` silently, so `PanelThemeTest`
             //     asserts the rendered `--font-family` is the approved family EXACTLY.
             ->font(
                 (string) config('design-tokens.fonts.latin.family'),
@@ -206,32 +213,5 @@ class StudioPanelProvider extends PanelProvider
                 Route::get('preview/asset/{asset}', [PreviewController::class, 'asset'])
                     ->name('preview.asset');
             });
-    }
-
-    /**
-     * The approved Filament palettes, read from the generated token config.
-     *
-     * Typed here rather than inline so PHPStan sees the shape `Panel::colors()` wants without
-     * a cast that would hide a config key going missing. A missing or malformed palette is a
-     * THROW and not a silent fallback: Filament would otherwise quietly use
-     * `ColorManager::DEFAULT_COLORS` -- amber, red, blue -- and the panel would look restyled
-     * while carrying none of the approved values, which is the dead-control shape §4a records.
-     *
-     * @return array<string, array<int, string>>
-     */
-    private function approvedColours(): array
-    {
-        $palette = config('design-tokens.filament_palette');
-
-        if (! is_array($palette) || $palette === []) {
-            throw new RuntimeException(
-                'design-tokens.filament_palette is missing. Run `pnpm tokens:generate`; '
-                .'without it Filament falls back to its own default families and the panel '
-                .'renders amber where the brand should be.'
-            );
-        }
-
-        /** @var array<string, array<int, string>> $palette */
-        return $palette;
     }
 }

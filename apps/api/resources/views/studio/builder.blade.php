@@ -14,7 +14,7 @@
 <x-filament-panels::page>
     @php($state = $this->state())
 
-    <div role="status" aria-live="polite" class="fi-section p-4 space-y-8">
+    <div role="status" aria-live="polite" class="fi-section p-16 space-y-8">
         <h2 class="text-base font-semibold">Status</h2>
 
         @if ($state['invalid'] !== null)
@@ -42,12 +42,12 @@
         {{ $this->form }}
 
         <div class="flex flex-wrap gap-12">
-            <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg">
+            <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
                 Save
             </button>
 
             <a href="{{ route('filament.studio.preview') }}" target="_blank" rel="noopener"
-               class="fi-btn fi-btn-size-md px-4 py-8 rounded-lg underline">
+               class="fi-btn fi-btn-size-md px-16 py-8 rounded-lg underline">
                 Preview <span class="sr-only">(opens in a new tab)</span>
             </a>
 
@@ -56,7 +56,7 @@
                  genuinely unavailable to a keyboard and to a screen reader. --}}
             <button type="button" wire:click="publish"
                     @disabled($state['blocks'] === 0 || $state['invalid'] !== null)
-                    class="fi-btn fi-btn-size-md fi-color-success px-4 py-8 rounded-lg disabled:opacity-50">
+                    class="fi-btn fi-btn-size-md fi-color-success px-16 py-8 rounded-lg disabled:opacity-50">
                 Publish
             </button>
 
@@ -74,7 +74,7 @@
                  panel's 600/min per-tenant bucket, billed to the tenant. Idempotent, yes;
                  free, no, and the row that accepted the cost is the one to read. --}}
             <button type="button" wire:click="unpublish"
-                    class="fi-btn fi-btn-size-md fi-color-danger px-4 py-8 rounded-lg">
+                    class="fi-btn fi-btn-size-md fi-color-danger px-16 py-8 rounded-lg">
                 @if ($state['status'] === \App\Domain\Landing\LandingPageStatus::Published)
                     Unpublish
                 @else

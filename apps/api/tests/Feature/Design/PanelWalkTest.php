@@ -141,6 +141,29 @@ function walkLeaks(): array
     ];
 }
 
+/**
+ * The headers a real browser navigation carries.
+ *
+ * ⚠ `Accept: text/html` ALONE NO LONGER REACHES THE PAGE, and that is the §11 security
+ * round's S-2 fix rather than a regression: a wildcard Accept and `text/html` are both what
+ * a browser
+ * sends for an image or a stylesheet, so `PanelProblemPage::wants()` now requires
+ * `Sec-Fetch-Dest: document` (or `Sec-Fetch-Mode: navigate`) — a forbidden header name a
+ * page cannot forge. Every case below that means to measure the PAGE must therefore
+ * navigate, and the disclosure sweep especially: reading JSON instead would quietly return
+ * that sweep to the safe half it already covered.
+ *
+ * @return array<string, string>
+ */
+function walkNavigation(): array
+{
+    return [
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Sec-Fetch-Dest' => 'document',
+        'Sec-Fetch-Mode' => 'navigate',
+    ];
+}
+
 /** Run $work with the app connection pointed at a closed port. */
 function withSourceDown(callable $work): mixed
 {
@@ -159,6 +182,22 @@ function withSourceDown(callable $work): mixed
         DB::purge('pgsql');
     }
 }
+
+it('derives all seven panel routes, so no sweep below runs over nothing', function (): void {
+    // ⚠ `walkRoutes()` HAD NO SIZE ASSERTION, and three cases loop over it with no bound --
+    // the brand sweep, the 503 case and the disclosure sweep, whose `expect($found)->toBe([])`
+    // is trivially true of an empty set. Only the CHROME subset was pinned, while the
+    // headline claim in the ticket and in PLAN §0.2 is about SEVEN screens.
+    expect(walkRoutes())->toBe([
+        '/platform',
+        '/platform/audit-log',
+        '/platform/restaurants',
+        '/studio',
+        '/studio/domains',
+        '/studio/media',
+        '/studio/preview',
+    ]);
+});
 
 it('shows the product in the browser tab, and never the framework', function (): void {
     // ⚠ §12: "a reviewer cannot name the UI framework from a screenshot". It was FALSE in
@@ -303,7 +342,7 @@ it('leaks nothing from any panel screen with its database unreachable', function
         // so it is the branch this case has to cover -- a disclosure sweep that only ever
         // read JSON would have been true of the safe half.
         $body = withSourceDown(
-            fn (): string => (string) $this->get($uri, ['Accept' => 'text/html'])->getContent()
+            fn (): string => (string) $this->get($uri, walkNavigation())->getContent()
         );
 
         foreach (walkLeaks() as $needle => $what) {
@@ -340,7 +379,7 @@ it('answers a panel screen with an HTML page and the API with the document', fun
 
     $this->actingAs(walkAdmin());
 
-    $panel = withSourceDown(fn () => $this->get('/platform', ['Accept' => 'text/html']));
+    $panel = withSourceDown(fn () => $this->get('/platform', walkNavigation()));
 
     expect($panel->status())->toBe(503)
         ->and((string) $panel->headers->get('content-type'))->toContain('text/html');
@@ -364,7 +403,8 @@ it('answers a panel screen with an HTML page and the API with the document', fun
     // ⚠ THE API SURFACE IS UNTOUCHED, which is the half that would be easy to break. `/v1`
     // is not a panel path, so an API client -- even one sending Accept: text/html -- still
     // gets the document the spec publishes.
-    $api = $this->get('/v1/does-not-exist', ['Accept' => 'text/html']);
+    // `/v1` is not a panel path, so even a full browser navigation there gets the document.
+    $api = $this->get('/v1/does-not-exist', walkNavigation());
 
     expect((string) $api->headers->get('content-type'))->toContain('application/problem+json')
         ->and($api->json('type'))->toBe('https://qrpager.dev/problems/not-found');
@@ -475,5 +515,85 @@ it('gives a JSON client on a panel path the document, not the page', function ()
             ->and(str_contains($type, 'application/problem+json'))
             ->toBeTrue("{$client} got {$type} instead of the document")
             ->and($response->json('status'))->toBe(503);
+    }
+});
+
+it('pairs every colour on the error page against the generated contrast table — M-5', function (): void {
+    /*
+     * ⚠ THE DEFECT CLASS THAT BLOCKED 8a, ONE SURFACE OVER. The §11 round found that this
+     * page had a VOCABULARY check and no PAIR check: the case above asserts it names only
+     * `config('design-tokens.…')` keys, which is satisfied by any two tokens put on top of
+     * each other. 8a's own review recorded the identical shape as blocking — "a `brand`-on-
+     * `alert-ink` rule at 1.14:1 inside a landing template passed everything, because the
+     * templates had a vocabulary check and no pair check".
+     *
+     * There is no breach today; I checked before writing this. The gap was the control.
+     *
+     * THE PAIRS ARE ENUMERATED WITH THEIR REASON, AND THE ENUMERATION IS HELD TO THE FILE:
+     * the second half of this case asserts the view declares exactly the colour properties
+     * this list accounts for, so a new pairing cannot arrive without updating it.
+     */
+    $table = json_decode(
+        (string) file_get_contents(dirname(base_path(), 2).'/packages/tokens/generated/contrast.json'),
+        true
+    );
+
+    expect($table)->toBeArray()->toHaveKey('pairs');
+
+    /** @var list<array<string, mixed>> $pairs */
+    $pairs = $table['pairs'];
+
+    expect(count($pairs))->toBeGreaterThan(20, 'the contrast table is too small to check against');
+
+    $find = function (string $fg, string $bg) use ($pairs): array {
+        foreach ($pairs as $row) {
+            if ($row['theme'] === 'light' && $row['fg'] === $fg && $row['bg'] === $bg) {
+                return $row;
+            }
+        }
+
+        return [];
+    };
+
+    // Every foreground/background the page puts together, and where.
+    $used = [
+        'body text on the ground' => ['ink', 'paper'],
+        'card text on the card' => ['ink', 'surface'],
+        'the reference line on the card' => ['ink-mid', 'surface'],
+    ];
+
+    foreach ($used as $what => [$fg, $bg]) {
+        $row = $find($fg, $bg);
+
+        expect($row)->not->toBe([], "{$what}: {$fg} on {$bg} is not in the generated table at all");
+        expect($row['pass'])->toBeTrue(
+            "{$what}: {$fg} on {$bg} is {$row['ratio']}, below its {$row['kind']} bar"
+        );
+    }
+
+    // ⚠ `hairline` ON `surface` IS THE CARD'S BORDER AND IS DECORATIVE, which the token
+    // source says in its own words. It is asserted as RECORDED-DECORATIVE rather than
+    // skipped: a border that silently became a control boundary would need 3:1, and the only
+    // way to notice is to look the pair up.
+    $border = $find('hairline', 'surface');
+
+    expect($border)->not->toBe([], 'hairline on surface is not in the generated table');
+    expect(strtolower((string) $border['what']))->toContain('decorative');
+
+    // AND THE LIST IS HELD TO THE FILE. Every `color:` / `background:` declaration in the
+    // view must name a token this enumeration accounts for, so a fourth pairing cannot
+    // arrive unmeasured.
+    $view = (string) file_get_contents(resource_path('views/errors/panel-problem.blade.php'));
+    $code = (string) preg_replace(['/\{\{--[\s\S]*?--\}\}/', '#/\*[\s\S]*?\*/#'], ' ', $view);
+
+    preg_match_all('/(?:^|[^-\w])(?:color|background|border)\s*:[^;]*var\(--([a-z0-9-]+)/mi', $code, $matches);
+
+    $accounted = ['paper', 'ink', 'ink-mid', 'surface', 'hairline'];
+
+    expect(array_values(array_unique($matches[1])))->not->toBe([], 'no colour declaration was found');
+
+    foreach (array_unique($matches[1]) as $token) {
+        expect(in_array($token, $accounted, true))
+            ->toBeTrue("the page uses --{$token}, which the pair enumeration above does not account for");
     }
 });

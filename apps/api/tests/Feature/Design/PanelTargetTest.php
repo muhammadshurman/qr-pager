@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
 use App\Models\User;
+use App\Platform\Panel\PanelRoutes;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\LandingFixtures;
@@ -92,14 +93,16 @@ function renderedControlElements(): array
     $tenant = test()->actingForTenant(role: TenantRole::Owner);
     $classes = [];
 
-    foreach ([
-        '/platform',
-        '/platform/restaurants',
-        '/platform/audit-log',
-        '/studio',
-        '/studio/media',
-        '/studio/domains',
-    ] as $uri) {
+    // ⚠ DERIVED, NOT LISTED. This carried a typed six-element array while
+    // `PanelRoutes::chrome()` already derives exactly that set structurally -- which is the
+    // §11 QA round's M-4, and against PLAN §4.3's own ruling that the walk's subject list is
+    // "DERIVED from that table, never hand-listed". A seventh chrome route would have been
+    // invisible to this floor check, which is one of the two controls R-174 rests on.
+    $chrome = PanelRoutes::chrome();
+
+    expect($chrome)->toHaveCount(6);
+
+    foreach (array_keys($chrome) as $uri) {
         if (str_starts_with($uri, '/studio')) {
             test()->actingForTenant(tenantId: $tenant, role: TenantRole::Owner);
         } else {

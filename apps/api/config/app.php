@@ -35,7 +35,7 @@ return [
     | concern on surfaces Task 5 owns — to fix a title. That coupling is itself a defect
     | and is recorded with an owner rather than fixed here.
     |
-    | So this key is what the panels show, both providers read it, and `PanelBrandTest`
+    | So this key is what the panels show, both providers read it, and `PanelWalkTest`
     | asserts the rendered title carries it and does not carry the framework's name.
     | "QR Pager" is not a new name: `config/scramble.php` already calls the API
     | "QR Pager API", with the same reasoning written beside it.

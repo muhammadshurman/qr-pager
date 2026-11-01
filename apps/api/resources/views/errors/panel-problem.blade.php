@@ -48,8 +48,17 @@
             padding: {{ (string) config('design-tokens.space.24') }};
             background: var(--paper);
             color: var(--ink);
+            {{-- ⚠ `{{ }}` AND NOT `{!! !!}`, which this line was. A fallback value containing
+                 `</style><script>` would have executed on every panel error page at every
+                 APP_DEBUG setting. It needs repo write access to reach -- the value comes
+                 from the generated, staleness-checked `config/design-tokens.php` -- so it was
+                 defence in depth rather than a live hole, and it was the only raw
+                 interpolation on a page whose every other value was already escaped.
+                 A font-family fallback list needs no raw HTML: escaping turns `<` into
+                 `&lt;`, which inside a `<style>` raw-text element blocks the breakout and
+                 leaves `system-ui, sans-serif` rendering exactly as written. --}}
             font-family: '{{ (string) config('design-tokens.fonts.latin.family') }}',
-                {!! (string) config('design-tokens.fonts.fallback') !!};
+                {{ (string) config('design-tokens.fonts.fallback') }};
             font-size: {{ (string) config('design-tokens.size.16') }};
             line-height: 1.5;
         }

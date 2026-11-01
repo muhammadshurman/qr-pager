@@ -13,7 +13,7 @@
     @php($assets = $this->assets())
     @php($full = $this->isFull())
 
-    <form wire:submit="store" class="fi-section p-4 space-y-12">
+    <form wire:submit="store" class="fi-section p-16 space-y-12">
         <h2 class="text-base font-semibold">Add an image</h2>
 
         <label for="media-upload" class="block text-sm font-medium">
@@ -43,12 +43,12 @@
         @enderror
 
         <button type="submit" @disabled($full)
-                class="fi-btn fi-btn-size-md fi-color-primary px-4 py-8 rounded-lg disabled:opacity-50">
+                class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg disabled:opacity-50">
             Upload
         </button>
     </form>
 
-    <div class="fi-section p-4 space-y-12">
+    <div class="fi-section p-16 space-y-12">
         <h2 class="text-base font-semibold">
             Your images ({{ count($assets) }} of {{ \App\Features\Landing\MediaLibrary::MAX_ASSETS }})
         </h2>

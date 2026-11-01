@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { globSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
@@ -284,6 +284,208 @@ test.describe('R-118 clause 2 — a measured 44px minimum touch target', () => {
     }
 
     expect(small, 'these panel controls are under §12’s 44px minimum target').toEqual([])
+  })
+})
+
+test.describe('every spacing class the panel blades use renders the px it names', () => {
+  /*
+   * ⚠ WRITTEN BECAUSE A RENAME CHANGED FOURTEEN RENDERED SIZES AND NOTHING NOTICED.
+   *
+   * Under the panel theme a spacing class's number is a TOKEN STEP IN PX, not Tailwind's
+   * 0.25rem multiplier: `panel-theme.css` declares `--spacing-4 … --spacing-96` from the
+   * approved ladder. Tasks 6-7 wrote these blades under the MULTIPLIER semantics, where
+   * `p-4` meant 4 × 0.25rem = 16px — and under the new theme it means 4px. The two readings
+   * collide on exactly one number, `4`, because 4 is both a valid multiplier and a valid
+   * token step, so the lint rule cannot tell them apart and did not.
+   *
+   * Measured in this engine: fourteen pre-existing `p-4` / `px-4` / `gap-4` sites were
+   * rendering **4px** where 16px was authored. They are now `-16`, and `mt-4` ×2 and
+   * `space-y-4` ×1 — 8b's own renames from `mt-1`/`space-y-1`, where 4px IS the intent —
+   * stay at 4.
+   *
+   * The intent behind a number is not mechanically decidable, which is why this is a
+   * MEASUREMENT and not an intent check: the class list is derived from the blades and the
+   * rendered px is pinned per class. A rename that changes a size reddens here with both
+   * numbers, for a human to read.
+   *
+   * ⚠ AND IT IS PER PANEL, which is load-bearing and surprising: each theme carries
+   * `source(none)` plus its own `@source` globs, so a class used only in the studio blades
+   * is NOT EMITTED in the platform theme. Measured: `p-16` resolves to 16px against the
+   * studio theme and to nothing against the platform one. A single-theme check would have
+   * reported half of these as broken.
+   */
+  const EXPECTED: Record<'platform' | 'studio', Record<string, string>> = {
+    platform: { 'gap-16': '16px', 'mt-4': '4px', 'mt-8': '8px' },
+    studio: {
+      'gap-12': '12px',
+      'p-16': '16px',
+      'px-12': '12px',
+      'px-16': '16px',
+      'py-8': '8px',
+      'space-y-4': '4px',
+      'space-y-8': '8px',
+      'space-y-12': '12px',
+      'space-y-24': '24px',
+    },
+  }
+
+  /** The spacing classes one panel's own views use, derived rather than listed. */
+  function spacingClasses(panel: 'platform' | 'studio'): string[] {
+    const dir = join(API, 'resources/views', panel)
+    const prefixes =
+      'p|px|py|pt|pr|pb|pl|ps|pe|m|mx|my|mt|mr|mb|ml|ms|me|gap|gap-x|gap-y|space-x|space-y'
+    const found = new Set<string>()
+
+    for (const file of globSync(join(dir, '*.blade.php'))) {
+      for (const match of readFileSync(file, 'utf8').matchAll(
+        new RegExp(String.raw`\b(${prefixes})-(\d+)\b`, 'g'),
+      )) {
+        found.add(match[0])
+      }
+    }
+
+    return [...found].sort()
+  }
+
+  for (const panel of ['platform', 'studio'] as const) {
+    test(`${panel}: every class resolves to the px its number names`, async ({ page }) => {
+      const classes = spacingClasses(panel)
+
+      // The derivation is the subject list, so an empty one is a broken check and not a
+      // clean panel.
+      expect(classes.length, `no spacing class was found in the ${panel} views`).toBeGreaterThan(2)
+      // And it must be exactly what is pinned: a class added to a blade without a measured
+      // value here would otherwise go unmeasured.
+      expect(classes).toEqual(Object.keys(EXPECTED[panel]).sort())
+
+      const theme = panelThemeCss(panel)
+      const markup = classes
+        .map((c) => `<div id="${c}" class="${c} flex"><span>a</span><span>b</span></div>`)
+        .join('')
+
+      await page.setContent(
+        `<!doctype html><html class="fi"><head><style>${readFileSync(
+          join(REPO, 'browser/fixtures/panel-palette.css'),
+          'utf8',
+        )}</style><style>${theme.replace(/@font-face\s*\{[^}]*\}/g, '')}</style></head>` +
+          `<body class="fi-body fi-panel-${panel}">${markup}</body></html>`,
+      )
+
+      const measured: Record<string, string> = {}
+
+      for (const c of classes) {
+        measured[c] = await page.evaluate((id) => {
+          const s = getComputedStyle(document.getElementById(id)!)
+          const first = document.querySelector(`#${CSS.escape(id)} > span`)
+
+          if (id.startsWith('gap')) return s.columnGap
+          // ⚠ marginBlockEND, not start. Tailwind v4's `space-y-n` emits
+          // `> :not(:last-child) { --tw-space-y-reverse: 0; margin-block-start:
+          // calc(var(--spacing-n) * var(--tw-space-y-reverse)); margin-block-end:
+          // calc(var(--spacing-n) * calc(1 - var(--tw-space-y-reverse))) }` — so with the
+          // reverse flag at 0 the START margin is 0 by construction and the space is on the
+          // END. Reading start gave `0px` for all four and would have been read as a
+          // failure of the rename rather than of this probe.
+          if (id.startsWith('space-y')) return getComputedStyle(first!).marginBlockEnd || '0px'
+          if (id.startsWith('px')) return s.paddingLeft
+          if (id.startsWith('py')) return s.paddingTop
+          if (id.startsWith('p')) return s.paddingTop
+          if (id.startsWith('mt')) return s.marginTop
+          return s.marginTop
+        }, c)
+      }
+
+      expect(measured).toEqual(EXPECTED[panel])
+    })
+  }
+})
+
+test.describe('the restyle mirrors under RTL — §3', () => {
+  /*
+   * ⚠ `§3`'s "RTL mirrors correctly" had NO evidence for the restyled panel, which is the
+   * §11 QA round's M-6: the only thing asserted was Task 6's pre-existing `<html dir>`
+   * attribute, the fixture was `dir="ltr"`, and no project set RTL.
+   *
+   * WHAT THIS CAN AND CANNOT SHOW, said plainly. Arabic is a launch language and the panel's
+   * LAYOUT is Filament's; a full mirroring audit of a vendor stylesheet is Task 9's harness
+   * against a running panel. What IS this task's own is the CSS this task ADDED, and the one
+   * way added CSS breaks mirroring is a PHYSICAL direction property — `padding-left`,
+   * `margin-right`, `left`, `border-left` — which does not flip. So:
+   *
+   *   - every box this task floors is measured at `dir="rtl"` and must be unchanged, because
+   *     `min-height` and `min-width` are direction-agnostic by construction;
+   *   - and the authored CSS is read for physical properties, which is the falsifiable half:
+   *     plant a `padding-left` and this reddens.
+   */
+  test('renders every floored control the same size at dir=rtl', async ({ page }) => {
+    await page.setContent(fixtureHtml().replace('dir="ltr"', 'dir="rtl"'))
+    await assertStylesApplied(page)
+
+    const direction = await page.evaluate(
+      () => getComputedStyle(document.documentElement).direction,
+    )
+
+    // The precondition: a run that silently stayed LTR would measure nothing.
+    expect(direction).toBe('rtl')
+
+    const small: string[] = []
+
+    for (const id of ['primary-button', 'input']) {
+      const box = await page.locator(`#${id}`).boundingBox()
+
+      expect(box, `#${id} is not in the layout at dir=rtl`).not.toBeNull()
+
+      if (box !== null && box.height < 44) {
+        small.push(`#${id} is ${String(Math.round(box.height))}px tall at dir=rtl`)
+      }
+    }
+
+    expect(small, 'the 44px floor does not survive mirroring').toEqual([])
+  })
+
+  test('adds no physical-direction property in any CSS this task authored', () => {
+    // The authored files, named: the two panel entrypoints, the shared floor, and the
+    // generated panel theme. Filament's own stylesheet is NOT in scope -- it is the vendor's,
+    // it is 693 kB, and auditing it is Task 9's harness against a running panel.
+    const authored = [
+      'apps/api/resources/css/filament/targets.css',
+      'apps/api/resources/css/filament/platform/theme.css',
+      'apps/api/resources/css/filament/studio/theme.css',
+      'packages/tokens/generated/panel-theme.css',
+      'apps/api/resources/views/errors/panel-problem.blade.php',
+    ]
+
+    const physical =
+      /(?:^|[^-\w])(?:padding|margin|border)-(?:left|right)\s*:|(?:^|[^-\w])(?:left|right)\s*:/
+
+    const offenders: string[] = []
+
+    for (const file of authored) {
+      const source = readFileSync(join(REPO, file), 'utf8')
+      // Comments stripped: this file's own prose names `padding-left` as the thing it
+      // refuses, and a check that read its own documentation would refuse itself -- the
+      // shape the shell checker's pipefail grep was already fixed for.
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\{\{--[\s\S]*?--\}\}/g, ' ')
+
+      if (physical.test(code)) {
+        offenders.push(file)
+      }
+    }
+
+    expect(
+      offenders,
+      'these files set a PHYSICAL direction property, which does not mirror under RTL. ' +
+        'Use the logical form: padding-inline-start, margin-inline-end, inset-inline-start.',
+    ).toEqual([])
+
+    // NOT VACUOUS: the files must exist and carry CSS, or "no physical property" is true of
+    // nothing. The floor is the one that matters, so it is named rather than indexed --
+    // `authored[0]` is `string | undefined` under `noUncheckedIndexedAccess` and a `!` there
+    // would assert away what that setting exists to surface.
+    expect(
+      readFileSync(join(REPO, 'apps/api/resources/css/filament/targets.css'), 'utf8'),
+    ).toContain('min-height')
+    expect(authored).toContain('apps/api/resources/css/filament/targets.css')
   })
 })
 

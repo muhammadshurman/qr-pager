@@ -100,10 +100,39 @@ composer install --no-interaction --no-progress --prefer-dist >"$work/composer.l
     || { tail -30 "$work/composer.log" >&2; fail "composer install did not complete (see $work/composer.log)"; }
 grep -cE "^  - (Installing|Downloading)" "$work/composer.log" | sed 's/^/packages installed: /'
 
-step "the three commands CLAUDE.md says a fresh clone needs, and nothing else"
+# ================================================================================
+# ⚠ apps/api's npm TREE, WHICH THIS SCRIPT DID NOT INSTALL AND THE GATE NOW NEEDS
+# ================================================================================
+#
+# Task 8b put `composer assets` in `bin/gate`, ahead of `php artisan test`, because
+# `->viteTheme()` makes `public/build/manifest.json` a prerequisite of every test that
+# renders a panel page. `bin/assets` fails CLOSED when `apps/api/node_modules` is absent --
+# and this script asserts a few lines above that the clone HAS no `apps/api/node_modules`,
+# which is exactly right for a clone and exactly what the gate then cannot work without.
+#
+# So the proof failed at `composer assets`, and it failed for the right reason: the §6
+# fresh-clone clause was genuinely unmet. The fix is the ORDER, which is the whole root
+# cause behind this and two sibling failures:
+#
+#   composer install   ->  apps/api/vendor/filament/.../resources/css/theme.css
+#                          which is the FIRST LINE of each panel theme's @import chain
+#   npm ci             ->  apps/api/node_modules (vite, tailwind 4.3.3, the vite plugin)
+#   npm run build      ->  apps/api/public/build (done BY the gate, as `composer assets`)
+#
+# Nothing in that chain is optional and nothing in it can be reordered: the build reads the
+# composer tree, and the suite reads the build. A clean environment that installs one and
+# not the other fails in a way that names neither.
+step "apps/api's own npm tree, which the asset build and therefore the suite need"
+command -v npm >/dev/null 2>&1 || fail "npm is not on PATH; the panel asset build needs it"
+npm ci --ignore-scripts >"$work/npm.log" 2>&1 \
+    || { tail -30 "$work/npm.log" >&2; fail "npm ci did not complete (see $work/npm.log)"; }
+node -e "const l=require('./package-lock.json');console.log('packages from the lockfile: '+Object.keys(l.packages||{}).length)"
+
+step "the commands CLAUDE.md says a fresh clone needs, and nothing else"
 cp .env.example .env || fail ".env.example is not in the repository"
 php artisan key:generate --quiet || fail "key:generate failed"
 echo "cp .env.example .env · php artisan key:generate · docker compose is already up"
+echo "(composer install and npm ci above are the two installs; the gate does the build)"
 
 step "composer gate, in the clone"
 if bin/gate >"$work/gate.log" 2>&1; then

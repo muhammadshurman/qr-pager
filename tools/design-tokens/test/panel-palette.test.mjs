@@ -145,6 +145,11 @@ describe('the Filament colour ladders', () => {
     // module builds would be caught by the figure rather than by the diff.
     const php = read('apps/api/config/design-tokens.php')
 
+    // ⚠ THE ENCLOSING KEY IS PINNED TOO, which it was not: verified in a scratch worktree,
+    // renaming `filament_palette` left all seven cases GREEN while both providers threw at
+    // boot. The family keys and shade lines alone cannot see the block they sit in.
+    expect(php).toContain("'filament_palette' => [")
+
     for (const [family, ladder] of Object.entries(palette)) {
       expect(php).toContain(`'${family}' => [`)
 

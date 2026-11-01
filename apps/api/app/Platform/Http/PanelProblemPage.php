@@ -7,6 +7,7 @@ namespace App\Platform\Http;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Throwable;
 
 /**
  * The HTML form of a problem document, for the panel screens only — `QRPAGER-23 §6.1a`.
@@ -59,11 +60,49 @@ final class PanelProblemPage
      */
     public function wants(Request $request): bool
     {
+        // ⚠ WRAPPED, AND THE WRAP IS THE WHOLE SAFETY ARGUMENT'S FOUNDATION. This runs INSIDE
+        // the exception renderer: a throwable escaping here escapes to Laravel's own
+        // renderer, which at APP_DEBUG=true is the 862,104-byte shape `ProblemRenderer`
+        // exists to prevent. `Filament::getPanels()` reads a registry that may not have
+        // booted -- an exception raised before the panel providers run reaches this line.
+        // So the control that must never fail cannot fail here: anything unexpected means
+        // "serve the document", which is always safe.
+        try {
+            return $this->wantsPage($request);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function wantsPage(Request $request): bool
+    {
         if ($request->expectsJson()) {
             return false;
         }
 
         if (! $request->acceptsHtml()) {
+            return false;
+        }
+
+        // ⚠ A REAL DOCUMENT NAVIGATION, AND NOT MERELY "ACCEPTS HTML". `Accept: */*` ACCEPTS
+        // html, so `acceptsHtml()` says yes to an image request, a stylesheet request and
+        // `fetch()` -- and `expectsJson()` only refuses the subset that sets
+        // `X-Requested-With`, which `fetch()` never does. Measured: a browser's own
+        // `Accept: image/avif,…,image/*,*/*;q=0.8` for `/studio/preview/asset/<uuid>`
+        // resolved to the PAGE, so a binary endpoint answered a 2 kB HTML document on its
+        // error path -- and that endpoint's SUCCESS path deliberately carries
+        // `default-src 'none'`, `nosniff`, `DENY` and `no-referrer` by an earlier §11
+        // ruling, none of which the page carried.
+        //
+        // `Sec-Fetch-Dest` is the browser's own statement of what the response is FOR, it is
+        // a forbidden header name so a page cannot forge it, and every engine this project
+        // targets sends it. Absent (curl, an old client), the answer is the document: the
+        // machine-readable form is the safe default for anything that did not say it was
+        // navigating.
+        $destination = (string) $request->headers->get('Sec-Fetch-Dest', '');
+        $mode = (string) $request->headers->get('Sec-Fetch-Mode', '');
+
+        if ($destination !== 'document' && $mode !== 'navigate') {
             return false;
         }
 
@@ -84,19 +123,53 @@ final class PanelProblemPage
         return false;
     }
 
-    /** The page, carrying the problem's own title and status and nothing else. */
+    /**
+     * The page, carrying the problem's own title and status and nothing else.
+     *
+     * ⚠ THE HEADERS ARE THE PROBLEM'S, NOT A FRESH SET. The first version built a response
+     * carrying only `Content-Type`, which silently dropped two things
+     * `Problem::toResponse()` sets:
+     *
+     *   - `Retry-After`, chosen PER SQLSTATE by `DatabaseErrorMapper` (R-070: a lock is 1s,
+     *     a connection failure or a saturated pool is 10s). Measured: the document carried
+     *     `retry-after: 10` and the page carried none, so the panel's outage page was the one
+     *     503 on this surface that told no machine client to back off -- during exactly the
+     *     condition where a retry storm is the cascade §4 › Edge & ops exists to prevent.
+     *   - `Cache-Control: no-store`, downgraded to Laravel's default `no-cache`, which
+     *     permits storage with revalidation.
+     *
+     * AND IT ADDS WHAT AN HTML DOCUMENT ON THIS ORIGIN NEEDS. An earlier §11 review required
+     * `default-src 'none'` + `nosniff` + frame denial on `PreviewController`'s binary
+     * responses precisely because they are served from the origin carrying the `/platform`
+     * and `/studio` session cookies. This is a new HTML document on that origin; the same
+     * reasoning applies, and `style-src 'unsafe-inline'` is all it needs because its only
+     * asset is the inline `<style>` block.
+     */
     public function respond(Problem $problem): Response
     {
         $status = $problem->type->status();
 
-        return response()
-            ->view('errors.panel-problem', [
-                'title' => $problem->type->title(),
-                'status' => $status,
-                'guidance' => $this->guidance($status),
-                'brand' => (string) config('app.brand'),
-            ], $status)
-            ->header('Content-Type', 'text/html; charset=UTF-8');
+        $headers = [
+            'Content-Type' => 'text/html; charset=UTF-8',
+            'Cache-Control' => 'no-store, private',
+            // No script, no external asset, no framing, no form, no base rewrite.
+            'Content-Security-Policy' => "default-src 'none'; style-src 'unsafe-inline'; "
+                ."base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+            'X-Content-Type-Options' => 'nosniff',
+            'X-Frame-Options' => 'DENY',
+            'Referrer-Policy' => 'no-referrer',
+        ];
+
+        if ($problem->retryAfter !== null) {
+            $headers['Retry-After'] = (string) $problem->retryAfter;
+        }
+
+        return response()->view('errors.panel-problem', [
+            'title' => $problem->type->title(),
+            'status' => $status,
+            'guidance' => $this->guidance($status),
+            'brand' => (string) config('app.brand'),
+        ], $status, $headers);
     }
 
     /**
