@@ -75,4 +75,4 @@ out/
 # Agent worktrees (Claude Code `isolation: worktree`). Transient clones of this repo;
 # `git add -A` sweeps them up as embedded git repositories, which is how one reached a
 # commit on 2026-11-02. Never committed.
-.claude/worktrees/
+/.claude/worktrees/
