@@ -1,6 +1,7 @@
 import { Button } from '@qrpager/ui'
 
 import type { Translate } from '../copy/index.ts'
+import type { AlertsState } from '../pager/journey.ts'
 import { Frame, type BrandSlot } from './Frame.tsx'
 
 /**
@@ -11,8 +12,16 @@ import { Frame, type BrandSlot } from './Frame.tsx'
  * requires the request to be *"in response to direct user interaction"* (WebKit's own
  * announcement, `§1.2` of the ticket file), and a request made from an effect is silently
  * refused on iOS -- which costs the customer the alert and tells them nothing.
+ *
+ * ⚠ ITS STATE UNION IS IMPORTED, NOT DECLARED. `journey.ts` derives all six per-screen unions
+ * from `JOURNEY_STATES` with a template-literal `infer`, so this screen's `state` prop cannot
+ * fall out of step with the journey that drives it. The copy map below stays -- it is
+ * exhaustive because the compiler requires a key for every member of the imported union,
+ * which is the same derivation, and none of these state names collides with a `pager_status`
+ * value. `SessionEnded`'s three do, which is why that one screen has no map.
  */
-export type AlertsState = 'notAsked' | 'granted' | 'denied' | 'unsupported'
+
+export type { AlertsState }
 
 export interface EnableAlertsProps {
   readonly state: AlertsState

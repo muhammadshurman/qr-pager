@@ -165,6 +165,44 @@ describe('the workspace gate and CI run the same steps', () => {
     ).toContain('gate:e2e')
   })
 
+  it('runs every browser step through the engine runner, so any host can run the gate', () => {
+    // ⚠ MEASURED, NOT ANTICIPATED, AND THE GATE WAS UNRUNNABLE HERE BEFORE IT. `test:browser`
+    // invoked `playwright test` directly, and `pnpm gate` died on this builder's host with
+    //
+    //   chrome-headless-shell: error while loading shared libraries: libnspr4.so
+    //
+    // for all five projects. `playwright install-deps` needs root and this host has no sudo,
+    // so the WORKSPACE GATE COULD NOT BE RUN AT ALL while the tests themselves were fine --
+    // which is exactly the defect `apps/api/bin/gate`'s `PAO_DISABLE=1` exists for, one half
+    // over: a gate whose result depends on which machine runs it is not a gate.
+    //
+    // `tools/browsers/bin/browsers` probes the host, execs NATIVELY when all three engines
+    // launch, and falls back to the pinned image when they do not. CI's `frontend` job
+    // installs the engines, so there the probe passes and this wrapper costs nothing -- it is
+    // not a second toolchain, it is the one that works everywhere.
+    //
+    // It also pins the binary: `node_modules/.bin/playwright` rather than `pnpm exec`, because
+    // pnpm 12 verifies and RELINKS `node_modules` before running a script and did so in the
+    // middle of a container run.
+    const pkg = JSON.parse(read('package.json'))
+    const offenders = Object.entries(pkg.scripts).filter(
+      ([, body]) =>
+        body.includes('playwright test') && !body.includes('tools/browsers/bin/browsers'),
+    )
+
+    expect(
+      offenders.map(([name]) => name),
+      'these scripts launch browsers without the engine runner, so `pnpm gate` passes or ' +
+        'fails on whether the host happens to carry the Playwright OS libraries',
+    ).toEqual([])
+
+    // Not vacuous: there IS a script that runs playwright, so the filter has something to
+    // judge. An empty `scripts` object would otherwise satisfy the assertion above.
+    expect(
+      Object.entries(pkg.scripts).filter(([, body]) => body.includes('playwright test')).length,
+    ).toBe(1)
+  })
+
   it('has every CI pnpm step in the GATE', () => {
     const gate = gateSteps()
     const missing = ciSteps().filter((line) => !gate.some((step) => line.startsWith(step)))

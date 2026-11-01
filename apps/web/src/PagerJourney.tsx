@@ -8,7 +8,14 @@ import { alertEnvironmentFrom, soundTheAlert } from './pager/alert.ts'
 import { forgetDevice, pollStatus, resolveSession, type ApiConfig } from './pager/api.ts'
 import { installGuidance } from './pager/install.ts'
 import { browserLocale } from './pager/locale.ts'
-import { INITIAL, reduce, screenOf, type JourneyEvent, type JourneyState } from './pager/journey.ts'
+import {
+  INITIAL,
+  reduce,
+  screenOf,
+  stateOf,
+  type JourneyEvent,
+  type JourneyState,
+} from './pager/journey.ts'
 import {
   askPermission,
   clearWorkerCredential,
@@ -682,7 +689,7 @@ function Render({
     case 'alerts.unsupported':
       return (
         <EnableAlerts
-          state={state.screen.slice('alerts.'.length) as 'notAsked'}
+          state={stateOf(state.screen, 'alerts')}
           t={t}
           install={install}
           onAsk={onAsk}
@@ -697,7 +704,7 @@ function Render({
     case 'waiting.offline':
       return (
         <Waiting
-          state={state.screen.slice('waiting.'.length) as 'healthy'}
+          state={stateOf(state.screen, 'waiting')}
           t={t}
           reference={reference ?? ''}
           elapsedSeconds={elapsed}
@@ -727,20 +734,14 @@ function Render({
     case 'ended.completed':
     case 'ended.cancelled':
     case 'ended.expired':
-      return (
-        <SessionEnded
-          state={state.screen.slice('ended.'.length) as 'completed'}
-          t={t}
-          reference={reference}
-        />
-      )
+      return <SessionEnded state={stateOf(state.screen, 'ended')} t={t} reference={reference} />
 
     case 'error.offline':
     case 'error.server':
     case 'error.unknown':
       return (
         <OfflineError
-          state={state.screen.slice('error.'.length) as 'offline'}
+          state={stateOf(state.screen, 'error')}
           t={t}
           onRetry={() => {
             send({ type: 'retry' })

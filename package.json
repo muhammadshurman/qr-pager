@@ -18,7 +18,7 @@
     "typecheck:root": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:browser": "playwright test --project=chromium --project=chromium-reduced-motion --project=engines-chromium --project=engines-firefox --project=engines-webkit",
+    "test:browser": "tools/browsers/bin/browsers node_modules/.bin/playwright test --project=chromium --project=chromium-reduced-motion --project=engines-chromium --project=engines-firefox --project=engines-webkit",
     "tokens:generate": "pnpm --filter @qrpager/tokens run generate",
     "tokens:check": "pnpm --filter @qrpager/tokens run check",
     "audit": "pnpm audit --audit-level low",

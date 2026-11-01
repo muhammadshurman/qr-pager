@@ -1,4 +1,5 @@
 import type { Translate } from '../copy/index.ts'
+import type { EndedState } from '../pager/journey.ts'
 import { Frame, type BrandSlot } from './Frame.tsx'
 
 /**
@@ -15,8 +16,18 @@ import { Frame, type BrandSlot } from './Frame.tsx'
  * carries a tenant landing URL and Task 11 owns that page, so `homeHref` renders a link ONLY
  * when one is supplied. A link to a guessed URL would be a dead end wearing the costume of
  * a path, which is the opposite of what that clause asks for.
+ *
+ * ⚠ ITS THREE STATES ARE THE PAGER ENUM'S THREE TERMINAL STATUSES, AND THAT IS WHY THIS
+ * SCREEN NAMES NEITHER THEM NOR ITS COPY KEYS. `EndedState` is imported, derived from
+ * `JOURNEY_STATES`; and the title/body keys are built by TEMPLATE rather than looked up in a
+ * map, so the compiler -- checking `` `ended.${EndedState}.title` `` against `CopyKey` --
+ * is what requires copy for every one of them. The three sibling screens keep the ordinary
+ * map, which is the more readable form and is exhaustive the same way; this one cannot,
+ * because a map with `completed:`, `cancelled:` and `expired:` for keys is a second,
+ * hand-written declaration of the status enum (`§6.2`) whatever its values are, and
+ * `StatusMirrorContractTest` is right to refuse it. Measured: that guard went red on this
+ * file and on `journey.ts` at `fcdfd8f`, and green at the commit that removed both.
  */
-export type EndedState = 'completed' | 'cancelled' | 'expired'
 
 export interface SessionEndedProps {
   readonly state: EndedState
@@ -26,22 +37,6 @@ export interface SessionEndedProps {
 }
 
 export function SessionEnded({ state, t, reference, brand }: SessionEndedProps) {
-  const title = (
-    {
-      completed: 'ended.completed.title',
-      cancelled: 'ended.cancelled.title',
-      expired: 'ended.expired.title',
-    } as const
-  )[state]
-
-  const body = (
-    {
-      completed: 'ended.completed.body',
-      cancelled: 'ended.cancelled.body',
-      expired: 'ended.expired.body',
-    } as const
-  )[state]
-
   const home = brand?.homeHref
 
   return (
@@ -62,13 +57,13 @@ export function SessionEnded({ state, t, reference, brand }: SessionEndedProps) 
         )
       }
     >
-      <h1 className="pg-title">{t(title)}</h1>
+      <h1 className="pg-title">{t(`ended.${state}.title`)}</h1>
       {reference !== null && (
         <p className="pg-note" dir="ltr">
           {`${t('landing.ref.label')} ${reference}`}
         </p>
       )}
-      <p className="pg-note">{t(body)}</p>
+      <p className="pg-note">{t(`ended.${state}.body`)}</p>
       {/* The way forward with no link available: a physical action, named. `§4.1`'s *"no dead
           end"* is satisfied by an instruction the customer can act on, not by a button. */}
       <p className="pg-note">{t('ended.rescan')}</p>

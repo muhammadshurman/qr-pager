@@ -1,6 +1,7 @@
 import { Button } from '@qrpager/ui'
 
 import type { Translate } from '../copy/index.ts'
+import type { ErrorState } from '../pager/journey.ts'
 import { Frame, type BrandSlot } from './Frame.tsx'
 
 /**
@@ -21,8 +22,16 @@ import { Frame, type BrandSlot } from './Frame.tsx'
  * not be made at all. Once a snapshot exists, a failure degrades the WAITING screen instead
  * -- which is `§4 › Edge`'s shedding order, and is why losing the connection mid-wait does
  * not throw the customer out of their session.
+ *
+ * ⚠ ITS STATE UNION IS IMPORTED, NOT DECLARED. `journey.ts` derives all six per-screen unions
+ * from `JOURNEY_STATES` with a template-literal `infer`, so this screen's `state` prop cannot
+ * fall out of step with the journey that drives it. The copy map below stays -- it is
+ * exhaustive because the compiler requires a key for every member of the imported union,
+ * which is the same derivation, and none of these state names collides with a `pager_status`
+ * value. `SessionEnded`'s three do, which is why that one screen has no map.
  */
-export type ErrorState = 'offline' | 'server' | 'unknown'
+
+export type { ErrorState }
 
 export interface OfflineErrorProps {
   readonly state: ErrorState

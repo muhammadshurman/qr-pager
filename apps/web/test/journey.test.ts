@@ -14,9 +14,17 @@ import {
   isTerminal,
   reduce,
   screenOf,
+  stateOf,
+  type AlertsState,
+  type EndedState,
+  type ErrorState,
   type JourneyEvent,
   type JourneyState,
+  type LandingState,
+  type ReadyState,
+  type Screen,
   type ScreenState,
+  type WaitingState,
 } from '../src/pager/journey.ts'
 import type { PresentedToken } from '../src/pager/token.ts'
 
@@ -78,7 +86,39 @@ const ALL_EVENTS: readonly JourneyEvent[] = [
   { type: 'skip' },
 ]
 
+/**
+ * ⚠ A TYPE-LEVEL ASSERTION, AND IT CATCHES THE ONE THING THE RUNTIME ONES CANNOT.
+ *
+ * The six per-screen unions are DERIVED from `JOURNEY_STATES` with a template-literal
+ * `infer`. A derivation that resolved to `string` would be too WIDE -- `SessionEnded` would
+ * then accept `'waiting'` for its `state` -- and every runtime assertion in this file would
+ * still pass, because `JOURNEY_STATES` is untouched by the mistake. So the types are checked
+ * as types, in BOTH directions: `Exact` is false for a wider union AND for a narrower one,
+ * where a plain `extends` would accept one of the two.
+ *
+ * `apps/web/tsconfig.json` includes `test/**`, which is what makes this an assertion rather
+ * than a decoration -- and that inclusion is itself held by
+ * `tools/gate/test/typecheck-coverage.test.mjs`.
+ */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+
+const EXACT_UNIONS: readonly true[] = [
+  true satisfies Exact<Screen, 'landing' | 'alerts' | 'waiting' | 'ready' | 'ended' | 'error'>,
+  true satisfies Exact<LandingState, 'valid' | 'invalid'>,
+  true satisfies Exact<AlertsState, 'notAsked' | 'granted' | 'denied' | 'unsupported'>,
+  true satisfies Exact<WaitingState, 'healthy' | 'degraded' | 'offline'>,
+  true satisfies Exact<ReadyState, 'fresh' | 'acknowledged'>,
+  true satisfies Exact<EndedState, 'completed' | 'cancelled' | 'expired'>,
+  true satisfies Exact<ErrorState, 'offline' | 'server' | 'unknown'>,
+]
+
 describe('the state inventory', () => {
+  it('derives each screens state union EXACTLY, which no runtime assertion can check', () => {
+    // The seven `satisfies` above are the assertion; this case is what makes a reader of the
+    // test report see that they were checked, and it fails if one is dropped.
+    expect(EXACT_UNIONS).toEqual([true, true, true, true, true, true, true])
+  })
+
   it('is the 17 screen states PLAN 4.1 inventories', () => {
     expect(JOURNEY_STATES.length).toBe(17)
     expect(new Set(JOURNEY_STATES).size).toBe(17)
@@ -108,6 +148,46 @@ describe('the state inventory', () => {
       'ready',
       'waiting',
     ])
+  })
+
+  it('splits every state into the two halves a screen component is handed', () => {
+    // `screenOf` and `stateOf` are the only two readers of a state string's shape, and the
+    // orchestrator passes the second half straight into a screen's `state` prop -- so a bad
+    // split would render a screen with a state it has no copy for. Round-tripped over all 17
+    // rather than spot-checked, and the halves are named EXACTLY rather than counted, because
+    // a count would survive two states swapping their suffixes.
+    for (const state of JOURNEY_STATES) {
+      expect(`${screenOf(state)}.${stateOf(state, screenOf(state))}`, state).toBe(state)
+    }
+
+    expect(
+      JOURNEY_STATES.filter((s) => screenOf(s) === 'landing').map((s) => stateOf(s, 'landing')),
+    ).toEqual(['valid', 'invalid'])
+    expect(
+      JOURNEY_STATES.filter((s) => screenOf(s) === 'alerts').map((s) => stateOf(s, 'alerts')),
+    ).toEqual(['notAsked', 'granted', 'denied', 'unsupported'])
+    expect(
+      JOURNEY_STATES.filter((s) => screenOf(s) === 'waiting').map((s) => stateOf(s, 'waiting')),
+    ).toEqual(['healthy', 'degraded', 'offline'])
+    expect(
+      JOURNEY_STATES.filter((s) => screenOf(s) === 'ready').map((s) => stateOf(s, 'ready')),
+    ).toEqual(['fresh', 'acknowledged'])
+    expect(
+      JOURNEY_STATES.filter((s) => screenOf(s) === 'ended').map((s) => stateOf(s, 'ended')),
+    ).toEqual(['completed', 'cancelled', 'expired'])
+    expect(
+      JOURNEY_STATES.filter((s) => screenOf(s) === 'error').map((s) => stateOf(s, 'error')),
+    ).toEqual(['offline', 'server', 'unknown'])
+  })
+
+  it('names its three ended states with the generated enums three TERMINAL statuses', () => {
+    // The derivation `TERMINAL` now rests on: a `pager_status` with no permitted transition
+    // IS an end. Pinned here on the mirror's side as well as on the journey's, so the day PHP
+    // gives `cancelled` a transition this fails on the input rather than on the outcome.
+    const terminalStatuses = PAGER_STATUS.filter((s) => PAGER_STATUS_TRANSITIONS[s].length === 0)
+
+    expect(terminalStatuses).toEqual(['completed', 'cancelled', 'expired'])
+    expect(JOURNEY_STATES.filter(isTerminal)).toEqual(terminalStatuses.map((s) => `ended.${s}`))
   })
 
   it('maps all four of PLAN 4.1s scan-landing outcomes, each to a real state', () => {

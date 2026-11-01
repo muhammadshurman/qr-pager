@@ -1,6 +1,7 @@
 import { OrderReady } from '@qrpager/ui'
 
 import type { Translate } from '../copy/index.ts'
+import type { ReadyState } from '../pager/journey.ts'
 import type { BrandSlot } from './Frame.tsx'
 
 /**
@@ -26,7 +27,7 @@ import type { BrandSlot } from './Frame.tsx'
  * and computes nothing.
  */
 export interface OrderReadyScreenProps {
-  readonly state: 'fresh' | 'acknowledged'
+  readonly state: ReadyState
   readonly t: Translate
   readonly reference: string
   readonly onAcknowledge: () => void

@@ -1,4 +1,4 @@
-import { PAGER_STATUS_TRANSITIONS, type PagerStatus } from '@qrpager/contracts'
+import { PAGER_STATUS, PAGER_STATUS_TRANSITIONS, type PagerStatus } from '@qrpager/contracts'
 
 import type { SessionSnapshot } from './api.ts'
 import { MAX_CONSECUTIVE_FAILURES } from './poll.ts'
@@ -45,11 +45,51 @@ export const JOURNEY_STATES = [
 
 export type ScreenState = (typeof JOURNEY_STATES)[number]
 
+/**
+ * THE TWO HALVES OF A STATE, BOTH DERIVED FROM `JOURNEY_STATES` AND NEITHER WRITTEN OUT.
+ *
+ * ⚠ `Screen` WAS A HAND-WRITTEN UNION OF THE SIX PREFIXES AND `StatusMirrorContractTest`'s
+ * second-declaration guard WAS RIGHT TO FIRE ON IT: two of those six prefixes are spelled
+ * exactly like two of the five `pager_status` values, so one declaration carried two status
+ * words and from outside this file that is indistinguishable from a copy of the enum. The
+ * guard's threshold is two for exactly that reason (`§6.2`, `ADR-003`).
+ *
+ * ⚠ AND THE OLD UNION IS DESCRIBED HERE RATHER THAN QUOTED. The guard reads raw source,
+ * comments included -- quoting the line it rejected would re-create the offence inside the
+ * comment explaining it, which was measured, not reasoned: the first attempt at this comment
+ * left the file red for the same reason the code had been.
+ *
+ * Taking the prefix with a template-literal `infer` is not a workaround for the guard, it is
+ * the better artefact: the union cannot DRIFT from `JOURNEY_STATES`, where the old one merely
+ * happened to agree with it on the day it was written. The four per-screen state unions below
+ * are derived the same way, from the same one list, so a screen state added there needs no
+ * second edit anywhere.
+ *
+ * `S` is a naked type parameter in both, which is what makes the conditional DISTRIBUTE over
+ * the 17-member union. Writing `ScreenState extends ...` inline does not distribute and would
+ * silently resolve to `never`.
+ */
+type PrefixOf<S extends string> = S extends `${infer P}.${string}` ? P : never
+type SuffixOf<S extends string, P extends string> = S extends `${P}.${infer R}` ? R : never
+
 /** The screen half of a state, for the `data-screen` attribute a locator reads. */
-export type Screen = 'landing' | 'alerts' | 'waiting' | 'ready' | 'ended' | 'error'
+export type Screen = PrefixOf<ScreenState>
+
+/** The state half, per screen. Each one is a screen component's `state` prop. */
+export type LandingState = SuffixOf<ScreenState, 'landing'>
+export type AlertsState = SuffixOf<ScreenState, 'alerts'>
+export type WaitingState = SuffixOf<ScreenState, 'waiting'>
+export type ReadyState = SuffixOf<ScreenState, 'ready'>
+export type EndedState = SuffixOf<ScreenState, 'ended'>
+export type ErrorState = SuffixOf<ScreenState, 'error'>
 
 export function screenOf(state: ScreenState): Screen {
   return state.split('.')[0] as Screen
+}
+
+/** The state half of a state, for the `data-state` attribute and for a screen's own prop. */
+export function stateOf<P extends Screen>(state: ScreenState, prefix: P): SuffixOf<ScreenState, P> {
+  return state.slice(prefix.length + 1) as SuffixOf<ScreenState, P>
 }
 
 /**
@@ -130,8 +170,20 @@ function assertNever(value: never): never {
   throw new Error(`unhandled: ${JSON.stringify(value)}`)
 }
 
-/** The three terminal states. A session that reached one is over. */
-const TERMINAL: readonly ScreenState[] = ['ended.completed', 'ended.cancelled', 'ended.expired']
+/**
+ * The terminal states. A session that reached one is over.
+ *
+ * ⚠ DERIVED FROM THE GENERATED TRANSITION TABLE, not listed. An empty transition list IS
+ * what terminal means in `PagerStatus`, and the mirror emits that table verbatim -- so a
+ * status that stops being terminal in PHP stops being terminal here, with no edit. The list
+ * this replaced read `['ended.completed', 'ended.cancelled', 'ended.expired']`, which is the
+ * same defect class the second-declaration guard caught one screen over: a hand-written list
+ * that agreed with the generated one on the day it was written and had nothing holding it
+ * there afterwards.
+ */
+const TERMINAL: readonly ScreenState[] = PAGER_STATUS.filter(
+  (status) => PAGER_STATUS_TRANSITIONS[status].length === 0,
+).map((status) => destinationFor(status, 0))
 
 export function isTerminal(state: ScreenState): boolean {
   return TERMINAL.includes(state)

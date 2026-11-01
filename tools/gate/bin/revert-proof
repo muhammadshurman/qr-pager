@@ -19,7 +19,7 @@
 # scratch copies live beside the originals with a `.revert-proof-backup` suffix, which
 # `git status` shows and `.gitignore` does not hide.
 #
-# USAGE:  tools/gate/bin/revert-proof            all four
+# USAGE:  tools/gate/bin/revert-proof            all six
 #         tools/gate/bin/revert-proof <name>     one
 set -uo pipefail
 
@@ -76,24 +76,51 @@ undo() {
   backups=()
 }
 
-# Run one Vitest file and report whether it was green. The STATUS is the proof, so it is
-# captured directly from the command and never read after a pipe.
+# Run one case and report whether it was green. The STATUS is the proof, so it is captured
+# directly from the command and never read after a pipe.
+#
+# ⚠ THREE RUNNERS, BECAUSE THE GUARDS THIS TASK RELIES ON LIVE IN THREE PLACES. Two of the
+# six claims below are not `apps/web` cases at all: one is a `tools` Vitest project and one is
+# a PHP test in `apps/api`. A proof script that could only run the web project would have had
+# to assert those two by prose, which is the thing this file exists to refuse.
 suite() {
-  local file="$1" name="$2"
+  local project="$1" file="$2" name="$3"
 
-  ./node_modules/.bin/vitest run --project web "$file" -t "$name" >/tmp/revert-proof.$$ 2>&1
+  ./node_modules/.bin/vitest run --project "$project" "$file" -t "$name" >/tmp/revert-proof.$$ 2>&1
+}
+
+# ⚠ `PAO_DISABLE=1` IS NOT OPTIONAL HERE. `laravel/pao` swaps the console output style
+# whenever it detects an agent session, and the single JSON line it prints then carries no
+# frame list -- so the twelve lines this script echoes on a FAILED claim would name nothing.
+# `CLAUDE.md` states the rule for a hand-run `php artisan test`; this is a hand-run one.
+php_case() {
+  local filter="$1"
+
+  (cd apps/api && PAO_DISABLE=1 php artisan test --filter="$filter") >/tmp/revert-proof.$$ 2>&1
+}
+
+run_case() {
+  local runner="$1" spec="$2" name="$3"
+
+  if [ "$runner" = php ]; then
+    php_case "$name"
+  else
+    suite "$runner" "$spec" "$name"
+  fi
 }
 
 failures=0
 
+# The 7th argument is the RUNNER and defaults to `web`, so the four claims written before
+# there was more than one runner read exactly as they did.
 prove() {
-  local label="$1" file="$2" needle="$3" replacement="$4" spec="$5" name="$6"
+  local label="$1" file="$2" needle="$3" replacement="$4" spec="$5" name="$6" runner="${7:-web}"
 
   printf '\n== %s\n' "$label"
 
   revert "$file" "$needle" "$replacement" || { failures=$((failures + 1)); return; }
 
-  if suite "$spec" "$name"; then
+  if run_case "$runner" "$spec" "$name"; then
     echo "   FAILED: the case is GREEN with the fix reverted, so it does not catch it."
     sed -n '1,12p' /tmp/revert-proof.$$ | sed 's/^/     /'
     failures=$((failures + 1))
@@ -103,7 +130,7 @@ prove() {
 
   undo "$file"
 
-  if suite "$spec" "$name"; then
+  if run_case "$runner" "$spec" "$name"; then
     echo "   green with the fix    (so the red above was the revert and not the case)"
   else
     echo "   FAILED: the case is RED with the fix restored -- something else is broken."
@@ -154,6 +181,34 @@ if [ "$want" = all ] || [ "$want" = monotone-status ]; then
     "      if (false) {" \
     "test/journey.test.ts" \
     "ignores a poll that answers waiting after ready"
+fi
+
+# -------------------------------------------------------------------------------- 5
+if [ "$want" = all ] || [ "$want" = browser-runner ]; then
+  # The gate step that could not run on this host at all. Reverting the wrapper restores the
+  # bare `playwright test`, which is the form that died on `libnspr4.so`.
+  prove "every browser step goes through the engine runner, not a bare playwright" \
+    "package.json" \
+    "\"test:browser\": \"tools/browsers/bin/browsers node_modules/.bin/playwright test" \
+    "\"test:browser\": \"playwright test" \
+    "test/ci-parity.test.mjs" \
+    "runs every browser step through the engine runner" \
+    tools
+fi
+
+# -------------------------------------------------------------------------------- 6
+if [ "$want" = all ] || [ "$want" = second-status-declaration ]; then
+  # ⚠ THE GUARD THAT CAUGHT THIS TASK, AND IT IS A PHP ONE. `composer gate` went red at step
+  # 10 of 10 on `fcdfd8f` naming `journey.ts` and `SessionEnded.tsx`; both now DERIVE their
+  # unions from `JOURNEY_STATES`. Reverting the derivation puts two `pager_status` words back
+  # into one hand-written declaration, which is what `§6.2` forbids.
+  prove "the screen union is derived, so it is not a second declaration of the status enum" \
+    "apps/web/src/pager/journey.ts" \
+    "export type Screen = PrefixOf<ScreenState>" \
+    "export type Screen = 'landing' | 'alerts' | 'waiting' | 'ready' | 'ended' | 'error'" \
+    "" \
+    "StatusMirrorContractTest" \
+    php
 fi
 
 rm -f /tmp/revert-proof.$$

@@ -1,6 +1,7 @@
 import { Button, ElapsedTimer } from '@qrpager/ui'
 
 import type { Translate } from '../copy/index.ts'
+import type { WaitingState } from '../pager/journey.ts'
 import { Frame, type BrandSlot } from './Frame.tsx'
 
 /**
@@ -13,8 +14,16 @@ import { Frame, type BrandSlot } from './Frame.tsx'
  * shedding the live timer -- `ShedLoad` is on that route and on neither of the other two --
  * so the degraded copy says the timer is behind AND THAT THE BUZZ IS NOT. Without that
  * sentence a customer cannot tell a shed timer from a broken product.
+ *
+ * ⚠ ITS STATE UNION IS IMPORTED, NOT DECLARED. `journey.ts` derives all six per-screen unions
+ * from `JOURNEY_STATES` with a template-literal `infer`, so this screen's `state` prop cannot
+ * fall out of step with the journey that drives it. The copy map below stays -- it is
+ * exhaustive because the compiler requires a key for every member of the imported union,
+ * which is the same derivation, and none of these state names collides with a `pager_status`
+ * value. `SessionEnded`'s three do, which is why that one screen has no map.
  */
-export type WaitingState = 'healthy' | 'degraded' | 'offline'
+
+export type { WaitingState }
 
 export interface WaitingProps {
   readonly state: WaitingState

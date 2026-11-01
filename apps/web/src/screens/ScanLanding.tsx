@@ -1,6 +1,7 @@
 import { Button } from '@qrpager/ui'
 
 import type { Translate } from '../copy/index.ts'
+import type { LandingState } from '../pager/journey.ts'
 import { Frame, type BrandSlot } from './Frame.tsx'
 
 /**
@@ -15,7 +16,7 @@ import { Frame, type BrandSlot } from './Frame.tsx'
  * screen. Rendering them here as well would be two states that look identical to two others.
  */
 export interface ScanLandingProps {
-  readonly state: 'valid' | 'invalid'
+  readonly state: LandingState
   readonly t: Translate
   readonly reference: string | null
   readonly onEnableAlerts: () => void
