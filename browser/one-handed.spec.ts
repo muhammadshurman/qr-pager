@@ -127,6 +127,49 @@ async function withPermission(
     scope.PushManager = class PushManagerStub {
       readonly stub = true
     }
+    /**
+     * ⚠ THE WORKER CONTAINER IS STUBBED TOO, AND THAT IS WHAT MAKES THIS A GEOMETRY
+     * MEASUREMENT RATHER THAN A TLS ONE.
+     *
+     * `alerts.granted` timed out at 35 s on WebKit LTR and RTL, every run, while the same
+     * state passed on Chromium and Firefox. The cause is not the layout: with permission
+     * granted the orchestrator registers the real `/sw.js`, and the harness serves it over a
+     * SELF-SIGNED certificate. `ignoreHTTPSErrors` is a Playwright option and a worker script
+     * is fetched by the browser's own NETWORK STACK, so it does not reach that fetch --
+     * `playwright.config.ts` says so where the journey projects pass Chromium
+     * `--ignore-certificate-errors`, a flag WebKit has no equivalent for. So the registration
+     * genuinely fails there, and the page could never hold the granted state.
+     *
+     * ⚠ AND THE FAILURE WAS A PRODUCT DEFECT BEFORE IT WAS A HARNESS ONE. The reconcile
+     * awaited `register()` with no `catch`, so a rejection became an unhandled rejection and
+     * the screen kept claiming alerts were on. That is fixed in `PagerJourney.tsx` and
+     * asserted in `orchestrator.test.tsx`; with the fix, WebKit now correctly renders
+     * `alerts.unsupported` -- which is still not the state THIS file is measuring.
+     *
+     * A registration that resolves and a `subscribe()` that rejects is the smallest stub that
+     * leaves the journey where this spec needs it: `reconcileSubscription` catches the
+     * rejection and returns `failed`, so there is no request, no state change and no
+     * dependence on any engine's certificate handling. The real registration is the SUBJECT
+     * of `sw.spec.ts`, where it is driven on the engine that can do it.
+     */
+    const registration = {
+      pushManager: {
+        getSubscription: () => Promise.resolve(null),
+        subscribe: () => Promise.reject(new Error('one-handed: geometry only, no real push')),
+      },
+    }
+
+    Object.defineProperty(scope.navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        register: () => Promise.resolve(registration),
+        getRegistration: () => Promise.resolve(registration),
+        ready: Promise.resolve(registration),
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      },
+    })
+
     scope.Notification = Object.assign(
       function NotificationStub() {
         // A constructor the app never calls: it reads `Notification.permission` and
@@ -240,10 +283,68 @@ async function reach(page: Page, state: ScreenState): Promise<void> {
     await page.locator('.qr-ready__acknowledge').click()
   }
 
-  await expect(page.locator(`[data-screen="${screen}"][data-state="${detail}"]`)).toBeVisible({
-    timeout: 30_000,
-  })
-  expect(polls).toBeGreaterThanOrEqual(0)
+  /**
+   * ⚠ POLLED FOR THE PAIR AS ONE STRING, SO A FAILURE NAMES WHAT DID RENDER. This was
+   * `toBeVisible()` on a `[data-screen][data-state]` selector, and when `alerts.granted`
+   * never appeared on WebKit the message was *"element(s) not found"* -- which is every
+   * wrong state at once and names none of them. Three cases failed that way and the log
+   * could not say whether the engine had rendered `notAsked`, `unsupported` or nothing;
+   * diagnosing it needed a second run with a probe bolted on. `§4a`'s own argument about a
+   * generic 500 that names nothing, in a browser.
+   */
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('[data-screen]')
+          .first()
+          .evaluate(
+            (el) =>
+              `${el.getAttribute('data-screen') ?? '?'}.${el.getAttribute('data-state') ?? '?'}`,
+          ),
+      { timeout: 30_000, message: `reach(${state}) never rendered that state` },
+    )
+    .toBe(state)
+
+  /**
+   * ⚠ THIS WAS `expect(polls).toBeGreaterThanOrEqual(0)` -- TRUE FOR EVERY POSSIBLE VALUE,
+   * including a poller that never ran. A vacuous assertion is worse than none: it occupies
+   * the place where the real one would have gone, and the suite reports it as a check.
+   *
+   * ⚠ AND THE FIRST REPLACEMENT WAS WRONG, WHICH IS WHY THE PARTITION BELOW IS NARROW. It
+   * asserted `polls > 0` for every state with a live session -- the valid landing, all four
+   * alerts states, all three waiting states, both ready states -- on the reasoning that
+   * polling starts the moment a session resolves. It does start; it has not FIRED yet. 54
+   * cases went red with `polls=0`, and the measurement is in `§4a`: `landing.valid`,
+   * `alerts.*`, `waiting.healthy`, `waiting.offline` and `ready.*` all reach their state
+   * before the first interval elapses. So that was an assertion about the machine's speed
+   * wearing the costume of one about the journey.
+   *
+   * What is left is what is a PROPERTY of the journey rather than of the clock:
+   *
+   *   polls === 0   there is no live session to poll, and no amount of waiting creates one:
+   *                 an invalid token, a resolve that answered a TERMINAL status, and the
+   *                 three error states, where the resolve itself failed so polling never
+   *                 began. A regression that polled a completed session fails here.
+   *   polls > 0     the state is reachable ONLY THROUGH a poll answer: `waiting.degraded` is
+   *                 what a 503 from the polling route produces, and the wait above does not
+   *                 return until that screen is on. One state, and it is guaranteed rather
+   *                 than likely.
+   *
+   * The other nine are asserted at their real cadence where the clock is the subject --
+   * `journey.test.ts` drives the interval, the jitter and the backoff against a fake timer,
+   * and `pager.spec.ts` drives a real poll discovering `ready` over HTTP. Counting them here
+   * would be a race, and a test that sometimes passes is the thing this file is careful about.
+   */
+  const pollsAreImpossible = state === 'landing.invalid' || screen === 'ended' || screen === 'error'
+
+  if (pollsAreImpossible) {
+    expect(polls, `${state} polled a session that cannot be polled`).toBe(0)
+  }
+
+  if (state === 'waiting.degraded') {
+    expect(polls > 0, `${state}: polls=${String(polls)}`).toBe(true)
+  }
 }
 
 async function measure(page: Page, state: ScreenState): Promise<Measurement> {

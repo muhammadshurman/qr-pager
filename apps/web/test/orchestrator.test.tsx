@@ -1210,6 +1210,79 @@ describe('the recovery paths', () => {
     expect(screen.getByText('Your order')).toBeTruthy()
   })
 
+  it('says alerts are unavailable when the worker REFUSES to register, and keeps polling', async () => {
+    /**
+     * ⛔ `navigator.serviceWorker.register()` REJECTED AND THE APP DID NOTHING ABOUT IT.
+     *
+     * The reconcile's async block awaited `register()` and `ready` with no `catch`, so the
+     * rejection became an unhandled promise rejection: no state change, no honest message,
+     * and the customer left on the GRANTED alerts screen -- "we'll buzz you" -- with no
+     * worker and therefore no push path behind it. The screen asserted the opposite of the
+     * truth, which is the one thing `§4.1`'s *"honest message"* clause forbids.
+     *
+     * ⚠ AND THE REJECTION IS NOT HYPOTHETICAL. `register()` rejects in private browsing on
+     * several engines, when storage is revoked mid-session, when a policy forbids the worker
+     * script, and whenever the script fetch fails. `one-handed.spec.ts` on WebKit is where
+     * it was found: a self-signed certificate that `ignoreHTTPSErrors` cannot help with,
+     * because the worker script is fetched by the browser's own network stack.
+     *
+     * Two assertions, because the fix has two halves: the screen tells the truth, AND the
+     * product continues. `O2` made polling the fallback precisely so that losing the buzz
+     * does not lose the order.
+     */
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    const session = new Session().answers({ status: 200, body: snapshot('waiting') })
+
+    Object.defineProperty(window.navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        register: () => Promise.reject(new Error('SecurityError: the script could not be fetched')),
+        getRegistration: () => Promise.resolve(undefined),
+        ready: Promise.resolve({}),
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      },
+    })
+    vi.stubGlobal('Notification', {
+      permission: 'granted',
+      requestPermission: () => Promise.resolve('granted'),
+    })
+    vi.stubGlobal('PushManager', PushManagerStub)
+
+    session.mount()
+    await screen.findByText('A-42')
+
+    // The probe saw `granted`, so this is the screen the app starts on -- and the registration
+    // failure is what moves it. Asserted as the exact state, not as "not granted".
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-screen="alerts"]')?.getAttribute('data-state')).toBe(
+        'unsupported',
+      )
+    })
+
+    // AND THE SESSION IS STILL LIVE. A device that cannot register a worker still has the
+    // whole product: the customer continues to the status screen and the poller runs. The
+    // poll count is read as a DELTA across the advance rather than as an absolute, because
+    // the jittered interval decides how many land and this case is not about that number --
+    // `polls after the jitter floor and not before it` is.
+    await settle(() => {
+      const button = screen.getByRole('button', { name: 'Continue' })
+
+      button.click()
+    })
+
+    expect(document.querySelector('[data-screen]')?.getAttribute('data-screen')).toBe('waiting')
+
+    const before = session.calls('/v1/pager/status').length
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000)
+    })
+
+    expect(session.calls('/v1/pager/status').length).toBeGreaterThan(before)
+  })
+
   it('re-runs the reconcile on every return to visibility -- SR-5s iOS mechanism', async () => {
     /**
      * ⚠ THIS IS THE ONLY MECHANISM ON iOS. `pushsubscriptionchange` is `safari_ios: false` in

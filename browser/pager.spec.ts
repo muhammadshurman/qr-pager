@@ -194,21 +194,46 @@ test.describe('the four failure paths the gate names', () => {
 
     await page.getByRole('button', { name: /enable alerts/i }).click()
 
-    const ask = page.getByRole('button', { name: /allow notifications/i })
+    /**
+     * ⚠ THE EXPECTED STATE IS DERIVED FROM THE ENGINE, NOT GUESSED FROM THE UI.
+     *
+     * This read `if (ask.isVisible()) … else expect(unsupported)`, i.e. it assumed that an
+     * engine with no "Allow notifications" button must be one with no `Notification` at all.
+     * There is a THIRD real shape and Chromium is in it: headless Chromium reports
+     * `Notification.permission === 'denied'` with no prompt ever shown, so the app correctly
+     * renders `alerts.denied` -- which has no ask button either, because a retry would be a
+     * lie. The `else` branch then demanded `unsupported` and failed against a page that was
+     * behaving exactly as specified. One engine, every run, since the case was written.
+     *
+     * So the engine is ASKED what it supports and what it has already decided, and the one
+     * state that follows is asserted exactly. No disjunction, nothing branching on the UI
+     * the assertion is about.
+     */
+    const shape = await page.evaluate(() => {
+      if (!('Notification' in globalThis)) return 'unsupported'
 
-    // WebKit on Linux exposes no `Notification` in this context, which is the `unsupported`
-    // state -- a real engine shape, asserted as itself rather than forced.
-    if (await ask.isVisible()) {
-      await ask.click()
-      await expect(page.locator('[data-screen="alerts"][data-state="denied"]')).toBeVisible()
-      // The only control is a way ONWARD. A retry would be a lie: the browser will not ask
-      // again.
-      await expect(page.getByRole('button')).toHaveCount(1)
-      await expect(page.getByRole('button', { name: /continue/i })).toBeVisible()
-    } else {
-      await expect(page.locator('[data-screen="alerts"][data-state="unsupported"]')).toBeVisible()
-      await expect(page.getByRole('button', { name: /continue/i })).toBeVisible()
+      return (globalThis as unknown as { Notification: { permission: string } }).Notification
+        .permission
+    })
+
+    const expected = shape === 'unsupported' ? 'unsupported' : 'denied'
+
+    if (shape === 'default') {
+      // The engine will prompt, and the stub answers `denied`. This is the asked-and-refused
+      // transition; the two shapes below never reach `requestPermission` at all.
+      await page.getByRole('button', { name: /allow notifications/i }).click()
     }
+
+    await expect(page.locator(`[data-screen="alerts"][data-state="${expected}"]`)).toBeVisible()
+
+    // The only control is a way ONWARD. A retry would be a lie: the browser will not ask
+    // again. On `unsupported` the iOS install flow is also on screen -- it is the state an
+    // iOS tab reaches -- so the count is asserted only where the screen is just the refusal.
+    if (expected === 'denied') {
+      await expect(page.getByRole('button')).toHaveCount(1)
+    }
+
+    await expect(page.getByRole('button', { name: /continue/i })).toBeVisible()
 
     // Either way the customer reaches the status screen, because O2 made polling the
     // fallback and a denial removes the buzz rather than the product.

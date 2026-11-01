@@ -375,8 +375,36 @@ export function PagerJourney({ apiBase, vapidPublicKey, locale }: PagerJourneyPr
     const signal = controller.signal
 
     void (async () => {
-      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      await navigator.serviceWorker.ready
+      let registration: ServiceWorkerRegistration
+
+      try {
+        registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        await navigator.serviceWorker.ready
+      } catch {
+        /**
+         * ⚠ THIS WAS UNCAUGHT, AND IT IS THE ONE AWAIT IN THIS FILE THAT CAN REJECT FOR A
+         * REASON THAT HAS NOTHING TO DO WITH THIS CODE. `register()` rejects in private
+         * browsing on several engines, when storage is revoked mid-session, when a policy
+         * forbids the worker script, and whenever the script fetch itself fails. The block
+         * was a bare `void (async () => { await register(...) })()`, so the rejection went
+         * NOWHERE: no state change, no honest message, and a customer left on *"Alerts are
+         * on"* with no alert path behind it -- the screen asserting the opposite of the truth.
+         *
+         * Found by `one-handed.spec.ts` on WebKit, where the harness's self-signed
+         * certificate makes exactly this happen: `ignoreHTTPSErrors` is a Playwright option
+         * and a worker script is fetched by the browser's own network stack, so the
+         * registration fails for real. The engine was right and the app was wrong.
+         *
+         * A device with no worker has NO PUSH PATH, which is what `alerts.unsupported`
+         * already means -- learned here rather than at the probe, which is the only
+         * difference. `§4.1`'s fallback applies unchanged: polling keeps the status screen
+         * live, so the product continues and only the buzz is lost. That is `O2`'s decision
+         * being honoured, not a new one.
+         */
+        if (!signal.aborted) dispatch({ type: 'permission/unsupported' })
+
+        return
+      }
 
       if (signal.aborted) return
 

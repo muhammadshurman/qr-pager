@@ -6712,7 +6712,7 @@ over. Two consequences worth recording rather than discovering:
   only `php -l` and `require` a generated array file, so the version is immaterial to them,
   but no other PHP figure in this section was taken there.
 
-### Task 9 — **built, all three gates green, NOT TAGGED, and `R-073` is why** on `task-9-customer-pwa` (2026-11-01). Ticket `QRPAGER-16`, epic E5
+### Task 9 — **built, all three gates green, NOT TAGGED, and TWO clauses are why** on `task-9-customer-pwa` (2026-11-01). Ticket `QRPAGER-16`, epic E5
 
 **Base `58ca1ea`**, the tip of the pushed `origin/task-8b-panel-restyle` and a strict descendant
 of `task-8b` (`git merge-base task-8b^{commit} 58ca1ea` → `5ab40fc`). ⚠ **NOT the tag, and that
@@ -6722,11 +6722,30 @@ no tag carries them, because `QRPAGER-24` is deliberately untagged until its dev
 Recorded here before the first implementation commit rather than discovered in the history,
 which is the actual defect behind *do not branch from a loose sha*.
 
-**⛔ WHY IT IS NOT TAGGED, in one line:** `§3` row 9 clause (a) requires *"a real iOS device,
-installed to Home Screen, receives one real push from Task 4's dispatcher — iOS version and
-result recorded in `§4a`"*. That run is `QRPAGER-24`'s, it is Muhammad's to perform, and it has
-not happened. `R-073` is open. Every half this project owns is asserted; what is untested is
-whether the push arrives.
+**⛔ WHY IT IS NOT TAGGED. TWO CLAUSES OF `§3` ROW 9, AND BOTH ARE MUHAMMAD'S:**
+
+**1. The device clause (`R-073`).** Clause (a) requires *"a real iOS device, installed to Home
+Screen, receives one real push from Task 4's dispatcher — iOS version and result recorded in
+`§4a`"*. That run is `QRPAGER-24`'s, it is Muhammad's to perform, and it has not happened. Every
+half this project owns is asserted; what is untested is whether the push arrives.
+
+**2. `Lighthouse Performance ≥ 95` is NOT met — the median is 76 (`R-205`).** Five runs by
+`§3.1` row 9's own six-part method: **[71, 76, 77, 79, 76]**. ⚠ **AND THE PAGE IS NOT SLOW**,
+which is the half a bare number hides: the same reports carry the OBSERVED timings, and across
+those five runs the real first contentful paint is **85–122 ms** and the real largest contentful
+paint is **236–352 ms**, against the method's simulated 2,420 ms and 4,537–4,841 ms.
+`benchmarkIndex` was 1,628–2,220 — a healthy desktop — so this is not host starvation but what
+`RTT 300 ms · 700 Kbps · CPU ×4` produces for 13 first-party requests and 458 ms of script
+evaluation. The three LOAD-INVARIANT assertions the method itself says *"carry it"* are green.
+The levers are the bar, the throttling figures, or a landing that paints without hydration; `§1`
+locks Next 15 and all three are rulings rather than code this task may write.
+
+⚠ **AND `gate:lighthouse` IS DELIBERATELY NOT A STEP OF ANY GATE**, which is stated here because
+*a gate clause nobody runs* is the defect this project has paid for before. It is a `package.json`
+script, run deliberately, with its five runs and its median recorded in `R-205` and its transcript
+committed. Wiring a clause that is red by RULING rather than by defect into `pnpm gate` would make
+the gate permanently red and therefore unread, which is worse than a clause whose result is written
+down. It joins a gate on the day `R-205` is decided, whichever way it goes.
 
 #### What it ships
 
@@ -6799,6 +6818,150 @@ cause that was not the code.
    stop it; the pinned binaries are invoked directly now. A run that mutates its own toolchain
    cannot be measured.
 
+#### ⚠ AND TWO MORE, NEITHER FOUND BY A TEST THIS TASK WROTE
+
+**1. `StatusMirrorContractTest` — AN INHERITED GUARD — CAUGHT TWO SECOND DECLARATIONS OF THE
+STATUS ENUM IN THIS TASK'S OWN CODE.** `composer gate` at `fcdfd8f` went red at step **10 of
+10**, the nine before it green, on *"it writes no second DECLARATION of a status list outside
+the generated mirror"*, naming `apps/web/src/pager/journey.ts` and
+`apps/web/src/screens/SessionEnded.tsx`. `bin/classify-reds` put it on no `known-flakes.json`
+row: **REAL RED, 1 of 1**, `Tests: 1 failed, 1166 passed (9913 assertions)`.
+
+It was right both times, and the second one is the interesting one:
+
+- `journey.ts` declared the six screen prefixes as a hand-written union, and two of those
+  prefixes — `waiting`, `ready` — are spelled exactly like two of the five `pager_status`
+  values. One declaration carrying two status words is what `§6.2` forbids, and the guard
+  cannot tell it from a copy of the enum because from outside the file it is not
+  distinguishable from one.
+- `SessionEnded.tsx` declared its three states as a union of the enum's three **terminal**
+  statuses, and keyed two copy maps by them.
+
+**Neither is fixed by exempting it, and the fix is the better artefact anyway**: `PrefixOf` and
+`SuffixOf` take the two halves of a `ScreenState` with a template-literal `infer`, so `Screen`
+and all six per-screen state unions now come OUT of `JOURNEY_STATES` and cannot drift from it —
+where the old lists merely agreed with it on the day they were written. `SessionEnded` builds
+its copy keys by template, so the compiler checking ``` `ended.${EndedState}.title` ``` against
+`CopyKey` is what requires copy for every terminal status; measured before being relied on (the
+good form typechecks, `ended.nope.title` is a `TS2345`). `TERMINAL` is now derived from
+`PAGER_STATUS_TRANSITIONS` — an empty transition list IS what terminal means — rather than
+listed; the guard did not flag that one, and it is the same defect class.
+
+⚠ **THE FIRST ATTEMPT AT THE COMMENT EXPLAINING THE FIX LEFT THE FILE RED.** The guard reads
+raw source, comments included, so quoting the rejected line re-created the offence inside the
+comment about it. It is described there now, not quoted — and that is recorded in the comment
+itself, because the next person to explain a guard in a comment will reach for the quote.
+
+**2. `pnpm gate` COULD NOT BE RUN ON THIS HOST AT ALL, and the tests were fine.** Step 11 died
+for all five Playwright projects with
+
+```
+chrome-headless-shell: error while loading shared libraries: libnspr4.so
+```
+
+`test:browser` invoked `playwright test` directly, `playwright install-deps` needs root, and
+this builder has no sudo — so the workspace gate was **unrunnable**, which is the same defect
+`apps/api/bin/gate`'s `PAO_DISABLE=1` exists for one half over: *a gate whose result depends on
+which machine runs it is not a gate.* `test:browser` now goes through
+`tools/browsers/bin/browsers`, which probes the host, execs **natively** when all three engines
+launch — which they do on CI, where the `frontend` job installs them, so this costs CI nothing
+— and uses the pinned image when they do not. It also pins `node_modules/.bin/playwright`
+rather than `pnpm exec`, because pnpm 12 relinks `node_modules` before running a script and did
+so mid-run. A new `ci-parity` case fails on any `package.json` script that runs
+`playwright test` without the runner, and asserts there IS one so the filter is not vacuous.
+
+**3. ⛔ A TASK 5 GRANT MADE EVERY PASSKEY LOGIN RETURN `403`, AND 1,167 TESTS COULD NOT SEE IT.**
+`browser/passkey.spec.ts` — a virtual authenticator over CDP against the real API — got
+`passkey login -> 403` where it wanted 200. The API's own log named it:
+
+```
+SQLSTATE[42501]: Insufficient privilege: permission denied for table passkeys
+```
+
+`2026_10_28_120000_create_auth_contract.php` granted `UPDATE (name, last_used_at, updated_at)
+ON passkeys`, and `Laravel\Passkeys\Actions\VerifyPasskey::updatePasskey()` writes **`credential`**
+and `last_used_at` after every successful assertion. `credential` is not in that list, so the
+UPDATE raised `42501` and `DatabaseErrorMapper` mapped it to `ProblemType::Forbidden`.
+Registration succeeded; login never could.
+
+⚠ **AND THE COLUMN IS NOT COSMETIC.** The vendor's own comment on that method: *"The credential
+must be persisted after each use to store the updated signature counter, which is used to detect
+cloned authenticators."* So the missing grant also froze WebAuthn's clone-detection counter at
+its registration value for the lifetime of every key.
+
+⚠ **HOW IT SURVIVED THE SUITE, measured rather than assumed:** nothing drives the assertion
+ceremony as `qrpager_app`, because the counter is written only after a real authenticator signs a
+real challenge. Checked that this was not merely a stale development database — `qrpager_test`
+carries the **identical** column grants. `R-100` is the `§5` row that asked for this toolchain,
+and the harness found this on its first full pass, which is the strongest thing that can be said
+for the row being closed.
+
+Fixed by `2026_11_01_120000_grant_passkey_credential_update.php` — **one column, named**, and no
+`credential_id` or `user_id` UPDATE, because a changed credential id is a different key and
+re-pointing a key at another account is the escalation `narrow_auth_grants` exists to refuse. Two
+cases in `AuthGrantNarrowingTest`: one drives the vendor's own UPDATE statement, one pins the
+grant set to **exactly** `credential, last_used_at, name, updated_at` so a later widening fails
+there rather than passing quietly. Proven both ways with `REVOKE`/`GRANT` against the test
+database: **2 failed** — *"Failed asserting that '42501' is null"* — and **6 passed** with it.
+
+**4. ⛔ `navigator.serviceWorker.register()` REJECTING WAS UNCAUGHT, AND THE SCREEN LIED.**
+The reconcile effect awaited `register()` and `ready` inside a bare
+`void (async () => { … })()` with no `catch`, so a rejection became an unhandled promise
+rejection: no state change, no honest message, and the customer left on the GRANTED alerts screen
+— *"we'll buzz you"* — with no worker and therefore no push path behind it. `§4.1`'s *"honest
+message"* clause forbids exactly that.
+
+⚠ **AN ENGINE FOUND IT, AND THE ENGINE WAS RIGHT.** `one-handed.spec.ts` timed out on
+`alerts.granted` on WebKit LTR and RTL, every run, while the same state passed on Chromium and
+Firefox. The harness serves the page over a self-signed certificate; `ignoreHTTPSErrors` is a
+Playwright option and a worker script is fetched by the browser's own NETWORK STACK, so it does
+not reach that fetch — `playwright.config.ts` says so where the journey projects pass Chromium
+`--ignore-certificate-errors`, a flag WebKit has no equivalent for. So the registration genuinely
+failed there, reproducing what private browsing, revoked storage and a restrictive policy all
+produce in production.
+
+A device with no worker has no push path, which is what `alerts.unsupported` already means, so
+the catch dispatches `permission/unsupported` and `§4.1`'s own fallback applies unchanged:
+polling keeps the status screen live, the product continues, and only the buzz is lost — `O2`'s
+decision honoured rather than a new one. Asserted in `orchestrator.test.tsx` with both halves:
+the screen tells the truth AND the poll count still rises. Proven red by reverting the dispatch:
+*"expected undefined to be 'unsupported'"*.
+
+**5. ⚠ A VACUOUS ASSERTION, AND THE FIRST REPLACEMENT FOR IT WAS WRONG.**
+`one-handed.spec.ts` ended every one of its 102 cases with
+
+```
+expect(polls).toBeGreaterThanOrEqual(0)
+```
+
+which is true for every possible value, including a poller that never ran. The first replacement
+asserted `polls > 0` for every state with a live session — and **54 cases went red at
+`polls=0`**, because polling STARTS the moment a session resolves but has not FIRED before these
+states are reached. That was an assertion about the machine's speed wearing the costume of one
+about the journey. What is left is the part that is a property: `polls === 0` on the seven states
+with no live session to poll, and `polls > 0` on `waiting.degraded`, which is reachable only
+THROUGH a 503 poll answer. The other nine are asserted at their real cadence in `journey.test.ts`
+and `pager.spec.ts`, where the clock is the subject.
+
+**6. ⚠ `pager.spec.ts` DEMANDED THE WRONG STATE ON ONE ENGINE, EVERY RUN SINCE IT WAS WRITTEN.**
+Its permission-denied case branched `if (ask.isVisible()) … else expect(unsupported)`, i.e. it
+assumed an engine with no *"Allow notifications"* button must be one with no `Notification` at
+all. There is a third real shape: headless Chromium reports `Notification.permission === 'denied'`
+with no prompt ever shown, so the app correctly rendered `alerts.denied` — which has no ask button
+either, because a retry would be a lie. The `else` branch then failed against a page behaving
+exactly as specified. The expected state is now DERIVED from the engine's own answer and asserted
+as one exact value, with no disjunction and nothing branching on the UI the assertion is about.
+Green on all three engines afterwards.
+
+**7. ⚠ `lighthouse-proof` NAMED THE RIGHT CHROME AND MEASURED WITH NONE — a missing `export`.**
+It resolved `CHROME_PATH` from `chromium.executablePath()`, printed *Google Chrome for Testing
+156.0.8078.4* at `/ms-playwright/chromium-1248/...` into its own report header, and never
+exported the variable. `chrome-launcher` reads `process.env.CHROME_PATH` and Lighthouse has no
+`--chrome-path` flag, so the child process searched the container, found nothing, and died on run
+1 of 5 with *"The CHROME_PATH environment variable must be set"*. **A header that names the
+toolchain is not the same as a measurement that used it**, which is the rank-1 brief's trap 5
+turned on this task's own script.
+
 #### ⚠ THE TWO GATES MUST NOT RUN AT THE SAME TIME, AND THAT IS `R-200`'s MECHANISM ONE LAYER OUT
 
 `php artisan serve` (the E2E's API) uses `.env`'s `DB_DATABASE=qrpager`; the suite uses
@@ -6819,6 +6982,7 @@ who runs both at once will get a red E2E whose cause is in the other terminal.
 | `§3` row 9's fragment clause (c) — *a CSP whose `script-src` makes (b) impossible* | ⛔ **NOT MET, and it is `R-171`.** The headers belong at the edge on a statically prerendered app; what this task adds is the derived, byte-compared `web-csp-surface.json` so Task 12 writes the policy from a measurement |
 | the push **transport** | Not drivable by any runner: a push must come from Apple's, Google's or Mozilla's service. The handler is driven on the shipped bytes in all three engines; the delivery is `QRPAGER-24`'s device run |
 | the offline shell **from a real worker registration** in Firefox and WebKit | Harness limit, named in the spec: a worker script is fetched by the browser's own network stack, so `ignoreHTTPSErrors` does not reach it and only Chromium has a flag. Every other offline clause is asserted in all three |
+| `§3` row 9 — *Lighthouse Performance ≥ 95* | ⛔ **NOT MET, median 76 over five runs.** And the page is not slow: its OBSERVED first paint is 109 ms and its OBSERVED LCP is 286 ms, against the method's simulated 2,420 ms and 4,700 ms. All three LOAD-INVARIANT assertions the method says *"carry it"* are green. Nothing inside this task's scope closes the gap — the levers are the bar, the throttling figures, or a landing that paints without hydration, and all three are Muhammad's. `R-205` |
 | `R-093`'s deadline — *before Task 9 builds the client* | ⚠ **PASSED WITHOUT EITHER BRANCH BEING TAKEN**, and reported rather than carried quietly. The sentence is Muhammad's at rank 2 and `§0` forbids a session editing it; a `SourceGuard` key-inventory rule is an `apps/api` control this task has no other reason to touch. Nothing in this task adds a Redis key or reads one |
 
 #### Every `§3` row 9 clause, quoted, with where it is asserted
@@ -6830,7 +6994,7 @@ who runs both at once will get a red E2E whose cause is in the other terminal.
 | *"permission-denied, offline, expired-token and invalid-token paths all handled"* | ✅ | four cases in `pager.spec.ts`, each driven by the real answer; plus a fifth for a malformed fragment that asserts **zero** requests |
 | *"a rotated subscription is re-registered by the `pushsubscriptionchange` handler and the next notification still arrives — tested, not assumed"* | ⚠ **the handler: yes. The mechanism is absent on iOS — `SR-5`/`R-202`** | `sw.spec.ts` drives every branch of the handler on the shipped bytes in three engines; `notify.test.ts` drives `reconcileSubscription()`'s five outcomes, which is the half that works on iOS, and asserts it **with the handler removed** |
 | *"iOS Home-Screen install path works and is measured"* | ⚠ **the product flow: yes. The install on a device: `QRPAGER-24`** | `environment.test.ts` (iPad-on-a-Mac-UA detection, display-mode, the three guidance verdicts), `orchestrator.test.tsx` (rendered on an iOS tab, absent when standalone), `screens.test.tsx` (its own heading, three steps, the self-label) |
-| *"Lighthouse Performance ≥ 95"* | see the figure | `tools/gate/bin/lighthouse-proof`, by `§3.1` row 9's six-part method |
+| *"Lighthouse Performance ≥ 95"* | ⛔ **NOT MET — median 76** | `tools/gate/bin/lighthouse-proof`, by `§3.1` row 9's six-part method: runs [71, 76, 77, 79, 76]. The page's OBSERVED paint is 109 ms FCP / 286 ms LCP; the gap is the method's simulated `RTT 300 ms · 700 Kbps · CPU ×4`. `R-205`, Muhammad, 2026-11-15 |
 | *"one-handed operation verified at 390px"* | ✅ | `one-handed.spec.ts`, four properties × 17 states × 3 engines × 2 directions, table generated per project and byte-compared |
 | row 9 (a) *"a real iOS device … receives one real push"* | ⛔ **`R-073`** | nowhere — it needs a phone |
 | row 9 (b) *"client backoff and jitter verified"* | ✅ | `poll.test.ts` at exact values at both extremes; `orchestrator.test.tsx` reads the cadence off the request log |
@@ -7053,6 +7217,7 @@ _Medium/Low review findings that are not fixed land here with an owner and a dat
 | **R-202** | **THE NAMED INVARIANT'S MECHANISM DOES NOT EXIST ON THE PLATFORM THE INVARIANT EXISTS TO PROTECT.** `§3.1` row 9's middle column is *"a rotated subscription is re-registered by the `pushsubscriptionchange` handler and the next notification still arrives."* Measured against MDN `browser-compat-data` `main`, read 2026-11-01: `api/ServiceWorkerGlobalScope.json` → `pushsubscriptionchange_event` → **`safari_ios: false`** (no `version_added` at all), `chrome: 138`, `edge: 17` **removed in 79**, firefox 44 / firefox_android 48 **`partial_implementation`** with the note *"The event does not have the `oldSubscription` and `newSubscription` properties."* Corroborated by **WebKit Bugzilla 273063**. And **WebKit 249766, closed WONTFIX**, records that a push to an EXPIRED Safari endpoint still answers **200** — so Task 4's dispatcher's *"404 / 410 means a dead subscription"* pruning never fires for a Safari endpoint either. `§4 › Realtime` says *"iOS: Web Push only works from a Home Screen install"* and `R-073` calls iOS *"the project's largest product risk"*, so the clause names a mechanism that is absent on exactly the platform it is about. Raised as `QRPAGER-16 SR-5` before the first implementation commit. | **Medium** | **The OUTCOME holds on iOS; it is the stated MECHANISM that does not.** Task 9 ships both: the handler the clause names, hardened and driven on the shipped `sw.js` in all three engines, AND `reconcileSubscription()` — run on every launch and every return to visibility, comparing `pushManager.getSubscription()` against the last registered endpoint and re-registering through the same real `POST /v1/pager/subscription`, which Task 4's own contract already makes idempotent (*"safe to repeat on every page load"*). For a Home-Screen app a customer opens to check their order, the next launch is the next thing that happens. | Both mechanisms are asserted separately, and the reconcile is asserted **with the handler removed**, so the iOS path is proven to hold without it. `notify.test.ts` drives all five reconcile outcomes including the rotation; `browser/sw.spec.ts` drives the handler's every branch on the shipped bytes in chromium, firefox and webkit. | **Muhammad** — it is a WORDING question about `§3.1` row 9, not an engineering one, and `§0`'s precedence rule says a document conflict is stopped and reported rather than resolved by the builder. The two readings: the clause names the handler and is read as satisfied by the handler existing and working where it exists, or it is amended to name the outcome and both mechanisms. `R-174` is the precedent and the same shape · **accepted 2026-11-01, from Task 9's own pre-coding gate** | **2026-11-08**, deliberately earlier than the other three: it changes how `task-9`'s own invariant is read |
 | **R-203** | **The customer PWA ships no `apple-touch-icon`, so iOS uses a SCREENSHOT of the page as the Home-Screen icon.** The manifest names `/pager-icon.svg` twice (`any` and `maskable`) and that icon is **generated from the token source** — so the one design asset this task ships is a stale-checked output like every other one. But iOS does not accept SVG for `apple-touch-icon`, and `appleWebApp` in Next emits no icon link. QRPAGER-24 measured and recorded the same gap for its own harness and accepted it there on the grounds that *"an ugly icon is the right trade for a harness `§1` requires to be unstyled"* — which is not an argument available for the customer-facing app. | **Low** | **The install still works and the push path is unaffected**, which QRPAGER-24 measured. What suffers is the icon a customer looks at on their Home Screen, and `§12`'s *"No library default look"* is about screens rather than OS icon slots. Closing it means a raster asset at several sizes, which is a design deliverable and not a code one: a PNG generated from the token source would need an encoder in `packages/tokens`, and a hand-drawn one would be the first design value in this repository outside the token source. | `build-surface.test.ts` asserts the manifest link and both `apple-` meta names are in the built HTML, so what IS emitted is pinned; the absence is recorded here rather than left to be discovered on a phone. | **Muhammad** for whether a raster icon set is wanted at all, with **Task 11 (`QRPAGER-18`)** if it is — it is the task that already renders per-tenant imagery · **accepted 2026-11-01, from Task 9's build** | **2026-11-22** |
 | **R-204** | **The E2E harness binds the API and the PWA on `0.0.0.0` and fronts them with a self-signed certificate, for the length of a suite run.** `tools/browsers/bin/e2e` must do this: the browsers cannot launch on this host (`playwright install-deps` needs sudo it does not have), so they run in a container that reaches the host as `host.docker.internal` — and `--network host` does not reach the host's loopback on this platform, measured (`000` against a server answering `200` through `host-gateway`). A loopback-only listener is therefore unreachable from the engines, and `navigator.serviceWorker` and `navigator.credentials` are both undefined outside a secure context, which forces https. | **Low** | **Development and test infrastructure only, bounded to one run, and nothing under `apps/` knows it exists** — which is `§1`'s rule for a local stand-in. The certificate is generated per run into `storage/` (git-ignored, key mode 600) with a **one-day** validity and is never committed; the servers are torn down by the script's own process-group trap; and the harness refuses to start when a port is already held, rather than measuring somebody else's server. CI does not take this path at all: its runners launch the engines natively, so the whole mechanism is inert there. | `tools/gate/bin/check-shell-evidence` scans the script; the port guard and the `setsid`/`kill -- -PGID` teardown are in it because the first version leaked an orphaned `next start` that served a stale asset manifest and reddened 33 of 45 journey cases against bytes nobody built in that run. Both the measurement and the consequence are in the script's own comments. | **Task 13 (`QRPAGER-20`)**, which owns how development services bind and is already the owner of `R-047`, `R-058`, `R-191` and `R-200` — the honest closure is a composed browser service with its own network rather than a host-gateway hop · **accepted 2026-11-01, from Task 9's build** | **2026-12-06**, Task 13's date |
+| **R-205** | **`§3` ROW 9's `Lighthouse Performance ≥ 95` IS NOT MET: THE MEDIAN IS 76, AND THE PAGE IS NOT SLOW.** Measured by `tools/gate/bin/lighthouse-proof`, which implements `§3.1` row 9's six-part method and nothing else — five runs **[71, 76, 77, 79, 76]**, median **76**, bar **95**; lighthouse **13.5.0**, Google Chrome for Testing **156.0.8078.4**, container `qrpager-browsers:pw1.64.1`, transcript `docs/tickets/QRPAGER-16-lighthouse.txt`. ⚠ **AND THE SAME REPORTS CARRY THE OBSERVED TIMINGS, WHICH IS WHAT MAKES THIS A RULING RATHER THAN A BUG:** across the five runs the page's REAL first contentful paint is **85–122 ms** (median 109) and its REAL largest contentful paint is **236–352 ms** (median 286), against the method's SIMULATED 2,420 ms and 4,537–4,841 ms. `benchmarkIndex` was **1,628–2,220** on those runs — a healthy desktop range — so the figure is not host starvation; it is what `RTT 300 ms · 700 Kbps · CPU ×4` produces for 13 first-party requests, ~157 KB transferred and 458 ms of script evaluation. The arithmetic is coherent: 157 KB at 700 Kbps ≈ 1.8 s, plus 458 ms × 4 ≈ 1.8 s, plus the connection RTTs ≈ the 4.7 s simulated LCP. **The three LOAD-INVARIANT assertions the method itself says *"carry it"* are all green** — critical path **120,530 / 135,000** gzipped bytes, render-blocking requests **exactly 2**, third-party origins **0** at build and **0** at runtime on all three engines. The two largest critical-path chunks are **54.8 KB** and **46.3 KB** of React and Next, and `§1` locks Next 15, so nothing inside Task 9's scope moves 76 towards 95: the reachable levers are the BAR, the THROTTLING FIGURES, or a landing that reaches first paint without client hydration — and all three are rulings, not code this task may write. Reported rather than explained away, and rather than re-run until a 95 appeared. | **Muhammad**, who wrote both the bar (`§3` row 9) and the method (`§3.1` row 9, 2026-11-01) and is the only person who can change either · **accepted 2026-11-01, from Task 9's build**, with the measurement above rather than an estimate | **2026-11-15**, before Task 10 claims the same bar |
 
 ### 5.1 Ledger sweep of 2026-10-27 — every row read against its own owner
 

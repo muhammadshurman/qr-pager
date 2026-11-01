@@ -1,0 +1,39 @@
+$ QRPAGER_E2E_SUITE=0 QRPAGER_E2E_LIGHTHOUSE=1 tools/browsers/bin/e2e
+e2e: starting the real API on http://127.0.0.1:8099
+e2e: the API is up at http://127.0.0.1:8099/healthz
+e2e: the customer routes are mounted (POST /v1/pager/status -> 404 for an unknown token)
+e2e: issuing real sessions
+e2e: issued 5 sessions -> /home/lenovo/code/qr-pager/storage/logs/e2e-sessions.json (git-ignored, mode 600)
+e2e: building apps/web for production with the one-origin rewrite
+e2e: starting next start on http://127.0.0.1:3099
+e2e: the PWA is up at http://127.0.0.1:3099/s
+e2e: the one-origin rewrite serves /v1 through the PWA origin
+e2e: generated a one-day self-signed certificate in storage/e2e-tls (git-ignored, mode 600)
+e2e: starting the TLS front on https://127.0.0.1:3098
+e2e: the TLS front is up at https://127.0.0.1:3098 (secure context, so service workers exist)
+e2e: starting the API TLS front on https://127.0.0.1:3097 (for R-100s passkey harness)
+e2e: the API TLS front is up at https://127.0.0.1:3097
+e2e: created the passkey harness user -> /home/lenovo/code/qr-pager/storage/logs/e2e-harness-user.json (git-ignored, mode 600)
+e2e: running the Lighthouse proof by the method in §3.1 row 9
+browsers: this host cannot launch all three engines; using the container.
+lighthouse-proof
+  lighthouse          13.5.0  (pinned exact in package.json)
+  @playwright/test    1.64.1
+  chrome              Google Chrome for Testing 156.0.8078.4 
+  chrome path         /ms-playwright/chromium-1248/chrome-linux64/chrome
+  toolchain           container=qrpager-browsers:pw1.64.1
+  url                 https://host.docker.internal:3098/s#<token redacted>
+  runs                5, median is the figure, all five reported
+
+  run 1  score  71  (under the 95 bar -- reported, not fatal)
+  run 2  score  76  (under the 95 bar -- reported, not fatal)
+  run 3  score  77  (under the 95 bar -- reported, not fatal)
+  run 4  score  79  (under the 95 bar -- reported, not fatal)
+  run 5  score  76  (under the 95 bar -- reported, not fatal)
+
+lighthouse-proof: runs [71,76,77,79,76]  MEDIAN 76  bar 95
+  lighthouse 13.5.0 · Google Chrome for Testing 156.0.8078.4  · container=qrpager-browsers:pw1.64.1
+  reports: /repo/storage/lighthouse/run-{1..5}.json
+lighthouse-proof: FAILED -- the median is below the bar.
+[ELIFECYCLE] Command failed with exit code 1.
+EXIT=1

@@ -1,0 +1,27 @@
+
+== the reconcile must not register a device for a session that is OVER
+   red without the fix   (as it must be)
+   green with the fix    (so the red above was the revert and not the case)
+
+== the reconcile must not register a device BEFORE the session resolves
+   red without the fix   (as it must be)
+   green with the fix    (so the red above was the revert and not the case)
+
+== the iOS install flow must appear on alerts.unsupported, which an iOS TAB reaches
+   red without the fix   (as it must be)
+   green with the fix    (so the red above was the revert and not the case)
+
+== a poll answering waiting AFTER ready must be ignored
+   red without the fix   (as it must be)
+   green with the fix    (so the red above was the revert and not the case)
+
+== every browser step goes through the engine runner, not a bare playwright
+   red without the fix   (as it must be)
+   green with the fix    (so the red above was the revert and not the case)
+
+== the screen union is derived, so it is not a second declaration of the status enum
+   red without the fix   (as it must be)
+   green with the fix    (so the red above was the revert and not the case)
+
+revert-proof: every claim held -- each case is red without its fix and green with it.
+EXIT=0

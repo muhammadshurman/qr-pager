@@ -62,6 +62,17 @@ mkdir -p "$OUT"
 
 # The Chrome Playwright pins. Resolved from the installed browser rather than from a path
 # anybody typed, so the two tools cannot disagree about which engine produced the number.
+#
+# ⚠ `export`, AND IT WAS MISSING -- A ONE-WORD DEFECT THAT PRINTED CORRECTLY AND MEASURED
+# NOTHING. `chrome-launcher` (Lighthouse's launcher) reads `process.env.CHROME_PATH` and
+# nothing else: Lighthouse has no `--chrome-path` flag. Without `export` this script resolved
+# the right binary, printed the right version and path into the report header -- *Google
+# Chrome for Testing 156.0.8078.4* at `/ms-playwright/chromium-1248/...` -- and then the
+# lighthouse child process searched the container for Chrome, found none, and died with
+# *"The CHROME_PATH environment variable must be set"* on run 1 of 5. A header that names the
+# toolchain is not the same as a measurement that USED it, which is the whole argument trap 5
+# of the rank-1 brief makes, turned on this script.
+export CHROME_PATH
 CHROME_PATH="$(node -e '
 const { chromium } = require("playwright")
 process.stdout.write(chromium.executablePath())
@@ -94,6 +105,15 @@ for run in $(seq 1 "$RUNS"); do
   # A fresh `--user-data-dir` per run gives all four at once: an empty profile has no cache,
   # no registered worker and no storage. `--disable-features=...` is NOT used to fake it --
   # the profile really is new.
+  #
+  # ⚠ `--ignore-certificate-errors` IS ABOUT THE HARNESS AND NOT ABOUT THE MEASUREMENT, which
+  # is worth saying because every other flag here is a FIGURE the `§3.1` method dictates. The
+  # page is served through `tools/browsers/bin/tls-proxy.mjs` on a one-day self-signed
+  # certificate, because a service worker needs a secure context; Chrome refuses such an
+  # origin without this. `playwright.config.ts` passes Chromium the same flag for the same
+  # reason. It changes no byte of the document and no throttling value -- the alternative was
+  # to measure the plain-HTTP port instead, which would have been a DIFFERENT origin from the
+  # one every other assertion in this task was taken against.
   profile="$(mktemp -d)"
   report="${OUT}/run-${run}.json"
 
@@ -107,7 +127,7 @@ for run in $(seq 1 "$RUNS"); do
     --output=json \
     --output-path="$report" \
     --quiet \
-    --chrome-flags="--headless=new --no-sandbox --user-data-dir=${profile}" \
+    --chrome-flags="--headless=new --no-sandbox --ignore-certificate-errors --user-data-dir=${profile}" \
     --throttling-method=simulate \
     --throttling.rttMs=300 \
     --throttling.throughputKbps=700 \

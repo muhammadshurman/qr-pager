@@ -117,6 +117,59 @@ it('holds no DELETE on passkeys, because no route deletes one yet', function ():
         ->toBeNull();
 });
 
+it('lets the app role persist the WebAuthn signature counter, which login could not', function (): void {
+    /*
+     * ⛔ THE STATEMENT THAT RETURNED 403 FOR EVERY PASSKEY LOGIN, and nothing in this suite
+     * ran it before. `VerifyPasskey::updatePasskey()` writes `credential` and `last_used_at`
+     * after every successful assertion, and `2026_10_28_120000_create_auth_contract.php`
+     * granted UPDATE on `name, last_used_at, updated_at` only -- so the UPDATE raised
+     * `42501` and `DatabaseErrorMapper` turned it into `ProblemType::Forbidden`.
+     *
+     * It was unreachable from here because the counter is written only after a real
+     * authenticator signs a real challenge. Task 9's `browser/passkey.spec.ts` -- a virtual
+     * authenticator over CDP against the real API -- found it, which is what `R-100` asked
+     * that toolchain for. This case is the half that does not need a browser.
+     *
+     * ⚠ ONE STATEMENT, AND IT IS THE VENDOR'S OWN. Not a reduced stand-in: the SET list is
+     * the two columns that method writes plus the `updated_at` Eloquent adds, so a grant that
+     * covered the test's statement and not the application's would fail here.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    expect($this->sqlStateOf(fn () => DB::update(
+        'update passkeys set credential = ?, last_used_at = now(), updated_at = now() where id = ?',
+        [json_encode(['counter' => 1]), (string) Str::uuid7()]
+    )))->toBeNull('the app role cannot persist a used credential, so passkey login 403s');
+
+    // The POSITIVE CONTROL's mirror: the columns that must stay unwritable. A credential's
+    // identity never changes -- a changed `credential_id` is a different key -- and
+    // re-pointing a key at another account is the escalation `narrow_auth_grants` refuses.
+    foreach (['credential_id' => "'x'", 'user_id' => "'".Str::uuid7()."'"] as $column => $value) {
+        expect($this->sqlStateOf(fn () => DB::update(
+            "update passkeys set {$column} = {$value} where id = ?",
+            [(string) Str::uuid7()]
+        )))->toBe('42501', "the app role can move passkeys.{$column}");
+    }
+});
+
+it('grants the app role UPDATE on exactly four passkeys columns, and no more', function (): void {
+    // The catalog half, EXACT rather than "contains": the fix above is one column, and a
+    // later widening -- to `credential_id`, to `user_id`, or table-wide -- fails here instead
+    // of passing quietly. `GrantMatrixTest` pins reachability; this pins the verb.
+    $rows = DB::connection('pgsql_root')->select(
+        "select column_name
+           from information_schema.column_privileges
+          where table_name = 'passkeys'
+            and grantee = 'qrpager_app'
+            and privilege_type = 'UPDATE'
+          order by column_name",
+    );
+
+    expect(array_map(fn (object $r): string => (string) $r->column_name, $rows))
+        ->toBe(['credential', 'last_used_at', 'name', 'updated_at']);
+});
+
 it('returns no secret from authenticate_user, and exactly the columns the login path reads', function (): void {
     /*
      * QA M-6, and the reason it is worth a test of its own: the control that was supposed
