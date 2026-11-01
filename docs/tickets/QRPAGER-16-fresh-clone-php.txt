@@ -1,0 +1,29 @@
+fresh-clone-proof: docs(9): the ticket's inline-script-hash claim, corrected to the measure at 488efa6
+
+=== clone through file:// so no object is shared
+
+=== the clone arrived with nothing the gate needs pre-installed
+no vendor/, no .env, no node_modules — the clone is bare
+
+=== the clone's tracked tree is byte-identical to this commit's
+tree fab1c6ddc6ec91d3be1c3cf85b78e30bf953faa7
+
+=== composer install, from the repository's own lock file
+host composer cache: present (a cache, not a source — it costs time, not correctness)
+packages installed: 205
+
+=== apps/api's own npm tree, which the asset build and therefore the suite need
+packages from the lockfile: 144
+
+=== the commands CLAUDE.md says a fresh clone needs, and nothing else
+cp .env.example .env · php artisan key:generate · docker compose is already up
+(composer install and npm ci above are the two installs; the gate does the build)
+
+=== composer gate, in the clone
+gate: all 10 steps green. Full output: /tmp/qrpager-fresh-clone-DQUQWn/clone/apps/api/storage/logs/gate-20261101T144143Z.log
+
+fresh-clone-proof: PASSED at 488efa6
+  Tests:    1172 passed (9942 assertions)
+  gate log: /tmp/qrpager-fresh-clone-DQUQWn/gate.log
+  (clone removed; pass --keep to inspect it)
+EXIT=0
