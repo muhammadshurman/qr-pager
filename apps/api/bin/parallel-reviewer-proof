@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# =============================================================================
+# TWO REVIEWERS, AT THE SAME TIME, PROVEN BY OVERLAP -- STANDING CHANGE (b) of three
+# =============================================================================
+#
+# ⚠ WHAT THIS PROVES, AND WHY "BOTH GREEN" WOULD NOT BE IT. `apps/api/bin/concurrent-suite-proof`
+# already shows two concurrent invocations both exiting 0 -- and its own header says what that
+# means today: *"The second runner QUEUES on the suite lock rather than running beside the
+# first, so the wall-clock time is the sum of the two and not the longer of them."* Two runs
+# that queue and two runs that are isolated look IDENTICAL if the only assertion is the exit
+# code. So this proof asserts the thing that is actually new: that the two runs OVERLAPPED IN
+# TIME.
+#
+# THE THREE THINGS THAT MADE THE OVERLAP POSSIBLE, each of which this would catch the loss of:
+#
+#   1. `DB_DATABASE` per slot. Verified in the pinned PHPUnit source rather than assumed:
+#      `TextUI/Configuration/PhpHandler.php:167` reads
+#      `if ($force || getenv($name) === false) { putenv(...) }`, and `phpunit.xml`'s
+#      `<env name="DB_DATABASE" value="qrpager_test"/>` carries NO `force` attribute -- so an
+#      exported value wins and the file's value is the fallback. If anyone adds `force="true"`
+#      there, both slots collapse onto one database and this proof goes red.
+#   2. `REDIS_DB` / `REDIS_CACHE_DB` per slot. `TestCase::setUp`'s `clearPagerProjection()`
+#      deletes `t:*:pager:*` and `pager:tok:*` before EVERY test, which is `R-200`'s mechanism;
+#      on one index that wipes the other runner's fixtures mid-test.
+#   3. `TestCase::suiteLockKey()`. The suite lock used to be the constant `2_000_000_049` for
+#      every runner, so two slots would have queued on it however separate their data was.
+#      Keyed by the test database's name, different databases take different keys.
+#
+# WHAT GREEN MEANS: both runs exit 0, AND the wall clock is materially less than the sum of the
+# two runtimes, AND the measured intervals actually intersect. The last one is the assertion;
+# the wall-clock figure is reported so a human can see the size of the win.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+REPO_API="$(pwd)"
+
+# `R-054`: frames on disk whoever runs it.
+export PAO_DISABLE=1
+
+slot_a=1
+slot_b=2
+
+# ⚠ THE TWO FILES ARE CHOSEN FOR THE TWO SHARED RESOURCES, not arbitrarily. One drives the
+# pager projection in Redis -- the resource `R-200` names -- and one drives tenant rows in
+# Postgres, which is what `R-049`'s truncation race corrupted. A pair that touched only one of
+# the two would prove only half the isolation.
+file_a="tests/Feature/Pager/PagerPollingTest.php"
+file_b="tests/Feature/Database/OwnerAndBypassTest.php"
+
+for file in "$file_a" "$file_b"; do
+    if [ ! -f "$file" ]; then
+        echo "parallel-reviewer-proof: $file does not exist -- the proof cannot run" >&2
+        exit 1
+    fi
+done
+
+slot_runner="${REPO_API}/../../tools/gate/bin/reviewer-slot"
+
+if [ ! -x "$slot_runner" ]; then
+    echo "parallel-reviewer-proof: tools/gate/bin/reviewer-slot is missing or not executable" >&2
+    exit 1
+fi
+
+out_a="$(mktemp -t qrpager-parallel-a-XXXXXX.log)"
+out_b="$(mktemp -t qrpager-parallel-b-XXXXXX.log)"
+times_a="$(mktemp -t qrpager-parallel-ta-XXXXXX)"
+times_b="$(mktemp -t qrpager-parallel-tb-XXXXXX)"
+
+cleanup() {
+    rm -f "$out_a" "$out_b" "$times_a" "$times_b"
+}
+trap cleanup EXIT
+
+echo "parallel-reviewer-proof"
+echo "  slot ${slot_a}: ${file_a}"
+echo "  slot ${slot_b}: ${file_b}"
+echo "  starting both now; the assertion is that their intervals INTERSECT"
+echo
+
+# Each child writes "<start> <end> <status>" so the parent reads the interval from the child
+# that actually measured it, rather than from its own view of when it forked.
+run_slot() {
+    local slot="$1" file="$2" out="$3" times="$4"
+    local start end status
+
+    start="$(date +%s)"
+    "$slot_runner" "$slot" -- php artisan test "$file" >"$out" 2>&1
+    status=$?
+    end="$(date +%s)"
+
+    printf '%s %s %s\n' "$start" "$end" "$status" >"$times"
+}
+
+wall_start="$(date +%s)"
+
+run_slot "$slot_a" "$file_a" "$out_a" "$times_a" &
+pid_a=$!
+run_slot "$slot_b" "$file_b" "$out_b" "$times_b" &
+pid_b=$!
+
+wait "$pid_a" || true
+wait "$pid_b" || true
+
+wall_end="$(date +%s)"
+
+read -r start_a end_a status_a <"$times_a"
+read -r start_b end_b status_b <"$times_b"
+
+dur_a=$(( end_a - start_a ))
+dur_b=$(( end_b - start_b ))
+wall=$(( wall_end - wall_start ))
+
+echo "  slot ${slot_a}: exit ${status_a}, ${dur_a}s  (${start_a} -> ${end_a})"
+echo "  slot ${slot_b}: exit ${status_b}, ${dur_b}s  (${start_b} -> ${end_b})"
+echo "  wall clock: ${wall}s   sum of runtimes: $(( dur_a + dur_b ))s"
+echo
+
+failed=0
+
+if [ "$status_a" -ne 0 ]; then
+    echo "parallel-reviewer-proof: slot ${slot_a} FAILED -- isolation did not hold, or the suite is red:" >&2
+    tail -30 "$out_a" >&2
+    failed=1
+fi
+
+if [ "$status_b" -ne 0 ]; then
+    echo "parallel-reviewer-proof: slot ${slot_b} FAILED -- isolation did not hold, or the suite is red:" >&2
+    tail -30 "$out_b" >&2
+    failed=1
+fi
+
+# THE ASSERTION. Two intervals intersect when each starts before the other ends. Queued runs
+# do not intersect: the second's start is at or after the first's end.
+overlap_start="$start_a"
+if [ "$start_b" -gt "$overlap_start" ]; then overlap_start="$start_b"; fi
+
+overlap_end="$end_a"
+if [ "$end_b" -lt "$overlap_end" ]; then overlap_end="$end_b"; fi
+
+overlap=$(( overlap_end - overlap_start ))
+
+if [ "$overlap" -le 0 ]; then
+    echo "parallel-reviewer-proof: FAILED -- the two runs did NOT overlap (${overlap}s of intersection)." >&2
+    echo "  They queued instead of running together, which is the pre-2026-11-01 behaviour:" >&2
+    echo "  check that TestCase::suiteLockKey() is keyed by the database and that phpunit.xml" >&2
+    echo "  has not gained force=\"true\" on DB_DATABASE." >&2
+    failed=1
+else
+    echo "  OVERLAP: ${overlap}s of the two runs ran at the SAME TIME."
+fi
+
+if [ "$failed" -ne 0 ]; then
+    exit 1
+fi
+
+echo "parallel-reviewer-proof: green -- two slots, two databases, two Redis indices, overlapping in time"

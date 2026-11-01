@@ -183,6 +183,57 @@ wait_for() {
 # reaches these ports through `--network host`.
 require_free_port "${API_PORT}" "the API"
 say "starting the real API on ${API_ORIGIN}"
+# ------------------------------------------------- the database this suite runs against
+#
+# ⚠ THIS STEP DID NOT EXIST, AND ITS ABSENCE IS A FALSE RED THAT NAMES NOTHING. Found
+# 2026-11-01 on a cold machine: `pnpm run gate:e2e` went red on ONE case --
+# `passkey.spec.ts` *"registers against a virtual authenticator and then signs in with it"* --
+# with `passkey login -> 403` and a problem body reading *"That is not permitted."* Nothing in
+# that output mentions a migration.
+#
+# The cause: this script starts `php artisan serve` against the DEVELOPMENT database
+# (`DB_DATABASE` from `.env`, `qrpager`), and NOTHING here ever migrated it. `php artisan test`
+# bootstraps and migrates its OWN database -- `CLAUDE.md` says so and it is true -- but that is
+# `qrpager_test`, a different database, which is exactly why the two gates can run against one
+# cluster at all. So the E2E gate's correctness silently depended on somebody having run
+# `php artisan migrate --database=pgsql_owner` by hand at some point after checking out the
+# branch.
+#
+# Measured on the machine that found it: `select count(*) from migrations` -> 12, newest
+# `2026_10_28_160000_create_landing_tables`, and `information_schema.column_privileges` showed
+# `UPDATE` on `passkeys` for `name, last_used_at, updated_at` and NOT on `credential`. The
+# missing migration is `2026_11_01_120000_grant_passkey_credential_update`, whose own docblock
+# predicts this exact symptom: *"`403` on `POST /v1/auth/passkeys/login` for a credential the
+# browser's own authenticator produced"*. `VerifyPasskey::updatePasskey()` writes the signature
+# counter into `credential`, Postgres answers `42501`, and `DatabaseErrorMapper` maps `42501` to
+# `ProblemType::Forbidden` -- a 403 that looks like an authorisation defect and is a grant.
+#
+# `§6`'s fresh-clone clause is the rule this breaks: *"nothing that only exists on the
+# builder's machine"*. A gate whose result depends on unrecorded local database state is the
+# "works on my machine" shape, and `§7` says a recurrence means the mechanism was missing. This
+# is the mechanism: the same two commands `php artisan test` runs, run here, every time, before
+# anything is served. Both are idempotent -- `db:bootstrap` checks `pg_database` before
+# creating and `migrate` is a no-op when there is nothing to apply -- so this costs a second on
+# an up-to-date machine and removes a whole class of false red on a cold one.
+say "bootstrapping and migrating the development database this suite serves"
+
+if ! (cd "${REPO}/apps/api" && php artisan db:bootstrap) >"${LOG_DIR}/e2e-db-bootstrap.log" 2>&1; then
+  say 'FAILED: db:bootstrap did not complete'
+  cat "${LOG_DIR}/e2e-db-bootstrap.log" >&2
+  exit 1
+fi
+
+# `--force`: `migrate` prompts for confirmation outside `local`, and a prompt in a gate is a
+# hang rather than a failure. `--database=pgsql_owner` because migrations run as the OWNER and
+# never as the app role (`CLAUDE.md`, `PLAN §2.1`).
+if ! (cd "${REPO}/apps/api" && php artisan migrate --database=pgsql_owner --force) >"${LOG_DIR}/e2e-db-migrate.log" 2>&1; then
+  say 'FAILED: migrations did not apply'
+  cat "${LOG_DIR}/e2e-db-migrate.log" >&2
+  exit 1
+fi
+
+say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
+
 # ⚠ `0.0.0.0`, NOT `127.0.0.1`. The browsers run in a container (this host cannot launch them)
 # and reach these ports through `host.docker.internal`, which arrives on the host's
 # non-loopback interface. A loopback-only listener is unreachable from there -- measured. It

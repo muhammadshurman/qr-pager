@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PDO;
+use RuntimeException;
 use Throwable;
 
 abstract class TestCase extends BaseTestCase
@@ -40,6 +41,46 @@ abstract class TestCase extends BaseTestCase
      * Out of the range by construction costs nothing and cannot be drawn.
      */
     private const SUITE_LOCK_KEY = 2_000_000_049;
+
+    /**
+     * The suite lock's key FOR THIS RUNNER'S OWN TEST DATABASE -- standing change (b) of three.
+     *
+     * ⚠ WHY THIS IS NO LONGER A CONSTANT. The lock above serialises every runner against every
+     * other, which is right when they share a database and wrong when they do not. `§11` ran
+     * its two reviewers SEQUENTIALLY for exactly this reason: both worktrees pointed at
+     * `qrpager_test` and at Redis db 0, so the only safe order was one after the other, and a
+     * review round therefore cost twice the wall clock it needed to. `R-200`'s fix made the
+     * reds attributable; it did not make the runs independent.
+     *
+     * The lock exists to protect a DATABASE, so its key now names one. Two runners with
+     * different `DB_DATABASE` take different keys and run at the same time; two runners with
+     * the SAME database still queue, which is `R-049`'s fix and is untouched.
+     *
+     * ⚠ STILL ABOVE 2_000_000_000, BY CONSTRUCTION, and the constant's own docblock says why:
+     * `RoleTimeoutTest` draws its key from `random_int(1, 2_000_000_000)` and THIS lock is
+     * never released, so a key inside that range would not merely clash -- it would hang that
+     * test forever. The offset is taken modulo 1,000,000, so every key this can produce lies
+     * in [2_000_000_049, 2_000_999_048]: out of the drawable range whatever the database is
+     * called.
+     *
+     * ⚠ AND A HASH COLLISION FAILS IN THE SAFE DIRECTION. Two differently-named databases that
+     * land on the same bucket would QUEUE -- today's behaviour for everyone -- rather than
+     * interleave. The unsafe direction would be two runners on ONE database getting two keys,
+     * and that cannot happen: the key is a pure function of the name.
+     */
+    private static function suiteLockKey(): int
+    {
+        $database = config('database.connections.'.DatabaseRoles::connection('app').'.database');
+
+        if (! is_string($database) || $database === '') {
+            throw new RuntimeException(
+                'No test database is configured, so the suite lock cannot be keyed to one. '.
+                'Set DB_DATABASE, or run through tools/gate/bin/reviewer-slot.'
+            );
+        }
+
+        return self::SUITE_LOCK_KEY + (crc32($database) % 1_000_000);
+    }
 
     private static bool $databaseReady = false;
 
@@ -271,7 +312,7 @@ abstract class TestCase extends BaseTestCase
         // WAITS, and inheriting that from a role attribute nobody is looking at would
         // turn a queue into a 55P03 the first time someone gives root a lock_timeout.
         $pdo->exec('set lock_timeout = 0');
-        $pdo->exec('select pg_advisory_lock('.self::SUITE_LOCK_KEY.')');
+        $pdo->exec('select pg_advisory_lock('.self::suiteLockKey().')');
 
         // Assigned only after the lock is held: a handle in this property is the
         // claim that this process owns the lock, so it must not be set by a connect

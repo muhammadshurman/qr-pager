@@ -55,7 +55,30 @@ concurrency:
   #
   # The CI-minute saving is kept where it was meant to apply: a pull_request run has
   # github.ref = refs/pull/N/merge, so it still cancels its own superseded runs.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+  #
+  # ================================================================================
+  # ⚠ NARROWED TO PULL REQUESTS ONLY, 2026-11-01 -- STANDING CHANGE (b) of three
+  # ================================================================================
+  #
+  # The expression below USED to read
+  # `github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')`, which is TRUE
+  # for every task branch. Task 9 pushed once per commit and the branch page filled with
+  # Cancelled runs: each push killed the run that was about to deliver the previous commit's
+  # verdict, so the wall of grey reads as failure and no individual commit has a verdict at
+  # all. That is the task-1 cancellation (see above) reproduced on a task branch, in the one
+  # window where acting on a red is still cheap.
+  #
+  # The alternative was a DISCIPLINE -- push only at round boundaries -- and it was rejected
+  # for the reason this file's own history keeps demonstrating: a rule nobody can forget beats
+  # a rule everybody must remember. `R-126`, `W-14` and the task-1 merge are all the same
+  # shape, and `§7` says a recurrence means the mechanism was missing rather than the habit.
+  #
+  # So: a task branch now gets a verdict per push, main and tags keep theirs, and only a
+  # pull_request -- whose superseded runs are genuinely redundant, because the next one tests
+  # the same merge commit -- still cancels. The cost is CI minutes on a private repo; the
+  # thing bought is that "the head is green in CI, with the run id and conclusion" is a
+  # question that always has an answer.
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
   gitleaks:

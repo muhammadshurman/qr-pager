@@ -14,13 +14,60 @@
 # output. This script produces the score, reports all five runs, and fails only on the
 # MEDIAN, because under `§11`'s round limit a misleading red costs a round and a Lighthouse
 # score moves with the runner.
+#
+# =============================================================================
+# ⚠ AMENDED 2026-11-01, AND THE SCORE IS NO LONGER WHAT THIS SCRIPT FAILS ON
+# =============================================================================
+#
+# Muhammad ruled on 2026-11-01, on this script's own five runs: the bar and the method were
+# INCOHERENT WITH EACH OTHER, not with the page. Median 78 over [78, 77, 78, 77, 80] under
+# `RTT 300 ms / 700 Kbps / CPU x4`, while the same five reports carry OBSERVED paints of
+# 84-118 ms FCP and 224-287 ms LCP and `benchmarkIndex` 1,916-2,328 rules out host
+# starvation. A >= 95 under that simulation is unreachable with any hydration and `§1` locks
+# Next 15, so the number measured the instrument rather than the product.
+#
+# `PROJECT_INSTRUCTIONS.md §12`'s *"Lighthouse Performance >= 95"* is UNTOUCHED -- rank 2, the
+# product aspiration. What moved is the rank-3 clause in `§3` row 9 and `§3.1` row 9, which is
+# what the task ships on, and this script now implements THAT:
+#
+#   (i)   the three LOAD-INVARIANT assertions stay where they already are and are already a
+#         gate step -- `apps/web/test/build-surface.test.ts`, in `pnpm gate`'s Vitest step and
+#         in CI. This script does not duplicate them; a second copy would be a second source.
+#   (ii)  THE OBSERVED PAINTS ARE WHAT THIS SCRIPT NOW FAILS ON: median observed FCP and LCP
+#         against bars set from the 2026-11-01 measurement and stated as such.
+#   (iii) THE SIMULATED MEDIAN IS STILL MEASURED, STILL PRINTED, AND NO LONGER FATAL, so the
+#         gap to >= 95 stays visible and auditable. `R-205` carries that gap, owned by
+#         Task 11 (`QRPAGER-18`) -- a landing that paints without client hydration is the one
+#         remaining lever. Deleting the simulation would hide the residual, which is the
+#         opposite of the ruling.
+#
+# ⚠ WHY THE OBSERVED NUMBERS ARE A REAL-DEVICE FIGURE EVEN THOUGH THE RUN IS THROTTLED, which
+# is the one thing a reader could reasonably doubt: `--throttling-method=simulate` does NOT
+# constrain the engine. Lighthouse loads the page at full speed and then applies a MODEL to
+# the trace, which is why a report can carry an 88 ms observed FCP and a 2,409 ms simulated
+# one at the same time. So `observedFirstContentfulPaint` and `observedLargestContentfulPaint`
+# are what Chrome actually did on this hardware, and no separate unthrottled run is needed to
+# obtain them -- which also means (ii) and (iii) come from the SAME five reports and cannot
+# drift apart. Field names verified in the pinned tree:
+# `lighthouse/core/computed/metrics/timing-summary.js` lines 116 and 120, surfaced through
+# `core/audits/metrics.js` at `audits.metrics.details.items[0]`, rounded to integers there.
 set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
 REPO="$(pwd)"
 
 RUNS=5
+
+# The simulated score bar. REPORTED, never fatal, since the 2026-11-01 ruling -- see (iii).
 BAR=95
+
+# ⚠ THE TWO BARS THIS SCRIPT FAILS ON, AND BOTH ARE SET FROM THE 2026-11-01 MEASUREMENT AND
+# SAY SO. Observed medians that day were FCP 88 ms and LCP 244 ms, so each bar sits at roughly
+# 1.6x what the page does now: loose enough to survive a slower runner, tight enough that
+# doubling either fails. They are NOT industry figures -- a threshold copied from a table
+# would be the "number with no provenance" `§3.1` row 9 already refuses for the score.
+FCP_BAR_MS=200
+LCP_BAR_MS=400
 
 # TOOL AND VERSION. *"The Lighthouse CLI, pinned exact in the workspace (`save-exact`),
 # driven over the same Chrome for Testing build Playwright already pins. Both versions
@@ -98,6 +145,8 @@ echo "  runs                ${RUNS}, median is the figure, all five reported"
 echo
 
 scores=()
+fcps=()
+lcps=()
 
 for run in $(seq 1 "$RUNS"); do
   # COLD, AND COLD MEANS FOUR THINGS. *"A fresh browser profile per run; empty HTTP cache; NO
@@ -150,26 +199,60 @@ for run in $(seq 1 "$RUNS"); do
 
   rm -rf "$profile"
 
-  score="$(node -e '
+  # THREE NUMBERS FROM ONE REPORT, in one pass: the simulated score and the two OBSERVED
+  # paints. Reading them together is what makes (ii) and (iii) the same measurement rather
+  # than two that can disagree.
+  #
+  # ⚠ THE OBSERVED FIELDS ARE REQUIRED, NOT OPTIONAL. A report that carries no
+  # `observedFirstContentfulPaint` is a report this script cannot hold to its bar, and
+  # treating that as a pass is the vacuous-assertion shape this repository has paid for
+  # repeatedly (`§11` round two, QA M-4). It exits non-zero and names the field instead.
+  metrics="$(node -e '
 const report = require(process.argv[1])
 const score = report.categories.performance.score
 if (typeof score !== "number") {
   console.error("no performance score in the report")
   process.exit(1)
 }
+const items = report.audits?.metrics?.details?.items
+const m = Array.isArray(items) ? items[0] : undefined
+if (m === undefined) {
+  console.error("the report carries no `metrics` audit, so the observed paints cannot be read")
+  process.exit(1)
+}
+for (const field of ["observedFirstContentfulPaint", "observedLargestContentfulPaint"]) {
+  if (typeof m[field] !== "number") {
+    console.error(`the report carries no numeric ${field}`)
+    process.exit(1)
+  }
+}
 // Lighthouse reports 0..1. x100 and FLOORED, never rounded up: the convention this project
 // settled for contrast figures ("a raw 4.4996 presented as 4.50 against a 4.5 bar reads as a
 // pass and is not one") applies to every minimum bar, on every instrument.
-process.stdout.write(String(Math.floor(score * 100)))
+//
+// The paints are already integer milliseconds (core/audits/metrics.js rounds them), and they
+// are compared against a MAXIMUM rather than a minimum, so Math.ceil is the conservative
+// direction here for the same reason Math.floor is above: never present a figure as better
+// than it measured.
+process.stdout.write([
+  Math.floor(score * 100),
+  Math.ceil(m.observedFirstContentfulPaint),
+  Math.ceil(m.observedLargestContentfulPaint),
+].join(" "))
 ' "$report")"
 
+  read -r score fcp lcp <<<"$metrics"
+
   scores+=("$score")
+  fcps+=("$fcp")
+  lcps+=("$lcp")
 
   # A SINGLE RUN UNDER 95 REPORTS AND DOES NOT FAIL -- the method says so.
   if [ "$score" -lt "$BAR" ]; then
-    printf '  run %d  score %3d  (under the %d bar -- reported, not fatal)\n' "$run" "$score" "$BAR"
+    printf '  run %d  score %3d (simulated, under the %d bar -- reported, not fatal)  observed FCP %4d ms  LCP %4d ms\n' \
+      "$run" "$score" "$BAR" "$fcp" "$lcp"
   else
-    printf '  run %d  score %3d\n' "$run" "$score"
+    printf '  run %d  score %3d (simulated)  observed FCP %4d ms  LCP %4d ms\n' "$run" "$score" "$fcp" "$lcp"
   fi
 done
 
@@ -181,15 +264,64 @@ echo
 # `|| true`: with five scores `sed -n 3p` always prints one, so this cannot fail today --
 # but the assignment is the same shape QA H-1 cost a round for, and a future RUNS change
 # would make it silent. The emptiness check below is what actually decides.
-median="$(printf '%s\n' "${scores[@]}" | sort -n | sed -n '3p' || true)"
+# ⚠ ONE MEDIAN HELPER FOR ALL THREE SERIES, so the statistic cannot differ between the figure
+# that reports and the figures that decide. `|| true` for the reason the old comment here gave
+# and it still applies: with five values `sed -n 3p` always prints one, but the assignment is
+# the shape QA H-1 cost a round for, and a future RUNS change would make it silent. The
+# emptiness checks below are what actually decide.
+median_of() {
+  printf '%s\n' "$@" | sort -n | sed -n "$(( ($# + 1) / 2 ))p" || true
+}
 
-printf 'lighthouse-proof: runs [%s]  MEDIAN %s  bar %s\n' "$(IFS=,; echo "${scores[*]}")" "$median" "$BAR"
-echo "  lighthouse ${LH_VERSION} · ${CHROME_VERSION} · ${QRPAGER_TOOLCHAIN:-host}"
-echo "  reports: ${OUT}/run-{1..${RUNS}}.json"
+median="$(median_of "${scores[@]}" || true)"
+fcp_median="$(median_of "${fcps[@]}" || true)"
+lcp_median="$(median_of "${lcps[@]}" || true)"
 
-if [ "$median" -lt "$BAR" ]; then
-  echo "lighthouse-proof: FAILED -- the median is below the bar." >&2
+if [ -z "$median" ] || [ -z "$fcp_median" ] || [ -z "$lcp_median" ]; then
+  echo "lighthouse-proof: FAILED -- a median came out empty, so nothing was measured." >&2
   exit 1
 fi
 
-echo "lighthouse-proof: green"
+echo "lighthouse-proof"
+echo "  lighthouse ${LH_VERSION} · ${CHROME_VERSION} · ${QRPAGER_TOOLCHAIN:-host}"
+echo "  reports: ${OUT}/run-{1..${RUNS}}.json"
+echo
+
+# (iii) THE SIMULATED MEDIAN, RECORDED AND NOT FATAL. This line is the residual `R-205`
+# carries; it is printed every run so the gap to >= 95 is never a thing someone has to go and
+# re-derive.
+printf '  SIMULATED  runs [%s]  median %s  against §12 aspiration %s  — REPORTED, not fatal (R-205, Task 11)\n' \
+  "$(IFS=,; echo "${scores[*]}")" "$median" "$BAR"
+
+# (ii) THE TWO BARS THIS SCRIPT FAILS ON.
+printf '  OBSERVED   FCP runs [%s] ms  median %s  bar %s\n' \
+  "$(IFS=,; echo "${fcps[*]}")" "$fcp_median" "$FCP_BAR_MS"
+printf '  OBSERVED   LCP runs [%s] ms  median %s  bar %s\n' \
+  "$(IFS=,; echo "${lcps[*]}")" "$lcp_median" "$LCP_BAR_MS"
+echo
+echo "  the three LOAD-INVARIANT assertions are apps/web/test/build-surface.test.ts, a Vitest"
+echo "  step of 'pnpm gate' and of CI -- not duplicated here, by design"
+echo
+
+failed=0
+
+if [ "$fcp_median" -gt "$FCP_BAR_MS" ]; then
+  printf 'lighthouse-proof: FAILED -- median observed FCP %s ms is over the %s ms bar.\n' \
+    "$fcp_median" "$FCP_BAR_MS" >&2
+  failed=1
+fi
+
+if [ "$lcp_median" -gt "$LCP_BAR_MS" ]; then
+  printf 'lighthouse-proof: FAILED -- median observed LCP %s ms is over the %s ms bar.\n' \
+    "$lcp_median" "$LCP_BAR_MS" >&2
+  failed=1
+fi
+
+# ⚠ BOTH BARS ARE REPORTED BEFORE EITHER EXITS. Failing on the first would hide the second,
+# and a reader of the log would fix one and re-run to discover the other -- which is the
+# round-costing shape `§11`'s round limit exists to bound.
+if [ "$failed" -ne 0 ]; then
+  exit 1
+fi
+
+echo "lighthouse-proof: green -- both observed paints are inside their bars"

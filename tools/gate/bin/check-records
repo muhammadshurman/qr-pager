@@ -49,6 +49,22 @@ function git(...args) {
   return execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim()
 }
 
+/**
+ * The same, with git's own stderr discarded.
+ *
+ * For the calls whose FAILURE is a finding -- a sha that does not resolve, a commit that is not
+ * an ancestor -- git writes `fatal: …` to stderr on its way to a non-zero exit, and that line
+ * lands in the gate log looking like the script itself broke. The exit code is the signal here;
+ * the message is noise.
+ */
+function gitQuiet(...args) {
+  return execFileSync('git', args, {
+    cwd: REPO,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim()
+}
+
 /** `§0` is everything before the first `## 1.`-style heading. */
 function sectionZero(plan) {
   const end = plan.search(/^## 1\./m)
@@ -306,6 +322,205 @@ function countPhpTests() {
   }
 }
 
+/**
+ * (b3) `§0`'s OWN PROVENANCE SHA IS IN THIS HISTORY, AND NOTHING OUTSIDE `docs/` HAS MOVED SINCE.
+ *
+ * ⚠ THIS CHECK EXISTS BECAUSE THE SCRIPT WAS GREEN AT `c6f5fc0` WHILE `§0` SAID *"Head on
+ * `task-9-customer-pwa` is `8027ad9`"* -- one commit behind, in the cell `CLAUDE.md` sends every
+ * cold session to first, inside the very commit titled *"§0 names the head"*. `§11` round one's
+ * QA H-3 and H-4 were both this family and both were found by a reviewer; (b1), (b2) and (c)
+ * were built for them and none of the three reads the head claim at all.
+ *
+ * ⚠ AND EXACT EQUALITY WITH `HEAD` IS UNSATISFIABLE, WHICH IS WHY THE CLAIM WENT STALE RATHER
+ * THAN BEING KEPT: a file cannot state the sha of the commit that contains it -- writing the
+ * sha changes it. So *"the head is X"* is false the moment it is true, and the honest claim is
+ * about PROVENANCE instead: the commit the figures were measured at, plus the assertion that
+ * nothing since then invalidates them. That is checkable and it never goes falsely stale.
+ *
+ * TWO RULES, and the second is what catches the instance above verbatim:
+ *
+ *   1. `Gates measured at <sha>` must resolve, must be an ancestor of `HEAD` or `HEAD` itself,
+ *      and `git diff <sha>..HEAD` must touch NOTHING outside `docs/`. A code commit after the
+ *      measurement is exactly QA H-4's defect -- a figure measured against a different tree --
+ *      and it is named here rather than discovered by the next reviewer.
+ *   2. A bare `Head on <branch> is <sha>` claim, the phrasing that went stale, must equal
+ *      `HEAD` exactly. It cannot be kept true, so the rule refuses the phrasing rather than
+ *      pretending to police it; rule 1's form is the replacement.
+ */
+export function checkStatedHead(plan, headSha = null) {
+  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const head = headSha ?? git('rev-parse', 'HEAD')
+
+  /** Rule 2 first: the phrasing that cannot be kept true. */
+  const bare = /Head on `[^`]+` is \*{0,2}`([0-9a-f]{7,40})`\*{0,2}/.exec(cell)
+
+  if (bare !== null && !head.startsWith(bare[1])) {
+    fail(
+      'records(b3)',
+      `§0's *Next up* says the head is \`${bare[1]}\` and HEAD is \`${head.slice(0, 7)}\` — ` +
+        'a sha cannot name the commit that contains it, so state `Gates measured at <sha>` instead',
+    )
+  }
+
+  const stated = /Gates measured at \*{0,2}`([0-9a-f]{7,40})`\*{0,2}/.exec(cell)
+
+  if (stated === null) {
+    // Only demanded once the bare phrasing is gone, so this check cannot fail a §0 twice for
+    // the same sentence.
+    if (bare === null) {
+      fail(
+        'records(b3)',
+        '§0\'s *Next up* cell states no `Gates measured at <sha>`, so the figures beside it have no provenance',
+      )
+    }
+
+    return
+  }
+
+  let resolved
+
+  try {
+    resolved = gitQuiet('rev-parse', '--verify', `${stated[1]}^{commit}`)
+  } catch {
+    fail('records(b3)', `§0 names \`${stated[1]}\` as the measured commit and it does not resolve in this repository`)
+
+    return
+  }
+
+  try {
+    gitQuiet('merge-base', '--is-ancestor', resolved, head)
+  } catch {
+    fail(
+      'records(b3)',
+      `§0 names \`${stated[1]}\` as the measured commit and it is not an ancestor of HEAD \`${head.slice(0, 7)}\``,
+    )
+
+    return
+  }
+
+  /**
+   * ⚠ `docs/` ONLY, AND THAT BOUNDARY IS THE WHOLE RULE. The record is allowed to be written
+   * in commits AFTER the measurement -- that is how a record gets written at all -- but a
+   * change to code, tests, workflows or lockfiles between the two means every figure in the
+   * cell was measured against a tree that no longer exists.
+   */
+  const drifted = git('diff', '--name-only', `${resolved}..${head}`)
+    .split('\n')
+    .filter((f) => f.length > 0 && !f.startsWith('docs/'))
+
+  if (drifted.length > 0) {
+    fail(
+      'records(b3)',
+      `§0's figures are measured at \`${stated[1]}\` and ${String(drifted.length)} file(s) outside \`docs/\` ` +
+        `have changed since (${drifted.slice(0, 3).join(', ')}${drifted.length > 3 ? ', …' : ''}) — re-measure or re-state`,
+    )
+  }
+}
+
+/**
+ * (b4) EVERY TEST TOTAL `§0` STATES IS THE ONE ITS OWN COMMITTED TRANSCRIPT RECORDS.
+ *
+ * ⚠ FOUND BY HAND AT `c6f5fc0`, WHICH IS THE POINT: `§0` said *"`pnpm gate` 13/13 with 812
+ * Vitest"* while `QRPAGER-16-gate-frontend.txt` -- the transcript `§4a` cites as the evidence
+ * for that very claim -- records `Tests  814 passed`, as does the fresh-clone transcript beside
+ * it. Check (c) already holds each transcript to the suite and to its own exit code, and read
+ * NEITHER of the numbers `§0` states about them, so the two could disagree indefinitely.
+ *
+ * ⚠ NO EXPECTED VALUE IS WRITTEN HERE. Each number is read from `§0` and compared against the
+ * committed transcript for the ticket `§0` itself names as in flight -- the same authority
+ * (c) scopes by. A check carrying its own copy of `1172` would be the second source this file's
+ * header refuses.
+ */
+export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
+  const ticket = inFlightTicket(plan)
+
+  if (ticket === null || !existsSync(dir)) return
+
+  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const transcript = (suffix) => {
+    const path = join(dir, `${ticket}-${suffix}.txt`)
+
+    return existsSync(path) ? readFileSync(path, 'utf8') : null
+  }
+
+  /**
+   * Each claim: what `§0` says, where the truth lives, and how it is spelled in each.
+   *
+   * The `gate-frontend` transcript carries BOTH frontend numbers -- Vitest's `Tests  N passed`
+   * and Playwright's bare `N passed (`-- which is why the browser-case row reads the same file
+   * with a different pattern rather than a second file.
+   */
+  /**
+   * ⚠ EVERY PATTERN IS ANCHORED TO ITS OWN GATE AND TOLERATES BOLD, AND BOTH HALVES WERE
+   * LEARNED THE HARD WAY BY THIS CHECK FAILING ON ITSELF. `§0`'s cells are written
+   * newest-first and KEEP every superseded clause, so the cell holds *"all 370 Vitest green"*
+   * from Task 8a and *"1163 passed"* from the post-8b session. An unanchored `(\d+) Vitest`
+   * matched 370 -- a true statement about Task 8a -- and reported it as this task's figure.
+   * That is the same hazard `checkRowCount` names for the *Open debt* cell: the current claim
+   * is the FIRST one after its own gate's name, and history must not be held to today's tree.
+   *
+   * `\*{0,2}` because `§0` bolds a figure whenever it has been corrected, so the correction
+   * itself must not make the check stop seeing the number.
+   */
+  const claims = [
+    {
+      what: 'the PHP suite total',
+      stated: /`composer gate`[^·]*?\*{0,2}(\d+)\*{0,2} passed/.exec(cell),
+      text: transcript('gate-php'),
+      truth: /^\s*Tests:\s+(\d+) passed/m,
+    },
+    {
+      what: 'the Vitest total',
+      stated: /`pnpm gate`[^·]*?\*{0,2}(\d+)\*{0,2} Vitest/.exec(cell),
+      text: transcript('gate-frontend'),
+      truth: /^\s*Tests\s+(\d+) passed/m,
+    },
+    {
+      what: 'the browser-case total',
+      stated: /`pnpm gate`[^·]*?\*{0,2}(\d+)\*{0,2} browser cases/.exec(cell),
+      text: transcript('gate-frontend'),
+      truth: /^\s*(\d+) passed \(/m,
+    },
+    {
+      what: 'the e2e total',
+      stated: /`pnpm run gate:e2e`[^·]*?\*{0,2}(\d+)\*{0,2} passed/.exec(cell),
+      text: transcript('e2e'),
+      truth: /^\s*(\d+) passed \(/m,
+    },
+  ]
+
+  let compared = 0
+
+  for (const claim of claims) {
+    if (claim.stated === null || claim.text === null) continue
+
+    const found = claim.truth.exec(claim.text)
+
+    if (found === null) continue
+
+    compared += 1
+
+    if (claim.stated[1] !== found[1]) {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} and the committed transcript records ${found[1]}`,
+      )
+    }
+  }
+
+  /**
+   * Not vacuous: `§0` states four totals and the transcripts for the in-flight ticket are
+   * committed, so a run that compared none of them means a pattern has drifted, not that the
+   * record is clean. That is the dead-code shape round two's QA M-4 found one check along.
+   */
+  if (compared === 0) {
+    fail(
+      'records(b4)',
+      `§0 states gate totals for ${ticket} and none could be compared against a committed transcript — a pattern here has drifted`,
+    )
+  }
+}
+
 const SELF_TESTS = [
   {
     what: 'a §5 row count that disagrees with the table',
@@ -316,6 +531,87 @@ const SELF_TESTS = [
       )
       const before = failures.length
       checkRowCount(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * ⚠ THE EXACT INSTANCE, AS THE BAD INPUT. `§0` at `c6f5fc0` said *"Head on
+     * `task-9-customer-pwa` is `8027ad9`"* with `HEAD` one commit further on, and this script
+     * reported agreement. The fixture is that sentence, against a `HEAD` that is not it.
+     */
+    what: "a §0 whose `Head on ... is <sha>` disagrees with HEAD (the c6f5fc0 / 8027ad9 instance)",
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Next up\*\*/m,
+        '| **Next up** | Head on `task-9-customer-pwa` is **`8027ad9`**, pushed. |\n| **Next up**',
+      )
+      const before = failures.length
+      checkStatedHead(plan, '0'.repeat(40))
+
+      return failures.length > before
+    },
+  },
+  {
+    what: 'a §0 whose measured sha is not an ancestor of HEAD',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Next up\*\*/m,
+        '| **Next up** | Gates measured at **`0000000000000000000000000000000000000000`**. |\n| **Next up**',
+      )
+      const before = failures.length
+      checkStatedHead(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * The positive control for (b3): the repository's own `HEAD`, stated in the provenance
+     * form, must NOT be flagged -- or the rule above would simply fail everything.
+     */
+    what: 'a §0 measured at HEAD itself is NOT flagged (the positive control)',
+    run: () => {
+      const head = git('rev-parse', 'HEAD')
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Next up\*\*/m,
+        `| **Next up** | Gates measured at **\`${head}\`**. |\n| **Next up**`,
+      )
+      const before = failures.length
+      checkStatedHead(plan)
+
+      return failures.length === before
+    },
+  },
+  {
+    /**
+     * ⚠ THE SECOND EXACT INSTANCE. `§0` said *"812 Vitest"* while both committed frontend
+     * transcripts record `Tests  814 passed`. The fixture plants 812 over whatever the cell
+     * currently states, so this stays a real comparison after the number is corrected.
+     */
+    what: "a §0 test count that disagrees with its own transcript (the 812-against-814 instance)",
+    run: () => {
+      /**
+       * ⚠ PLANTED INTO THE CURRENT CLAUSE, NOT THE FIRST MATCH IN THE CELL, and the first
+       * version of this fixture got that wrong in the direction that matters: a blunt
+       * `.replace(/(\d+) Vitest/, ...)` rewrote Task 8a's superseded *"all 370 Vitest green"*
+       * instead, so the anchored check still read the correct 814, found no mismatch, and the
+       * self-test reported MISSES. A fixture that does not plant where the check looks tests
+       * nothing -- which is the dead-check shape round two's QA M-4 found in this very file.
+       */
+      const plan = readFileSync(PLAN, 'utf8')
+      const found = /`pnpm gate`[^·]*?\*{0,2}(\d+)\*{0,2} Vitest/.exec(plan)
+
+      if (found === null) return false
+
+      const planted =
+        plan.slice(0, found.index) +
+        found[0].replace(/\*{0,2}\d+\*{0,2} Vitest/, '812 Vitest') +
+        plan.slice(found.index + found[0].length)
+
+      const before = failures.length
+      checkStatedCounts(planted)
 
       return failures.length > before
     },
@@ -402,6 +698,8 @@ const plan = readFileSync(PLAN, 'utf8')
 
 checkRowCount(plan)
 checkTagReality(plan)
+checkStatedHead(plan)
+checkStatedCounts(plan)
 checkTranscripts(inFlightTicket(plan))
 
 if (failures.length > 0) {
@@ -410,4 +708,7 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log('check-records: §0 agrees with the tags and the ledger; every committed transcript is current and green.')
+console.log(
+  'check-records: §0 agrees with the tags, the ledger, its own measured sha and every total it states; ' +
+    'every committed transcript is current and green.',
+)

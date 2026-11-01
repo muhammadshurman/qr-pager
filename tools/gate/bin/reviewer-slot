@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# =============================================================================
+# ONE REVIEWER, ONE DATABASE, ONE REDIS DB INDEX -- STANDING CHANGE (b) of three
+# =============================================================================
+#
+# ⚠ WHAT THIS EXISTS TO STOP. `§11`'s two reviewers ran SEQUENTIALLY in Task 9, and in Task 8a
+# and 8b before it, for one reason stated in the builder report: *"both worktrees share this
+# machine's one Postgres and one Redis"*. So a review round cost twice the wall clock it
+# needed, every time, and the reason was never a property of the reviews -- it was two
+# runners pointed at `qrpager_test` and at Redis db 0.
+#
+# `R-200` made the resulting reds ATTRIBUTABLE. It did not make the runs INDEPENDENT, and
+# those are different problems: attribution tells you which run corrupted which, isolation
+# means neither can.
+#
+# WHAT A SLOT IS. Three values, all of which the application already reads from the
+# environment -- nothing here is a new configuration surface:
+#
+#   DB_DATABASE      qrpager_test_s<N>   `db:bootstrap` CREATES whatever this names
+#                                        (RoleBootstrapper::ensureDatabase), and
+#                                        `php artisan test` runs db:bootstrap itself.
+#   REDIS_DB         2N                  config/database.php `redis.default.database`
+#   REDIS_CACHE_DB   2N+1                config/database.php `redis.cache.database`
+#
+# ⚠ SLOT 0 IS DELIBERATELY NOT AVAILABLE. It is the ordinary developer pair -- `qrpager_test`
+# with Redis 0 and 1 -- and a reviewer who lands on it is back to sharing with whoever is
+# working in the main checkout, which is the whole failure this script removes. Slots run 1-7
+# because Redis ships with 16 databases (`CONFIG GET databases` -> 16, measured) and each slot
+# takes two.
+#
+# ⚠ AND THE SUITE LOCK HAD TO MOVE TOO, which is the half that is NOT environment. `TestCase`
+# took `pg_advisory_lock(2_000_000_049)` -- one constant for every runner -- so two slots would
+# have queued on it however separate their data was. It is now keyed by the test database's own
+# name (`TestCase::suiteLockKey()`), so different databases take different keys and the SAME
+# database still queues, which is `R-049`'s fix untouched.
+#
+# USAGE
+#   tools/gate/bin/reviewer-slot 1 -- php artisan test
+#   tools/gate/bin/reviewer-slot 2 -- composer gate
+#   eval "$(tools/gate/bin/reviewer-slot 1 --export)"   # for an interactive shell
+#
+# Proven by apps/api/bin/parallel-reviewer-proof, which runs two slots AT THE SAME TIME and
+# asserts both green AND that they overlapped in wall-clock time -- because two green runs
+# that happened to queue would look identical to two that ran in parallel.
+set -euo pipefail
+
+usage() {
+    echo "usage: reviewer-slot <1-7> -- <command...>" >&2
+    echo "       reviewer-slot <1-7> --export" >&2
+}
+
+if [ "$#" -lt 2 ]; then
+    usage
+    exit 2
+fi
+
+slot="$1"
+shift
+
+case "$slot" in
+    [1-7]) ;;
+    0)
+        echo "reviewer-slot: slot 0 is the ordinary developer pair (qrpager_test, redis 0/1)." >&2
+        echo "  A reviewer on it shares with the main checkout, which is what this exists to stop." >&2
+        exit 2
+        ;;
+    *)
+        echo "reviewer-slot: '${slot}' is not a slot. Redis ships 16 databases and a slot takes two, so 1-7." >&2
+        exit 2
+        ;;
+esac
+
+export DB_DATABASE="qrpager_test_s${slot}"
+export REDIS_DB="$(( slot * 2 ))"
+export REDIS_CACHE_DB="$(( slot * 2 + 1 ))"
+
+# `§6`/`R-054`: an agent session gets the JSON reporter with no frame list unless this is set,
+# and a reviewer reading a red needs the frames. bin/gate exports it; a reviewer running
+# `php artisan test` directly through this wrapper gets it too.
+export PAO_DISABLE=1
+
+if [ "$1" = "--export" ]; then
+    echo "export DB_DATABASE=${DB_DATABASE}"
+    echo "export REDIS_DB=${REDIS_DB}"
+    echo "export REDIS_CACHE_DB=${REDIS_CACHE_DB}"
+    echo "export PAO_DISABLE=1"
+    exit 0
+fi
+
+if [ "$1" != "--" ]; then
+    usage
+    exit 2
+fi
+
+shift
+
+if [ "$#" -eq 0 ]; then
+    usage
+    exit 2
+fi
+
+echo "reviewer-slot ${slot}: DB_DATABASE=${DB_DATABASE} REDIS_DB=${REDIS_DB} REDIS_CACHE_DB=${REDIS_CACHE_DB}" >&2
+
+exec "$@"
