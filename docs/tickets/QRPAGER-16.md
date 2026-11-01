@@ -412,9 +412,21 @@ a control that is green locally and absent where it matters.
 
 **What this task DOES add to that row, because it is the task that made it bite:** the CSP
 Task 12 has to write is now **derivable rather than invented**. `build-surface.test.ts`
-emits `docs/contracts/web-csp-surface.json` — the complete set of origins, inline-script
-hashes and connect targets the built app actually needs — and asserts it is unchanged. The
-policy is `default-src 'self'` plus that file, and a future diff that needs a wider policy
+emits `docs/contracts/web-csp-surface.json` — the complete set of origins, the inline-script
+COUNT and connect targets the built app actually needs — and asserts it is unchanged.
+
+⚠ **THIS SENTENCE SAID *"inline-script hashes"* AND THE ARTEFACT CARRIED NONE** (`§11` round
+one, SEC L-4) — and the first fix, which emitted them, was **wrong**: measured across two
+builds of one commit, four of the six hashes are identical and **exactly two differ**, because
+Next's RSC payload pushes carry build-specific content. `fresh-clone-proof`, now a CI step,
+caught it on the clone. So a committed hash list would be wrong on every machine but the one
+that wrote it, and the artefact records that measurement instead. **The consequence is the part
+Task 12 needs: a `script-src` policy for this page CANNOT be static** — it must be emitted by
+the build from that build's own output, or by the edge as a per-response nonce. The hashes are
+computed on every run and asserted for count, shape and distinctness, so the capability is
+proven without pinning a build artefact.
+
+The policy is `default-src 'self'` plus that file, and a future diff that needs a wider policy
 fails a test rather than quietly widening one.
 
 **What the service worker caches, which ticket `§3` asks explicitly.**
