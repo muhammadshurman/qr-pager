@@ -1,0 +1,67 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * ONE USER WITH A KNOWN PASSWORD, FOR THE PASSKEY HARNESS. `R-100`, Task 9.
+ * ================================================================================
+ *
+ * `R-100` is Task 5's one unmet gate clause: *"`§3` row 5 requires passkey registration +
+ * login proven end to end THROUGH THE BROWSER against the harness page"*, and it could not be
+ * met because *"this machine has no browser"*. Its owner cell names **Task 9** -- *"which
+ * creates the Playwright harness … so closing this on its own means standing up a browser
+ * toolchain for one test"* -- and its acceptance clause is *"at Task 9's acceptance gate, in
+ * the same change as its Playwright setup."*
+ *
+ * The toolchain now exists (`tools/browsers/`), so the remaining cost is this script and one
+ * spec. `browser/passkey.spec.ts` drives `resources/views/passkey-harness.blade.php` against
+ * a CDP virtual authenticator, which is the recipe `QRPAGER-12-handover.md §6.1` wrote down.
+ *
+ * ⚠ THE PASSWORD IS A FIXED, OBVIOUSLY-FAKE LITERAL AND IT IS NOT A SECRET. It exists for one
+ * HTTP POST on a development machine, for one user whose email carries `harness-` and whose
+ * name says what it is. `§10`'s *"zero secrets in history"* is about credentials that protect
+ * something; this protects a row created and used in the same minute. It is printed so the
+ * spec can use it, and it is in no `.env` and no committed fixture.
+ *
+ * ⚠ AND THE USER IS NOT A PLATFORM ADMIN. The harness only needs an account that can sign in;
+ * giving it the platform flag would make the one test that proves the WebAuthn ceremony also
+ * depend on the authorisation surface, and a failure would not say which half broke.
+ *
+ * USAGE: php bin/issue-harness-user
+ */
+
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Illuminate\Foundation\Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+$id = (string) Str::uuid7();
+$email = 'harness-'.Str::lower(Str::random(12)).'@example.test';
+$password = 'harness-only-not-a-secret';
+
+DB::connection('pgsql_owner')->table('users')->insert([
+    'id' => $id,
+    'name' => 'Passkey harness',
+    'email' => $email,
+    'password' => Hash::make($password),
+    'is_platform_admin' => false,
+]);
+
+// Read it back through the model, so a schema the model cannot hydrate fails here rather
+// than inside a browser where the error is a blank page.
+$user = User::query()->findOrFail($id);
+assert($user instanceof User);
+
+echo json_encode([
+    'id' => $id,
+    'email' => $email,
+    'password' => $password,
+], JSON_THROW_ON_ERROR), "\n";

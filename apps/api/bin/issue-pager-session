@@ -1,0 +1,114 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * ISSUE ONE REAL PAGER SESSION AND PRINT ITS TOKEN. Task 9's E2E fixture.
+ * ================================================================================
+ *
+ * WHY IT EXISTS. `§3` row 9's gate is *"Playwright E2E green on Chromium, Firefox and
+ * WebKit: scan -> wait -> ready -> alert"*, and a scan needs a token a real `PagerSessions`
+ * issued -- not a fabricated 22-character string. A fabricated one would resolve to nothing,
+ * so every case would exercise the INVALID path and the suite would be green while testing
+ * the opposite of its subject. That is the vacuous-assertion shape `§4a` records four of.
+ *
+ * ⚠ IT PRINTS THE RAW TOKEN ON STDOUT, WHICH IS THE ONE PLACE IT MAY GO. `§4 › Data` forbids
+ * the raw token in a log, a URL query string and an error body; stdout of a developer tool
+ * invoked by the test harness is none of those, and `IssuedPagerSession`'s docblock records
+ * that *"there is no path that reads a token back later"* -- so a harness that needs one has
+ * to be handed it at issue time or not at all. It is written to no file by this script.
+ *
+ * ⚠ AND IT IS NOT A SEEDER. It creates ONE tenant and ONE session per invocation and prints
+ * them; it writes no fixture anybody else reads, so two concurrent runs cannot collide.
+ *
+ * MARKED FOR WHAT IT IS. The tenant's name is `E2E fixture` and its slug carries `e2e-`, so
+ * a row left behind by an interrupted run is identifiable rather than indistinguishable from
+ * a real restaurant. Nothing deletes them: this runs against a development database, and a
+ * script that deletes tenant rows is a worse thing to have than a few marked ones.
+ *
+ * USAGE:  php bin/issue-pager-session [order-reference] [--status=ready|completed|cancelled|expired]
+ *
+ * The optional status moves the session on through the REAL domain service rather than by an
+ * UPDATE, so `already-ready` and the three `ended` states are reachable from the E2E suite
+ * without the harness writing a status anywhere. `expired` is the one exception and says so.
+ */
+
+use App\Features\Pager\PagerSessions;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Illuminate\Foundation\Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+$reference = 'E-001';
+$status = 'waiting';
+
+foreach (array_slice($argv, 1) as $argument) {
+    if (str_starts_with($argument, '--status=')) {
+        $status = substr($argument, strlen('--status='));
+
+        continue;
+    }
+
+    $reference = $argument;
+}
+
+$tenant = (string) Str::uuid7();
+
+withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenants')->insert([
+    'id' => $tenant,
+    'name' => 'E2E fixture',
+    'slug' => 'e2e-'.str_replace('-', '', $tenant),
+]), 'pgsql_owner');
+
+$sessions = $app->make(PagerSessions::class);
+$issued = $sessions->create($tenant, $reference);
+$token = $issued->token->reveal();
+
+/*
+ * THE TRANSITIONS GO THROUGH THE DOMAIN SERVICE, so the outbox row, the audit row and the
+ * Redis projection are written exactly as they are in production. A harness that reached for
+ * an UPDATE would produce a state the application never produces.
+ */
+switch ($status) {
+    case 'waiting':
+        break;
+    case 'ready':
+        withTenant($tenant, fn () => $sessions->markReady($tenant, $issued->session->id));
+        break;
+    case 'completed':
+        withTenant($tenant, fn () => $sessions->complete($tenant, $issued->session->id));
+        break;
+    case 'cancelled':
+        withTenant($tenant, fn () => $sessions->cancel($tenant, $issued->session->id));
+        break;
+    case 'expired':
+        /*
+         * ⚠ THE ONE STATE THAT CANNOT BE REACHED THROUGH THE SERVICE, and it is said rather
+         * than glossed. `expires_at` is set to now + TTL at creation and no public method
+         * moves it, because nothing in the product ever shortens a session's life -- the
+         * expiry job reads the clock. So the harness moves the column, as the OWNER, inside
+         * a tenant scope, and this is the only write in this file that is not a domain call.
+         */
+        withTenant($tenant, fn () => DB::connection('pgsql_owner')
+            ->table('pager_sessions')
+            ->where('id', $issued->session->id)
+            ->update(['expires_at' => now()->subMinute()]), 'pgsql_owner');
+        break;
+    default:
+        fwrite(STDERR, "issue-pager-session: unknown --status={$status}\n");
+        exit(1);
+}
+
+echo json_encode([
+    'token' => $token,
+    'order_reference' => $reference,
+    'session_id' => $issued->session->id,
+    'tenant_id' => $tenant,
+    'status' => $status,
+], JSON_THROW_ON_ERROR), "\n";

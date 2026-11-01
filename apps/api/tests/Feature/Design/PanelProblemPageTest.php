@@ -332,3 +332,91 @@ it('falls back to the document when the page itself cannot render — security 1
         ->and(str_contains((string) $response->headers->get('cache-control'), 'no-store'))->toBeTrue()
         ->and(strlen((string) $response->getContent()))->toBeGreaterThan(80);
 });
+
+/*
+ * ===================================================================================
+ * R-195's THREE UNCOVERED ARMS. Owned by Task 9, closed here.
+ * ===================================================================================
+ *
+ * The row, verbatim: *"the `Sec-Fetch-Mode: navigate` arm is never exercised ALONE (both test
+ * helpers send dest *and* mode, and the negative case sends `dest=empty, mode=cors`);
+ * `! acceptsHtml()` has no case of its own; and `retryAfter === null` -- a 4xx page carrying
+ * no `Retry-After` -- is asserted nowhere. … No defect is reachable through any of them
+ * today, which is why this is a row and not a fix: the behaviour is right and the coverage is
+ * not."* Its owner cell asks for *"one case per arm, which is three short cases."*
+ *
+ * ⚠ AND THE ROW'S SIBLING, `R-194`, IS MEASURED SOMEWHERE ELSE AND SAYS SO. Whether a real
+ * engine sends `Sec-Fetch-Dest` at all is not answerable from PHP, and `R-194` is owned by
+ * Task 9 *"with the E2E harness"* for that reason. `browser/engines.spec.ts` answers it in
+ * Chromium, Firefox and WebKit -- all three send `document` on a genuine navigation -- so
+ * that row is NARROWED by measurement rather than closed by assertion. These three cases are
+ * the PHP half and make no claim about engines.
+ */
+
+it('serves the page on Sec-Fetch-Mode ALONE, with no Sec-Fetch-Dest — R-195', function (): void {
+    // The arm `wantsPage()` spells as `$destination !== 'document' && $mode !== 'navigate'`:
+    // either header on its own is enough. Both existing helpers send both, so this arm had
+    // never been taken by itself -- a reader could have deleted the `$mode` half and every
+    // test would still have passed.
+    $this->actingAs(problemAdmin());
+
+    $page = withPanelSourceDown(fn () => $this->get('/platform', [
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Sec-Fetch-Mode' => 'navigate',
+    ]));
+
+    expect($page->status())->toBe(503)
+        ->and((string) $page->headers->get('content-type'))->toContain('text/html');
+});
+
+it('serves the page on Sec-Fetch-Dest ALONE, with no Sec-Fetch-Mode — R-195', function (): void {
+    // The mirror of the case above, so neither half of that `&&` can be removed quietly.
+    // WebKit 27.2 sends `Sec-Fetch-Dest` and omits `Sec-Fetch-User`, measured in
+    // `browser/engines.spec.ts`, so an engine sending a partial set is a real shape.
+    $this->actingAs(problemAdmin());
+
+    $page = withPanelSourceDown(fn () => $this->get('/platform', [
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Sec-Fetch-Dest' => 'document',
+    ]));
+
+    expect($page->status())->toBe(503)
+        ->and((string) $page->headers->get('content-type'))->toContain('text/html');
+});
+
+it('refuses the page to a client that does NOT accept html — R-195', function (): void {
+    // `! acceptsHtml()` had no case of its own: every negative case so far failed on the
+    // Sec-Fetch arm instead, so this early return was reachable only in principle. An
+    // `Accept` that names one non-html type and nothing else is what a binary client sends.
+    $this->actingAs(problemAdmin());
+
+    $response = withPanelSourceDown(fn () => $this->get('/platform', [
+        'Accept' => 'image/png',
+        'Sec-Fetch-Dest' => 'document',
+        'Sec-Fetch-Mode' => 'navigate',
+    ]));
+
+    // The machine-readable form, even though every OTHER signal said "navigation" -- which is
+    // the point: a client that cannot read html must not be sent 2 kB of it.
+    expect($response->status())->toBe(503)
+        ->and((string) $response->headers->get('content-type'))->toContain('application/problem+json');
+});
+
+it('puts NO Retry-After on a 4xx page, because there is nothing to come back for — R-195', function (): void {
+    /**
+     * The `retryAfter === null` arm. A 503 carries one (asserted at the top of this file); a
+     * 403 must not, and that was asserted nowhere -- so a change making `Retry-After`
+     * unconditional would have passed every test here while telling a browser to retry a
+     * refusal.
+     *
+     * A 403 is reached without taking the database down: a signed-in platform admin asking
+     * for the STUDIO panel, which they hold no membership for.
+     */
+    $this->actingAs(problemAdmin());
+
+    $page = $this->get('/studio', navigation());
+
+    expect($page->status())->toBeGreaterThanOrEqual(400)
+        ->and($page->status())->toBeLessThan(500)
+        ->and($page->headers->has('retry-after'))->toBeFalse();
+});
