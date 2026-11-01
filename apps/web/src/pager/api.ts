@@ -56,7 +56,22 @@ export type ResolveResult =
   | { readonly kind: 'ok'; readonly snapshot: SessionSnapshot }
   | { readonly kind: 'expired' }
   | { readonly kind: 'unknown' }
+  /** A 5xx, or a 4xx this client has no screen for. Something is wrong on our side. */
   | { readonly kind: 'server' }
+  /**
+   * ⚠ A 2xx WE CANNOT INTERPRET, AND IT IS A DIFFERENT ANSWER FROM A 5xx.
+   *
+   * The server said yes and sent something this build cannot read: a malformed body, or a
+   * `status` outside the GENERATED union -- which is reachable only across a deploy. `§3.6`
+   * of the ticket separates the two because the COPY differs: a 5xx says *"this is on us,
+   * not on you"*, and this one says *"we're not sure what"*. Claiming to know would be the
+   * dishonesty `§4.1`'s *"honest message"* is about.
+   *
+   * ⚠ AND WITHOUT IT `error.unknown` WAS AN UNREACHABLE STATE -- a screen in
+   * `JOURNEY_STATES` that no event could produce. Found by `browser/one-handed.spec.ts`,
+   * which iterates that export and timed out at 30 s trying to reach it.
+   */
+  | { readonly kind: 'unreadable' }
   | { readonly kind: 'unreachable' }
 
 export type PollResult =
@@ -182,10 +197,10 @@ export async function resolveSession(
 
   if (answer === null) return { kind: 'unreachable' }
 
-  if (answer.status === 200) {
+  if (answer.status >= 200 && answer.status < 300) {
     const snapshot = toSnapshot(answer.body)
 
-    return snapshot === null ? { kind: 'server' } : { kind: 'ok', snapshot }
+    return snapshot === null ? { kind: 'unreadable' } : { kind: 'ok', snapshot }
   }
 
   if (answer.status === 409 && problemType(answer.body) === PROBLEM_TYPES.expired) {

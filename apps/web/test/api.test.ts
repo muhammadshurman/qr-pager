@@ -195,26 +195,41 @@ describe('resolveSession -- the five answers', () => {
     expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'unknown' })
   })
 
-  it('a 200 whose body does not parse is a server error, never a snapshot', async () => {
+  it('a 200 whose body does not parse is UNREADABLE, which is not a server error', async () => {
+    /**
+     * ⚠ A DIFFERENT ANSWER FROM A 5xx, AND THE COPY IS WHY. A 5xx says *"this is on us, not
+     * on you"*; a 2xx this build cannot read says *"we're not sure what"*, which is the
+     * honest thing when the server said yes and sent something unrecognisable. `§3.6` of the
+     * ticket separates them, and until this distinction existed `error.unknown` was a state
+     * no event could produce -- a screen and six strings that were dead.
+     */
     answer = { status: 200, body: {}, raw: 'not json at all' }
 
-    expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'server' })
+    expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'unreadable' })
   })
 
-  it('a 200 missing a field is a server error', async () => {
+  it('a 200 missing a field is unreadable', async () => {
     answer = { status: 200, body: { status: 'waiting', order_reference: 'A-42' } }
 
-    expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'server' })
+    expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'unreadable' })
   })
 
-  it('a 200 carrying a status this build does not have is a server error', async () => {
+  it('a 201 is read as a success too, not as a server error', async () => {
+    // The resolve endpoint answers 200 today. A 2xx is a 2xx, and reading only 200 would turn
+    // a future 201 into an error screen for a session that resolved perfectly.
+    answer = { status: 201, body: OK_BODY }
+
+    expect((await resolveSession(api(), TOKEN)).kind).toBe('ok')
+  })
+
+  it('a 200 carrying a status this build does not have is unreadable', async () => {
     // ⚠ A MISS, NOT A NEW STATUS. `PagerStatus` is the generated union, so this is reachable
     // only across a deploy -- and the honest answer is the error state rather than a screen
     // rendering a status it cannot interpret. The same decision `PagerStatusView::decode()`
     // already makes server-side, applied to the wire.
     answer = { status: 200, body: { ...OK_BODY, status: 'refunded' } }
 
-    expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'server' })
+    expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'unreadable' })
   })
 
   it('an unreachable server is unreachable, and the error is DISCARDED', async () => {

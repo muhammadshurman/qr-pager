@@ -59,6 +59,7 @@ const ALL_EVENTS: readonly JourneyEvent[] = [
   { type: 'resolve/expired' },
   { type: 'resolve/unknown' },
   { type: 'resolve/server' },
+  { type: 'resolve/unreadable' },
   { type: 'resolve/unreachable' },
   { type: 'poll/ok', snapshot: snapshot('ready') },
   { type: 'poll/stale' },
@@ -346,8 +347,8 @@ describe('every state accepts every event without throwing', () => {
       }
     }
 
-    expect(evaluated).toBe(17 * 22)
-    expect(ALL_EVENTS.length).toBe(22)
+    expect(evaluated).toBe(17 * 23)
+    expect(ALL_EVENTS.length).toBe(23)
   })
 })
 
@@ -621,5 +622,36 @@ describe('the state inventory as an artefact the browser suite can read', () => 
     }
 
     expect(readFileSync(path, 'utf8'), `${path} is stale -- regenerate and commit it`).toBe(encoded)
+  })
+})
+
+describe('every state is REACHABLE, which one of them was not', () => {
+  it('has an event that produces each of the 17 screen states', () => {
+    /**
+     * ⚠ THIS ASSERTION EXISTS BECAUSE `error.unknown` WAS UNREACHABLE. It was in
+     * `JOURNEY_STATES`, it had a screen, it had copy in both languages -- and no event
+     * produced it, because `api.ts` returned `server` for a 2xx it could not read. The
+     * state, the screen and six strings were dead, and `browser/one-handed.spec.ts` found it
+     * by timing out at 30 s trying to reach it.
+     *
+     * Exhaustiveness over the event union does not catch that: it proves every EVENT is
+     * handled, not that every STATE is produced. This is the other direction, and it is the
+     * one a reviewer would otherwise have to check by eye.
+     */
+    const produced = new Set<ScreenState>()
+
+    for (const screen of JOURNEY_STATES) {
+      for (const event of ALL_EVENTS) {
+        produced.add(reduce({ ...waiting(), screen }, event).screen)
+      }
+    }
+
+    // Driven from every starting state, so a state reachable only from one place still counts.
+    const unreachable = JOURNEY_STATES.filter((state) => !produced.has(state))
+
+    expect(
+      unreachable,
+      'these states have a screen and copy and no event that produces them',
+    ).toEqual([])
   })
 })

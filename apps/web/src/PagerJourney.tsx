@@ -227,6 +227,9 @@ export function PagerJourney({ apiBase, vapidPublicKey, locale }: PagerJourneyPr
         case 'server':
           dispatch({ type: 'resolve/server' })
           break
+        case 'unreadable':
+          dispatch({ type: 'resolve/unreadable' })
+          break
         case 'unreachable':
           dispatch({ type: 'resolve/unreachable' })
           break

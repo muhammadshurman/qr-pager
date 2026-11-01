@@ -107,6 +107,7 @@ export type JourneyEvent =
   | { readonly type: 'resolve/expired' }
   | { readonly type: 'resolve/unknown' }
   | { readonly type: 'resolve/server' }
+  | { readonly type: 'resolve/unreadable' }
   | { readonly type: 'resolve/unreachable' }
   | { readonly type: 'poll/ok'; readonly snapshot: SessionSnapshot }
   | { readonly type: 'poll/stale' }
@@ -277,6 +278,12 @@ export function reduce(state: JourneyState, event: JourneyEvent): JourneyState {
 
     case 'resolve/server':
       return { ...state, screen: 'error.server', polling: false }
+
+    case 'resolve/unreadable':
+      // ⚠ THE ONLY TRANSITION INTO `error.unknown`, AND IT DID NOT EXIST. That state was in
+      // `JOURNEY_STATES` and no event produced it, so the screen was unreachable and its copy
+      // was dead. Found by `browser/one-handed.spec.ts`, which iterates that export.
+      return { ...state, screen: 'error.unknown', polling: false }
 
     case 'resolve/unreachable':
       return { ...state, screen: 'error.offline', polling: false }

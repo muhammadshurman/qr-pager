@@ -158,6 +158,7 @@ async function reach(page: Page, state: ScreenState): Promise<void> {
   await page.route(`${origin()}/v1/pager/session`, async (route) => {
     if (state === 'error.offline') return route.abort()
     if (state === 'error.server') return answer(route, 500, { title: 'no' })
+    // A 200 whose body this build cannot read -- the ONLY route to `error.unknown`.
     if (state === 'error.unknown') return answer(route, 200, { nonsense: true })
     if (state === 'landing.invalid') return answer(route, 404, { type: 'x/not-found' })
     if (screen === 'ended') {
