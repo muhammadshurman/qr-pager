@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# =============================================================================
+# EVERY FIX THIS TASK MADE, PROVEN RED WITHOUT IT. Task 9 (QRPAGER-16).
+# =============================================================================
+#
+# `§6`: *"Every bug found gets a regression test that fails without the fix."* `§11` role 2
+# check 7 is sharper -- *"Verify by reverting the fix in a scratch copy, not by reading"* --
+# and the rank-1 brief tells both reviewers to verify every *"proven by revert"* claim BY
+# DOING THE REVERT.
+#
+# So the claim is not prose. This script performs each revert, runs the case that is supposed
+# to catch it, asserts it goes RED, restores the file, and asserts it goes GREEN again. A
+# claim that cannot be re-run is `R-043`'s shape: a gate clause whose demonstration lived in
+# a session.
+#
+# ⚠ IT WORKS ON A SCRATCH COPY OF THE FILE AND RESTORES IT IN A `trap`, so an interrupted run
+# cannot leave a reverted source behind. `R-018` is the row recording that every `finally` in
+# this repository is correct and none survives a `kill -9`; the mitigation here is that the
+# scratch copies live beside the originals with a `.revert-proof-backup` suffix, which
+# `git status` shows and `.gitignore` does not hide.
+#
+# USAGE:  tools/gate/bin/revert-proof            all four
+#         tools/gate/bin/revert-proof <name>     one
+set -uo pipefail
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo 'revert-proof: the working tree is dirty. A revert proof on a dirty tree proves' >&2
+  echo '  nothing about the committed code -- commit or stash first.' >&2
+  exit 1
+fi
+
+backups=()
+
+restore() {
+  for b in "${backups[@]:-}"; do
+    [ -n "$b" ] || continue
+    [ -f "$b" ] || continue
+    mv -f "$b" "${b%.revert-proof-backup}"
+  done
+}
+trap restore EXIT INT TERM
+
+# Replace the first occurrence of a fixed string in a file, keeping a backup.
+revert() {
+  local file="$1" needle="$2" replacement="$3"
+
+  cp "$file" "${file}.revert-proof-backup"
+  backups+=("${file}.revert-proof-backup")
+
+  python3 - "$file" "$needle" "$replacement" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+needle, replacement = sys.argv[2], sys.argv[3]
+source = path.read_text(encoding='utf-8')
+
+if source.count(needle) != 1:
+    sys.stderr.write(
+        f'revert-proof: the anchor appears {source.count(needle)} times in {path}, not once. '
+        'The proof is only meaningful against the exact line the fix changed.\n'
+    )
+    raise SystemExit(1)
+
+path.write_text(source.replace(needle, replacement), encoding='utf-8')
+PY
+}
+
+undo() {
+  local file="$1"
+
+  mv -f "${file}.revert-proof-backup" "$file"
+  backups=()
+}
+
+# Run one Vitest file and report whether it was green. The STATUS is the proof, so it is
+# captured directly from the command and never read after a pipe.
+suite() {
+  local file="$1" name="$2"
+
+  ./node_modules/.bin/vitest run --project web "$file" -t "$name" >/tmp/revert-proof.$$ 2>&1
+}
+
+failures=0
+
+prove() {
+  local label="$1" file="$2" needle="$3" replacement="$4" spec="$5" name="$6"
+
+  printf '\n== %s\n' "$label"
+
+  revert "$file" "$needle" "$replacement" || { failures=$((failures + 1)); return; }
+
+  if suite "$spec" "$name"; then
+    echo "   FAILED: the case is GREEN with the fix reverted, so it does not catch it."
+    sed -n '1,12p' /tmp/revert-proof.$$ | sed 's/^/     /'
+    failures=$((failures + 1))
+  else
+    echo "   red without the fix   (as it must be)"
+  fi
+
+  undo "$file"
+
+  if suite "$spec" "$name"; then
+    echo "   green with the fix    (so the red above was the revert and not the case)"
+  else
+    echo "   FAILED: the case is RED with the fix restored -- something else is broken."
+    sed -n '1,12p' /tmp/revert-proof.$$ | sed 's/^/     /'
+    failures=$((failures + 1))
+  fi
+}
+
+want="${1:-all}"
+
+# -------------------------------------------------------------------------------- 1
+if [ "$want" = all ] || [ "$want" = reconcile-terminal ]; then
+  prove "the reconcile must not register a device for a session that is OVER" \
+    "apps/web/src/PagerJourney.tsx" \
+    "    if (screenOf(state.screen) === 'ended') return" \
+    "    // reverted by tools/gate/bin/revert-proof" \
+    "test/orchestrator.test.tsx" \
+    "does NOT call the subscription endpoint when the session EXPIRED"
+fi
+
+# -------------------------------------------------------------------------------- 2
+if [ "$want" = all ] || [ "$want" = reconcile-unresolved ]; then
+  prove "the reconcile must not register a device BEFORE the session resolves" \
+    "apps/web/src/PagerJourney.tsx" \
+    "    if (state.snapshot === null) return" \
+    "    // reverted by tools/gate/bin/revert-proof" \
+    "test/orchestrator.test.tsx" \
+    "does NOT call the subscription endpoint when the session EXPIRED"
+fi
+
+# -------------------------------------------------------------------------------- 3
+if [ "$want" = all ] || [ "$want" = install-on-unsupported ]; then
+  prove "the iOS install flow must appear on alerts.unsupported, which an iOS TAB reaches" \
+    "apps/web/src/screens/EnableAlerts.tsx" \
+    "        <p className=\"pg-note\">{t(\`\${prefix}.body\` as 'alerts.denied.body')}</p>
+        {installFlow}" \
+    "        <p className=\"pg-note\">{t(\`\${prefix}.body\` as 'alerts.denied.body')}</p>" \
+    "test/orchestrator.test.tsx" \
+    "shows the three-step flow on an iOS tab and not on an installed one"
+fi
+
+# -------------------------------------------------------------------------------- 4
+if [ "$want" = all ] || [ "$want" = monotone-status ]; then
+  prove "a poll answering waiting AFTER ready must be ignored" \
+    "apps/web/src/pager/journey.ts" \
+    "      if (!statusMayFollow(state.snapshot?.status ?? null, event.snapshot.status)) {" \
+    "      if (false) {" \
+    "test/journey.test.ts" \
+    "ignores a poll that answers waiting after ready"
+fi
+
+rm -f /tmp/revert-proof.$$
+
+echo
+if [ "$failures" -ne 0 ]; then
+  echo "revert-proof: ${failures} claim(s) did NOT hold." >&2
+  exit 1
+fi
+
+echo "revert-proof: every claim held -- each case is red without its fix and green with it."
