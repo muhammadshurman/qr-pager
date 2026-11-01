@@ -426,7 +426,13 @@ fails a test rather than quietly widening one.
 | the token, in **one** `Cache` entry under its own cache name, written by the page | read **only** by `pushsubscriptionchange` | a service worker cannot read `localStorage`, and the rotation handler must be able to authenticate. QRPAGER-24's harness established this and named it as the thing Task 9 must harden; `§4` of this file says how |
 
 The token cache is **deleted** when the session reaches a terminal status, on `DELETE
-/v1/pager/subscription`, and by the shell's own `activate` purge if its session has expired —
+/v1/pager/subscription`, and — **as of `§11` round one, SEC M-2** — by `sw.js`'s own expiry check, which
+drops the entry on READ as well as on `activate` once its `expiresAt` has passed, treating an ABSENT
+expiry as expired. ⚠ **THIS SENTENCE WAS FALSE WHEN WRITTEN:** `CREDENTIAL_CACHE` was in the worker's
+`OWNED` list, so `activate` deleted only caches NOT in it, and no expiry was checked or even stored —
+so a customer who collected their order and closed the app left a live 128-bit bearer token on the
+device for the whole 2-hour TTL. Asserted in `browser/sw.spec.ts` (expired entry, and no-expiry entry)
+and in `browser/pager.spec.ts` (both homes empty after a terminal status, in a real engine) —
 so a device that is handed on does not carry a live credential. Asserted.
 
 ### 5. Scale: cost per request and per active session. What is bounded?
@@ -450,7 +456,7 @@ again.
 | polls per device per minute | 8.57 mean, 10.7 worst case | `poll_after_seconds` + jitter floor |
 | consecutive 503s before the client stops polling | **6** → 5.6 s, 11.2 s, 22.4 s, 44.8 s, 89.6 s, 120 s (capped), then the degraded state and a manual retry | exponential backoff, base 2, cap 120 s |
 | requests on the scan path | **1** per scan; the document itself is static and CDN-served | `§4 › Edge` |
-| `POST /v1/pager/subscription` calls | **1** per launch at most, and only when `reconcileSubscription()` finds a difference | the reconcile compares before it posts |
+| `POST /v1/pager/subscription` calls | **1** per launch at most, and only when `reconcileSubscription()` finds a difference | the reconcile compares before it posts — against `localStorage` first and, when that is unavailable, against the credential `Cache` entry's own `endpoint`. ⚠ **THE BOUND WAS FALSE UNTIL `§11` ROUND ONE, SEC M-4:** `remembered` was read through `env.storage?.`, so with storage null (Safari private browsing, blocked site storage) it was ALWAYS null, the `unchanged` branch was unreachable and the reconcile posted on EVERY return to visibility — one POST and one Postgres upsert per tab focus. Measured by the reviewer at 5 calls → 5 POSTs. `notify.test.ts` now drives five launches with `storage: null` and an unchanged endpoint and asserts exactly one POST |
 | notification count for one order | **1** visible notification, however many pushes arrive | the `tag` from the payload (`R-075`) |
 | token copies on the device | **2** — one `localStorage` entry, one `Cache` entry — both deleted on a terminal status | asserted |
 
@@ -816,7 +822,9 @@ function, `apps/web/src/pager/journey.ts`:
 reduce(state: JourneyState, event: JourneyEvent): JourneyState
 ```
 
-**17 screen-states**, from `§3`: `landing`×3 (valid, invalid, and the two that redirect) ·
+**17 screen-states**, from `§3`: `landing`×2 (valid, invalid — the other two of `§4.1`'s four scan
+outcomes REDIRECT to `ended.expired` and `ready.fresh` rather than being states of their own, which is
+what `SCAN_OUTCOMES` maps; `§11` QA L-4 corrected the ×3) ·
 `alerts`×4 · `waiting`×3 · `ready`×2 · `ended`×3 · `error`×3. `JOURNEY_STATES` exports all of
 them and `journey.test.ts` iterates that export, so a state added without a case is a
 failing test rather than an untested branch.
@@ -826,13 +834,25 @@ failing test rather than an untested branch.
 | event | source |
 | --- | --- |
 | `token/present`, `token/malformed` | `readPresentedToken()` over `location.hash` |
-| `resolve/ok`, `resolve/expired`, `resolve/unknown`, `resolve/unreachable`, `resolve/server` | `POST /v1/pager/session` |
+| `resolve/ok`, `resolve/expired`, `resolve/unknown`, `resolve/unreachable`, `resolve/server`, `resolve/unreadable` | `POST /v1/pager/session`. `unreadable` is a 200 whose body this build cannot interpret — added during the build, because `error.unknown` was otherwise an unreachable state with copy written for it |
 | `poll/ok`, `poll/stale`, `poll/unavailable`, `poll/unreachable` | `POST /v1/pager/status` — the four answers Task 4 defines, `stale` and `unavailable` deliberately distinct (`§3` row 9 clause (c)) |
-| `permission/granted`, `permission/denied`, `permission/unsupported` | `Notification.requestPermission()`, and the capability probe |
+| `permission/probed`, `permission/granted`, `permission/denied`, `permission/unsupported` | `Notification.requestPermission()`, and the capability probe. `probed` carries what the browser already thinks before anything is asked; `unsupported` is also dispatched when `serviceWorker.register()` REJECTS, which `§11` round one found uncaught |
 | `push/ready` | the service worker's message to the page |
+| `alerts/open` | the scan landing's primary action — the only path to the alerts screen |
 | `ack` | the customer |
 | `net/online`, `net/offline` | `window` events |
 | `skip` | `landing.valid.skip`, `alerts.notNow`, `alerts.continue` |
+| `retry` | the retry control on the error and degraded screens |
+
+**⚠ TWENTY-THREE EVENTS, AND THIS TABLE SAID NINETEEN** — `§11` round one, QA L-4. The export is
+the authority: `journey.ts` declares 23 and `journey.test.ts` asserts `ALL_EVENTS.length === 23`
+so the 17 × 23 matrix cannot go stale. The four this table had dropped are `resolve/unreadable`,
+`permission/probed`, `retry` and `alerts/open` — the last of which is the ONLY path to the alerts
+screen, so a table missing it described a journey with an unreachable screen. All four are rows
+now, and the reconciliation was done by parsing the declared union rather than by recounting by
+hand: the first correction to this table still left `alerts/open` out.
+`§4` exists so *"every branch has a test"* is countable FROM THE TICKET, which a table four
+events short is not.
 
 **Three properties asserted over the whole table rather than case by case**, because a
 per-case assertion cannot see a hole:
@@ -874,7 +894,10 @@ came out as.
 get wrong: the subject list. `browser/one-handed.spec.ts` derives its subjects from
 `JOURNEY_STATES` — the same export the reducer's test iterates — so a screen state that
 exists and is not measured is impossible rather than merely unlikely. The emitted table is
-`docs/tickets/QRPAGER-16-one-handed.md`, and the spec fails if the committed copy disagrees.
+`docs/tickets/QRPAGER-16-one-handed-{chromium,firefox,webkit}-{ltr,rtl}.md` — SIX files, one per
+project — and the spec fails if any committed copy disagrees. (`§11` round one, QA L-4: this named a
+single `QRPAGER-16-one-handed.md` that was never written, which matters because `§5` exists so a
+reviewer can count branches from the ticket.)
 
 ---
 
