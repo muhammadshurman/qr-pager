@@ -1,10 +1,40 @@
 Task 8a — design system: workspace, approved direction, tokens, UI kit, templates
 
-⚠ STILL NOT APPLIED, AND NOW FOR ONE REASON ONLY: §5's "AND CI RUNS IT AS A SECOND JOB"
-is NOT MET, and the only evidence that clause accepts is an Actions run for the HEAD SHA
-reporting success, by run id and conclusion. Neither §11 reviewer could discharge it either
--- no gh, no token, private repository, so the API answers 404. Everything else this message
-said was waiting on is done.
+APPLIED 2026-11-01 at d8c9652. Tag object d5f49a5, on origin.
+
+§5's "AND CI RUNS IT AS A SECOND JOB" is MET: run 151, commit d8c9652, branch
+task-8a-design-system, conclusion SUCCESS, 7m 05s, reported by Muhammad from the Actions
+list -- the same provenance §4a's Task 0 row ("run #2, both jobs green, 37s") and Task 1's
+row already rest on. No session on this machine can read Actions (gh absent, both token
+variables unset, private repository -> HTTP 404), which is why that clause has always been
+discharged by report rather than by API.
+
+⚠ THIS FILE SAID "NOT MET" FOR THE WHOLE OF TASK 8b, AND THAT WAS DELIBERATE, NOT STALE.
+The discharge went into the TAG OBJECT, which git tag -a -F snapshots from this working
+file -- so the tag carried MET while the committed file still read NOT MET. The edit could
+not be committed: these lines are lines a1f1263..d8c9652 changed, and PLAN §0.0's additive
+condition barred task-8b-precoding from committing an edit to them, because committing it
+is exactly the thing that would move 8a's tree out from under run 151. Recorded as R-190,
+owned by Muhammad at the rebase, with the instruction "read the tag, not the file".
+That condition is now spent: task-8a is tagged and immutable, so the file is editable and
+is edited here. R-190 IS CLOSED -- the record no longer contradicts itself.
+
+⚠ AND READING THE TAG TO WRITE THIS FOUND A DEFECT IN THE TAG OBJECT ITSELF, which cannot
+be repaired and is therefore recorded. git tag -a -F defaults to --cleanup=strip, which
+silently removes every line whose first character is '#'. The head paragraph of the
+task-8a tag object is missing its run-id line for exactly that reason, and the damage is
+visible in the grammar:
+
+    APPLIED 2026-11-01 at d8c9652. §5's "AND CI RUNS IT AS A SECOND JOB" is DISCHARGED: run
+    Muhammad from the Actions list -- the same provenance §4a's Task 0 row ...
+
+The stripped line read "#151, ...". The figure survives in that object only because a
+later occurrence of it is indented, so its '#' is not first on the line. Reproduced
+2026-11-01 in a throwaway repository: the same file tagged with the default cleanup drops
+the line, and with --cleanup=verbatim keeps it. task-8a is immutable and is NOT being
+re-tagged over a message defect; task-8b was applied with --cleanup=verbatim and its
+object was diffed against its file byte-for-byte. THIS FILE is now the complete record of
+run 151 for 8a, which is the half of R-190 that can still be fixed.
 
 UPDATED 2026-10-31 AFTER BOTH §11 REVIEWS AND THE ONE FIX PASS THEY PRODUCED.
 24 findings -- QA 14 (0 Critical, 2 High, 9 Medium, 3 Low) and Security 10 (0 Critical,
@@ -72,7 +102,12 @@ GATE CLAUSES MET, WITH THE FIGURE
 §5  Workspace builds, lints, tests from a FRESH CLONE ............ MET
       tools/gate/bin/fresh-clone-proof: GREEN, all gate steps, in a clone sharing no object
       with the working tree.
-§5  ...AND CI RUNS IT AS A SECOND JOB .......................... NOT MET
+§5  ...AND CI RUNS IT AS A SECOND JOB .............................. MET
+      DISCHARGED 2026-11-01: run 151, commit d8c9652, branch task-8a-design-system,
+      conclusion SUCCESS, 7m 05s, reported by Muhammad from the Actions list. The
+      paragraphs below were written while this read NOT MET and are KEPT VERBATIM, because
+      they are what was fixed to get here -- five causes found and fixed in the job, none
+      of them visible to a local gate.
       THE ONLY CLAUSE STILL UNMET, and the only one a local run cannot discharge. The job
       exists and is configured; three causes have been found and fixed since this line was
       written (lint:shell missing from the job, setup-node v5's automatic package-manager
@@ -202,6 +237,9 @@ single §5 row the 24 findings produced.
 
 (3) §5 / §7 — "The workspace builds, lints and tests from a fresh clone, AND CI RUNS IT AS
     A SECOND JOB."
+    ✅ MET 2026-11-01 — run 151, d8c9652, SUCCESS, 7m 05s, reported by Muhammad. The
+    superseded text is kept verbatim below because the clause went RED before it went green
+    and what fixed it is the content of this entry.
     ⚠ NOT MET, AND THIS LINE PREVIOUSLY UNDERSTATED IT. It said "half met and half
     unverifiable from here", which was true only while no run existed. A run now exists and
     MUHAMMAD REPORTS IT RED — a configuration failure, not a code failure — so the clause is
@@ -247,6 +285,7 @@ single §5 row the 24 findings produced.
         JOB. It also asserts every `pnpm` step comes after corepack. All three proven.
     Owner: Muhammad, by the W-3 route — `gh` is absent, no token is set, and the repository
     is private, so an unauthenticated API call answers 404. Measured, not assumed.
+    DISCHARGED by that route on 2026-11-01: run 151, SUCCESS. Nothing is owed on it.
 
 (4) R-118 — the admin panel's share of the four accessibility clauses.
     NOT MET HERE, AND CORRECTLY SO. R-118's own resolution requires the figures be taken

@@ -1,0 +1,192 @@
+Task 8b — Filament restyle and the zero-technical-background walk
+
+APPLIED 2026-11-01 at 5ab40fc, on task-8b-panel-restyle (cut from the task-8a tag).
+
+PLAN §3's "and CI runs it as a second job" is DISCHARGED for the workflow THIS task
+changed, which is what R-199 was about and the one clause that stood between this tree
+and the tag:
+
+    run 162, commit 5ab40fc, branch task-8b-precoding, conclusion SUCCESS, 10m 31s,
+    reported by Muhammad from the Actions list.
+
+Same provenance §4a's Task 0 row ("run #2, both jobs green, 37s"), Task 1's row and 8a's
+run 151 already rest on. No session on this machine can read Actions -- gh absent, both
+token variables unset, private repository -> HTTP 404 -- so that clause has always been
+discharged by report rather than by API, and this is not a weaker discharge than its
+predecessors, it is the same one.
+
+The run was reported against the branch's HOLDING name, task-8b-precoding. The branch is
+renamed to task-8b-panel-restyle in the same move as this tag; the sha is unchanged and
+the sha is what the run is for, so the rename does not touch the evidence. §6's order rule
+is satisfied: 5ab40fc is a strict descendant of d8c9652, which IS the task-8a tag
+(git merge-base --is-ancestor d8c9652 5ab40fc -> true, 17 commits).
+
+=====================================================================================
+WHAT THIS TAG CERTIFIES
+=====================================================================================
+
+The named invariant, QRPAGER-23 §4.1:
+
+    No panel screen displays a system identifier, a raw framework or database error, or
+    an empty state with no next action; and no panel style value is hand-written rather
+    than taken from the generated token artefacts.
+
+MET, with the second half mechanical and the first half driven. §11's cap is two rounds
+and both ran; after the second only a failure of this clause blocks the tag, and the
+round-two QA reviewer reported the refusal-copy half MET in those words, having driven a
+401 and two 403s with different reasons through real navigations (the two 403 bodies
+byte-identical) and all 13 ProblemType cases through respond().
+
+Gates at a0d99ba, re-measured at this head:
+
+    composer gate   all 10 steps green -- 1154 passed, 9804 assertions
+                    docs/tickets/QRPAGER-23-composer-gate.txt
+    pnpm gate       all 12 steps green -- 554 Vitest over 23 files, 88 Playwright,
+                    both Next builds -- docs/tickets/QRPAGER-23-pnpm-gate.txt
+    coverage        PHP 429/438 = 97.95% over this task's 7 files
+                    (bin/coverage --task=d8c9652); TS 92.89 / 90.28 / 98.46 / 93.97
+                    against a 90 floor -- the branch margin is 0.28 points, stated
+                    rather than widened
+    fresh clone     both proofs PASS, and QA verified independently in a clone
+    artefacts       9 generated, each byte-diffed by tokens:check
+
+Two §11 rounds, 58 findings, all dispositioned: round one 28 (QA 21 = 0C/6H/8M/7L,
+Security 7 = 0C/0H/2M/5L), round two 30 (QA 22 = 0C/2H/10M/10L, Security 8 =
+0C/0H/3M/5L). Every High fixed with a regression test proven red without the fix. Eleven
+round-two findings were fixed rather than deferred, five of them defects in round one's
+own fixes.
+
+=====================================================================================
+EVERY GATE CLAUSE NOT MET, WITH ITS ROW AND ITS OWNER (§6's requirement for this file)
+=====================================================================================
+
+1 · §6 DoD: "Three consecutive green full-suite runs, transcripts committed"
+    NOT MET, and it is the host rather than this task. What the record says instead is
+    individual green runs, repeatedly, with every red's identity captured:
+
+      R-191   08006 connect timeout on pgsql_owner at TestCase::setUp's TRUNCATE,
+              striking a random test; six identities. Measured to the host: 300 bare
+              TCP connects to 127.0.0.1:5432 under eight spinning threads gave a
+              35,648 ms maximum with no Postgres in the path.      Task 13
+      R-185   / R-172, the outbox and lease family, three identities.        Task 12
+      R-200   PagerPollLatencyTest exec()s bin/poll-latency-proof from INSIDE the
+              suite; R-049's lock queues a runner, not a self-spawned harness.
+              9 of 20 reproductions, every one "answered 404, not 200".      Task 13
+      R-092   the original two-fault row this family descends from.
+                                            Muhammad, with Task 13 for the fix
+
+2 · §4 acceptance gate: "All previous tasks' suites still pass, unchanged"
+    NOT DISCHARGEABLE AS WRITTEN at this sha, and that is a property of the clause and
+    not of the suite. With three live intermittents in the suite (the rows above) any
+    red can be attributed to one of them, so the clause cannot be falsified. What the
+    task CAN show is that it alters presentation and not behaviour, and that is shown:
+    1154 passed at this head against 1150 before round two, and no behavioural test was
+    narrowed. The clause is made dischargeable AFTER this tag by a named known-flake
+    list the gate reports separately from failures -- so a red outside the list is a
+    real red. That work is not in this tree and is not claimed by this tag.
+                                            Owner: Task 13 for the fixes; the list
+                                            itself lands on task-8b-panel-restyle after
+                                            this tag and is recorded in §4a, not here.
+
+3 · §4 acceptance gate: "Every error message says what to do, not what failed -- no
+    SQLSTATE, no exception class, no raw identifier"
+    MET for every path the page serves, NOT MET for two paths that never reach it:
+      R-193   bootstrap/app.php's fallback() route and RateLimit both RETURN their
+              Problem instead of throwing, so PanelProblemPage never runs and a real
+              browser navigation to an unknown /platform path still gets raw JSON.
+                                                                     Task 10
+      R-194   PanelProblemPage::wants() requires Sec-Fetch-Dest: document, so engines
+              that do not send Sec-Fetch-* -- Safari before 16.4, older embedded
+              webviews, anything scripted -- get application/problem+json on a genuine
+              navigation.                                            Task 9
+      R-195   three branches of the representation decision have no case, one of them
+              the only thing between a 4xx page and a wrong Retry-After.
+                                                                     Task 9
+      R-196   H-4's "every panel 4xx with the SAME page" is broader than the code: two
+              4xx statuses carry two distinct titles each.            Task 12
+
+4 · §12's 2026-10-30 zero-technical-background clause -- the standard this task's
+    ENTIRE copy and walk work is written against -- is in force by RULING and not by
+    any file in this repository.
+      R-188   measured 2026-11-01: grep -c 'The admin and studio panels are used by
+              people with no technical background' docs/PROJECT_INSTRUCTIONS.md -> 0.
+              It is a paste into a rank-2 document, which only its author can make.
+                                            Muhammad
+    This does not make the work unfounded -- the text is quoted verbatim in
+    QRPAGER-23 §0 and in SR-2 -- but a binding standard living only in a ticket and a
+    chat copy is one deletion away from being lost.
+
+5 · Three record corrections this branch was BARRED from making, by §0.0's additive
+    condition (8b edits no line a1f1263..d8c9652 changed):
+      R-184   PLAN §0 and 8a's §11 disposition state a HYPOTHETICAL
+              brand-on-alert-ink 1.14:1 rule as a shipped defect.     Muhammad
+      R-186   §5's row count is stale in §0, the one place that states current state.
+              The fix is the re-deriving command beside the number, not a number.
+                                                                      Muhammad
+      R-190   the task-8a tag object says the CI clause is MET and the committed
+              QRPAGER-15-tag-message.txt says NOT MET.                Muhammad
+    R-190 IS CLOSED in the same move as this tag: task-8a is tagged and immutable, so
+    the additive condition no longer applies to that file, and the file now reads MET
+    with run 151. R-184 and R-186 stand.
+
+6 · The forced spacing exception has its MECHANISM and does NOT have the §5 row the
+    ticket promised it.
+    SR-1 was ruled per namespace: colour, type and radius got §8's redesign -- those
+    utilities compile to nothing -- and SPACING did not, because Filament's own CSS
+    calls --spacing(8) twice and --spacing(7) once, and in Tailwind v4 the bare key's
+    existence is exactly what enables p-<any>. Proven mutually exclusive: naming only
+    the nine approved steps and omitting the bare key FAILS THE BUILD.
+    The mechanism is built and is the strongest available: panel-theme.test.mjs
+    'carries the spacing exception, and a HARD COUNT of what forces it' asserts the
+    allowlist BY VALUE with an exact count --
+        expect(sites.sort()).toEqual(['--spacing(7)', '--spacing(8)', '--spacing(8)'])
+    -- so a Filament patch adding a fourth call site reddens the gate instead of
+    silently widening the allowance, plus the panel lint rule at the authoring moment.
+    WHAT IS MISSING IS THE RECORD: QRPAGER-23 §0 SR-1 says "the §5 row carries the
+    exclusivity measurement, the three vendor line numbers and their values, the hard
+    count, and the review-by that re-tests them against a later Filament", and no such
+    row exists in PLAN §5 -- grep over R-001..R-200 finds no row on this subject. The
+    absence is the finding and it is stated here rather than filed, because filing it
+    is a disposition and this message is not the place to take one.
+                                            Muhammad, at the rebase, beside R-184 and
+                                            R-186 -- it is a §5 edit, same class
+
+7 · §6 DoD: "Branch task-8b-panel-restyle, pushed, CI green"
+    MET as of this move, and it was not before it. The work was held on the holding
+    name task-8b-precoding because task-8a was not tagged when 8b started -- the §6
+    deviation §0.0 records, with its hard additive condition. The branch is renamed to
+    the ticket's name here; no commit is rewritten and no sha moves.
+
+8 · R-187 is not a clause of this task's gate and is named because this task created the
+    reading that found it: apps/api/resources/css/app.css still carries
+    @import 'tailwindcss' with nothing cleared and --font-sans: 'Instrument Sans', the
+    starter-kit face whose WEB FONT this task removed. The second "trap 1 door".
+                                            Task 10, with R-115 -- the next task to add
+                                            Blade to apps/api and the first that would
+                                            actually load that stylesheet
+
+Remaining round-two deferrals, each with an owner and a date in §5, none of them a clause
+of this gate: R-192 (Task 13), R-197 (Task 13), R-198 (Task 13), R-189 (the builder, every
+round from now on -- one pinned git worktree per reviewer).
+
+=====================================================================================
+ON THIS FILE'S OWN FORM
+=====================================================================================
+
+NO LINE OF THIS MESSAGE MAY BEGIN WITH A '#', AND THE TAG MUST BE APPLIED WITH
+--cleanup=verbatim. git tag -a -F defaults to --cleanup=strip, which removes every line
+whose first character is '#' -- silently, with no warning and no non-zero exit. That is
+not a hypothetical: the task-8a tag object LOST ITS RUN-ID LINE to it. Read it and the
+damage is visible in the grammar:
+
+    APPLIED 2026-11-01 at d8c9652. §5's "AND CI RUNS IT AS A SECOND JOB" is DISCHARGED: run
+    Muhammad from the Actions list -- the same provenance §4a's Task 0 row ...
+
+The line between those two read "#151, ..." and is gone from the immutable object. The
+figure survives in that message only because a LATER occurrence of it is indented, so its
+'#' is not the line's first character. Reproduced on 2026-11-01 in a throwaway repository:
+the same file tagged with the default cleanup drops the line and with --cleanup=verbatim
+keeps it. This file is written in the form that survives, and the tag it produces is
+verified after the fact rather than assumed.
+
+R-073's harness (QRPAGER-24) and Task 9 are not blocked by anything in this list.
