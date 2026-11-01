@@ -416,6 +416,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+        with:
+          # ⚠ TAGS, OR `check-records`' tag assertion READS AN EMPTY LIST AND PASSES.
+          # `§11` round two, QA M-5: a default checkout fetches none and the check
+          # returned early when `git tag --list task-*` was empty — proven in a
+          # `--depth 1 --no-tags` clone of the head, which reported "§0 agrees with the
+          # tags and the ledger" having read zero tags. The step existed and was vacuous
+          # exactly where it was deployed.
+          fetch-tags: true
+          fetch-depth: 0
       # ⚠ THE NODE VERSION COMES FROM .nvmrc, NEVER FROM A LITERAL HERE.
       #
       # QRPAGER-15 §7.4: a version verified in a session and not written down is a version

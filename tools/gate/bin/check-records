@@ -110,7 +110,21 @@ export function checkTagReality(plan) {
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
 
-  if (tags.length === 0) return
+  /**
+   * ⚠ AN EMPTY TAG LIST IS A FAILURE, AND IT USED TO BE AN EARLY RETURN. `§11` round two, QA
+   * M-5: a default `actions/checkout` fetches no tags, so this check was vacuous precisely where
+   * the diff deployed it — proven in a `--depth 1 --no-tags` clone of the head, which reported
+   * agreement having read zero tags. CI passes `fetch-tags: true` now, and this says so rather
+   * than passing quietly if that is ever removed.
+   */
+  if (tags.length === 0) {
+    fail(
+      'records(b2)',
+      'no `task-*` tags are visible, so §0 cannot be checked against the delivery record — a shallow checkout needs `fetch-tags: true`',
+    )
+
+    return
+  }
 
   /**
    * ⚠ THE *Last completed* CELL ONLY, BECAUSE THAT CELL IS THE DELIVERY RECORD. The rest of
