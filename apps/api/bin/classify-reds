@@ -1,0 +1,187 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * SPLIT A RED SUITE RUN INTO ATTRIBUTED REDS AND REAL REDS.
+ *
+ * WHY THIS EXISTS. Task 9's gate says "all previous tasks' tests still pass". With three
+ * live intermittents in the suite that clause could not be discharged honestly: any new
+ * red could be attributed to one of them by assertion, and §4a records that the most
+ * expensive defect shape on this project is an unidentified flake. R-185 says the same
+ * thing from the other side -- that §6's clause was being satisfied PROBABILISTICALLY
+ * rather than demonstrably.
+ *
+ * So the named list is tests/known-flakes.json, this script is what reads a run against
+ * it, and the verdict is in the exit code:
+ *
+ *   0   no failures
+ *   1   AT LEAST ONE FAILURE IS NOT ON THE LIST -- a real red, the gate's own failure
+ *   2   every failure is attributed to a named row -- an ATTRIBUTED red
+ *
+ * EXIT 2 IS NOT GREEN, DELIBERATELY. Making an attributed red exit 0 would hide a genuine
+ * regression in any test whose file happens to appear on the list, and it would remove the
+ * reading that R-191's and R-172's own owner cells demand ("a red run is to be READ, not
+ * re-run away"). A distinct code means a caller can tell the two apart; it does not mean
+ * one of them is a pass.
+ *
+ * USAGE: classify-reds <gate-log-or-test-output>   (or '-' for stdin)
+ */
+
+$path = $argv[1] ?? '-';
+$raw = $path === '-' ? (string) stream_get_contents(STDIN) : (string) @file_get_contents($path);
+
+if ($raw === '') {
+    fwrite(STDERR, "classify-reds: nothing to read at '{$path}'\n");
+    exit(1);
+}
+
+/*
+ * ANSI FIRST, AND IT IS NOT COSMETIC. bin/gate tees Pest's output verbatim, so the log
+ * carries escape sequences; `FAILED` in the log is wrapped in them, and a regex for a
+ * bare "FAILED" matches nothing. Measured on this project's own gate log.
+ */
+$text = (string) preg_replace('/\e\[[0-9;]*[A-Za-z]/', '', $raw);
+
+$listPath = __DIR__.'/../tests/known-flakes.json';
+/** @var array{flakes: list<array<string, mixed>>} $list */
+$list = json_decode((string) file_get_contents($listPath), true, 512, JSON_THROW_ON_ERROR);
+
+/*
+ * THE FAILURE BLOCKS. Pest prints one "FAILED  <Class> > <description>" line per failing
+ * case, and the message and frame follow it. The DESCRIPTION IS TRUNCATED with an ellipsis
+ * when it is long, which is why nothing here matches on it -- the class is not truncated,
+ * and the §5 rows name their flakes by file anyway. A block runs from its FAILED line to
+ * the next one, or to the summary.
+ */
+$lines = explode("\n", $text);
+$blocks = [];
+$current = null;
+
+foreach ($lines as $line) {
+    if (preg_match('/^\s*FAILED\s+(\S+)/', $line, $m) === 1) {
+        if ($current !== null) {
+            $blocks[] = $current;
+        }
+        $current = ['class' => $m[1], 'text' => $line."\n"];
+
+        continue;
+    }
+
+    if ($current !== null) {
+        if (preg_match('/^\s*Tests:\s/', $line) === 1) {
+            $blocks[] = $current;
+            $current = null;
+
+            continue;
+        }
+        $current['text'] .= $line."\n";
+    }
+}
+
+if ($current !== null) {
+    $blocks[] = $current;
+}
+
+if ($blocks === []) {
+    echo "classify-reds: no FAILED block in this output.\n";
+    echo "  ⚠ THAT IS NOT THE SAME AS 'no failures'. A step before the suite can fail the\n";
+    echo "    gate, and a suite can die without printing a FAILED block at all (a fatal, a\n";
+    echo "    killed process, a connection refused at boot). Read the log.\n";
+    exit(0);
+}
+
+/** Short class name, because Pest prints the FQN and the rows name the file. */
+$shortName = static function (string $class): string {
+    $parts = explode('\\', $class);
+
+    return (string) end($parts);
+};
+
+$attributed = [];
+$real = [];
+
+foreach ($blocks as $block) {
+    $short = $shortName($block['class']);
+    $hit = null;
+
+    foreach ($list['flakes'] as $flake) {
+        $match = $flake['match'] ?? [];
+
+        // By name: the families whose identity is a fixed file.
+        if (in_array($short, $match['tests'] ?? [], true)) {
+            $hit = $flake;
+            break;
+        }
+
+        /*
+         * By signature: R-191 strikes a RANDOM test, so a name list cannot describe it.
+         * BOTH the signature and the frame must match -- the SQLSTATE alone would swallow
+         * any genuine connection defect this project ever writes, which is the exact
+         * over-attribution this script exists to prevent.
+         */
+        $signature = $match['signature'] ?? null;
+        $frame = $match['frame'] ?? null;
+
+        if ($signature !== null
+            && preg_match('/'.$signature.'/', $block['text']) === 1
+            && ($frame === null || preg_match('/'.$frame.'/', $block['text']) === 1)) {
+            $hit = $flake;
+            break;
+        }
+    }
+
+    if ($hit === null) {
+        $real[] = $block;
+    } else {
+        $attributed[] = [$block, $hit];
+    }
+}
+
+echo "\n";
+echo "================================================================================\n";
+echo " RED RUN, SPLIT AGAINST tests/known-flakes.json\n";
+echo "================================================================================\n";
+
+echo "\nATTRIBUTED REDS -- a named row, its owner and its measured rate: ".count($attributed)."\n";
+
+if ($attributed === []) {
+    echo "  (none)\n";
+}
+
+foreach ($attributed as [$block, $flake]) {
+    printf("\n  %s\n", $shortName($block['class']));
+    printf("    row      %s%s\n", $flake['row'], ($flake['with'] ?? []) === [] ? '' : '  (with '.implode(', ', $flake['with']).')');
+    printf("    owner    %s\n", $flake['owner']);
+    printf("    rate     %s\n", $flake['rate']);
+    printf("    measured %s\n", $flake['measured']);
+}
+
+echo "\nREAL REDS -- on no row, owned by nobody, and the gate's own failure: ".count($real)."\n";
+
+if ($real === []) {
+    echo "  (none)\n";
+}
+
+foreach ($real as $block) {
+    printf("\n  %s\n", $shortName($block['class']));
+    foreach (array_slice(array_filter(explode("\n", $block['text']), static fn (string $l): bool => trim($l) !== ''), 1, 4) as $l) {
+        printf("    %s\n", trim($l));
+    }
+}
+
+echo "\n--------------------------------------------------------------------------------\n";
+
+if ($real !== []) {
+    printf("VERDICT: REAL RED. %d of %d failure(s) are on no row. This is the gate failing.\n", count($real), count($blocks));
+    echo "         Do not re-run. Read the log, then either fix it or file a row with an\n";
+    echo "         owner and a date -- adding it to known-flakes.json without a measured\n";
+    echo "         rate is the one thing that file must never be used for.\n";
+    exit(1);
+}
+
+printf("VERDICT: ATTRIBUTED RED. All %d failure(s) match a named row. NOT A PASS.\n", count($blocks));
+echo "         Exit 2, not 0: a regression in one of these files would look exactly like\n";
+echo "         this. The attribution says who owns the symptom, not that the run was fine.\n";
+exit(2);

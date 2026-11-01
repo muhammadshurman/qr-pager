@@ -1,0 +1,71 @@
+{
+  "_README": [
+    "THE NAMED KNOWN-FLAKE LIST. bin/gate reports entries matched here SEPARATELY from",
+    "failures, so that a red OUTSIDE this list is a real red and Task 9's gate clause",
+    "'all previous tasks' tests still pass' can be discharged honestly rather than",
+    "probabilistically. Before this file existed, three live intermittents meant any new",
+    "red could be attributed to one of them by assertion.",
+    "",
+    "RULES FOR THIS FILE, and they are the whole value of it:",
+    "  - An entry is a NAMED §5 row, its OWNER and its MEASURED rate with the commit and",
+    "    date it was measured at. No entry without all three. KnownFlakeListTest enforces",
+    "    it, and also enforces that every 'row' here is a real row in PLAN.md §5.",
+    "  - Adding an entry is a disposition, not a convenience. A red that is merely",
+    "    unexplained does NOT belong here -- that is the opposite of this file's purpose.",
+    "  - An entry is REMOVED when its row is closed, and removing it is how a fix is",
+    "    proven to have landed. R-200 was removed on 2026-11-01 by being fixed.",
+    "  - THERE ARE TWO SYMPTOM FAMILIES, NOT ONE PER ROW, and this file says so rather",
+    "    than listing rows as if they were independent. R-092 predates and is the parent",
+    "    of both.",
+    "",
+    "MATCHING. 'tests' matches the failing test's class as Pest prints it. 'signature' is",
+    "a regex over that failure's own block of output. A family whose identity is a random",
+    "test CANNOT be matched by name -- R-191 strikes a different file every time -- so it",
+    "is matched by its SQLSTATE and frame, which is exactly what its own row instructs a",
+    "reader to check."
+  ],
+  "flakes": [
+    {
+      "row": "R-191",
+      "with": ["R-092 (fault one)", "R-049", "R-047", "R-058"],
+      "title": "08006 connect timeout on pgsql_owner at TestCase::setUp's TRUNCATE, striking a random test",
+      "owner": "Task 13 (infrastructure)",
+      "rate": "3 of 3 full `composer gate` runs red at a6ece55; 0 of 2 under a bare `php artisan test`. Predecessor R-092 measured 3 red in 10 full-suite runs at 056d7a1 (2026-10-27), 2 of those this family.",
+      "measured": "2026-10-31/2026-11-01 at a6ece55; R-092 2026-10-27 at 056d7a1",
+      "identities": [
+        "AuditLogAssertionTest", "TenantContextTest", "ShedLoadTest", "EnumContractTest",
+        "BootstrapDatabaseCommandTest", "MemberConcurrencyTest (stated as a hypothesis, not a cause)",
+        "BootstrapLoggingTest (as R-092)", "PagerTransactionTest (as R-092)",
+        "ReadinessCarrierTest (as R-092, third symptom)"
+      ],
+      "match": {
+        "signature": "SQLSTATE\\[08006\\][\\s\\S]*?timeout expired",
+        "frame": "TestCase\\.php:112"
+      },
+      "why_not_a_code_defect": "Measured to the host, not argued: 300 bare TCP connects to 127.0.0.1:5432 idle gave 0 failed / median 0.0 ms / max 0.9 ms; the same 300 with eight CPU-spinning threads gave 0 failed / median 162.6 ms / p95 320.1 ms / max 35,648 ms -- a 35-second stall on one connect() with no Postgres in the path. The WSL2 + Docker userspace port forward is the cause. qrpager_owner peaked at 2 backends against a CONNECTION LIMIT of 10, so role limits are not it, and no connect_timeout is configured anywhere."
+    },
+    {
+      "row": "R-172",
+      "with": ["R-185", "R-092 (fault two)", "R-160", "R-166", "R-169"],
+      "title": "OutboxWorker::claim() returns ZERO rows where the test expects one, under full-suite load",
+      "owner": "Task 12",
+      "rate": "2 failures in roughly 7 full-suite runs on task-8b-precoding (2026-11-01); 8 of 8 green for the file in isolation; the §11 QA round did not reproduce it in 3 full runs at 5f7ffdc. Predecessor R-092 fault two: 1 red in 10 full-suite runs at 056d7a1.",
+      "measured": "2026-11-01 on task-8b-precoding; R-092 2026-10-27 at 056d7a1",
+      "identities": [
+        "OutboxWorkerTest", "OutboxLeaseTest", "WorkOutboxCommandTest (as R-092, the --limit 2 claim shortfall)"
+      ],
+      "match": {
+        "tests": ["OutboxWorkerTest", "OutboxLeaseTest", "WorkOutboxCommandTest"]
+      },
+      "why_not_a_code_defect": "⚠ UNRESOLVED, AND THAT IS WHY THIS ENTRY IS THE WEAKER OF THE TWO. R-185 exists precisely because R-172's diagnosis is a hypothesis presented as a cause: nothing yet distinguishes 'the test's own fixture races' from 'claim() drops work under load', and the second would be a failure of TASK 4's NAMED INVARIANT rather than a flaky test. Strongly load-correlated (the failing run took 335.53s against a typical ~205s). An entry here attributes the red to a named row; it does NOT certify the row's diagnosis. If this family is ever reproduced in isolation, it leaves this file and becomes a Task 4 defect."
+    }
+  ],
+  "removed": [
+    {
+      "row": "R-200",
+      "title": "PagerPollLatencyTest's exec()'d harness lost its seeded session to the suite",
+      "removed_on": "2026-11-01",
+      "why": "FIXED, not deferred. The row named the wrong mechanism -- it said a concurrent test's TRUNCATE, and the harness has run on its own Postgres database (qrpager_poll_proof) since it was written while the suite runs on qrpager_test, so no statement the suite issues can reach its rows. The shared resource was REDIS, which every Postgres database shares: TestCase::setUp's clearPagerProjection() deletes t:*:pager:* and pager:tok:* before every test, and a pager session IS a Redis key. The harness now runs in its own logical databases and under its own prefix. Measured both ways: a loop deleting *pager* from Redis while the harness runs failed 10 of 10 before the change and 0 of 10 after it. PagerPollLatencyTest asserts the isolation property and is proven red by putting the harness back on the suite's keyspace."
+    }
+  ]
+}

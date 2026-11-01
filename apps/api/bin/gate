@@ -67,6 +67,23 @@ log="storage/logs/gate-$(date -u +%Y%m%dT%H%M%SZ).log"
 echo "gate: full output -> $(pwd)/$log"
 echo
 
+# THE NAMED KNOWN-FLAKE LIST, PRINTED INTO EVERY LOG WHETHER THE RUN GOES RED OR NOT.
+#
+# Task 9's gate says "all previous tasks' tests still pass". Two live intermittent families
+# ride in this suite, so without a named list that clause cannot be discharged honestly --
+# any new red can be attributed to one of them by assertion, and R-185 is this ledger's own
+# row about §6's clause being satisfied probabilistically rather than demonstrably.
+#
+# So the list is tests/known-flakes.json and it is reported SEPARATELY from failures: on a
+# red, bin/classify-reds splits the run into ATTRIBUTED reds (a named row, its owner, its
+# measured rate) and REAL reds (on no row). A red outside the list is a real red.
+#
+# Printed on a GREEN run too, deliberately. A log that names the list is a log in which the
+# list's own staleness is visible -- an entry whose row has been closed should be gone, and
+# that is only noticeable if somebody sees it.
+php bin/known-flakes-summary 2>&1 | tee -a "$log"
+echo | tee -a "$log"
+
 # composer's own scripts, so this cannot drift from what CI runs.
 steps=(
   "composer pint"
@@ -100,6 +117,21 @@ for step in "${steps[@]}"; do
   if ! $step 2>&1 | tee -a "$log"; then
     echo | tee -a "$log"
     echo "gate: FAILED at '$step'. Full output: $(pwd)/$log" | tee -a "$log" >&2
+
+    # ONLY THE SUITE STEP IS CLASSIFIED. A pint, stan, guard, deptrac, assets or deps
+    # failure has nothing to do with a flaky test and feeding one to the classifier would
+    # print "no FAILED block" and say nothing useful. The nine steps above are
+    # deterministic; the suite is the only one with intermittents in it.
+    if [ "$step" = "php artisan test" ]; then
+      php bin/classify-reds "$log" 2>&1 | tee -a "$log"
+      verdict=${PIPESTATUS[0]}
+
+      if [ "$verdict" -eq 2 ]; then
+        echo "gate: ATTRIBUTED RED -- every failure matches a named row. Exit 2." | tee -a "$log" >&2
+        exit 2
+      fi
+    fi
+
     exit 1
   fi
 

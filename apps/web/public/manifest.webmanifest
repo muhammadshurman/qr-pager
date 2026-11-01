@@ -1,0 +1,23 @@
+{
+  "name": "QR Pager push harness",
+  "short_name": "Pager harness",
+  "description": "QRPAGER-24: an unstyled harness that proves Web Push reaches an iOS PWA installed to the Home Screen.",
+  "start_url": "/harness/push",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/harness-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/harness-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

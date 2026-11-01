@@ -1,0 +1,19 @@
+   FAILED  Tests\Feature\Notifications\OutboxWorkerTest > it refreshes the projection
+
+  Failed asserting that 0 is identical to 1.
+
+  at tests/Feature/Notifications/OutboxWorkerTest.php:192
+    192▕         expect($tally['retried'])->toBe(1);
+
+   FAILED  Tests\Feature\Landing\PublishTest > it commits the row before the first byte
+
+  Failed asserting that false is true.
+
+  at tests/Feature/Landing/PublishTest.php:88
+     88▕         expect($published)->toBeTrue();
+
+  2   tests/Feature/Notifications/OutboxWorkerTest.php:192
+  3   tests/Feature/Landing/PublishTest.php:88
+
+
+  Tests:    2 failed, 1152 passed (9798 assertions)

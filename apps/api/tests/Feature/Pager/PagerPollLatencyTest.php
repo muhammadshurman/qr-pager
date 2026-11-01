@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Tests\TestCase;
 
 /*
  * A SMOKE CHECK ON THE LATENCY HARNESS. It is not the p99 of record and must never be
@@ -81,4 +82,112 @@ it('smoke-checks the latency harness: it runs, and still measures zero Postgres 
     // rather than an accident.
     expect($transcript)->toContain('timing REPORTED ONLY')
         ->and($transcript)->not->toContain('full -- properties and timing asserted');
+})->group('slow');
+
+/*
+ * R-200's REGRESSION CASE, and it asserts the PROPERTY rather than re-running the race.
+ *
+ * WHAT R-200 WAS, and the part of its own row that was wrong. The row says the harness's
+ * seeded session is removed by "a concurrent test's TRUNCATE". It is not, and it cannot
+ * be: bin/poll-latency-proof has run on its own database since it was written
+ * (`qrpager_poll_proof`) and this suite runs on `qrpager_test` (phpunit.xml:64), so no
+ * statement this suite issues can reach a row that harness wrote. Postgres was never the
+ * shared resource.
+ *
+ * REDIS WAS. A pager session lives in Redis -- §4 › Realtime makes the token pointer a key
+ * whose own NAME is the secret -- and Redis is shared across every Postgres database.
+ * TestCase::setUp calls clearPagerProjection() before EVERY test, deleting `t:*:pager:*`
+ * and `pager:tok:*`; with one prefix and one logical database for both processes those
+ * patterns matched the keys the harness had just seeded. Hence 404 on a poll, hence 9 in
+ * 20 rather than always: it takes one test boundary landing inside one batch.
+ *
+ * WHY THIS CASE AND NOT A CONCURRENCY TEST. A test that spawns the suite alongside itself
+ * to reproduce a 9-in-20 race is the F10 shape this very file's header is an essay about
+ * -- it would be the flakiest test in the repository and would prove the fix only
+ * statistically. The fix is an ISOLATION property and isolation is checkable exactly. The
+ * race was measured by hand instead, both ways, and the figures are in the script's
+ * docblock: a loop deleting `*pager*` from Redis while the harness runs failed 10 of 10
+ * before this change and 0 of 10 after it.
+ *
+ * AND THE NUMBERS ARE READ, NOT COPIED. The harness prints the keyspace it actually used
+ * and this case parses that line, so there is no constant here to go stale when a default
+ * moves in the script. The suite's own side is read from live config for the same reason.
+ */
+it('runs the harness in a keyspace this suite cannot reach, which is R-200', function (): void {
+    $script = base_path('bin/poll-latency-proof');
+
+    $output = [];
+    $status = 0;
+    exec(escapeshellarg($script).' --quick 2>&1', $output, $status);
+    $transcript = implode(PHP_EOL, $output);
+
+    expect($status)->toBe(0, "the latency harness failed:\n".$transcript);
+
+    // Read what the harness SAYS it used. One source: the script, reporting itself.
+    expect($transcript)->toMatch('/^  redis ns     db \S+ \/ cache db \S+ \/ prefix \S+$/m')
+        ->and($transcript)->toMatch('/^  postgres db  \S+/m');
+
+    preg_match('/^  redis ns     db (\S+) \/ cache db (\S+) \/ prefix (\S+)$/m', $transcript, $redis);
+    preg_match('/^  postgres db  (\S+)/m', $transcript, $postgres);
+
+    [, $harnessDb, $harnessCacheDb, $harnessPrefix] = $redis;
+
+    // ----------------------------------------------------------------------------------
+    // (1) The half R-200's row named, pinned so the claim cannot be made again: the two
+    //     processes were never on one database.
+    // ----------------------------------------------------------------------------------
+    expect($postgres[1])->not->toBe(
+        (string) config('database.connections.pgsql.database'),
+        'the harness shares this suite\'s Postgres database -- R-200 would be about TRUNCATE after all',
+    );
+
+    // ----------------------------------------------------------------------------------
+    // (2) The half that was actually the defect. BOTH axes, because either one alone
+    //     closes today's two sweeps and only the pair survives a broader one written later.
+    // ----------------------------------------------------------------------------------
+    expect($harnessDb)->not->toBe(
+        (string) config('database.redis.default.database'),
+        'the harness shares this suite\'s Redis logical database -- R-200 is open',
+    )->and($harnessCacheDb)->not->toBe(
+        (string) config('database.redis.cache.database'),
+        'the harness shares this suite\'s Redis CACHE database, which is where the rate-limit buckets live',
+    )->and($harnessPrefix)->not->toBe(
+        (string) config('database.redis.options.prefix'),
+        'the harness shares this suite\'s Redis key prefix -- clearPagerProjection\'s patterns match its keys',
+    );
+
+    // ----------------------------------------------------------------------------------
+    // (3) AND IT IS DRIVEN, not merely compared. A key in the harness's reported namespace
+    //     must survive the REAL clearPagerProjection(), and a key in this suite's own
+    //     namespace must NOT -- the second half is what stops this passing vacuously
+    //     because the clear is broken rather than because the isolation works.
+    // ----------------------------------------------------------------------------------
+    $client = new Redis;
+    $client->connect((string) config('database.redis.default.host'), (int) config('database.redis.default.port'));
+
+    $suitePrefix = (string) config('database.redis.options.prefix');
+    $suiteDb = (int) config('database.redis.default.database');
+    $probe = 'pager:tok:r200-'.bin2hex(random_bytes(8));
+
+    $client->select((int) $harnessDb);
+    $client->set($harnessPrefix.$probe, 'harness');
+    $client->select($suiteDb);
+    $client->set($suitePrefix.$probe, 'suite');
+
+    $clear = new ReflectionMethod(TestCase::class, 'clearPagerProjection');
+    $clear->setAccessible(true);
+    $clear->invoke(null);
+
+    $client->select($suiteDb);
+    $suiteSurvived = $client->exists($suitePrefix.$probe);
+    $client->select((int) $harnessDb);
+    $harnessSurvived = $client->exists($harnessPrefix.$probe);
+
+    $client->del($harnessPrefix.$probe);
+    $client->select($suiteDb);
+    $client->del($suitePrefix.$probe);
+    $client->close();
+
+    expect($suiteSurvived)->toBe(0, 'clearPagerProjection did not delete a key in its OWN namespace, so (3) proves nothing')
+        ->and($harnessSurvived)->toBe(1, 'clearPagerProjection reached into the harness keyspace -- R-200 is open');
 })->group('slow');

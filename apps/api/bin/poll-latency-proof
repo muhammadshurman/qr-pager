@@ -83,6 +83,77 @@ putenv('DB_DATABASE='.$database);
 $_ENV['DB_DATABASE'] = $database;
 $_SERVER['DB_DATABASE'] = $database;
 
+/*
+ * AND ITS OWN REDIS KEYSPACE, FOR THE SAME REASON AND BY THE SAME MECHANISM -- R-200.
+ *
+ * THE DEFECT THIS CLOSES, and the row that named the wrong cause. R-200 reads: "the script
+ * seeds a session and a concurrent test's TRUNCATE deletes it mid-batch". The TRUNCATE
+ * cannot be it. This script has run on its own database since the day it was written
+ * (`qrpager_poll_proof`, above) and the suite runs on `qrpager_test` -- phpunit.xml:64 --
+ * so no statement the suite issues can reach a row this harness wrote. Postgres was never
+ * the shared resource.
+ *
+ * REDIS WAS, and it is shared by every database. A pager session lives in Redis, not in a
+ * table: §4 › Realtime makes the token pointer a Redis key whose own NAME is the secret.
+ * TestCase::setUp calls clearPagerProjection() before EVERY test, which deletes
+ * `t:*:pager:*` and `pager:tok:*` -- and with one prefix and one logical database for both
+ * processes, those patterns match the keys THIS harness just seeded. The 404s R-200
+ * measured are the poll endpoint failing to resolve a pointer the suite had deleted under
+ * it, which is why they were 9-in-20 rather than constant: it takes one test boundary
+ * landing inside one batch.
+ *
+ * MEASURED, both directions, 2026-11-01:
+ *   - deleting `*pager*` from Redis in a loop while this script runs: 10 of 10 runs FAIL.
+ *     Nothing else is touched -- no Postgres, no load.
+ *   - the same loop with this isolation in place: 10 of 10 PASS.
+ *
+ * SO THE FIX IS A KEYSPACE OF ITS OWN, not R-200's two candidates. Neither of those would
+ * have worked: "give the subprocess its own database" is already true and is not the axis
+ * that matters, and "have the harness take R-049's lock" DEADLOCKS -- the suite holds that
+ * lock for its whole process lifetime and is blocked waiting on this subprocess, so this
+ * subprocess waiting on the lock waits forever.
+ *
+ * Both axes are set, deliberately: a distinct logical database AND a distinct prefix. The
+ * prefix alone would be enough against the two `keys()` sweeps TestCase does today, because
+ * those patterns are prefixed before they are matched; the logical database is what makes
+ * it survive a sweep that is written later and is broader -- a `flushdb`, say. No test
+ * flushes today (grepped), which is a fact about today.
+ *
+ * REDIS_CACHE_DB as well as REDIS_DB, because RequestLimiter runs on the CACHE store and
+ * not the raw connection -- its own docblock says why, and TestCase::clearRateLimitBuckets
+ * records what it cost to learn. This harness clears its own bucket between batches, so
+ * both connections have to move together or it clears a bucket it is not filling.
+ */
+/*
+ * `?:` IS WRONG HERE AND THAT WAS FOUND BY THIS CHANGE'S OWN REVERT PROOF, not reasoned.
+ * `'0' ?: '3'` is '3' -- PHP's falsy '0' -- so an operator pinning the harness to logical
+ * database 0 on purpose would silently get 3, and the revert that proves the regression
+ * case red is exactly that operator. The first attempt at the proof passed the logical-db
+ * assertion for this reason and reddened one line further down, which read as the fix
+ * working when it was the override being ignored. So: false-test each variable, which is
+ * what getenv() actually returns when a name is unset. DB_DATABASE above takes a non-empty
+ * name and is not exposed to this, and is left alone rather than churned.
+ */
+$envOr = static function (string $name, string $default): string {
+    $value = getenv($name);
+
+    return $value === false || $value === '' ? $default : $value;
+};
+
+$redisDb = $envOr('POLL_PROOF_REDIS_DB', '3');
+$redisCacheDb = $envOr('POLL_PROOF_REDIS_CACHE_DB', '4');
+$redisPrefix = $envOr('POLL_PROOF_REDIS_PREFIX', 'pollproof-database-');
+
+foreach ([
+    'REDIS_DB' => $redisDb,
+    'REDIS_CACHE_DB' => $redisCacheDb,
+    'REDIS_PREFIX' => $redisPrefix,
+] as $key => $value) {
+    putenv($key.'='.$value);
+    $_ENV[$key] = $value;
+    $_SERVER[$key] = $value;
+}
+
 require __DIR__.'/../vendor/autoload.php';
 
 /** @var Illuminate\Foundation\Application $app */
@@ -276,6 +347,20 @@ printf("  machine      %s, %s CPU(s), load %s\n", $uname, $cpus, $load);
 printf("  php          %s\n", PHP_VERSION);
 printf("  mode         %s\n", $quick ? 'QUICK -- properties asserted, timing REPORTED ONLY' : 'full -- properties and timing asserted');
 printf("  method       %d warm-up discarded, %d measured, best p99 of %d batch(es);\n", WARMUP, SAMPLE, QUICK_BATCHES);
+/*
+ * THE KEYSPACE IS REPORTED, and that is what makes R-200's fix testable without a race.
+ * PagerPollLatencyTest reads these two lines out of this output and compares them with the
+ * SUITE's live values, so there is one source for the figure -- this script, saying what it
+ * actually used -- rather than a constant copied into a test that would go stale the moment
+ * a default here changed. Same argument as the commit line below, and the same argument
+ * contrast.json settled for the colour figures.
+ */
+printf("  postgres db  %s  (suite: see phpunit.xml DB_DATABASE)\n", (string) config('database.connections.pgsql.database'));
+printf("  redis ns     db %s / cache db %s / prefix %s\n",
+    (string) config('database.redis.default.database'),
+    (string) config('database.redis.cache.database'),
+    (string) config('database.redis.options.prefix'),
+);
 printf("               wall clock around the whole HTTP kernel call, real Redis, warm projection\n");
 printf("\n");
 printf("  Postgres statements per poll   %d  (budget 0)\n", $postgres);
