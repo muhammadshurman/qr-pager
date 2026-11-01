@@ -1505,4 +1505,4 @@ openapi: 66 problem response(s) published as application/problem+json
 
 
 gate: all 10 steps green. Full output: /home/pixels/code/qr-pager/apps/api/storage/logs/gate-20261101T233710Z.log
-SCRIPT_EXIT=0
+EXIT=0
