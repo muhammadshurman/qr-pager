@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -201,6 +202,83 @@ describe('the workspace gate and CI run the same steps', () => {
     expect(
       Object.entries(pkg.scripts).filter(([, body]) => body.includes('playwright test')).length,
     ).toBe(1)
+  })
+
+  it('builds apps/web BEFORE Vitest, in the gate AND in CI -- QA C-1', () => {
+    /**
+     * ⚠ THE THIRD RECURRENCE OF ONE FAMILY, SO THIS IS THE REGRESSION TEST `§7` SAYS WAS
+     * MISSING. 8a shipped pnpm-before-corepack, 8b shipped vendor-before-build, Task 9
+     * shipped vitest-before-build -- each caught by a review rather than by a gate.
+     *
+     * `build-surface.test.ts` reads `apps/web/.next/server/app/s.html` and FAILS rather than
+     * skips when it is absent, deliberately: a skipped load-invariant clause is a clause
+     * nobody checked. So with the builds after Vitest, both halves were deterministically red
+     * on any tree without a stale `.next` -- measured by `fresh-clone-proof` at `a6f9a47`,
+     * `gate: FAILED at 'pnpm exec vitest run --coverage'`, 10 cases red.
+     *
+     * Asserted as an ORDERING over both step lists rather than as "the step exists", because
+     * both steps existed the whole time. Index comparison, in both halves, from the same two
+     * parsers the rest of this file uses.
+     */
+    const gate = gateSteps()
+    const gateBuild = gate.findIndex(
+      (step) => step.includes('@qrpager/web') && step.includes('build'),
+    )
+    const gateVitest = gate.findIndex((step) => step.includes('vitest'))
+
+    expect(gateBuild, 'the gate has no @qrpager/web build step at all').toBeGreaterThan(-1)
+    expect(gateVitest, 'the gate has no vitest step at all').toBeGreaterThan(-1)
+    expect(
+      gateBuild < gateVitest,
+      `pnpm gate runs vitest (step ${String(gateVitest)}) before the web build (step ${String(gateBuild)}), so build-surface.test.ts reads a build that does not exist yet`,
+    ).toBe(true)
+
+    // CI's own job, read as raw text in step order rather than through the pnpm-step parser,
+    // because the build is a multi-line `run:` block and not a one-line pnpm step.
+    const job = frontendJob
+    const ciBuild = job.indexOf('pnpm --filter @qrpager/web run build')
+    const ciVitest = job.indexOf('pnpm exec vitest run --coverage')
+
+    expect(ciBuild, "CI's frontend job has no @qrpager/web build").toBeGreaterThan(-1)
+    expect(ciVitest, "CI's frontend job has no vitest step").toBeGreaterThan(-1)
+    expect(
+      ciBuild < ciVitest,
+      "CI's frontend job runs vitest before the web build, so the job is red on every runner",
+    ).toBe(true)
+  })
+
+  it('runs the fresh-clone proof as a CI step, on every push rather than at the end of a task', () => {
+    // The mechanisation half of QA C-1/H-2. A proof a builder runs by hand when they remember
+    // is not a control: three tasks have now shipped a clone-breaking defect past it. As a
+    // step it is proven on the push that breaks it.
+    expect(
+      frontendJob,
+      'CI does not run tools/gate/bin/fresh-clone-proof, so a clone-breaking change is caught by a reviewer instead of by a gate',
+    ).toContain('tools/gate/bin/fresh-clone-proof')
+  })
+
+  it('checks the repositorys own record in both halves, and proves each check bites', () => {
+    // §11 round one rulings (b) and (c). The step existing is half the assertion: a checker
+    // that cannot fail is the vacuous-assertion shape this project has paid for, so the
+    // script's own `--self-test` is run here against deliberately bad inputs.
+    expect(
+      gateSteps().some((step) => step.includes('records:check')),
+      'pnpm gate does not check §0 or the transcripts',
+    ).toBe(true)
+    expect(frontendJob, 'CI does not check §0 or the transcripts').toContain('records:check')
+
+    const selfTest = spawnSync('node', ['tools/gate/bin/check-records', '--self-test'], {
+      cwd: REPO,
+      encoding: 'utf8',
+    })
+
+    expect(
+      selfTest.status,
+      `check-records --self-test did not pass:\n${selfTest.stdout}${selfTest.stderr}`,
+    ).toBe(0)
+    // Named, so a self-test that quietly stopped covering a family fails here.
+    expect(selfTest.stdout).toContain('catches  a §5 row count that disagrees with the table')
+    expect(selfTest.stdout).toContain('catches  a §0 naming a tag that does not exist')
   })
 
   it('has every CI pnpm step in the GATE', () => {

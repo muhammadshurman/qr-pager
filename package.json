@@ -12,6 +12,7 @@
     "lint:tokens": "node tools/design-tokens/bin/scan-css.mjs",
     "lint:panel": "node tools/design-tokens/bin/scan-panel.mjs",
     "lint:shell": "tools/gate/bin/check-shell-evidence",
+    "records:check": "node tools/gate/bin/check-records",
     "format:check": "prettier --check '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'",
     "format": "prettier --write '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'",
     "typecheck": "pnpm run typecheck:root && pnpm -r --no-bail run typecheck",

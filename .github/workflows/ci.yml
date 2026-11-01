@@ -603,6 +603,12 @@ jobs:
       - name: The generated token artefacts are not stale
         run: pnpm run tokens:check
 
+      # §11 round one rulings (b) and (c): §0's stated state against the tags and the ledger,
+      # and every committed gate transcript against its own exit code. Both failures were real
+      # at a6f9a47 and both were found by a reviewer rather than by a gate.
+      - name: §0 and the committed transcripts agree with reality
+        run: pnpm run records:check
+
       # §11.7's dependency clause, and it existed nowhere before this fix. The first run
       # returned five advisories -- 2 high, 3 moderate -- against a diff that adds 3,184
       # lockfile lines. `--audit-level low` so no severity is filtered out silently. The two
@@ -611,6 +617,16 @@ jobs:
       # hard-pins postcss 8.4.31 and §1 locks Next 15).
       - name: Known CVEs in the dependency tree — §11.7
         run: pnpm run audit
+
+      # ⚠ BEFORE VITEST, AND THAT ORDER IS THE FIX FOR §11 QA C-1. `build-surface.test.ts`
+      # reads the BUILT document and FAILS rather than skips when it is absent, so with the
+      # builds last this job was deterministically red on any runner with no `.next` -- which
+      # is every CI runner. `ci-parity.test.mjs` asserts this ordering in both halves, so it
+      # cannot drift back.
+      - name: Both Next.js apps build
+        run: |
+          pnpm --filter @qrpager/web run build
+          pnpm --filter @qrpager/site run build
 
       # §6's "unit coverage >= 90% on code this task added", with Vitest as ADR-003 names.
       # The thresholds are in vitest.config.ts, so a run below them exits non-zero here.
@@ -625,10 +641,15 @@ jobs:
       - name: The browser checks — R-118's four clauses
         run: pnpm run test:browser
 
-      - name: Both Next.js apps build
-        run: |
-          pnpm --filter @qrpager/web run build
-          pnpm --filter @qrpager/site run build
+      # ⚠ ON EVERY PUSH, NOT AT THE END OF A TASK, AND THAT IS THE RULING THIS FAMILY EARNED.
+      # A fresh-clone pass was a thing a builder ran once, by hand, when they remembered --
+      # and three tasks running it late have each cost a review round: 8a's
+      # pnpm-before-corepack, 8b's vendor-before-build, Task 9's vitest-before-build (QA C-1,
+      # caught at review rather than at commit 1). `§7`: a recurrence means the regression
+      # test was missing. This is that test, as a step, so the clone is proven on the push
+      # that breaks it.
+      - name: A fresh clone builds, lints and tests — §6's clause, as a step
+        run: tools/gate/bin/fresh-clone-proof
 
       # A generated artefact or a build output left modified means something in this job
       # wrote to the tree, and a committed artefact that disagrees with its generator is the

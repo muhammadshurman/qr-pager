@@ -107,7 +107,20 @@ for required in \
     apps/api/composer.json apps/api/composer.lock \
     apps/api/resources/css/filament/targets.css \
     apps/api/resources/css/filament/platform/theme.css \
-    apps/api/resources/css/filament/studio/theme.css
+    apps/api/resources/css/filament/studio/theme.css \
+    tools/browsers/Dockerfile \
+    tools/browsers/bin/browsers \
+    tools/browsers/bin/e2e \
+    tools/browsers/bin/tls-proxy.mjs \
+    tools/browsers/probe/engines.mjs \
+    tools/gate/bin/lighthouse-proof \
+    docs/contracts/journey-states.json \
+    docs/contracts/web-csp-surface.json \
+    apps/web/public/sw.js \
+    apps/web/public/pager.webmanifest \
+    apps/web/public/pager-icon.svg \
+    apps/api/bin/issue-pager-session \
+    apps/api/bin/issue-harness-user
 do
     if [ -f "$required" ]; then
         echo "  tracked: $required"

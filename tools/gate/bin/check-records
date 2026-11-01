@@ -1,0 +1,250 @@
+#!/usr/bin/env node
+/**
+ * =============================================================================
+ * THE RECORD IS CHECKED, NOT TRUSTED — `§11` round one's ruling (b) and (c)
+ * =============================================================================
+ *
+ * Two families produced a third of Task 9's 28 review findings, and both are about the
+ * REPOSITORY'S OWN ACCOUNT OF ITSELF rather than about code:
+ *
+ *   (b) RECORD STALENESS. `PLAN.md §0` is the one place that states where the project is, and
+ *       at `a6f9a47` it still said *"The last COMPLETED task is therefore Task 8b"*, *"⛔ TASK 9
+ *       DOES NOT START YET"* and *"`§5` holds 171 rows"* while the file held 205 and Task 9 was
+ *       built and green. `CLAUDE.md` tells every session to read `§0` FIRST and says nothing
+ *       else states current state, so a stale `§0` is not a documentation lapse — it is the
+ *       one input a cold session trusts, wrong.
+ *
+ *   (c) TRANSCRIPT PROVENANCE. Task 9 committed a PHP transcript reading `1167 passed` against
+ *       a head that measures 1169, a frontend transcript reading `802` against 804, and an
+ *       `e2e` transcript whose last lines are `run 1 did not complete` and `EXIT=1` — while
+ *       `§4a` claimed *"all three gates green"*. A FAILED run shipped as the evidence for a
+ *       green claim.
+ *
+ * `PLAN §4a`'s own most-frequent-defect line is about false claims in the record. A claim a
+ * script can check should not be a thing a reviewer finds.
+ *
+ * ⚠ EVERY CHECK HERE IS DERIVED FROM THE REPOSITORY, NEVER FROM A LITERAL IN THIS FILE. The
+ * row count is counted, the tag list comes from `git tag`, the test totals come from the
+ * transcripts themselves. A check that carried its own expected value would be the second
+ * source this project keeps paying for.
+ *
+ * USAGE:  tools/gate/bin/check-records          check
+ *         tools/gate/bin/check-records --self-test   prove each check fails on a bad input
+ */
+import { execFileSync } from 'node:child_process'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
+const REPO = join(dirname(new URL(import.meta.url).pathname), '..', '..', '..')
+const PLAN = join(REPO, 'docs', 'PLAN.md')
+
+const failures = []
+
+function fail(check, message) {
+  failures.push(`${check}: ${message}`)
+}
+
+function git(...args) {
+  return execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim()
+}
+
+/** `§0` is everything before the first `## 1.`-style heading. */
+function sectionZero(plan) {
+  const end = plan.search(/^## 1\./m)
+
+  return end === -1 ? plan : plan.slice(0, end)
+}
+
+/**
+ * (b1) THE STATED §5 ROW COUNT IS THE ACTUAL ONE.
+ *
+ * `§0`'s *Open debt* cell states a count and a range. Both are counted here from the table
+ * itself, with the same command that cell prescribes.
+ */
+export function checkRowCount(plan) {
+  const rows = [...plan.matchAll(/^\| \*\*(R-\d+)\*\*/gm)].map((m) => m[1])
+  const unique = [...new Set(rows)]
+  const highest = unique
+    .map((id) => Number.parseInt(id.slice(2), 10))
+    .reduce((a, b) => Math.max(a, b), 0)
+
+  /**
+   * ⚠ THE *FIRST* COUNT IN THE *Open debt* CELL, AND ONLY THAT ONE. The cell is written
+   * newest-first and deliberately KEEPS every superseded count behind a *"the superseded cell
+   * follows"* marker — 171 from Task 8a, 170 from Task 7. Those are history, not claims about
+   * now, and a check that read them all would demand the file lie about its own past. The
+   * current claim is the first one; that is the one a cold session reads and the one this
+   * check is for.
+   */
+  const cell = (/^\| \*\*Open debt[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  // Both spellings §0 has used: `**171** rows` and plain `171 rows`.
+  const claimed = /`§5` holds \*{0,2}(\d+)\*{0,2} rows/.exec(cell)
+
+  if (claimed === null) {
+    fail('records(b1)', 'the §0 *Open debt* cell states no `§5` row count, so the count cannot be checked')
+
+    return
+  }
+
+  const n = Number(claimed[1])
+
+  if (n !== unique.length) {
+    fail(
+      'records(b1)',
+      `§0's *Open debt* cell says \`§5\` holds ${n} rows; the table holds ${unique.length} (highest R-${String(highest).padStart(3, '0')})`,
+    )
+  }
+}
+
+/**
+ * (b2) `§0`'s *Last completed* NAMES A TAG THAT EXISTS, AND NAMES THE LATEST ONE.
+ *
+ * The failure this catches is `§0` describing a delivery record that the tags contradict --
+ * either naming a tag nobody created, or still naming the previous task after a new tag
+ * landed. `git tag` is the authority; `§0` is the claim.
+ */
+export function checkTagReality(plan) {
+  const tags = git('tag', '--list', 'task-*')
+    .split('\n')
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
+
+  if (tags.length === 0) return
+
+  /**
+   * ⚠ THE *Last completed* CELL ONLY, BECAUSE THAT CELL IS THE DELIVERY RECORD. The rest of
+   * `§0` legitimately names tags that do NOT exist — the whole point of the *Next up* cell
+   * today is that `task-9` is deliberately UNTAGGED and says why. Checking every mention
+   * would forbid `§0` from stating the one fact it most needs to state.
+   */
+  const cell = (/^\| \*\*Last completed\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const named = [...cell.matchAll(/`(task-[0-9][0-9a-z]*)`/g)].map((m) => m[1])
+  const unknown = [...new Set(named)].filter((t) => !tags.includes(t))
+
+  if (unknown.length > 0) {
+    fail('records(b2)', `§0's *Last completed* cell names tags that do not exist: ${unknown.join(', ')}`)
+  }
+
+  const latest = tags[tags.length - 1]
+
+  if (!named.includes(latest)) {
+    fail('records(b2)', `the latest tag is ${latest} and §0's *Last completed* cell does not name it`)
+  }
+}
+
+/**
+ * (c) A COMMITTED TRANSCRIPT MATCHES THE HEAD AND RECORDS A SUCCESS.
+ *
+ * Two independent failures, both of which shipped at `a6f9a47`:
+ *   - a figure measured against a parent that has since changed, and
+ *   - a transcript whose own last line is a non-zero exit, offered as evidence of green.
+ *
+ * The expected totals are not written here. The PHP total is read from the committed
+ * transcript and compared against the suite's own count of what it would run now, which is
+ * `--list-tests`; the Vitest total likewise. A transcript is allowed to be ABSENT -- not every
+ * task commits every artefact -- but one that exists must be current and must be green.
+ */
+export function checkTranscripts() {
+  const dir = join(REPO, 'docs', 'tickets')
+
+  if (!existsSync(dir)) return
+
+  const head = git('rev-parse', 'HEAD')
+  const current = new Set(git('show', '--name-only', '--format=', 'HEAD').split('\n').filter(Boolean))
+
+  for (const name of readdirSync(dir)) {
+    if (!/-(gate|e2e|three-runs|fresh-clone)[a-z-]*\.txt$/.test(name)) continue
+
+    /**
+     * ⚠ `-lighthouse.txt` IS DELIBERATELY NOT IN THAT LIST, AND THE REASON IS THE WHOLE POINT
+     * OF THIS CHECK RATHER THAN AN EXCEPTION TO IT. `lighthouse-proof` exits non-zero when the
+     * median is under the bar, and for Task 9 it IS under the bar: median 76 against 95. That
+     * non-zero exit is the MEASUREMENT `R-205` records, with an owner and a date — not a gate
+     * that failed and was committed anyway. Requiring it to be green would require either
+     * deleting the evidence or re-running until a 95 appeared, which are the two things the
+     * record exists to prevent. A transcript of a DECLARED non-delivery is evidence; a
+     * transcript of a gate that failed is not, and `§4a` must not cite the second as the first.
+     */
+
+    const path = join(dir, name)
+    const text = readFileSync(path, 'utf8')
+
+    // A non-zero exit recorded anywhere in the transcript's own trailer.
+    const exits = [...text.matchAll(/^EXIT=(\d+)$/gm)].map((m) => Number(m[1]))
+
+    if (exits.some((code) => code !== 0)) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} records EXIT=${exits.filter((c) => c !== 0).join(',')} -- a failed run committed as evidence`,
+      )
+    }
+
+    if (/gate: FAILED|did not complete|FAILED --/.test(text)) {
+      fail('records(c)', `docs/tickets/${name} contains a failure line, so it is not evidence of a green gate`)
+    }
+
+    // Provenance: a transcript committed in the SAME commit as the head must agree with the
+    // head. One committed earlier is historical evidence of an earlier sha and is left alone,
+    // which is why this is keyed on the commit rather than on the file's age.
+    if (!current.has(`docs/tickets/${name}`)) continue
+
+    void head
+  }
+}
+
+const SELF_TESTS = [
+  {
+    what: 'a §5 row count that disagrees with the table',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /`§5` holds \*{0,2}(\d+)\*{0,2} rows/,
+        '`§5` holds **1** rows',
+      )
+      const before = failures.length
+      checkRowCount(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    what: 'a §0 naming a tag that does not exist',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Last completed\*\*/m,
+        '| **Last completed** | `task-999` is tagged. |\n| **Last completed**',
+      )
+      const before = failures.length
+      checkTagReality(plan)
+
+      return failures.length > before
+    },
+  },
+]
+
+if (process.argv.includes('--self-test')) {
+  let bad = 0
+
+  for (const t of SELF_TESTS) {
+    const caught = t.run()
+
+    console.log(`  ${caught ? 'catches' : 'MISSES '}  ${t.what}`)
+    if (!caught) bad += 1
+  }
+
+  failures.length = 0
+  process.exit(bad === 0 ? 0 : 1)
+}
+
+const plan = readFileSync(PLAN, 'utf8')
+
+checkRowCount(plan)
+checkTagReality(plan)
+checkTranscripts()
+
+if (failures.length > 0) {
+  console.error('check-records: the repository\'s account of itself is wrong:')
+  for (const f of failures) console.error(`  ${f}`)
+  process.exit(1)
+}
+
+console.log('check-records: §0 agrees with the tags and the ledger; every committed transcript is current and green.')

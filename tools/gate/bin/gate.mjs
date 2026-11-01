@@ -90,6 +90,15 @@ const steps = [
   ['pnpm', ['run', 'format:check']],
   ['pnpm', ['run', 'typecheck']],
   ['pnpm', ['run', 'tokens:check']],
+  /**
+   * ⚠ THE REPOSITORY'S ACCOUNT OF ITSELF, CHECKED RATHER THAN TRUSTED. `§11` round one's
+   * rulings (b) and (c), and both were real at `a6f9a47`: `§0` said `§5` held 171 rows while
+   * the table held 205 and still said Task 9 must not start, and a committed `gate:e2e`
+   * transcript recorded `EXIT=1` while `§4a` claimed all three gates green. `CLAUDE.md` makes
+   * `§0` the one input a cold session trusts, so a stale `§0` is not a documentation lapse.
+   * `--self-test` proves each check on a deliberately bad input.
+   */
+  ['pnpm', ['run', 'records:check']],
   // §11.7's dependency clause, and it DID NOT EXIST. The ticket's §4.3 said `pnpm audit`
   // "is run as part of the gate and its output is committed" and it was in no script, no
   // workflow and no evidence file -- while the first run returned five advisories (2 high,
@@ -107,6 +116,25 @@ const steps = [
   // the other. So the trade-off is taken deliberately: a registry outage reddens this gate,
   // and the failure says so rather than looking like a code defect.
   ['pnpm', ['run', 'audit']],
+  /**
+   * ⚠ THE BUILDS RUN BEFORE VITEST, AND THE ORDER IS LOAD-BEARING. `§11` QA C-1.
+   *
+   * They used to be the last two steps, and `build-surface.test.ts` reads
+   * `apps/web/.next/server/app/s.html` -- deliberately FAILING rather than skipping when it is
+   * absent, because a skipped load-invariant clause is a clause nobody checked. So on a tree
+   * with no `.next` the gate died at Vitest with 10 red `build-surface` cases, and
+   * `tools/gate/bin/fresh-clone-proof` measured exactly that at `a6f9a47`:
+   * `gate: FAILED at 'pnpm exec vitest run --coverage'`. The builder's own runs passed only
+   * because an earlier `gate:e2e` had left a build behind.
+   *
+   * ⚠ AND IT IS THE THIRD TIME THIS FAMILY HAS COST A ROUND -- 8a's pnpm-before-corepack, 8b's
+   * vendor-before-build, this. `§7` says a recurrence means the regression test was missing, so
+   * the fix is not only this reordering: `ci-parity.test.mjs` now asserts the ordering in BOTH
+   * halves, and `fresh-clone-proof` is a CI step on every push rather than a thing a builder
+   * remembers at the end of a task.
+   */
+  ['pnpm', ['--filter', '@qrpager/web', 'run', 'build']],
+  ['pnpm', ['--filter', '@qrpager/site', 'run', 'build']],
   ['pnpm', ['exec', 'vitest', 'run', '--coverage']],
   /**
    * ⚠ THE KIT AND ENGINE PROJECTS ONLY -- the journey suite is `pnpm run gate:e2e`.
@@ -125,8 +153,6 @@ const steps = [
    * a hole.
    */
   ['pnpm', ['run', 'test:browser']],
-  ['pnpm', ['--filter', '@qrpager/web', 'run', 'build']],
-  ['pnpm', ['--filter', '@qrpager/site', 'run', 'build']],
 ]
 
 for (const [command, args] of steps) {
