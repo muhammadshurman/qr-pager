@@ -191,12 +191,24 @@ async function reach(page: Page, state: ScreenState): Promise<void> {
   await page.goto(`${origin()}/s#${state === 'landing.invalid' ? 'not-a-token' : TOKEN}`)
   await expect(page.locator('[data-screen]')).toBeVisible()
 
+  /**
+   * ⚠ LOCATED BY CLASS, NOT BY COPY, AND THE RTL PROJECTS ARE WHY. Half of these projects run
+   * at `locale: 'ar-JO'`, so every label on screen is Arabic -- and
+   * `getByRole('button', { name: /enable alerts/i })` matched nothing there: three projects
+   * timed out at 30 s per state against a UI that was behaving perfectly.
+   *
+   * `.pg-actions`'s primary and quiet buttons are the two journey-advancing controls on every
+   * framed screen, and `.qr-ready__acknowledge` is the order-ready screen's only one. All
+   * three are language-independent by construction, which is what a GEOMETRY measurement
+   * needs -- the copy is asserted in `copy.test.ts` and `screens.test.tsx`, where the
+   * language is the subject rather than an obstacle.
+   */
   if (screen === 'alerts') {
-    await page.getByRole('button', { name: /enable alerts/i }).click()
+    await page.locator('.pg-actions .qr-button--primary').first().click()
   }
 
   if (screen === 'waiting') {
-    await page.getByRole('button', { name: /just show me the status/i }).click()
+    await page.locator('.pg-actions .qr-button--quiet').first().click()
   }
 
   if (state === 'waiting.degraded') {
@@ -224,7 +236,7 @@ async function reach(page: Page, state: ScreenState): Promise<void> {
   }
 
   if (state === 'ready.acknowledged') {
-    await page.getByRole('button', { name: /got it/i }).click()
+    await page.locator('.qr-ready__acknowledge').click()
   }
 
   await expect(page.locator(`[data-screen="${screen}"][data-state="${detail}"]`)).toBeVisible({
