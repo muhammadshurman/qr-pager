@@ -71,3 +71,8 @@ out/
 # (tools/gate/test/typecheck-coverage.test.mjs). Ignored so a crashed run cannot leave an
 # untracked file that reddens CI's clean-tree assertion instead of the thing under test.
 /browser/planted-type-error.generated.ts
+
+# Agent worktrees (Claude Code `isolation: worktree`). Transient clones of this repo;
+# `git add -A` sweeps them up as embedded git repositories, which is how one reached a
+# commit on 2026-11-02. Never committed.
+.claude/worktrees/
