@@ -820,6 +820,8 @@ describe('the service worker wiring', () => {
           expect(probe.getSubscriptionCalls).toBeGreaterThanOrEqual(n)
         })
       },
+      /** How many times the reconcile reached its decision. Zero means it never ran. */
+      reconcileAttempts: () => probe.getSubscriptionCalls,
     }
   }
 
@@ -850,7 +852,7 @@ describe('the service worker wiring', () => {
     // The bound `§6` question 5 claims: one POST per launch AT MOST.
     const session = new Session().answers({ status: 200, body: snapshot('waiting') })
     window.localStorage.setItem('qrpager.pager.endpoint', 'https://push.example/known')
-    container({
+    const worker = container({
       subscription: {
         endpoint: 'https://push.example/known',
         toJSON: () => ({
@@ -862,13 +864,14 @@ describe('the service worker wiring', () => {
 
     session.mount()
     await screen.findByText('A-42')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    // ⚠ THE RECONCILE HAS REACHED ITS DECISION, rather than 50 ms having passed. A fixed
+    // sleep made this assertion pass, then fail when an unrelated case was added to the
+    // file, then pass again when its failure message grew. That is not a measurement.
+    await worker.reconciled()
 
     expect(
       session.calls('/v1/pager/subscription').map((c) => c.body),
-      `a reconcile posted when the endpoint already matched. remembered=${String(
-        window.localStorage.getItem('qrpager.pager.endpoint'),
-      )} keys=${JSON.stringify(Object.keys(window.localStorage))}`,
+      'a reconcile posted when the endpoint already matched',
     ).toEqual([])
     withoutPushPath()
   })
@@ -1081,7 +1084,7 @@ describe('the service worker wiring', () => {
       body: { type: 'https://qrpager.dev/problems/expired' },
     })
 
-    container({
+    const worker = container({
       subscription: {
         endpoint: 'https://push.example/known',
         toJSON: () => ({
@@ -1094,11 +1097,23 @@ describe('the service worker wiring', () => {
 
     session.mount()
     await screen.findByText('This code has expired')
-    await new Promise((resolve) => setTimeout(resolve, 50))
 
+    /**
+     * ⚠ A NEGATIVE NEEDS A MOMENT AT WHICH IT IS KNOWN, and here the thing asserted is that
+     * the reconcile NEVER runs -- so there is no event to wait for. What is waited on instead
+     * is React settling: `waitFor` polls until the terminal screen is stable, by which point
+     * every effect the mount scheduled has run. Then the counter says whether the reconcile
+     * reached its decision at all, which is a stronger statement than "no request arrived
+     * within 50 ms".
+     */
+    await vi.waitFor(() => {
+      expect(screen.getByText('This code has expired')).toBeTruthy()
+    })
+
+    expect(worker.reconcileAttempts()).toBe(0)
     expect(
       session.calls('/v1/pager/subscription').map((c) => c.body),
-      'a reconcile posted when the endpoint already matched',
+      'a reconcile ran for a session that was already expired',
     ).toEqual([])
     withoutPushPath()
   })
