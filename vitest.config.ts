@@ -41,6 +41,42 @@ export default defineConfig({
         },
       },
       {
+        /**
+         * ⚠ JSX IS CONFIGURED EXPLICITLY HERE AND IT HAS TO BE. `apps/web/tsconfig.json`
+         * sets `"jsx": "preserve"`, which Next requires because Next's own compiler does the
+         * transform -- so Vite reads that setting, leaves the JSX alone, and the parse fails
+         * with *"Unexpected JSX expression"* on the first `<Component />` in a test. The
+         * `packages/ui` project needs nothing because its tsconfig inherits
+         * `"jsx": "react-jsx"` from the base.
+         *
+         * This is a TEST-RUNNER setting and changes nothing about the app's build.
+         */
+        oxc: { jsx: { runtime: 'automatic', importSource: 'react' } },
+        test: {
+          /**
+           * Task 9. The customer PWA's own modules.
+           *
+           * jsdom, for the same reason `ui` uses it and with the same boundary: the journey
+           * reducer, the cadence arithmetic, the token handling and the copy catalogue are
+           * logic, and the screens' DOM output is structure. What jsdom CANNOT answer --
+           * a computed outline, a rendered bounding box, a resolved colour pair, whether
+           * `prefers-reduced-motion` actually suppressed anything, and whether a real engine
+           * sends `Sec-Fetch-Dest` -- is Playwright's, in `browser/`.
+           *
+           * ⚠ AND `api.test.ts` IS DELIBERATELY NOT MOCKED. It drives a real `node:http`
+           * server over a real socket, because *a test that crosses HTTP is not one that does
+           * not*: the four answers the polling endpoint gives are distinguished by status
+           * code AND problem type, and a stubbed `fetch` would assert the client's own
+           * assumptions about them rather than its behaviour against a wire.
+           */
+          name: 'web',
+          root: './apps/web',
+          environment: 'jsdom',
+          include: ['test/**/*.test.{ts,tsx}'],
+          setupFiles: ['./test/setup.ts'],
+        },
+      },
+      {
         test: {
           // Both tool packages: the design-token rule and the gate's own checks. One
           // project rather than two, because they share an environment and neither has a
@@ -88,6 +124,26 @@ export default defineConfig({
         'packages/ui/src/**/*.{ts,tsx}',
         'tools/design-tokens/*.mjs',
         'tools/design-tokens/bin/*.mjs',
+        /**
+         * Task 9's own code. `§6` asks for coverage "on code this task added", and the
+         * previous comment's own lesson is that a figure measured over a SUBSET of it is not
+         * that figure -- 96.73% once omitted ~990 lines of 8a's code.
+         *
+         * `apps/web/src/**` is every module of the customer journey AND its six screens.
+         *
+         * ⚠ WHAT IS DELIBERATELY NOT HERE, each with its reason rather than as an omission:
+         *
+         *   apps/web/app/**        three files of route plumbing: a `metadata` object, a
+         *                          `viewport` object and a component that forwards two env
+         *                          vars. There is no unit in them, and `build-surface.test.ts`
+         *                          asserts what they actually produce -- the built HTML's meta
+         *                          tags -- which is a stronger claim than a line count.
+         *   apps/web/public/sw.js  a service worker runs in a worker global this coverage
+         *                          provider cannot instrument. It is driven for real in
+         *                          `browser/sw.spec.ts`, in all three engines, including the
+         *                          rotation path with the handler removed.
+         */
+        'apps/web/src/**/*.{ts,tsx}',
       ],
       exclude: ['**/generated/**', '**/*.d.ts', '**/index.ts', 'packages/tokens/src/fonts/**'],
       thresholds: {
