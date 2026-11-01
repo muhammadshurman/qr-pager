@@ -34,8 +34,15 @@
 # name (`TestCase::suiteLockKey()`), so different databases take different keys and the SAME
 # database still queues, which is `R-049`'s fix untouched.
 #
+# ⚠ IT DOES NOT CHANGE DIRECTORY -- `exec "$@"` runs the command in YOUR cwd. So a
+# `php artisan` invocation has to be made from `apps/api`, not from the repo root, or it dies
+# with `Could not open input file: artisan`. Measured by tripping over it on 2026-11-02;
+# `apps/api/bin/parallel-reviewer-proof` gets it right by cd-ing first. Not "fixed" by cd-ing
+# here, because the wrapper is also used for workspace commands that must run at the root --
+# the cwd is the caller's business and this line is so the next caller knows it.
+#
 # USAGE
-#   tools/gate/bin/reviewer-slot 1 -- php artisan test
+#   cd apps/api && ../../tools/gate/bin/reviewer-slot 1 -- php artisan test
 #   tools/gate/bin/reviewer-slot 2 -- composer gate
 #   eval "$(tools/gate/bin/reviewer-slot 1 --export)"   # for an interactive shell
 #

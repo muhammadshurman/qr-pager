@@ -118,7 +118,17 @@ it('derives the key from the test DATABASE, so two reviewer slots do not queue o
      */
     $key = fn (string $database): int => 2_000_000_049 + (crc32($database) % 1_000_000);
 
-    expect($key('qrpager_test'))->toBe($key('qrpager_test'), 'the key is not a pure function of the database name')
+    /*
+     * ⚠ THE DETERMINISM CLAUSE CALLS THE LIVE FUNCTION TWICE, NOT THE LOCAL CLOSURE AGAINST
+     * ITSELF. It used to read `expect($key('qrpager_test'))->toBe($key('qrpager_test'))`, which
+     * is `x === x` over a pure local closure: it could not fail for ANY implementation of
+     * `TestCase::suiteLockKey()` and touched it not at all. The scoped review of 2026-11-02
+     * (finding B2) measured that the comment enumerated three claims while two were asserted.
+     */
+    expect(TestCase::suiteLockKey())->toBe(
+        TestCase::suiteLockKey(),
+        'suiteLockKey() is not deterministic, so the holder and this assertion can disagree',
+    )
         ->and($key('qrpager_test_s1'))->not->toBe($key('qrpager_test_s2'))
         ->and($key('qrpager_test'))->not->toBe($key('qrpager_test_s1'));
 
@@ -133,6 +143,52 @@ it('derives the key from the test DATABASE, so two reviewer slots do not queue o
     expect(suiteLockKey())->toBe(
         $key((string) $database),
         'TestCase::suiteLockKey() no longer derives from the app connection database'
+    );
+});
+
+it('mirrors phpunit.xml\'s own DB_DATABASE, so the shared-database name is not a second source', function (): void {
+    /*
+     * `TestCase::SHARED_TEST_DATABASE` is the name every DEFAULT runner shares, and the
+     * half-isolation refusal (`R-049`'s door, scoped review finding B1) compares against it. A
+     * silent copy of `phpunit.xml`'s value is the duplicated-list shape `§6.2` refuses, so the
+     * XML is PARSED rather than trusted -- the same move `composer guard` rule 11c makes by
+     * parsing `ThemeTokens` instead of copying it.
+     */
+    $xml = simplexml_load_string((string) file_get_contents(base_path('phpunit.xml')));
+
+    expect($xml)->not->toBeFalse('phpunit.xml does not parse');
+
+    $found = null;
+
+    foreach ($xml->php->env as $env) {
+        if ((string) $env['name'] === 'DB_DATABASE') {
+            $found = (string) $env['value'];
+        }
+    }
+
+    expect($found)->not->toBeNull('phpunit.xml sets no DB_DATABASE, so the mirror pins nothing');
+
+    $reflected = new ReflectionClass(TestCase::class);
+
+    expect($reflected->getConstant('SHARED_TEST_DATABASE'))->toBe(
+        $found,
+        'TestCase::SHARED_TEST_DATABASE disagrees with phpunit.xml, so the half-isolation refusal '.
+        'compares against the wrong name and a default runner could be refused (or a half-isolated one allowed)'
+    );
+});
+
+it('cannot collide with the bootstrap lock, which would DEADLOCK db:bootstrap', function (): void {
+    /*
+     * `TestCase`'s own docblock says sharing `tenancy.bootstrap_lock_key` would deadlock the
+     * bootstrap that `setUp()` is about to run, against a lock that is never released. Nothing
+     * asserted the non-overlap, and it mattered more once the suite key became a BAND of a
+     * million keys rather than one. Scoped review finding B3.
+     */
+    $bootstrap = (int) config('tenancy.bootstrap_lock_key');
+
+    expect($bootstrap < 2_000_000_049 || $bootstrap > 2_001_000_048)->toBeTrue(
+        "tenancy.bootstrap_lock_key ({$bootstrap}) is inside the suite lock's band ".
+        '[2_000_000_049, 2_001_000_048], so some database name produces a key that deadlocks db:bootstrap'
     );
 });
 

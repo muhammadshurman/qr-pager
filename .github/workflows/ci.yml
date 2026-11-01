@@ -83,6 +83,19 @@ concurrency:
   # 12 of the 15 most recent runs were `cancelled` and the other 3 were `failure`, with #177
   # to #186 an unbroken run of ten. Run #187's red -- the one this branch was actually
   # blocked on -- sat unexamined behind that wall.
+  #
+  # ⚠ AND MEASURED AFTER, WHICH CORRECTS WHAT THIS CHANGE WAS FIRST CLAIMED TO BUY. It does
+  # NOT mean "every push gets a verdict". GitHub allows only ONE run to be PENDING in a
+  # concurrency group, and a newer pending run supersedes the older one whatever
+  # `cancel-in-progress` says. Measured on this branch: #190 was `in_progress` and SURVIVED
+  # #191's push (which the old expression would have killed), while #191 was still `pending`
+  # and was CANCELLED when #192 entered the group.
+  #
+  # So what this actually buys, stated honestly: A RUN THAT HAS STARTED IS NEVER KILLED, and
+  # THE NEWEST HEAD ALWAYS GETS A VERDICT. An intermediate commit pushed in quick succession
+  # can still lose its own -- which is why the step list's "push at round boundaries" is a
+  # recommendation and not merely a cost saving: batching is what makes each pushed commit
+  # the newest head long enough to be verified.
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:

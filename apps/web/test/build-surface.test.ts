@@ -226,6 +226,70 @@ describe('zero third-party origins in the built output -- §3 row 9 clause (b)',
   })
 })
 
+describe('the push harness is NOT in a default production build -- SEC-R2 M-5', () => {
+  /**
+   * ⚠ THIS IS THE TEST `app/harness/push/layout.tsx` CLAIMED ALREADY EXISTED, AND IT DID NOT.
+   * The layout's docblock said *"`build-surface.test.ts` asserts that against the build"* while
+   * this file read only `server/app/s.html` and asserted nothing whatever about `/harness/**`.
+   * `§8`: do not claim a test passed. Raised by the scoped review of 2026-11-02 (finding A2),
+   * which measured it with `git grep -i harness -- apps/web/test` -> no relevant hit.
+   *
+   * It matters because `§11` round two's SEC-R2 M-5 was exactly this route shipping in every
+   * production build, and the fix for it was a module-scope constant that NOTHING held to the
+   * artefact. The next refactor that moves the flag reopens M-5 with a green gate.
+   *
+   * Measured against the BUILT OUTPUT and never against the flag, which is the whole point:
+   * `next build` with `QRPAGER_HARNESS_API_ORIGIN` unset bakes `notFound()` into the
+   * prerendered route, so the page's own `.meta` carries status 404.
+   */
+  const harnessMeta = join(NEXT, 'server', 'app', 'harness', 'push.meta')
+
+  it('prerenders /harness/push as a 404 in the built output', () => {
+    expect(
+      existsSync(harnessMeta),
+      `${relative(WEB, harnessMeta)} is absent, so nothing here is measured`,
+    ).toBe(true)
+
+    const meta: unknown = JSON.parse(readFileSync(harnessMeta, 'utf8'))
+    const status = (meta as { status?: unknown }).status
+
+    expect(
+      status,
+      'the harness route does not prerender as a 404, so it is reachable in a production build -- SEC-R2 M-5. ' +
+        'EXPECTED if you built with QRPAGER_HARNESS_API_ORIGIN set for a QRPAGER-24 device run: rebuild ' +
+        'without it. `pnpm gate` and CI both build flag-unset, so this is red there only if the gate is broken.',
+    ).toBe(404)
+  })
+
+  it('leaves no trace of the harness on the customer scan landing', () => {
+    // The customer surface is the thing M-5 actually endangered: `/s` is the route a QR code
+    // reaches, and the harness writes the credential entry the shipped worker trusts.
+    const landing = readFileSync(PAGE, 'utf8')
+
+    expect(
+      landing.includes('harness'),
+      'the built scan landing mentions the harness, so the two surfaces are not separate',
+    ).toBe(false)
+  })
+
+  it('has no per-session manifest route in the build at all', () => {
+    /*
+     * A `force-dynamic` route handler is NOT gated by a build-time flag -- its
+     * `process.env` read survives into the artefact and is resolved per server start, so a
+     * deploy carrying the variable would serve it. The route was removed rather than gated
+     * (see the page's own comment and `R-214`); this pins the removal so it cannot come back
+     * without someone reading that reasoning.
+     */
+    const route = join(NEXT, 'server', 'app', 'harness', 'manifest', 'route.js')
+
+    expect(
+      existsSync(route),
+      'a harness manifest route is back in the build; its env gate is a RUNTIME read, not a build-time one. ' +
+        'If the source is gone, this is a STALE .next -- rebuild.',
+    ).toBe(false)
+  })
+})
+
 describe('the iOS install meta tags -- BOTH names, measured on the built page', () => {
   it('emits apple-mobile-web-app-capable AND mobile-web-app-capable', () => {
     /**

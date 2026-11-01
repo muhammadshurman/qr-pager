@@ -43,6 +43,21 @@ abstract class TestCase extends BaseTestCase
     private const SUITE_LOCK_KEY = 2_000_000_049;
 
     /**
+     * The database every DEFAULT runner shares, mirroring `phpunit.xml`'s own `<env>` value.
+     *
+     * ⚠ A MIRROR, AND IT IS GATE-CHECKED RATHER THAN TRUSTED. `SuiteSerializationTest` parses
+     * `phpunit.xml` and fails if the two disagree, which is the same shape `composer guard`
+     * rule 11c uses (it parses `ThemeTokens` rather than copying it). A silent second copy of
+     * this string is what `§6.2` refuses.
+     */
+    private const SHARED_TEST_DATABASE = 'qrpager_test';
+
+    /** Redis indices a runner gets when nothing overrides them -- `config/database.php`. */
+    private const SHARED_REDIS_DB = '0';
+
+    private const SHARED_REDIS_CACHE_DB = '1';
+
+    /**
      * The suite lock's key FOR THIS RUNNER'S OWN TEST DATABASE -- standing change (b) of three.
      *
      * ⚠ WHY THIS IS NO LONGER A CONSTANT. The lock above serialises every runner against every
@@ -60,7 +75,9 @@ abstract class TestCase extends BaseTestCase
      * `RoleTimeoutTest` draws its key from `random_int(1, 2_000_000_000)` and THIS lock is
      * never released, so a key inside that range would not merely clash -- it would hang that
      * test forever. The offset is taken modulo 1,000,000, so every key this can produce lies
-     * in [2_000_000_049, 2_000_999_048]: out of the drawable range whatever the database is
+     * in **[2_000_000_049, 2_001_000_048]** (corrected 2026-11-02 from `2_000_999_048`, which was wrong
+     * by 1,000 -- the scoped review measured the real bound over 200k synthetic names): out of the
+     * drawable range whatever the database is
      * called.
      *
      * ⚠ AND A HASH COLLISION FAILS IN THE SAFE DIRECTION. Two differently-named databases that
@@ -79,7 +96,60 @@ abstract class TestCase extends BaseTestCase
             );
         }
 
+        self::refuseHalfIsolatedRunner($database);
+
         return self::SUITE_LOCK_KEY + (crc32($database) % 1_000_000);
+    }
+
+    /**
+     * A runner with its OWN DATABASE but the SHARED REDIS is refused, loudly, before it runs.
+     *
+     * ⚠ THIS CLOSES A DOOR THE DERIVED LOCK KEY OPENED, and the scoped review of 2026-11-02
+     * (finding B1) is what found it. Before the key was keyed by database, a reviewer who
+     * exported `DB_DATABASE` alone QUEUED on the one constant key and was therefore safe. Now
+     * they get a different key and run CONCURRENTLY with the main checkout while sharing Redis
+     * db 0 -- which is `R-049`'s class of defect (an unattributable red in somebody else's run)
+     * reopened through a door the constant key held shut.
+     *
+     * The failure is not hypothetical: `setUp()`'s own docblock records one runner's saturated
+     * `ReadinessStore` snapshot (60 s TTL) making three `TenantResolutionTest` cases and two
+     * `LogRedactionTest` cases answer 503, and `RateLimitTest` shares Redis counters the same
+     * way. `clearPagerProjection()` deleting `t:*:pager:*` before every test is the other half.
+     *
+     * ⚠ AND THE REDIS INDICES ARE DELIBERATELY *NOT* FOLDED INTO THE LOCK KEY, which is the
+     * obvious fix and the wrong one: it would hand two runners on ONE database two different
+     * keys and let them truncate under each other. Isolation has to be all-or-nothing, so the
+     * mismatch is REFUSED instead -- `tools/gate/bin/reviewer-slot` sets all three together and
+     * is the supported way in.
+     */
+    private static function refuseHalfIsolatedRunner(string $database): void
+    {
+        if ($database === self::SHARED_TEST_DATABASE) {
+            return;
+        }
+
+        /*
+         * ⚠ `config()` AND NOT `env()`, which larastan refuses for a real reason rather than a
+         * stylistic one: `env()` outside the config directory returns NULL once the config is
+         * cached, so the refusal below would have compared against `''` and silently stopped
+         * refusing exactly where a cached config is in play. Reading the CONFIG also reads the
+         * value actually in force, which is what this check is about.
+         */
+        $redis = (string) config('database.redis.default.database', self::SHARED_REDIS_DB);
+        $cache = (string) config('database.redis.cache.database', self::SHARED_REDIS_CACHE_DB);
+
+        if ($redis !== self::SHARED_REDIS_DB && $cache !== self::SHARED_REDIS_CACHE_DB) {
+            return;
+        }
+
+        throw new RuntimeException(
+            "This runner has its own database ({$database}) but the SHARED Redis indices ".
+            "(REDIS_DB={$redis}, REDIS_CACHE_DB={$cache}). That combination runs CONCURRENTLY with ".
+            'every other runner while sharing Redis, so TestCase::setUp()\'s clearPagerProjection() '.
+            "and the ReadinessStore snapshot corrupt each other -- R-049's defect through a door the ".
+            'old constant lock key held shut. Isolation is all-or-nothing: run through '.
+            'tools/gate/bin/reviewer-slot, which sets DB_DATABASE, REDIS_DB and REDIS_CACHE_DB together.'
+        );
     }
 
     private static bool $databaseReady = false;

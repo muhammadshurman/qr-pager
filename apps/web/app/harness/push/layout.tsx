@@ -76,6 +76,20 @@ export const metadata: Metadata = {
  * request: these are statically prerendered routes, so an unset flag makes the route a 404 in
  * the built output rather than at run time. `build-surface.test.ts` asserts that against the
  * build.
+ *
+ * ⚠ CORRECTED 2026-11-02: UNTIL THAT DATE IT DID NOT, and the sentence above was false (`§8`:
+ * do not claim a test passed). `build-surface.test.ts` read only `server/app/s.html` and
+ * asserted nothing whatever about `/harness/**`, so SEC-R2 M-5's fix rested on a module-scope
+ * constant that nothing held to the artefact -- the next refactor moving the flag would have
+ * reopened M-5 with a green gate. Found by the scoped review of tonight's diff, by grepping the
+ * test directory rather than by trusting this comment. The assertions exist now: `push.meta`
+ * carries status 404, the built scan landing mentions no harness, and no per-session manifest
+ * route is in the build.
+ *
+ * ⚠ AND THE *"statically prerendered routes"* REASONING DOES NOT EXTEND TO A ROUTE HANDLER. A
+ * `force-dynamic` handler keeps its `process.env` read in the artefact and resolves it per
+ * server start, so a flag-unset BUILD still ships a live handler. That is why the per-session
+ * manifest route was REMOVED rather than gated, and why one of the new cases pins its absence.
  */
 const HARNESS_ENABLED = (process.env.QRPAGER_HARNESS_API_ORIGIN ?? '') !== ''
 
