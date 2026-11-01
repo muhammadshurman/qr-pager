@@ -7,15 +7,15 @@ lighthouse-proof
   url                 https://host.docker.internal:3098/s#<token redacted>
   runs                5, median is the figure, all five reported
 
-  run 1  score  73  (under the 95 bar -- reported, not fatal)
-  run 2  score  79  (under the 95 bar -- reported, not fatal)
+  run 1  score  78  (under the 95 bar -- reported, not fatal)
+  run 2  score  77  (under the 95 bar -- reported, not fatal)
   run 3  score  78  (under the 95 bar -- reported, not fatal)
-  run 4  score  80  (under the 95 bar -- reported, not fatal)
-  run 5  score  78  (under the 95 bar -- reported, not fatal)
+  run 4  score  77  (under the 95 bar -- reported, not fatal)
+  run 5  score  80  (under the 95 bar -- reported, not fatal)
 
-lighthouse-proof: FAILED -- the median is below the bar.
-lighthouse-proof: runs [73,79,78,80,78]  MEDIAN 78  bar 95
+lighthouse-proof: runs [78,77,78,77,80]  MEDIAN 78  bar 95
   lighthouse 13.5.0 · Google Chrome for Testing 156.0.8078.4  · container=qrpager-browsers:pw1.64.1
   reports: /repo/storage/lighthouse/run-{1..5}.json
+lighthouse-proof: FAILED -- the median is below the bar.
 [ELIFECYCLE] Command failed with exit code 1.
 EXIT=1
