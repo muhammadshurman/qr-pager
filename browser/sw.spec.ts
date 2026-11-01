@@ -314,6 +314,16 @@ async function driveWorker(
        * calls with the promise this shim then awaits. `§11` round two, SEC-R2 M-3 -- the navigate
        * branch could not be driven at all before this.
        */
+      /**
+       * ⚠ `notificationclick` CLOSES THE NOTIFICATION BEFORE IT DOES ANYTHING ELSE, so without
+       * this the handler throws on line one and never reaches `matchAll` -- which is why the
+       * SEC L-3 case saw an empty focus list rather than a wrong one. The shim must supply
+       * every member the handler touches, not only the interesting ones.
+       */
+      if (kind === 'notificationclick') {
+        event.notification = { close: () => undefined, data: {} }
+      }
+
       if (kind === 'fetch') {
         event.request = {
           url: parsed.requestUrl ?? `${location.origin}/s`,
@@ -687,10 +697,21 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
     })
 
     expect(refused.messages).toEqual([{ type: 'qrpager/resubscribe' }])
+
+    /**
+     * ⚠ THE PROPERTY IS *"the remembered endpoint is not REPLACED"*, not *"the cache is empty"*,
+     * and the first version of this assertion got that wrong. The case PLANTS a credential, so
+     * after a refused POST the planted entry is still there — which is correct: the worker must
+     * not overwrite a known-good endpoint with one the server refused, and it must not delete
+     * what it had either. Asserting null failed against the planted value and would have gone on
+     * failing however the worker behaved.
+     */
+    const afterRefusal = refused.credentialAfter as Record<string, unknown> | null
+
     expect(
-      refused.credentialAfter,
+      afterRefusal?.endpoint,
       'a refused registration was recorded as the remembered endpoint',
-    ).toBeNull()
+    ).toBe('https://push.example/old')
 
     // And the same for a network failure, which is the other arm of that guard.
     const threw = await driveWorker(page, 'pushsubscriptionchange', {
@@ -704,7 +725,13 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
     })
 
     expect(threw.messages).toEqual([{ type: 'qrpager/resubscribe' }])
-    expect(threw.credentialAfter).toBeNull()
+
+    const afterThrow = threw.credentialAfter as Record<string, unknown> | null
+
+    expect(
+      afterThrow?.endpoint,
+      'a failed registration was recorded as the remembered endpoint',
+    ).toBe('https://push.example/old')
   })
 
   test('uses the REMEMBERED endpoint when the engine supplies no oldSubscription', async ({
