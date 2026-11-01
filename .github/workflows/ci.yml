@@ -78,6 +78,11 @@ concurrency:
   # the same merge commit -- still cancels. The cost is CI minutes on a private repo; the
   # thing bought is that "the head is green in CI, with the run id and conclusion" is a
   # question that always has an answer.
+  #
+  # MEASURED before the change, with `gh run list --branch task-9-customer-pwa --limit 15`:
+  # 12 of the 15 most recent runs were `cancelled` and the other 3 were `failure`, with #177
+  # to #186 an unbroken run of ten. Run #187's red -- the one this branch was actually
+  # blocked on -- sat unexamined behind that wall.
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:

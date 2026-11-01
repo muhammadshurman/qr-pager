@@ -602,7 +602,10 @@ queued green runs look identical to two isolated ones if the only assertion is t
 `concurrency.cancel-in-progress` was `github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')`,
 which is **true for every task branch**. Task 9 pushed once per commit, so each push cancelled the run
 about to deliver the previous commit's verdict: a wall of `Cancelled` that reads as failure, with no
-individual commit holding a verdict at all. That is the `task-1` cancellation reproduced on a task branch.
+individual commit holding a verdict at all. ⚠ **MEASURED rather than described, 2026-11-01:** of the
+**15 most recent runs on this branch, 12 are `cancelled`** and the other 3 are `failure` — `#177` to
+`#186` is an unbroken run of ten — so for most of the task the branch page carried no verdict worth
+reading, which is why `#187`'s red went unexamined until a cold session was told to look. That is the `task-1` cancellation reproduced on a task branch.
 **Of the two options, the repo change was taken rather than the discipline** — *push only at round
 boundaries* is a rule somebody has to remember, and `R-126`, `W-14` and the `task-1` merge are three
 instances of the same forgetting; `PROJECT_INSTRUCTIONS.md §7` says a recurrence means the mechanism was
