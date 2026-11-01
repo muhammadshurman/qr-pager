@@ -83,7 +83,9 @@ if [ ! -x "$CHROME_PATH" ]; then
   exit 1
 fi
 
-CHROME_VERSION="$("$CHROME_PATH" --version 2>/dev/null | head -1)"
+# `|| true`: the executable check above already proved the binary exists; a `--version` that
+# prints nothing must not abort a measurement run (QA H-1's family).
+CHROME_VERSION="$("$CHROME_PATH" --version 2>/dev/null | head -1 || true)"
 
 echo "lighthouse-proof"
 echo "  lighthouse          ${LH_VERSION}  (pinned exact in package.json)"
@@ -176,7 +178,10 @@ echo
 # RUNS AND STATISTIC. *"Five runs; the MEDIAN is the figure; all five are reported. ... A
 # Lighthouse Performance score is bounded at 100 and its noise is two-sided, so best of five
 # would systematically overstate it. Median of five, floored, never the best."*
-median="$(printf '%s\n' "${scores[@]}" | sort -n | sed -n '3p')"
+# `|| true`: with five scores `sed -n 3p` always prints one, so this cannot fail today --
+# but the assignment is the same shape QA H-1 cost a round for, and a future RUNS change
+# would make it silent. The emptiness check below is what actually decides.
+median="$(printf '%s\n' "${scores[@]}" | sort -n | sed -n '3p' || true)"
 
 printf 'lighthouse-proof: runs [%s]  MEDIAN %s  bar %s\n' "$(IFS=,; echo "${scores[*]}")" "$median" "$BAR"
 echo "  lighthouse ${LH_VERSION} · ${CHROME_VERSION} · ${QRPAGER_TOOLCHAIN:-host}"

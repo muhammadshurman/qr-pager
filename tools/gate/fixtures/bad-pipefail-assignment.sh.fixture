@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# DELIBERATELY WRONG. `§11` round two, QA H-1.
+#
+# A SECOND fixture rather than more lines in `bad-evidence.sh.fixture`, and that is the
+# point: this rule only applies to a file that HAS enabled pipefail, and that file's
+# finding (1) is precisely that it never does. Adding `set -o pipefail` there to exercise
+# this rule silently cancelled that finding -- measured, and the reason these are two files.
+set -euo pipefail
+
+# (1) THE EXACT SHAPE THAT COST A ROUND. `grep` exits 1 when it matches nothing, `pipefail`
+#     fails the pipeline, the substitution fails, and `set -e` aborts the script -- which in
+#     `tools/browsers/bin/e2e` happened inside the EXIT trap, so three ports were never freed
+#     and `gate:e2e` exited 1 after printing `e2e: green`.
+pid="$(ss -ltnpH "sport = :8099" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+echo "$pid"
+
+# (2) the same inside a function, declared `local`, which is how it actually appeared.
+find_it() {
+  local found
+  found="$(printf 'a\nb\n' | grep -c zzz)"
+  echo "$found"
+}
+
+# --- legitimate shapes that must NOT fire, so the rule is not merely loud ---
+
+# The acknowledged form: finding nothing is a valid outcome and the code says so.
+ok_pid="$(ss -ltnpH "sport = :8099" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)"
+echo "$ok_pid"
+
+# No pipe in the substitution at all.
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+echo "$stamp"
+
+# A pipeline that is not an assignment: its failure is the caller's to handle, and `set -e`
+# aborting there is the intended behaviour rather than a surprise inside a trap.
+printf 'a\nb\n' | grep -c b

@@ -32,7 +32,8 @@
  *         tools/gate/bin/check-records --self-test   prove each check fails on a bad input
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const REPO = join(dirname(new URL(import.meta.url).pathname), '..', '..', '..')
@@ -144,8 +145,20 @@ export function checkTagReality(plan) {
  * `--list-tests`; the Vitest total likewise. A transcript is allowed to be ABSENT -- not every
  * task commits every artefact -- but one that exists must be current and must be green.
  */
-export function checkTranscripts() {
-  const dir = join(REPO, 'docs', 'tickets')
+/**
+ * The ticket `§0`'s *Next up* cell names first, or null when it names none.
+ *
+ * Used to scope the transcript-currency check to the delivery in flight — see the comment at
+ * its call site for why a previous ticket's transcript must not be held to the current suite.
+ */
+function inFlightTicket(plan) {
+  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const found = /`(QRPAGER-\d+)`/.exec(cell)
+
+  return found === null ? null : found[1]
+}
+
+export function checkTranscripts(inFlight, dir = join(REPO, 'docs', 'tickets')) {
 
   if (!existsSync(dir)) return
 
@@ -156,9 +169,30 @@ export function checkTranscripts() {
     if (!/-(gate|e2e|three-runs|fresh-clone)[a-z-]*\.txt$/.test(name)) continue
 
     /**
+     * ⚠ A `-baseline-` TRANSCRIPT IS FROM THE BASE COMMIT BY DESIGN and must not be held to the
+     * head's figures: `QRPAGER-16-baseline-composer-gate.txt` records 1163 at `58ca1ea` and that
+     * is the point of it. Named rather than inferred, so a transcript cannot dodge this check by
+     * accident.
+     */
+    if (name.includes('-baseline-')) continue
+
+    /**
+     * ⚠ AND ONLY THE TICKET `§0` SAYS IS IN FLIGHT IS HELD TO THE CURRENT SUITE. A previous
+     * ticket's transcript is evidence for ITS tag, taken when the suite was smaller:
+     * `QRPAGER-15-gate-php.txt` records 1101 and the suite now enumerates 1172, which is the
+     * suite having GROWN, not a stale claim. The first version of this check flagged it, and
+     * flagging honest history is how a checker gets switched off.
+     *
+     * `§0` is the authority this whole script exists to verify, so scoping by what `§0` names is
+     * consistent rather than a second source: the ticket in flight is the one its *Next up* cell
+     * names first.
+     */
+    if (inFlight !== null && !name.startsWith(`${inFlight}-`)) continue
+
+    /**
      * ⚠ `-lighthouse.txt` IS DELIBERATELY NOT IN THAT LIST, AND THE REASON IS THE WHOLE POINT
      * OF THIS CHECK RATHER THAN AN EXCEPTION TO IT. `lighthouse-proof` exits non-zero when the
-     * median is under the bar, and for Task 9 it IS under the bar: median 76 against 95. That
+     * median is under the bar, and for Task 9 it IS under the bar: median under the bar. That
      * non-zero exit is the MEASUREMENT `R-205` records, with an owner and a date — not a gate
      * that failed and was committed anyway. Requiring it to be green would require either
      * deleting the evidence or re-running until a 95 appeared, which are the two things the
@@ -172,6 +206,19 @@ export function checkTranscripts() {
     // A non-zero exit recorded anywhere in the transcript's own trailer.
     const exits = [...text.matchAll(/^EXIT=(\d+)$/gm)].map((m) => Number(m[1]))
 
+    /**
+     * ⚠ A TRAILER IS REQUIRED, NOT MERELY CHECKED WHEN PRESENT. `§11` round two, QA L-4 and
+     * SEC-R2 M-4: this only failed on a non-zero `EXIT=`, so a transcript with the line DELETED
+     * passed — and `QRPAGER-16-e2e.txt` shipped with no trailer at all, which is the one
+     * artefact round one's H-4 was about. Both reviewers measured it.
+     */
+    if (exits.length === 0) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} records no EXIT= trailer, so nothing says whether the run it transcribes succeeded`,
+      )
+    }
+
     if (exits.some((code) => code !== 0)) {
       fail(
         'records(c)',
@@ -183,12 +230,65 @@ export function checkTranscripts() {
       fail('records(c)', `docs/tickets/${name} contains a failure line, so it is not evidence of a green gate`)
     }
 
-    // Provenance: a transcript committed in the SAME commit as the head must agree with the
-    // head. One committed earlier is historical evidence of an earlier sha and is left alone,
-    // which is why this is keyed on the commit rather than on the file's age.
-    if (!current.has(`docs/tickets/${name}`)) continue
+    /**
+     * ⚠ PROVENANCE, AND THIS WAS DEAD CODE BEHIND A SUCCESS MESSAGE THAT CLAIMED IT RAN.
+     * `§11` round two, QA M-4 and SEC-R2 M-4 — both reviewers found it independently, and both
+     * proved it by falsifying a committed total and watching the script report *"every
+     * committed transcript is current and green"*. The body computed two values and discarded
+     * them (`void head`). A new gate step whose success line overstates what it checked is the
+     * defect the step was commissioned to stop.
+     *
+     * ⚠ AND THE FIRST REPLACEMENT WAS ALSO WRONG, recorded because it is the same mistake one
+     * layer along: it only checked a transcript committed in the SAME commit as the head, so
+     * one further commit made it inert again — which is exactly how the original went unnoticed.
+     * Keyed on the commit, the check is dead the moment anything else lands. Every matched
+     * transcript is checked now, whatever commit it arrived in, because `§4a` cites all of them
+     * as the evidence for the CURRENT head.
+     */
+    if (!/-gate-php\.txt$/.test(name)) continue
 
-    void head
+    const claimed = /^\s*Tests:\s+(\d+) passed/m.exec(text)
+
+    if (claimed === null) continue
+
+    const counted = countPhpTests()
+
+    if (counted !== null && counted !== Number(claimed[1])) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} claims ${claimed[1]} tests and the suite now enumerates ${String(counted)} — measured against a different tree`,
+      )
+    }
+  }
+}
+
+/**
+ * How many tests the PHP suite would run NOW, enumerated rather than executed.
+ *
+ * ⚠ THE PHP HALF ONLY, AND THE FRONTEND HALF IS DELIBERATELY NOT CHECKED THIS WAY. `php artisan
+ * test --list-tests` prints one line per case and its count is EXACT — measured 1172 against a
+ * transcript reading 1172. `vitest list` does NOT expand parameterised cases: it reports 616
+ * where the run reports 812, so comparing it to a run total would fail on every honest
+ * transcript. A check that fires falsely is worse than one that is absent, and an absent one
+ * that is CLAIMED is worse than both — which is this finding. So the frontend transcript is
+ * covered by the exit-code rule and by `ci-parity`'s step assertions, and not by a count.
+ *
+ * Null when the enumeration cannot be trusted — a missing `php`, a boot failure — which is
+ * treated as *cannot check* rather than as a stale transcript.
+ */
+function countPhpTests() {
+  try {
+    const out = execFileSync('php', ['artisan', 'test', '--list-tests'], {
+      cwd: join(REPO, 'apps', 'api'),
+      encoding: 'utf8',
+      env: { ...process.env, PAO_DISABLE: '1' },
+      maxBuffer: 64 * 1024 * 1024,
+    })
+    const n = (out.match(/^\s*-\s/gm) ?? []).length
+
+    return n > 0 ? n : null
+  } catch {
+    return null
   }
 }
 
@@ -221,6 +321,50 @@ const SELF_TESTS = [
   },
 ]
 
+/**
+ * The transcript rules, driven on FIXTURES rather than on the repository's own files.
+ *
+ * `§11` round two asked for a self-test per family. Writing fixtures into a temp directory is
+ * what makes each rule falsifiable without editing committed evidence — the two reviewers both
+ * had to edit a real transcript and restore it to prove the inert check, which is a measurement
+ * nobody should have to repeat by hand.
+ */
+function transcriptSelfTests() {
+  const dir = mkdtempSync(join(tmpdir(), 'qrpager-records-'))
+  const results = []
+
+  const drive = (file, body) => {
+    writeFileSync(join(dir, file), body)
+    const before = failures.length
+    checkTranscripts('QRPAGER-99', dir)
+    const caught = failures.length > before
+    rmSync(join(dir, file))
+
+    return caught
+  }
+
+  results.push([
+    'a transcript with no EXIT= trailer',
+    drive('QRPAGER-99-gate-frontend.txt', 'Tests  1 passed (1)\n'),
+  ])
+  results.push([
+    'a transcript recording a non-zero exit',
+    drive('QRPAGER-99-gate-frontend.txt', 'Tests  1 passed (1)\nEXIT=1\n'),
+  ])
+  results.push([
+    'a transcript carrying a failure line',
+    drive('QRPAGER-99-e2e.txt', 'gate: FAILED at something\nEXIT=0\n'),
+  ])
+  results.push([
+    'a green transcript is NOT flagged (the positive control)',
+    !drive('QRPAGER-99-gate-frontend.txt', 'Tests  1 passed (1)\nEXIT=0\n'),
+  ])
+
+  rmSync(dir, { recursive: true, force: true })
+
+  return results
+}
+
 if (process.argv.includes('--self-test')) {
   let bad = 0
 
@@ -228,6 +372,11 @@ if (process.argv.includes('--self-test')) {
     const caught = t.run()
 
     console.log(`  ${caught ? 'catches' : 'MISSES '}  ${t.what}`)
+    if (!caught) bad += 1
+  }
+
+  for (const [what, caught] of transcriptSelfTests()) {
+    console.log(`  ${caught ? 'catches' : 'MISSES '}  ${what}`)
     if (!caught) bad += 1
   }
 
@@ -239,7 +388,7 @@ const plan = readFileSync(PLAN, 'utf8')
 
 checkRowCount(plan)
 checkTagReality(plan)
-checkTranscripts()
+checkTranscripts(inFlightTicket(plan))
 
 if (failures.length > 0) {
   console.error('check-records: the repository\'s account of itself is wrong:')

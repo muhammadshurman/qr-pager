@@ -145,7 +145,10 @@ fi
 # The figures, so the caller can compare them with the host's run rather than trust that
 # both were green. A different count between the two is itself a finding: it means the
 # suite's behaviour depends on something the clone does not have.
-tests="$(grep -oE "Tests: +[0-9]+ passed \([0-9]+ assertions\)" "$work/gate.log" | tail -1)"
+# `|| true`: a gate log with no `Tests:` line is a gate that died before the suite, which
+# the status check below reports. `§11` round two, QA H-1 -- the same hazard the new
+# `check-shell-evidence` rule found in four scripts at once.
+tests="$(grep -oE "Tests: +[0-9]+ passed \([0-9]+ assertions\)" "$work/gate.log" | tail -1 || true)"
 [ -n "$tests" ] || tests="$(sed 's/\x1b\[[0-9;]*m//g' "$work/gate.log" | grep -oE "Tests:.*" | tail -1)"
 
 printf '\nfresh-clone-proof: PASSED at %s\n' "${sha:0:7}"

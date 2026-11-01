@@ -45,7 +45,15 @@ for arg in "$@"; do
 done
 
 if [ "$fixture_mode" = "1" ]; then
-    targets=("tools/gate/fixtures/bad-evidence.sh.fixture")
+    # ⚠ BOTH FIXTURES, AND THERE ARE TWO FOR A REASON. `§11` round two, QA H-1 added a rule that
+    # only applies to a file which HAS enabled `pipefail`, and `bad-evidence.sh.fixture`'s own
+    # finding (1) is that it never does. Exercising the new rule there cancelled that finding --
+    # measured -- so the pipefail-assignment hazard lives in its own file. A `--fixture` run that
+    # scanned only the first would have reported the new rule as covered while covering nothing.
+    targets=(
+        "tools/gate/fixtures/bad-evidence.sh.fixture"
+        "tools/gate/fixtures/bad-pipefail-assignment.sh.fixture"
+    )
 elif [ "${#targets[@]}" = "0" ]; then
     # Everything tracked under the two script directories. `git ls-files` rather than a
     # glob, so an untracked scratch script cannot fail the gate and a tracked one cannot

@@ -92,7 +92,10 @@ while [ "$green_streak" -lt "$needed" ] && [ "$attempt" -lt "$max_attempts" ]; d
   # earlier readers of these logs in this project.
   plain="$(sed -e 's/\x1b\[[0-9;]*m//g' "$log")"
 
-  counts="$(printf '%s\n' "$plain" | grep -E '^ *Tests:' | tail -1 | sed 's/^ *//')"
+  # `|| true`: a run that died before the suite prints no `Tests:` line, and the status is
+  # what decides green -- not this string. Without it, `pipefail` + `set -e` would abort the
+  # loop that exists to report the failure (QA H-1's family).
+  counts="$(printf '%s\n' "$plain" | grep -E '^ *Tests:' | tail -1 | sed 's/^ *//' || true)"
   [ -z "$counts" ] && counts='(no Tests: line -- the run did not reach the suite)'
 
   if [ "$status" -eq 0 ]; then
@@ -103,7 +106,9 @@ while [ "$green_streak" -lt "$needed" ] && [ "$attempt" -lt "$max_attempts" ]; d
     # EVERY FAILING TEST IS NAMED, which is R-049's whole lesson: "13 of 14 green, one
     # unexplained" was the honest state of this suite for a week because a summary was
     # kept instead of the output.
-    failures="$(printf '%s\n' "$plain" | grep -E '^ +(FAILED|⨯)' | sed 's/^ *//' | tr '\n' ';' )"
+    # `|| true`: NO failure lines is the ordinary case on a green run, and aborting here
+    # would turn a green run into a crash (QA H-1's family).
+    failures="$(printf '%s\n' "$plain" | grep -E '^ +(FAILED|⨯)' | sed 's/^ *//' | tr '\n' ';' || true)"
     [ -z "$failures" ] && failures='(no FAILED line -- a non-suite step failed)'
 
     if printf '%s\n' "$plain" | grep -qE "$r092_connect"; then

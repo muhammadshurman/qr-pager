@@ -94,6 +94,29 @@ FILENAME != cur {
         }
     }
 
+    # ⚠ A PIPELINE ASSIGNMENT UNDER `pipefail`, WHICH COST A ROUND. `§11` round two, QA H-1.
+    #
+    #     pid="$(ss … | grep … | head -1 | cut -d= -f2)"
+    #
+    # `grep` exits 1 when it matches nothing, `pipefail` makes the pipeline exit 1, the command
+    # substitution therefore fails, and `set -e` kills the script -- which in `tools/browsers/
+    # bin/e2e` happened INSIDE the EXIT trap, so three ports were never freed and `gate:e2e`
+    # exited 1 after printing `e2e: green`. It made a green run indistinguishable from a red one
+    # and a builder's green claim unsupportable.
+    #
+    # The hazard is specifically: an assignment whose value is a command substitution containing
+    # a pipe, in a file that sets `pipefail`, with no `|| true` / `|| :` fallback. `grep`, `head`
+    # and `cut` are all legitimate there -- what is missing is the acknowledgement that the
+    # pipeline is ALLOWED to find nothing.
+    if (saw_pipefail[FILENAME] && code ~ /^[ \t]*(local[ \t]+)?[A-Za-z_][A-Za-z0-9_]*="?\$\(/) {
+        inner = code
+        gsub(/\|\|/, "__OR__", inner)
+        if (inner ~ /\|/ && inner !~ /__OR__[ \t]*(true|:)/) {
+            printf "%s\t%d\ta pipeline assignment under pipefail with no fallback\tthe substitution FAILS when a stage matches nothing, and `set -e` then aborts -- append `|| true` if finding nothing is a valid outcome\n", FILENAME, FNR
+            findings++
+        }
+    }
+
     prev = code
 }
 

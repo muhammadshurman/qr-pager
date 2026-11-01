@@ -132,13 +132,51 @@ const OWNED = [SHELL_CACHE, CREDENTIAL_CACHE]
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      // Delete superseded shells. The credential and harness caches are keyed by name
-      // rather than by version, so they survive a deploy -- a customer mid-session must not
-      // lose the credential their rotation handler needs because we shipped a CSS change.
+      /**
+       * Delete superseded shells. The credential cache is keyed by name rather than by version,
+       * so it survives a deploy -- a customer mid-session must not lose the credential their
+       * rotation handler needs because we shipped a CSS change.
+       *
+       * ⚠ SCOPED TO THIS APP'S OWN PREFIX, AND IT WAS *"anything not in OWNED"*. `§11` round
+       * two, SEC-R2 L-5: narrowing `OWNED` to two names turned this into a worker at
+       * `scope: '/'` that deletes EVERY other cache on the origin — and the navigate-branch
+       * comment one screen down already notes that Task 10's staff dashboard and KDS will live
+       * here. A security fix must not acquire an availability side effect on a sibling surface.
+       */
       const names = await self.caches.keys()
       await Promise.all(
-        names.filter((name) => !OWNED.includes(name)).map((name) => self.caches.delete(name)),
+        names
+          .filter((name) => name.startsWith('qrpager-') && !OWNED.includes(name))
+          .map((name) => self.caches.delete(name)),
       )
+
+      /**
+       * ⚠ AND THE EXPIRY IS PURGED HERE TOO, WHICH THREE COMMENTS CLAIMED AND NO CODE DID.
+       * `§11` round two, SEC-R2 M-2 / QA M-2.
+       *
+       * `sw.js`, `notify.ts` and the ticket all said the entry is dropped *"on read as well as
+       * on activate"*. `activate` deleted only caches NOT in `OWNED`, and `CREDENTIAL_CACHE` is
+       * in it, so there was no activate-time purge at all — and `notify.ts`'s load-bearing
+       * sentence, *"one of the two had to survive the other being skipped"*, was describing one
+       * mechanism twice. The same round-one commit replaced a sentence marked *"THIS SENTENCE
+       * WAS FALSE WHEN WRITTEN"* with another that was false.
+       *
+       * This is the half that matters for the residual SEC M-2 named: a tab closed mid-session
+       * or a crash never reaches the page's `clearWorkerCredential()`, and on iOS the rotation
+       * read never happens either, so activation is the only remaining moment that is
+       * guaranteed to arrive — it runs on every deploy and on every worker update.
+       */
+      try {
+        const cache = await self.caches.open(CREDENTIAL_CACHE)
+        const stored = await cache.match('/pager-credential')
+
+        if (stored && hasExpired(await stored.json())) {
+          await cache.delete('/pager-credential')
+        }
+      } catch {
+        // A cache that cannot be opened, or a body that is not JSON. The read path purges the
+        // same entry, so a failure here costs the earlier of two chances rather than the only one.
+      }
 
       await self.clients.claim()
     })(),

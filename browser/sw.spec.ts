@@ -35,6 +35,9 @@ declare global {
     /** `§11` round two, QA M-3: the POST-failure branch was reachable by no case. */
     fetchStatus?: number
     fetchThrows?: boolean
+    /** `§11` round two, SEC-R2 M-3: the navigate branch was reachable by no case. */
+    requestUrl?: string
+    requestMode?: string
   }
 }
 
@@ -81,6 +84,8 @@ interface DriveOptions {
   readonly rawText?: string
   readonly fetchStatus?: number
   readonly fetchThrows?: boolean
+  readonly requestUrl?: string
+  readonly requestMode?: string
   readonly credential?: Record<string, unknown> | null
   readonly harnessCredential?: Record<string, unknown> | null
   readonly oldSubscription?: { endpoint: string } | null
@@ -104,7 +109,7 @@ interface DriveOptions {
  */
 async function driveWorker(
   page: Page,
-  event: 'push' | 'pushsubscriptionchange',
+  event: 'push' | 'pushsubscriptionchange' | 'activate' | 'fetch',
   options: DriveOptions = {},
 ): Promise<Captured> {
   await page.addInitScript((raw: string) => {
@@ -217,8 +222,14 @@ async function driveWorker(
       }
 
       const status = parsed.fetchStatus ?? 201
+      const response = {
+        ok: status >= 200 && status < 300,
+        status,
+        // The navigate and asset branches `clone()` before caching, so the shim must too.
+        clone: () => ({ ok: status >= 200 && status < 300, status, cloned: true }),
+      }
 
-      return Promise.resolve({ ok: status >= 200 && status < 300, status })
+      return Promise.resolve(response)
     }
   }, JSON.stringify(options))
 
@@ -256,6 +267,23 @@ async function driveWorker(
               }
       } else if (parsed.oldSubscription !== null && parsed.oldSubscription !== undefined) {
         event.oldSubscription = parsed.oldSubscription
+      }
+
+      /**
+       * A `fetch` event: a request the worker's listener inspects, plus `respondWith`, which it
+       * calls with the promise this shim then awaits. `§11` round two, SEC-R2 M-3 -- the navigate
+       * branch could not be driven at all before this.
+       */
+      if (kind === 'fetch') {
+        event.request = {
+          url: parsed.requestUrl ?? `${location.origin}/s`,
+          mode: parsed.requestMode ?? 'navigate',
+          method: 'GET',
+          destination: '',
+        }
+        event.respondWith = (promise: Promise<unknown>) => {
+          waits.push(promise)
+        }
       }
 
       const dispatched = window.dispatchEvent(event)
@@ -779,6 +807,83 @@ test.describe('what the worker refuses to do, each asserted rather than read', (
     // The delivery is still SHOWN: a push this build cannot read still arrived, and swallowing
     // it would turn a successful delivery into a silent failure.
     expect(captured.notifications[0]?.options.tag).toBe('qrpager-harness')
+  })
+
+  test('purges an expired credential at ACTIVATE, which three comments claimed -- SEC-R2 M-2', async ({
+    page,
+  }) => {
+    /**
+     * `sw.js`, `notify.ts` and the ticket all said the entry is dropped *"on read as well as on
+     * activate"*. `activate` deleted only caches NOT in `OWNED` and `CREDENTIAL_CACHE` is in it,
+     * so there was no activate-time purge at all — one mechanism described twice, with
+     * `notify.ts`'s *"one of the two had to survive the other being skipped"* resting on it.
+     *
+     * This is the half that covers the residual: a tab closed mid-session never reaches the
+     * page's cleanup, and on iOS the rotation read never happens either.
+     */
+    const expired = await driveWorker(page, 'activate', {
+      credential: {
+        token: 'AbCdEfGhIjKlMnOpQrStUv',
+        applicationServerKey: 'AQAB',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      },
+    })
+
+    expect(expired.credentialAfter, 'an expired credential survived activation').toBeNull()
+
+    // And a LIVE one is left alone: a customer mid-session must not lose the credential their
+    // rotation handler needs because we shipped a deploy.
+    const live = await driveWorker(page, 'activate', {
+      credential: {
+        token: 'AbCdEfGhIjKlMnOpQrStUv',
+        applicationServerKey: 'AQAB',
+        expiresAt: LIVE(),
+      },
+    })
+
+    expect(live.credentialAfter, 'activation purged a live credential').not.toBeNull()
+  })
+
+  test('caches NO same-origin navigation but /s, and no failure -- SEC-R2 M-3', async ({
+    page,
+  }) => {
+    /**
+     * Round one scoped the navigate branch to `/s` and added a `fresh.ok` guard, and nothing
+     * asserted either — reverting both left the whole suite green. One same-origin navigation
+     * anywhere else (`/harness/push`, a 404, Task 10's dashboard) became the customer's offline
+     * shell for the life of the cache version.
+     *
+     * Driven through the worker's own `fetch` listener on the shipped bytes rather than through
+     * a real navigation, because the shim is what makes the branch reachable in all three
+     * engines; the real-registration path is Chromium-only and is covered separately below.
+     */
+    const elsewhere = await driveWorker(page, 'fetch', {
+      requestUrl: `${origin()}/harness/push`,
+      requestMode: 'navigate',
+    })
+
+    expect(
+      elsewhere.shellAfter,
+      'a navigation to another same-origin path became the offline shell',
+    ).toBeNull()
+
+    // And a FAILED /s is not stored either: a 404 or 5xx written here would be served as the
+    // offline shell until the cache version changed.
+    const failed = await driveWorker(page, 'fetch', {
+      requestUrl: `${origin()}/s`,
+      requestMode: 'navigate',
+      fetchStatus: 404,
+    })
+
+    expect(failed.shellAfter, 'a non-ok /s was stored as the offline shell').toBeNull()
+
+    // The positive control, so the two above are not passing on a branch that never runs.
+    const ok = await driveWorker(page, 'fetch', {
+      requestUrl: `${origin()}/s`,
+      requestMode: 'navigate',
+    })
+
+    expect(ok.shellAfter, 'a successful /s navigation was NOT cached').not.toBeNull()
   })
 
   test('focuses the PAGER client and not a sibling surface -- SEC L-3', async ({ page }) => {
