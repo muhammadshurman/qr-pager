@@ -754,9 +754,27 @@ describe('the service worker wiring', () => {
     onSubscribe?: () => void
   }) {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>()
+    /**
+     * ⚠ COUNTED, SO "THE RECONCILE RAN" IS OBSERVABLE RATHER THAN SLEPT FOR.
+     *
+     * Two cases below assert that NO subscription request was made. A negative like that
+     * needs a point in time at which the thing is known to have happened, and the first
+     * version used `await new Promise(r => setTimeout(r, 50))` -- which made the assertion
+     * timing-dependent: it passed, then failed when an unrelated test was added to the file,
+     * then passed again when the failure MESSAGE grew. A fixed sleep is not a measurement.
+     *
+     * `reconcileSubscription()` calls `getSubscription()` before it decides anything, so this
+     * counter is exactly "the reconcile reached its decision", and `vi.waitFor` on it is
+     * deterministic.
+     */
+    const probe = { getSubscriptionCalls: 0 }
     const registration = {
       pushManager: {
-        getSubscription: () => Promise.resolve(options.subscription ?? null),
+        getSubscription: () => {
+          probe.getSubscriptionCalls += 1
+
+          return Promise.resolve(options.subscription ?? null)
+        },
         subscribe: () => {
           options.onSubscribe?.()
 
@@ -795,6 +813,12 @@ describe('the service worker wiring', () => {
     return {
       send: (data: unknown) => {
         for (const listener of listeners) listener({ data } as MessageEvent<unknown>)
+      },
+      /** Resolves once the reconcile has reached its decision at least `n` times. */
+      reconciled: async (n = 1) => {
+        await vi.waitFor(() => {
+          expect(probe.getSubscriptionCalls).toBeGreaterThanOrEqual(n)
+        })
       },
     }
   }
@@ -840,7 +864,12 @@ describe('the service worker wiring', () => {
     await screen.findByText('A-42')
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    expect(session.calls('/v1/pager/subscription')).toEqual([])
+    expect(
+      session.calls('/v1/pager/subscription').map((c) => c.body),
+      `a reconcile posted when the endpoint already matched. remembered=${String(
+        window.localStorage.getItem('qrpager.pager.endpoint'),
+      )} keys=${JSON.stringify(Object.keys(window.localStorage))}`,
+    ).toEqual([])
     withoutPushPath()
   })
 
@@ -978,6 +1007,72 @@ describe('the service worker wiring', () => {
     withoutPushPath()
   })
 
+  it('does NOT reconcile again AFTER the session has ended -- the terminal guard', async () => {
+    /**
+     * ⚠ THIS CASE EXISTS BECAUSE `tools/gate/bin/revert-proof` FOUND THAT THE TERMINAL GUARD
+     * WAS COVERED BY NOTHING.
+     *
+     * The reconcile effect has two guards: *not on a terminal screen* and *not before a
+     * snapshot exists*. The EXPIRED case below is caught by the second one -- an expired
+     * resolve never produces a snapshot -- so removing BOTH left that case green and the
+     * proof reported the claim as not holding. Which it did not.
+     *
+     * A session that reaches `completed` or `cancelled` DOES have a snapshot, so the terminal
+     * guard is the only thing standing between it and a subscription request on every return
+     * to visibility, for the rest of the app's life in that tab. That is what this measures:
+     * the count at the moment the ended screen appears, then a `visibilitychange`, then the
+     * count again.
+     */
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    const session = new Session()
+      .answers({ status: 200, body: snapshot('waiting') })
+      .then({ status: 200, body: snapshot('completed') })
+
+    container({
+      subscription: {
+        endpoint: 'https://push.example/known',
+        toJSON: () => ({
+          endpoint: 'https://push.example/known',
+          keys: { p256dh: 'P', auth: 'A' },
+        }),
+        unsubscribe: () => Promise.resolve(true),
+      } as unknown as PushSubscription,
+    })
+
+    session.mount()
+    await screen.findByText('A-42')
+    ;(await screen.findByRole('button', { name: 'Just show me the status' })).click()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000)
+    })
+
+    await screen.findByText('Enjoy your order')
+
+    // Let the end-of-session cleanup's own DELETE land, so what is counted next is only what
+    // a RECONCILE would add.
+    await vi.waitFor(() => {
+      expect(session.calls('/v1/pager/subscription').length).toBeGreaterThan(0)
+    })
+
+    const settled = session.calls('/v1/pager/subscription').length
+
+    // The endpoint the page remembered is deliberately cleared, so a reconcile that DID run
+    // would find a difference and post -- the strongest form of this assertion.
+    window.localStorage.removeItem('qrpager.pager.endpoint')
+
+    await settle(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    expect(session.calls('/v1/pager/subscription').length).toBe(settled)
+    withoutPushPath()
+  })
+
   it('does NOT call the subscription endpoint when the session EXPIRED', async () => {
     // `CustomerPagerController::live()` refuses an expired session by design, so the call
     // could only fail. Skipping it is behaviour, not an omission.
@@ -1001,7 +1096,10 @@ describe('the service worker wiring', () => {
     await screen.findByText('This code has expired')
     await new Promise((resolve) => setTimeout(resolve, 50))
 
-    expect(session.calls('/v1/pager/subscription')).toEqual([])
+    expect(
+      session.calls('/v1/pager/subscription').map((c) => c.body),
+      'a reconcile posted when the endpoint already matched',
+    ).toEqual([])
     withoutPushPath()
   })
 })

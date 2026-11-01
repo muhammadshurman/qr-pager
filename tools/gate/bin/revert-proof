@@ -122,7 +122,7 @@ if [ "$want" = all ] || [ "$want" = reconcile-terminal ]; then
     if (state.snapshot === null) return" \
     "    if (state.snapshot === null) return" \
     "test/orchestrator.test.tsx" \
-    "does NOT call the subscription endpoint when the session EXPIRED"
+    "does NOT reconcile again AFTER the session has ended"
 fi
 
 # -------------------------------------------------------------------------------- 2
