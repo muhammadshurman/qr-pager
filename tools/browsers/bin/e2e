@@ -163,8 +163,21 @@ say "starting the real API on ${API_ORIGIN}"
 # torn down by this script's own trap.
 #
 # `setsid`, so the whole process group can be taken down -- see `stop_group`.
-setsid bash -c 'cd "$1" && exec php artisan serve --host=0.0.0.0 --port="$2"' \
-  e2e-api "${REPO}/apps/api" "${API_PORT}" >"${API_LOG}" 2>&1 &
+#
+# ⚠ `APP_URL` IS OVERRIDDEN FOR THIS RUN, AND `R-100` IS WHY. `laravel/passkeys` derives the
+# WebAuthn RELYING PARTY ID from `APP_URL`'s host, and `.env` has `http://localhost:8000` --
+# while the browser reaches the harness page at `host.docker.internal`. The two must match or
+# `navigator.credentials.create()` rejects with a SecurityError, because a relying party ID has
+# to be a registrable suffix of the page's own origin. Measured: the login step answered 200
+# and the register step produced NO output at all, because the rejection is not caught by the
+# page -- so the failure named nothing.
+#
+# It is scoped to this one process for the length of the suite and is not written to `.env`.
+# `pager.landing_url` is a separate setting and is untouched, so nothing about the QR payload
+# changes.
+setsid bash -c 'cd "$1" && APP_URL="$3" exec php artisan serve --host=0.0.0.0 --port="$2"' \
+  e2e-api "${REPO}/apps/api" "${API_PORT}" "https://host.docker.internal:${TLS_API_PORT}" \
+  >"${API_LOG}" 2>&1 &
 api_pid=$!
 
 # ⚠ `healthz`, NOT `up` AND NOT `readyz`, and both alternatives were measured rather than

@@ -98,6 +98,21 @@ test.describe('R-100 — a passkey registered and used through a real browser', 
 
     expect(authenticatorId).toBeTruthy()
 
+    /**
+     * ⚠ THE PAGE's OWN ERRORS ARE CAPTURED AND REPORTED, because the harness page does not
+     * catch a rejection from `navigator.credentials.create()` -- so the first time this failed,
+     * `#out` still said `login -> 200` and the timeout named nothing. The cause was a relying
+     * party ID that did not match the serving origin, which only the rejection says.
+     */
+    const pageErrors: string[] = []
+
+    page.on('pageerror', (error) => {
+      pageErrors.push(error.message)
+    })
+    page.on('console', (message) => {
+      if (message.type() === 'error') pageErrors.push(message.text())
+    })
+
     await page.goto(`${origin}/passkey-harness`)
     await expect(page.getByRole('heading', { name: 'Passkey harness' })).toBeVisible()
 
@@ -130,7 +145,10 @@ test.describe('R-100 — a passkey registered and used through a real browser', 
 
     // ⚠ 201, THE FIGURE THE ROW ASKS FOR. Anything else -- a 422 from the vendor
     // FormRequest, a 500 from the challenge store -- is the clause failing.
-    await expect(page.locator('#out')).toContainText('register -> 201', { timeout: 20_000 })
+    await expect(
+      page.locator('#out'),
+      `the register step did not answer 201. page errors: ${JSON.stringify(pageErrors)}`,
+    ).toContainText('register -> 201', { timeout: 20_000 })
 
     // The authenticator really holds a credential now, read from the engine rather than
     // inferred from the response.
