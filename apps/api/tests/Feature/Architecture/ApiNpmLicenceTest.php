@@ -295,6 +295,28 @@ it('holds this tree to the SAME disposition the workspace tree was given', funct
 
     expect($named)->not->toBeEmpty('the MPL-2.0 disposition names no package');
 
+    /*
+     * ⚠ THE BASE NAME, for the reason the block below spells out: a platform binary's name
+     * carries its target, and which targets `npm ci` resolves depends on the machine. The
+     * fresh-clone proof caught this with `lightningcss-linux-x64-musl`, which a clean
+     * install takes and an incremental one does not. The disposition names the PACKAGE; the
+     * platform suffix is not a different package.
+     */
+    $base = static fn (string $package): string => (string) preg_replace(
+        '/-(?:linux|darwin|win32|freebsd|android)-[a-z0-9-]+$/',
+        '',
+        substr($package, 0, (int) strrpos($package, '@'))
+    );
+
+    $namedBases = array_values(array_unique(array_map(
+        static fn (string $n): string => (string) preg_replace(
+            '/-(?:linux|darwin|win32|freebsd|android)-[a-z0-9-]+$/',
+            '',
+            $n
+        ),
+        $named
+    )));
+
     $unnamed = [];
     $seen = [];
 
@@ -303,22 +325,39 @@ it('holds this tree to the SAME disposition the workspace tree was given', funct
             continue;
         }
 
-        $name = substr($package, 0, (int) strrpos($package, '@'));
         $seen[] = $package;
 
-        if (! in_array($name, $named, true)) {
+        if (! in_array($base($package), $namedBases, true)) {
             $unnamed[] = $package;
         }
     }
 
-    // Not vacuous: this tree really does carry MPL-2.0 packages, four of them.
-    sort($seen);
-    expect($seen)->toBe([
-        'lightningcss-linux-x64-gnu@1.32.0',
-        'lightningcss-linux-x64-gnu@1.33.0',
-        'lightningcss@1.32.0',
-        'lightningcss@1.33.0',
-    ]);
+    /*
+     * ⚠ THE FAMILY, NOT AN IDENTITY LIST, and the fresh-clone proof is what taught me the
+     * difference. This asserted the exact four `name@version` strings my dev tree carries
+     * and went RED in a clone: `npm ci` resolved `lightningcss-linux-x64-musl@1.32.0` and
+     * `@1.33.0` as well, because a clean install takes the optional platform binaries for
+     * both glibc and musl while an incremental one keeps only the host's.
+     *
+     * `licences.test.mjs`'s own header had already written the argument I then ignored:
+     * *"a per-package list goes stale at every install and differs by PLATFORM ... a
+     * byte-diffed table of package names would therefore be red on one machine and green on
+     * another, which is the 'works on the builder's machine' shape the fresh-clone proof
+     * exists for."* It exists for exactly this, and it caught exactly this.
+     *
+     * So the property is the BASE NAME: every MPL-2.0 package must be one the disposition
+     * names, with any platform suffix stripped. A new MPL-2.0 package still reddens; a
+     * macOS clone, a musl clone and an arm64 clone do not.
+     */
+    $bases = array_values(array_unique(array_map($base, $seen)));
+    sort($bases);
+
+    expect($bases)->toBe(['lightningcss']);
+
+    // Not vacuous: the tree really does carry MPL-2.0 packages, and more than one of them --
+    // "every base name is lightningcss" would be true of an empty list.
+    expect(count($seen))->toBeGreaterThanOrEqual(2);
+    expect($seen)->toContain('lightningcss@1.32.0');
 
     expect($unnamed, 'these MPL-2.0 packages in apps/api/node_modules are not named by the '.
         "MPL-2.0 disposition, so that disposition's reasoning -- build-time only, no code ".
