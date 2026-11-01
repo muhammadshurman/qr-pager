@@ -7007,6 +7007,103 @@ mid-journey.
 They are therefore run **serially**, and that is stated here rather than discovered: a reader
 who runs both at once will get a red E2E whose cause is in the other terminal.
 
+#### `§11` ROUND ONE — 28 findings, both reviews, and what they cost
+
+**QA: 13 findings — 1 Critical, 4 High, 4 Medium, 4 Low. SECURITY: 15 findings — 0 Critical,
+0 High, 7 Medium, 8 Low.** Both reviewers resolved the diff to `a6f9a47`, base `58ca1ea`,
+89 files, +19,867/−83, each in its own worktree pinned at that sha, each launched with the
+read-only agent definition and the brief verbatim. **Run SEQUENTIALLY rather than in parallel**,
+which is a decision and not an accident: both worktrees share this machine's one Postgres and
+Redis, and `R-200`'s mechanism — `clearPagerProjection()` deleting `t:*:pager:*` before every
+test — means two reviewers running `php artisan test` at once would corrupt each other's runs
+and produce findings about the other's interference.
+
+**⚠ WHAT BOTH REVIEWERS COULD NOT SEE, stated rather than left implicit:** neither subagent had
+an Atlassian tool, so **QRPAGER-16's Jira comment thread was not readable by either**. Both read
+the committed 979-line `docs/tickets/QRPAGER-16.md` instead, which is what `§4a` records as
+relayed to the ticket as comment `10086`. A clause living only in a Jira comment and in neither
+that file nor `PLAN.md`/`PROJECT_INSTRUCTIONS.md` has not been reviewed.
+
+**⚠ AND A REVIEWER-PROCEDURE FACT WORTH MORE THAN SOME OF THE FINDINGS:** `php artisan test`
+**cannot run from a git worktree at all.** Pest derives its root from the autoloader, so with
+`apps/api/vendor` symlinked every test file is treated as outside the root,
+`pest()->extend(TestCase::class)->in('Feature')` never binds, and Laravel-dependent cases die
+with `Container::basePath()`. A worktree whose directory name starts with a digit — which
+`R-189` mandates for reviewers — fails earlier still with `Pest\Exceptions\InvalidTestClassName`.
+Both reviewers hit it independently and both found a sound way round it (one ran the PHP half in
+a clean checkout at the identical sha; the other extracted the guard's own detection function
+and re-ran it). This is now in `§0`.
+
+**FOUR RULINGS FROM MUHAMMAD, 2026-11-01, folded into round one rather than deferred:**
+
+1. **SEC M-3 is a HIGH, not a Medium.** The reviewer rated it Medium on *"it needs a script on
+   the origin"*; `R-171` records that `apps/web` has no response-header policy and
+   `web-csp-surface.json` shows six inline scripts, which rules out a plain `script-src 'self'`
+   — so the precondition is weaker than the rating assumed. Fixed so the production worker
+   cannot READ the harness credential at all, not merely validate it.
+2. **SEC M-2 is FIXED, not deferred**, and the ticket sentence corrected with it. Same for M-4
+   and M-5, each of which falsified a claim the ticket made in writing.
+3. **QA L-3 / `SR-5` RULED:** *"and the next notification still arrives"* must be ASSERTED.
+4. **QA M-4:** the start deviation is recorded — `§0.0b`.
+
+**AND THREE MECHANISATION STEPS, because three families produced a third of the 28:**
+
+| family | the step | proven on |
+| --- | --- | --- |
+| **gate order** | `fresh-clone-proof` is a CI step on EVERY push | C-1 itself: run at `a6f9a47` it reported `gate: FAILED at 'pnpm exec vitest run --coverage'`, 10 cases red |
+| **record staleness** | `tools/gate/bin/check-records`, a step of `pnpm gate` and of CI | run against the tree as committed it reproduced QA H-3 unaided: *"§0 says `§5` holds 171 rows; the table holds 205"* |
+| **transcript provenance** | the same script | reproduced QA H-4 unaided, naming `QRPAGER-16-e2e.txt`'s `EXIT=1` |
+
+⚠ **THE GATE-ORDER FAMILY HAS NOW COST THREE ROUNDS** — 8a's pnpm-before-corepack, 8b's
+vendor-before-build, Task 9's vitest-before-build. `§7` says a recurrence means the regression
+test was missing, which is why the fix is a CI step rather than a reordering alone.
+
+⚠ **AND `check-records` CARRIES ONE DELIBERATE EXEMPTION, stated because it looks like a
+loophole:** `-lighthouse.txt` is exempt from the non-zero-exit rule. `lighthouse-proof` exits
+non-zero when the median is under the bar, and for Task 9 it is — 76 against 95 — and that exit
+IS the measurement `R-205` records with an owner and a date. Requiring it green would mean
+deleting the evidence or re-running until a 95 appeared.
+
+#### ⚠ AND THE MECHANISATION CAUGHT MY OWN FIX, WITHIN THE HOUR
+
+`SEC L-4` offered two closures: emit the inline-script hashes the ticket claimed, or correct the
+ticket. I emitted them and committed them. `tools/gate/bin/fresh-clone-proof` — a CI step as of
+this round's ruling (a), which did not exist when round one started — reddened on the clone of
+`80e3223`:
+
+```
+    "inlineScriptHashes": [
+       "sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo=",
+    -  "sha256-1tFSdVDj/PoKrWzqlYEq8mMK+Yr4mRirgrbBwLtpdjo=",
+    -  "sha256-7Mq3N50e5xRjHPX6/UmLHAwlaBWqvLmtJzD2PraNlCo=",
+    +  "sha256-Bv9hoqrrVen0YIByEWoc9BoLDlOhusY1D3FR5yMuGi0=",
+    +  "sha256-xmzg8R6r8IGTTsmEo9hUGCEHPwH17cLj166q9zQzWww=",
+       ...three identical...
+    ]
+```
+
+**Measured, same commit, two builds: four of the six hashes are identical and EXACTLY TWO
+differ** — Next's RSC payload pushes carry build-specific content. So a committed hash list is
+not fragile, it is **wrong on any machine but the one that wrote it**, which is the same defect
+class as QA C-1 and was caught by the step added for QA C-1.
+
+⚠ **AND THE CORRECTED ANSWER IS WORTH MORE THAN THE HASH LIST WOULD HAVE BEEN:** a `script-src`
+policy for this page **cannot be static**. It has to be emitted by the build, from that build's
+own output, or by the edge as a per-response nonce. That is written into the artefact with the
+numbers behind it, `R-171`'s acceptance clause is tightened to match, and the count, shape and
+distinctness of the six hashes are computed and asserted on every run — so the capability is
+demonstrated without pinning a build artefact. Had the hashes shipped, Task 12 would have taken
+six values into a policy that breaks on its own CI.
+
+#### The four findings that went to `§5` rather than to code, each with an owner and a date
+
+| row | finding | owner | date |
+| --- | --- | --- | --- |
+| **`R-206`** | SEC L-1 — `passkeys` has no RLS and no ownership predicate while the app role can now write `credential`. Not reachable today: the only writer locates its row from the assertion | Task 12 (`QRPAGER-19`) | 2026-11-29 |
+| **`R-207`** | SEC L-6 — the browser image is unpinned (mutable tag, unversioned `php-cli`, `npx --yes` Playwright) and runs with host IPC and host network over a writable repo mount, so *"the engine behind every figure"* is not reproducible | Task 13 (`QRPAGER-20`), with `R-204` | 2026-12-06 |
+| **`R-208`** | SEC L-8 — the fragment survives in the browser profile's own cloud-synced history, which no assertion in any runner can disprove. The code comment named it; the ledger did not | Muhammad | 2026-11-22 |
+| **`R-209`** | QA H-1's second half — the TypeScript half has no `known-flakes.json`/`classify-reds` equivalent, so a flaky Vitest or Playwright red cannot be attributed at all. The flake itself is fixed; this is the missing INSTRUMENT | Task 13 (`QRPAGER-20`) | 2026-12-06 |
+
 #### What is NOT delivered, and why
 
 | clause | state |
