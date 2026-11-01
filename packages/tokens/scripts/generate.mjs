@@ -771,6 +771,56 @@ export function buildPanelThemeCss() {
   })
 }
 
+// ------------------------------------------------------------------ the PWA icon (Task 9)
+
+/**
+ * ================================================================================
+ * THE CUSTOMER PWA's HOME-SCREEN ICON, GENERATED. Task 9, ADDITIVE.
+ * ================================================================================
+ *
+ * WHY IT IS GENERATED AND NOT DRAWN. An icon is a design artefact carrying two approved
+ * colours, and `§12` is *"No hard-coded hex, spacing or font size in any component"*. An SVG
+ * with typed hexes would also escape every control this repository has: `lint:tokens` scans
+ * `.css` and the ESLint rule scans TypeScript, so nothing reads an `.svg` at all.
+ *
+ * ⚠ AND THAT GAP IS NOT HYPOTHETICAL -- IT IS IN THE TREE. `apps/web/public/harness-icon.svg`
+ * (QRPAGER-24) carries `fill="#0b6b4f"` and `fill="#f7faf8"`, and the second is NOT an
+ * approved value: the approved `paper` is `#F2F4F1` and `surface` is `#FFFFFF`. Nothing
+ * caught it because nothing looks in there. The harness is deliberately unstyled so that is
+ * not a defect of this task to fix, but it is exactly why this icon is emitted rather than
+ * typed. Recorded as a §5 row with an owner.
+ *
+ * THE PAIR IS THE ORDER-READY PAIR, not the brand on paper, and that is deliberate: the icon
+ * a customer taps on their Home Screen should look like the screen it leads to. It is fixed
+ * by D4 in the token source and takes no theme, so the icon has one form in both themes --
+ * which is also what a Home-Screen icon has to be, since the OS renders it with no page
+ * around it.
+ */
+function buildPagerIconSvg() {
+  const field = resolveOrderReady('ready-field')
+  const signal = resolveOrderReady('ready-signal')
+
+  // The three finder squares of a QR code, which is what a customer is about to scan or has
+  // just scanned. Geometry only -- the viewBox is a coordinate system and not a magnitude,
+  // so there is no spacing token to reference and none is wanted.
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!-- GENERATED FILE -- DO NOT EDIT. Emitted from packages/tokens/src/source.ts by',
+    '     packages/tokens/scripts/generate.mjs. Run `pnpm tokens:generate` to refresh it;',
+    '     `pnpm tokens:check` byte-diffs it and fails the gate when it is stale. -->',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Your order">',
+    '  <title>Your order</title>',
+    `  <rect width="64" height="64" rx="12" fill="${field}" />`,
+    `  <path fill="${signal}" d="M12 12h16v16H12zm3 3v10h10V15z" />`,
+    `  <path fill="${signal}" d="M36 12h16v16H36zm3 3v10h10V15z" />`,
+    `  <path fill="${signal}" d="M12 36h16v16H12zm3 3v10h10V39z" />`,
+    `  <rect x="38" y="38" width="6" height="6" fill="${signal}" />`,
+    `  <rect x="46" y="46" width="6" height="6" fill="${signal}" />`,
+    '</svg>',
+    '',
+  ].join('\n')
+}
+
 // --------------------------------------------------------------------------------- main
 
 /** The three artefacts: where each goes and what produces it. */
@@ -834,6 +884,15 @@ export const ARTEFACTS = [
     path: join(PKG, 'generated', 'panel-theme.css'),
     build: buildPanelThemeCss,
     what: "the Filament panels' Tailwind theme -- redefines rather than clears",
+  },
+  /**
+   * Task 9, ADDITIVE. The customer PWA's Home-Screen icon, so the one design asset this
+   * task ships is a generated output of the token source like every other one.
+   */
+  {
+    path: join(REPO, 'apps', 'web', 'public', 'pager-icon.svg'),
+    build: buildPagerIconSvg,
+    what: "the customer PWA's Home-Screen icon (Task 9)",
   },
 ]
 

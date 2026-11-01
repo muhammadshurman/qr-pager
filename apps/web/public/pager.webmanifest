@@ -1,0 +1,25 @@
+{
+  "name": "Your order",
+  "short_name": "Your order",
+  "description": "Scan, sit down, and we will page you when your order is ready.",
+  "start_url": "/s",
+  "scope": "/s",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "en",
+  "dir": "auto",
+  "icons": [
+    {
+      "src": "/pager-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pager-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
