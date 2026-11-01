@@ -435,7 +435,9 @@ test.afterAll(({ browserName }, testInfo) => {
 
   const dir = join(import.meta.dirname, '..', 'docs', 'tickets')
   mkdirSync(dir, { recursive: true })
-  const path = join(dir, `QRPAGER-16-one-handed-${project}.md`)
+  // The project name already carries the `one-handed-` prefix, so it is used whole:
+  // `one-handed-chromium-ltr` -> `QRPAGER-16-one-handed-chromium-ltr.md`.
+  const path = join(dir, `QRPAGER-16-${project}.md`)
 
   if (!existsSync(path)) {
     writeFileSync(path, markdown)

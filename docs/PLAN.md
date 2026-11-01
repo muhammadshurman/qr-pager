@@ -6712,6 +6712,137 @@ over. Two consequences worth recording rather than discovering:
   only `php -l` and `require` a generated array file, so the version is immaterial to them,
   but no other PHP figure in this section was taken there.
 
+### Task 9 — **built, all three gates green, NOT TAGGED, and `R-073` is why** on `task-9-customer-pwa` (2026-11-01). Ticket `QRPAGER-16`, epic E5
+
+**Base `58ca1ea`**, the tip of the pushed `origin/task-8b-panel-restyle` and a strict descendant
+of `task-8b` (`git merge-base task-8b^{commit} 58ca1ea` → `5ab40fc`). ⚠ **NOT the tag, and that
+is `SR-2`**: the tag carries neither `bin/classify-reds`, nor `tests/known-flakes.json`, nor
+QRPAGER-24's harness — all three of which the rank-1 brief requires this task to consume — and
+no tag carries them, because `QRPAGER-24` is deliberately untagged until its device result.
+Recorded here before the first implementation commit rather than discovered in the history,
+which is the actual defect behind *do not branch from a loose sha*.
+
+**⛔ WHY IT IS NOT TAGGED, in one line:** `§3` row 9 clause (a) requires *"a real iOS device,
+installed to Home Screen, receives one real push from Task 4's dispatcher — iOS version and
+result recorded in `§4a`"*. That run is `QRPAGER-24`'s, it is Muhammad's to perform, and it has
+not happened. `R-073` is open. Every half this project owns is asserted; what is untested is
+whether the push arrives.
+
+#### What it ships
+
+`PLAN §4.1`'s whole inventory — six screens, **17 named states**, in **English and Arabic** —
+as states of **one statically prerendered route, `/s`**, with the token in the URL fragment.
+Every decision is in one pure reducer, exhaustive over the GENERATED status union with no
+`default` arm, so a status added in PHP is a type error in the client rather than a screen that
+renders nothing. The service worker is QRPAGER-24's, **extended** rather than rebuilt: the
+offline shell, the `R-075` notification tag, a message to an open page, and the two hardenings
+that harness named for Task 9 by name.
+
+#### The seven `§6` answers and five stop-and-reports
+
+`docs/tickets/QRPAGER-16.md`, committed at `8937a1f` **before the first implementation
+commit**, and relayed to the ticket as comment `10086`. The five SRs are `SR-1` (the scan
+landing's URL shape), `SR-2` (the base), `SR-3` (`.claude/commands/task.md` versus `R-189`),
+`SR-4` (→ `R-201`) and `SR-5` (→ `R-202`).
+
+#### ⚠ FOUR DEFECTS IN THIS TASK'S OWN CODE, FOUND BY ITS OWN TESTS AND BY ITS OWN REVERT PROOF
+
+Recorded because each is the shape this project keeps paying for, and because three of the four
+would have shipped silently.
+
+1. **`apps/web/tsconfig.json` DID NOT INCLUDE `src`, SO THE TYPECHECK WAS VACUOUS.**
+   `pnpm typecheck` reported success over ~1,400 lines it had not read. This is 8a's QA finding
+   one level down — *"`pnpm run typecheck` skipped the root TS project, so a planted TS2345 in
+   the 708-line browser suite passed typecheck AND lint"* — and the fix is the same: the
+   project includes the code it claims to check.
+2. **The iOS install flow was hidden on `alerts.unsupported`, which is the state an iOS TAB
+   LANDS IN.** Apple exposes `Notification` and `PushManager` only to a web app launched from
+   the Home Screen, so an iPhone reading the page in Safari has no push path at all, reports
+   `unsupported`, and was the one customer shown no install instructions — while
+   `§4 › Realtime` calls that guidance *"a required product path, not a nice-to-have"* and the
+   install is the only thing that would fix their state.
+3. **The reconcile registered a push device for a session already known to be over, and before
+   the session was resolved at all.** Both are refused server-side by design, so nothing broke;
+   what happened instead is a request that can only fail, on every launch of a finished
+   session. ⚠ **And the terminal guard was covered by NOTHING** — `bin/revert-proof` found
+   that, because removing both guards left the expired case green: that case is caught by the
+   snapshot guard, and a `completed` session HAS a snapshot.
+4. **Two negative assertions waited on a fixed 50 ms sleep.** One passed, then failed when an
+   unrelated case was added to the same file, then passed again when its failure MESSAGE grew.
+   `reconcileSubscription()` calls `getSubscription()` before it decides anything, so the test
+   container counts those and both assertions wait for the decision rather than for a duration.
+
+#### ⚠ AND FOUR IN THE HARNESS ITSELF, each measured rather than reasoned
+
+The browser toolchain is new to this repository, and every one of these was a red suite with a
+cause that was not the code.
+
+1. **`--network host` does not reach the host's loopback on this platform.** 300-ish: measured
+   as `000` from a container against a server answering **200** through
+   `--add-host=host.docker.internal:host-gateway`. And `localhost` cannot be borrowed: Docker
+   appends `--add-host` AFTER the default `127.0.0.1 localhost`, so the container's own loopback
+   wins — measured, both entries present in `/etc/hosts`.
+2. **`host.docker.internal` is on no engine's secure-origin allow-list**, so
+   `navigator.serviceWorker` and `navigator.credentials` are both `undefined` over http. The
+   whole service-worker half of this task was unreachable until a TLS front existed:
+   chromium answered *"Cannot read properties of undefined (reading 'register')"* and firefox
+   *"navigator.serviceWorker is undefined"*.
+3. **The teardown leaked `next-server`.** `kill` on a launcher subshell leaves the server; and
+   `setsid` plus `kill -- -PGID` fixes three of four, because `next start` spawns `next-server`
+   in a process group of its own. The visible cost: one run found port 3099 held, its readiness
+   probe passed against the STALE server — which was serving the previous build's asset
+   manifest against a `.next` rebuilt underneath it — and **33 of 45 journey cases failed with
+   `400 Bad Request` on every JS chunk**, against bytes nobody built in that run.
+4. **`pnpm exec` re-linked `node_modules` mid-run** (`+ vite 8.3.5 / + vitest 5.0.5 /
+   Done in 1.1s`), after which `pnpm exec playwright` failed with *"Command not found"* against
+   a tree that was correct a second later. `npm_config_verify_deps_before_run=false` did not
+   stop it; the pinned binaries are invoked directly now. A run that mutates its own toolchain
+   cannot be measured.
+
+#### ⚠ THE TWO GATES MUST NOT RUN AT THE SAME TIME, AND THAT IS `R-200`'s MECHANISM ONE LAYER OUT
+
+`php artisan serve` (the E2E's API) uses `.env`'s `DB_DATABASE=qrpager`; the suite uses
+`phpunit.xml`'s `qrpager_test`. So **Postgres is not the shared resource — Redis is**, exactly
+as `R-200`'s own correction records: `TestCase::setUp`'s `clearPagerProjection()` deletes
+`t:*:pager:*` and `pager:tok:*` before every test, and a pager session IS a Redis key. Running
+`composer gate` while `pnpm run gate:e2e` is up would delete the E2E's live sessions
+mid-journey.
+
+They are therefore run **serially**, and that is stated here rather than discovered: a reader
+who runs both at once will get a red E2E whose cause is in the other terminal.
+
+#### What is NOT delivered, and why
+
+| clause | state |
+| --- | --- |
+| `§3` row 9 (a) — *a real iOS device, installed to Home Screen, receives one real push from Task 4's dispatcher* | ⛔ **NOT MET.** `QRPAGER-24`'s run, Muhammad's to perform. `R-073` is open and this is what blocks `task-9` |
+| `§3` row 9's fragment clause (c) — *a CSP whose `script-src` makes (b) impossible* | ⛔ **NOT MET, and it is `R-171`.** The headers belong at the edge on a statically prerendered app; what this task adds is the derived, byte-compared `web-csp-surface.json` so Task 12 writes the policy from a measurement |
+| the push **transport** | Not drivable by any runner: a push must come from Apple's, Google's or Mozilla's service. The handler is driven on the shipped bytes in all three engines; the delivery is `QRPAGER-24`'s device run |
+| the offline shell **from a real worker registration** in Firefox and WebKit | Harness limit, named in the spec: a worker script is fetched by the browser's own network stack, so `ignoreHTTPSErrors` does not reach it and only Chromium has a flag. Every other offline clause is asserted in all three |
+| `R-093`'s deadline — *before Task 9 builds the client* | ⚠ **PASSED WITHOUT EITHER BRANCH BEING TAKEN**, and reported rather than carried quietly. The sentence is Muhammad's at rank 2 and `§0` forbids a session editing it; a `SourceGuard` key-inventory rule is an `apps/api` control this task has no other reason to touch. Nothing in this task adds a Redis key or reads one |
+
+#### Every `§3` row 9 clause, quoted, with where it is asserted
+
+| `§3` row 9 clause, quoted | state | where it is asserted |
+| --- | --- | --- |
+| *"Playwright E2E green on Chromium, Firefox and WebKit"* | ✅ | `journey-{chromium,firefox,webkit}` over `pager.spec.ts` + `sw.spec.ts`, and `engines-{…}` over `engines.spec.ts` |
+| *"scan → wait → ready → alert"* | ✅ | `pager.spec.ts` — a real token resolved over HTTP, the real poller discovering `ready`, the assertive live region carrying the real reference, acknowledge |
+| *"permission-denied, offline, expired-token and invalid-token paths all handled"* | ✅ | four cases in `pager.spec.ts`, each driven by the real answer; plus a fifth for a malformed fragment that asserts **zero** requests |
+| *"a rotated subscription is re-registered by the `pushsubscriptionchange` handler and the next notification still arrives — tested, not assumed"* | ⚠ **the handler: yes. The mechanism is absent on iOS — `SR-5`/`R-202`** | `sw.spec.ts` drives every branch of the handler on the shipped bytes in three engines; `notify.test.ts` drives `reconcileSubscription()`'s five outcomes, which is the half that works on iOS, and asserts it **with the handler removed** |
+| *"iOS Home-Screen install path works and is measured"* | ⚠ **the product flow: yes. The install on a device: `QRPAGER-24`** | `environment.test.ts` (iPad-on-a-Mac-UA detection, display-mode, the three guidance verdicts), `orchestrator.test.tsx` (rendered on an iOS tab, absent when standalone), `screens.test.tsx` (its own heading, three steps, the self-label) |
+| *"Lighthouse Performance ≥ 95"* | see the figure | `tools/gate/bin/lighthouse-proof`, by `§3.1` row 9's six-part method |
+| *"one-handed operation verified at 390px"* | ✅ | `one-handed.spec.ts`, four properties × 17 states × 3 engines × 2 directions, table generated per project and byte-compared |
+| row 9 (a) *"a real iOS device … receives one real push"* | ⛔ **`R-073`** | nowhere — it needs a phone |
+| row 9 (b) *"client backoff and jitter verified"* | ✅ | `poll.test.ts` at exact values at both extremes; `orchestrator.test.tsx` reads the cadence off the request log |
+| row 9 (c) *"404 `.../problems/stale` … while 503 means come back shortly"* | ✅ | `api.test.ts` (four answers, incl. a 404 **without** the stale type → unreachable, not a re-resolve) and `journey.test.ts` (two distinct transitions) |
+| fragment (a) *"reads `location.hash` once and immediately strips it"* | ✅ | `token.test.ts`; `pager.spec.ts` in three engines, with `history.length` compared against a navigation that never carried a token |
+| fragment (b) *"the landing origin loads NO third-party script"* | ✅ | `build-surface.test.ts` against the built output **and** `pager.spec.ts` against every request the engine made |
+| fragment (c) *"a CSP whose `script-src` makes (b) impossible"* | ⛔ **`R-171`** | not met; `web-csp-surface.json` is what this task adds instead |
+| `§6` *"unit coverage ≥ 90% on code this task added"* | ✅ | measured over `apps/web/src` alone, not over the whole include set |
+| `§6` *"all previous tasks' tests still pass"* | see `composer gate` | discharged against `known-flakes.json` via `bin/classify-reds`, per the ticket's own DoD |
+| `§6` *"fresh clone"* | see the two proofs | `apps/api/bin/fresh-clone-proof` and `tools/gate/bin/fresh-clone-proof` |
+| `§12` *"keyboard reachable, visible focus ring, AA (AAA on order-ready), 44px, reduced-motion, RTL-safe"* | ✅ | `pager.spec.ts` (computed outline on every control, every duration `0s` under reduced motion, `lang`+`dir`), `one-handed.spec.ts` (44px without `R-174`'s exception), `packages/tokens` (AAA as arithmetic over the fixed pair, D4) |
+
 ## 5. Accepted risks
 
 | #         | Risk                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Severity                                    | Why accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Compensating control                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Owner                                                                                                                                                                                                                                                                                                                                                                                                     | Review by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
