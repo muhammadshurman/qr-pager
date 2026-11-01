@@ -48,6 +48,53 @@ umask 077
 cd "$(dirname "$0")/../../.."
 REPO="$(pwd)"
 
+# ⚠ WHERE THE BROWSER REACHES THIS HOST, RESOLVED BEFORE ANY ORIGIN BELOW IS COMPOSED, AND IT
+# IS WHAT REDDENED CI RUN #187. One source: `tools/browsers/bin/browsers --reachable-host`,
+# which answers from the same mode decision it then launches under -- `localhost` natively (CI),
+# `host.docker.internal` in the container (both developer machines so far).
+#
+# `APP_URL`'s host becomes the WebAuthn relying-party id, and a relying-party id must be a
+# registrable suffix of the page's own origin. A constant could not be right for both modes, and
+# the mode that was wrong is the one no local run exercises: in run #187 the register step
+# produced NO output for 20 s and the step failed with "the register step did not answer 201.
+# page errors: []", which is the SecurityError the harness page does not catch.
+BROWSER_HOST="$("${REPO}/tools/browsers/bin/browsers" --reachable-host)"
+
+if [ -z "$BROWSER_HOST" ]; then
+  echo "e2e: FAILED: could not resolve the host the browser reaches this machine by" >&2
+  exit 1
+fi
+
+# Pinned for the rest of the run, so the answer above cannot differ from the launch that
+# follows -- and because `host_can_launch()` really launches all three engines to decide, this
+# also stops that probe running twice.
+if [ -z "${QRPAGER_BROWSERS:-}" ]; then
+  if [ "$BROWSER_HOST" = "localhost" ]; then
+    export QRPAGER_BROWSERS=host
+  else
+    export QRPAGER_BROWSERS=container
+  fi
+fi
+
+# ⚠ AND THE TWO HOSTS ARE NOT THE SAME ONE IN CONTAINER MODE, which is the thing to keep
+# straight here. `LOCAL_HOST` is what THIS SCRIPT curls to wait for its own servers;
+# `BROWSER_HOST` is what the browser resolves. They coincide natively and diverge in the
+# container:
+#
+#   container:  LOCAL_HOST=127.0.0.1          BROWSER_HOST=host.docker.internal
+#   native:     LOCAL_HOST=localhost          BROWSER_HOST=localhost
+#
+# The container case MUST keep the `127.0.0.1` spelling in the origins this script composes,
+# because `browsers` rewrites exactly that literal to `host.docker.internal` when it forwards
+# the environment -- and because `host.docker.internal` does not resolve on the host, so a
+# health check against it would hang on a server that is already up. The first version of this
+# fix set both from `BROWSER_HOST` and would have broken the container path's `wait_for`.
+if [ "$BROWSER_HOST" = "localhost" ]; then
+  LOCAL_HOST="localhost"
+else
+  LOCAL_HOST="127.0.0.1"
+fi
+
 API_PORT="${QRPAGER_E2E_API_PORT:-8099}"
 WEB_PORT="${QRPAGER_E2E_WEB_PORT:-3099}"
 TLS_PORT="${QRPAGER_E2E_TLS_PORT:-3098}"
@@ -63,8 +110,13 @@ WEB_ORIGIN="http://127.0.0.1:${WEB_PORT}"
 # undefined outside a secure context, and the browsers reach the host as
 # `host.docker.internal`, which is on no engine's secure-origin allow-list. Measured both
 # ways; the full argument is in `tools/browsers/bin/tls-proxy.mjs`.
-TLS_ORIGIN="https://127.0.0.1:${TLS_PORT}"
-TLS_API_ORIGIN="https://127.0.0.1:${TLS_API_PORT}"
+# ⚠ THESE TWO ARE BROWSER-FACING AND SO FOLLOW `BROWSER_HOST`; `API_ORIGIN` and `WEB_ORIGIN`
+# above stay on the loopback literal because only this script curls them. In the container these
+# keep the `127.0.0.1` form that `browsers` rewrites to `host.docker.internal` when it forwards
+# the environment; natively they become `localhost`, which is a valid relying-party id where
+# `127.0.0.1` is not.
+TLS_ORIGIN="https://${LOCAL_HOST}:${TLS_PORT}"
+TLS_API_ORIGIN="https://${LOCAL_HOST}:${TLS_API_PORT}"
 LOG_DIR="${REPO}/storage/logs"
 mkdir -p "$LOG_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -183,6 +235,8 @@ wait_for() {
 # reaches these ports through `--network host`.
 require_free_port "${API_PORT}" "the API"
 say "starting the real API on ${API_ORIGIN}"
+say "the browser reaches this host as ${BROWSER_HOST} (QRPAGER_BROWSERS=${QRPAGER_BROWSERS})"
+
 # ------------------------------------------------- the database this suite runs against
 #
 # ⚠ THIS STEP DID NOT EXIST, AND ITS ABSENCE IS A FALSE RED THAT NAMES NOTHING. Found
@@ -254,7 +308,7 @@ say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
 # `pager.landing_url` is a separate setting and is untouched, so nothing about the QR payload
 # changes.
 setsid bash -c 'cd "$1" && APP_URL="$3" exec php artisan serve --host=0.0.0.0 --port="$2"' \
-  e2e-api "${REPO}/apps/api" "${API_PORT}" "https://host.docker.internal:${TLS_API_PORT}" \
+  e2e-api "${REPO}/apps/api" "${API_PORT}" "https://${BROWSER_HOST}:${TLS_API_PORT}" \
   >"${API_LOG}" 2>&1 &
 api_pid=$!
 

@@ -43,6 +43,52 @@ host_can_launch() {
 ' >/dev/null 2>&1
 }
 
+# ================================================================================
+# ⚠ ONE SOURCE FOR "WHERE DOES THE BROWSER REACH THIS HOST" -- CI run #187's RED
+# ================================================================================
+#
+# `--reachable-host` prints the hostname a browser launched by THIS script will use to reach
+# the host machine: `127.0.0.1` when it runs natively, `host.docker.internal` when it runs in
+# the container (which is what the env rewriting below does to every forwarded `127.0.0.1`).
+#
+# It exists because that fact was duplicated, and the second copy was a CONSTANT.
+# `tools/browsers/bin/e2e` hard-coded `APP_URL=https://host.docker.internal:<port>` for
+# `R-100`, which is right in the container and wrong natively -- and CI launches the engines
+# natively. `laravel/passkeys` derives the WebAuthn relying-party id from `APP_URL`'s host, a
+# relying-party id must be a registrable suffix of the page's own origin, and
+# `host.docker.internal` is not a suffix of `127.0.0.1`, so `navigator.credentials.create()`
+# was rejected with a SecurityError that the harness page does not catch.
+#
+# The symptom is the one `e2e`'s own comment already described from the other direction: *the
+# login step answered 200 and the register step produced NO output at all*. In CI run #187 that
+# is exactly what happened -- `#out` still held `login -> 200` after 20 s and the step failed
+# with *"the register step did not answer 201. page errors: []"*. Green in the container on two
+# machines, red in CI, for five commits.
+#
+# Printing it from here means the host and the browser's launch mode cannot disagree: the
+# decision is made once, by the code that also acts on it.
+if [ "${1:-}" = "--reachable-host" ]; then
+  # ⚠ `localhost` AND NOT `127.0.0.1`, WHICH IS THE WHOLE POINT OF THE NATIVE BRANCH. A WebAuthn
+  # relying-party id is a DOMAIN string -- an IP literal is not one and is refused -- so
+  # swapping `host.docker.internal` for `127.0.0.1` would have replaced one `credentials.create()`
+  # rejection with another. `localhost` is a valid relying-party id, is a trustworthy origin by
+  # definition, resolves to the loopback the servers already bind, and is in the self-signed
+  # certificate's SAN (`DNS:localhost`) that `e2e` generates. The container branch keeps
+  # `host.docker.internal`, which is also a domain and is why that path works today.
+  if [ "$MODE" = host ]; then
+    echo "localhost"
+    exit 0
+  fi
+
+  if [ "$MODE" = auto ] && (cd "$REPO" && host_can_launch); then
+    echo "localhost"
+    exit 0
+  fi
+
+  echo "host.docker.internal"
+  exit 0
+fi
+
 if [ "$#" -eq 0 ]; then
   echo "usage: $(basename "$0") <command> [args...]" >&2
   exit 64

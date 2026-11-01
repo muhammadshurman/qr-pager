@@ -348,7 +348,16 @@ function countPhpTests() {
  *      pretending to police it; rule 1's form is the replacement.
  */
 export function checkStatedHead(plan, headSha = null) {
-  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const whole = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+
+  /**
+   * ⚠ THE CURRENT CLAUSE ONLY, AND EVERYTHING AFTER THE FIRST `———` IS HISTORY. `§0`'s cells
+   * are written newest-first and deliberately KEEP every superseded clause behind that marker,
+   * exactly as the *Open debt* cell does for its row counts -- so a check that read the whole
+   * cell would hold Task 8a's or Task 7's old state to today's `HEAD` and demand the file lie
+   * about its own past. `checkRowCount` already scopes this way for the same reason.
+   */
+  const cell = whole.split('———')[0]
   const head = headSha ?? git('rev-parse', 'HEAD')
 
   /** Rule 2 first: the phrasing that cannot be kept true. */
