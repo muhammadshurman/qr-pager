@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Platform\Database\DatabaseRoles;
 use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
 
 /*
  * R-049: the suite's per-test TRUNCATE is serialised against a second runner.
@@ -22,8 +24,24 @@ use Illuminate\Support\Facades\DB;
  * which is R-043's whole complaint, so it is not repeated here.
  */
 
-/** The key TestCase holds. Duplicated deliberately -- see the last case in this file. */
-const SUITE_LOCK_KEY = 2_000_000_049;
+/**
+ * The key TestCase actually holds, READ FROM TestCase RATHER THAN COPIED.
+ *
+ * ⚠ THIS WAS `const SUITE_LOCK_KEY = 2_000_000_049;` WITH THE COMMENT *"Duplicated deliberately
+ * -- see the last case in this file"*, AND THAT POINTER WAS WRONG: the last case in this file is
+ * `R-054`'s `PAO_DISABLE` export and has nothing to do with the key, so the duplication was
+ * justified by a case that does not exist and was reconciled against `TestCase` by nothing.
+ *
+ * It stopped being harmless on 2026-11-01, when the suite lock became **keyed by the test
+ * database's name** so that two reviewer slots can run at once (`PLAN §0.2` (b)). The copy here
+ * still said 2_000_000_049, the holder held a derived key, and both cases below went red in all
+ * seven runs of `three-green-runs` -- which is the good outcome for a duplicated constant and the
+ * reason the fix is to delete the copy rather than to update it.
+ */
+function suiteLockKey(): int
+{
+    return TestCase::suiteLockKey();
+}
 
 it('holds a process-lifetime advisory lock, so a second runner queues rather than truncating — R-049', function (): void {
     // Observed from an ordinary Laravel connection, which is the point: the lock is held
@@ -48,7 +66,7 @@ it('holds a process-lifetime advisory lock, so a second runner queues rather tha
      */
     $held = DB::connection('pgsql_root')->selectOne(
         'select count(*) as c from pg_locks where locktype = ? and objid = ? and granted',
-        ['advisory', SUITE_LOCK_KEY],
+        ['advisory', suiteLockKey()],
     );
 
     expect((int) $held->c)->toBe(
@@ -65,7 +83,7 @@ it('keeps holding it after a connection purge, which is the half that made the n
     // `granted` filtered here too, for the reason the case above carries at length.
     $held = DB::connection('pgsql_root')->selectOne(
         'select count(*) as c from pg_locks where locktype = ? and objid = ? and granted',
-        ['advisory', SUITE_LOCK_KEY],
+        ['advisory', suiteLockKey()],
     );
 
     expect((int) $held->c)->toBe(1, 'a purge released the suite lock');
@@ -78,7 +96,44 @@ it('does not collide with the key RoleTimeoutTest draws, because this lock is ne
     // unlocked, the draw would block that test FOREVER -- a hung suite with no output,
     // one run in two billion. Out of the range by construction, and pinned here so the
     // range and the key cannot drift towards each other unnoticed.
-    expect(SUITE_LOCK_KEY)->toBeGreaterThan(2_000_000_000);
+    expect(suiteLockKey())->toBeGreaterThan(2_000_000_000);
+});
+
+it('derives the key from the test DATABASE, so two reviewer slots do not queue on one lock', function (): void {
+    /*
+     * `PLAN §0.2` (b). The lock exists to protect a DATABASE, so its key names one: two runners
+     * with different `DB_DATABASE` take different keys and run at the same time, and two on the
+     * SAME database still queue, which is `R-049`'s fix and is what the two cases above assert.
+     *
+     * Asserted as the PROPERTY rather than against a literal, because a literal here would
+     * reintroduce exactly the second source this file just deleted. The function is pure, so the
+     * three claims below are all that "keyed by the database" means:
+     *   - the same name twice gives the same key (or the holder could not be found at all);
+     *   - two different names give different keys (or the slots would queue);
+     *   - every key it can produce is out of RoleTimeoutTest's drawable range.
+     *
+     * The behavioural half -- that two slots actually OVERLAP in wall-clock time rather than
+     * merely both passing -- is `apps/api/bin/parallel-reviewer-proof`, in the repository for
+     * `R-043`'s reason and not repeated here.
+     */
+    $key = fn (string $database): int => 2_000_000_049 + (crc32($database) % 1_000_000);
+
+    expect($key('qrpager_test'))->toBe($key('qrpager_test'), 'the key is not a pure function of the database name')
+        ->and($key('qrpager_test_s1'))->not->toBe($key('qrpager_test_s2'))
+        ->and($key('qrpager_test'))->not->toBe($key('qrpager_test_s1'));
+
+    // The range clause, over every name a slot can produce rather than over today's one.
+    foreach (['qrpager_test', 'qrpager_test_s1', 'qrpager_test_s7', 'qrpager'] as $database) {
+        expect($key($database))->toBeGreaterThan(2_000_000_000);
+    }
+
+    // And the live key really is one of them: this runner's own database, through TestCase.
+    $database = config('database.connections.'.DatabaseRoles::connection('app').'.database');
+
+    expect(suiteLockKey())->toBe(
+        $key((string) $database),
+        'TestCase::suiteLockKey() no longer derives from the app connection database'
+    );
 });
 
 it('keeps its behavioural proof in the repository, not in a session scratchpad — R-043', function (): void {

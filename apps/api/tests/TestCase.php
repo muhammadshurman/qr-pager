@@ -68,7 +68,7 @@ abstract class TestCase extends BaseTestCase
      * interleave. The unsafe direction would be two runners on ONE database getting two keys,
      * and that cannot happen: the key is a pure function of the name.
      */
-    private static function suiteLockKey(): int
+    public static function suiteLockKey(): int
     {
         $database = config('database.connections.'.DatabaseRoles::connection('app').'.database');
 

@@ -96,7 +96,7 @@ TOKEN="${QRPAGER_LH_TOKEN:-}"
 
 if [ -z "$BASE" ] || [ -z "$TOKEN" ]; then
   echo "lighthouse-proof: QRPAGER_E2E_BASE and QRPAGER_LH_TOKEN are required." >&2
-  echo "  Run it through 'tools/browsers/bin/lighthouse', which starts the stack, issues a" >&2
+  echo "  Run it through 'pnpm run gate:lighthouse', which starts the stack, issues a" >&2
   echo "  real session and passes both. This script does not invent a token: a fabricated" >&2
   echo "  one renders the INVALID screen, which is a different and much smaller page." >&2
   exit 1

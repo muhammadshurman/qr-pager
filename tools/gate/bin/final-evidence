@@ -80,12 +80,21 @@ echo
 # ⚠ THE ORDER IS DELIBERATE: cheapest-to-diagnose first, so a trivial red does not arrive 40
 # minutes in. The two three-green-runs come before the fresh clones because a red in the
 # working tree is faster to read than the same red inside a temp clone.
+# ⚠ THE LIGHTHOUSE ENTRY POINT IS THE STACK WRAPPER, NOT THE PROOF SCRIPT, and the first version
+# of this file got that wrong: it called `tools/gate/bin/lighthouse-proof` directly, which refuses
+# with *"QRPAGER_E2E_BASE and QRPAGER_LH_TOKEN are required"* because it will not invent a token --
+# a fabricated one renders the INVALID screen, which is a different and much smaller page. The
+# stack, the real issued session and both variables come from `gate:e2e` under
+# `QRPAGER_E2E_LIGHTHOUSE=1`, which is what `pnpm run gate:lighthouse` is.
+#
+# Each entry is `name:shell command`, run through `bash -c` because the commands are no longer all
+# single words.
 steps=(
     "php-three-green-runs:apps/api/bin/three-green-runs"
     "frontend-three-green-runs:tools/gate/bin/three-green-runs"
     "php-fresh-clone:apps/api/bin/fresh-clone-proof"
     "frontend-fresh-clone:tools/gate/bin/fresh-clone-proof"
-    "lighthouse:tools/gate/bin/lighthouse-proof"
+    "lighthouse:pnpm run gate:lighthouse"
 )
 
 failed=()
@@ -100,7 +109,7 @@ for entry in "${steps[@]}"; do
     # The status is read directly from the command, not through a pipe and not from `$?` on a
     # line carrying a substitution -- `check-shell-evidence` rules 2 and 3.
     set +e
-    "$cmd" >"$out" 2>&1
+    bash -c "$cmd" >"$out" 2>&1
     status=$?
     set -e
 
