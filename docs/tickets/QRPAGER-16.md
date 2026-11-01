@@ -961,3 +961,19 @@ Four rows, each with an owner and a date. They are `SR-4`, `SR-5`, and two small
 task measured.
 
 ---
+
+## §8. DECLARED NON-DELIVERIES AND DELIBERATE CHOICES A REVIEWER MAY DISAGREE WITH
+
+Stated here so none of them has to be discovered. Each is a decision rather than an oversight,
+and each names what would change it.
+
+| choice | why, and what would change it |
+| --- | --- |
+| **The PWA renders the approved LIGHT theme only.** `ThemeProvider` is given no `theme`, so `data-theme="light"` is always set and the attribute always decides — `prefers-color-scheme` never reaches it. | The approved direction makes the order-ready screen *"the only dark surface in the product"*, and that screen is outside theming entirely (D4), so a dark customer journey is not something the approval covers. A customer with dark mode on their phone therefore gets a bright page at night. Offering them the dark theme is a product decision nobody has taken; the mechanism already exists (`AVAILABLE_THEMES`), so it is one prop when somebody does. |
+| **No language switcher.** The locale comes from `navigator.languages`, matched on the primary subtag. | `§4.1` asks the scan landing for *"zero chrome"*, and a switcher is a control on every screen that advances nothing. A customer scanning a code in a restaurant has their phone's language set already. |
+| **The prerendered shell carries no copy at all** — a spinner, and the locale resolves at hydration. | The document is static, so it is built with no `navigator`. Rendering the English shell and switching would be a hydration mismatch for every Arabic customer AND a visible flash of the wrong language and direction. It costs nothing because the first paint has no order data either way. |
+| **The `<details>` disclosure keeps the engine's own marker triangle.** | Everything else about it is ours — colour, size, the 44px block floor, the focus ring. `§12`'s *"no library default look"* is about naming a FRAMEWORK from a screenshot, and a disclosure triangle names none. The alternative is re-implementing a native, keyboard-reachable, screen-reader-announced control in JavaScript. |
+| **One rewritten response in one browser case.** `pager.spec.ts`'s poll-driven transition rewrites the FIRST resolve's `status` to `waiting` and nothing else; every later request, including every poll, reaches the real server. | There is no customer route that can mark a live session ready — `markReady` is staff-authenticated — and adding a control route to `apps/api` is out of scope (`§2`). The choice was one rewritten field or no poll-driven transition at all, and it is named in the test rather than hidden in a helper. |
+| **The one-handed measurement controls the API answers.** | It is a GEOMETRY measurement over 17 states × 3 engines × 2 directions; reaching each state deterministically matters more than the transport, and the transport is what `pager.spec.ts` crosses for real. |
+| **The offline-shell cases run in Chromium only.** | A real service-worker registration needs a trusted certificate, and a worker script is fetched by the browser's own network stack — so `ignoreHTTPSErrors` does not reach it and only Chromium has a flag. Named in the spec with what is therefore not proven. |
+| **`R-100` is closed in Chromium only.** | `WebAuthn.addVirtualAuthenticator` is a CDP command; no runner exposes an equivalent for Firefox or WebKit, so there is no way to present a valid attestation to them. |
