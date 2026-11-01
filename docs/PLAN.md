@@ -6348,6 +6348,97 @@ state, so the count is reported rather than bounded.
 
 ---
 
+### Task 8b — **built, both `§11` rounds run, on `task-8b-precoding`** (2026-11-01). Ticket `QRPAGER-23`, epic E5
+
+**Base `d8c96521baf033e2e70b9b4feb8a45d61c1e3e8d`** — 8a's head, now the `task-8a` tag. `§0.0` records
+the `§6` deviation that let 8b start before that tag existed, and its hard condition: **8b edits no
+line `a1f1263..d8c9652` changed.** Held, and checked mechanically at every commit — for each file both
+diffs touch, the set of lines this branch deletes is intersected with the set 8a added, and the
+intersection is empty. The one place that condition bit is `R-190`.
+
+⚠ **THIS SECTION EXISTS BECAUSE `§6`'s COVERAGE CLAUSE WAS UNREPORTED AND `§4a` HAD NO 8b RECORD AT
+ALL.** Both were the §11 QA round's H-5. Every task from 10 to 15 carries gate, coverage, fresh-clone
+and three-run evidence here; 8b carried none until this section.
+
+#### The gates, at `a0d99ba`
+
+| | |
+| --- | --- |
+| `composer gate` | **all 10 steps green** — pint, stan, guard, deptrac, openapi:check, landing:check, contracts:check, **assets**, **deps**, test — **1150 passed, 9775 assertions**. Transcript: `docs/tickets/QRPAGER-23-composer-gate.txt` |
+| `pnpm gate` | **all 12 steps green** — lint:es, lint:tokens, **lint:panel**, lint:shell, format:check, typecheck, tokens:check, audit, vitest, playwright, and both Next builds — **553 Vitest over 23 files**, **82 Playwright**. Transcript: `docs/tickets/QRPAGER-23-pnpm-gate.txt` |
+| new gate steps | `composer assets` and `composer deps` in the PHP gate; `pnpm run lint:panel` in the workspace gate. All three are in CI, and `ci-parity.test.mjs` is what made that non-optional |
+| generated artefacts | **9**, up from 7: `browser/fixtures/panel-palette.css` and `packages/tokens/generated/panel-theme.css` are new, both byte-diffed by `tokens:check` |
+
+#### Coverage — `§6` asks for the number, so here it is
+
+`apps/api/bin/coverage --task=d8c9652`, measured 2026-11-01:
+
+```
+app/Features/Landing/Panel/Pages/DomainsPage.php                  53/57     93.0%
+app/Features/Landing/Panel/StudioPanelProvider.php               135/135   100.0%
+app/Features/Provisioning/Panel/PlatformPanelProvider.php        113/113   100.0%
+app/Features/Provisioning/Panel/Resources/PlatformAuditResource   56/57     98.2%
+app/Platform/Http/PanelProblemPage.php                            39/42     92.9%
+app/Platform/Panel/ApprovedPalette.php                              8/8    100.0%
+app/Platform/Panel/PanelRoutes.php                                25/26     96.2%
+THIS TASK (7 files)                                              429/438   97.95%
+```
+
+⚠ The figure was **98.02% over 5 files** when first measured and is **97.95% over 7** now: the two
+`App\Platform\Panel` classes landed with the round-one fixes, after the first run. The transcript at
+`docs/tickets/QRPAGER-23-coverage.txt` is the later one, and the number moved because the denominator
+grew — which is the only honest way to report a figure measured twice.
+
+Project total **95.0%**. TypeScript, from `coverage/coverage-summary.json` rather than the truncated
+table: **statements 92.89 · branches 90.28 · functions 98.46 · lines 93.97**, against a 90 floor on
+each. ⚠ The branch margin is **0.28 points** and is stated rather than widened: it fell to 89.85 when
+`scan-panel.mjs` landed and was brought back by driving that scanner's three refusal paths in-process
+instead of through a subprocess, which is also why they are measured and not merely proven.
+
+#### Fresh clone — `§6`'s own clause, and what it caught
+
+`apps/api/bin/fresh-clone-proof` and `tools/gate/bin/fresh-clone-proof` both **failed at `5f7ffdc`**,
+which was the QA round's H-1, and both failures were the same root cause as H-2 and H-3: the panel
+theme's first `@import` reads `apps/api/vendor`, the suite reads `apps/api/public/build`, both are
+git-ignored, and three clean environments installed neither or only one. Fixed as one thing in all
+three places, in the one order that works — `composer install` → `npm ci` → `npm run build`.
+
+⚠ **AND THE CLONE THEN CAUGHT SOMETHING THE DEV TREE COULD NOT**: `ApiNpmLicenceTest` asserted four
+exact `name@version` strings and went red, because `npm ci` resolves the optional platform binaries
+for **both glibc and musl** in a clean tree while an incremental install keeps only the host's. That
+is the "works on the builder's machine" shape the proof exists for, and `licences.test.mjs`'s own
+header had already written the argument — a per-package list "differs by PLATFORM". Both halves now
+compare base names.
+
+#### Three consecutive runs, and the honest state of them
+
+**Not clean, and the cause is measured rather than suspected.** `R-191`: `SQLSTATE[08006] … timeout
+expired` on `pgsql_owner` at `TestCase::setUp`'s TRUNCATE strikes a random test — five identities so
+far. 300 bare TCP connects to `127.0.0.1:5432` idle give **0 failed, median 0.0 ms, max 0.9 ms**; the
+same 300 with eight CPU-spinning threads give **0 failed, median 162.6 ms, p95 320.1 ms, max
+35,648 ms** — a 35-second stall on one `connect()`, with no Postgres in the path. The WSL2 + Docker
+userspace port forward is the cause; whichever test's `setUp` lands in a stall window fails.
+`R-185`/`R-172` is a second, distinct family in the outbox and lease area, now with three identities.
+
+So the record is: **individual green runs, repeatedly, with reds whose identity is captured every
+time** — `AuditLogAssertionTest`, `TenantContextTest`, `ShedLoadTest`, `EnumContractTest`,
+`BootstrapDatabaseCommandTest` (all `R-191`) and `OutboxWorkerTest` ×2, `OutboxLeaseTest` (all
+`R-185`). ⚠ A red run on this machine is to be READ, not re-run away: `bin/gate` keeps every run's
+output for exactly that, and both rows say so in their owner cells.
+
+#### The two `§11` rounds
+
+**Round one** (`d8c9652...5f7ffdc`, two fresh subagents, diff and ticket only): **28 findings — QA 21
+(0C/6H/8M/7L) and Security 7 (0C/0H/2M/5L)**. H-1, H-2 and H-3 were one root cause; `S-6`/`L-6` and
+`S-7`/`L-3` were each one defect found by both reviewers. Dispositions: every High FIXED with a
+regression test proven red, the rest FIXED, CORRECTED IN PLACE, or `§5` with an owner and a date
+(`R-185`…`R-190`).
+
+⚠ **BOTH ROUND-ONE REVIEWERS REPORTED THE SAME PROCESS DEFECT FROM OPPOSITE SIDES** — they shared one
+working tree and each saw the other's falsification reverts. `R-189` records it and the rule: one
+pinned `git worktree` per reviewer. Round two was run that way.
+
+
 ## 5. Accepted risks
 
 | #         | Risk                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Severity                                    | Why accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Compensating control                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Owner                                                                                                                                                                                                                                                                                                                                                                                                     | Review by                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
