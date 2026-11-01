@@ -361,17 +361,16 @@ jobs:
       # TASK 9's JOURNEY SUITE -- IN THIS JOB, AND THAT IS THE ONE PARITY EXCEPTION
       # ================================================================================
       #
-      # `pnpm run test:e2e` is a `pnpm gate` step, and every other `pnpm` gate step runs in
-      # the `frontend` job. This one cannot: it stands up the REAL Laravel API against the
-      # composed Postgres and Redis, issues a REAL pager session through the domain service,
-      # serves the PRODUCTION build of `apps/web` and puts a TLS front in front of both so the
-      # origin is a secure context -- and the `frontend` job has no PHP, no Postgres and no
-      # Redis. This job has all three, already migrated and already bootstrapped by the steps
-      # above.
+      # `pnpm run gate:e2e` is Task 9's CROSS-HALF gate: the real Laravel API against the
+      # composed Postgres and Redis, a real pager session issued through the domain service,
+      # the production build of `apps/web`, and a TLS front so the origin is a secure context.
       #
-      # ⚠ `tools/gate/test/ci-parity.test.mjs` NAMES IT AND ASSERTS IT IS HERE, so the step
-      # MOVES between jobs rather than quietly leaving CI. A carve-out that only excused it
-      # from the `frontend` job would be the hole `R-126` is about.
+      # It is deliberately NOT part of `pnpm gate` -- `ADR-003` splits the two halves and
+      # `tools/gate/bin/gate.mjs`'s header gives the argument -- so it runs HERE, in the job
+      # that already has PHP, Postgres and Redis migrated and bootstrapped above.
+      #
+      # ⚠ `tools/gate/test/ci-parity.test.mjs` ASSERTS THIS STEP IS IN THIS JOB. A third gate
+      # nobody is required to run is a gate in name only, which is the hole `R-126` is about.
       #
       # It needs the workspace and the browsers, which this job did not have before.
       - uses: actions/setup-node@v5
@@ -397,7 +396,7 @@ jobs:
 
       - name: The customer journey, the service worker, one-handed at 390px, and R-100
         working-directory: .
-        run: pnpm run test:e2e
+        run: pnpm run gate:e2e
 
   frontend:
     name: Frontend workspace — lint, types, Vitest, Playwright, build

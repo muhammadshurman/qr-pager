@@ -96,20 +96,20 @@ const PROVISIONING = [
 
 /**
  * ================================================================================
- * THE ONE GATE STEP CI RUNS IN A DIFFERENT JOB -- AND IT IS ASSERTED, NOT EXCUSED
+ * TASK 9's THIRD GATE, AND WHY IT IS NOT A PARITY EXCEPTION
  * ================================================================================
  *
- * `pnpm run test:e2e` stands up the REAL Laravel API against the composed Postgres and Redis,
- * issues a real pager session through the domain service, serves the production build of
- * `apps/web`, and puts a TLS front in front of both so the origin is a secure context. The
- * `frontend` job has no PHP, no Postgres and no Redis; the `gates` job has all three.
+ * `pnpm run gate:e2e` is a gate of its own: the real Laravel API against the composed Postgres
+ * and Redis, a real pager session issued through the domain service, the production build of
+ * `apps/web`, and a TLS front so the origin is a secure context. It is NOT a `pnpm gate` step
+ * -- `ADR-003` splits the two halves and `gate.mjs`'s header gives the argument -- so the
+ * parity comparison below is UNCHANGED and exact.
  *
- * ⚠ SO THE STEP MOVES, AND THE ASSERTION BELOW IS WHAT MAKES THAT DIFFERENT FROM VANISHING.
- * An exception that merely removed it from the comparison would let it leave CI entirely and
- * nothing would notice -- which is `R-126`'s shape and the reason `PROVISIONING` above is a
- * named list rather than a pattern. Named here, and required to be present in `gates`.
+ * ⚠ WHAT WOULD MAKE IT A GATE IN NAME ONLY IS NOBODY BEING REQUIRED TO RUN IT, so the two
+ * assertions further down require it of CI's `gates` job (which already has PHP, Postgres and
+ * Redis) and of `three-green-runs`. A third gate with no enforcement is `R-126`'s shape.
  */
-const RUN_IN_THE_GATES_JOB = ['pnpm run test:e2e']
+const CROSS_HALF_GATE = 'pnpm run gate:e2e'
 
 /** Every `pnpm …` command line the frontend job runs, across `run:` scalars and blocks. */
 function ciSteps() {
@@ -129,34 +129,45 @@ describe('the workspace gate and CI run the same steps', () => {
 
   it('has every GATE step in the CI frontend job', () => {
     const ci = ciSteps()
-    const missing = gateSteps()
-      .filter((step) => !RUN_IN_THE_GATES_JOB.includes(step))
-      .filter((step) => !ci.some((line) => line.startsWith(step)))
+    const missing = gateSteps().filter((step) => !ci.some((line) => line.startsWith(step)))
     expect(
       missing,
       'these `pnpm gate` steps are not run by CI, so the runner never checks them',
     ).toEqual([])
   })
 
-  it('runs the one gates-job step in the GATES job, so it has not left CI', () => {
-    // The other half of the exception above. Without this, naming a step here would be a way
-    // to remove it from CI without removing it from the gate.
-    for (const step of RUN_IN_THE_GATES_JOB) {
-      expect(gateSteps(), `${step} is named as a gates-job step but is not in the gate`).toContain(
-        step,
-      )
-      expect(
-        gatesJob,
-        `${step} is named as a gates-job step and the gates job does not run it`,
-      ).toContain(step)
-    }
+  it('requires CI to run the cross-half gate, in the job that can', () => {
+    // Task 9's `gate:e2e` is not a `pnpm gate` step, so the parity assertions above do not
+    // reach it. This is what stops it being a gate nobody runs.
+    expect(
+      gatesJob,
+      `CI's gates job does not run ${CROSS_HALF_GATE} -- the journey suite, the service ` +
+        'worker, the one-handed measurement and R-100 would then be verified by no runner',
+    ).toContain(CROSS_HALF_GATE)
+
+    // And it must be a real script rather than a name in a workflow.
+    const pkg = JSON.parse(read('package.json'))
+
+    expect(
+      Object.keys(pkg.scripts),
+      'gate:e2e is required of CI and is not a script in package.json',
+    ).toContain('gate:e2e')
+  })
+
+  it('runs the cross-half gate in each of three-green-runs runs', () => {
+    // *"Three consecutive green full-suite runs"* has to mean the whole suite, and the
+    // cross-half gate contains every browser-only clause of Task 9.
+    const loop = read('tools/gate/bin/three-green-runs')
+
+    expect(
+      loop,
+      'three-green-runs does not run the cross-half gate, so its "full suite" is not one',
+    ).toContain('gate:e2e')
   })
 
   it('has every CI pnpm step in the GATE', () => {
     const gate = gateSteps()
-    const missing = ciSteps()
-      .filter((line) => !RUN_IN_THE_GATES_JOB.some((step) => line.startsWith(step)))
-      .filter((line) => !gate.some((step) => line.startsWith(step)))
+    const missing = ciSteps().filter((line) => !gate.some((step) => line.startsWith(step)))
     expect(
       missing,
       'these CI steps are not in `pnpm gate`, so a developer cannot reproduce a red locally',

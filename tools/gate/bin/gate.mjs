@@ -25,6 +25,23 @@
  * `playwright test` is in the list. It needs a browser, which the fresh-clone proof installs
  * with `playwright install chromium` -- and the package is pinned to an exact 1.64.1 so the
  * browser the cache holds is the browser this verifies against.
+ *
+ * ⚠ TASK 9's CROSS-HALF SUITE IS **NOT** IN THIS LIST, AND THAT IS `ADR-003`'s SPLIT BEING
+ * RESPECTED RATHER THAN AN OMISSION.
+ *
+ * `pnpm run gate:e2e` stands up the real Laravel API against the composed Postgres and Redis,
+ * issues a real session through the domain service, and serves the production build of
+ * `apps/web` behind a TLS front. Putting it here would make this script span both halves --
+ * which the header above argues against in `ADR-003`'s own words: *"One script spanning both
+ * halves would make a PHP failure and a TypeScript failure indistinguishable in the log,
+ * which is the opposite of what a gate log is for."* It would also make the frontend
+ * fresh-clone proof depend on `apps/api` having `vendor/` and an `.env`, which a bare clone
+ * does not have and should not need for the TypeScript half.
+ *
+ * So it is a THIRD gate, and it is enforced rather than remembered:
+ * `tools/gate/test/ci-parity.test.mjs` asserts CI's `gates` job runs it -- that job already
+ * has PHP, Postgres and Redis -- and that `tools/gate/bin/three-green-runs` runs it too, so
+ * "three consecutive green full-suite runs" means the whole thing.
  */
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -92,7 +109,7 @@ const steps = [
   ['pnpm', ['run', 'audit']],
   ['pnpm', ['exec', 'vitest', 'run', '--coverage']],
   /**
-   * ⚠ THE KIT AND ENGINE PROJECTS ONLY -- the journey suite is the step after this one.
+   * ⚠ THE KIT AND ENGINE PROJECTS ONLY -- the journey suite is `pnpm run gate:e2e`.
    *
    * These need nothing running: every fixture is loaded from the filesystem with
    * `setContent`, and `engines.spec.ts` starts its own `node:http` server in process. That is
@@ -108,7 +125,6 @@ const steps = [
    * a hole.
    */
   ['pnpm', ['run', 'test:browser']],
-  ['pnpm', ['run', 'test:e2e']],
   ['pnpm', ['--filter', '@qrpager/web', 'run', 'build']],
   ['pnpm', ['--filter', '@qrpager/site', 'run', 'build']],
 ]
