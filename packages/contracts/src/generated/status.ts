@@ -168,6 +168,26 @@ export function DomainStatusCanMoveTo(from: DomainStatus, to: DomainStatus): boo
 }
 
 /**
+ * The shape of a presented QR pager token, from App\Domain\Pager\PagerToken.
+ *
+ * Unpadded base64url of 128 CSPRNG bits (§4 › Data), so the length is fixed rather
+ * than a maximum. A client applies this BEFORE it sends anything, so a fragment
+ * that is not a token costs no request -- the same reason the server checks the
+ * shape before it hashes.
+ */
+export const PAGER_TOKEN_LENGTH = 22
+
+/** The character class, as a regex fragment. Build the anchors locally. */
+export const PAGER_TOKEN_ALPHABET = 'A-Za-z0-9_-'
+
+/** Whether a string is shaped like a presented pager token. */
+export function isWellFormedPagerToken(presented: string): boolean {
+  return new RegExp(
+    '^[' + PAGER_TOKEN_ALPHABET + ']{' + String(PAGER_TOKEN_LENGTH) + '}$',
+  ).test(presented)
+}
+
+/**
  * Every mirrored Postgres enum type, keyed by its type name.
  *
  * Emitted from App\Domain\DatabaseEnums::map(), so a type added there appears here

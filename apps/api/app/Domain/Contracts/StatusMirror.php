@@ -6,6 +6,7 @@ namespace App\Domain\Contracts;
 
 use App\Domain\DatabaseEnum;
 use App\Domain\DatabaseEnums;
+use App\Domain\Pager\PagerToken;
 use ReflectionMethod;
 
 /**
@@ -54,7 +55,53 @@ final class StatusMirror
             $out .= self::block($type, $class);
         }
 
+        $out .= self::pagerToken();
         $out .= self::registry();
+
+        return $out;
+    }
+
+    /**
+     * The QR token's SHAPE, mirrored for the client that has to apply it before it sends
+     * anything. Task 9.
+     *
+     * WHY THE CLIENT NEEDS IT AT ALL, which is the question that decides whether this
+     * belongs in a contract. `§3` row 9's clause (a) has the PWA read the token out of
+     * `location.hash`; a fragment that is not a token must therefore be refused on the
+     * CLIENT, so that a scan of a damaged or forged code renders the invalid state without
+     * a request. That is the same argument `PagerToken::fromPresented()` makes
+     * server-side -- *"a malformed token costs one regex and no database round trip"* --
+     * arriving one layer out.
+     *
+     * AND IT IS EMITTED RATHER THAN TYPED because the alternative is a literal `22` and a
+     * typed character class in TypeScript, which is `§6.2`'s second source exactly: it
+     * agrees on the day it is written and drifts silently after. If `BYTES` ever changes,
+     * `LENGTH` changes, this file changes, `contracts:check` goes red, and nobody has to
+     * remember that a client validator exists.
+     *
+     * NOT the token itself and nothing derived from one: a length and a character class
+     * are public facts about the format, already visible in `docs/openapi.json`'s
+     * `size:22` rule and in any scanned QR code.
+     */
+    private static function pagerToken(): string
+    {
+        $out = "/**\n";
+        $out .= " * The shape of a presented QR pager token, from App\\Domain\\Pager\\PagerToken.\n";
+        $out .= " *\n";
+        $out .= " * Unpadded base64url of 128 CSPRNG bits (§4 › Data), so the length is fixed rather\n";
+        $out .= " * than a maximum. A client applies this BEFORE it sends anything, so a fragment\n";
+        $out .= " * that is not a token costs no request -- the same reason the server checks the\n";
+        $out .= " * shape before it hashes.\n";
+        $out .= " */\n";
+        $out .= 'export const PAGER_TOKEN_LENGTH = '.PagerToken::LENGTH."\n\n";
+        $out .= "/** The character class, as a regex fragment. Build the anchors locally. */\n";
+        $out .= "export const PAGER_TOKEN_ALPHABET = '".PagerToken::ALPHABET."'\n\n";
+        $out .= "/** Whether a string is shaped like a presented pager token. */\n";
+        $out .= "export function isWellFormedPagerToken(presented: string): boolean {\n";
+        $out .= "  return new RegExp(\n";
+        $out .= "    '^[' + PAGER_TOKEN_ALPHABET + ']{' + String(PAGER_TOKEN_LENGTH) + '}\$',\n";
+        $out .= "  ).test(presented)\n";
+        $out .= "}\n\n";
 
         return $out;
     }
