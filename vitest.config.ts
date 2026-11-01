@@ -145,7 +145,22 @@ export default defineConfig({
          */
         'apps/web/src/**/*.{ts,tsx}',
       ],
-      exclude: ['**/generated/**', '**/*.d.ts', '**/index.ts', 'packages/tokens/src/fonts/**'],
+      // ⚠ NO BLANKET GLOB OVER EVERY `index.ts`, AND THERE USED TO BE ONE. `§11` round one,
+      // QA L-1: it excluded `apps/web/src/copy/index.ts` -- 41 lines holding `interpolate()`
+      // and `translatorFor()`, which is not a barrel. The clause passed either way, so this is
+      // the denominator-honesty shape 8a's review already filed rather than a threshold
+      // failure: a coverage figure that excludes the code it claims to measure is not a
+      // measurement of that code. Only real barrels are named.
+      //
+      // (Written as line comments on purpose: the glob this replaced contains the two
+      // characters that end a block comment, which is how the first version of this note
+      // broke the config file outright.)
+      exclude: [
+        '**/generated/**',
+        '**/*.d.ts',
+        'packages/*/src/index.ts',
+        'packages/tokens/src/fonts/**',
+      ],
       thresholds: {
         lines: 90,
         functions: 90,

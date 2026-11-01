@@ -37,6 +37,14 @@
 # a measurement*: a green gate whose E2E silently did not run is worse than a red one.
 set -euo pipefail
 
+# ⚠ `umask` BEFORE ANYTHING IS WRITTEN, AND IT WAS `chmod 600` AFTERWARDS. `§11` round one,
+# SEC L-7. This script writes five raw pager tokens, a harness account's password and a TLS
+# private key, and each was created with the default umask and tightened on the NEXT line --
+# so a local user could read any of them in the window between the two. The file's own comments
+# present mode 600 as the control, which it was not until the file already existed. The
+# `chmod`s stay: they are correct for a file that somehow pre-exists with looser bits.
+umask 077
+
 cd "$(dirname "$0")/../../.."
 REPO="$(pwd)"
 

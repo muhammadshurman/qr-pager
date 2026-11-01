@@ -63,7 +63,14 @@ function fakeCaches() {
 
             return Promise.resolve()
           },
-          match: (key: string) => Promise.resolve(store.get(key)),
+          /**
+           * ⚠ `clone()`, BECAUSE THE REAL `Cache.match()` RETURNS A FRESH `Response` EVERY
+           * TIME AND THIS FAKE DID NOT. A `Response` body is single-use, so handing the same
+           * object back twice made the SECOND read throw — a difference from the platform
+           * that would have hidden a repeat-read bug in `notify.ts` and `sw.js`, both of which
+           * read this entry on every launch. Found while writing the `SEC M-4` case below.
+           */
+          match: (key: string) => Promise.resolve(store.get(key)?.clone()),
           delete: (key: string) => Promise.resolve(store.delete(key)),
         } as unknown as Cache)
       },
@@ -355,6 +362,65 @@ describe('reconcileSubscription -- all five outcomes', () => {
 
     expect(outcome).toEqual({ kind: 'unchanged', endpoint: 'https://push.example/a' })
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('posts ONCE across five launches when localStorage is unavailable -- SEC M-4', async () => {
+    /**
+     * ⛔ THE BOUND THE TICKET STATES, DRIVEN IN THE CONDITION THAT BROKE IT. `§11` round one,
+     * SEC M-4. The case above supplies a working `storage`, which is why the gap survived:
+     * `remembered` was read through `env.storage?.`, so with storage null it was ALWAYS null,
+     * the `unchanged` branch was unreachable, and the write-back was a no-op too. Measured by
+     * the reviewer at five calls with an unchanged endpoint -> five POSTs.
+     *
+     * `storageFrom()` returns null for the real cases -- Safari private browsing, blocked site
+     * storage -- and the reconcile runs on every `visibilitychange` to visible, so this was one
+     * POST and one Postgres upsert PER TAB FOCUS on the one customer route that inserts a row.
+     *
+     * FIVE calls, not two, because the failure was unbounded repetition: a two-call version
+     * would also pass on an implementation that alternated. The count is asserted EXACTLY.
+     */
+    const shared = fakeCaches().storage
+    const live = subscription('https://push.example/stable')
+    let posts = 0
+
+    const deps = () => ({
+      env: env({ storage: null, caches: shared }),
+      api: {
+        base: '',
+        fetch: (() => {
+          posts += 1
+
+          // 201: Task 4's `registerDevice` treats only 200 and 201 as registered.
+          return Promise.resolve(new Response(null, { status: 201 }))
+        }) as typeof fetch,
+      },
+      token: TOKEN,
+      applicationServerKey: KEY,
+      registration: {
+        pushManager: { getSubscription: () => Promise.resolve(live) } as unknown as PushManager,
+      },
+      expiresAt: FUTURE,
+    })
+
+    // The first launch has nothing remembered anywhere, so it registers. That is correct and
+    // is the one POST the bound allows.
+    expect(await reconcileSubscription(deps())).toEqual({
+      kind: 'reregistered',
+      endpoint: 'https://push.example/stable',
+    })
+    expect(posts).toBe(1)
+
+    // Four more launches against the SAME endpoint and the same (shared) worker cache. With
+    // no `localStorage`, the credential entry written by the first launch is the only memory
+    // this device has -- and it is now read.
+    for (let i = 0; i < 4; i += 1) {
+      expect(await reconcileSubscription(deps())).toEqual({
+        kind: 'unchanged',
+        endpoint: 'https://push.example/stable',
+      })
+    }
+
+    expect(posts, 'the reconcile re-registered a device whose endpoint had not changed').toBe(1)
   })
 
   it('reregistered: the browser ROTATED the endpoint behind our back', async () => {

@@ -205,6 +205,35 @@ export async function writeWorkerCredential(
  * mid-session, a crash -- `sw.js` drops the entry once `expiresAt` has passed, on read and on
  * activate. One of the two had to survive the other being skipped.
  */
+/**
+ * The endpoint this device last registered, read from the worker's own credential entry.
+ *
+ * The fallback for `SEC M-4`: used only when `localStorage` is unavailable, which is the
+ * condition that made the subscribe bound false. Returns null on anything unexpected — a
+ * missing entry, a body that is not JSON, an entry with no endpoint — because a null here
+ * means *"compare nothing and re-register"*, which is the safe direction.
+ */
+async function rememberedFromWorkerCache(env: PushEnvironment): Promise<string | null> {
+  if (env.caches === null) return null
+
+  try {
+    const cache = await env.caches.open(WORKER_CACHE)
+    const stored = await cache.match(WORKER_CACHE_KEY)
+
+    if (stored === undefined) return null
+
+    const credential: unknown = await stored.json()
+
+    if (typeof credential !== 'object' || credential === null) return null
+
+    const endpoint = (credential as { readonly endpoint?: unknown }).endpoint
+
+    return typeof endpoint === 'string' && endpoint !== '' ? endpoint : null
+  } catch {
+    return null
+  }
+}
+
 export async function clearWorkerCredential(env: PushEnvironment): Promise<void> {
   if (env.caches !== null) {
     const cache = await env.caches.open(WORKER_CACHE)
@@ -276,7 +305,31 @@ export async function reconcileSubscription(deps: ReconcileDeps): Promise<Reconc
     return { kind: 'failed' }
   }
 
-  const remembered = env.storage?.getItem(LAST_ENDPOINT_KEY) ?? null
+  /**
+   * ⚠ TWO SOURCES FOR THE REMEMBERED ENDPOINT, AND WITH ONE THE STATED BOUND WAS FALSE.
+   *
+   * `§11` round one, SEC M-4, measured with a probe: five calls with an UNCHANGED endpoint and
+   * `storage: null` produced `reregistered` five times and **five POSTs**. The reason is one
+   * `?.`: `remembered` read through `env.storage?.`, so when storage is null it is always
+   * null, the `unchanged` branch is unreachable, and the write-back at the end is a no-op too.
+   * `storageFrom()` returns null for exactly the real cases — Safari private browsing, blocked
+   * site storage — and the reconcile runs on EVERY `visibilitychange` to visible.
+   *
+   * The ticket stated the bound as *"`POST /v1/pager/subscription` calls: 1 per launch at
+   * most, and only when `reconcileSubscription()` finds a difference"*, and the only test of
+   * it supplied a working storage. The cost of the gap is one POST and one Postgres upsert per
+   * TAB FOCUS on the one customer route that inserts a row, metered per-IP with no per-tenant
+   * half (`R-085`) and deliberately never shed — so a customer in private browsing toggling
+   * tabs, or an attacker with one valid token looping focus, exhausts a shared bucket behind a
+   * restaurant's NAT and denies the alert path for everyone on it.
+   *
+   * The credential `Cache` entry ALREADY carries `endpoint` — it is written there for the
+   * rotation handler on engines that supply no `oldSubscription` — so the fallback needs no new
+   * storage and no new write. `localStorage` stays first: it is synchronous and cannot fail
+   * mid-session the way an eviction can.
+   */
+  const remembered =
+    env.storage?.getItem(LAST_ENDPOINT_KEY) ?? (await rememberedFromWorkerCache(env))
 
   if (existing !== null && remembered !== null && existing.endpoint === remembered) {
     return { kind: 'unchanged', endpoint: existing.endpoint }

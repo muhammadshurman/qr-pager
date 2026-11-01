@@ -260,13 +260,40 @@ test.describe('the three ended states, each from a real session', () => {
     })
   }
 
-  test('clears the token from the device when the session is over', async ({ page }) => {
+  test('clears BOTH homes when the session is over, Cache included -- SEC M-5', async ({
+    page,
+  }) => {
+    /**
+     * ⚠ THIS ASSERTED ONE OF THE TWO HOMES. `§11` round one, SEC M-5.
+     *
+     * `storage.ts` and `notify.ts` both claimed in writing that *"after a terminal status both
+     * homes are empty"* and cited an `endSession()` and an `apps/web/test/storage.test.ts`,
+     * neither of which exists. What existed was this case plus a jsdom one, and both asserted
+     * only the `localStorage` keys — the jsdom one CANNOT do better, because jsdom has no
+     * `window.caches`, so `clearWorkerCredential()` short-circuits there and a refactor that
+     * dropped the call would have left every test green.
+     *
+     * A real engine has `caches`, so the second home is asserted here, where it exists. Both
+     * `localStorage` keys are named rather than just the token: the expiry is what
+     * `readPresentedToken` uses to decide a remembered token is still live, so leaving it
+     * behind would be half a cleanup.
+     */
     await scan(page, sessions().completed.token)
     await expect(page.locator('[data-screen="ended"]')).toBeVisible()
 
     await expect
-      .poll(async () => page.evaluate(() => window.localStorage.getItem('qrpager.pager.token')))
-      .toBeNull()
+      .poll(async () =>
+        page.evaluate(async () => ({
+          token: window.localStorage.getItem('qrpager.pager.token'),
+          expires: window.localStorage.getItem('qrpager.pager.expires'),
+          // `undefined` when the entry is gone. Read through the real Cache API, which is the
+          // whole point of asserting it here rather than in jsdom.
+          cached:
+            (await (await caches.open('qrpager-pager-credential')).match('/pager-credential')) ===
+            undefined,
+        })),
+      )
+      .toEqual({ token: null, expires: null, cached: true })
   })
 })
 

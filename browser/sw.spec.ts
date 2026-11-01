@@ -244,6 +244,14 @@ async function driveWorker(
   )
 }
 
+/**
+ * An expiry comfortably in the future, for the cases that plant a credential meant to be
+ * LIVE. `sw.js` treats an absent or past `expiresAt` as expired (`§11` SEC M-2), so a case
+ * that omits this is asserting the purge rather than whatever it meant to assert — which is
+ * why it is named here rather than inlined seven times.
+ */
+const LIVE = () => new Date(Date.now() + 3_600_000).toISOString()
+
 test.describe('the push handler, on the shipped bytes', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`${origin()}/s`)
@@ -359,6 +367,7 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
         applicationServerKey: 'AQAB',
         apiBase: '',
         endpoint: 'https://push.example/old',
+        expiresAt: LIVE(),
       },
     })
 
@@ -366,6 +375,80 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
     expect(captured.fetches[0]?.body).toContain('https://push.example/old')
     expect(captured.fetches[1]?.body).toContain('https://push.example/rotated')
     expect(captured.subscribes).toBe(1)
+  })
+
+  test('and the NEXT NOTIFICATION ARRIVES at the rotated endpoint -- the invariants other half', async ({
+    page,
+  }) => {
+    /**
+     * ⛔ THE SECOND HALF OF THE NAMED INVARIANT, AND IT WAS ASSERTED NOWHERE. `§11` round one,
+     * QA L-3, and **RULED by Muhammad on 2026-11-01: it must be ASSERTED, not inferred.**
+     *
+     * `§3` row 9's middle column reads *"a rotated subscription is re-registered by the
+     * `pushsubscriptionchange` handler **and the next notification still arrives** — tested,
+     * not assumed"*, and `§11 › Round limit` makes that sentence the ONLY thing that blocks
+     * the tag once the review cap is spent. Re-registration was proven in three engines; the
+     * arrival half was declared undrivable and left to `R-073`'s device run, which left the
+     * fallback bar ambiguous — the one thing `§11` cannot tolerate.
+     *
+     * ⚠ WHAT MAKES IT DRIVABLE: the push TRANSPORT is Apple's, Google's or Mozilla's and no
+     * runner can make one deliver — that part is genuinely `R-073`. But *"the next
+     * notification still arrives"* is a claim about THIS WORKER: that after a rotation, a push
+     * delivered to the NEW endpoint is handled and shown. The edge is already mocked for every
+     * other case in this file, so the chain is driven end to end on the shipped bytes:
+     *
+     *   1. rotate — the handler DELETEs the old endpoint and registers the new one,
+     *   2. take the endpoint the handler actually registered, from its own POST body,
+     *   3. deliver a push to THAT endpoint and assert the notification appears, with the
+     *      reference the dispatcher's real payload shape carries.
+     *
+     * Step 2 is what makes this more than two independent cases: the push is sent to the
+     * endpoint the rotation produced, not to one the test chose. A handler that registered one
+     * endpoint and listened on another would pass both halves separately and fail here.
+     */
+    const rotated = await driveWorker(page, 'pushsubscriptionchange', {
+      credential: {
+        token: 'AbCdEfGhIjKlMnOpQrStUv',
+        applicationServerKey: 'AQAB',
+        apiBase: '',
+        endpoint: 'https://push.example/old',
+        expiresAt: LIVE(),
+      },
+    })
+
+    const post = rotated.fetches.find((f) => f.method === 'POST')
+
+    expect(
+      post,
+      'the rotation registered nothing, so there is no endpoint to deliver to',
+    ).toBeTruthy()
+
+    // Read out of the handler's own POST body rather than chosen by this test: that is what
+    // makes the delivery below a test of the SAME endpoint the rotation produced.
+    const registered = (JSON.parse(post?.body ?? '{}') as Record<string, unknown>).endpoint
+
+    expect(registered).toBe('https://push.example/rotated')
+
+    // The push, to the endpoint the handler itself registered, in Task 4's real payload shape.
+    const delivered = await driveWorker(page, 'push', {
+      credential: {
+        token: 'AbCdEfGhIjKlMnOpQrStUv',
+        applicationServerKey: 'AQAB',
+        apiBase: '',
+        endpoint: typeof registered === 'string' ? registered : '',
+        expiresAt: LIVE(),
+      },
+      payload: { v: 1, event: 'pager.ready', order_reference: 'A-42' },
+    })
+
+    expect(delivered.notifications.length, 'the push to the rotated endpoint showed nothing').toBe(
+      1,
+    )
+    expect(delivered.notifications[0]?.title).toBe('Your order is ready')
+    expect(delivered.notifications[0]?.options.body).toContain('A-42')
+    // And it is the READY notification, not some other one: the tag carries the event and the
+    // reference, which is the server's own `Topic` shape.
+    expect(delivered.notifications[0]?.options.tag).toBe('qrpager:pager.ready:A-42')
   })
 
   test('uses the REMEMBERED endpoint when the engine supplies no oldSubscription', async ({
@@ -380,6 +463,7 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
         applicationServerKey: 'AQAB',
         apiBase: '',
         endpoint: 'https://push.example/remembered',
+        expiresAt: LIVE(),
       },
       oldSubscription: null,
     })
@@ -397,6 +481,7 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
         applicationServerKey: 'AQAB',
         apiBase: '',
         endpoint: 'https://push.example/remembered',
+        expiresAt: LIVE(),
       },
       oldSubscription: { endpoint: 'https://push.example/from-the-event' },
     })
@@ -412,7 +497,7 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
      * client, so `reconcileSubscription()` completes the registration at the next launch.
      */
     const captured = await driveWorker(page, 'pushsubscriptionchange', {
-      credential: { applicationServerKey: 'AQAB', apiBase: '' },
+      credential: { applicationServerKey: 'AQAB', apiBase: '', expiresAt: LIVE() },
     })
 
     expect(captured.subscribes).toBe(1)
@@ -423,27 +508,94 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
 
   test('tells the page when it has no application server key either', async ({ page }) => {
     const captured = await driveWorker(page, 'pushsubscriptionchange', {
-      credential: { token: 'AbCdEfGhIjKlMnOpQrStUv', apiBase: '' },
+      credential: { token: 'AbCdEfGhIjKlMnOpQrStUv', apiBase: '', expiresAt: LIVE() },
     })
 
     expect(captured.subscribes).toBe(0)
     expect(captured.messages).toEqual([{ type: 'qrpager/resubscribe' }])
   })
 
-  test('reads QRPAGER-24s own cache entry as well as Task 9s', async ({ page }) => {
-    // The operator script still drives this file, so a credential written by the HARNESS must
-    // keep working. Asserted by giving the shim only that cache and no Task 9 one.
+  test('CANNOT read the harness cache, so no planted apiBase can take the token', async ({
+    page,
+  }) => {
+    /**
+     * ⛔ THE INVERSE OF WHAT THIS CASE USED TO ASSERT. `§11` round one, SEC M-3, raised Medium
+     * and **ruled HIGH by Muhammad on 2026-11-01**.
+     *
+     * It used to read *"reads QRPAGER-24s own cache entry as well as Task 9s"* and proved that
+     * the shipped worker accepted a credential from `qrpager-harness`. That made the worker
+     * reachable by anything able to write a cache on this origin: plant
+     * `{token, apiBase: 'https://attacker.example'}` and the next rotation POSTs the live QR
+     * token off-origin — and the worker wrote `apiBase` BACK, so the exfiltration survived
+     * removal of the script that planted it. `§4 › Data` says the raw token never leaves.
+     *
+     * The ruling is that the production worker must not be able to read it **at all — not
+     * validate it, not reach it**. So this case now plants a HOSTILE harness entry, gives the
+     * worker no credential of its own, and asserts the worker reaches NOTHING: no subscribe,
+     * no fetch to any origin, and specifically no request to the planted one. QRPAGER-24's
+     * harness writes `/pager-credential` instead, which the case above already covers.
+     */
     const captured = await driveWorker(page, 'pushsubscriptionchange', {
       credential: null,
       harnessCredential: {
         token: 'AbCdEfGhIjKlMnOpQrStUv',
         applicationServerKey: 'AQAB',
-        apiBase: '',
+        apiBase: 'https://attacker.example',
       },
     })
 
-    expect(captured.fetches.some((f) => f.method === 'POST')).toBe(true)
-    expect(captured.subscribes).toBe(1)
+    // Not "no POST": no request AT ALL, to anywhere. A worker with no credential has nothing
+    // to authenticate with and must say so to the page instead.
+    expect(captured.fetches).toEqual([])
+    expect(captured.subscribes).toBe(0)
+    expect(
+      captured.fetches.filter((f) => f.url.includes('attacker.example')),
+      'the worker sent the token to an origin a cache entry chose',
+    ).toEqual([])
+
+    // And the page is told, which is the branch a credential-less rotation is supposed to take.
+    expect(captured.messages).toEqual([{ type: 'qrpager/resubscribe' }])
+  })
+
+  test('drops an EXPIRED credential instead of using it -- SEC M-2', async ({ page }) => {
+    /**
+     * ⛔ THE TOKEN'S `Cache` HOME WAS NEVER PURGED. `§11` round one, SEC M-2.
+     * `qrpager-pager-credential` is in the worker's `OWNED` list, so `activate` deleted only
+     * caches NOT in it, and nothing anywhere checked an expiry — so a customer who collected
+     * their order and closed the app (the common case, since `completed` is set by staff) left
+     * a live 128-bit bearer token on the device for the whole 2-hour TTL. The `localStorage`
+     * half has always self-deleted on read past expiry; this half could not, because the entry
+     * did not carry one. The ticket stated in writing that it was purged and asserted.
+     *
+     * Driven on the shipped bytes: an entry whose `expiresAt` is in the past must be treated as
+     * absent AND removed, so a rotation behaves exactly as it does with no credential.
+     */
+    const captured = await driveWorker(page, 'pushsubscriptionchange', {
+      credential: {
+        token: 'AbCdEfGhIjKlMnOpQrStUv',
+        applicationServerKey: 'AQAB',
+        apiBase: '',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      },
+    })
+
+    expect(captured.fetches, 'an expired credential was used to authenticate a request').toEqual([])
+    expect(captured.subscribes).toBe(0)
+    expect(captured.messages).toEqual([{ type: 'qrpager/resubscribe' }])
+  })
+
+  test('treats a credential with NO expiry as expired, which is the fail-closed half', async ({
+    page,
+  }) => {
+    // An entry written by a build that recorded no expiry cannot be shown to be live. The cost
+    // of being wrong this way is one reconcile from the page, which runs on every launch
+    // anyway; the cost the other way is a live bearer token kept forever.
+    const captured = await driveWorker(page, 'pushsubscriptionchange', {
+      credential: { token: 'AbCdEfGhIjKlMnOpQrStUv', applicationServerKey: 'AQAB', apiBase: '' },
+    })
+
+    expect(captured.fetches).toEqual([])
+    expect(captured.subscribes).toBe(0)
   })
 })
 

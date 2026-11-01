@@ -107,6 +107,55 @@ describe('the dependency licence inventory', () => {
     }
   })
 
+  it('carries the measured count for every family, so the inventory cannot go stale -- SEC L-5', () => {
+    /**
+     * ⚠ THE INVENTORY'S OWN NUMBERS WERE WRONG BY 99 PACKAGES AND EVERY PER-FAMILY COUNT WAS
+     * OFF. `§11` round one, SEC L-5: `$measured` said *"229 installed packages"* and the
+     * reviewer walked the store and found 328; MIT said 173 against 237, Apache-2.0 23
+     * against 44, and so on. The enforced assertions still passed -- what is asserted is that
+     * every family SEEN appears here, plus a `> 200` bound -- so the control was sound and the
+     * PROVENANCE was false. `§10`'s Transfer Ownership hands this file to the client as the
+     * licence record, so a false provenance is the part that actually matters.
+     *
+     * The fix is not a fresh number: it is this assertion. The counts are now read from the
+     * same walk the rest of this file uses, so the next `pnpm install` that moves them fails
+     * the gate instead of quietly dating the file. That is the *"every table is generated or
+     * gate-checked"* rule applied to a table that was neither.
+     */
+    const measured = new Map()
+
+    for (const licence of licences.values()) {
+      measured.set(licence, (measured.get(licence) ?? 0) + 1)
+    }
+
+    const stated = new Map()
+
+    for (const group of ['permissive', 'dispositioned', 'refused']) {
+      for (const [family, entry] of Object.entries(inventory()[group] ?? {})) {
+        if (typeof entry.count === 'number') stated.set(family, entry.count)
+      }
+    }
+
+    const wrong = []
+
+    for (const [family, count] of measured) {
+      const claimed = stated.get(family)
+
+      if (claimed !== undefined && claimed !== count) {
+        wrong.push(`${family}: inventory says ${String(claimed)}, the tree has ${String(count)}`)
+      }
+    }
+
+    expect(
+      wrong,
+      'docs/contracts/dependency-licences.json states counts that the installed tree contradicts',
+    ).toEqual([])
+
+    // Not vacuous: at least one family must actually carry a count, or the loop above compares
+    // nothing and passes on an inventory with every number deleted.
+    expect(stated.size, 'no family in the inventory carries a count at all').toBeGreaterThan(0)
+  })
+
   it('carries no licence family that is in neither the allow-list nor a disposition', () => {
     const { permissive, dispositioned } = inventory()
     const known = new Set([...Object.keys(permissive), ...Object.keys(dispositioned)])
