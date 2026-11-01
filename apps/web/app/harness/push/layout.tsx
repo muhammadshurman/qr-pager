@@ -1,3 +1,5 @@
+import { notFound } from 'next/navigation'
+
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
@@ -55,6 +57,33 @@ export const metadata: Metadata = {
   other: { 'apple-mobile-web-app-capable': 'yes' },
 }
 
+/**
+ * ⛔ THE HARNESS IS NOT PART OF A DEFAULT PRODUCTION BUILD. `§11` round two, SEC-R2 M-5.
+ *
+ * Nothing gated this route: `next.config.mjs` gates only the `/v1` REWRITE, so `/harness/push`
+ * shipped in every build of the customer origin. Round one then repointed it at the PRODUCTION
+ * credential entry (`qrpager-pager-credential` / `/pager-credential`) to satisfy SEC M-3 — which
+ * made it a WRITER of the one entry the shipped worker trusts, so the fix widened the planting
+ * surface instead of narrowing it.
+ *
+ * The attack the reviewer named: link a customer to `/harness/push#t=<attacker token>`; after
+ * they grant notifications and tap subscribe, their device's push endpoint is registered against
+ * the attacker's session and their own rotation handler no longer holds their token. It needs a
+ * user gesture, which is why it was Medium and not High — and it needs the route to exist.
+ *
+ * `QRPAGER_HARNESS_API_ORIGIN` is the flag `next.config.mjs` already uses for the same harness,
+ * so there is ONE switch rather than two that can disagree. Read at module scope, not per
+ * request: these are statically prerendered routes, so an unset flag makes the route a 404 in
+ * the built output rather than at run time. `build-surface.test.ts` asserts that against the
+ * build.
+ */
+const HARNESS_ENABLED = (process.env.QRPAGER_HARNESS_API_ORIGIN ?? '') !== ''
+
 export default function PushHarnessLayout({ children }: { readonly children: ReactNode }) {
+  if (!HARNESS_ENABLED) {
+    // A 404 in the BUILT output, not a redirect: there is nothing here to tell anyone about.
+    notFound()
+  }
+
   return children
 }

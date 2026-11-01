@@ -381,7 +381,15 @@ export function PagerJourney({ apiBase, vapidPublicKey, locale }: PagerJourneyPr
       let registration: ServiceWorkerRegistration
 
       try {
-        registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        // ⚠ `?api=` CARRIES THE BUILD-TIME API ORIGIN INTO THE WORKER. `§11` round two,
+        // SEC-R2 H-1: the worker used to take the destination of its token-bearing requests
+        // from the credential CACHE, which any script on this origin can write. `self.location`
+        // is fixed at install and cannot be rewritten without registering a different script
+        // URL, so this is the narrowest channel available to a static worker file.
+        registration = await navigator.serviceWorker.register(
+          `/sw.js?api=${encodeURIComponent(api.base)}`,
+          { scope: '/' },
+        )
         await navigator.serviceWorker.ready
       } catch {
         /**

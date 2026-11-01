@@ -177,7 +177,11 @@ export default function PushHarnessPage() {
       return null
     }
 
-    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    // The same `?api=` channel the customer page uses (SEC-R2 H-1).
+    const registration = await navigator.serviceWorker.register(
+      `/sw.js?api=${encodeURIComponent(API_BASE)}`,
+      { scope: '/' },
+    )
     await navigator.serviceWorker.ready
     append(`service worker ready, scope ${registration.scope}`)
 

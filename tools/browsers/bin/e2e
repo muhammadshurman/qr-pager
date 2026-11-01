@@ -103,7 +103,26 @@ stop_group() {
 free_port() {
   local port="$1" pid
 
-  pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+  # ⚠ `|| true`, AND WITHOUT IT THIS FUNCTION ABORTED THE EXIT TRAP AND THE SCRIPT EXITED 1 ON
+  # A FULLY GREEN RUN. `§11` round two, QA H-1.
+  #
+  # `grep` exits 1 when a port has no listener, `set -o pipefail` (:39) propagates that to the
+  # pipeline, the command substitution therefore fails, and `set -e` aborts -- inside
+  # `cleanup`, which is the EXIT trap. Two consequences, both measured: the remaining ports
+  # (3099, 3098, 3097) were NEVER FREED, defeating the orphan-`next-server` teardown that
+  # `§4a` records as having cost 33 of 45 journey cases; and `pnpm run gate:e2e` exited 1 after
+  # printing `e2e: green`.
+  #
+  # ⚠ AND IT MADE MY OWN GREEN CLAIM UNSUPPORTED. `gate:e2e` exits non-zero when the Lighthouse
+  # median is under the bar too, so the builder saw `EXIT=1` on a 314-passed/0-failed run and
+  # attributed it to `R-205`. Both produce the same code; nothing distinguished them. The suite
+  # tally was real, the GATE's exit status was never once observed to be 0.
+  #
+  # `|| true` on the substitution rather than `set +e` around it: the pipeline's own failure is
+  # the expected case (no listener = nothing to free), and the `[ -n "$pid" ]` guard below is
+  # what already handles it. `check-shell-evidence` mandates `pipefail`, so the hazard is a
+  # pipeline ASSIGNMENT under it -- which that script now has a rule for.
+  pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)"
 
   [ -n "$pid" ] || return 0
   kill "$pid" 2>/dev/null || true

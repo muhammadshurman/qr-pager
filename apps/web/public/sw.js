@@ -66,6 +66,45 @@ self.addEventListener('install', () => {
  * Lighthouse method requires *"no service worker installed"* for exactly that reason -- so
  * this caching is invisible to that figure by construction rather than by luck.
  */
+/**
+ * ⛔ THE API ORIGIN COMES FROM THIS WORKER'S OWN SCRIPT URL, NEVER FROM STORED DATA.
+ * `§11` round two, SEC-R2 H-1 — and round one's SEC M-3 ruling, which this now actually
+ * satisfies.
+ *
+ * The ruling was *"the production worker must not be able to read it at all — not validate it,
+ * not reach it"*, and its stated REASON was the `apiBase` the worker sent the raw QR token to
+ * and then wrote BACK, so the exfiltration outlived the script that planted it. Round one
+ * removed the harness cache NAME and left that mechanism untouched: `apiBase` still came out of
+ * the credential entry, and `apps/web/app/harness/push/page.tsx` was repointed at that very
+ * entry — so the planting surface got WIDER, not narrower. The reviewer was right and the first
+ * fix did not meet the ruling.
+ *
+ * `self.location` is fixed when the worker installs and no script can rewrite it; changing it
+ * means registering a DIFFERENT script URL, which is a different registration and a far higher
+ * bar than writing a cache. The page passes its build-time `NEXT_PUBLIC_QRPAGER_API_BASE` as
+ * `?api=`; absent or unparseable means SAME-ORIGIN, which is what the one-origin deployment
+ * uses anyway.
+ *
+ * ⚠ AND `apiBase` IS NO LONGER WRITTEN BACK. That write was the persistence property — the
+ * reason round one rated this High rather than Medium — and with the value derived here there is
+ * nothing to persist.
+ */
+const API_BASE = (() => {
+  try {
+    const declared = new URL(self.location.href).searchParams.get('api')
+
+    if (declared === null || declared === '') return ''
+
+    // Absolute http(s) only, normalised to an origin: a relative or `javascript:` value is not
+    // a destination this worker will send a token to.
+    const parsed = new URL(declared)
+
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.origin : ''
+  } catch {
+    return ''
+  }
+})()
+
 const SHELL_CACHE = 'qrpager-shell-v1'
 const CREDENTIAL_CACHE = 'qrpager-pager-credential'
 
@@ -513,7 +552,23 @@ self.addEventListener('pushsubscriptionchange', (event) => {
         credential && typeof credential.applicationServerKey === 'string'
           ? credential.applicationServerKey
           : null
-      const apiBase = credential && typeof credential.apiBase === 'string' ? credential.apiBase : ''
+      /**
+       * ⚠ CARRIED THROUGH TO THE WRITE-BACK, AND IT WAS DROPPED. `§11` round two, QA H-2, and
+       * it is a regression the `SEC M-2` fix introduced one round earlier.
+       *
+       * The write-back below wrote `{token, applicationServerKey, apiBase, endpoint}` with no
+       * `expiresAt`, and `hasExpired()` treats a MISSING expiry as expired (deliberately --
+       * fail closed). So rotation 1 succeeded and wrote a credential that `readCredential()`
+       * **purged on the next read**: rotation 2 found nothing, sent no `DELETE` for the stale
+       * endpoint and re-registered nothing. That is the engine-with-no-`oldSubscription` path
+       * -- Firefox -- which is the only reason the write-back exists, and it is a failure of
+       * this task's NAMED INVARIANT, so it blocks the tag whatever `§11`'s round cap says.
+       *
+       * Non-null whenever `credential` is: `readCredential()` returns null for an entry whose
+       * expiry is absent or past, so reaching here means it parsed and is live.
+       */
+      const expiresAt =
+        credential && typeof credential.expiresAt === 'string' ? credential.expiresAt : null
 
       // (2) and (3): forget the old endpoint server-side, FIRST, and only when we can
       // authenticate. The endpoint comes from the event when the engine supplies it and
@@ -524,7 +579,7 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 
       if (token !== null && oldEndpoint !== null) {
         try {
-          await fetch(apiBase + '/v1/pager/subscription', {
+          await fetch(API_BASE + '/v1/pager/subscription', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
             body: JSON.stringify({ token, endpoint: oldEndpoint }),
@@ -590,7 +645,7 @@ self.addEventListener('pushsubscriptionchange', (event) => {
       let registered
 
       try {
-        const response = await fetch(apiBase + '/v1/pager/subscription', {
+        const response = await fetch(API_BASE + '/v1/pager/subscription', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({
@@ -624,8 +679,12 @@ self.addEventListener('pushsubscriptionchange', (event) => {
             JSON.stringify({
               token,
               applicationServerKey: key,
-              apiBase,
               endpoint: json.endpoint,
+              // QA H-2: without this the entry is born expired and the NEXT rotation purges it.
+              expiresAt,
+              // ⚠ NO `apiBase`. SEC-R2 H-1: writing it back is what made a planted destination
+              // survive the script that planted it. The origin is derived from this worker's
+              // own script URL, so there is nothing here worth persisting.
             }),
             { headers: { 'Content-Type': 'application/json' } },
           ),
