@@ -547,7 +547,9 @@ describe('the request deadline -- QA M-1, the timeout path §6 question 6 names'
     // off the object bare is what `unbound-method` is right to refuse.
     const original = AbortSignal.timeout.bind(AbortSignal)
 
-    // @ts-expect-error -- deliberately removing a platform method to reach the fallback.
+    // Deliberately removing a platform method to reach the fallback. The cast is what makes
+    // this type-safe, so no `@ts-expect-error` is needed -- an unused one is itself a
+    // typecheck error, which `pnpm gate` caught where `typecheck:root` did not.
     delete (AbortSignal as unknown as Record<string, unknown>).timeout
 
     try {
