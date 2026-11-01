@@ -22,7 +22,15 @@
     "the push service endpoint the browser chooses (set by the engine, not by us)"
   ],
   "inlineScriptCount": 6,
-  "inlineScriptNote": "Next's RSC payload pushes. script-src 'self' alone BREAKS this page, and a nonce is unavailable because the document is a static file with no per-response step. The choice is per-build hashes or 'unsafe-inline', and it is Task 12's to make.",
+  "inlineScriptHashes": [
+    "sha256-OBTN3RiyCV4Bq7dFqZ5a2pAXjnCcCYeTJMO2I/LYKeo=",
+    "sha256-Bv9hoqrrVen0YIByEWoc9BoLDlOhusY1D3FR5yMuGi0=",
+    "sha256-xmzg8R6r8IGTTsmEo9hUGCEHPwH17cLj166q9zQzWww=",
+    "sha256-F6PPNlIJg6NiqGiRjNhTo9wscCPOJOjoS77E6qmYJOw=",
+    "sha256-OaXHtMoICJu1MexjkshakC1SQUOc+qNmfKF1CciyKu4=",
+    "sha256-i/k9dNlim2bw/P4uBE6H5TkwSixGtVIyDp1QCZNZnrE="
+  ],
+  "inlineScriptNote": "Next's RSC payload pushes. script-src 'self' alone BREAKS this page, and a nonce is unavailable because the document is a static file with no per-response step. The choice is per-build hashes or 'unsafe-inline', and it is Task 12's to make -- and the hashes above are what makes the first of those two a measurement rather than a re-derivation. They change with every build that changes the payload, which is why this file is byte-compared by this test rather than hand-maintained.",
   "renderBlockingRequests": 2,
   "imageOrigins": [
     "self"

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
   PROBLEM_TYPES,
+  REQUEST_TIMEOUT_MS,
   forgetDevice,
   pollStatus,
   registerDevice,
@@ -462,4 +463,79 @@ describe('the branches that only an unreachable or malformed answer reaches', ()
 
     expect(await resolveSession(api(), TOKEN)).toEqual({ kind: 'server' })
   })
+})
+
+describe('the request deadline -- QA M-1, the timeout path §6 question 6 names', () => {
+  /**
+   * ⛔ A REQUEST THAT CONNECTS AND NEVER ANSWERS USED TO STOP THE CLIENT FOREVER.
+   *
+   * `§11` round one, QA M-1. There was no deadline anywhere: no `AbortSignal.timeout`, no
+   * `setTimeout` guard, and the orchestrator's `AbortController`s were never passed to `fetch`.
+   * `tick()` re-arms the poll timer only from an ANSWER, so a hung request stopped the poller
+   * permanently -- elapsed timer still running, `waiting.healthy` offering no retry control --
+   * and the resolve effect left `resolving.current` true for the life of the page.
+   *
+   * ⚠ DRIVEN AGAINST A REAL SOCKET THAT ACCEPTS AND NEVER REPLIES, which is the only honest
+   * way to test this: a stubbed `fetch` that returns a never-settling promise would prove that
+   * the ABORT fires, not that a real engine's request is actually cancelled. The server below
+   * holds the connection open with no response at all.
+   */
+  let hung: Server
+  let hungBase = ''
+  let held: ServerResponse[] = []
+
+  beforeAll(async () => {
+    hung = createServer((_request: IncomingMessage, response: ServerResponse) => {
+      // Accept, read the body, and answer NOTHING. The socket stays open.
+      held.push(response)
+    })
+
+    await new Promise<void>((resolve) => hung.listen(0, '127.0.0.1', resolve))
+
+    const address = hung.address()
+
+    if (address === null || typeof address === 'string') throw new Error('no port')
+
+    hungBase = `http://127.0.0.1:${String(address.port)}`
+  })
+
+  afterAll(async () => {
+    for (const response of held) response.destroy()
+    held = []
+    await new Promise<void>((resolve) => {
+      hung.close(() => {
+        resolve()
+      })
+    })
+  })
+
+  it('is a stated constant rather than a number buried in a call', () => {
+    // Asserted EXACTLY, because the figure is derived from the poll's own jitter floor and the
+    // failure ladder, and a silent change to it changes when a customer sees the degraded
+    // screen. `poll.ts`'s floor is 5.6 s, so the deadline must exceed it.
+    expect(REQUEST_TIMEOUT_MS).toBe(10_000)
+  })
+
+  it('abandons a hung POLL and reports unreachable, so the backoff ladder advances', async () => {
+    const started = Date.now()
+    const outcome = await pollStatus({ base: hungBase, fetch }, TOKEN)
+    const elapsed = Date.now() - started
+
+    // `unreachable` is what the reducer routes to `poll/unreachable` -- the same answer a
+    // refused connection gives, which is deliberate: a customer cannot tell the two apart and
+    // the ladder is the right response to both.
+    expect(outcome).toEqual({ kind: 'unreachable' })
+
+    // AND IT RETURNED BECAUSE OF THE DEADLINE, not because the socket closed: the elapsed time
+    // brackets the stated constant. Without the deadline this call never resolves and the test
+    // times out instead, which is the failure it is written to catch.
+    expect(elapsed).toBeGreaterThanOrEqual(REQUEST_TIMEOUT_MS - 1_500)
+    expect(elapsed).toBeLessThan(REQUEST_TIMEOUT_MS + 5_000)
+  }, 30_000)
+
+  it('abandons a hung RESOLVE the same way, so the error screen is reachable', async () => {
+    // The resolve is the half with no fallback: until it answers there is no session, so a
+    // hang here left the customer on the landing with nothing happening and no way back.
+    expect(await resolveSession({ base: hungBase, fetch }, TOKEN)).toEqual({ kind: 'unreachable' })
+  }, 30_000)
 })

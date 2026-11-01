@@ -150,6 +150,66 @@ function problemType(body: unknown): string | null {
 }
 
 /**
+ * ⚠ EVERY REQUEST HAS A DEADLINE, AND NONE OF THEM DID. `§11` round one, QA M-1.
+ *
+ * `§6` question 6 and `§11` check 3 both name **timeout** among the failure paths this task
+ * must handle, and there was no deadline anywhere in `api.ts`, `notify.ts` or `sw.js`: no
+ * `AbortSignal.timeout`, no `setTimeout` guard, and the `AbortController`s in the orchestrator
+ * were never passed to `fetch`, so they cancelled nothing.
+ *
+ * The consequence is not a slow request, it is a STOPPED CLIENT. `tick()` re-arms the poll
+ * timer only from an ANSWER, so a `fetch` that connects and never settles -- a captive portal,
+ * a mobile handover, a load balancer holding the socket -- stopped the poller permanently,
+ * with the elapsed timer still running and `waiting.healthy` offering no retry control at all.
+ * The resolve effect had the same shape, where `resolving.current` stayed `true` forever. The
+ * customer sat on a live-looking screen in front of an order that was already ready.
+ *
+ * ⚠ 10 SECONDS, AND IT IS DERIVED RATHER THAN PICKED. The poll's own floor is 5.6 s of jitter
+ * (`poll.ts`), so a deadline shorter than that would abandon requests the product is still
+ * waiting on by design; the degraded screen appears after one failure and the offline one
+ * after `MAX_CONSECUTIVE_FAILURES`, so a deadline must be short enough that the ladder is
+ * reachable while a customer is still holding the phone. Ten seconds is under the jittered
+ * ceiling and inside a pager's useful attention span, and it is stated here so the next person
+ * changes it against a reason.
+ *
+ * An abort surfaces as a rejected `fetch`, which this function already turns into `null` -- the
+ * same answer a connection failure gives, which the reducer already routes to
+ * `poll/unreachable` and `resolve/unreachable`. So the backoff ladder and the degraded and
+ * offline screens are reached by a hang exactly as they are by a refusal, which is the
+ * behaviour `§4.1` describes and what the new cases assert.
+ */
+export const REQUEST_TIMEOUT_MS = 10_000
+
+/**
+ * The deadline signal for one request.
+ *
+ * `AbortSignal.timeout` where the engine has it -- Chrome 124, Firefox 100, Safari 17.4 -- and
+ * a controller-plus-`setTimeout` where it does not, because an engine without it is exactly an
+ * engine this product supports (`§4 › Realtime` targets iOS from 16.4). Written as one helper
+ * so no call site has to remember which it got.
+ */
+function deadline(): { readonly signal: AbortSignal; readonly done: () => void } {
+  if (typeof AbortSignal.timeout === 'function') {
+    return { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), done: () => undefined }
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+
+  // ⚠ CLEARED ON EVERY PATH. A pending timer per request would keep the event loop awake and,
+  // in a test with fake timers, would make the NEXT advance fire an abort for a request that
+  // had already answered.
+  return {
+    signal: controller.signal,
+    done: () => {
+      clearTimeout(timer)
+    },
+  }
+}
+
+/**
  * One request. `no-store` and `same-origin` credentials: there is no cookie on this surface
  * and asking for none is narrower than letting the default decide.
  */
@@ -159,6 +219,8 @@ async function post(
   body: Readonly<Record<string, unknown>>,
   method: 'POST' | 'DELETE' = 'POST',
 ): Promise<{ status: number; body: unknown } | null> {
+  const bound = deadline()
+
   try {
     const response = await config.fetch(`${config.base}${path}`, {
       method,
@@ -166,6 +228,7 @@ async function post(
       body: JSON.stringify(body),
       cache: 'no-store',
       credentials: 'omit',
+      signal: bound.signal,
     })
 
     let parsed: unknown = null
@@ -185,7 +248,13 @@ async function post(
     // that includes the request URL in several engines, and the request body is reachable
     // from a wrapped error in a debugger. Nothing about the failure is worth the risk of
     // carrying the token out of this function -- the caller only needs "unreachable".
+    //
+    // A DEADLINE ABORT ARRIVES HERE TOO, and deliberately gets the same answer: a request
+    // that never finished is not distinguishable, to a customer, from one that was refused,
+    // and the reducer's ladder is the right response to both.
     return null
+  } finally {
+    bound.done()
   }
 }
 

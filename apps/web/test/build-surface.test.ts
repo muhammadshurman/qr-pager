@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -316,10 +317,28 @@ describe('the CSP surface -- what R-171 has to cover, derived rather than invent
         'the push service endpoint the browser chooses (set by the engine, not by us)',
       ],
       inlineScriptCount: inline.length,
+      /**
+       * ⚠ THE HASHES, AND THE TICKET CLAIMED THESE WERE HERE WHEN THEY WERE NOT. `§11` round
+       * one, SEC L-4: `QRPAGER-16 §7` says this artefact emits *"the complete set of origins,
+       * inline-script hashes and connect targets the built app actually needs"*, and it carried
+       * a count and no hashes. The consequence is the one the reviewer named: Task 12 could not
+       * write a hash policy *"from a measurement"* as claimed and would have had to re-derive
+       * them, which is the step most likely to end in `'unsafe-inline'`.
+       *
+       * `sha256-<base64>`, which is the exact token CSP's `script-src` takes, over the script
+       * element's text content with no trimming -- the byte-for-byte rule the spec uses, so a
+       * value copied from here works unmodified.
+       */
+      inlineScriptHashes: inline.map(
+        (body) => `sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}`,
+      ),
       inlineScriptNote:
         "Next's RSC payload pushes. script-src 'self' alone BREAKS this page, and a nonce " +
         'is unavailable because the document is a static file with no per-response step. ' +
-        "The choice is per-build hashes or 'unsafe-inline', and it is Task 12's to make.",
+        "The choice is per-build hashes or 'unsafe-inline', and it is Task 12's to make -- " +
+        'and the hashes above are what makes the first of those two a measurement rather ' +
+        'than a re-derivation. They change with every build that changes the payload, which ' +
+        'is why this file is byte-compared by this test rather than hand-maintained.',
       renderBlockingRequests: RENDER_BLOCKING,
       imageOrigins: ['self'],
       fontOrigins: ['self'],
