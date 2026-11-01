@@ -105,6 +105,28 @@ const API_BASE = (() => {
   }
 })()
 
+/**
+ * ⚠ THE WORKER'S OWN REQUESTS HAVE A DEADLINE TOO, AND THEY DID NOT. `§11` round two, QA M-8.
+ *
+ * Round one's QA M-1 docblock named *"`api.ts`, `notify.ts` or `sw.js`"* as the places with no
+ * timeout and then fixed `post()` only. So a HANG at rotation time — the moment a device is
+ * most likely to be on a degraded network — still skipped the endpoint bookkeeping and the
+ * `qrpager/resubscribe` message, which is the exact failure QA M-2 fixed for a REFUSAL one
+ * round earlier. A refused request was handled and a hung one was not.
+ *
+ * Ten seconds, the same figure and the same reasoning as `api.ts`'s `REQUEST_TIMEOUT_MS`:
+ * stated in one place per side rather than shared, because a worker is a separate script with
+ * no import of the app's modules.
+ */
+const REQUEST_TIMEOUT_MS = 10_000
+
+/** A deadline signal, or undefined on an engine without `AbortSignal.timeout`. */
+function deadline() {
+  return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    : undefined
+}
+
 const SHELL_CACHE = 'qrpager-shell-v1'
 const CREDENTIAL_CACHE = 'qrpager-pager-credential'
 
@@ -621,6 +643,8 @@ self.addEventListener('pushsubscriptionchange', (event) => {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
             body: JSON.stringify({ token, endpoint: oldEndpoint }),
+            // QA M-8: a hang here used to abandon the rotation silently.
+            signal: deadline(),
           })
         } catch {
           // The dead row survives until the dispatcher reaps it, which on Safari it never
@@ -692,6 +716,9 @@ self.addEventListener('pushsubscriptionchange', (event) => {
             p256dh: json.keys.p256dh,
             auth: json.keys.auth,
           }),
+          // QA M-8: a hang is now the same as a refusal — the page is told and the launch
+          // reconcile repairs the record.
+          signal: deadline(),
         })
 
         registered = response.ok

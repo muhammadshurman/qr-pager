@@ -340,6 +340,33 @@ describe('reconcileSubscription -- all five outcomes', () => {
     ).toEqual({ kind: 'not-permitted' })
   })
 
+  it('writes the session expiry into the credential, in the format sw.js parses -- QA L-6', async () => {
+    /**
+     * `§11` round two, QA L-6: `expiresAt` became REQUIRED in round one — `sw.js` treats a
+     * missing one as expired — and no test asserted it at the only production write site. A
+     * format the worker cannot parse would silently disable the rotation handler, fail-closed,
+     * on every device.
+     *
+     * The value used is the shape the server actually sends: `CustomerPagerController` emits
+     * `DATE_RFC3339`, which is what `toSnapshot()` carries through unchanged. Asserted by
+     * PARSING it the way `sw.js`'s `hasExpired()` does rather than by comparing strings, because
+     * that is the property that matters.
+     */
+    const environment = env()
+    const serverFormat = '2026-11-01T18:30:00+00:00'
+
+    await writeWorkerCredential(environment, TOKEN, KEY, '', 'https://push.example/a', serverFormat)
+
+    const cache = await environment.caches?.open('qrpager-pager-credential')
+    const stored = await cache?.match('/pager-credential')
+    const credential = (await stored?.json()) as Record<string, unknown>
+
+    expect(credential.expiresAt, 'the write site dropped the expiry').toBe(serverFormat)
+    // `Date.parse` is exactly what `sw.js` uses; NaN there means the worker purges every
+    // credential on read and the rotation handler never runs again.
+    expect(Number.isNaN(Date.parse(String(credential.expiresAt)))).toBe(false)
+  })
+
   it('unchanged: the live endpoint is the one already registered -- NO request is made', async () => {
     // ⚠ THE BOUND `§6` QUESTION 5 CLAIMS. "1 POST per launch at most" is this comparison:
     // the ordinary case costs one `getSubscription()` and no network call at all.

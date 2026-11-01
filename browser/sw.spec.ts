@@ -469,9 +469,20 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
      *   3. deliver a push to THAT endpoint and assert the notification appears, with the
      *      reference the dispatcher's real payload shape carries.
      *
-     * Step 2 is what makes this more than two independent cases: the push is sent to the
-     * endpoint the rotation produced, not to one the test chose. A handler that registered one
-     * endpoint and listened on another would pass both halves separately and fail here.
+     * ⚠ AND THE CLAIM THAT THIS *CHAINS* WAS FALSE, CORRECTED HERE RATHER THAN LEFT. `§11`
+     * round two, QA M-7. The sentence used to read *"a handler that registered one endpoint and
+     * listened on another would pass both halves separately and fail here"*. It would not: the
+     * `push` listener reads `event.data` and nothing else, and `readCredential()` is called only
+     * from `pushsubscriptionchange`, so the `endpoint` planted in the second drive is INERT. The
+     * two halves are sequential, not coupled.
+     *
+     * What this case does establish, which is still the half `§3` row 9 asks for and which was
+     * asserted nowhere before ruling 3: after a rotation has happened, a push delivered to the
+     * app IS handled and IS shown, on the shipped bytes, with the dispatcher's real payload
+     * shape — and the endpoint it is delivered to is read out of the handler's own POST body
+     * rather than chosen by the test, so the value is at least the one the rotation produced.
+     * Coupling the two would need the shim to route a push through a registered endpoint, which
+     * is `R-073`'s device run or a mocked push service; that is recorded as not done.
      */
     const rotated = await driveWorker(page, 'pushsubscriptionchange', {
       credential: {

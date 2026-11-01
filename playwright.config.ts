@@ -95,7 +95,26 @@ export default defineConfig({
   // Fail rather than silently pass if a test has no assertion path -- a browser test that
   // finds no element must not look like a pass.
   forbidOnly: true,
+  /**
+   * ⚠ `retries: 0` IS KEPT, AND THE TIMEOUT IS RAISED INSTEAD. `§11` round two, QA M-9.
+   *
+   * The reviewer measured `gate:e2e` at this head as **1 failed / 6 skipped / 313 passed** — a
+   * `page.goto` in `one-handed-firefox-ltr` timing out at 30 s — and the same case passing 3 of
+   * 3 in isolation at 2.4–2.9 s. A sibling case in the same run took **27.8 s** against a 30 s
+   * default, so the suite was within ~2 s of red by construction on this host: 102 geometry
+   * cases and a real Laravel API behind one worker.
+   *
+   * Retries would HIDE that rather than fix it — a case that passes on the second attempt is a
+   * case whose first attempt nobody reads, and `R-209` exists precisely because the TypeScript
+   * half has no attribution path for a red. So the budget is raised to a figure with headroom
+   * over the slowest observed case, and the number is stated with the measurement behind it
+   * rather than picked.
+   *
+   * 90 s: three times the slowest case the reviewer observed. A case that needs more than that
+   * is not slow, it is stuck, and the point of a timeout is to say so.
+   */
   retries: 0,
+  timeout: 90_000,
   reporter: [['list']],
   // ⚠ ONE WORKER. The journey specs drive ONE real API against ONE composed Postgres and
   // Redis, and `R-049` records what two concurrent runners against one database cost this

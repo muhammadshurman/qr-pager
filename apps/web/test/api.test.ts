@@ -533,6 +533,45 @@ describe('the request deadline -- QA M-1, the timeout path §6 question 6 names'
     expect(elapsed).toBeLessThan(REQUEST_TIMEOUT_MS + 5_000)
   }, 30_000)
 
+  it('abandons a hung poll on an engine with NO AbortSignal.timeout -- QA L-2', async () => {
+    /**
+     * `§11` round two, QA L-2: the controller-plus-`setTimeout` fallback was the branch written
+     * for engines without `AbortSignal.timeout` — iOS 16.4 to 17.3, which the docblock itself
+     * calls *"exactly an engine this product supports"* — and it was in the uncovered set. The
+     * branch that exists for the oldest supported engine was the one never run.
+     *
+     * `AbortSignal.timeout` is deleted for the duration, which is the only way to reach it, and
+     * restored in a `finally` so a failure here cannot leak into another case.
+     */
+    // Captured as a bound reference: `AbortSignal.timeout` is a static method and pulling it
+    // off the object bare is what `unbound-method` is right to refuse.
+    const original = AbortSignal.timeout.bind(AbortSignal)
+
+    // @ts-expect-error -- deliberately removing a platform method to reach the fallback.
+    delete (AbortSignal as unknown as Record<string, unknown>).timeout
+
+    try {
+      expect(typeof AbortSignal.timeout).not.toBe('function')
+
+      const started = Date.now()
+
+      expect(await pollStatus({ base: hungBase, fetch }, TOKEN)).toEqual({ kind: 'unreachable' })
+
+      // The same bracket as the primary branch: it returned on the DEADLINE, not because the
+      // socket closed. Without the fallback this call never settles and the case times out.
+      const elapsed = Date.now() - started
+
+      expect(elapsed).toBeGreaterThanOrEqual(REQUEST_TIMEOUT_MS - 1_500)
+      expect(elapsed).toBeLessThan(REQUEST_TIMEOUT_MS + 5_000)
+    } finally {
+      Object.defineProperty(AbortSignal, 'timeout', {
+        configurable: true,
+        writable: true,
+        value: original,
+      })
+    }
+  }, 30_000)
+
   it('abandons a hung RESOLVE the same way, so the error screen is reachable', async () => {
     // The resolve is the half with no fallback: until it answers there is no session, so a
     // hang here left the customer on the landing with nothing happening and no way back.
