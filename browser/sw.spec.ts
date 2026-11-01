@@ -24,6 +24,8 @@ declare global {
      */
     credentialAfter: unknown
     shellAfter: unknown
+    /** Which open clients `notificationclick` focused, in order. SEC L-3. */
+    focused: string[]
   }
 
   interface DriveOptionsLike {
@@ -38,6 +40,8 @@ declare global {
     /** `§11` round two, SEC-R2 M-3: the navigate branch was reachable by no case. */
     requestUrl?: string
     requestMode?: string
+    /** Paths of the window clients to present to `notificationclick`. SEC L-3. */
+    clientUrls?: string[]
   }
 }
 
@@ -77,6 +81,7 @@ interface Captured {
   /** What the worker LEFT BEHIND, not what it was given -- see CapturedLike above. */
   readonly credentialAfter: unknown
   readonly shellAfter: unknown
+  readonly focused: string[]
 }
 
 interface DriveOptions {
@@ -86,6 +91,7 @@ interface DriveOptions {
   readonly fetchThrows?: boolean
   readonly requestUrl?: string
   readonly requestMode?: string
+  readonly clientUrls?: string[]
   readonly credential?: Record<string, unknown> | null
   readonly harnessCredential?: Record<string, unknown> | null
   readonly oldSubscription?: { endpoint: string } | null
@@ -109,7 +115,7 @@ interface DriveOptions {
  */
 async function driveWorker(
   page: Page,
-  event: 'push' | 'pushsubscriptionchange' | 'activate' | 'fetch',
+  event: 'push' | 'pushsubscriptionchange' | 'activate' | 'fetch' | 'notificationclick',
   options: DriveOptions = {},
 ): Promise<Captured> {
   await page.addInitScript((raw: string) => {
@@ -121,6 +127,7 @@ async function driveWorker(
       subscribes: 0,
       credentialAfter: null,
       shellAfter: null,
+      focused: [],
     }
     const stores = new Map<string, Map<string, unknown>>()
 
@@ -157,19 +164,52 @@ async function driveWorker(
         },
       },
     }
+    /**
+     * ⚠ THE WINDOW CLIENTS ARE PART OF THE SHIM, so `notificationclick` can be driven through
+     * `driveWorker` like every other handler. SEC L-3's first version called `page.evaluate`
+     * directly, which meant `sw.js` was never injected and the event reached no listener.
+     */
+    const clientUrls = parsed.clientUrls ?? []
+    const windows = clientUrls.map((path) => ({
+      url: `${location.origin}${path}`,
+      focus: () => {
+        captured.focused.push(path)
+
+        return Promise.resolve()
+      },
+    }))
+
     scope.clients = {
       claim: () => Promise.resolve(),
+      openWindow: (url: string) => {
+        captured.focused.push(`open:${url}`)
+
+        return Promise.resolve(null)
+      },
+      /**
+       * The windows a case asked for, each recording its own `focus()`; the default single `/s`
+       * client when a case asked for none, so every existing `postMessage` assertion is
+       * unchanged.
+       */
       matchAll: () =>
-        Promise.resolve([
-          {
-            url: `${location.origin}/s`,
-            focus: () => Promise.resolve(),
-            postMessage: (message: unknown) => {
-              captured.messages.push(message)
-            },
-          },
-        ]),
-      openWindow: () => Promise.resolve(null),
+        Promise.resolve(
+          windows.length > 0
+            ? windows.map((w) => ({
+                ...w,
+                postMessage: (message: unknown) => {
+                  captured.messages.push(message)
+                },
+              }))
+            : [
+                {
+                  url: `${location.origin}/s`,
+                  focus: () => Promise.resolve(),
+                  postMessage: (message: unknown) => {
+                    captured.messages.push(message)
+                  },
+                },
+              ],
+        ),
     }
     /**
      * ⚠ `defineProperty`, NOT AN ASSIGNMENT, AND THAT COST FIVE RED CASES. `window.caches` is
@@ -296,14 +336,32 @@ async function driveWorker(
 
       // The stores, after the handler has run. `stores` is the shim's own Map, so this is what
       // the worker actually left behind rather than what it was given.
-      const readStore = (name: string, key: string) => {
+      /**
+       * ⚠ THE BODY IS READ, BECAUSE A `Response` DOES NOT CROSS `page.evaluate`. The worker
+       * stores `new Response(JSON.stringify(...))`, and returning that object serialised to
+       * `{}` — so the first version of the QA H-2 and M-3 cases asserted against an empty
+       * object and failed for a reason that had nothing to do with the code under test.
+       * `json()` where the held value has one, the value itself otherwise.
+       */
+      const readStore = async (name: string, key: string) => {
         const held = (scope.__qrpagerStores as Map<string, Map<string, unknown>>).get(name)
+        const value = held === undefined ? null : (held.get(key) ?? null)
 
-        return held === undefined ? null : (held.get(key) ?? null)
+        if (value !== null && typeof (value as { json?: unknown }).json === 'function') {
+          try {
+            return await (value as { json: () => Promise<unknown> }).json()
+          } catch {
+            // A body that is not JSON: report its presence rather than nothing, so a case can
+            // still tell "something was written" from "nothing was".
+            return { unparseable: true }
+          }
+        }
+
+        return value
       }
 
-      captured.credentialAfter = readStore('qrpager-pager-credential', '/pager-credential')
-      captured.shellAfter = readStore('qrpager-shell-v1', '/s')
+      captured.credentialAfter = await readStore('qrpager-pager-credential', '/pager-credential')
+      captured.shellAfter = await readStore('qrpager-shell-v1', '/s')
 
       return captured
     },
@@ -903,51 +961,20 @@ test.describe('what the worker refuses to do, each asserted rather than read', (
      * `/studio` -- with an exact pathname match, and `notificationclick` was driven by nothing
      * at all. From Task 10 the likely wrong surface is the staff dashboard, in front of the
      * customer whose order it is.
+     *
+     * ⚠ DRIVEN THROUGH `driveWorker`, AND THE FIRST VERSION WAS NOT. It called `page.evaluate`
+     * directly, so the shim was never installed and `sw.js` was never injected -- the case
+     * dispatched an event at a document with no listener and failed for a reason unrelated to
+     * the code under test. The lesson is the one this file already states about `addScriptTag`:
+     * a worker case that does not go through the loader is not testing the worker.
      */
-    const focused = await page.evaluate(async () => {
-      const scope = window as unknown as Record<string, unknown>
-      const order: string[] = []
-      const clients = [
-        {
-          url: `${location.origin}/settings`,
-          focus: () => {
-            order.push('/settings')
-            return Promise.resolve()
-          },
-        },
-        {
-          url: `${location.origin}/staff`,
-          focus: () => {
-            order.push('/staff')
-            return Promise.resolve()
-          },
-        },
-        {
-          url: `${location.origin}/s`,
-          focus: () => {
-            order.push('/s')
-            return Promise.resolve()
-          },
-        },
-      ]
-
-      ;(scope.clients as Record<string, unknown>).matchAll = () => Promise.resolve(clients)
-
-      const event = new CustomEvent('notificationclick') as CustomEvent & Record<string, unknown>
-      const waits: Promise<unknown>[] = []
-
-      event.waitUntil = (p: Promise<unknown>) => {
-        waits.push(p)
-      }
-      event.notification = { close: () => undefined, data: {} }
-
-      window.dispatchEvent(event)
-      await Promise.all(waits)
-
-      return order
+    const captured = await driveWorker(page, 'notificationclick', {
+      clientUrls: ['/settings', '/staff', '/s'],
     })
 
-    expect(focused, 'notificationclick focused a surface that merely contains /s').toEqual(['/s'])
+    expect(captured.focused, 'notificationclick focused a surface that merely contains /s').toEqual(
+      ['/s'],
+    )
   })
 })
 
