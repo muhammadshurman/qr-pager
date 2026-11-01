@@ -45,6 +45,29 @@ require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
+/**
+ * ⛔ LOCAL AND TESTING ONLY, AND THERE WAS NO GUARD AT ALL. `§11` round one, SEC M-6.
+ *
+ * This script bootstraps the real kernel and writes as `pgsql_owner`, so it worked against
+ * whatever database `.env` pointed at -- including a production one. The docblock above argues
+ * that the row is created and used in the same minute, and that argument is about INTENT: it
+ * is not a control, and anyone who reached a shell in the API container, or any runbook, seed
+ * hook or CI step that called this by name, got a real row for free. `apps/api` is packaged
+ * wholesale by Task 13, which ships these scripts with it.
+ *
+ * Checked AFTER the kernel boots, because `app()->environment()` needs the configuration, and
+ * written to fail CLOSED: an unset or unrecognised `APP_ENV` is not `local` or `testing`.
+ */
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this writes real rows as the database owner and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
 $reference = 'E-001';
 $status = 'waiting';
 

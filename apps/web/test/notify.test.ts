@@ -38,6 +38,9 @@ import type { PresentedToken } from '../src/pager/token.ts'
  */
 
 const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv' as PresentedToken
+/** An expiry comfortably in the future: these cases are not about the purge. */
+const FUTURE = new Date(Date.now() + 3_600_000).toISOString()
+
 const KEY =
   'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM'
 
@@ -254,7 +257,7 @@ describe('the worker credential', () => {
     const caches = fakeCaches()
     const environment = env({ caches: caches.storage })
 
-    await writeWorkerCredential(environment, TOKEN, KEY, '', 'https://push.example/a')
+    await writeWorkerCredential(environment, TOKEN, KEY, '', 'https://push.example/a', FUTURE)
 
     const stored = caches.stores.get(WORKER_CACHE)?.get(WORKER_CACHE_KEY)
 
@@ -280,7 +283,7 @@ describe('the worker credential', () => {
     const caches = fakeCaches()
     const environment = env({ caches: caches.storage })
 
-    await writeWorkerCredential(environment, TOKEN, KEY, '', 'https://push.example/a')
+    await writeWorkerCredential(environment, TOKEN, KEY, '', 'https://push.example/a', FUTURE)
     environment.storage?.setItem('qrpager.pager.endpoint', 'https://push.example/a')
 
     await clearWorkerCredential(environment)
@@ -292,7 +295,7 @@ describe('the worker credential', () => {
   it('does nothing and does not throw when the engine has no CacheStorage', async () => {
     // Safari private browsing, and any context where storage is blocked.
     await expect(
-      writeWorkerCredential(env({ caches: null }), TOKEN, KEY, '', null),
+      writeWorkerCredential(env({ caches: null }), TOKEN, KEY, '', null, FUTURE),
     ).resolves.toBeUndefined()
     await expect(clearWorkerCredential(env({ caches: null }))).resolves.toBeUndefined()
   })
@@ -307,6 +310,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
         token: TOKEN,
         applicationServerKey: KEY,
         registration: { pushManager: {} as PushManager },
+        expiresAt: FUTURE,
       }),
     ).toEqual({ kind: 'unsupported' })
   })
@@ -324,6 +328,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
         token: TOKEN,
         applicationServerKey: KEY,
         registration: { pushManager: {} as PushManager },
+        expiresAt: FUTURE,
       }),
     ).toEqual({ kind: 'not-permitted' })
   })
@@ -345,6 +350,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
           getSubscription: () => Promise.resolve(subscription('https://push.example/a')),
         } as unknown as PushManager,
       },
+      expiresAt: FUTURE,
     })
 
     expect(outcome).toEqual({ kind: 'unchanged', endpoint: 'https://push.example/a' })
@@ -380,6 +386,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
           getSubscription: () => Promise.resolve(subscription('https://push.example/NEW')),
         } as unknown as PushManager,
       },
+      expiresAt: FUTURE,
     })
 
     expect(outcome).toEqual({ kind: 'reregistered', endpoint: 'https://push.example/NEW' })
@@ -409,6 +416,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
           },
         } as unknown as PushManager,
       },
+      expiresAt: FUTURE,
     })
 
     expect(subscribed).toBe(true)
@@ -431,6 +439,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
             getSubscription: () => Promise.reject(new Error('no')),
           } as unknown as PushManager,
         },
+        expiresAt: FUTURE,
       }),
     ).toEqual({ kind: 'failed' })
 
@@ -444,6 +453,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
             subscribe: () => Promise.reject(new Error('permission revoked')),
           } as unknown as PushManager,
         },
+        expiresAt: FUTURE,
       }),
     ).toEqual({ kind: 'failed' })
 
@@ -457,6 +467,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
             getSubscription: () => Promise.resolve(subscription('https://push.example/x')),
           } as unknown as PushManager,
         },
+        expiresAt: FUTURE,
       }),
     ).toEqual({ kind: 'failed' })
   })
@@ -476,6 +487,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
           getSubscription: () => Promise.resolve(subscription('https://push.example/x')),
         } as unknown as PushManager,
       },
+      expiresAt: FUTURE,
     })
 
     expect(environment.storage?.getItem('qrpager.pager.endpoint')).toBeNull()
@@ -509,6 +521,7 @@ describe('reconcileSubscription -- all five outcomes', () => {
           },
         } as unknown as PushManager,
       },
+      expiresAt: FUTURE,
     })
 
     expect(caches.stores.get(WORKER_CACHE)?.get(WORKER_CACHE_KEY)).toBeDefined()
@@ -543,6 +556,7 @@ describe('the two early returns a browser can actually produce', () => {
             } as unknown as PushSubscription),
         } as unknown as PushManager,
       },
+      expiresAt: FUTURE,
     })
 
     expect(outcome).toEqual({ kind: 'failed' })

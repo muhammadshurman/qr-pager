@@ -365,6 +365,9 @@ export function PagerJourney({ apiBase, vapidPublicKey, locale }: PagerJourneyPr
     if (state.snapshot === null) return
 
     const token: PresentedToken = state.token
+    // Non-null: the guard above returns when the snapshot is null, which is what makes the
+    // session's own expiry available to carry into the worker's credential (SEC M-2).
+    const expiresAt: string = state.snapshot.expiresAt
     // ⚠ AN `AbortController` RATHER THAN A `let cancelled = false`. The flag is set from
     // the cleanup closure, which type narrowing cannot see, so an inferred `false` makes
     // every guard below look dead to `@typescript-eslint/no-unnecessary-condition` -- and
@@ -416,6 +419,7 @@ export function PagerJourney({ apiBase, vapidPublicKey, locale }: PagerJourneyPr
         token,
         applicationServerKey: vapidPublicKey,
         registration,
+        expiresAt,
       })
     })()
 
@@ -436,6 +440,7 @@ export function PagerJourney({ apiBase, vapidPublicKey, locale }: PagerJourneyPr
           token,
           applicationServerKey: vapidPublicKey,
           registration,
+          expiresAt,
         })
       })()
     }

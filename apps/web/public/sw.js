@@ -68,10 +68,27 @@ self.addEventListener('install', () => {
  */
 const SHELL_CACHE = 'qrpager-shell-v1'
 const CREDENTIAL_CACHE = 'qrpager-pager-credential'
-const HARNESS_CACHE = 'qrpager-harness'
 
-/** The caches this worker owns. Anything else under this origin is deleted on activate. */
-const OWNED = [SHELL_CACHE, CREDENTIAL_CACHE, HARNESS_CACHE]
+/**
+ * The caches this worker owns. Anything else under this origin is deleted on activate.
+ *
+ * ⚠ `qrpager-harness` IS DELIBERATELY ABSENT, AND IT USED TO BE HERE. `§11` round one, SEC
+ * M-3, raised as Medium and **ruled HIGH by Muhammad on 2026-11-01**: this worker read
+ * QRPAGER-24's harness credential as a second source, and that entry carried an `apiBase`
+ * this worker then sent the raw QR token to — and wrote BACK, so the exfiltration survived
+ * removal of the script that planted it. `§4 › Data` says the raw token never leaves.
+ *
+ * The ruling is that the production worker must not be able to read it **at all — not
+ * validate it, not reach it**. So the name is gone from this file, which means `activate`
+ * now treats `qrpager-harness` as somebody else's cache and DELETES it. That is stronger
+ * than ignoring it: a device that ever ran the harness has the entry removed on the next
+ * activation of the shipped worker.
+ *
+ * QRPAGER-24's harness writes `/pager-credential` into `CREDENTIAL_CACHE` instead — one
+ * cache, one writer shape, one reader — so the harness still works and this worker still has
+ * exactly one credential source.
+ */
+const OWNED = [SHELL_CACHE, CREDENTIAL_CACHE]
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
@@ -131,15 +148,42 @@ self.addEventListener('fetch', (event) => {
   // offline screen with no dead end, and a customer who has installed this to the Home
   // Screen and is in a basement has to reach SOMETHING. The cached document boots the app,
   // which then renders its own offline state from `navigator.onLine` and a failed fetch.
-  if (request.mode === 'navigate' && url.origin === self.location.origin) {
+  /**
+   * ⚠ `/s` AND `/s/` ONLY, AND IT USED TO BE EVERY SAME-ORIGIN NAVIGATION. `§11` round one,
+   * SEC M-1. The condition was `request.mode === 'navigate' && url.origin === origin`, and the
+   * body then wrote the response to the `/s` key with **no path check and no `fresh.ok`
+   * check** -- unlike the asset branch below, which has always checked `ok`. The worker is
+   * registered at `scope: '/'` while the manifest deliberately scopes the app to `/s`, so its
+   * reach is the whole origin.
+   *
+   * One same-origin navigation anywhere else -- a link in a message, the 404 page,
+   * `/harness/push`, and from Task 10 the staff dashboard and KDS, which `app/s/layout.tsx`
+   * says will live here -- became the customer's offline shell until `SHELL_CACHE`'s version
+   * string changed at a deploy. Cheap, persistent, one click.
+   *
+   * The whitelist above already applied to non-navigations; this is the same whitelist applied
+   * to navigations, which is what it was always meant to be.
+   */
+  const isPagerNavigation =
+    request.mode === 'navigate' &&
+    url.origin === self.location.origin &&
+    (url.pathname === '/s' || url.pathname === '/s/')
+
+  if (isPagerNavigation) {
     event.respondWith(
       (async () => {
         try {
           const fresh = await fetch(request)
-          const cache = await self.caches.open(SHELL_CACHE)
-          // `/s` is the key for every navigation into this app: the fragment is not part of
-          // a cache key and the path is constant by `SR-1`, so one entry serves every scan.
-          await cache.put('/s', fresh.clone())
+
+          // ⚠ ONLY A REAL SUCCESS IS STORED, same as the asset branch. A 404 or a 5xx written
+          // here would be served as the offline shell for the life of the cache version --
+          // which is how a transient deploy race becomes a permanent wrong screen.
+          if (fresh.ok) {
+            const cache = await self.caches.open(SHELL_CACHE)
+            // `/s` is the key for every navigation into this app: the fragment is not part of
+            // a cache key and the path is constant by `SR-1`, so one entry serves every scan.
+            await cache.put('/s', fresh.clone())
+          }
 
           return fresh
         } catch {
@@ -228,9 +272,20 @@ function notificationFor(payload, rawText) {
     return {
       title: 'Your order is ready',
       body:
+        // ⚠ THE RAW PAYLOAD IS NOT RENDERED, AND IT USED TO BE. `§11` round one, SEC L-2: this
+        // read `'Push received, payload not recognised: ' + rawText`, so anyone able to send
+        // a decryptable push to the endpoint -- i.e. holding the subscription's own
+        // `p256dh`/`auth`, or the server misbehaving -- put arbitrary text on the customer's
+        // LOCK SCREEN. Narrow, because the payload is authenticated by the subscription keys
+        // and VAPID, but it is a debug affordance that was shipping on a customer surface.
+        //
+        // The distinction kept from QRPAGER-24 is the one that matters: a push this build
+        // cannot read still ARRIVED, and swallowing it would turn a successful delivery into a
+        // silent failure. So the notification still appears and still carries the harness tag
+        // its operator script reads -- it just no longer quotes the sender.
         rawText === null
           ? 'Push received with no payload'
-          : 'Push received, payload not recognised: ' + rawText,
+          : 'Push received, in a format this version does not recognise',
       tag: 'qrpager-harness',
     }
   }
@@ -322,7 +377,7 @@ self.addEventListener('notificationclick', (event) => {
       // service-worker state, which reads as "the push did not arrive".
       for (const client of windows) {
         if (
-          (client.url.includes('/s') || client.url.includes('/harness/push')) &&
+          (isPagerClient(client.url) || client.url.includes('/harness/push')) &&
           'focus' in client
         ) {
           return client.focus()
@@ -379,24 +434,74 @@ self.addEventListener('notificationclick', (event) => {
  * is asserted WITH THIS HANDLER REMOVED.
  */
 
-/** The credential, from Task 9's cache or QRPAGER-24's. Null when neither holds one. */
+/**
+ * The credential. ONE cache, ONE key — see `OWNED` above for why the harness source is gone.
+ *
+ * ⚠ AND THE ENTRY IS DROPPED WHEN IT HAS EXPIRED, which it never was. `§11` round one, SEC
+ * M-2: `CREDENTIAL_CACHE` is in `OWNED`, `activate` deletes only caches NOT in `OWNED`, and
+ * nothing anywhere checked the expiry — so a customer who collected their order and closed
+ * the app (the common case, since `completed` is set by staff) left a live 128-bit bearer
+ * token on the device for the whole 2-hour TTL. The `localStorage` half self-deletes on read
+ * past expiry; this half had no equivalent, while the ticket stated in writing that it did.
+ *
+ * Checked on READ as well as on activate, because a read is the only moment that is
+ * guaranteed to happen before the token would be used.
+ */
 async function readCredential() {
-  for (const [name, key] of [
-    [CREDENTIAL_CACHE, '/pager-credential'],
-    [HARNESS_CACHE, '/harness-token'],
-  ]) {
-    try {
-      const cache = await self.caches.open(name)
-      const stored = await cache.match(key)
+  try {
+    const cache = await self.caches.open(CREDENTIAL_CACHE)
+    const stored = await cache.match('/pager-credential')
 
-      if (stored) return await stored.json()
-    } catch {
-      // A cache that cannot be opened or a body that is not JSON. Try the next one; a
-      // throw here would abandon the rotation for a reason the next source may not share.
+    if (!stored) return null
+
+    const credential = await stored.json()
+
+    if (hasExpired(credential)) {
+      await cache.delete('/pager-credential')
+
+      return null
     }
-  }
 
-  return null
+    return credential
+  } catch {
+    // A cache that cannot be opened, or a body that is not JSON. A rotation with no
+    // credential tells the page instead, which is the branch below.
+    return null
+  }
+}
+
+/**
+ * Whether a stored credential is past its own expiry.
+ *
+ * ⚠ ABSENT `expires_at` IS TREATED AS EXPIRED, not as eternal. An entry written by a build
+ * that did not record one cannot be shown to be live, and the cost of being wrong in this
+ * direction is one reconcile from the page — which runs on every launch anyway — against a
+ * live bearer token left on a device in the other.
+ */
+function hasExpired(credential) {
+  if (!credential || typeof credential.expiresAt !== 'string') return true
+
+  const at = Date.parse(credential.expiresAt)
+
+  return Number.isNaN(at) || at <= Date.now()
+}
+
+/**
+ * Whether an open client is the pager surface.
+ *
+ * ⚠ THIS WAS `client.url.includes('/s')`, WHICH MATCHES `/settings`, `/staff`, `/studio` AND
+ * `/s3-anything`. `§11` round one, SEC L-3: on a device with two windows open on this origin,
+ * tapping the *order ready* notification focused whichever matched first -- and from Task 10
+ * the likely wrong surface is the staff dashboard, in front of the customer whose order it is.
+ */
+function isPagerClient(href) {
+  try {
+    const path = new URL(href).pathname
+
+    return path === '/s' || path === '/s/' || path.startsWith('/s/')
+  } catch {
+    return false
+  }
 }
 
 self.addEventListener('pushsubscriptionchange', (event) => {
@@ -468,16 +573,46 @@ self.addEventListener('pushsubscriptionchange', (event) => {
         return
       }
 
-      await fetch(apiBase + '/v1/pager/subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          token,
-          endpoint: json.endpoint,
-          p256dh: json.keys.p256dh,
-          auth: json.keys.auth,
-        }),
-      })
+      /**
+       * ⚠ GUARDED, AND IT WAS THE ONE UNGUARDED `await` IN THIS HANDLER. `§11` round one, QA
+       * M-2: the DELETE above, the `subscribe()` above and the `cache.put` below are each
+       * wrapped; this POST was not. A network failure AT ROTATION TIME -- the moment a device
+       * is most likely to be offline -- rejected `event.waitUntil` and skipped the endpoint
+       * bookkeeping that follows, leaving the remembered endpoint equal to the one just
+       * DELETEd. That is the same uncaught-rejection class this task fixed one layer up in
+       * `PagerJourney.tsx`.
+       *
+       * ⚠ AND THE STATUS IS READ, which it also was not. A 4xx is not a network failure and
+       * must not be treated as a success: an open client is told so the page's reconcile --
+       * which compares the live endpoint against the remembered one -- runs with more context
+       * than this worker has.
+       */
+      let registered
+
+      try {
+        const response = await fetch(apiBase + '/v1/pager/subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            token,
+            endpoint: json.endpoint,
+            p256dh: json.keys.p256dh,
+            auth: json.keys.auth,
+          }),
+        })
+
+        registered = response.ok
+      } catch {
+        registered = false
+      }
+
+      if (!registered) {
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+
+        for (const client of clients) client.postMessage({ type: 'qrpager/resubscribe' })
+
+        return
+      }
 
       // Remember the endpoint we just registered, so the next rotation can DELETE it even on
       // an engine that supplies no `oldSubscription`.

@@ -160,6 +160,7 @@ export async function writeWorkerCredential(
   applicationServerKey: string,
   apiBase: string,
   endpoint: string | null,
+  expiresAt: string,
 ): Promise<void> {
   if (env.caches === null) return
 
@@ -171,7 +172,14 @@ export async function writeWorkerCredential(
     // not have the `oldSubscription` and `newSubscription` properties"* -- so a handler that
     // wants to DELETE the endpoint it is replacing has no way to learn it from the event
     // there. This is that way. Null before the first subscribe, which the handler tolerates.
-    new Response(JSON.stringify({ token, applicationServerKey, apiBase, endpoint }), {
+    // ⚠ `expiresAt` IS WHAT MAKES THE ENTRY PURGEABLE, and it was missing -- `§11` round one,
+    // SEC M-2. `CREDENTIAL_CACHE` is in the worker's `OWNED` list, so `activate` never deleted
+    // it and nothing anywhere checked an expiry: a customer who collected their order and
+    // closed the app left a live 128-bit bearer token on the device for the whole 2-hour TTL.
+    // The `localStorage` half has always self-deleted on read past expiry; this half could
+    // not, because it did not know when that was. `sw.js`'s `hasExpired()` reads this, treats
+    // an ABSENT value as expired, and deletes the entry on read as well as on activate.
+    new Response(JSON.stringify({ token, applicationServerKey, apiBase, endpoint, expiresAt }), {
       headers: { 'Content-Type': 'application/json' },
     }),
   )
@@ -183,8 +191,19 @@ export async function writeWorkerCredential(
  * ⚠ THIS IS A SECURITY STEP AND NOT TIDYING. The credential is a 128-bit bearer token with a
  * two-hour life, and a phone is handed to a friend, left on a table and sold. A session that
  * is over must not leave a live credential in a cache on the device, and `§4 › Data` treats
- * the raw token as a secret wherever it is. Asserted: after a terminal status both homes are
- * empty.
+ * the raw token as a secret wherever it is.
+ *
+ * ⚠ THE PREVIOUS SENTENCE HERE CLAIMED *"Asserted: after a terminal status both homes are
+ * empty"* AND THAT WAS HALF TRUE -- `§11` round one, SEC M-5. The call site is an effect in
+ * `PagerJourney.tsx`, not an `endSession()` function, and the only test
+ * (`orchestrator.test.tsx`'s *forgets the token on a terminal status*) asserted the two
+ * `localStorage` keys and NOT this cache -- it cannot, because jsdom has no `window.caches`,
+ * so this function short-circuits there. The `Cache` half is now asserted where `caches`
+ * really exists: `browser/sw.spec.ts`'s *clears BOTH homes when the session is over*.
+ *
+ * ⚠ AND IT IS NO LONGER THE ONLY DEFENCE. Even if this call is never reached -- a tab closed
+ * mid-session, a crash -- `sw.js` drops the entry once `expiresAt` has passed, on read and on
+ * activate. One of the two had to survive the other being skipped.
  */
 export async function clearWorkerCredential(env: PushEnvironment): Promise<void> {
   if (env.caches !== null) {
@@ -213,6 +232,13 @@ export interface ReconcileDeps {
   readonly token: PresentedToken
   readonly applicationServerKey: string
   readonly registration: Pick<ServiceWorkerRegistration, 'pushManager'>
+  /**
+   * The session's own expiry, from the snapshot the resolve returned. Carried into the
+   * worker's credential so the worker can drop it without asking anyone -- `§11` round one,
+   * SEC M-2. Required rather than optional: an entry whose expiry is unknown is treated as
+   * expired, so making this optional would quietly disable the purge.
+   */
+  readonly expiresAt: string
 }
 
 /**
@@ -275,7 +301,14 @@ export async function reconcileSubscription(deps: ReconcileDeps): Promise<Reconc
 
   // The credential goes to the worker's cache BEFORE the POST, for the reason
   // `writeWorkerCredential` states.
-  await writeWorkerCredential(env, token, applicationServerKey, api.base, fields.endpoint)
+  await writeWorkerCredential(
+    env,
+    token,
+    applicationServerKey,
+    api.base,
+    fields.endpoint,
+    deps.expiresAt,
+  )
 
   const result = await registerDevice(api, token, fields)
 
