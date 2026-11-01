@@ -168,19 +168,29 @@ pnpm install --frozen-lockfile || { echo "install failed in the clone" >&2; exit
 # frontend job), which is why it is fixed as one thing in all three.
 echo
 echo "== apps/api's composer tree, npm tree and asset build, which the workspace gate reads =="
+# ⚠ mktemp, NEVER A FIXED PATH, and the sibling script already carries this ruling verbatim:
+# "security L-5 on the sibling proof was exactly this, and a predictable directory under
+# /tmp is a symlink target on a shared host." The first version of this block wrote
+# `>/tmp/fcp-composer.log` and friends, and the §11 security round DROVE it: pre-create the
+# path as a symlink and `>` follows it and truncates the target -- measured against a victim
+# file holding known contents. Two further consequences it named: the three logs survived the
+# run (the trap only removes $clone), leaving the dependency tree readable at a guessable
+# path, and `tail -20` printed attacker-controlled bytes as this script's own diagnostic.
+logs="$(mktemp -d "${TMPDIR:-/tmp}/qrpager-frontend-fresh-clone-logs.XXXXXX")"
+trap 'rm -rf "$clone" "$logs"' EXIT
 for tool in php composer npm; do
     command -v "$tool" >/dev/null 2>&1 || { echo "  $tool is not on PATH; the panel checks need it" >&2; exit 1; }
 done
 (
     cd apps/api || exit 1
-    composer install --no-interaction --no-progress --prefer-dist >/tmp/fcp-composer.log 2>&1 \
-        || { tail -20 /tmp/fcp-composer.log >&2; echo "  composer install failed in the clone" >&2; exit 1; }
+    composer install --no-interaction --no-progress --prefer-dist >"$logs/composer.log" 2>&1 \
+        || { tail -20 "$logs/composer.log" >&2; echo "  composer install failed in the clone" >&2; exit 1; }
     echo "  composer install: ok"
-    npm ci --ignore-scripts >/tmp/fcp-npm.log 2>&1 \
-        || { tail -20 /tmp/fcp-npm.log >&2; echo "  npm ci failed in the clone" >&2; exit 1; }
+    npm ci --ignore-scripts >"$logs/npm.log" 2>&1 \
+        || { tail -20 "$logs/npm.log" >&2; echo "  npm ci failed in the clone" >&2; exit 1; }
     echo "  npm ci: ok"
-    npm run build >/tmp/fcp-build.log 2>&1 \
-        || { tail -20 /tmp/fcp-build.log >&2; echo "  the panel asset build failed in the clone" >&2; exit 1; }
+    npm run build >"$logs/build.log" 2>&1 \
+        || { tail -20 "$logs/build.log" >&2; echo "  the panel asset build failed in the clone" >&2; exit 1; }
     echo "  npm run build: ok"
     # Named rather than assumed: the browser checks resolve the theme THROUGH the manifest,
     # so a build that wrote no manifest entry would fail them later and further away.

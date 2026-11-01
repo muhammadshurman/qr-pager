@@ -40,6 +40,23 @@
         <span class="fi-btn-label">New restaurant</span>
       </button>
 
+      <!--
+        ⚠ A TWO-CHARACTER LABEL, AND IT EXISTS BECAUSE `min-width` HAD NO TEST. The §11
+        round-two QA review removed `min-width: var(--target-min)` from `.fi-btn`, rebuilt,
+        and `PanelTargetTest` plus all 82 browser checks stayed GREEN — because the only
+        button in this fixture carried "New restaurant" and measured 112px wide, so no
+        element was ever under the bar on that axis. Same class list as the button above;
+        only the label is short.
+      -->
+      <button
+        data-fixture="narrow-button"
+        id="narrow-button"
+        type="button"
+        class="fi-ac-btn-action fi-btn fi-size-md  fi-color fi-color-primary fi-bg-color-600 hover:fi-bg-color-500 dark:fi-bg-color-600 dark:hover:fi-bg-color-500 fi-text-color-0 hover:fi-text-color-0 dark:fi-text-color-0 dark:hover:fi-text-color-0"
+      >
+        <span class="fi-btn-label">OK</span>
+      </button>
+
       <button
         data-fixture="icon-button"
         id="icon-button"

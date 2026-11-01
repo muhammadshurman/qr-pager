@@ -19,7 +19,7 @@
 
         @if ($state['invalid'] !== null)
             {{-- INVALID. The refusing field is named inline and Publish is disabled. --}}
-            <p class="text-danger-700 dark:text-danger-400">
+            <p class="text-danger-700 dark:text-danger-200">
                 <strong>Not publishable.</strong> {{ $state['invalid'] }}
             </p>
         @elseif ($state['blocks'] === 0)

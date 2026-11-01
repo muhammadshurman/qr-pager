@@ -7,6 +7,7 @@ namespace App\Platform\Http;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Throwable;
 
 /**
@@ -145,7 +146,27 @@ final class PanelProblemPage
      * reasoning applies, and `style-src 'unsafe-inline'` is all it needs because its only
      * asset is the inline `<style>` block.
      */
-    public function respond(Problem $problem): Response
+    public function respond(Problem $problem): SymfonyResponse
+    {
+        // ⚠ WRAPPED, FOR THE REASON `wants()` IS. This runs inside the exception renderer and
+        // does strictly MORE than `wants()` — fifteen `config()` reads, a view resolve and a
+        // Blade compile — and it carried no guard. Measured by moving the view aside and
+        // driving a real navigation: `HTTP/1.1 500`, a **0-byte body**, and none of the six
+        // headers, because the throwable escaped to `handleShutdown` and the sanitised
+        // Problem was discarded. Any partial deploy, unwritable `storage/framework/views` or
+        // bad cache state turns every panel error — including the 503 this feature exists
+        // for — into a bodyless 500 with no retry hint.
+        //
+        // The fallback is the document, which needs no view and is what every non-navigation
+        // client already gets.
+        try {
+            return $this->renderPage($problem);
+        } catch (Throwable) {
+            return $problem->toResponse();
+        }
+    }
+
+    private function renderPage(Problem $problem): Response
     {
         $status = $problem->type->status();
 

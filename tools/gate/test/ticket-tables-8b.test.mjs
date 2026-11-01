@@ -231,6 +231,48 @@ describe("QRPAGER-23's Filament mapping tables", () => {
   })
 })
 
+describe("QRPAGER-23's artefact/import-path table", () => {
+  it('names every artefact the panel entrypoints actually import, and no other', () => {
+    /*
+     * ⚠ `§8.2` NAMED THIS TABLE AND THE FIRST VERSION OF THIS FILE DID NOT COVER IT, which
+     * is how the row survived being false: it said `generated/theme.css` was imported by each
+     * panel theme "at the same relative path", and that file is imported NOWHERE — `SR-1`
+     * ruled it unusable for the panels, and `panel-theme.mjs`'s first line says so.
+     *
+     * So the check reads the imports out of the entrypoints and requires the table to name
+     * each one. The authority is the stylesheet, not the prose.
+     */
+    const imported = new Set()
+
+    for (const panel of ['platform', 'studio']) {
+      const entry = read(`apps/api/resources/css/filament/${panel}/theme.css`)
+
+      for (const match of entry.matchAll(/@import\s+'([^']+)'/g)) {
+        const path = match[1] ?? ''
+
+        // The vendor theme and the shared floor are apps/api's own, not token artefacts.
+        if (path.includes('/vendor/') || path.endsWith('targets.css')) {
+          continue
+        }
+
+        // Normalised to a repo-relative path, which is how the table names them.
+        imported.add(path.replace(/^(?:\.\.\/)+/, ''))
+      }
+    }
+
+    expect(imported.size, 'the panel entrypoints import no token artefact').toBeGreaterThan(2)
+
+    for (const path of imported) {
+      expect(ticket.includes(path), `the artefact table does not name ${path}`).toBe(true)
+    }
+
+    // AND THE FALSE ROW IS GONE: `generated/theme.css` must not be presented as a current
+    // import. It may appear as prose (the correction itself names it), so the claim checked
+    // is the shape the row had — a path cell asserting it reaches the panels.
+    expect(imported.has('packages/tokens/generated/theme.css')).toBe(false)
+  })
+})
+
 describe('the planted-figure proof', () => {
   it('would catch a wrong figure, which is the only thing that makes the above a check', () => {
     // ⚠ THE VACUITY GUARD. Every case here is `ticket.includes(<real value>)`, which a

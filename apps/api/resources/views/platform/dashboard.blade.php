@@ -30,9 +30,9 @@
             ['Median wait', $summary->medianWaitSeconds === null ? 'No data yet' : $summary->medianWaitSeconds . ' s', 'The median of each restaurant’s own median wait.'],
         ] as [$label, $value, $hint])
             <x-filament::section>
-                <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ $label }}</dt>
+                <dt class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ $label }}</dt>
                 <dd class="mt-4 text-3xl font-semibold tracking-tight">{{ $value }}</dd>
-                <dd class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ $hint }}</dd>
+                <dd class="mt-4 text-sm text-gray-600 dark:text-gray-300">{{ $hint }}</dd>
             </x-filament::section>
         @endforeach
     </dl>
@@ -47,7 +47,7 @@
         I not see the orders".
     --}}
     <x-filament::section>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-gray-600 dark:text-gray-300">
             @if ($summary->aggregatesComputedAt === null)
                 No aggregates have been computed yet. They are written by
                 <code>platform:aggregate-stats</code>.
@@ -56,7 +56,7 @@
                 every five minutes.
             @endif
         </p>
-        <p class="mt-8 text-sm text-gray-500 dark:text-gray-400">
+        <p class="mt-8 text-sm text-gray-600 dark:text-gray-300">
             These are aggregates. A platform admin administers a restaurant from the outside
             and cannot see inside it: no order, no pager token and no customer session is
             readable from this panel.

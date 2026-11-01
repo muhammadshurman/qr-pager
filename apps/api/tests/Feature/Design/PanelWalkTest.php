@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
 use App\Models\User;
-use Filament\Pages\BasePage;
+use App\Platform\Panel\PanelRoutes;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -38,66 +38,38 @@ use Tests\Support\LandingFixtures;
  * quietly reopen the leak this renderer was built to close.
  */
 
-/** Every concrete GET route either panel serves, derived from the router (SR-3's seven). */
-function walkRoutes(): array
-{
-    $uris = [];
-
-    foreach (Route::getRoutes() as $route) {
-        $uri = '/'.ltrim($route->uri(), '/');
-
-        if (! str_starts_with($uri, '/platform') && ! str_starts_with($uri, '/studio')) {
-            continue;
-        }
-
-        if (! in_array('GET', $route->methods(), true) || str_contains($uri, '{')) {
-            continue;
-        }
-
-        $uris[] = $uri;
-    }
-
-    $uris = array_values(array_unique($uris));
-    sort($uris);
-
-    return $uris;
-}
-
 /**
- * The panel routes that render FILAMENT CHROME, derived from each route's action class.
+ * Every concrete GET route either panel serves, and the six that render Filament chrome.
  *
- * A Filament page route resolves to a Livewire component extending `Filament\Pages\BasePage`;
- * `/studio/preview` resolves to `PreviewController`, which renders the TENANT'S OWN landing
- * page. That distinction matters here: the preview's `<title>` is the RESTAURANT's name and
- * must NOT carry our brand -- measured, it reads `Tenant 01a19423` from the fixture's own
- * tenant name, which is correct and is why the first version of the case below failed.
+ * ⚠ BOTH READ `App\Platform\Panel\PanelRoutes` NOW, AND THIS FILE IS WHY THAT CLASS EXISTS.
+ * The §11 QA round's M-4 was three tests carrying a typed six-element list against `§4.3`'s
+ * own ruling — "DERIVED from that table, never hand-listed" — and the fix pointed two of them
+ * at the shared derivation and left THIS one: the file where "seven panel routes" is actually
+ * asserted, and which `PLAN §0.2` and the ticket both describe. So `PanelRoutes::all()` had
+ * no caller outside its own class, and one fact had two derivations — the `§6.2` shape the fix
+ * was invoking. Round two named it M7.
+ *
+ * The structural discriminator for chrome lives there too: a Filament page route resolves to
+ * a Livewire component extending `BasePage`, while `/studio/preview` resolves to a controller
+ * rendering the TENANT'S OWN landing page, whose title is the restaurant's name and must NOT
+ * carry our brand — which is what the first version of the brand case reddened on.
  *
  * @return list<string>
  */
-function walkChromeRoutes(): array
+function walkRoutes(): array
 {
-    $chrome = [];
-
-    foreach (Route::getRoutes() as $route) {
-        $uri = '/'.ltrim($route->uri(), '/');
-
-        if (! in_array($uri, walkRoutes(), true)) {
-            continue;
-        }
-
-        $action = $route->getAction('controller');
-
-        if (is_string($action) && is_subclass_of($action, BasePage::class)) {
-            $chrome[] = $uri;
-        }
-    }
-
-    $chrome = array_values(array_unique($chrome));
-    sort($chrome);
-
-    return $chrome;
+    return PanelRoutes::all();
 }
 
+/**
+ * The chrome routes, uri => panel id.
+ *
+ * @return array<string, string>
+ */
+function walkChromeRoutes(): array
+{
+    return PanelRoutes::chrome();
+}
 /** A platform admin, inserted as the owner because the app role holds no INSERT on the flag. */
 function walkAdmin(): User
 {
@@ -248,7 +220,13 @@ it('names the product on every panel page that has a title', function (): void {
     // our name on their page, which is the opposite of what §12 wants.
     expect(walkChromeRoutes())->toHaveCount(6);
 
-    foreach (walkChromeRoutes() as $uri) {
+    // ⚠ array_keys(), BECAUSE THE SHARED DERIVATION RETURNS uri => PANEL ID. The local
+    // function this replaced returned a plain list, so `foreach (… as $uri)` iterated URIs;
+    // against the map it iterated the VALUES -- `'platform'`, `'studio'` -- and
+    // `$this->get('platform')` matched no route, so three pages rendered no title and
+    // `$titled` came back 3 instead of 6. The case caught its own rewiring, which is what
+    // the counted positive control is for.
+    foreach (array_keys(walkChromeRoutes()) as $uri) {
         if (str_starts_with($uri, '/studio')) {
             $this->actingForTenant(role: TenantRole::Owner);
         } else {
@@ -545,9 +523,16 @@ it('pairs every colour on the error page against the generated contrast table �
 
     expect(count($pairs))->toBeGreaterThan(20, 'the contrast table is too small to check against');
 
-    $find = function (string $fg, string $bg) use ($pairs): array {
+    // ⚠ BOTH THEMES. This filtered `theme === 'light'` while the page re-declares all five
+    // tokens inside `@media (prefers-color-scheme: dark)` — so the dark half was unchecked,
+    // and the §11 QA round proved it by forcing the DARK `ink`-on-`surface` row to
+    // `pass:false, ratio:1.02`: the case stayed green, while the same plant on the light row
+    // reddened it. All four dark pairs pass today (15.54 / 12.60 / 5.62 / 1.68-decorative),
+    // but the dark ladder is the DERIVED one 8a had to raise twice for AA, so it is the half
+    // most likely to move.
+    $find = function (string $theme, string $fg, string $bg) use ($pairs): array {
         foreach ($pairs as $row) {
-            if ($row['theme'] === 'light' && $row['fg'] === $fg && $row['bg'] === $bg) {
+            if ($row['theme'] === $theme && $row['fg'] === $fg && $row['bg'] === $bg) {
                 return $row;
             }
         }
@@ -562,23 +547,37 @@ it('pairs every colour on the error page against the generated contrast table �
         'the reference line on the card' => ['ink-mid', 'surface'],
     ];
 
-    foreach ($used as $what => [$fg, $bg]) {
-        $row = $find($fg, $bg);
+    $checked = 0;
 
-        expect($row)->not->toBe([], "{$what}: {$fg} on {$bg} is not in the generated table at all");
-        expect($row['pass'])->toBeTrue(
-            "{$what}: {$fg} on {$bg} is {$row['ratio']}, below its {$row['kind']} bar"
-        );
+    foreach (['light', 'dark'] as $theme) {
+        foreach ($used as $what => [$fg, $bg]) {
+            $row = $find($theme, $fg, $bg);
+
+            expect($row)->not->toBe(
+                [],
+                "{$what} ({$theme}): {$fg} on {$bg} is not in the generated table at all"
+            );
+            expect($row['pass'])->toBeTrue(
+                "{$what} ({$theme}): {$fg} on {$bg} is {$row['ratio']}, below its {$row['kind']} bar"
+            );
+
+            $checked++;
+        }
     }
+
+    // Three pairings in two themes. A theme silently dropped cannot pass this case.
+    expect($checked)->toBe(6);
 
     // ⚠ `hairline` ON `surface` IS THE CARD'S BORDER AND IS DECORATIVE, which the token
     // source says in its own words. It is asserted as RECORDED-DECORATIVE rather than
     // skipped: a border that silently became a control boundary would need 3:1, and the only
     // way to notice is to look the pair up.
-    $border = $find('hairline', 'surface');
+    foreach (['light', 'dark'] as $theme) {
+        $border = $find($theme, 'hairline', 'surface');
 
-    expect($border)->not->toBe([], 'hairline on surface is not in the generated table');
-    expect(strtolower((string) $border['what']))->toContain('decorative');
+        expect($border)->not->toBe([], "hairline on surface ({$theme}) is not in the table");
+        expect(strtolower((string) $border['what']))->toContain('decorative');
+    }
 
     // AND THE LIST IS HELD TO THE FILE. Every `color:` / `background:` declaration in the
     // view must name a token this enumeration accounts for, so a fourth pairing cannot
@@ -586,7 +585,18 @@ it('pairs every colour on the error page against the generated contrast table �
     $view = (string) file_get_contents(resource_path('views/errors/panel-problem.blade.php'));
     $code = (string) preg_replace(['/\{\{--[\s\S]*?--\}\}/', '#/\*[\s\S]*?\*/#'], ' ', $view);
 
-    preg_match_all('/(?:^|[^-\w])(?:color|background|border)\s*:[^;]*var\(--([a-z0-9-]+)/mi', $code, $matches);
+    // ⚠ EVERY DECLARATION, NOT THREE PROPERTY NAMES. This matched only `color`, `background`
+    // and `border` immediately followed by `:` — so the §11 QA round planted
+    // `outline-color: var(--alert-fill)` and
+    // `background-image: linear-gradient(var(--alert-fill), var(--paper))` and all nine cases
+    // stayed green. `alert-fill` is the token whose own approval bounds it to text at >= 24px
+    // (dark pair 3.68), and this is `R-175`'s shape reproduced one surface over — inside the
+    // fix for the finding about control gaps.
+    //
+    // So the rule is now: ANY `var(--…)` anywhere in ANY declaration must name an accounted
+    // token. `outline`, `box-shadow`, `text-decoration-color`, `fill`, `stroke` and whatever
+    // comes next are covered by construction rather than by a list that has to keep up.
+    preg_match_all('/var\(--([a-z0-9-]+)/i', $code, $matches);
 
     $accounted = ['paper', 'ink', 'ink-mid', 'surface', 'hairline'];
 

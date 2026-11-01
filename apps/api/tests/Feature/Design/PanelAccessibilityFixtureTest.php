@@ -74,12 +74,16 @@ function browserFixtureElements(): array
     return $elements;
 }
 
-it('finds four marked elements in the fixture, so the sweep below has subjects', function (): void {
+it('finds five marked elements in the fixture, so the sweep below has subjects', function (): void {
     $elements = browserFixtureElements();
 
     // Named exactly: an element dropped from the fixture stops being measured in the
-    // browser, and a sweep over whatever remains would not notice.
-    expect(array_keys($elements))->toBe(['primary-button', 'icon-button', 'input', 'header-cell']);
+    // browser, and a sweep over whatever remains would not notice. `narrow-button` is the
+    // fifth and it exists because `.fi-btn`'s `min-width` had no test — the only button here
+    // carried "New restaurant" and measured 112px wide, so nothing was ever under the bar on
+    // that axis (§11 round two, QA L1). With it, removing that line measures 43x44.
+    expect(array_keys($elements))
+        ->toBe(['primary-button', 'narrow-button', 'icon-button', 'input', 'header-cell']);
 
     foreach ($elements as $name => $classes) {
         // str_contains() and not `toContain($needle, $message)`: that matcher is variadic

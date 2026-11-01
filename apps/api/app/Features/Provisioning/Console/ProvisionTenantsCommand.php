@@ -45,7 +45,7 @@ use Throwable;
  * THE APP ROLE, NOT THE WORKER. `§2.7` gives `qrpager_app` the `tenants` and `tenant_users`
  * inserts and gives the worker neither; granting them to the worker would widen a role whose
  * whole value is that it cannot do them. So this command runs on the default connection, and
- * `ProvisioningRoleTest` pins that rather than leaving it to a reader.
+ * `ProvisionTenantsCommandTest` pins that rather than leaving it to a reader.
  */
 final class ProvisionTenantsCommand extends Command
 {

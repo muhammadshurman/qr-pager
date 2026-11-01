@@ -39,7 +39,7 @@
         </p>
 
         @error('upload')
-            <p role="alert" class="text-sm text-danger-700 dark:text-danger-400">{{ $message }}</p>
+            <p role="alert" class="text-sm text-danger-700 dark:text-danger-200">{{ $message }}</p>
         @enderror
 
         <button type="submit" @disabled($full)

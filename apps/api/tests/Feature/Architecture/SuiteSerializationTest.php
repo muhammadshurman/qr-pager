@@ -30,14 +30,30 @@ it('holds a process-lifetime advisory lock, so a second runner queues rather tha
     // by a raw PDO handle outside the connection manager, so tearDown()'s purge of every
     // Laravel connection cannot release it. If it could, this would read 0 on the second
     // test in the process rather than on every one.
+    /*
+     * ⚠ `granted` IS FILTERED, AND THE UNFILTERED FORM REPORTED THE OPPOSITE OF THE TRUTH.
+     * `pg_locks` carries a row for a WAITER as well as for the holder (`granted = false`),
+     * so a correctly-QUEUED second runner — which is precisely what `R-049`'s lock exists to
+     * produce — appeared as a second row and this count read 2. The message then said *"the
+     * suite lock is not held, so two concurrent runners would truncate under each other"*,
+     * which is the exact opposite of what was happening.
+     *
+     * Measured by the §11 round-two QA review, whose own run overlapped the other reviewer's:
+     * **2 failed, 972 passed, 175 pending**, both cases here, on a tree where the lock was
+     * working. A reviewer who read that message would file a false Critical — a control
+     * reporting the inverse of reality is worse than an absent one.
+     *
+     * So: `and granted` on both counts. The holder is one row; a queued waiter is not a
+     * second holder.
+     */
     $held = DB::connection('pgsql_root')->selectOne(
-        'select count(*) as c from pg_locks where locktype = ? and objid = ?',
+        'select count(*) as c from pg_locks where locktype = ? and objid = ? and granted',
         ['advisory', SUITE_LOCK_KEY],
     );
 
     expect((int) $held->c)->toBe(
         1,
-        'the suite lock is not held, so two concurrent runners would truncate under each other',
+        'the suite lock is not HELD (granted), so two concurrent runners would truncate under each other',
     );
 });
 
@@ -46,8 +62,9 @@ it('keeps holding it after a connection purge, which is the half that made the n
     // argued: purge everything, then look again.
     $this->purgeConnections();
 
+    // `granted` filtered here too, for the reason the case above carries at length.
     $held = DB::connection('pgsql_root')->selectOne(
-        'select count(*) as c from pg_locks where locktype = ? and objid = ?',
+        'select count(*) as c from pg_locks where locktype = ? and objid = ? and granted',
         ['advisory', SUITE_LOCK_KEY],
     );
 

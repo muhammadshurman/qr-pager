@@ -679,3 +679,170 @@ it('does not flag ThemeTokens for owning the list, or ThemeStylesheet for emitti
         expect($violations)->toBe([], $file.' is flagged by the rule it is exempt from');
     }
 });
+
+it('carries a raw Blade echo in exactly one view, and that one is documented', function (): void {
+    /*
+     * ⚠ THE PANEL ERROR PAGE'S `{!! !!}` HAD NO CONTROL, which both §11 round-two reviewers
+     * filed. The fix (escaping `config('design-tokens.fonts.fallback')`) is real — with the
+     * raw form restored and the token set to
+     * `sans-serif;}</style><script>alert(document.cookie)</script><style>x{`, the rendered
+     * page carries the raw `<script>`; escaped, it renders `&lt;/style&gt;&lt;script&gt;`.
+     * But NO TEST REDDENED on the revert, because the real token value is
+     * `system-ui, sans-serif`, which `htmlspecialchars` leaves byte-identical — so no
+     * rendering test can tell the two forms apart.
+     *
+     * The repo already owns this control for one file: `LandingXssFuzzTest` asserts
+     * `views/landing/page.blade.php` contains no `{!!` at all. This is the same assertion
+     * over EVERY view, with the exception list closed and named — which is the only form
+     * that catches the next one rather than this one.
+     */
+    $views = [];
+    $raw = [];
+
+    $walk = function (string $dir) use (&$walk, &$views, &$raw): void {
+        foreach ((array) scandir($dir) as $entry) {
+            if (! is_string($entry) || $entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+
+            if (is_dir($path)) {
+                $walk($path);
+
+                continue;
+            }
+
+            if (! str_ends_with($path, '.blade.php')) {
+                continue;
+            }
+
+            $views[] = $path;
+
+            // Blade COMMENTS stripped first: this project's comments quote `{!! !!}` when
+            // explaining why it is refused, and a check that read its own documentation
+            // would refuse itself -- the shape the shell checker's pipefail grep was fixed
+            // for, and which this very task hit twice in CSS and PHP comments.
+            $code = (string) preg_replace('/\{\{--[\s\S]*?--\}\}/', ' ', (string) file_get_contents($path));
+
+            if (str_contains($code, '{!!')) {
+                $raw[] = str_replace(resource_path('views').'/', '', $path);
+            }
+        }
+    };
+
+    $walk(resource_path('views'));
+
+    // Not vacuous: a walk that found none would make "no raw echo" true of nothing. The
+    // floor is 5 and the real count is 9 — measured rather than guessed, because the first
+    // version of this line said 10 and reddened on a tree that has nine views.
+    expect(count($views))->toBeGreaterThan(5);
+
+    sort($raw);
+
+    /*
+     * ⚠ EMPTY, AND THE EXCEPTION LIST I EXPECTED TO NEED DOES NOT EXIST. I wrote this
+     * expecting `landing/page.blade.php` to be the one documented exception, because
+     * `LandingXssFuzzTest` has a case about it. Measured: that file carries four `{!!`
+     * occurrences and **all four are inside Blade comments** — prose spelling out the rule
+     * ("EVERY TENANT-AUTHORED VALUE IN THIS FILE GOES THROUGH `{{ }}`, AND NEVER `{!! !!}`").
+     * So does the panel error page's one occurrence.
+     *
+     * No view in this application performs a raw echo. That is a stronger property than the
+     * one-exception version, and it is the one asserted, because an exception list with a
+     * phantom entry is a list that stops meaning anything the first time someone trusts it.
+     */
+    expect($raw)->toBe([]);
+});
+
+it('names no test class that does not exist, outside two historical records', function (): void {
+    /*
+     * ⚠ 8a's FIRST BLOCKING FINDING WAS THIS CLASS — "every artefact was stale-checked and
+     * none existence-checked" — and the §11 round-two QA review found two more live ones
+     * in `apps/api/app`: `UserColumnGrantTest` cited by `app/Models/User.php` and
+     * `ProvisioningRoleTest` by `ProvisionTenantsCommand`. Neither file existed. Both are
+     * corrected; this is what stops the third.
+     *
+     * The project's own words, at `app/Domain/Auth/RoleMatrix.php:38`: *"a docblock pointing
+     * at an imaginary test is worse than one pointing at none"*.
+     *
+     * TWO NAMES ARE EXEMPT AND BOTH ARE SELF-LABELLED HISTORICAL RECORDS — prose about a
+     * citation that was already found false, which is exactly the record this project keeps
+     * rather than deletes. They are listed by name, not matched by a pattern, so a third
+     * cannot join them by resembling one.
+     */
+    $historical = ['MatrixCoverageTest', 'MembershipScopeTest'];
+
+    $referenced = [];
+
+    $walk = function (string $dir) use (&$walk, &$referenced): void {
+        foreach ((array) scandir($dir) as $entry) {
+            if (! is_string($entry) || $entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $dir.'/'.$entry;
+
+            if (is_dir($path)) {
+                $walk($path);
+
+                continue;
+            }
+
+            if (! str_ends_with($path, '.php')) {
+                continue;
+            }
+
+            preg_match_all('/\b([A-Z][A-Za-z0-9]*Test)\b/', (string) file_get_contents($path), $names);
+
+            foreach ($names[1] as $name) {
+                $referenced[$name][] = $path;
+            }
+        }
+    };
+
+    foreach ([app_path(), config_path(), resource_path()] as $root) {
+        $walk($root);
+    }
+
+    // Not vacuous: this application's source cites dozens of its own tests by name, and a
+    // walk that found none would make "none is missing" true of nothing.
+    expect(count($referenced))->toBeGreaterThan(40);
+
+    $missing = [];
+
+    foreach ($referenced as $name => $sites) {
+        if (in_array($name, $historical, true)) {
+            continue;
+        }
+
+        $found = glob(base_path('tests/**/'.$name.'.php'), GLOB_BRACE) ?: [];
+
+        if ($found === []) {
+            $found = glob(base_path('tests/*/*/'.$name.'.php')) ?: [];
+        }
+
+        if ($found === []) {
+            $missing[] = $name.' (cited by '.str_replace(base_path().'/', '', $sites[0]).')';
+        }
+    }
+
+    sort($missing);
+
+    expect($missing, 'these docblocks name a test class that does not exist. A citation to a '.
+        'control that is not where it says is the R-136 shape, and 8a\'s first blocking '.
+        'finding was this exact class')->toBe([]);
+
+    // And the exemptions must still BE historical records, or the list is a silencer: each
+    // must sit beside prose saying the name was wrong.
+    foreach ($historical as $name) {
+        // array_key_exists, not `toHaveKey($key, $message)`: Pest's signature is
+        // `toHaveKey(string|int $key, mixed $value = new Any, string $message = '')`, so a
+        // two-argument call reads the MESSAGE as the expected value. Same family as the
+        // variadic `toContain`, and this is its sixth appearance in this task -- an author
+        // habit, not a gap in `composer guard`, whose documented decision to flag only the
+        // silently-vacuous negated form has held every time.
+        expect(array_key_exists($name, $referenced))
+            ->toBeTrue("{$name} is exempt and is cited nowhere; drop it from the list");
+    }
+});

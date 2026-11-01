@@ -38,14 +38,18 @@
  * ⚠ `.fi-btn` GETS BOTH AXES, and the §11 QA round's L-2 is why: this file gave six
  * selectors `min-height` only while `browser/panel.spec.ts` is titled "at least 44px in
  * BOTH directions". Nothing measured was under the bar — `#primary-button` is 112px wide —
- * but a short-label button ("OK", an icon-less close) would be, and `PanelTargetTest` only
- * asks whether a covered selector matches, never which axis.
+ * but a short-label button would be — **43x44**, measured, with a two-character button added
+ * to the browser fixture for exactly that, because `PanelTargetTest` only asks whether a
+ * covered selector matches and never which axis.
  *
  * The other five keep height only, deliberately: `.fi-input` and `.fi-select-input` are
  * full-width by layout, and a 44px floor on `.fi-ta-header-cell-sort-btn`,
  * `.fi-sidebar-item-btn` or `.fi-dropdown-list-item` would distort a narrow table column or
- * a text row. `R-174` now records the axis as part of the stated exception rather than
- * leaving the spec's title broader than the rule.
+ * a text row.
+ *
+ * ⚠ `R-174` NOW ACTUALLY RECORDS THAT SPLIT, and it did not when this comment first claimed
+ * it — the §11 round-two QA review's M-5, which is the R-136 shape: a comment citing a ledger
+ * row for a statement the row does not make. Corrected 2026-11-01 in both directions.
  */
 .fi-btn {
   min-height: var(--target-min);

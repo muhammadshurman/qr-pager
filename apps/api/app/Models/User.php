@@ -41,7 +41,7 @@ use Laravel\Sanctum\HasApiTokens;
  * scope below pins an explicit column list on every query this model builds. Without it,
  * every single read of a user is a 42501, which is a *loud* failure rather than a leak;
  * but it is also every authentication in the application, so it is pinned here and
- * `UserColumnGrantTest` asserts both halves — that the model's reads succeed and that a
+ * `GrantMatrixTest` asserts both halves — that the model's reads succeed and that a
  * raw `select *` still does not.
  *
  * ================================================================================

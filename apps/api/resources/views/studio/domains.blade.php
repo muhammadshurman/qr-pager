@@ -82,7 +82,7 @@
                         @endif
 
                         @if ($domain->lastError !== null)
-                            <p class="text-danger-700 dark:text-danger-400">
+                            <p class="text-danger-700 dark:text-danger-200">
                                 We could not verify {{ $domain->hostname }}: {{ $domain->lastError }}
                             </p>
                         @endif
@@ -114,7 +114,7 @@
                         @break
 
                     @case($statuses::Failed)
-                        <p class="text-danger-700 dark:text-danger-400">
+                        <p class="text-danger-700 dark:text-danger-200">
                             We could not verify {{ $domain->hostname }}:
                             {{ $domain->lastError ?? 'the challenge was not found.' }}
                         </p>

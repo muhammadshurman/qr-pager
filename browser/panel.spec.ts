@@ -252,7 +252,10 @@ test.describe('R-118 clause 2 — a measured 44px minimum touch target', () => {
 
     const small: string[] = []
 
-    for (const id of ['primary-button', 'input']) {
+    // ⚠ `narrow-button` IS WHY THIS LIST GREW. Removing `.fi-btn`'s `min-width` left every
+    // check green, because the only button here carried "New restaurant" and measured 112px
+    // wide — no element was ever under the bar on that axis (QA L1).
+    for (const id of ['primary-button', 'narrow-button', 'input']) {
       const box = await page.locator(`#${id}`).boundingBox()
 
       expect(box, `#${id} is not in the layout at all`).not.toBeNull()
@@ -430,14 +433,31 @@ test.describe('the restyle mirrors under RTL — §3', () => {
 
     const small: string[] = []
 
-    for (const id of ['primary-button', 'input']) {
+    // ⚠ EVERY FLOORED ID IN THE FIXTURE, not two of them. The comment above says "every box
+    // this task floors is measured at dir=rtl" and the first version iterated
+    // `['primary-button', 'input']` while the fixture has four — QA L7. `icon-button` is the
+    // mobile sidebar toggle and is hidden above `lg`, so it is measured at a phone width
+    // here for the same reason the LTR case does it.
+    for (const id of ['primary-button', 'narrow-button', 'input']) {
       const box = await page.locator(`#${id}`).boundingBox()
 
       expect(box, `#${id} is not in the layout at dir=rtl`).not.toBeNull()
 
-      if (box !== null && box.height < 44) {
-        small.push(`#${id} is ${String(Math.round(box.height))}px tall at dir=rtl`)
+      if (box !== null && (box.height < 44 || box.width < 44)) {
+        small.push(
+          `#${id} is ${String(Math.round(box.width))}x${String(Math.round(box.height))} at dir=rtl`,
+        )
       }
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 })
+
+    const toggle = await page.locator('#icon-button').boundingBox()
+
+    expect(toggle, 'the sidebar toggle is in the layout at NO width under rtl').not.toBeNull()
+
+    if (toggle !== null && (toggle.height < 44 || toggle.width < 44)) {
+      small.push(`#icon-button is ${String(Math.round(toggle.height))}px tall at dir=rtl`)
     }
 
     expect(small, 'the 44px floor does not survive mirroring').toEqual([])
@@ -510,6 +530,139 @@ test.describe('R-118 clause 3 — the engine resolves an AA pair on the panel', 
       `the primary button resolved ${pair.text} on ${pair.background} = ${ratio.toFixed(2)}`,
     ).toBeGreaterThanOrEqual(4.5)
   })
+})
+
+test.describe('every colour-family text utility the blades use clears AA', () => {
+  /*
+   * ⚠ A LIVE WCAG AA FAILURE, CAUSED BY THIS TASK, THAT EVERY OTHER CONTROL WAS BLIND TO.
+   * The §11 QA round measured `text-sm text-gray-500 dark:text-gray-400` on the platform
+   * dashboard at **4.01:1 light and 4.20:1 dark at 13px**, against AA's 4.5 for normal text.
+   *
+   * It is 8b's: `.text-gray-500` does not exist in Filament's precompiled stylesheet, so
+   * before `->viteTheme()` those classes resolved to nothing and the text inherited
+   * `--gray-950`. 8b's `->colors()` is what makes `--gray-500` `#75827B`. And it was handed
+   * to this task explicitly — `PlatformPanelAccessibilityTest`'s own header says that usage
+   * "is fine — §12 exempts Tasks 6-7 from the visual bar and Task 8 restyles from the
+   * tokens", and §12 exempts those tasks from the VISUAL bar, "never from the accessibility
+   * bar".
+   *
+   * ⚠ AND MEASURING THE SECOND FAMILY FOUND A SECOND FAILURE THE REVIEW DID NOT NAME:
+   * `dark:text-danger-400` on the dark card is **3.41:1**, in four places. Both are moved —
+   * gray to 600/300 (5.71 / 5.64, and `gray-600` IS `ink-mid`, the pair the contrast table
+   * already records as "secondary text only") and danger's dark half to 200 (6.70).
+   *
+   * WHY NOTHING SAW IT: `contrast.json`'s 42 pairs are token-on-token, and the AA checks
+   * either side of this one cover the BUTTON pairs Filament's resolver picks. A
+   * `text-<family>-<shade>` utility an author writes in a blade is neither. This case is
+   * that third thing: the utilities are DERIVED from the blades, rendered inside Filament's
+   * own section markup, and measured in both themes against the background they actually
+   * land on.
+   */
+  const SECTION = 'fi-section'
+
+  /** Every `text-<family>-<shade>` (and its dark: pair) one panel's views use. */
+  function textUtilities(panel: 'platform' | 'studio'): { light: string; dark: string }[] {
+    const families = 'gray|primary|danger|success|warning|info'
+    const pairs = new Map<string, { light: string; dark: string }>()
+
+    for (const file of globSync(join(API, 'resources/views', panel, '*.blade.php'))) {
+      const source = readFileSync(file, 'utf8')
+
+      for (const match of source.matchAll(
+        new RegExp(
+          String.raw`\btext-(?:${families})-\d+(?:\s+dark:text-(?:${families})-\d+)?`,
+          'g',
+        ),
+      )) {
+        const [light, dark] = match[0].split(/\s+dark:/)
+        pairs.set(match[0], {
+          light: light ?? '',
+          dark: (dark ?? light ?? '').replace(/^text-/, 'text-'),
+        })
+      }
+    }
+
+    return [...pairs.values()]
+  }
+
+  for (const panel of ['platform', 'studio'] as const) {
+    test(`${panel}: every text utility clears 4.5 in both themes`, async ({ page }) => {
+      const utilities = textUtilities(panel)
+
+      // The derivation is the subject list: an empty one is a broken check, not a clean
+      // panel. Both panels use at least one.
+      expect(utilities.length, `no text utility found in the ${panel} views`).toBeGreaterThan(0)
+
+      const theme = panelThemeCss(panel)
+      const palette = readFileSync(join(REPO, 'browser/fixtures/panel-palette.css'), 'utf8')
+
+      const markup = utilities
+        .map(
+          (u, i) =>
+            `<div class="${SECTION}"><p id="t${String(i)}" class="text-sm ${u.light} ${u.dark === u.light ? '' : `dark:${u.dark}`}">x</p></div>`,
+        )
+        .join('')
+
+      const failures: string[] = []
+
+      for (const mode of ['light', 'dark'] as const) {
+        await page.setContent(
+          `<!doctype html><html class="fi${mode === 'dark' ? ' dark' : ''}">` +
+            `<head><style>${palette}</style>` +
+            `<style>${theme.replace(/@font-face\s*\{[^}]*\}/g, '')}</style></head>` +
+            `<body class="fi-body fi-panel-${panel}">${markup}</body></html>`,
+        )
+        await assertStylesApplied(page).catch(() => undefined)
+
+        for (const [i, u] of utilities.entries()) {
+          const pair = await page.evaluate(
+            (id) => {
+              const el = document.getElementById(id)!
+              const text = getComputedStyle(el).color
+              // The background the text actually lands on: walk up until something paints.
+              let node: HTMLElement | null = el
+              let background = 'rgba(0, 0, 0, 0)'
+
+              while (node !== null) {
+                const value = getComputedStyle(node).backgroundColor
+
+                if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+                  background = value
+                  break
+                }
+
+                node = node.parentElement
+              }
+
+              return { text, background, size: getComputedStyle(el).fontSize }
+            },
+            `t${String(i)}`,
+          )
+
+          const ratio = contrast(
+            await srgb(page, pair.text),
+            await srgb(
+              page,
+              pair.background === 'rgba(0, 0, 0, 0)' ? 'rgb(255,255,255)' : pair.background,
+            ),
+          )
+
+          if (ratio < 4.5) {
+            failures.push(
+              `${mode}: ${mode === 'dark' ? u.dark : u.light} at ${pair.size} resolved ` +
+                `${pair.text} on ${pair.background} = ${ratio.toFixed(2)}`,
+            )
+          }
+        }
+      }
+
+      expect(
+        failures,
+        'these text utilities are below WCAG AA for normal text, which §12 does not waive ' +
+          'for the panel — only the VISUAL bar is waived, and only for Tasks 6-7',
+      ).toEqual([])
+    })
+  }
 })
 
 test.describe('R-118 clause 4 — prefers-reduced-motion on the panel', () => {

@@ -503,7 +503,8 @@ migration.**
 | # | artefact | how panel code consumes it | staleness check | which job runs that check |
 | --- | --- | --- | --- | --- |
 | 1 | `packages/tokens/generated/tokens.css` | `@import` from each panel theme — `../../../../../../packages/tokens/generated/tokens.css` | `pnpm tokens:check` (byte diff) | CI **frontend** job |
-| 2 | `packages/tokens/generated/theme.css` | same, same relative path | `pnpm tokens:check` | CI **frontend** job |
+| 2 | ~~`packages/tokens/generated/theme.css`~~ → **`packages/tokens/generated/panel-theme.css`** | ⚠ **CORRECTED 2026-11-01.** This row said `generated/theme.css` was `@import`ed by each panel theme at the same relative path. It is imported **nowhere**: `SR-1` ruled that file unusable for the panels — it CLEARS namespaces Filament's own stylesheet consumes — and `panel-theme.mjs`'s header says so in its first line, *"A SIBLING of generated/theme.css, NOT AN EDIT TO IT"*. What the panel entrypoints actually import is `generated/tokens.css`, `generated/panel-theme.css` and `packages/tokens/fonts/fonts.css`. Found by the §11 round-two QA review as M-6, and it is the one table `§8.2` named that the new gate-check had not covered. | `pnpm tokens:check` | CI **frontend** job |
+| 2a | `packages/tokens/fonts/fonts.css` | `@import` from each panel theme — `../../../../../../packages/tokens/fonts/fonts.css` | `fonts.test.ts` (same-origin + on-disk hash) | CI **frontend** job |
 | 3 | `apps/api/config/design-tokens.php` | `config('design-tokens.…')` in PHP — no path | `pnpm tokens:check` | CI **frontend** job |
 | 4 | `packages/contracts/src/generated/status.ts` | not consumed by the panels | `composer contracts:check` | CI **gates** job |
 

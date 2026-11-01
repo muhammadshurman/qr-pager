@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\User;
 use App\Platform\Panel\ApprovedPalette;
+use Closure;
 use Filament\Facades\Filament;
 use Filament\Support\Colors\Color;
 use Filament\Support\View\Components\BadgeComponent;
@@ -16,6 +17,7 @@ use Filament\Support\View\Components\LinkComponent;
 use Filament\Support\View\Components\ToggleComponent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use ReflectionClass;
 
 /*
  * ================================================================================
@@ -281,4 +283,44 @@ it('fails CLOSED and loudly when the generated palette is absent — L-3, S-7', 
     // THE KEY IS NAMED ONCE. The constant and the message must agree, or the sentence tells
     // the operator to fix a key that is not the one being read.
     expect(ApprovedPalette::CONFIG_KEY)->toBe('design-tokens.filament_palette');
+});
+
+it('registers the palette as a CLOSURE, so a boot does not evaluate it — S-7, QA M2', function (): void {
+    /*
+     * ⚠ THE FIX HAD NO REGRESSION TEST, which the §11 QA round proved by reverting it: with
+     * the eager `->colors(ApprovedPalette::families())` restored, `tests/Feature/Design` was
+     * 44/44 GREEN while the defect was live — with the config key renamed, the eager form
+     * makes `php artisan --version` print `RuntimeException: design-tokens.filament_palette
+     * is missing` and the closure form prints `Laravel Framework 13.38.0`.
+     *
+     * The accessor's own case passes either way, because it calls the accessor directly. The
+     * property that matters is WHERE the evaluation happens, and that is observable: Filament
+     * keeps whatever `->colors()` was handed, so an eager call leaves an ARRAY in the panel's
+     * colour sets and the closure leaves a CLOSURE. Read off the live Panel objects, which is
+     * the only place the distinction exists.
+     */
+    foreach (['platform', 'studio'] as $id) {
+        $panel = Filament::getPanel($id);
+
+        $sets = (new ReflectionClass($panel))->getProperty('colors');
+        /** @var array<array<string, mixed>|Closure> $registered */
+        $registered = $sets->getValue($panel);
+
+        expect($registered)->not->toBe([], "{$id} registers no colour set at all");
+
+        $ours = array_filter($registered, static fn (mixed $set): bool => $set instanceof Closure);
+
+        expect($ours)->not->toBe(
+            [],
+            "the {$id} panel registers its palette EAGERLY. `panel()` runs on every boot, so a "
+            .'missing generated config then throws for `artisan`, the queue worker and the '
+            .'scheduler — measured. Pass the accessor as a closure instead.'
+        );
+    }
+
+    // AND THE PANEL REQUEST STILL FAILS CLOSED, which is the half the deferral must not have
+    // traded away: a render with the config absent must refuse, not silently use amber.
+    config(['design-tokens.filament_palette' => null]);
+
+    expect(fn (): array => ApprovedPalette::families())->toThrow(RuntimeException::class);
 });

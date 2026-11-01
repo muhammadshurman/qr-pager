@@ -10,6 +10,7 @@ use App\Platform\Http\Problem;
 use Filament\Facades\Filament;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 use Tests\Support\LandingFixtures;
 
@@ -292,4 +293,42 @@ it('chooses its guidance by status CLASS and by nothing else', function (): void
 
     // And the two classes differ, or the split does nothing.
     expect(reset($sentences['4xx']))->not->toBe(reset($sentences['5xx']));
+});
+
+it('falls back to the document when the page itself cannot render — security 1', function (): void {
+    /*
+     * ⚠ `respond()` DID MORE WORK THAN `wants()` AND CARRIED NO GUARD. Measured by the §11
+     * security round: with the view moved aside, a real navigation got `HTTP/1.1 500`, a
+     * **0-byte body**, and none of the six headers — the throwable escaped to
+     * `handleShutdown` and the sanitised Problem was discarded. Any partial deploy or
+     * unwritable `storage/framework/views` turns every panel error, including the 503 this
+     * feature exists for, into a bodyless 500 with no retry hint.
+     *
+     * Driven by making the view factory throw, which is the same shape as making the panel
+     * registry throw for `wants()`.
+     */
+    View::swap(new class
+    {
+        public function make(mixed ...$arguments): never
+        {
+            throw new RuntimeException('the view factory is unavailable');
+        }
+
+        public function share(mixed ...$arguments): void {}
+
+        public function exists(mixed ...$arguments): bool
+        {
+            return true;
+        }
+    });
+
+    $problem = new Problem(ProblemType::Unavailable, '/platform', retryAfter: 10);
+    $response = app(PanelProblemPage::class)->respond($problem);
+
+    // The DOCUMENT, with everything the Problem carries -- not a bodyless 500.
+    expect($response->getStatusCode())->toBe(503)
+        ->and((string) $response->headers->get('content-type'))->toContain('application/problem+json')
+        ->and($response->headers->get('retry-after'))->toBe('10')
+        ->and(str_contains((string) $response->headers->get('cache-control'), 'no-store'))->toBeTrue()
+        ->and(strlen((string) $response->getContent()))->toBeGreaterThan(80);
 });
