@@ -1053,13 +1053,21 @@ describe('the service worker wiring', () => {
 
     await screen.findByText('Enjoy your order')
 
-    // Let the end-of-session cleanup's own DELETE land, so what is counted next is only what
-    // a RECONCILE would add.
+    /**
+     * ⚠ ONLY REGISTRATIONS ARE COUNTED, AND THE FIRST VERSION OF THIS CONFLATED TWO THINGS.
+     * The end-of-session cleanup sends its own `DELETE /v1/pager/subscription`, which lands
+     * after the ended screen appears -- so a count of ALL calls on that path grew by one for
+     * a reason that is correct behaviour, and the assertion read `expected 3 to be 2`. A
+     * registration is the one that carries the keys; a forget does not.
+     */
+    const registrations = () =>
+      session.calls('/v1/pager/subscription').filter((c) => c.body.includes('p256dh'))
+
     await vi.waitFor(() => {
-      expect(session.calls('/v1/pager/subscription').length).toBeGreaterThan(0)
+      expect(registrations().length).toBeGreaterThan(0)
     })
 
-    const settled = session.calls('/v1/pager/subscription').length
+    const settled = registrations().length
 
     // The endpoint the page remembered is deliberately cleared, so a reconcile that DID run
     // would find a difference and post -- the strongest form of this assertion.
@@ -1072,7 +1080,10 @@ describe('the service worker wiring', () => {
       await vi.advanceTimersByTimeAsync(500)
     })
 
-    expect(session.calls('/v1/pager/subscription').length).toBe(settled)
+    expect(
+      registrations().length,
+      'a reconcile registered a device after the session had ended',
+    ).toBe(settled)
     withoutPushPath()
   })
 
