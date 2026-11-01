@@ -147,7 +147,17 @@ async function driveWorker(
         ]),
       openWindow: () => Promise.resolve(null),
     }
-    scope.caches = {
+    /**
+     * ⚠ `defineProperty`, NOT AN ASSIGNMENT, AND THAT COST FIVE RED CASES. `window.caches` is
+     * a READ-ONLY accessor, so `window.caches = {…}` is silently ignored in sloppy mode -- the
+     * shim looked installed, `sw.js` read the real `CacheStorage`, found no credential, and
+     * the rotation handler correctly did nothing. The assertions then reported
+     * `Array []` against an expected `['DELETE','POST']`, which names the symptom and not the
+     * cause. `fetch`, `registration`, `clients` and `skipWaiting` are writable or new, so only
+     * this one needed it -- and it is the one that decides whether the handler can read
+     * anything at all.
+     */
+    const cacheShim = {
       keys: () => Promise.resolve([...stores.keys()]),
       delete: (name: string) => Promise.resolve(stores.delete(name)),
       open: (name: string) => {
@@ -171,6 +181,8 @@ async function driveWorker(
         })
       },
     }
+    Object.defineProperty(window, 'caches', { configurable: true, value: cacheShim })
+
     scope.fetch = (url: string, init?: { method?: string; body?: string }) => {
       captured.fetches.push({
         url,
@@ -436,6 +448,28 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
 })
 
 test.describe('the offline shell -- §4.1s offline screen, with a real worker', () => {
+  /**
+   * ⚠ CHROMIUM ONLY, AND IT IS A HARNESS LIMIT RATHER THAN A PRODUCT ONE, SAID PLAINLY.
+   *
+   * These two cases need a REAL `navigator.serviceWorker.register()`, and the harness serves a
+   * self-signed certificate because the engines reach the host under a name that is on no
+   * secure-origin allow-list. A worker script is fetched by the browser's own network stack,
+   * not by the page, so Playwright's `ignoreHTTPSErrors` does not reach it -- measured:
+   * *"An SSL certificate error occurred when fetching the script."* Chromium has
+   * `--ignore-certificate-errors`; Firefox and WebKit have no equivalent in any runner.
+   *
+   * WHAT IS THEREFORE *NOT* PROVEN IN FIREFOX AND WEBKIT: that a cached document boots the app
+   * with the network down. What IS proven in all three is every other offline clause --
+   * `context.setOffline(true)` mid-wait keeps the customer in their session with the order
+   * reference on screen (`pager.spec.ts`), and the `offline` state's own copy, controls and
+   * geometry are asserted in jsdom and in the one-handed measurement. The gap is the engine's
+   * cache serving a navigation, which is the engine's behaviour rather than this project's.
+   */
+  test.skip(
+    ({ browserName }) => browserName !== 'chromium',
+    'a REAL service worker registration needs a trusted certificate; only Chromium has a flag for it',
+  )
+
   test('boots the app from the cache with the network down', async ({ page, context }) => {
     /**
      * ⚠ A REAL REGISTRATION AND A REAL RELOAD. The shim above cannot answer this: whether a

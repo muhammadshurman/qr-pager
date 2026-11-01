@@ -155,6 +155,21 @@ export default defineConfig({
         // origin secure; it does NOT make the page insecure, and nothing about the bytes
         // changes.
         ignoreHTTPSErrors: true,
+        /**
+         * ⚠ AND `ignoreHTTPSErrors` IS NOT ENOUGH TO *REGISTER A SERVICE WORKER*, measured:
+         *
+         *   SecurityError: Failed to register a ServiceWorker for scope
+         *   ('https://host.docker.internal:3098/') with script (…/sw.js):
+         *   An SSL certificate error occurred when fetching the script.
+         *
+         * The worker script is fetched by the browser's own network stack rather than by the
+         * page, so the context-level option does not reach it. Chromium has a launch flag
+         * that does; Firefox and WebKit have no equivalent, which is why the two cases that
+         * need a REAL registration say so and run where they can.
+         */
+        ...(engine.name === 'chromium'
+          ? { launchOptions: { args: ['--ignore-certificate-errors'] } }
+          : {}),
       },
     })),
 
