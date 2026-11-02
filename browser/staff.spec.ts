@@ -92,9 +92,27 @@ async function targets(page: Page): Promise<{ name: string; width: number; heigh
  * that quietly measured less would be the vacuous half of this very finding.
  */
 async function openDetailPanel(page: Page): Promise<boolean> {
+  /*
+   * ⚠ IT WAITS FOR A ROW FIRST, AND THE FIRST VERSION DID NOT — 14 e2e failures across all
+   * six staff projects, every one reading *"no board row to open"*.
+   *
+   * `signInAsStaff()` waits for `[data-staff-shell="true"]`, which is the CHROME: the board's
+   * first poll is a second round trip behind it, so a `count()` taken immediately after
+   * signing in is taken against a board still in its loading state and answers zero. The
+   * fixture always provides two live pagers, so an empty board here is a timing artefact
+   * rather than a state — which is why this waits rather than returning false quickly.
+   *
+   * It still RETURNS a boolean rather than throwing, because the caller asserting it is what
+   * makes "the panel went unmeasured" a visible failure rather than a silently smaller sweep
+   * — which is the whole of `§11` QA M-15.
+   */
   const opener = page.locator('[data-board="true"] [data-action="open"]').first()
 
-  if ((await opener.count()) === 0) return false
+  try {
+    await opener.waitFor({ state: 'visible', timeout: 60_000 })
+  } catch {
+    return false
+  }
 
   await opener.click()
   await page.waitForSelector('[data-detail="true"]', { timeout: 30_000 })
