@@ -175,6 +175,41 @@ it('attributes an R-191 red whose frame MOVED, which is the defect this matcher 
     expect(str_contains($fixture, 'TestCase.php:112'))->toBeFalse();
 });
 
+it('attributes the same fault on ANOTHER connection, which is what proved the matcher too narrow', function (): void {
+    /*
+     * ⚠ A SECOND VERBATIM CAPTURE, AND IT IS WHY THE MATCHER KEYS ON THE CONNECT PATH.
+     *
+     * The first repair pinned `pgsql_owner` and the `TRUNCATE`, which is this row's symptom as
+     * its own TITLE describes it. The very next full gate run produced the same fault on a
+     * DIFFERENT connection and a different statement -- `PanelProblemPageTest`, 08006 timeout
+     * expired on `pgsql`, on a `SELECT` of `users` -- and it came out REAL again.
+     *
+     * MEASURED AT 94f5b5b rather than argued: full `composer gate` 2 of 2 RED with two
+     * different tests on two different connections; bare `php artisan test` 2 of 2 GREEN at
+     * 1198 passed / 10604 assertions. That is this row's own recorded rate reproduced at a new
+     * commit, and it says the variable is HOST LOAD and not any statement -- the gate runs nine
+     * steps before the suite.
+     *
+     * So the pattern keys on `Connector.php`, where `PDO::connect` is called. **A connect
+     * timeout cannot be caused by any code in this repository** -- only by the host, which is
+     * exactly what this row's `why_not_a_code_defect` measured. That is the strongest available
+     * argument for a wide pattern, and it is why this widening is defensible where a bare
+     * `08006` would not be.
+     */
+    [$code, $output] = classify('r191-other-connection.txt');
+
+    expect($output)->toContain('ATTRIBUTED RED')
+        ->and($output)->toContain('R-191')
+        ->and($code)->toBe(2);
+
+    $fixture = (string) file_get_contents(base_path('tests/fixtures/classify-reds/r191-other-connection.txt'));
+
+    // The two facts that made the earlier, narrower matcher miss it. Asserted so this case
+    // cannot pass against a matcher that went back to pinning either one.
+    expect(str_contains($fixture, 'Connection: pgsql,'))->toBeTrue('the fixture is not on another connection');
+    expect(str_contains($fixture, 'TRUNCATE'))->toBeFalse('the fixture carries a TRUNCATE after all');
+});
+
 it('calls the SAME SQLSTATE at a different frame a REAL red -- the control that matters', function (): void {
     [$code, $output] = classify('r191-wrong-frame.txt');
 

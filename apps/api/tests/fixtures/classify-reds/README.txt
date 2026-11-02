@@ -43,3 +43,22 @@ r191-moved-frame.txt -- added 2026-11-02, and it is a VERBATIM CAPTURE rather th
   So this fixture fails if the frame pattern is ever pinned back to a specific line, and the
   `r191-wrong-frame.txt` control beside it fails if the pattern is widened to the point of
   matching any 08006 anywhere. The two together are what keeps the matcher honest.
+
+r191-other-connection.txt -- added 2026-11-02, also a VERBATIM CAPTURE, and it is the fixture
+  that proved the first repair still too narrow.
+
+  Captured from `composer gate` at 94f5b5b: `PanelProblemPageTest`, 08006 timeout expired on
+  connection **pgsql** (not pgsql_owner), on a `SELECT` of `users` (not a TRUNCATE), raised
+  from `Connectors/Connector.php:67`.
+
+  WHAT IT PINS. R-191's title describes the symptom as "on pgsql_owner at TestCase::setUp's
+  TRUNCATE", and a matcher built from the title missed this one. The row's own
+  `why_not_a_code_defect` measurement is about `connect()` stalling under host load, which is
+  independent of connection and statement -- so the matcher now keys on the CONNECT PATH.
+
+  A connect timeout cannot be caused by any code in this repository. That is what makes the
+  wide pattern defensible, and `r191-wrong-frame.txt` is the control: an 08006 raised by a
+  QUERY, at `app/Features/Pager/PagerSessions.php:204`, must stay REAL.
+
+  Measured the same day: full `composer gate` 2 of 2 RED (two different tests, two different
+  connections); bare `php artisan test` 2 of 2 GREEN at 1198 passed. The variable is host load.
