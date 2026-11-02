@@ -115,7 +115,21 @@ try {
      * the one ordering mistake that would make every figure meaningless: a page still
      * resolving its token has not begun polling, so a click sent before it settles measures
      * page load and not notification. Task 9's own marker is waited for.
+     *
+     * ⚠ **AND `waiting` IS NOT THE FIRST SCREEN — waiting for it directly timed out at 60 s
+     * on the first real run.** `/s#<token>` lands on `[data-screen="landing"]`, and the
+     * journey only reaches `waiting` once the customer ACTS: either enabling alerts or
+     * declining them. `browser/pager.spec.ts` drives the same two steps for the same reason.
+     *
+     * The DECLINE path is taken deliberately: enabling alerts asks for a real notification
+     * permission, and the figure this script exists for is the POLLING one — `§3.1` row 10's
+     * method says so, because push is Apple's and Google's and is not drivable by a runner
+     * (`R-211`). Clicking *enable* would measure whichever channel won the race.
      */
+    await customer.waitForSelector('[data-screen="landing"]', { timeout: 60_000 })
+    await customer
+      .getByRole('button', { name: /just show me the status|اكتفِ بعرض الحالة/i })
+      .click()
     await customer.waitForSelector('[data-screen="waiting"]', { timeout: 60_000 })
 
     // The board row for THIS pager, and the panel opened — both outside the window, because
