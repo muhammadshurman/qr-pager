@@ -2,7 +2,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { origin, scan, sessions } from './support/e2e.ts'
+import { navigate, origin, scan, sessions } from './support/e2e.ts'
 
 /**
  * The two shapes the page-side code shares with the node-side code.
@@ -274,7 +274,7 @@ async function driveWorker(
   }, JSON.stringify(options))
 
   // A fresh document per drive, so each case sees a worker that has just installed.
-  await page.goto(`${origin()}/s`)
+  await navigate(page, `${origin()}/s`)
   await page.addScriptTag({ path: SW_PATH })
 
   return page.evaluate(
@@ -389,7 +389,7 @@ const LIVE = () => new Date(Date.now() + 3_600_000).toISOString()
 
 test.describe('the push handler, on the shipped bytes', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${origin()}/s`)
+    await navigate(page, `${origin()}/s`)
   })
 
   test('derives the notification tag from the payload -- R-075', async ({ page }) => {
@@ -486,7 +486,7 @@ test.describe('the push handler, on the shipped bytes', () => {
 
 test.describe('the rotation handler -- the named invariants own clause', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${origin()}/s`)
+    await navigate(page, `${origin()}/s`)
   })
 
   test('DELETES the old endpoint and REGISTERS the new one, in that order', async ({ page }) => {
@@ -884,7 +884,7 @@ test.describe('the rotation handler -- the named invariants own clause', () => {
 
 test.describe('what the worker refuses to do, each asserted rather than read', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${origin()}/s`)
+    await navigate(page, `${origin()}/s`)
   })
 
   test('shows no sender-controlled text for a payload it cannot read -- SEC L-2', async ({

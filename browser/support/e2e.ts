@@ -78,7 +78,55 @@ export function origin(): string {
  * `§3` row 3 as amended is why it is not a path segment.
  */
 export async function scan(page: Page, token: string): Promise<void> {
-  await page.goto(`${origin()}/s#${token}`)
+  await navigate(page, `${origin()}/s#${token}`)
+}
+
+/**
+ * Navigate to a page this application's SERVICE WORKER may claim mid-flight.
+ *
+ * ⚠ ONE RETRY, FOR ONE NAMED ERROR, WITH A MEASURED CAUSE — and it is deliberately not the
+ * blanket `retries` that `playwright.config.ts` refuses.
+ *
+ * Measured on 2026-11-02 across ten `pnpm run gate:e2e` runs: **three** failed with
+ *
+ *     page.goto: Operation was cancelled; maybe frame was detached?
+ *
+ * every one of them in `journey-webkit`, in three different places (`sw.spec.ts:417`,
+ * `pager.spec.ts:148`, and run 3 of `final-evidence`'s `frontend-three-green-runs`), while the
+ * other 390 cases passed. It is not the application misbehaving and it is not slowness:
+ *
+ *   * `apps/web/public/sw.js` calls `self.skipWaiting()` on install (line 46) and
+ *     `self.clients.claim()` on activate (line 203) — correct for a PWA, and what Task 9's
+ *     own rotation clause requires;
+ *   * `sw.spec.ts` installs, rotates and replaces workers, so a later navigation in the same
+ *     project can begin while a NEW worker is activating;
+ *   * a worker that claims a client mid-navigation supersedes that navigation, and WebKit
+ *     reports the superseded one as cancelled.
+ *
+ * So the navigation was interrupted by a documented, deliberate part of the application, and
+ * re-issuing it is the honest response: the page is reached, every assertion after it is
+ * untouched, and nothing about the result is retried. The guard is narrow on purpose — this
+ * error text only, one attempt only — because what it must not become is a way for a REAL
+ * navigation failure to pass on the second try.
+ *
+ * ⚠ AND IT IS A WORKAROUND, NOT A FIX: the underlying gap is `§5` `R-209` — the TypeScript
+ * half has no attribution path, so a flake here cannot be classified the way `bin/classify-reds`
+ * classifies `R-191` by exit code. Three strikes tonight cost three ~7-minute re-runs and one
+ * `final-evidence` round to tell apart from a regression.
+ */
+export async function navigate(page: Page, url: string): Promise<void> {
+  try {
+    await page.goto(url)
+
+    return
+  } catch (error) {
+    const cancelled = /Operation was cancelled|frame was detached/i.test(String(error))
+
+    if (!cancelled) throw error
+  }
+
+  // The service worker claimed the page mid-navigation. Ask once more, now that it has.
+  await page.goto(url)
 }
 
 /** Every request the page made, so clause (b) can be asserted at RUNTIME and not only on the build. */
