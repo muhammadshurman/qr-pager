@@ -90,7 +90,7 @@
                                                             },
                                                             "name": {
                                                                 "type": "string",
-                                                                "description": "THE RESTAURANT'S NAME \u2014 added at 10b on Muhammad's `R-222` ruling. The chooser labels by this. `slug` STAYS and is not removed: `\u00a76` says a\npublished path is never changed in place, and removing a member of a\nresponse shape is exactly that change \u2014 it would break any reader that\nalready has one. The CLIENT stops using it as a label; the endpoint keeps\nanswering it.\n\n\u26a0 THE DISCLOSURE, analysed rather than waved through, because `R-222`'s\nown text called this a `\u00a74 \u203a Security` tension. This endpoint returns ONLY\nthe caller's own memberships and already drops every tenant that is not\nactive, so what is published is the names of restaurants this person is\nstaff of. There is no input shape that returns a second user's set \u2014 one\nexact-match uuid from the guard \u2014 so nothing is enumerable, and the slug\nbeside it was already a disclosure of the same shape at a lower\nresolution. The reason it needed a ruling rather than a patch is that\n`/v1/auth/me` answers BEFORE a tenant is selected, which is the one place\nin this product where a payload is not bounded by a tenant scope."
+                                                                "description": "The restaurant's name."
                                                             },
                                                             "role": {
                                                                 "type": "string"
@@ -337,7 +337,7 @@
                                                             },
                                                             "name": {
                                                                 "type": "string",
-                                                                "description": "THE RESTAURANT'S NAME \u2014 added at 10b on Muhammad's `R-222` ruling. The chooser labels by this. `slug` STAYS and is not removed: `\u00a76` says a\npublished path is never changed in place, and removing a member of a\nresponse shape is exactly that change \u2014 it would break any reader that\nalready has one. The CLIENT stops using it as a label; the endpoint keeps\nanswering it.\n\n\u26a0 THE DISCLOSURE, analysed rather than waved through, because `R-222`'s\nown text called this a `\u00a74 \u203a Security` tension. This endpoint returns ONLY\nthe caller's own memberships and already drops every tenant that is not\nactive, so what is published is the names of restaurants this person is\nstaff of. There is no input shape that returns a second user's set \u2014 one\nexact-match uuid from the guard \u2014 so nothing is enumerable, and the slug\nbeside it was already a disclosure of the same shape at a lower\nresolution. The reason it needed a ruling rather than a patch is that\n`/v1/auth/me` answers BEFORE a tenant is selected, which is the one place\nin this product where a payload is not bounded by a tenant scope."
+                                                                "description": "The restaurant's name."
                                                             },
                                                             "role": {
                                                                 "type": "string"

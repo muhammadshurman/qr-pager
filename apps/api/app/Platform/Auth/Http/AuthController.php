@@ -184,6 +184,33 @@ final class AuthController
     /** @return array<string, mixed> */
     private function identity(User $user, string $userId): array
     {
+        /*
+         * INTERNAL NOTES ON `memberships[].name`, ADDED AT 10b -- and they are HERE rather
+         * than above the array key they describe, because a comment above a key in this
+         * array IS PUBLISHED as that property's description in `docs/openapi.json`. That is
+         * `R-052`'s mechanism, and `OpenApiSpecTest` caught the first version of this
+         * paragraph sitting in the spec: *"a published description carries [§]"*. Same
+         * decision `StoreMemberRequest` records for a FormRequest's docblock, one layer over.
+         *
+         * THE RULING. Muhammad, `R-222`, 2026-11-02: publish the restaurant's NAME, and the
+         * chooser labels by it. `PLAN.md §1` carries it.
+         *
+         * `slug` STAYS and is not removed: `§6` says a published path is never changed in
+         * place, and removing a member of a response shape is exactly that change -- it
+         * would break any reader that already has one. The CLIENT stops using it as a label;
+         * the endpoint keeps answering it.
+         *
+         * ⚠ THE DISCLOSURE, analysed rather than waved through, because `R-222`'s own text
+         * called this a `§4 › Security` tension. This endpoint returns ONLY the caller's own
+         * memberships and already drops every tenant that is not active, so what is
+         * published is the names of restaurants this person is staff of. There is no input
+         * shape that returns a second user's set -- one exact-match uuid from the guard, via
+         * `§2.8`'s function -- so nothing is enumerable, and the slug beside it was already a
+         * disclosure of the same shape at a lower resolution. The reason it needed a ruling
+         * rather than a patch is that `/v1/auth/me` answers BEFORE a tenant is selected,
+         * which is the one place in this product where a payload is not bounded by a tenant
+         * scope.
+         */
         $memberships = [];
 
         foreach ($this->memberships->for($userId) as $membership) {
@@ -197,26 +224,7 @@ final class AuthController
             $memberships[] = [
                 'tenant_id' => $membership->tenantId,
                 'slug' => $membership->tenantSlug,
-                /*
-                 * THE RESTAURANT'S NAME — added at 10b on Muhammad's `R-222` ruling.
-                 *
-                 * The chooser labels by this. `slug` STAYS and is not removed: `§6` says a
-                 * published path is never changed in place, and removing a member of a
-                 * response shape is exactly that change — it would break any reader that
-                 * already has one. The CLIENT stops using it as a label; the endpoint keeps
-                 * answering it.
-                 *
-                 * ⚠ THE DISCLOSURE, analysed rather than waved through, because `R-222`'s
-                 * own text called this a `§4 › Security` tension. This endpoint returns ONLY
-                 * the caller's own memberships and already drops every tenant that is not
-                 * active, so what is published is the names of restaurants this person is
-                 * staff of. There is no input shape that returns a second user's set — one
-                 * exact-match uuid from the guard — so nothing is enumerable, and the slug
-                 * beside it was already a disclosure of the same shape at a lower
-                 * resolution. The reason it needed a ruling rather than a patch is that
-                 * `/v1/auth/me` answers BEFORE a tenant is selected, which is the one place
-                 * in this product where a payload is not bounded by a tenant scope.
-                 */
+                // The restaurant's name.
                 'name' => $membership->tenantName,
                 'role' => $membership->role->value,
                 'principal' => Principal::fromTenantRole($membership->role)->value,
