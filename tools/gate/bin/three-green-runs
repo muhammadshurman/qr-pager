@@ -76,7 +76,17 @@ for i in $(seq 1 "$runs"); do
         echo "  run $i: RED. The loop STOPS here -- a red retried until it passes is not a"
         echo "  consecutive green, and the identity of the red is what matters (R-049)."
         echo
-        echo "$out" | grep -E "FAIL|✕|×|Error:|AssertionError|gate: FAILED" | head -20
+        # ⚠ THE PLAYWRIGHT FAILURE HEADER IS IN THIS PATTERN NOW, AND ITS ABSENCE COST A
+        # DIAGNOSIS. This grep claimed to print the red's identity — the comment four lines up
+        # says *"the identity of the red is what matters (R-049)"* — and matched none of
+        # Playwright's own `  N) [project] › file:line › title` lines, so an e2e red reported
+        # `Error: element(s) not found` with no case, no file and no engine. Measured on 10b's
+        # own final-evidence run: the artefact said a browser locator failed and the identity
+        # had to be recovered afterwards from `test-results/`'s error-context files.
+        #
+        # A proof whose failure output cannot name what failed sends the reader somewhere
+        # else, which is the whole thing this script exists to prevent.
+        echo "$out" | grep -E "^ *[0-9]+\) \[|FAIL|✕|×|Error:|AssertionError|gate: FAILED" | head -20
         echo
         echo "three-green-runs: FAILED at run $i of $runs, commit $sha"
         exit 1
