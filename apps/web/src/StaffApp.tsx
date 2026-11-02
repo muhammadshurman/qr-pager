@@ -231,6 +231,22 @@ export function StaffApp({
    */
   const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(NO_HISTORY_FILTERS)
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(NO_HISTORY_FILTERS)
+  /**
+   * The applied filters, as a ref, for the view effect to read.
+   *
+   * ⚠ **A REF AND NOT A DEPENDENCY, AND THE DEFECT IT FIXES IS WORTH NAMING.** The effect that
+   * loads this screen on arrival used to call `loadHistory(NO_HISTORY_FILTERS)`, so coming BACK
+   * to it — which the lost-sheet path does, via the issue screen and back — silently reset the
+   * applied filters while `draftFilters` kept showing them. The controls then displayed a
+   * filter that was not applied to the rows beside them, which is worse than losing the filter:
+   * the screen asserts something false about what you are looking at.
+   *
+   * Loading the APPLIED set is the right behaviour, and a ref is how the effect reads the
+   * current one without `appliedFilters` becoming a dependency — as a dependency it would
+   * refetch every time an answer arrived, because `loadHistory` sets it on success. That is an
+   * infinite loop, not a stale read, which is why this is a ref rather than a widened list.
+   */
+  const appliedFiltersRef = useRef<HistoryFilters>(NO_HISTORY_FILTERS)
 
   const [issuePhase, setIssuePhase] = useState<IssuePhase>('idle')
   const [issueReference, setIssueReference] = useState('')
@@ -886,6 +902,10 @@ export function StaffApp({
       if (result.kind === 'ok') {
         setHistory(result.value)
         setAppliedFilters(filters)
+        // Written together, so the ref can never describe a different set from the state. One
+        // assignment beside the other rather than an effect that mirrors it, because a mirror
+        // is a render behind and this is read by an effect.
+        appliedFiltersRef.current = filters
         setHistoryPhase('ready')
 
         return
@@ -1243,7 +1263,10 @@ export function StaffApp({
    */
   useEffect(() => {
     if (phase !== 'ready' || view !== 'history') return
-    void loadHistory(NO_HISTORY_FILTERS)
+    // The filters currently in force, not a reset -- see `appliedFiltersRef`. On the first
+    // visit that is `NO_HISTORY_FILTERS`; on a return from the sheet screen it is whatever the
+    // person had applied, which is what the controls are still showing.
+    void loadHistory(appliedFiltersRef.current)
     // No `eslint-disable` here: this workspace installs no `react-hooks` plugin, so there is
     // no exhaustive-deps rule to silence -- and a disable comment for a rule that does not
     // exist is itself an error (`Definition for rule ... was not found`). The dependency list

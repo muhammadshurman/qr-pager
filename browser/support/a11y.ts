@@ -173,6 +173,31 @@ export async function tagControls(page: Page): Promise<string[]> {
 
       if (box.width === 0 && box.height === 0) return
 
+      /*
+       * ⚠ **A DISABLED CONTROL IS SKIPPED, AND LEAVING IT IN COST AN e2e ROUND.** Measured:
+       * `§12 on 10d's and 10e's screens › draws a visible focus ring on every control of the
+       * ISSUE screen` failed in every project while history and team passed — because *Make
+       * the sheet* is `disabled` until an order number is typed, and `§12`'s floor keeps it
+       * 44px and rendered, so it was tagged and could never receive focus.
+       *
+       * A disabled control is excluded from the tab order BY THE BROWSER, deliberately, and
+       * demanding a focus ring on one is demanding a thing the platform forbids. `§12`'s clause
+       * is *keyboard reachable, visible focus ring* — about controls a person can use.
+       *
+       * ⚠ AND IT IS SKIPPED HERE RATHER THAN IN THE 44px SWEEP, which still measures it: a
+       * disabled button becomes enabled, and a 20px box does not grow when it does.
+       *
+       * `aria-disabled` is honoured too. It does NOT remove an element from the tab order, so
+       * such a control is still expected to take focus and draw a ring — but a kit that used it
+       * instead of the attribute would otherwise make this sweep demand a ring on something it
+       * has told assistive technology is unavailable. Nothing in this kit uses it today; the
+       * branch is here so the answer is the same either way.
+       */
+      if (element.matches(':disabled, [aria-disabled="true"]')) return
+
+      // A control explicitly taken out of the tab order is likewise not a keyboard subject.
+      if (element.getAttribute('tabindex') === '-1') return
+
       const id = `sweep-${String(index)}`
 
       element.setAttribute('data-sweep', id)

@@ -145,10 +145,22 @@ test.describe('§12 on the kitchen screen', () => {
   }, testInfo) => {
     await openKds(page)
 
-    const direction = await page.locator('[dir]').first().getAttribute('dir')
     const rtl = testInfo.project.name.endsWith('-rtl')
 
-    expect(direction, `the document direction is ${String(direction)}`).toBe(rtl ? 'rtl' : 'ltr')
+    /*
+     * ⚠ `[data-theme]` AND NOT `[dir]`, for `staff.spec.ts`'s stated reason and `R-221`'s:
+     * `app/layout.tsx` hard-codes `lang="en" dir="ltr"` on `<html>` for every route in this
+     * app, so the FIRST element carrying `dir` is always `ltr` and reading it would report the
+     * root layout's value as this screen's. `ThemeProvider` sets `data-theme`, `lang` and `dir`
+     * together on one element, which is the one that answers the question.
+     *
+     * The first version of this case read `[dir]` and failed in all three RTL projects — on a
+     * screen whose direction was correct.
+     */
+    const themed = page.locator('[data-theme]').first()
+
+    await expect(themed).toHaveAttribute('dir', rtl ? 'rtl' : 'ltr')
+    await expect(themed).toHaveAttribute('lang', rtl ? 'ar' : 'en')
 
     // No horizontal overflow in either direction. A mirrored layout that scrolls sideways on a
     // wall tablet is one nobody can read the right-hand column of.

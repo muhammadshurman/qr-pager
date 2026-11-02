@@ -1060,11 +1060,26 @@ test.describe('§12 on 10d’s and 10e’s screens', () => {
       await page.waitForSelector(screen.marker, { timeout: 60_000 })
 
       const rtl = testInfo.project.name.endsWith('-rtl')
-      const direction = await page.locator('[dir]').first().getAttribute('dir')
 
-      expect(direction, `${screen.nav}: the document direction is ${String(direction)}`).toBe(
-        rtl ? 'rtl' : 'ltr',
-      )
+      /*
+       * ⚠ **READ OFF `[data-theme]`, NOT `[dir]` OR `<html>` — AND THE FIRST VERSION OF THIS
+       * SWEEP GOT IT WRONG AND FAILED IN ALL THREE RTL PROJECTS FOR A REASON THAT IS AN
+       * ACCEPTED RISK RATHER THAN A DEFECT.**
+       *
+       * It read `page.locator('[dir]').first()`, and the first element carrying `dir` in this
+       * app is `<html>` — which `app/layout.tsx` HARD-CODES as `lang="en" dir="ltr"` for every
+       * route. That is `R-221`, open and owned, and the direction is carried on the element
+       * `ThemeProvider` renders instead. So the assertion was reading the root layout's
+       * hard-coded value and reporting it as the screen's direction.
+       *
+       * The sibling case above states the same thing in its own words and is where this
+       * selector comes from: *"asserting `<html>` here would assert a property of the root
+       * layout, which this ticket does not own."*
+       */
+      const themed = page.locator('[data-theme]').first()
+
+      await expect(themed).toHaveAttribute('dir', rtl ? 'rtl' : 'ltr')
+      await expect(themed).toHaveAttribute('lang', rtl ? 'ar' : 'en')
 
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
