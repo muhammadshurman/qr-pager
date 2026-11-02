@@ -152,6 +152,19 @@ function staffRoutes(): array
             'body' => [],
             'targets' => true,
         ],
+        // ---------------------------------------------------------------- Task 10a's two
+        'devices.index' => [
+            'method' => 'getJson',
+            'path' => fn (string $t, string $s): string => '/v1/devices',
+            'body' => [],
+            'targets' => false,
+        ],
+        'tenant.show' => [
+            'method' => 'getJson',
+            'path' => fn (string $t, string $s): string => '/v1/tenant',
+            'body' => [],
+            'targets' => false,
+        ],
     ];
 }
 
@@ -247,13 +260,17 @@ it('grants each principal exactly the abilities the matrix names, and nothing by
         'platform_admin' => [],
         'owner' => [
             'pager:read', 'pager:create', 'pager:notify', 'pager:resolve',
-            'members:read', 'members:write', 'devices:write',
+            'members:read', 'members:write', 'devices:write', 'tenant:read',
         ],
         'manager' => [
             'pager:read', 'pager:create', 'pager:notify', 'pager:resolve',
-            'members:read', 'members:write', 'devices:write',
+            'members:read', 'members:write', 'devices:write', 'tenant:read',
         ],
-        'staff' => ['pager:read', 'pager:create', 'pager:notify', 'pager:resolve'],
+        // `tenant:read` JOINED AT TASK 10a AND IT IS THE FLOOR, NOT A PRIVILEGE: every
+        // person who signs in has to be told which restaurant they signed in to, and §12
+        // forbids answering that with a slug. The cell to look at is `device`, which does
+        // NOT hold it -- see below.
+        'staff' => ['pager:read', 'pager:create', 'pager:notify', 'pager:resolve', 'tenant:read'],
         'device' => ['pager:read'],
     ]);
 
@@ -264,6 +281,16 @@ it('grants each principal exactly the abilities the matrix names, and nothing by
     // A device holds ONE, and it is the only ability issuable to one.
     expect(RoleMatrix::abilitiesFor(Principal::Device))->toBe([Ability::PagerRead])
         ->and(Ability::issuableToDevice())->toBe([Ability::PagerRead]);
+
+    // ⚠ AND `tenant:read` IS DELIBERATELY ABSENT FROM BOTH LISTS ABOVE, asserted here so
+    // that adding it to either is a diff somebody has to defend. A kitchen screen
+    // arguably wants to show the restaurant's name -- but `RequestPrincipal::may()`
+    // requires BOTH the matrix and the token's own abilities to allow, and
+    // `issuableToDevice()` is a closed list of one by `QRPAGER-12 §5`. So granting it in
+    // the matrix alone would be a cell that can never be exercised, and widening the
+    // closed list is a change to an approved design. Task 10a did neither.
+    expect(RoleMatrix::allows(Principal::Device, Ability::TenantRead))->toBeFalse()
+        ->and(Ability::TenantRead->issuableToDevices())->toBeFalse();
 
     // Staff cannot manage people or screens. This is the cell that makes the matrix
     // non-vacuous: without the member routes, no two principals would differ anywhere.

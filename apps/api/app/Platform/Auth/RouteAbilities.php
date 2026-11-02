@@ -84,6 +84,20 @@ final class RouteAbilities
         'devices.store' => Ability::DevicesWrite,
         'devices.destroy' => Ability::DevicesWrite,
 
+        // ---------------------------------------------------------------- Task 10a's
+        //
+        // Listing the screens is on `devices:write` and NOT on a new `devices:read`: the
+        // holder set would be identical, and a second ability with the same holders is a
+        // distinction with no difference. `DeviceController::index()` carries the argument.
+        'devices.index' => Ability::DevicesWrite,
+
+        // The restaurant the caller is signed in to. `tenant:read` is the FLOOR for a
+        // person -- staff, manager and owner all hold it -- because a shell that cannot
+        // say which restaurant you are in fails `§12`'s zero-technical-background bar.
+        // `Principal::Device` does NOT hold it; `Ability::TenantRead`'s docblock has the
+        // reason and it is not an oversight.
+        'tenant.show' => Ability::TenantRead,
+
         // The board a KDS screen reads. The ONE ability a device token may carry, which is
         // why this route exists at Task 5 rather than at Task 10: without it, "device token
         // scope cannot escalate" would be a claim about a token that can reach nothing, and

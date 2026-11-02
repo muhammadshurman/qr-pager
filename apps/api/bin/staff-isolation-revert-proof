@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# 10a's NAMED INVARIANT, revert-proved — and the two reverts are chosen to demonstrate the
+# two things `StaffSurfaceIsolationTest` adds over `RoleMatrixTest`, rather than to produce
+# a count.
+#
+# ===================================================================================
+# WHY THIS SCRIPT EXISTS AT ALL
+# ===================================================================================
+#
+# `QRPAGER-25 §0` is *"proven by driving EVERY mounted staff route cross-tenant over HTTP
+# and asserting the refusal"*, and the standing rule is that **an unproven guard is not a
+# guard**. A cross-tenant sweep is the easiest kind of test to write vacuously: every
+# assertion in it is a NEGATIVE — no 2xx, no leaked id — and a sweep over an empty route
+# list, or over ids that name nothing, passes every one of them. So the question this
+# script answers is not "does the test pass" but **"what does it catch that nothing else
+# already caught"**.
+#
+# ===================================================================================
+# THE TWO REVERTS, AND WHAT EACH ONE DEMONSTRATES
+# ===================================================================================
+#
+# **A — the tenant pin in `DeviceTokens::revoke()` is removed.** That is the only thing
+# keeping one restaurant from revoking another's kitchen-screen credential:
+# `personal_access_tokens` is global and RLS-free (`§2.4`), so no policy narrows the query
+# and the comparison in PHP *is* the control.
+#
+#   CONTROL: `RoleMatrixTest` must stay GREEN. Its `devices.destroy` row builds its path
+#   from `Str::uuid7()` — an id that exists nowhere — so `revoke()` returns false at the
+#   `$row === null` branch above the pin check and never reaches it. **The strongest
+#   isolation control on this surface can be deleted without that file noticing**, which is
+#   reason (2) in `StaffSurfaceIsolationTest`'s header, measured rather than asserted.
+#
+# **B — the `{device}` route parameter is renamed to `{screen}`.** Nothing about
+# authorisation changes and no route name changes.
+#
+#   CONTROL: `RoleMatrixTest` must stay GREEN again, and for a different reason — it keys
+#   its table by route NAME and builds paths as literals, so a renamed parameter is
+#   invisible to it. The derived list in `StaffSurfaceIsolationTest` sees it immediately
+#   and fails closed, naming the parameter nobody filled. That is reason (1): a subject
+#   list taken from the router rather than typed.
+#
+# It edits two tracked files and restores them in a trap, including on Ctrl-C. Run it on a
+# clean tree: if it is interrupted hard enough to skip the trap, `git checkout` them.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
+
+tokens="app/Features/Devices/DeviceTokens.php"
+routes="routes/v1.php"
+tokens_backup="$(mktemp)"
+routes_backup="$(mktemp)"
+
+cp "$tokens" "$tokens_backup"
+cp "$routes" "$routes_backup"
+trap 'cp "$tokens_backup" "$tokens"; cp "$routes_backup" "$routes"; rm -f "$tokens_backup" "$routes_backup"; revert_proof_cleanup' EXIT INT TERM
+
+# THE SUITES: 10a's invariant, and the Task 5 sweep it is being compared against. Both run
+# on every revert, because the point of each revert is the DIFFERENCE between them.
+#
+# THE CONTROLS are RoleMatrixTest's two cross-tenant cases plus its totality case. All
+# three must stay green through both reverts -- not because the reverts are harmless, but
+# because that file cannot see either one. A control that moved here would mean this
+# script's claim about what 10a adds is wrong.
+revert_proof_init \
+  "tests/Feature/Staff/StaffSurfaceIsolationTest.php tests/Feature/Auth/RoleMatrixTest.php" \
+  "covers every /v1 route in exactly one named set" \
+  "refuses every principal on every staff route in a tenant they do not belong to" \
+  "refuses device and platform_admin on every staff route of a tenant they cannot act in"
+
+run() { revert_proof_run "$@"; }
+
+echo "10a staff-isolation revert proof — $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "php $(php -r 'echo PHP_VERSION;'), $(php artisan --version)"
+echo
+
+run "baseline — no revert, every case should pass" baseline
+
+# ---------------------------------------------------------------- revert A: the pin check
+cp "$tokens_backup" "$tokens"
+cp "$routes_backup" "$routes"
+# Matched on the whole condition, so a partial match cannot leave a half-edited `if`.
+# `@` as the delimiter, NOT `|`: the condition itself contains `||`, which ends an
+# `s|...|` expression mid-pattern and gave `sed: unknown option to 's'` on the first run of
+# this script. Named rather than silently fixed, because the grep below is what turned that
+# into a FATAL instead of a revert that quietly matched nothing.
+sed -i 's@^\( *\)if (! is_array($abilities) || ! in_array(TenantPin::for($tenantId), $abilities, true)) {@\1if (false) { // REVERTED BY bin/staff-isolation-revert-proof@' "$tokens"
+grep -q 'REVERTED BY bin/staff-isolation-revert-proof' "$tokens" || { echo "FATAL: the revoke() pin check was not found"; exit 1; }
+run "revert A — DeviceTokens::revoke() no longer checks the tenant pin"
+revert_proof_require_red "revert A" "refuses a user who belongs to BOTH tenants" || true
+revert_proof_require_red "revert A" "refuses a staff member of tenant A on every mounted staff route"
+
+# ------------------------------------------------------- revert B: the parameter's name
+cp "$tokens_backup" "$tokens"
+cp "$routes_backup" "$routes"
+sed -i "s|{device}|{screen}|g; s|->whereUuid('device')|->whereUuid('screen')|g" "$routes"
+grep -q '{screen}' "$routes" || { echo "FATAL: the {device} parameter was not found"; exit 1; }
+run "revert B — the {device} route parameter is renamed {screen}, nothing else"
+revert_proof_require_red "revert B" "derives the staff surface from the router"
+
+# RESTORE EXPLICITLY AND NOT ONLY IN THE TRAP, so the comparison below has something true
+# to compare -- the trap has not fired yet at this point.
+cp "$tokens_backup" "$tokens"
+cp "$routes_backup" "$routes"
+
+for pair in "$tokens:$tokens_backup" "$routes:$routes_backup"; do
+  target="${pair%%:*}"
+  backup="${pair##*:}"
+
+  if cmp -s "$backup" "$target"; then
+    echo "restored: $target is byte-identical to the copy taken before the first revert"
+  else
+    echo "WARNING: $target does NOT match the pre-run copy. Restore it from git." >&2
+    exit 1
+  fi
+done
+
+echo
+
+revert_proof_verdict "staff-isolation-revert-proof" || exit 1

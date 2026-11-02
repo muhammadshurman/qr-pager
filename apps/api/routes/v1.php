@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Features\Devices\Http\DeviceController;
 use App\Features\Members\Http\MemberController;
 use App\Features\Pager\Http\PagerSessionController;
+use App\Features\Tenants\Http\TenantController;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\Middleware\RequireAbility;
 use Illuminate\Support\Facades\Route;
@@ -143,6 +144,13 @@ Route::middleware([RequireAbility::class])->group(function (): void {
      * applied to a credential rather than to a row.
      */
     Route::prefix('devices')->group(function (): void {
+        /*
+         * The list a settings screen reads. Takes no input at all -- no body, no query, no
+         * path parameter -- which is why it is a GET and is the strongest validation answer
+         * available: there is nothing to validate.
+         */
+        Route::get('/', [DeviceController::class, 'index'])->name('devices.index');
+
         Route::post('/', [DeviceController::class, 'store'])
             ->middleware([RateLimit::class.':devices-issue'])
             ->name('devices.store');
@@ -151,4 +159,25 @@ Route::middleware([RequireAbility::class])->group(function (): void {
             ->whereUuid('device')
             ->name('devices.destroy');
     });
+
+    /*
+     * THE RESTAURANT ITSELF, ADDED AT TASK 10a.
+     *
+     * One route, one row, no input. `tenants` is a tenant table whose scope column is its
+     * own `id` (`PLAN.md §2.5`), so inside the resolved tenant's scope row-level security
+     * leaves exactly one row visible and there is no predicate to tamper with.
+     *
+     * ⚠ WHY THIS EXISTS RATHER THAN A COLUMN ON `/v1/auth/me`. The shell has to name the
+     * restaurant, `/v1/auth/me` carries `slug`, and a slug is a DNS label rather than a
+     * name -- `§12`'s zero-technical-background bar forbids an unexplained identifier on a
+     * screen. The one-column alternative was to widen `public.user_memberships()`, which is
+     * `PROJECT_INSTRUCTIONS.md §4 › Tenancy`'s named CROSS-TENANT read path. Adding display
+     * text to a cross-tenant function, for data the caller can read inside their own scope,
+     * is the wrong trade: `§2.8`'s named list stays at four and no migration is needed.
+     *
+     * SINGULAR AND NOT `/tenants`, because there is no collection here to version into: a
+     * caller can only ever see the one their credential resolves to, and a plural path
+     * would publish a promise of a list that `§4` forbids ever existing.
+     */
+    Route::get('tenant', [TenantController::class, 'show'])->name('tenant.show');
 });

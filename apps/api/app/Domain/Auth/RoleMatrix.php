@@ -90,6 +90,11 @@ final class RoleMatrix
             Ability::PagerCreate,
             Ability::PagerNotify,
             Ability::PagerResolve,
+            // Task 10a. Every person who signs in has to be told which restaurant they
+            // signed in to, so this is the floor rather than a privilege. `Device` does
+            // NOT hold it -- Ability::TenantRead's docblock has the reason, and it is not
+            // an oversight.
+            Ability::TenantRead,
         ],
 
         // Staff, plus the people and the screens.
@@ -101,6 +106,7 @@ final class RoleMatrix
             Ability::MembersRead,
             Ability::MembersWrite,
             Ability::DevicesWrite,
+            Ability::TenantRead,
         ],
 
         // Everything a manager holds. The two are deliberately identical at this task:
@@ -115,6 +121,7 @@ final class RoleMatrix
             Ability::MembersRead,
             Ability::MembersWrite,
             Ability::DevicesWrite,
+            Ability::TenantRead,
         ],
 
         // Empty on purpose. See the class docblock.

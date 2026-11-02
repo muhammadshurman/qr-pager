@@ -92,6 +92,11 @@ it('describes exactly the routes that exist, and not the fallback', function ():
         '/v1/pager/session',
         '/v1/pager/status',
         '/v1/pager/subscription',
+        // Task 10a. SINGULAR, because a caller can only ever see the restaurant their own
+        // credential resolves to -- a plural path would publish a promise of a collection
+        // that `§4 › Tenancy` forbids ever existing. `GET /v1/devices` is also new at 10a
+        // and adds no PATH: it is a second operation on a path Task 5 already published.
+        '/v1/tenant',
     ]);
 
     // The fallback matches paths that do NOT exist. Documenting it would publish a route
@@ -506,7 +511,10 @@ it('publishes a security requirement on EVERY operation, and the staff routes ar
     // -- counted and named, so a route that quietly became public, or a customer route that
     // quietly claimed a staff credential, is a failure here rather than a reading of the
     // diff.
-    expect($authenticated)->toHaveCount(12)
+    // FOURTEEN as of Task 10a, which added `GET /v1/devices` and `GET /v1/tenant`. Both
+    // are named below rather than only counted, so a route that quietly became public is a
+    // failure here and not a reading of the diff.
+    expect($authenticated)->toHaveCount(14)
         ->and($authenticated)->toContain('POST /v1/pager-sessions')
         ->and($authenticated)->toContain('GET /v1/pager-sessions')
         ->and($authenticated)->toContain('GET /v1/members')
@@ -514,7 +522,9 @@ it('publishes a security requirement on EVERY operation, and the staff routes ar
         ->and($authenticated)->toContain('PATCH /v1/members/{member}')
         ->and($authenticated)->toContain('DELETE /v1/members/{member}')
         ->and($authenticated)->toContain('POST /v1/devices')
-        ->and($authenticated)->toContain('DELETE /v1/devices/{device}');
+        ->and($authenticated)->toContain('DELETE /v1/devices/{device}')
+        ->and($authenticated)->toContain('GET /v1/devices')
+        ->and($authenticated)->toContain('GET /v1/tenant');
 });
 
 it('publishes the 401 that every unauthenticated request actually receives — QA L-5', function (): void {
@@ -710,7 +720,7 @@ it('publishes every problem document under the media type the API really sends, 
     // a refusal a client has to handle is part of the published contract rather than an
     // implementation detail -- which is why it moves this count, and why this case caught
     // the change rather than taking it on trust.
-    expect($seen)->toBe(66, 'the spec publishes '.$seen.' problem responses, not the 66 the twenty-eight routes declare')
+    expect($seen)->toBe(71, 'the spec publishes '.$seen.' problem responses, not the 71 the thirty routes declare')
         ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
         ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
 });
@@ -801,11 +811,13 @@ it('produces the security and media-type decisions in the GENERATOR, not only in
         '/v1/pager/session', '/v1/pager/status', '/v1/pager/subscription',
         ...AppServiceProvider::PUBLIC_PATHS,
     ])
-        // Twelve and 66 as of Task 5's §11 review -- the in-process generator and the
-        // committed artifact must agree, which is this case's whole purpose, so both
-        // numbers move together with the ones in the committed-spec cases above. The
-        // sixty-sixth is `two-factor/enable`'s 409.
-        ->and($authenticated)->toHaveCount(12)
+        // FOURTEEN and 71 as of Task 10a -- the in-process generator and the committed
+        // artifact must agree, which is this case's whole purpose, so both numbers move
+        // together with the ones in the committed-spec cases above. They were twelve and
+        // 66 at Task 5's `§11` review, whose sixty-sixth was `two-factor/enable`'s 409.
+        // The five new problem responses are `GET /v1/devices`'s 401 and 403 and
+        // `GET /v1/tenant`'s 401, 403 and 404.
+        ->and($authenticated)->toHaveCount(14)
         ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
-        ->and($problemResponses)->toHaveCount(66);
+        ->and($problemResponses)->toHaveCount(71);
 });

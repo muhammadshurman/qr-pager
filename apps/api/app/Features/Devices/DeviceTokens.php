@@ -62,6 +62,17 @@ final class DeviceTokens
     public const MAX_TTL_MINUTES = 60 * 24 * 30;
 
     /**
+     * The ceiling on one `forTenant()` read, and therefore on one `GET /v1/devices`.
+     *
+     * A restaurant has kitchen screens, not a fleet: a number in the low tens is the real
+     * shape and 200 is two orders of magnitude of headroom over it. It is here rather than
+     * in `config/` because it bounds a QUERY and not a deployment -- a configurable
+     * ceiling is a ceiling somebody raises instead of asking why a restaurant has 200
+     * screens.
+     */
+    public const LIST_LIMIT = 200;
+
+    /**
      * Mint a device token for one tenant and one capability.
      *
      * Returns the PLAINTEXT, which exists exactly once and is never stored: Sanctum keeps
@@ -220,16 +231,35 @@ final class DeviceTokens
     /**
      * The device tokens this tenant holds, without anything secret.
      *
+     * ⚠ BOUNDED IN SQL, AND THE BOUND WAS ADDED AT TASK 10a WHEN THIS GREW A CALLER.
+     * Until then nothing in the application called this method -- only
+     * `AuthUnitGapsTest` -- so an unbounded read cost nothing. `GET /v1/devices` is the
+     * first caller, which makes the row count a per-request cost that a tenant's own
+     * minting history decides, and `§6` Q5 wants that answer to be a number rather than
+     * "however many they have made". `self::LIST_LIMIT` is it.
+     *
+     * ⚠ AND THE LIMIT APPLIES TO THE PREFILTERED SET, NOT TO THE CHECKED SET, which is
+     * worth saying rather than leaving for a reviewer to work out. The `LIKE` is a
+     * prefilter over a text column and the exact pin membership is re-tested in PHP below,
+     * so in principle a row could satisfy the `LIKE`, fill a limit slot and then be
+     * dropped -- hiding a real row. For that to happen, a row would have to contain
+     * `tenant:<uuid>` as a SUBSTRING of some other ability string while not containing it
+     * as an element, and `abilities` is written only by `issue()` five lines up, which
+     * writes the pin as its own element. So the divergence is unreachable by any path this
+     * application has; it is not impossible by the column's definition, which is why the
+     * exact re-check stays.
+     *
      * @return list<array{id: string, name: string, expires_at: string|null, last_used_at: string|null}>
      */
-    public function forTenant(string $tenantId): array
+    public function forTenant(string $tenantId, int $limit = self::LIST_LIMIT): array
     {
         $rows = DB::select(
             'select id, name, expires_at, last_used_at, abilities
                from personal_access_tokens
               where abilities::text like ?
-              order by created_at desc',
-            ['%'.TenantPin::for($tenantId).'%'],
+              order by created_at desc
+              limit ?',
+            ['%'.TenantPin::for($tenantId).'%', max(1, $limit)],
         );
 
         $out = [];

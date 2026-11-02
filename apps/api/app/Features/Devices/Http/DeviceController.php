@@ -33,6 +33,38 @@ final class DeviceController
     public function __construct(private readonly DeviceTokens $tokens) {}
 
     /**
+     * List this restaurant's kitchen screens.
+     *
+     * The name each screen was given, when its credential stops working, and when it was
+     * last used. Never the credential itself: that is returned once, when it is issued, and
+     * cannot be read back.
+     */
+    #[DocResponse(200, 'The kitchen screens set up for this restaurant.')]
+    #[DocResponse(401, 'No credential, or none that resolves a tenant.', type: ProblemDocument::class)]
+    #[DocResponse(403, 'That is not permitted.', type: ProblemDocument::class)]
+    public function index(): JsonResponse
+    {
+        /*
+         * ON `devices:write` AND NOT A NEW `devices:read`, which is the decision a reviewer
+         * should check rather than take on trust. Listing credentials is itself a
+         * credential-management act: the holders of a read ability here would be exactly
+         * the holders of the write one -- owner and manager -- because a staff member who
+         * may not issue or revoke a screen's credential has no reason to enumerate them.
+         * A second ability with an identical holder set is a distinction with no
+         * difference, and `RoleMatrix`'s array is the thing that would carry the
+         * duplication.
+         *
+         * `Cache-Control: private, no-store`, because this is tenant data on what `§12`'s
+         * lock clause assumes is a shared device.
+         */
+        return new JsonResponse(
+            ['devices' => $this->tokens->forTenant($this->tenant())],
+            200,
+            ['Cache-Control' => 'private, no-store'],
+        );
+    }
+
+    /**
      * Issue a device token.
      *
      * Returns the token once. Store it on the device; it cannot be read back.
