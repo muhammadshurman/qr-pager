@@ -320,9 +320,22 @@ say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
 # service worker, one for `R-100`'s harness page) and unifying them would change Task 9's
 # topology, so the server is told about both origins instead -- which is also what a
 # CloudFront deployment will need, per `App\Platform\Auth\PasskeyOrigins`.
-setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" exec php artisan serve --host=0.0.0.0 --port="$2"' \
+# ⚠ AND `RATELIMIT_SCALE`, BECAUSE THE LIMITER WAS WHAT THIS SUITE WAS MEASURING. Three red CI
+# runs and two red local ones were all reported as a sixty-second timeout in
+# `browser/support/e2e.ts`; the probe added there on 2026-11-02 named the real answer:
+# `/v1/auth/me -> 429 Too many requests`. This suite drives ~390 cases from ONE address, of
+# which roughly 66 are staff page loads, and each load calls `/v1/auth/me` -- bucket
+# `auth-session`, 60 per 60 s per IP -- so it crosses that window partway through and the API
+# refuses, correctly. The client maps 429 to its `server` kind, so the shell says "Something
+# went wrong on our side", which is false and names nothing (`§5` `R-224`).
+#
+# The bound is NOT weakened where it matters: `config/ratelimit.php` keeps every production
+# number, `RateLimitTest` drives the buckets at scale 1, and `RateLimitScaleTest` pins the
+# default AT 1. 20x is this stack only, so the suite measures the application rather than a
+# bound written for real traffic and exceeded by a synthetic burst.
+setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" exec php artisan serve --host=0.0.0.0 --port="$2"' \
   e2e-api "${REPO}/apps/api" "${API_PORT}" "https://${BROWSER_HOST}:${TLS_API_PORT}" \
-  "https://${BROWSER_HOST}:${TLS_PORT}" \
+  "https://${BROWSER_HOST}:${TLS_PORT}" "20" \
   >"${API_LOG}" 2>&1 &
 api_pid=$!
 

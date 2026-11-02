@@ -2,6 +2,48 @@
 
 declare(strict_types=1);
 
+/*
+ * ⚠ EVERY BOUND BELOW IS WRITTEN AT ITS PRODUCTION VALUE AND MULTIPLIED BY `RATELIMIT_SCALE`,
+ * WHICH DEFAULTS TO 1 — SO PRODUCTION IS EXACTLY WHAT THE NUMBERS SAY.
+ *
+ * The scale exists for ONE caller: the browser suite's own stack. Measured 2026-11-02, after
+ * three red CI runs and two red local ones all blamed on a sixty-second timeout:
+ * `pnpm run gate:e2e` drives ~390 cases from a single IP, of which roughly 66 are staff page
+ * loads, and each load calls `/v1/auth/me` (bucket `auth-session`, **60 per 60 s per IP**) and
+ * `/v1/tenant`. The suite therefore crosses that window partway through and the API answers
+ * **429** — correctly. The client maps 429 to its `server` kind, so the shell renders *"Something
+ * went wrong on our side. Nothing you did caused it."*, which is both false and unreadable as a
+ * diagnosis; `browser/support/e2e.ts` now probes the API when a staff page reaches the error
+ * state, and that probe is what finally said `429 Too many requests` out loud.
+ *
+ * ⚠ THE LIMITER IS NOT WEAKENED AND IS STILL PROVEN. `tests/Feature/Http/RateLimitTest.php`
+ * drives these buckets at scale 1 — `R-063`'s clause that *a limit is proven by being driven
+ * and not by being configured* — and `RateLimitScaleTest` pins the default AT 1 so an override
+ * cannot quietly become the production value. What the scale changes is which thing the browser
+ * suite measures: the application, rather than a bound written for real traffic and then
+ * exceeded by a synthetic burst from one address.
+ *
+ * ⚠ AND THE CLIENT'S 429 HANDLING IS A SEPARATE, REAL DEFECT, recorded rather than fixed here:
+ * `§5` `R-224`. A throttled staff screen should say *wait a moment*, not *our side is broken*,
+ * and that needs a state in `§12`'s table with copy in both launch languages — a product-copy
+ * decision, which is 10b's (it builds the polled board, where a 429 is most likely).
+ */
+
+$scale = max(1, (int) env('RATELIMIT_SCALE', 1));
+
+/**
+ * One bucket half, scaled.
+ *
+ * A closure used only while this file is EVALUATED, so nothing uncacheable reaches the returned
+ * array and `php artisan config:cache` is unaffected.
+ *
+ * @return array{attempts: int, seconds: int}
+ */
+$limit = static fn (int $attempts, int $seconds): array => [
+    'attempts' => $attempts * $scale,
+    'seconds' => $seconds,
+];
+
 return [
 
     /*
@@ -23,8 +65,8 @@ return [
     'buckets' => [
 
         'api' => [
-            'per_ip' => ['attempts' => 120, 'seconds' => 60],
-            'per_tenant' => ['attempts' => 600, 'seconds' => 60],
+            'per_ip' => $limit(120, 60),
+            'per_tenant' => $limit(600, 60),
         ],
 
         /*
@@ -53,7 +95,7 @@ return [
         | a script needs to matter, which is the property that counts here.
         */
         'panel' => [
-            'per_ip' => ['attempts' => 240, 'seconds' => 60],
+            'per_ip' => $limit(240, 60),
             // ⚠ A PER-TENANT HALF, ADDED AT TASK 7, and the comment this replaces said
             // there was "no tenant dimension available on this surface at all". That was
             // true of the PLATFORM panel, whose users hold no membership. It is false of
@@ -80,7 +122,7 @@ return [
             //
             // The platform panel is unaffected: a platform admin resolves to no tenant,
             // so only the per-IP half applies there, which is what it had before.
-            'per_tenant' => ['attempts' => 600, 'seconds' => 60],
+            'per_tenant' => $limit(600, 60),
         ],
 
         /*
@@ -97,8 +139,8 @@ return [
         | only one of them that can write repeatedly.
         */
         'pager-create' => [
-            'per_ip' => ['attempts' => 60, 'seconds' => 60],
-            'per_tenant' => ['attempts' => 240, 'seconds' => 60],
+            'per_ip' => $limit(60, 60),
+            'per_tenant' => $limit(240, 60),
         ],
 
         /*
@@ -138,8 +180,8 @@ return [
         | tenant" applies in full rather than in half.
         */
         'devices-issue' => [
-            'per_ip' => ['attempts' => 10, 'seconds' => 60],
-            'per_tenant' => ['attempts' => 20, 'seconds' => 60],
+            'per_ip' => $limit(10, 60),
+            'per_tenant' => $limit(20, 60),
         ],
 
         /*
@@ -155,7 +197,7 @@ return [
         | (one attempt, maybe three on a bad day) and far below what guessing needs.
         */
         'auth-login' => [
-            'per_ip' => ['attempts' => 10, 'seconds' => 60],
+            'per_ip' => $limit(10, 60),
         ],
 
         /*
@@ -165,7 +207,7 @@ return [
         | code and a retry and nothing else.
         */
         'auth-2fa' => [
-            'per_ip' => ['attempts' => 5, 'seconds' => 60],
+            'per_ip' => $limit(5, 60),
         ],
 
         /*
@@ -189,7 +231,7 @@ return [
         | is work an unauthenticated caller can make this process do.
         */
         'auth-passkey' => [
-            'per_ip' => ['attempts' => 30, 'seconds' => 60],
+            'per_ip' => $limit(30, 60),
         ],
 
         /*
@@ -209,7 +251,7 @@ return [
         | which is why it is not on `auth-login`'s 10.
         */
         'auth-session' => [
-            'per_ip' => ['attempts' => 60, 'seconds' => 60],
+            'per_ip' => $limit(60, 60),
         ],
 
         /*
@@ -253,11 +295,11 @@ return [
         | so there is no tenant to key on even in principle.
         */
         'auth-surface' => [
-            'per_ip' => ['attempts' => 120, 'seconds' => 60],
+            'per_ip' => $limit(120, 60),
         ],
 
         'pager-token' => [
-            'per_ip' => ['attempts' => 30, 'seconds' => 60],
+            'per_ip' => $limit(30, 60),
         ],
 
         /*
@@ -269,7 +311,7 @@ return [
         | that one session's state, which they are already entitled to.
         */
         'pager-poll' => [
-            'per_ip' => ['attempts' => 240, 'seconds' => 60],
+            'per_ip' => $limit(240, 60),
         ],
 
         /*
@@ -280,7 +322,7 @@ return [
         | endpoint into one row however many times it is called.
         */
         'pager-subscribe' => [
-            'per_ip' => ['attempts' => 20, 'seconds' => 60],
+            'per_ip' => $limit(20, 60),
         ],
 
         /*
@@ -291,7 +333,7 @@ return [
         | carries no tenant: it is refused before anything resolves one.
         */
         'unknown' => [
-            'per_ip' => ['attempts' => 30, 'seconds' => 60],
+            'per_ip' => $limit(30, 60),
         ],
 
     ],
