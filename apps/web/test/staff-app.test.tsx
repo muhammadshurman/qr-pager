@@ -199,6 +199,39 @@ describe('a signed-in shell', () => {
   })
 })
 
+describe('the chrome', () => {
+  it('offers a way back from every screen, and says which one you are on', async () => {
+    // ⚠ §12 S2's content inventory names navigation, and the first version passed
+    // `nav={null}`: a person who reached `/staff/devices` had no way back except the
+    // browser's back button, which a wall-mounted kitchen tablet in kiosk mode does not
+    // have. `aria-current` rather than colour alone, so "where am I" is in the accessible
+    // tree and not only in the paint.
+    const navigated: string[] = []
+
+    stack()
+
+    render(<StaffApp apiBase="" view="devices" onNavigate={(next) => navigated.push(next)} />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+    })
+
+    const home = document.querySelector<HTMLButtonElement>('[data-nav="home"]')
+    const devices = document.querySelector<HTMLButtonElement>('[data-nav="devices"]')
+
+    expect(home).not.toBeNull()
+    expect(devices).not.toBeNull()
+
+    // On the devices view, `devices` is current and `home` is not.
+    expect(devices?.getAttribute('aria-current')).toBe('page')
+    expect(home?.getAttribute('aria-current')).toBeNull()
+
+    home?.click()
+
+    expect(navigated).toEqual(['home'])
+  })
+})
+
 describe('the lock', () => {
   it('destroys the SERVER session first, then drops the data, then covers the screen', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })

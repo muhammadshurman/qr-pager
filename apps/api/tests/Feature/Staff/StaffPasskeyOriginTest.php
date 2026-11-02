@@ -73,6 +73,24 @@ it('accepts an origin and nothing that merely looks like one', function (): void
     }
 });
 
+it('reads its extra origins from CONFIG, so `config:cache` cannot silently empty them', function (): void {
+    // ⚠ THE BUG `larastan` CAUGHT, PINNED. The first version read `env()` from inside
+    // `PasskeyOrigins`, and `env()` answers null once `php artisan config:cache` has run -- so
+    // a cached production deployment would have dropped every extra origin, and the symptom
+    // is a passkey login failing with nothing naming an origin. That is the exact failure this
+    // class exists to prevent, reintroduced by the mechanism meant to fix it.
+    expect(PasskeyOrigins::CONFIG_KEY)->toBe('webauthn.extra_origins');
+    expect(config('webauthn.extra_origins'))->toBeArray();
+
+    // Driven: a value set in config reaches the allow-list, and a bad one does not.
+    config(['webauthn.extra_origins' => ['https://staff.example.com', 'https://bad.test/path', '']]);
+
+    expect(PasskeyOrigins::allowed())->toBe([
+        (string) config('app.url'),
+        'https://staff.example.com',
+    ]);
+});
+
 it('is a closed list with no wildcard in it, whatever the environment says', function (): void {
     // The property a reviewer should check directly, independent of the validator: no entry in
     // the list the library is actually given may contain a star.

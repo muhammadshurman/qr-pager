@@ -234,32 +234,69 @@ let staffCookies: Awaited<ReturnType<BrowserContext['cookies']>> | null = null
  * refreshes the cache. A cache that silently served a dead session would turn every later
  * case into a sign-in-screen assertion failure with no hint of the cause.
  */
+/**
+ * Which screen `/staff` settled on, decided by whichever marker appears FIRST.
+ *
+ * ⚠ A RACE AND NOT A FIXED WAIT, AND THE FIXED WAIT COST A GATE RUN. The first version gave
+ * the restored session five seconds to produce a shell and logged in from scratch if it did
+ * not. On WebKit under load the identity round trip took longer than that, so the probe
+ * reported "not restored" for a session that was perfectly good — and by the time the helper
+ * looked for *"Use a password instead"*, the page had finished loading the SHELL and there was
+ * no sign-in control to click. The case spent its whole 90 s budget waiting for a button that
+ * could not appear, and reported a timeout on a line that was not the problem.
+ *
+ * Racing the two markers removes the timing judgement entirely: the page is in exactly one of
+ * these states and the first selector to match says which. Each side swallows its own
+ * rejection, or the loser's timeout surfaces as an unhandled rejection after the test has
+ * moved on.
+ */
+async function settledOn(page: Page): Promise<'shell' | 'signin'> {
+  const shell = page
+    .waitForSelector('[data-staff-shell="true"]', { timeout: 60_000 })
+    .then(() => 'shell' as const)
+    .catch(() => 'never' as const)
+
+  const signin = page
+    .waitForSelector('[data-passkey-signin="true"]', { timeout: 60_000 })
+    .then(() => 'signin' as const)
+    .catch(() => 'never' as const)
+
+  const first = await Promise.race([shell, signin])
+
+  if (first !== 'never') return first
+
+  // Both timed out: the page reached neither state, which is a real failure rather than
+  // something to paper over. Awaiting both gives the error message something to say.
+  const [a, b] = await Promise.all([shell, signin])
+
+  throw new Error(
+    `/staff settled on neither the shell nor sign-in within 60s (shell=${a}, signin=${b})`,
+  )
+}
+
 export async function signInAsStaff(page: Page): Promise<StaffFixture> {
   const fixture = staffFixture()
   const context = page.context()
 
   if (staffCookies !== null) {
     await context.addCookies(staffCookies)
-    await page.goto('/staff')
-
-    // A short wait, not the full 30 s: a restored session either works immediately or is
-    // dead, and spending the whole budget here would make the fallback below useless.
-    const restored = await page
-      .waitForSelector('[data-staff-shell="true"]', { timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false)
-
-    if (restored) return fixture
-
-    staffCookies = null
   }
 
   await page.goto('/staff')
+
+  if ((await settledOn(page)) === 'shell') {
+    // Either the restored session worked, or this context was already authenticated. Both are
+    // the state the caller asked for, so there is nothing to do.
+    return fixture
+  }
+
+  staffCookies = null
+
   await page.getByRole('button', { name: /use a password instead|استخدم كلمة المرور/i }).click()
   await page.locator('input[name="email"]').fill(fixture.owner.email)
   await page.locator('input[name="password"]').fill(fixture.owner.password)
   await page.locator('[data-password-signin="true"]').click()
-  await page.waitForSelector('[data-staff-shell="true"]', { timeout: 30_000 })
+  await page.waitForSelector('[data-staff-shell="true"]', { timeout: 60_000 })
 
   staffCookies = await context.cookies()
 

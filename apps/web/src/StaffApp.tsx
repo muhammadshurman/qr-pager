@@ -1,6 +1,6 @@
 'use client'
 
-import { LockScreen, StaffShell, StaffState, ThemeProvider, type Locale } from '@qrpager/ui'
+import { Button, LockScreen, StaffShell, StaffState, ThemeProvider, type Locale } from '@qrpager/ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { translatorFor } from './copy/index.ts'
@@ -565,7 +565,37 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
         signedInLabel={t('staff.shell.signedIn', { name: identity.name })}
         signOutLabel={t('staff.shell.signOut')}
         onSignOut={() => void lock()}
-        nav={null}
+        nav={
+          /*
+           * ⚠ NAVIGATION, AND ITS ABSENCE WAS A REAL HOLE RATHER THAN AN OMISSION OF POLISH.
+           * `QRPAGER-25 §12` S2's content inventory names it, and the first version passed
+           * `nav={null}`: a person who reached `/staff/devices` had no way back to `/staff`
+           * except the browser's back button, which on a wall-mounted kitchen tablet in
+           * kiosk mode is not reachable at all.
+           *
+           * Two entries, because there are two staff routes. `aria-current="page"` rather
+           * than colour alone, so which one you are on is in the accessible tree and not
+           * only in the paint -- `§12`'s *visible focus ring* clause's sibling.
+           */
+          <>
+            <Button
+              variant={view === 'home' ? 'secondary' : 'quiet'}
+              onClick={() => onNavigate?.('home')}
+              aria-current={view === 'home' ? 'page' : undefined}
+              data-nav="home"
+            >
+              {t('staff.nav.today')}
+            </Button>
+            <Button
+              variant={view === 'devices' ? 'secondary' : 'quiet'}
+              onClick={() => onNavigate?.('devices')}
+              aria-current={view === 'devices' ? 'page' : undefined}
+              data-nav="devices"
+            >
+              {t('staff.nav.devices')}
+            </Button>
+          </>
+        }
       >
         {body()}
       </StaffShell>

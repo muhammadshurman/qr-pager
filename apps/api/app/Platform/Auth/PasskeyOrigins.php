@@ -63,8 +63,19 @@ namespace App\Platform\Auth;
  */
 final class PasskeyOrigins
 {
-    /** The environment variable, comma-separated. Empty in `.env.example` and in production. */
-    public const VARIABLE = 'PASSKEY_EXTRA_ORIGINS';
+    /**
+     * Where the extra origins are read from.
+     *
+     * ⚠ A CONFIG KEY AND NOT `env()`, AND `larastan` CAUGHT THE FIRST VERSION DOING THE LATTER
+     * -- correctly, and it is a real bug rather than a style rule. `env()` returns **null**
+     * once `php artisan config:cache` has run, so a cached production deployment would have
+     * silently dropped every extra origin, and the symptom is a passkey login failing with
+     * nothing in the response naming an origin: the exact failure this class exists to
+     * prevent, reintroduced by the mechanism meant to fix it.
+     *
+     * `config/webauthn.php` reads the variable, which is the one place `env()` is correct.
+     */
+    public const CONFIG_KEY = 'webauthn.extra_origins';
 
     /**
      * `APP_URL` first and always, then every valid extra origin, deduplicated.
@@ -77,8 +88,9 @@ final class PasskeyOrigins
      */
     public static function allowed(): array
     {
+        $declared = config(self::CONFIG_KEY, []);
         $extra = array_filter(
-            array_map('trim', explode(',', (string) env(self::VARIABLE, ''))),
+            is_array($declared) ? array_map(strval(...), $declared) : [],
             self::isOrigin(...),
         );
 

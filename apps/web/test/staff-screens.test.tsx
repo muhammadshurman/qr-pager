@@ -158,6 +158,37 @@ describe('kitchen screens — §12: not one identifier reaches the screen', () =
     expect(everythingRendered(container)).not.toContain(DEVICES[0].id)
   })
 
+  it('shows a credential in hand even when the list reload FAILED, so it cannot be lost', () => {
+    // ⚠ THE DEFECT THIS PINS WAS FOUND BY READING THE FILE. `onIssue()` sets `issued` and then
+    // reloads the list; the first version of this screen checked `loading`, `error` and
+    // `offline` BEFORE `issued`, so a failed reload left the token set and never rendered.
+    // The credential exists on the server, `DeviceTokens::issue()` returns it exactly once,
+    // and nothing can read it back -- so the only recovery is removing the screen just
+    // created, which the person would have no way of knowing.
+    for (const state of ['error', 'offline', 'loading'] as const) {
+      const { unmount } = render(
+        <StaffDevices
+          t={t}
+          state={state}
+          devices={[]}
+          issued={{ id: 'x', token: 'must-not-be-lost', expiresAt: '2026-12-01T10:00:00Z' }}
+          onRetry={vi.fn()}
+          onIssue={vi.fn()}
+          onDismissIssued={vi.fn()}
+          onRemove={vi.fn()}
+          formatDate={(iso) => iso}
+        />,
+      )
+
+      expect(
+        document.querySelector('[data-one-time-secret="true"]')?.textContent,
+        `the credential was hidden by the ${state} state`,
+      ).toBe('must-not-be-lost')
+
+      unmount()
+    }
+  })
+
   it('states what removal DOES rather than what it is called', () => {
     render(
       <StaffDevices

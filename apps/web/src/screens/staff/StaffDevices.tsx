@@ -60,33 +60,20 @@ export function StaffDevices({
   const [name, setName] = useState('')
   const [removing, setRemoving] = useState<string | null>(null)
 
-  if (state === 'loading') {
-    return <StaffState state="loading" loadingLabel={t('staff.shell.loading')} />
-  }
-
-  if (state === 'permission-denied') {
-    return (
-      <StaffState
-        state="permission-denied"
-        title={t('staff.devices.denied.title')}
-        description={t('staff.devices.denied.body')}
-      />
-    )
-  }
-
-  if (state === 'error' || state === 'offline') {
-    return (
-      <StaffState
-        state={state}
-        title={t(state === 'offline' ? 'staff.devices.offline.title' : 'staff.devices.error.title')}
-        description={t(
-          state === 'offline' ? 'staff.devices.offline.body' : 'staff.devices.error.body',
-        )}
-        action={{ label: t('staff.shell.error.retry'), onAction: onRetry }}
-      />
-    )
-  }
-
+  /*
+   * ⚠ THE ONE-TIME CREDENTIAL IS SHOWN BEFORE EVERY OTHER STATE, AND THE ORDER IS A DEFECT
+   * THAT WAS FOUND BY READING THIS FILE RATHER THAN BY A TEST.
+   *
+   * The first version checked `loading`, `permission-denied`, `error` and `offline` first.
+   * `onIssue()` sets `issued` and then reloads the list — so a reload that failed left
+   * `issued` set, `state` at `'error'`, and the token **never rendered at all**. The
+   * credential exists on the server, the person never saw it, `DeviceTokens::issue()` returns
+   * it exactly once and nothing can read it back: the only recovery is to remove the screen
+   * they just created and start again, and they would not know that is what happened.
+   *
+   * So a token in hand outranks every other state, including a failed refresh. The list
+   * behind it being stale is a cosmetic problem; the token being lost is not.
+   */
   if (issued !== null) {
     return (
       <section>
@@ -111,6 +98,33 @@ export function StaffDevices({
           </Button>
         </div>
       </section>
+    )
+  }
+
+  if (state === 'loading') {
+    return <StaffState state="loading" loadingLabel={t('staff.shell.loading')} />
+  }
+
+  if (state === 'permission-denied') {
+    return (
+      <StaffState
+        state="permission-denied"
+        title={t('staff.devices.denied.title')}
+        description={t('staff.devices.denied.body')}
+      />
+    )
+  }
+
+  if (state === 'error' || state === 'offline') {
+    return (
+      <StaffState
+        state={state}
+        title={t(state === 'offline' ? 'staff.devices.offline.title' : 'staff.devices.error.title')}
+        description={t(
+          state === 'offline' ? 'staff.devices.offline.body' : 'staff.devices.error.body',
+        )}
+        action={{ label: t('staff.shell.error.retry'), onAction: onRetry }}
+      />
     )
   }
 
