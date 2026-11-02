@@ -177,7 +177,63 @@ test.describe('§12 on the staff shell', () => {
      * reachable, visible focus ring*. Tabbing proves both at once — a control the ring is
      * drawn on but that Tab cannot reach would pass the old version and fail this one.
      */
-    const controls = await page.locator('button:visible, a[href]:visible, input:visible').count()
+    /*
+     * ⚠ FOCUS IS RETURNED TO THE DOCUMENT BEFORE TABBING, AND LEAVING IT OUT COST AN e2e
+     * ROUND — 4 failures reading *"Tab reached 7 of 8 controls"* in Chromium and WebKit while
+     * Firefox passed.
+     *
+     * `openDetailPanel()` CLICKS a button, and a click focuses it in those two engines (not
+     * reliably in Firefox, which is why the split looked like an engine bug and is not). That
+     * left focus in the MIDDLE of the tab order, so a budget of exactly `controls` presses
+     * wrapped past the end of the document, one press landed outside it, and the sweep
+     * counted one control short — a correct screen reported as unreachable.
+     *
+     * The assertion is unchanged and still an equality. What is fixed is the precondition it
+     * always assumed: that tabbing starts from the top.
+     */
+    await page.evaluate(() => {
+      const active = document.activeElement
+
+      if (active instanceof HTMLElement) active.blur()
+    })
+
+    /*
+     * ⚠ **EVERY CONTROL IS TAGGED AND THE SWEEP ASSERTS THE SET IT REACHED, NOT A COUNT OF
+     * PRESSES — and the count-based version cost two e2e rounds to understand.**
+     *
+     * It pressed Tab exactly `controls` times and required `seen.length === controls`, which
+     * assumes every press lands on a control. It does not: **Chromium and WebKit make a
+     * SCROLLABLE CONTAINER keyboard-focusable**, so with the detail panel open one press is
+     * spent on the scroller and the sweep reported *"Tab reached 6 of 7 controls"* against a
+     * screen where all seven are reachable. Firefox passed throughout, which is what made the
+     * split look like an engine defect rather than a measurement defect. Blurring first was
+     * the obvious fix and did not help, because the problem was never where tabbing STARTED.
+     *
+     * So each control gets a `data-sweep` id, the budget is generous, and the assertion is
+     * **set equality**: every control was reached, identified rather than counted. That is
+     * strictly stronger than the old equality — it could be satisfied by reaching one control
+     * seven times — and it is immune to any focusable non-control the engines invent next.
+     */
+    const ids = await page.evaluate(() => {
+      const found: string[] = []
+
+      document.querySelectorAll('button, a[href], input').forEach((element, index) => {
+        const box = element.getBoundingClientRect()
+
+        // Visible only, matching the locator this replaced: a collapsed disclosure's
+        // contents are not reachable and must not be demanded.
+        if (box.width === 0 && box.height === 0) return
+
+        const id = `sweep-${String(index)}`
+
+        element.setAttribute('data-sweep', id)
+        found.push(id)
+      })
+
+      return found
+    })
+
+    const controls = ids.length
 
     /*
      * Not vacuous: the shell HAS controls, and this count bounds the loop below.
@@ -190,9 +246,12 @@ test.describe('§12 on the staff shell', () => {
      */
     expect(controls, 'the shell rendered no controls at all').toBeGreaterThanOrEqual(2)
 
-    const seen: { name: string; width: string; style: string }[] = []
+    const seen: { name: string; width: string; style: string; id: string }[] = []
+    const reached = new Set<string>()
 
-    for (let step = 0; step < controls; step += 1) {
+    // Three presses per control. Generous on purpose: the budget's job is to outlast whatever
+    // else an engine decides is focusable, and the assertion below is what bounds the claim.
+    for (let step = 0; step < controls * 3 && reached.size < controls; step += 1) {
       await page.keyboard.press('Tab')
 
       const ring = await page.evaluate(() => {
@@ -200,19 +259,24 @@ test.describe('§12 on the staff shell', () => {
 
         if (element === null || element === document.body) return null
 
+        const id = element.getAttribute('data-sweep')
+
+        if (id === null) return null
+
         const resolved = getComputedStyle(element)
 
         return {
+          id,
           name: element.textContent.trim().slice(0, 40),
           width: resolved.outlineWidth,
           style: resolved.outlineStyle,
-          tag: element.tagName,
         }
       })
 
       if (ring === null) continue
-      if (!['BUTTON', 'A', 'INPUT'].includes(ring.tag)) continue
+      if (reached.has(ring.id)) continue
 
+      reached.add(ring.id)
       seen.push(ring)
     }
 
@@ -222,9 +286,12 @@ test.describe('§12 on the staff shell', () => {
      * one step left `seen` with one entry and passed `>= 2` as soon as there were two
      * controls; `=== controls` says what the sentence above it always claimed.
      */
-    expect(seen.length, `Tab reached ${String(seen.length)} of ${String(controls)} controls`).toBe(
-      controls,
-    )
+    const missed = ids.filter((id) => !reached.has(id))
+
+    expect(
+      missed,
+      `Tab never reached ${String(missed.length)} of ${String(controls)} controls: ${missed.join(', ')}`,
+    ).toEqual([])
 
     for (const ring of seen) {
       expect(ring.style, `"${ring.name}" has outline-style ${ring.style}`).not.toBe('none')
