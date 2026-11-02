@@ -626,7 +626,12 @@ data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
 sys.stdout.write(data['alpha']['id'])
 " "$staff_fixture")"
 
-  latency_pagers="${REPO}/apps/api/storage/logs/e2e-latency-pagers.json"
+  # ⚠ `LOG_DIR`, WHICH IS THE REPO ROOT'S `storage/logs`, AND NOT `apps/api`'s — the env
+  # var below is resolved against `REPO` inside the container, exactly as
+  # `QRPAGER_E2E_STAFF_FIXTURE` is. The first version wrote to `apps/api/storage/logs`
+  # and passed a repo-root-relative path, so the proof died on `ENOENT` for a file that
+  # existed one directory over.
+  latency_pagers="${LOG_DIR}/e2e-latency-pagers.json"
   : >"$latency_pagers"
   chmod 600 "$latency_pagers"
 
