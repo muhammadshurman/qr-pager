@@ -140,6 +140,22 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
     // NONE takes a tenant from request input. `PagerIdorTest` drives five caller-supplied
     // tenant shapes at the staff surface and requires 404 from each, which is the runtime
     // half of the same statement.
+    //
+    // ⚠ ONE LINE MOVED AT TASK 10b AND NO CALLER CHANGED: `AuthController:189` -> `:216`.
+    // READ BEFORE UPDATING, which is what the failure message below asks for, and the answer
+    // is the one this list already records for that site: it is `identity()`'s `for($userId)`
+    // with `$userId` the value `me()` took from the guard, unchanged in shape and in
+    // provenance. What moved it is a 28-line INTERNAL NOTES comment added above it, because
+    // `R-222`'s reasoning could not stay where it was -- a comment above a key in that method's
+    // array is PUBLISHED as the property's description in `docs/openapi.json` (`R-052`), and
+    // `OpenApiSpecTest` caught the whole paragraph in the spec.
+    //
+    // ⚠ AND THE SHAPE OF THIS GUARD IS WORTH A SENTENCE, since it fired for a comment: a
+    // `file:line` pin moves on any edit above a call site, so most of its reds will be shifts
+    // rather than new callers. That is friction by design -- the message demands a human read
+    // the moved line -- but it is also how a pin gets updated mechanically after the third
+    // time. Left as it is, because the mechanism belongs to whoever owns this guard and 10b
+    // came to build a board; recorded in `§4a`'s 10b notes rather than changed in passing.
     expect(membershipCallSites())->toBe([
         'app/Platform/Auth/ActiveTenant.php:111',
         'app/Platform/Auth/AuthenticatedMembership.php:53',
@@ -148,7 +164,7 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
         'app/Platform/Auth/AuthenticatedTenantResolver.php:162',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:167',
         'app/Platform/Auth/Http/AuthController.php:102',
-        'app/Platform/Auth/Http/AuthController.php:189',
+        'app/Platform/Auth/Http/AuthController.php:216',
         'app/Platform/Auth/RequestPrincipal.php:85',
     ], 'the set of callers of the named cross-tenant membership path changed -- read the '
        .'new one and say where its user id comes from before updating this list');
