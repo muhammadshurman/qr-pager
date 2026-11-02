@@ -499,6 +499,23 @@ cp "${issued_dir}/harness-user.json" "$harness_user"
 chmod 600 "$harness_user"
 say "created the passkey harness user -> ${harness_user} (git-ignored, mode 600)"
 
+# ------------------------------------------------- Task 10a's staff fixture (QRPAGER-25)
+#
+# TWO restaurants and a staff account in the first. `bin/issue-harness-user` above makes a
+# user with NO membership, which is right for `R-100` and useless for a staff shell -- and
+# the SECOND restaurant is what makes 10a's invariant provable in a browser at all: its rows
+# have to EXIST for a cross-tenant refusal to mean isolation rather than absence.
+if ! (cd "${REPO}/apps/api" && php bin/issue-staff-fixture) >"${issued_dir}/staff-fixture.json" 2>&1; then
+  say 'FAILED: could not create the staff fixture'
+  cat "${issued_dir}/staff-fixture.json" >&2
+  exit 1
+fi
+
+staff_fixture="${LOG_DIR}/e2e-staff-fixture.json"
+cp "${issued_dir}/staff-fixture.json" "$staff_fixture"
+chmod 600 "$staff_fixture"
+say "created the staff fixture -> ${staff_fixture} (git-ignored, mode 600)"
+
 # ------------------------------------------------------------------- the three engines
 #
 # ⚠ ONE STACK FOR BOTH MEASUREMENTS. `QRPAGER_E2E_LIGHTHOUSE=1` adds the Lighthouse proof
@@ -511,6 +528,7 @@ export QRPAGER_E2E_BASE="${TLS_ORIGIN}"
 export QRPAGER_E2E_SESSIONS="storage/logs/e2e-sessions.json"
 export QRPAGER_E2E_API_BASE="${TLS_API_ORIGIN}"
 export QRPAGER_E2E_HARNESS_USER="storage/logs/e2e-harness-user.json"
+export QRPAGER_E2E_STAFF_FIXTURE="storage/logs/e2e-staff-fixture.json"
 
 if [ "${QRPAGER_E2E_SUITE:-1}" = "1" ]; then
   say "running the journey suite"

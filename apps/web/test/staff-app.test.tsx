@@ -42,9 +42,15 @@ function stack(options?: { readonly identity?: unknown; readonly tenantStatus?: 
   const calls: Call[] = []
 
   const json = (status: number, body: unknown): Response =>
-    ({ status, ok: status >= 200 && status < 300, json: async () => body }) as unknown as Response
+    ({
+      status,
+      ok: status >= 200 && status < 300,
+      // `Promise.resolve` rather than an `async` thunk: a fake's `json()` has nothing to
+      // await, which is what `require-await` is for.
+      json: () => Promise.resolve(body),
+    }) as unknown as Response
 
-  const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+  const fetchMock = vi.fn((input: unknown, init?: RequestInit) => {
     const url = String(input)
 
     calls.push({ url, method: init?.method ?? 'GET' })
@@ -83,7 +89,7 @@ function stack(options?: { readonly identity?: unknown; readonly tenantStatus?: 
 
 /** Every text node and attribute value in the document, as one string. */
 function everything(): string {
-  const parts: string[] = [document.body.textContent ?? '']
+  const parts: string[] = [document.body.textContent]
 
   for (const element of document.body.querySelectorAll('*')) {
     for (const attribute of element.attributes) parts.push(attribute.value)
@@ -105,13 +111,7 @@ describe('an unauthenticated caller', () => {
     for (const view of ['home', 'devices'] as StaffView[]) {
       vi.stubGlobal(
         'fetch',
-        vi
-          .fn()
-          .mockResolvedValue({
-            status: 401,
-            ok: false,
-            json: async () => ({}),
-          } as unknown as Response),
+        vi.fn().mockResolvedValue({ status: 401, ok: false, json: () => Promise.resolve({}) }),
       )
 
       const { unmount } = render(<StaffApp apiBase="" view={view} />)
@@ -151,7 +151,10 @@ describe('a signed-in shell', () => {
     )
   })
 
-  it('shows NO chrome while it is still loading, which was a real defect', async () => {
+  // Not `async`: this case asserts the FIRST render, synchronously and deliberately. The
+  // defect it pins is a flash, so a case that awaited anything would be asserting about a
+  // later moment than the one that leaked.
+  it('shows NO chrome while it is still loading, which was a real defect', () => {
     // Found by reading the BUILT HTML rather than by a test: the first version rendered the
     // shell for every phase but locked and signed-out, so `/staff` prerendered
     // `qr-staff__restaurant`, a `Sign out` button and `Signed in as ` with an empty name --

@@ -99,7 +99,9 @@ function compile(fixture: string): Compilation {
 
   rmSync(file, { force: true })
 
-  return { status: result.status ?? 1, output: `${result.stdout ?? ''}${result.stderr ?? ''}` }
+  // `spawnSync`'s stdout/stderr are typed as strings when `encoding` is set, so `??` on
+  // them is provably dead; `status` genuinely may be null when the child was signalled.
+  return { status: result.status ?? 1, output: `${result.stdout}${result.stderr}` }
 }
 
 describe('the staff state type', () => {

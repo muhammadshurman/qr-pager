@@ -42,7 +42,7 @@ const DEVICES = [
 
 /** Every text node and every attribute value in the rendered tree, as one string. */
 function everythingRendered(container: HTMLElement): string {
-  const parts: string[] = [container.textContent ?? '']
+  const parts: string[] = [container.textContent]
 
   for (const element of container.querySelectorAll('*')) {
     for (const attribute of element.attributes) {
@@ -175,7 +175,7 @@ describe('kitchen screens — §12: not one identifier reaches the screen', () =
 
     // The copy nowhere says "revoke", "token" or "credential" -- the three words a
     // developer would choose and a restaurant owner would not understand.
-    const body = document.body.textContent ?? ''
+    const body = document.body.textContent
 
     for (const word of ['revoke', 'token', 'credential', 'session', 'API']) {
       expect(body.toLowerCase().includes(word.toLowerCase()), `the screen says "${word}"`).toBe(
@@ -243,7 +243,7 @@ describe('sign-in', () => {
 
     expect(screen.getByText(t('staff.signin.failed'))).toBeDefined()
 
-    const body = document.body.textContent ?? ''
+    const body = document.body.textContent
 
     // None of the words that would tell a caller WHICH half failed.
     for (const word of ['password is', 'no such', 'not found', 'unknown email', 'incorrect']) {
@@ -331,7 +331,7 @@ describe('the shell home', () => {
 
     // And it does not say "not built yet", "coming soon" or "Task 10b" -- system vocabulary
     // about our own delivery plan, on a restaurant owner's screen.
-    const body = (document.body.textContent ?? '').toLowerCase()
+    const body = document.body.textContent.toLowerCase()
 
     for (const word of ['coming soon', 'not built', 'task 10', 'todo', 'placeholder']) {
       expect(body.includes(word), `the home screen says "${word}"`).toBe(false)

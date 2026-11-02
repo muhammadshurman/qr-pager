@@ -84,6 +84,36 @@ const PASSKEY_SPECS = ['**/passkey.spec.ts'] as const
 /** The geometry measurement, which reaches its states through the real app. */
 const ONE_HANDED = ['**/one-handed.spec.ts'] as const
 
+/**
+ * TASK 10a's STAFF SURFACE. `§12` in full, on the real stack, in three engines and both
+ * directions -- and the browser half of `QRPAGER-25 §0`'s invariant.
+ *
+ * It needs the stack: the shell's every byte of tenant data arrives from `/v1` at run time,
+ * so a filesystem fixture would render the loading state and nothing else. And it needs a
+ * SECURE origin, because the sign-in screen's primary action is `navigator.credentials` --
+ * undefined outside one.
+ */
+const STAFF_SPECS = ['**/staff.spec.ts'] as const
+
+/**
+ * The staff passkey ceremony. `PASSKEY_SPECS` proves `R-100` against Task 5's harness PAGE;
+ * this proves the same ceremony against **10a's own screen**, which is what `QRPAGER-25 §4`
+ * asks for in those words -- *"not against Task 5's harness page"*.
+ *
+ * ONE ENGINE, for the reason `PASSKEY_SPECS` states: `WebAuthn.addVirtualAuthenticator` is a
+ * CDP command and no other engine exposes an equivalent in any runner.
+ */
+const STAFF_PASSKEY_SPECS = ['**/staff-passkey.spec.ts'] as const
+
+/**
+ * A WALL TABLET, NOT A PHONE, and that is `§12`'s own reasoning rather than a preference: a
+ * kitchen screen is *"greasy, bright and viewed from two metres"*. Measuring staff chrome at
+ * 390x844 would measure a layout no kitchen has. 1024x768 at DPR 2 is the commonest mounted
+ * tablet shape.
+ */
+const TABLET = { width: 1024, height: 768 } as const
+const TABLET_DPR = 2
+
 const ENGINES = [
   { name: 'chromium', device: devices['Desktop Chrome'] },
   { name: 'firefox', device: devices['Desktop Firefox'] },
@@ -129,7 +159,14 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testIgnore: [...STACK_SPECS, ...ONE_HANDED, ...ENGINE_SPECS, ...PASSKEY_SPECS],
+      testIgnore: [
+        ...STACK_SPECS,
+        ...ONE_HANDED,
+        ...ENGINE_SPECS,
+        ...PASSKEY_SPECS,
+        ...STAFF_SPECS,
+        ...STAFF_PASSKEY_SPECS,
+      ],
       use: { ...devices['Desktop Chrome'] },
     },
     {
@@ -137,7 +174,14 @@ export default defineConfig({
       // than a test flag, because `prefers-reduced-motion` is a context-level setting in
       // Playwright and setting it per test would not affect CSS already parsed.
       name: 'chromium-reduced-motion',
-      testIgnore: [...STACK_SPECS, ...ONE_HANDED, ...ENGINE_SPECS, ...PASSKEY_SPECS],
+      testIgnore: [
+        ...STACK_SPECS,
+        ...ONE_HANDED,
+        ...ENGINE_SPECS,
+        ...PASSKEY_SPECS,
+        ...STAFF_SPECS,
+        ...STAFF_PASSKEY_SPECS,
+      ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
     },
 
@@ -191,6 +235,45 @@ export default defineConfig({
           : {}),
       },
     })),
+
+    {
+      // 10a's ceremony against 10a's own screen, in the one engine that can present a
+      // virtual authenticator.
+      name: 'staff-passkey-chromium',
+      testMatch: [...STAFF_PASSKEY_SPECS],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.QRPAGER_E2E_BASE,
+        viewport: TABLET,
+        deviceScaleFactor: TABLET_DPR,
+        hasTouch: true,
+        ignoreHTTPSErrors: true,
+      },
+    },
+
+    ...ENGINES.flatMap((engine) =>
+      (
+        [
+          ['ltr', 'en-GB'],
+          ['rtl', 'ar-JO'],
+        ] as const
+      ).map(([direction, locale]) => ({
+        name: `staff-${engine.name}-${direction}`,
+        testMatch: [...STAFF_SPECS],
+        use: {
+          ...engine.device,
+          baseURL: process.env.QRPAGER_E2E_BASE,
+          viewport: TABLET,
+          deviceScaleFactor: TABLET_DPR,
+          hasTouch: true,
+          ignoreHTTPSErrors: true,
+          // `ar-JO` rather than a bare `ar`, for the reason the one-handed projects state:
+          // real phones and tablets send a region subtag, and a project pinned to `ar` would
+          // pass while every Arabic device in the launch region got English.
+          locale,
+        },
+      })),
+    ),
 
     ...ENGINES.flatMap((engine) =>
       (

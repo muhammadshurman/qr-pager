@@ -117,3 +117,107 @@ export async function answerPermissionWith(
     })
   }, answer)
 }
+
+/* ================================================================================
+ * TASK 10a's STAFF FIXTURE. Two restaurants, and a staff account in the first.
+ * ================================================================================
+ *
+ * `tools/browsers/bin/e2e` creates it with `apps/api/bin/issue-staff-fixture`, through the
+ * real services -- so beta's session, membership and device-token ids are the ones the
+ * application's own comparisons are written against.
+ *
+ * ⚠ BETA'S IDS ARE THE POINT. `QRPAGER-25 §0`'s invariant is proven by aiming at rows that
+ * EXIST: a 404 for a row that was never there proves absence, not isolation, and
+ * `RoleMatrixTest`'s own comment records that defect in the PHP suite.
+ *
+ * It THROWS rather than skipping, for the reason this file's header already gives.
+ */
+
+export interface StaffFixture {
+  readonly alpha: {
+    readonly id: string
+    readonly name: string
+    readonly slug: string
+    readonly membership_id: string
+  }
+  readonly owner: { readonly email: string; readonly password: string; readonly name: string }
+  readonly beta: {
+    readonly id: string
+    readonly name: string
+    readonly session_id: string
+    readonly membership_id: string
+    readonly device_id: string
+  }
+}
+
+let staffCached: StaffFixture | null = null
+
+export function staffFixture(): StaffFixture {
+  if (staffCached !== null) return staffCached
+
+  const path = process.env.QRPAGER_E2E_STAFF_FIXTURE
+
+  if (path === undefined || path === '') {
+    throw new Error(
+      'QRPAGER_E2E_STAFF_FIXTURE is unset. This spec needs two restaurants and a staff ' +
+        'account in the first -- run it through `tools/browsers/bin/e2e`, which creates them ' +
+        'with `apps/api/bin/issue-staff-fixture`. It does not skip: 10a ships on an invariant ' +
+        'with no other evidence behind it.',
+    )
+  }
+
+  const repo = join(import.meta.dirname, '..', '..')
+  /*
+   * ⚠ PARSED AS A LOOSE RECORD AND NARROWED, NOT CAST TO THE INTERFACE AND TRUSTED. A cast
+   * tells the compiler every field is present, which is the one thing a file read from disk
+   * cannot promise -- and it would make the check below provably dead code, which
+   * `@typescript-eslint/no-unnecessary-condition` says in so many words.
+   */
+  const raw = JSON.parse(readFileSync(join(repo, path), 'utf8')) as Record<
+    string,
+    Record<string, string> | undefined
+  >
+
+  // ⚠ READ BACK, so a fixture that wrote a partial document cannot make a cross-tenant case
+  // vacuous -- every assertion in that case is a NEGATIVE, and an empty id matches nothing.
+  for (const [section, key] of [
+    ['alpha', 'id'],
+    ['owner', 'email'],
+    ['beta', 'id'],
+    ['beta', 'session_id'],
+    ['beta', 'membership_id'],
+    ['beta', 'device_id'],
+  ] as const) {
+    const value = raw[section]?.[key]
+
+    if (typeof value !== 'string' || value === '') {
+      throw new Error(
+        `the staff fixture carries no ${section}.${key}, so a cross-tenant case would be vacuous`,
+      )
+    }
+  }
+
+  staffCached = raw as unknown as StaffFixture
+
+  return staffCached
+}
+
+/**
+ * Sign in as the staff fixture's owner, through the real login form on 10a's own screen.
+ *
+ * The PASSWORD path, deliberately: this helper is used by the `§12` and isolation cases,
+ * which are about the shell rather than about the ceremony, and a WebAuthn ceremony needs CDP
+ * and therefore one engine. `browser/staff-passkey.spec.ts` drives the passkey path.
+ */
+export async function signInAsStaff(page: Page): Promise<StaffFixture> {
+  const fixture = staffFixture()
+
+  await page.goto('/staff')
+  await page.getByRole('button', { name: /use a password instead|استخدم كلمة المرور/i }).click()
+  await page.locator('input[name="email"]').fill(fixture.owner.email)
+  await page.locator('input[name="password"]').fill(fixture.owner.password)
+  await page.locator('[data-password-signin="true"]').click()
+  await page.waitForSelector('[data-staff-shell="true"]', { timeout: 30_000 })
+
+  return fixture
+}

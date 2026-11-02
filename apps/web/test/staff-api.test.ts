@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import {
   DEVICE_TTL_MINUTES,
@@ -31,11 +31,28 @@ function cookie(value: string): void {
   Object.defineProperty(document, 'cookie', { value, writable: true, configurable: true })
 }
 
+/**
+ * The `RequestInit` a recorded `fetch` call was given.
+ *
+ * ⚠ A HELPER AND NOT AN INLINE SUBSCRIPT, because `vi.fn()`'s `mock.calls` is `any[][]` --
+ * so every `calls[0]?.[1].headers` is an unsafe member access on `any`, which the lint rule
+ * is right about: an `any` here would let a typo in `headers` pass as a passing assertion.
+ * Narrowed once, in one place, with the shape `fetch` actually has.
+ */
+function sentInit(mock: Mock, index = 0): RequestInit | undefined {
+  const calls = mock.mock.calls as unknown as [unknown, RequestInit | undefined][]
+
+  return calls[index]?.[1]
+}
+
 function respond(status: number, body?: unknown, ok?: boolean): Response {
+  // `Promise.resolve` rather than an `async` thunk: an async function with no `await` in it
+  // is what `@typescript-eslint/require-await` is for, and a fake's `json()` has nothing to
+  // wait on.
   return {
     status,
     ok: ok ?? (status >= 200 && status < 300),
-    json: async () => body,
+    json: () => Promise.resolve(body),
   } as unknown as Response
 }
 
@@ -55,8 +72,7 @@ describe('the CSRF token', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     return signOut('').then(() => {
-      const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-      const headers = init.headers as Record<string, string>
+      const headers = sentInit(fetchMock)?.headers as Record<string, string>
 
       // THE DECODED VALUE, asserted as an exact string. `toContain` would pass on the
       // percent-encoded form, which is the bug.
@@ -73,7 +89,7 @@ describe('the CSRF token', () => {
     vi.stubGlobal('fetch', fetchMock)
     await signOut('')
 
-    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>
+    const headers = sentInit(fetchMock)?.headers as Record<string, string>
 
     // An empty header is a value the server will try to decrypt and fail on; its absence
     // lets `Sec-Fetch-Site: same-origin` carry the request, which is the documented second
@@ -87,7 +103,7 @@ describe('the CSRF token', () => {
     vi.stubGlobal('fetch', fetchMock)
     await signOut('')
 
-    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).credentials).toBe('same-origin')
+    expect(sentInit(fetchMock)?.credentials).toBe('same-origin')
   })
 })
 
@@ -128,10 +144,8 @@ describe('the failure mapping', () => {
       vi.fn().mockResolvedValue({
         status: 200,
         ok: true,
-        json: async () => {
-          throw new SyntaxError('not json')
-        },
-      } as unknown as Response),
+        json: () => Promise.reject(new SyntaxError('not json')),
+      }),
     )
 
     expect((await fetchTenant('')).kind).toBe('server')
@@ -203,7 +217,11 @@ describe('kitchen screens', () => {
 
     await issueDevice('', 'Grill')
 
-    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))
+    const sent = sentInit(fetchMock)?.body
+
+    expect(typeof sent).toBe('string')
+
+    const body: unknown = JSON.parse(typeof sent === 'string' ? sent : '{}')
 
     // `Ability::issuableToDevice()` is a closed list of ONE, so a client that offered a
     // choice would be offering one the server refuses. Pinned as exact values.
@@ -223,6 +241,8 @@ describe('kitchen screens', () => {
     // The route is `whereUuid`, so a non-uuid is a routing miss either way -- but a client
     // that interpolated raw is a client that builds a URL from data, and that is the habit
     // rather than this one instance.
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/v1/devices/..%2F..%2Fv1%2Fmembers')
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit | undefined][]
+
+    expect(calls[0]?.[0]).toBe('/v1/devices/..%2F..%2Fv1%2Fmembers')
   })
 })
