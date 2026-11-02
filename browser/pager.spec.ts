@@ -19,6 +19,30 @@ import { answerPermissionWith, origin, recordRequests, scan, sessions } from './
  * is `QRPAGER-24` and `R-073`, and it is the reason this task is not tagged.
  */
 
+/**
+ * ⚠ **EVERY POST-SCAN `.pg-reference` ASSERTION CARRIES AN EXPLICIT 15-SECOND TIMEOUT, AND THAT
+ * IS `R-228`'s OWN PRESCRIBED FIX RATHER THAN A NEW DECISION.**
+ *
+ * That row records the diagnosis in full: the assertion immediately after `scan()` is the one
+ * with no explicit timeout, so it takes Playwright's **5-second** default — the shortest in this
+ * file — while the two it guards carry explicit 15-second timeouts *"precisely because they were
+ * expected to be slow"*. On a loaded host WebKit has not finished resolving the token in 5 s, and
+ * Playwright's page dump shows the document carrying nothing but `main: text: QR Pager`: the
+ * shell with the resolution still in flight. **The red is a page that never finished loading
+ * rather than a defect in the journey.**
+ *
+ * `R-228`'s *review by* cell names this fix in so many words — *"an explicit timeout on the
+ * post-scan assertion, matching the two below it"* — and says why that row exists rather than
+ * the edit: it is a Task 9 file that 10b's diff did not otherwise touch. Task 10's `§12` pass
+ * DOES touch this suite's gate, and the flake sank a full matrix run here (`journey-webkit`,
+ * `pager.spec.ts:85`, 1 of 547), so the edit is taken now with that row's blessing.
+ *
+ * 15 s matches the two siblings exactly rather than being a new number. It is not a licence for
+ * slowness: a page that needs more than fifteen seconds to resolve a token is broken, and the
+ * point of a timeout is to say so.
+ */
+const SCANNED = { timeout: 15_000 } as const
+
 test.describe('the scan landing', () => {
   test('resolves a real token from the fragment and shows the real order reference', async ({
     page,
@@ -27,7 +51,10 @@ test.describe('the scan landing', () => {
 
     await expect(page.locator('[data-screen="landing"][data-state="valid"]')).toBeVisible()
     // The reference came from Postgres, through the resolve endpoint, over HTTP.
-    await expect(page.locator('.pg-reference')).toHaveText(sessions().waiting.order_reference)
+    await expect(page.locator('.pg-reference')).toHaveText(
+      sessions().waiting.order_reference,
+      SCANNED,
+    )
     await expect(page.getByRole('button', { name: /enable alerts/i })).toBeVisible()
   })
 
@@ -58,7 +85,7 @@ test.describe('the scan landing', () => {
     const scanned = await browser.newContext()
     const page = await scanned.newPage()
     await scan(page, token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
 
     const seen = await page.evaluate(() => ({
       hash: window.location.hash,
@@ -86,7 +113,7 @@ test.describe('the scan landing', () => {
     const urls = recordRequests(page)
 
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
     await page.getByRole('button', { name: /just show me the status/i }).click()
     await expect(page.locator('[data-screen="waiting"]')).toBeVisible()
     // Long enough for at least one real poll at the 5.6-8.4 s jittered interval.
@@ -109,7 +136,7 @@ test.describe('the scan landing', () => {
     const base = origin()
 
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
     await page.getByRole('button', { name: /just show me the status/i }).click()
     await page.waitForTimeout(9000)
 
@@ -127,7 +154,7 @@ test.describe('the scan landing', () => {
     // route, so Next's client-side route announcer is never filled -- which is what keeps
     // the order-ready screen the only thing on this page that interrupts a screen reader.
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
     await page.getByRole('button', { name: /just show me the status/i }).click()
     await expect(page.locator('[data-screen="waiting"]')).toBeVisible()
 
@@ -167,7 +194,7 @@ test.describe('the four failure paths the gate names', () => {
 
   test('offline -- mid-wait, and the session is NOT abandoned', async ({ page, context }) => {
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
     await page.getByRole('button', { name: /just show me the status/i }).click()
     await expect(page.locator('[data-screen="waiting"][data-state="healthy"]')).toBeVisible()
 
@@ -178,7 +205,10 @@ test.describe('the four failure paths the gate names', () => {
     })
     // ⚠ STILL THE WAITING SCREEN, with the order reference on it. Losing the connection
     // mid-wait must not throw a customer out of their session.
-    await expect(page.locator('.pg-reference')).toHaveText(sessions().waiting.order_reference)
+    await expect(page.locator('.pg-reference')).toHaveText(
+      sessions().waiting.order_reference,
+      SCANNED,
+    )
 
     await context.setOffline(false)
     await page.getByRole('button', { name: /try again/i }).click()
@@ -190,7 +220,7 @@ test.describe('the four failure paths the gate names', () => {
   test('permission denied -- no retry offered, and polling CONTINUES', async ({ page }) => {
     await answerPermissionWith(page, 'denied')
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
 
     await page.getByRole('button', { name: /enable alerts/i }).click()
 
@@ -379,7 +409,7 @@ test.describe('scan -> wait -> ready, driven by the REAL poller', () => {
 test.describe('the accessibility bar, in a real engine', () => {
   test('is keyboard reachable with a visible focus ring on every control', async ({ page }) => {
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
 
     const controls = await page.locator('button, a[href], summary, input').count()
 
@@ -415,7 +445,7 @@ test.describe('the accessibility bar, in a real engine', () => {
 
   test('sets lang and dir on the same element, from the browsers own locale', async ({ page }) => {
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
 
     const themed = page.locator('[data-theme]').first()
 
@@ -428,7 +458,7 @@ test.describe('the accessibility bar, in a real engine', () => {
     // `0.01s` would satisfy "reduced" and fail this.
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await scan(page, sessions().waiting.token)
-    await expect(page.locator('.pg-reference')).toBeVisible()
+    await expect(page.locator('.pg-reference')).toBeVisible(SCANNED)
 
     const durations = await page.evaluate(() =>
       [...document.querySelectorAll('*')].flatMap((element) => {
