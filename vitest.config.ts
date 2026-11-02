@@ -77,6 +77,23 @@ export default defineConfig({
         },
       },
       {
+        /*
+         * The browser suite's own pure helpers.
+         *
+         * ⚠ A VITEST PROJECT FOR FILES UNDER `browser/`, which looks odd until you ask where
+         * else the cross-tenant sweep's leak RULE could be proven. Playwright selects its
+         * specs by explicit `testMatch` lists, so nothing here is picked up by a browser run;
+         * and `§11` QA M-3's finding was that the RULE was wrong, which a browser round cannot
+         * show without introducing a real cross-tenant disclosure for it to detect.
+         */
+        test: {
+          name: 'browser-support',
+          root: './browser',
+          environment: 'node',
+          include: ['support/test/**/*.test.ts'],
+        },
+      },
+      {
         test: {
           // Both tool packages: the design-token rule and the gate's own checks. One
           // project rather than two, because they share an environment and neither has a
@@ -144,6 +161,14 @@ export default defineConfig({
          *                          rotation path with the handler removed.
          */
         'apps/web/src/**/*.{ts,tsx}',
+        /*
+         * `browser/support/isolation.ts` and nothing else under `browser/`: it is ordinary
+         * task code with ordinary unit tests (`§11` QA M-3), so it belongs in the
+         * denominator. The specs and `support/e2e.ts` do not -- they run under Playwright
+         * against a real stack, and including them would measure a Vitest run's coverage of
+         * code Vitest never executes.
+         */
+        'browser/support/isolation.ts',
       ],
       // ⚠ NO BLANKET GLOB OVER EVERY `index.ts`, AND THERE USED TO BE ONE. `§11` round one,
       // QA L-1: it excluded `apps/web/src/copy/index.ts` -- 41 lines holding `interpolate()`

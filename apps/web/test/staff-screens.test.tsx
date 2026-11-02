@@ -226,7 +226,6 @@ describe('sign-in', () => {
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
         memberships={[]}
-        restaurantNames={{}}
         onChoose={vi.fn()}
       />,
     )
@@ -246,8 +245,7 @@ describe('sign-in', () => {
         onPasskey={vi.fn()}
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
-        memberships={[{ tenantId: 'tenant-a', role: 'owner' }]}
-        restaurantNames={{ 'tenant-a': 'Al Baik' }}
+        memberships={[{ tenantId: 'tenant-a', role: 'owner', slug: 'al-baik' }]}
         onChoose={vi.fn()}
       />,
     )
@@ -267,7 +265,6 @@ describe('sign-in', () => {
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
         memberships={[]}
-        restaurantNames={{}}
         onChoose={vi.fn()}
       />,
     )
@@ -282,35 +279,19 @@ describe('sign-in', () => {
     }
   })
 
-  it('offers each restaurant by NAME when choosing, and never by id', () => {
-    const { container } = render(
-      <StaffSignIn
-        t={t}
-        stage="choose"
-        onPasskey={vi.fn()}
-        onPassword={vi.fn()}
-        onTwoFactor={vi.fn()}
-        memberships={[
-          { tenantId: 'tenant-a', role: 'owner' },
-          { tenantId: 'tenant-b', role: 'manager' },
-        ]}
-        restaurantNames={{ 'tenant-a': 'Al Baik', 'tenant-b': 'Shawarma House' }}
-        onChoose={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByRole('button', { name: 'Al Baik' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Shawarma House' })).toBeDefined()
-
-    const rendered = everythingRendered(container)
-
-    expect(rendered).not.toContain('tenant-a')
-    expect(rendered).not.toContain('tenant-b')
-  })
-
-  it('falls back to the role WORD rather than an id while the names are unknown', () => {
-    // The state between "signed in" and "the names have arrived". A button with a uuid on it
-    // is the thing §12 forbids most explicitly, so the fallback is a true word instead.
+  it('distinguishes TWO memberships of the SAME role, which is what the chooser is for', () => {
+    /*
+     * ⚠ THE CASE `§11` QA H-2 SAID DID NOT EXIST, AND THE ONE THAT MATTERS.
+     *
+     * The old pair of cases asserted names were shown — with a `restaurantNames` map the TEST
+     * supplied — and the fallback case used ONE membership, so the ambiguity was never
+     * rendered. Meanwhile the only production call site passed `{}`, so the fallback was the
+     * permanent state and an owner of two restaurants saw two buttons both reading *"Owner"*
+     * under *"Which restaurant?"*. That actor is `R-119`'s own residual.
+     *
+     * Two memberships of the SAME role now, and the labels must differ. Nothing is injected:
+     * the label comes from the membership the server sent.
+     */
     render(
       <StaffSignIn
         t={t}
@@ -318,8 +299,42 @@ describe('sign-in', () => {
         onPasskey={vi.fn()}
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
-        memberships={[{ tenantId: '01a199c4-7f3e-7000-8000-0123456789ab', role: 'manager' }]}
-        restaurantNames={{}}
+        memberships={[
+          { tenantId: 'tenant-a', role: 'owner', slug: 'al-baik' },
+          { tenantId: 'tenant-b', role: 'owner', slug: 'shawarma-house' },
+        ]}
+        onChoose={vi.fn()}
+      />,
+    )
+
+    const labels = [...document.querySelectorAll('button')].map((b) => b.textContent)
+
+    expect(labels).toHaveLength(2)
+    expect(labels[0]).not.toBe(labels[1])
+    expect(labels[0]).toContain('al-baik')
+    expect(labels[1]).toContain('shawarma-house')
+    // The role word is still there as context -- it is what you would be acting AS.
+    expect(labels[0]).toContain(t('staff.role.owner'))
+
+    // And no uuid, which is the thing §12 forbids outright.
+    expect(document.body.textContent).not.toContain('tenant-a')
+    expect(document.body.textContent).not.toContain('tenant-b')
+  })
+
+  it('falls back to the role WORD only when the slug is missing, never to an id', () => {
+    // `/v1/auth/me` always carries a slug -- `StaffContractTest` pins the key -- so this is
+    // the malformed-payload path. It renders a cautious true word rather than a blank button
+    // or a uuid, which is the §12 order of preference.
+    render(
+      <StaffSignIn
+        t={t}
+        stage="choose"
+        onPasskey={vi.fn()}
+        onPassword={vi.fn()}
+        onTwoFactor={vi.fn()}
+        memberships={[
+          { tenantId: '01a199c4-7f3e-7000-8000-0123456789ab', role: 'manager', slug: '' },
+        ]}
         onChoose={vi.fn()}
       />,
     )

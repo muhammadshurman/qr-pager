@@ -62,3 +62,21 @@ r191-other-connection.txt -- added 2026-11-02, also a VERBATIM CAPTURE, and it i
 
   Measured the same day: full `composer gate` 2 of 2 RED (two different tests, two different
   connections); bare `php artisan test` 2 of 2 GREEN at 1198 passed. The variable is host load.
+
+r191-app-code-with-testcase-frame.txt -- added 2026-11-02 from §11 QA M-4, and it is the
+  REVIEWER's own falsification committed as a control.
+
+  An 08006 `timeout expired` raised from `app/Features/Pager/PagerSessions.php:204` -- app
+  code, which MUST stay REAL -- whose trace also lists `tests/TestCase.php:318`, the way a
+  real Pest block routinely does.
+
+  WHAT IT PINS. The first widening of R-191's matcher keyed the frame on
+  `(?:Connector|TestCase)\.php:\d+`, and classify-reds applies `frame` to the whole failure
+  BLOCK rather than to the raising frame. So one TestCase line inside the block was enough to
+  attribute an app-code connection defect to a host flake -- the dangerous direction, on a
+  surface where the waved-off red could be a security test.
+
+  r191-attributed.txt was DELETED in the same change rather than edited to fit: it was a
+  pre-capture construction with a TestCase frame and no vendor frame, and it was the only
+  reason `TestCase` was in the alternation at all. Editing a capture to match a matcher is the
+  wrong direction; two verbatim captures beside it already carry the real connect frame.

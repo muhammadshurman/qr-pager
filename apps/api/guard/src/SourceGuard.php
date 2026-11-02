@@ -1788,7 +1788,16 @@ final class SourceGuard
          * means the mechanism was missing, so `GuardWorktreeScopeTest` now asserts the
          * exclusion on this walk rather than trusting a third list to stay in step.
          */
-        $pruned = ['.git', 'vendor', 'node_modules', 'storage', 'build', 'guard/fixtures', '.claude'];
+        /*
+         * ⚠ `.claude/worktrees` AND NOT `.claude` — `§11` QA L-2. The first version pruned the
+         * whole directory, which also dropped `.claude/agents/qa-reviewer.md`,
+         * `.claude/agents/security-reviewer.md` and `.claude/commands/task.md` from this walk.
+         * Those three are TRACKED repository content — the `§11` briefs this guard's own rules
+         * are about — so the prune meant to stop the guard reporting a review in progress had
+         * quietly stopped it guarding the review's instructions. `GuardWorktreeScopeTest`
+         * asserts both halves: the worktree is pruned, and the briefs are scanned.
+         */
+        $pruned = ['.git', 'vendor', 'node_modules', 'storage', 'build', 'guard/fixtures', '.claude/worktrees'];
         $files = [];
 
         $iterator = new \RecursiveIteratorIterator(

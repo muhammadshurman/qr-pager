@@ -65,6 +65,27 @@ function gitQuiet(...args) {
   }).trim()
 }
 
+/**
+ * A committed transcript's text, with terminal colour removed.
+ *
+ * ⚠ THE ESCAPES ARE WHY A GREEN GATE'S TOTAL BECAME UNREADABLE, measured 2026-11-02. A
+ * `composer gate` run captured to a file wrote `Tests:` wrapped in SGR sequences, so (b4)'s
+ * `/^\s*Tests:\s+(\d+) passed/m` matched nothing and the check reported *"the committed
+ * transcript records no total this check can read"* against a transcript that plainly records
+ * one. `NO_COLOR=1` does not suppress it — `php artisan test` spawns Pest with its own colour
+ * decision — so the fix belongs HERE: a check must read what the gate actually writes, not a
+ * version of it somebody tidied by hand. The alternative was stripping the codes before
+ * committing, which makes the artefact a thing a person edited, and `§6`'s whole point about
+ * evidence is that nobody edits it.
+ *
+ * Only SGR colour sequences are removed. Nothing else about the bytes changes, so a figure,
+ * a failure line and the `EXIT=` trailer all read exactly as written.
+ */
+function plain(text) {
+  // eslint-disable-next-line no-control-regex -- the escape is the thing being matched
+  return text.replace(/\u001b\[[0-9;]*m/g, '')
+}
+
 /** `§0` is everything before the first `## 1.`-style heading. */
 function sectionZero(plan) {
   const end = plan.search(/^## 1\./m)
@@ -231,7 +252,7 @@ export function checkTranscripts(inFlight, dir = join(REPO, 'docs', 'tickets')) 
      */
 
     const path = join(dir, name)
-    const text = readFileSync(path, 'utf8')
+    const text = plain(readFileSync(path, 'utf8'))
 
     // A non-zero exit recorded anywhere in the transcript's own trailer.
     const exits = [...text.matchAll(/^EXIT=(\d+)$/gm)].map((m) => Number(m[1]))
@@ -439,17 +460,91 @@ export function checkStatedHead(plan, headSha = null) {
  * committed transcript for the ticket `§0` itself names as in flight -- the same authority
  * (c) scopes by. A check carrying its own copy of `1172` would be the second source this file's
  * header refuses.
+ *
+ * ⚠ AND A STATED TOTAL WITH NO TRANSCRIPT IS A FAILURE, WHICH IT WAS NOT -- `§11` QA M-11.
+ * The loop read `if (claim.stated === null || claim.text === null) continue`, so a figure `§0`
+ * asserted with no committed evidence beside it was skipped in SILENCE, and only a run that
+ * compared *nothing at all* said so. Task 10a was in exactly that state while this check was
+ * green: `§0` stated four totals, one transcript existed, and three claims passed through
+ * unexamined. The point of (b4) is that a number in `§0` has a file behind it; "there is no
+ * file" is the most important answer it can give, not a reason to stop asking.
+ *
+ * The three outcomes are now distinct: nothing stated (fine -- there is no claim to check), a
+ * claim with no transcript (fails), and a transcript this check cannot read a total out of
+ * (fails, because an unfinished run and a drifted pattern look identical from here and both
+ * need a person).
  */
 export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
   const ticket = inFlightTicket(plan)
 
   if (ticket === null || !existsSync(dir)) return
 
-  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  /**
+   * ⚠ THE CURRENT CLAUSE ONLY — everything after the first `———` is history, and this check
+   * read the WHOLE cell until 2026-11-02. `checkStatedHead` and `checkRowCount` already scope
+   * this way; (b4) did not, and the consequence is sharper here than a stale comparison:
+   *
+   * `§0`'s cells keep every superseded clause, and each one names `pnpm gate` with ITS OWN
+   * totals — Task 9's clause says *"`pnpm gate` 13/13 green at 46e3e52 with 817 Vitest"*. So
+   * when the live clause had no Vitest figure yet (the honest state of a task that has not
+   * measured one), the anchored pattern simply matched the next `pnpm gate` in the string and
+   * reported **817** as this task's claim, against this task's transcript. A figure nobody
+   * stated became a figure that failed, and the only way to make the check pass was to state
+   * a number before measuring it — which is the defect `§11` QA H-3 found, approached from the
+   * other side.
+   *
+   * Scoped to the live clause, an unstated figure is UNSTATED: (b4) skips it, history stays
+   * history, and a figure can be written in the same commit as the transcript that backs it.
+   */
+  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0].split('———')[0]
+
+  /**
+   * The transcript for one gate, or `null` if there is none this check will accept.
+   *
+   * ⚠ IT MUST BE **TRACKED**, AND `existsSync` ALONE IS WHAT `§11` QA H-3 CAUGHT. This read
+   * the filesystem and nothing else, so an UNTRACKED file in `docs/tickets/` was evidence as
+   * far as (b4) and (c) were concerned -- and 10a's `§0` figures rested on exactly that for a
+   * while: the file was on disk, the checks were green, and `git show HEAD:<path>` failed
+   * because nothing had ever been committed. The word in this check's own name is *committed*.
+   *
+   * Tracked rather than `git show HEAD:` on purpose. The gate runs BEFORE the commit that
+   * carries both the transcript and the `§0` figures, so demanding `HEAD` would fail the very
+   * state the procedure asks for; a file that is `git add`ed is in the index and passes, and a
+   * stray placeholder nobody staged does not. The content compared is the working tree's,
+   * which is what the run that just finished wrote.
+   */
+  // Memoised, because `gate-frontend` backs TWO claims (Vitest's total and Playwright's) and
+  // an untracked file would otherwise be reported once per claim -- the same defect named
+  // twice reads as two defects.
+  const seen = new Map()
   const transcript = (suffix) => {
+    if (seen.has(suffix)) return seen.get(suffix)
+
+    const value = readTranscript(suffix)
+
+    seen.set(suffix, value)
+
+    return value
+  }
+
+  /*
+   * ⚠ IT REPORTS NOTHING ITSELF, AND THE FIRST VERSION DID — which made it fire for figures
+   * `§0` never states. The `claims` array below is built EAGERLY, so every call to this
+   * function happens on every run whether or not the matching claim exists; a `fail()` in here
+   * therefore reported an untracked `gate-frontend` transcript while `§0` was silent about
+   * Vitest, and poisoned this check's own hermetic self-test along the way. The verdict is
+   * returned and the claim loop decides, because only the loop knows whether anything is being
+   * claimed.
+   */
+  const readTranscript = (suffix) => {
+    const relative = `docs/tickets/${ticket}-${suffix}.txt`
     const path = join(dir, `${ticket}-${suffix}.txt`)
 
-    return existsSync(path) ? readFileSync(path, 'utf8') : null
+    if (!existsSync(path)) return { kind: 'absent', relative }
+
+    if (gitQuiet('ls-files', '--', relative) === '') return { kind: 'untracked', relative }
+
+    return { kind: 'text', relative, text: plain(readFileSync(path, 'utf8')) }
   }
 
   /**
@@ -501,11 +596,38 @@ export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
   let compared = 0
 
   for (const claim of claims) {
-    if (claim.stated === null || claim.text === null) continue
+    // Nothing stated is not a failure: `§0` states the totals its own in-flight gate has
+    // produced, and a task mid-round has legitimately not produced all four yet.
+    if (claim.stated === null) continue
 
-    const found = claim.truth.exec(claim.text)
+    if (claim.text.kind === 'untracked') {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} and ${claim.text.relative} is present but UNTRACKED, so it is not evidence — stage it with the figures it backs`,
+      )
 
-    if (found === null) continue
+      continue
+    }
+
+    if (claim.text.kind === 'absent') {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} for ${ticket} and no committed transcript records it — a figure with no evidence beside it`,
+      )
+
+      continue
+    }
+
+    const found = claim.truth.exec(claim.text.text)
+
+    if (found === null) {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} and ${ticket}'s committed transcript records no total this check can read — either that run did not finish or the pattern has drifted`,
+      )
+
+      continue
+    }
 
     compared += 1
 
@@ -595,34 +717,115 @@ const SELF_TESTS = [
   },
   {
     /**
-     * ⚠ THE SECOND EXACT INSTANCE. `§0` said *"812 Vitest"* while both committed frontend
-     * transcripts record `Tests  814 passed`. The fixture plants 812 over whatever the cell
-     * currently states, so this stays a real comparison after the number is corrected.
+     * ⚠ THE SECOND EXACT INSTANCE, AS THE BAD INPUT. `§0` said *"812 Vitest"* while both
+     * committed frontend transcripts recorded `Tests  814 passed`; the figure was found BY
+     * HAND, and check (b4) exists because of it.
+     *
+     * ⚠ HERMETIC, AND THE FIRST TWO VERSIONS WERE NOT — which is the same mistake twice, in a
+     * file whose whole subject is claims that quietly stop being checked. Version one planted
+     * `812` with a blunt `.replace`, which rewrote Task 8a's superseded *"all 370 Vitest"*
+     * instead, so (b4) still read the correct figure and reported MISSES. Version two anchored
+     * the plant to the live clause's own Vitest claim — and then (b4) was scoped to the live
+     * clause (for its own good reason), the live clause legitimately had no Vitest figure for
+     * one round, and this self-test went MISSES again: measured in `pnpm gate`'s own output,
+     * `1 failed | 966 passed`.
+     *
+     * A control that only works while the repository is in one particular state is not a
+     * control. So the fixture is synthetic on the `§0` side and real on the evidence side: the
+     * tracked PHP transcript is read for the total it actually records, and a minimal `§0` is
+     * built claiming that number **plus one**. Same defect — a stated total disagreeing with
+     * its own committed transcript — and it depends on nothing but one tracked file.
      */
     what: "a §0 test count that disagrees with its own transcript (the 812-against-814 instance)",
     run: () => {
-      /**
-       * ⚠ PLANTED INTO THE CURRENT CLAUSE, NOT THE FIRST MATCH IN THE CELL, and the first
-       * version of this fixture got that wrong in the direction that matters: a blunt
-       * `.replace(/(\d+) Vitest/, ...)` rewrote Task 8a's superseded *"all 370 Vitest green"*
-       * instead, so the anchored check still read the correct 814, found no mismatch, and the
-       * self-test reported MISSES. A fixture that does not plant where the check looks tests
-       * nothing -- which is the dead-check shape round two's QA M-4 found in this very file.
-       */
-      const plan = readFileSync(PLAN, 'utf8')
-      const found = /`pnpm gate`[^·]*?\*{0,2}(\d+)\*{0,2} Vitest/.exec(plan)
+      const php = join(REPO, 'docs', 'tickets', 'QRPAGER-25-gate-php.txt')
 
-      if (found === null) return false
+      if (!existsSync(php)) return false
 
-      const planted =
-        plan.slice(0, found.index) +
-        found[0].replace(/\*{0,2}\d+\*{0,2} Vitest/, '812 Vitest') +
-        plan.slice(found.index + found[0].length)
+      const recorded = /^\s*Tests:\s+(\d+) passed/m.exec(plain(readFileSync(php, 'utf8')))
+
+      if (recorded === null) return false
+
+      const wrong = Number(recorded[1]) + 1
+      const synthetic = [
+        '# PLAN',
+        '',
+        `| **Next up** | \`QRPAGER-25\` · \`composer gate\` all green, **${wrong}** passed |`,
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
 
       const before = failures.length
-      checkStatedCounts(planted)
+      checkStatedCounts(synthetic)
 
       return failures.length > before
+    },
+  },
+  {
+    /**
+     * ⚠ `§11` QA M-11, AS THE BAD INPUT IT WAS. `§0` states four gate totals; this runs the
+     * check against a directory that is real and holds none of the transcripts, which is
+     * byte-for-byte the situation Task 10a was in while (b4) reported nothing: three of the
+     * four claims had no evidence and were skipped rather than failed.
+     *
+     * `docs/` rather than a temporary directory on purpose -- it exists, so the function's own
+     * `existsSync(dir)` guard does not swallow the fixture, and it contains no
+     * `QRPAGER-NN-gate-*.txt`.
+     */
+    what: 'a §0 that states a gate total with no committed transcript behind it (QA M-11)',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8')
+      const before = failures.length
+      checkStatedCounts(plan, join(REPO, 'docs'))
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * The positive control for the clause above: a `§0` whose stated total AGREES with its
+     * tracked transcript must not be flagged. Without it, "fail when the transcript is
+     * missing" could be implemented as "fail always" and every case above would still pass.
+     *
+     * ⚠ HERMETIC, AND THE FIRST VERSION WAS NOT — it ran `checkStatedCounts` over the LIVE
+     * `§0` and the live transcript directory, which made this unit case fail whenever the
+     * repository's in-flight bookkeeping was mid-update. That is not a control, it is a second
+     * copy of the check, and it re-created the very deadlock that moving `records:check` to the
+     * end of the gate was meant to end: `ci-parity.test.mjs` runs `--self-test` inside Vitest,
+     * which is step 11 of 13, so a task measuring its figures for the first time went red at
+     * step 11 instead of step 8 and still could not produce a transcript. Measured on 10a:
+     * `pnpm gate` pass one, `1 failed | 966 passed`, this case.
+     *
+     * So the fixture is SYNTHETIC on the `§0` side and real on the evidence side: the PHP
+     * transcript is read for the total it actually records, and a minimal `§0` cell is built
+     * stating that same number. It depends on one tracked file existing and nothing at all on
+     * tonight's figures.
+     */
+    what: 'a §0 whose stated total agrees with its tracked transcript is NOT flagged (the positive control)',
+    run: () => {
+      const php = join(REPO, 'docs', 'tickets', 'QRPAGER-25-gate-php.txt')
+
+      if (!existsSync(php)) return false
+
+      const recorded = /^\s*Tests:\s+(\d+) passed/m.exec(plain(readFileSync(php, 'utf8')))
+
+      if (recorded === null) return false
+
+      // A §0 with exactly one claim in it, stating the number the transcript records.
+      const synthetic = [
+        '# PLAN',
+        '',
+        `| **Next up** | \`QRPAGER-25\` · \`composer gate\` all green, **${recorded[1]}** passed |`,
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic)
+
+      return failures.length === before
     },
   },
   {

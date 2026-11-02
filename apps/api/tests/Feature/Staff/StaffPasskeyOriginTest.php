@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Platform\Auth\PasskeyOrigins;
+use Illuminate\Support\Facades\Log;
 
 /*
  * ================================================================================
@@ -31,9 +32,9 @@ it('is what THIS application computed, not what the package registered', functio
 
     expect($resolved)->toBe(PasskeyOrigins::allowed());
 
-    // `APP_URL` is unconditionally first, so a mistyped variable costs the extra origins and
-    // never the working one.
-    expect($resolved[0] ?? null)->toBe((string) config('app.url'));
+    // `APP_URL`'s ORIGIN is unconditionally first, so a mistyped extra variable costs the
+    // extra origins and never the working one.
+    expect($resolved[0] ?? null)->toBe(PasskeyOrigins::originOf((string) config('app.url')));
 });
 
 it('derives the relying party id from APP_URL\'s host, which is a SUFFIX match and not an origin', function (): void {
@@ -82,12 +83,22 @@ it('reads its extra origins from CONFIG, so `config:cache` cannot silently empty
     expect(PasskeyOrigins::CONFIG_KEY)->toBe('webauthn.extra_origins');
     expect(config('webauthn.extra_origins'))->toBeArray();
 
-    // Driven: a value set in config reaches the allow-list, and a bad one does not.
-    config(['webauthn.extra_origins' => ['https://staff.example.com', 'https://bad.test/path', '']]);
+    /*
+     * Driven: a value set in config reaches the allow-list, an unusable one does not, and a
+     * path-carrying one is NORMALISED.
+     *
+     * ⚠ THAT MIDDLE ENTRY USED TO BE DROPPED AND IS NOW KEPT AS ITS ORIGIN -- `§11` SECURITY
+     * L-6, and this case is amended rather than left reading as if nothing changed.
+     * `https://bad.test/path` was refused outright; `PasskeyOrigins::originOf()` now returns
+     * `https://bad.test` for it, which is the origin a browser serving that page actually
+     * sends. The entry that is still dropped is the one with no origin to find at all.
+     */
+    config(['webauthn.extra_origins' => ['https://staff.example.com', 'https://bad.test/path', 'ftp://bad.test', '']]);
 
     expect(PasskeyOrigins::allowed())->toBe([
-        (string) config('app.url'),
+        PasskeyOrigins::originOf((string) config('app.url')),
         'https://staff.example.com',
+        'https://bad.test',
     ]);
 });
 
@@ -101,4 +112,127 @@ it('is a closed list with no wildcard in it, whatever the environment says', fun
 
     // Not vacuous: the list is non-empty, so the loop above examined something.
     expect(config('passkeys.allowed_origins'))->not->toBe([]);
+});
+
+/*
+ * ================================================================================
+ * `§11` SECURITY L-6 — a dropped origin used to be dropped in SILENCE, and `APP_URL`
+ * reached the allow-list unexamined
+ * ================================================================================
+ *
+ * Both halves of that finding are a defect of the same shape as the one this class exists to
+ * fix: a passkey login that fails with nothing anywhere naming an origin. The cases below
+ * drive the two mechanisms rather than describing them.
+ */
+
+it('reduces APP_URL to its origin, so one trailing slash cannot silently match nothing', function (): void {
+    /*
+     * ⚠ THE DEFECT, DRIVEN. `APP_URL=https://api.example.com/` is how a great many
+     * deployments write it and how `.env.example` happens not to. The library compares the
+     * page's origin to this string EXACTLY, and a page's origin never carries a trailing
+     * slash — so the raw value put an entry in the allow-list that no ceremony could ever
+     * match, including one served from the application's own origin.
+     */
+    config(['app.url' => 'https://api.example.com/', PasskeyOrigins::CONFIG_KEY => []]);
+
+    expect(PasskeyOrigins::allowed())->toBe(['https://api.example.com']);
+
+    // A path prefix, which a deployment behind one has, is refused rather than truncated: the
+    // origin of `https://api.example.com/app` IS `https://api.example.com`, and that is what
+    // a browser would send, so normalising it is correct and silently broadening it is not.
+    config(['app.url' => 'https://api.example.com/app']);
+
+    expect(PasskeyOrigins::allowed())->toBe(['https://api.example.com']);
+
+    // And the port survives, because an origin is scheme + host + PORT and 10a's own measured
+    // failure was two ports on one host.
+    config(['app.url' => 'https://localhost:3097/']);
+
+    expect(PasskeyOrigins::allowed())->toBe(['https://localhost:3097']);
+});
+
+it('says so in the log when APP_URL has no usable origin, and omits it rather than passing it through', function (): void {
+    Log::spy();
+
+    config(['app.url' => 'not-a-url', PasskeyOrigins::CONFIG_KEY => ['https://staff.example.com']]);
+
+    // Omitted, not passed through: an entry no page's origin can equal is not protection, and
+    // leaving it in a list is how it gets read as deliberate later.
+    expect(PasskeyOrigins::allowed())->toBe(['https://staff.example.com']);
+
+    /*
+     * ⚠ `withArgs()` BEFORE `once()`, which is not a style choice. Mockery applies the count
+     * to the METHOD, so `->once()->withArgs(...)` asserts *"warning was called once, and by
+     * the way it matched these arguments"* -- and it fails against three different warnings
+     * even when each one is correct. Written this way it asserts *"exactly one call matched
+     * these arguments"*, which is the claim.
+     */
+    Log::shouldHaveReceived('error')
+        ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'APP_URL')
+            && $context['app_url'] === 'not-a-url')
+        ->once();
+});
+
+it('names every extra origin it drops, instead of filtering in silence', function (): void {
+    Log::spy();
+
+    config([PasskeyOrigins::CONFIG_KEY => [
+        'https://staff.example.com',
+        // Three with no origin to find: a wildcard would make the list decorative, a
+        // non-http scheme cannot be a page's origin, and an empty entry is a typo in the
+        // comma-separated variable.
+        'https://*.wildcard.test',
+        'ftp://staff.example.com',
+        '',
+    ]]);
+
+    expect(PasskeyOrigins::allowed())->toBe([
+        PasskeyOrigins::originOf((string) config('app.url')),
+        'https://staff.example.com',
+    ]);
+
+    // ⚠ EXACTLY THREE, AND EACH NAMED. A count alone would pass if one warning were logged
+    // three times, and `§11`'s point was that an operator cannot act on a silence.
+    Log::shouldHaveReceived('warning')->times(3);
+
+    foreach (['https://*.wildcard.test', 'ftp://staff.example.com', ''] as $dropped) {
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'unusable')
+                && $context['entry'] === $dropped)
+            ->once();
+    }
+});
+
+it('survives a non-string entry instead of throwing at boot', function (): void {
+    // The old body ran `strval()` over every entry, which THROWS for an array one -- a
+    // configuration mistake answered with a 500 before the application finished booting.
+    Log::spy();
+
+    config([PasskeyOrigins::CONFIG_KEY => [['https://staff.example.com'], 42, null]]);
+
+    expect(PasskeyOrigins::allowed())->toBe([
+        PasskeyOrigins::originOf((string) config('app.url')),
+    ]);
+
+    Log::shouldHaveReceived('warning')->times(3);
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message, array $context): bool => str_contains($message, 'non-string')
+            && $context['type'] === 'array')
+        ->once();
+});
+
+it('accepts a trailing slash on an EXTRA origin and stores the normalised form', function (): void {
+    // ⚠ THIS IS A WIDENING OF WHAT IS ACCEPTED AND IT IS SAID OUT LOUD. `isOrigin()` still
+    // answers false for `https://staff.example.com/` -- it is not an origin -- but `allowed()`
+    // now normalises it instead of discarding it, because a trailing slash is a typing
+    // convention and not a different origin. What reaches the library is the normalised form,
+    // so the list still holds origins only, which the closed-list case below re-checks.
+    expect(PasskeyOrigins::isOrigin('https://staff.example.com/'))->toBeFalse();
+
+    config([PasskeyOrigins::CONFIG_KEY => ['https://staff.example.com/']]);
+
+    expect(PasskeyOrigins::allowed())->toBe([
+        PasskeyOrigins::originOf((string) config('app.url')),
+        'https://staff.example.com',
+    ]);
 });

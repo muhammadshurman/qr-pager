@@ -124,6 +124,16 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
   >('loading')
   const [issued, setIssued] = useState<IssuedDevice | null>(null)
   const [passkeyNotice, setPasskeyNotice] = useState<'added' | 'failed' | null>(null)
+  /**
+   * Why the overlay is up: the idle timer, or the person asking.
+   *
+   * ⚠ ONE MECHANISM, TWO MESSAGES — `§11` QA L-3. Sign-out and the idle lock share `lock()`
+   * deliberately (`staff-app.test.tsx` pins that they are one path), and the first version
+   * shared the COPY too — so a person who pressed *"Sign out"* read *"Screen locked. Nobody is
+   * signed in on this screen."* That is the right sentence for a screen somebody walked away
+   * from and the wrong one for an action somebody just took.
+   */
+  const [lockReason, setLockReason] = useState<'idle' | 'signed-out'>('idle')
 
   /** One function, and it is the whole of "the shell holds no tenant datum". */
   const clearTenantData = useCallback((): void => {
@@ -208,26 +218,78 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
 
   phaseRef.current = phase
 
-  const lock = useCallback(async (): Promise<void> => {
-    // 1. THE SERVER FIRST. Awaited, and its failure is deliberately not checked: if the
-    //    network is down the right answer is still to forget everything and cover up.
-    await signOut(apiBase)
-    // 2. then the memory, 3. then the overlay.
-    clearTenantData()
-    setPhase('locked')
-    setSignInStage('idle')
-  }, [apiBase, clearTenantData])
+  const lock = useCallback(
+    (reason: 'idle' | 'signed-out' = 'idle'): void => {
+      /*
+       * ⚠ THE SCREEN IS COVERED AND THE DATA DROPPED **FIRST**, AND THE LOGOUT IS NOT AWAITED.
+       * `§11` SECURITY M-1.
+       *
+       * This read `await signOut(apiBase)` and then cleared, with a comment claiming *"its
+       * failure does not stop steps 2 and 3"*. That is true of a REJECTION and false of a
+       * STALL: `call()` uses a bare `fetch` with no `AbortController`, so against a
+       * reachable-but-dead route -- a captive portal, a hung proxy, an API outage -- the promise
+       * is pending for as long as the browser's own connect timeout allows, tens of seconds to
+       * minutes. For that whole window the restaurant's name, the person's name, the role word
+       * and the device list stayed rendered on an unattended screen, which is precisely the
+       * state the lock exists to end.
+       *
+       * The ordering argument that produced the bug was about the SERVER: destroy the session
+       * before covering up, so a locked screen holds no working credential. That ordering does
+       * not need the await -- the request is sent either way, and nothing the client does
+       * afterwards can un-send it. What the await bought was the illusion of sequencing and the
+       * risk of an unbounded delay.
+       *
+       * So: drop the data, raise the overlay, and let the logout fly. If it never lands, the
+       * session expires on its own (`§5` `R-220`), which is the fallback rather than the
+       * mechanism -- and the screen is already covered and already empty.
+       */
+      clearTenantData()
+      setLockReason(reason)
+      setPhase('locked')
+      setSignInStage('idle')
 
+      void signOut(apiBase)
+    },
+    [apiBase, clearTenantData],
+  )
+
+  /*
+   * ⚠ ARMED WHENEVER A SESSION MAY EXIST, WHICH IS EVERY PHASE BUT `locked`. `§11` SECURITY
+   * H-1, and it was a real hole rather than a missed edge.
+   *
+   * This read `if (phase !== 'ready') return`, so the watch was torn down and never re-armed
+   * in three reachable states that each hold a LIVE server session with no countdown at all:
+   *
+   *   phase `offline`   one transient packet loss during a shell load (`load()` -> unreachable)
+   *   phase `error`     one transient 5xx
+   *   phase `signed-out` + stage `choose`   a person with two memberships and none selected --
+   *                     `identity` is not cleared, the session is live, and `onChoose()` walks
+   *                     straight into the shell
+   *
+   * Nothing retries automatically — the offline copy says *"We will keep trying"* and no timer
+   * does — so the screen sat there indefinitely. The shell errors or drops a packet, the person
+   * walks away, and a passer-by taps *"Try again"* or a restaurant button and is in, with no
+   * credential. `§4`'s *"an idle shell locks … recovery needs the credential again"* was
+   * satisfied only on the happy path, and the 120-minute `SESSION_LIFETIME` was the only
+   * backstop — which `R-220` carries as a residual about an EXFILTRATED cookie, not about the
+   * lock failing to fire.
+   *
+   * ⚠ `locked` IS THE ONE EXCLUSION AND IT IS NOT AN OPTIMISATION: `watchForIdle` disarms
+   * itself after firing, but re-arming on the `locked` phase would start a fresh countdown
+   * whose `onIdle` would `POST /v1/auth/logout` against a session that is already gone — a
+   * request every fifteen minutes, all night, from a locked screen in an empty kitchen.
+   */
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (phase !== 'ready') return
+    if (phase === 'locked') return
 
     const watch = watchForIdle(window, {
       ...(idleSeconds === undefined ? {} : { seconds: idleSeconds }),
       onIdle: () => {
-        // Only a signed-in shell locks. A sign-in screen left alone is already locked, and
-        // locking it again would sign out a session that does not exist.
-        if (phaseRef.current === 'ready') void lock()
+        // Re-checked at FIRE time rather than trusted from the closure: the phase may have
+        // moved since the watch was armed, and locking a screen that has already locked is
+        // the one thing this must not do.
+        if (phaseRef.current !== 'locked') lock('idle')
       },
     })
 
@@ -422,13 +484,33 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
 
       if (Number.isNaN(when.getTime())) return iso
 
-      // The restaurant's own timezone, which is why `GET /v1/tenant` carries it: a kitchen
-      // screen showing UTC is showing a time nobody in the building is living in.
-      return new Intl.DateTimeFormat(resolved, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: tenant?.timezone ?? 'UTC',
-      }).format(when)
+      /*
+       * ⚠ GUARDED, BECAUSE AN UNVALIDATED TIMEZONE THROWS DURING RENDER — `§11` SECURITY L-5.
+       *
+       * `timeZone` comes straight from `GET /v1/tenant`, and `fetchTenant` passes any
+       * non-empty string through. Measured: `new Intl.DateTimeFormat('en', { timeZone:
+       * 'Kitchen/Nowhere' })` throws `RangeError: Invalid time zone specified`. This is called
+       * inside the device list's row map, so the throw is IN RENDER — and `apps/web/app/` has
+       * no `error.tsx`, so the tree unmounts to a blank page. `tenants.timezone` is
+       * `varchar(64)` with no CHECK and the app role may UPDATE it; only
+       * `TenantProvisioning`'s hard-coded `'UTC'` makes it unreachable today.
+       *
+       * UTC is the fallback rather than the ISO string: a wrong-but-readable time beats a
+       * blank screen, and the restaurant's own timezone being misconfigured is an operator
+       * problem the staff screen should survive rather than report.
+       */
+      const format = (zone: string): string =>
+        new Intl.DateTimeFormat(resolved, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: zone,
+        }).format(when)
+
+      try {
+        return format(tenant?.timezone ?? 'UTC')
+      } catch {
+        return format('UTC')
+      }
     },
     [resolved, tenant],
   )
@@ -495,8 +577,8 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
     return (
       <ThemeProvider locale={resolved} as="div">
         <LockScreen
-          title={t('staff.lock.title')}
-          description={t('staff.lock.body')}
+          title={t(lockReason === 'idle' ? 'staff.lock.title' : 'staff.signedout.title')}
+          description={t(lockReason === 'idle' ? 'staff.lock.body' : 'staff.signedout.body')}
           signInLabel={t('staff.lock.signIn')}
           onSignIn={() => {
             setPhase('signed-out')
@@ -517,7 +599,6 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
           onPassword={(email, password) => void onPassword(email, password)}
           onTwoFactor={(code) => void onTwoFactor(code)}
           memberships={identity?.memberships ?? []}
-          restaurantNames={{}}
           onChoose={(tenantId) => void onChoose(tenantId)}
         />
       </ThemeProvider>
@@ -564,7 +645,9 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
         roleWord={t(roleKey(role))}
         signedInLabel={t('staff.shell.signedIn', { name: identity.name })}
         signOutLabel={t('staff.shell.signOut')}
-        onSignOut={() => void lock()}
+        onSignOut={() => {
+          lock('signed-out')
+        }}
         nav={
           /*
            * ⚠ NAVIGATION, AND ITS ABSENCE WAS A REAL HOLE RATHER THAN AN OMISSION OF POLISH.

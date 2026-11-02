@@ -1,5 +1,5 @@
 import { Button, Field, StaffState } from '@qrpager/ui'
-import { useState, type SyntheticEvent } from 'react'
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
 
 import type { Translate } from '../../copy/index.ts'
 import type { StaffMembership } from '../../staff/api.ts'
@@ -26,8 +26,29 @@ import type { StaffMembership } from '../../staff/api.ts'
  * server answers, so a client that split them would re-open it from this side.
  */
 
-export type SignInStage =
-  'idle' | 'working' | 'failed' | 'offline' | 'unsupported' | 'two-factor' | 'choose'
+/**
+ * Every stage this screen knows, exported so a test can be made to cover all of them.
+ *
+ * ⚠ EXPORTED BECAUSE FOUR OF THE SEVEN WERE RENDERED BY NO TEST — `§11` QA M-1. `working`,
+ * `offline`, `unsupported` and `two-factor` existed only as members of an inline union, so
+ * nothing could enumerate them and nothing did: the suite drove `idle`, `failed` and `choose`
+ * and read as coverage of the screen. A union written out at its use site cannot be iterated;
+ * `STAFF_STATES` in `@qrpager/ui` is the shape that can be, and this follows it.
+ *
+ * `staff-signin-stages.test.tsx` maps over this and asserts a non-empty render per stage, so a
+ * stage added here without a case fails rather than ships dark.
+ */
+export const SIGN_IN_STAGES = [
+  'idle',
+  'working',
+  'failed',
+  'offline',
+  'unsupported',
+  'two-factor',
+  'choose',
+] as const
+
+export type SignInStage = (typeof SIGN_IN_STAGES)[number]
 
 export interface StaffSignInProps {
   readonly t: Translate
@@ -36,8 +57,6 @@ export interface StaffSignInProps {
   readonly onPassword: (email: string, password: string) => void
   readonly onTwoFactor: (code: string) => void
   readonly memberships: readonly StaffMembership[]
-  /** The restaurant names, by tenant id. Empty while they are still being read. */
-  readonly restaurantNames: Readonly<Record<string, string>>
   readonly onChoose: (tenantId: string) => void
 }
 
@@ -48,7 +67,6 @@ export function StaffSignIn({
   onPassword,
   onTwoFactor,
   memberships,
-  restaurantNames,
   onChoose,
 }: StaffSignInProps) {
   const [email, setEmail] = useState('')
@@ -56,13 +74,77 @@ export function StaffSignIn({
   const [code, setCode] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
+  /*
+   * ⚠ BOTH SUBMITS REFUSE TO FIRE TWICE, AND THE REFUSAL IS IN THE HANDLER AS WELL AS ON THE
+   * BUTTON — `§11` SECURITY L-2 / QA M-8.
+   *
+   * The passkey button has always carried `loading={stage === 'working'}`, and `Button`
+   * disables a loading button, so the PRIMARY action was guarded. Neither submit button was:
+   * the password one passed no `loading` at all and the 2FA one passed the literal
+   * `loading={false}`, which reads as a considered guard and is the vacuous form of one.
+   *
+   * What a second submit costs, measured rather than assumed:
+   *
+   *   - `auth-login` is a named limiter and `§11` round 1's own e2e run tripped it at 42
+   *     logins, so each wasted attempt is budget a real person on a shared kitchen device
+   *     then does not have;
+   *   - two `POST /v1/auth/login` in flight against the same credential race to issue
+   *     sessions, and the client keeps whichever resolves last;
+   *   - a wrong 2FA code submitted twice counts twice against the server's own attempt
+   *     ceiling, which is the one place a double-submit can lock a real person out.
+   *
+   * The handler guard is not redundant with the disabled button. A disabled default button
+   * suppresses implicit submission in current browsers, but the form is also reachable by a
+   * `requestSubmit()` from anywhere and by the Enter key through any user agent that treats
+   * implicit submission differently; the state this guards is "a request is already in
+   * flight", so it belongs where the request is made, not only where it is clicked.
+   */
+  const [inFlight, setInFlight] = useState(false)
+  /*
+   * ⚠ THE REF IS THE GUARD AND THE STATE IS THE BUTTON, for the reason
+   * `StaffDevices.tsx` records at length: every handler in one tick reads the same render's
+   * closure, so a state-only check lets a same-tick second submit straight through, and
+   * `fireEvent`'s `act()` flush hides that from a component test.
+   */
+  const inFlightRef = useRef(false)
+
+  /*
+   * ⚠ THE IN-FLIGHT FLAG IS THIS COMPONENT'S OWN, BECAUSE `stage` CANNOT CARRY IT FOR THE 2FA
+   * FORM. The first version of this fix passed `loading={stage === 'working'}` to both submit
+   * buttons and would have been the SAME VACUOUS GUARD in a new costume:
+   * `StaffApp.onTwoFactor` never sets `working` (it awaits `completeTwoFactor` and then sets
+   * `failed` / `offline`, or unmounts the screen on success), and the code form renders only
+   * while `stage === 'two-factor'` — so on that form `stage === 'working'` is false for the
+   * whole round trip, every time. A guard that is structurally unreachable reads exactly like
+   * one that works.
+   *
+   * It resets on every `stage` change, which is bounded and is the only signal a child gets
+   * that the parent's attempt resolved: a password attempt moves `idle → working → failed`,
+   * a code attempt moves `two-factor → failed | offline`, and a success unmounts the screen.
+   */
+  useEffect(() => {
+    inFlightRef.current = false
+    setInFlight(false)
+  }, [stage])
+
+  const working = stage === 'working' || inFlight
+  const alreadySent = (): boolean => stage === 'working' || inFlightRef.current
+
   const submitPassword = (event: SyntheticEvent): void => {
     event.preventDefault()
+    if (alreadySent()) return
+
+    inFlightRef.current = true
+    setInFlight(true)
     onPassword(email, password)
   }
 
   const submitCode = (event: SyntheticEvent): void => {
     event.preventDefault()
+    if (alreadySent()) return
+
+    inFlightRef.current = true
+    setInFlight(true)
     onTwoFactor(code)
   }
 
@@ -80,10 +162,16 @@ export function StaffSignIn({
                   onChoose(membership.tenantId)
                 }}
               >
-                {/* The NAME when it is known. While the names are still loading the button
-                    would otherwise have to show a uuid, which §12 forbids -- so it shows the
-                    role word instead, which is true, readable and not an identifier. */}
-                {restaurantNames[membership.tenantId] ?? t(roleKey(membership.role))}
+                {/*
+                 * ⚠ FROM THE MEMBERSHIP ITSELF, AND A PROP THE APP NEVER FILLED IS WHY -- §11
+                 * QA H-2. This read `restaurantNames[membership.tenantId] ?? t(roleKey(...))`,
+                 * and the only production call site passed `{}` -- so the fallback was the
+                 * PERMANENT state and two memberships of the same role rendered two identical
+                 * buttons under "Which restaurant?". The test that looked like its coverage
+                 * supplied the map itself, and its fallback case used ONE membership, so the
+                 * ambiguity was never rendered anywhere.
+                 */}
+                {chooserLabel(membership, t)}
               </Button>
             ))}
           </div>
@@ -138,7 +226,7 @@ export function StaffSignIn({
               }}
               required
             />
-            <Button type="submit" loading={false}>
+            <Button type="submit" loading={working} loadingLabel={t('staff.signin.working')}>
               {t('staff.signin.submit')}
             </Button>
           </form>
@@ -183,7 +271,13 @@ export function StaffSignIn({
                   }}
                   required
                 />
-                <Button type="submit" variant="secondary" data-password-signin="true">
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  loading={working}
+                  loadingLabel={t('staff.signin.working')}
+                  data-password-signin="true"
+                >
                   {t('staff.signin.submit')}
                 </Button>
               </form>
@@ -202,6 +296,25 @@ export function StaffSignIn({
       </div>
     </div>
   )
+}
+
+/**
+ * What a restaurant's button says in the chooser.
+ *
+ * The slug, with the role word beside it so the person knows what they would be acting AS —
+ * two memberships of the same restaurant cannot exist (`tenant_users` is unique on
+ * `(tenant_id, user_id)`), so the slug alone is already unique and the role is context rather
+ * than disambiguation.
+ *
+ * ⚠ IT FALLS BACK TO THE ROLE WORD ONLY IF THE SLUG IS MISSING, which `/v1/auth/me` never
+ * does — `StaffContractTest` pins the key. The fallback exists so a malformed payload renders
+ * a word rather than an empty button, and `§12` would rather show a cautious true thing than
+ * a blank control.
+ */
+export function chooserLabel(membership: StaffMembership, t: Translate): string {
+  return membership.slug === ''
+    ? t(roleKey(membership.role))
+    : `${membership.slug} · ${t(roleKey(membership.role))}`
 }
 
 /**

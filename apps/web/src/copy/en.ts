@@ -172,6 +172,9 @@ export const EN = {
   'staff.lock.title': 'Screen locked',
   'staff.lock.body': 'Nobody is signed in on this screen. Sign in with your passkey to carry on.',
   'staff.lock.signIn': 'Sign in',
+  'staff.signedout.title': 'Signed out',
+  'staff.signedout.body':
+    'This screen is no longer signed in. Sign in with your passkey when you are ready.',
 
   // -------------------------------------------------------------------- kitchen screens
   'staff.devices.title': 'Kitchen screens',
@@ -186,6 +189,7 @@ export const EN = {
   'staff.devices.name.label': 'What is this screen called?',
   'staff.devices.name.hint': 'Something you will recognise, like the pass counter or the grill.',
   'staff.devices.create': 'Create it',
+  'staff.devices.creating': 'Setting up the screen…',
   'staff.devices.cancel': 'Cancel',
   'staff.devices.issued.title': 'Set up the screen with this',
   'staff.devices.issued.warning':

@@ -85,6 +85,25 @@ const PASSKEY_SPECS = ['**/passkey.spec.ts'] as const
 const ONE_HANDED = ['**/one-handed.spec.ts'] as const
 
 /**
+ * The part of `browser/` that is NOT Playwright's, and it has to be said out loud.
+ *
+ * ⚠ MEASURED AS A RED e2e RUN, NOT ANTICIPATED. `browser/support/isolation.ts` is a pure
+ * module with ordinary Vitest tests beside it (`§11` QA M-3 — the cross-tenant sweep's leak
+ * RULE, which a browser round cannot prove without a real disclosure to detect). Playwright's
+ * default `testMatch` accepts any name ending in `.test.ts` or `.spec.ts` anywhere under
+ * `testDir`, which `isolation.test.ts` does
+ * — and the two projects below select by `testIgnore` rather than `testMatch`, so they collect
+ * *everything else* under `testDir`. The result: `pnpm run gate:e2e` imported a Vitest file
+ * into Playwright and died at collection with `Cannot read properties of undefined (reading
+ * 'config')` from inside `describe()`, before a single browser case ran.
+ *
+ * Added to BOTH denylist projects and to the top level: Playwright project options REPLACE the
+ * top-level ones rather than merging with them, so a project that declares its own
+ * `testIgnore` would not inherit this.
+ */
+const NOT_PLAYWRIGHT = ['**/support/test/**'] as const
+
+/**
  * TASK 10a's STAFF SURFACE. `§12` in full, on the real stack, in three engines and both
  * directions -- and the browser half of `QRPAGER-25 §0`'s invariant.
  *
@@ -122,6 +141,8 @@ const ENGINES = [
 
 export default defineConfig({
   testDir: './browser',
+  // The Vitest tree under `browser/support/test/` is not Playwright's -- see NOT_PLAYWRIGHT.
+  testIgnore: [...NOT_PLAYWRIGHT],
   // Fail rather than silently pass if a test has no assertion path -- a browser test that
   // finds no element must not look like a pass.
   forbidOnly: true,
@@ -166,6 +187,7 @@ export default defineConfig({
         ...PASSKEY_SPECS,
         ...STAFF_SPECS,
         ...STAFF_PASSKEY_SPECS,
+        ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -181,6 +203,7 @@ export default defineConfig({
         ...PASSKEY_SPECS,
         ...STAFF_SPECS,
         ...STAFF_PASSKEY_SPECS,
+        ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
     },

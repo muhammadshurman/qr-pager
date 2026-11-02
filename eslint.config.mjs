@@ -47,7 +47,32 @@ export default tseslint.config(
       // a star and a slash -- which CLOSED the comment three lines early and made the whole
       // config a syntax error: `eslint .` died with `Invalid or unexpected token` and no
       // finding at all, which is a worse gate result than 3,914 of them.
-      '.claude/**',
+      //
+      // ⚠ AND IT IS `.claude/worktrees/**` RATHER THAN `.claude/**` -- `§11` QA L-2. The first
+      // version excluded the whole directory, which also dropped the three files in it that
+      // are TRACKED: `.claude/agents/qa-reviewer.md`, `.claude/agents/security-reviewer.md`
+      // and `.claude/commands/task.md`. Those are repository content -- the `§11` briefs
+      // themselves -- and a linter that silently stops covering real files is the same class
+      // of defect as one that covers three copies of them, just quieter. The worktrees are
+      // what has to go, and they are the only thing under this path that does.
+      '.claude/worktrees/**',
+      // ⚠ A SCRATCH TREE A TEST WRITES INTO, AND LEAVING IT UNIGNORED BROKE THE GATE.
+      //
+      // `packages/ui/test/staff-state.test.tsx` proves `§12`'s "no empty state without a next
+      // action" by compiling a deliberately-wrong fixture, which means writing a real `.tsx`
+      // somewhere `tsc` can resolve the package's own `node_modules` from -- so it has to be
+      // inside the package. It is created and removed per run.
+      //
+      // Measured: `pnpm gate` died at step 1 with
+      // `ENOENT ... packages/ui/test/.generated/staff-state-without-action.tsx` -- ESLint had
+      // enumerated the file and it was gone before the read. A linter racing a test for a file
+      // neither of them should share is a red that says nothing about the code, which is the
+      // one thing a gate step must not produce.
+      //
+      // Ignored here, in `.prettierignore`, and in `packages/ui/tsconfig.json`'s `exclude` --
+      // three lists, because this repository has three tools that walk the tree and the night
+      // this was written proved that forgetting the third is the normal outcome.
+      'packages/ui/test/.generated/**',
       '**/dist/**',
       'apps/api/**',
       // Generated. The gate byte-diffs each against its generator's output, so a lint fix

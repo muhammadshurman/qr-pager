@@ -314,6 +314,51 @@ describe('the lock', () => {
     expect(document.querySelector('[data-passkey-signin="true"]')).not.toBeNull()
   })
 
+  it('says "signed out" when the person pressed sign out, and "locked" only when the timer fired', async () => {
+    /*
+     * ⚠ ONE MECHANISM, TWO MESSAGES — `§11` QA L-3.
+     *
+     * Sign-out and the idle lock deliberately share `lock()`: the security steps are
+     * identical and the case above pins that order. The first version shared the COPY too, so
+     * a person who pressed *"Sign out"* was told *"Screen locked. Nobody is signed in on this
+     * screen."* — the right sentence for a screen somebody walked away from and the wrong one
+     * for an action somebody just took, on a surface whose `§12` bar is a person with zero
+     * technical background.
+     *
+     * The precondition is asserted first: the two titles must actually DIFFER, or every
+     * assertion below passes against copy that never diverged.
+     */
+    expect(t('staff.signedout.title')).not.toBe(t('staff.lock.title'))
+
+    const { calls } = stack()
+
+    render(<StaffApp apiBase="" view="home" />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+    })
+
+    screen.getByRole('button', { name: t('staff.shell.signOut') }).click()
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-locked="true"]')).not.toBeNull()
+    })
+
+    // The DELIBERATE message, and not the idle one.
+    expect(screen.getByRole('heading', { name: t('staff.signedout.title') })).toBeDefined()
+    expect(everything()).toContain(t('staff.signedout.body'))
+    expect(everything()).not.toContain(t('staff.lock.title'))
+
+    // ⚠ AND THE SECURITY STEPS ARE UNCHANGED, which is the half that makes the split safe:
+    // a second message must not have become a second, weaker path.
+    const logout = calls.filter((call) => call.url.endsWith('/v1/auth/logout'))
+
+    expect(logout.length).toBe(1)
+    expect(logout[0]?.method).toBe('POST')
+    expect(everything().includes(RESTAURANT), 'the restaurant survived sign-out').toBe(false)
+    expect(everything().includes(PERSON), 'the person survived sign-out').toBe(false)
+  })
+
   it('writes nothing to storage, so there is nowhere for a datum to survive', async () => {
     stack()
 

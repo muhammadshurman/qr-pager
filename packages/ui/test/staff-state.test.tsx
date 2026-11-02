@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { render, screen } from '@testing-library/react'
-import { afterAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { STAFF_STATES, StaffState } from '../src/staff/StaffState.tsx'
 
@@ -48,6 +48,18 @@ const UI = join(import.meta.dirname, '..')
  * `exclude`d in `packages/ui/tsconfig.json` so `pnpm typecheck` never reads it as source.
  */
 const SCRATCH = join(UI, 'test', '.generated')
+
+/*
+ * ⚠ REMOVED AT BOTH ENDS, AND THE `beforeAll` HALF IS NOT BELT-AND-BRACES. A run killed
+ * between `compile()` and `afterAll` leaves a `.tsx` in the tree, and the next `pnpm gate`
+ * then lints it -- or races it, which is what happened: step 1 died with
+ * `ENOENT ... staff-state-without-action.tsx` because ESLint enumerated the file and it was
+ * gone before the read. The directory is now ignored by all three walkers, and this makes a
+ * crashed run unable to leave anything behind in the first place.
+ */
+beforeAll(() => {
+  rmSync(SCRATCH, { recursive: true, force: true })
+})
 
 afterAll(() => {
   rmSync(SCRATCH, { recursive: true, force: true })

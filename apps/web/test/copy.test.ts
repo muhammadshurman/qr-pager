@@ -46,10 +46,18 @@ describe('the copy catalogue', () => {
     // type, and an EXTRA Arabic key -- a renamed English id leaving its translation behind
     // -- is caught only here.
     expect(ar).toEqual(en)
-    // 62 at Task 9, 124 at Task 10a: the staff surface's sign-in, shell, lock, kitchen
-    // screens and the add-a-passkey outcome. The count is pinned rather than omitted because a key SILENTLY DELETED from
-    // both files at once is the one change key-parity cannot see.
-    expect(en.length).toBe(124)
+    /*
+     * 62 at Task 9, 127 at Task 10a: the staff surface's sign-in, shell, lock, kitchen
+     * screens, the add-a-passkey outcome, the two `staff.signedout.*` keys that `§11` QA L-3
+     * added so a person who PRESSED "Sign out" does not read "Screen locked. Nobody is signed
+     * in on this screen.", and `staff.devices.creating` — the busy label on the issue-device
+     * submit that `§11` SECURITY L-2 required, because a disabled button with no reason reads
+     * as a lockout rather than as work in progress.
+     *
+     * The count is pinned rather than omitted because a key SILENTLY DELETED from both files
+     * at once is the one change key-parity cannot see.
+     */
+    expect(en.length).toBe(127)
   })
 
   it('has no empty value in either language', () => {

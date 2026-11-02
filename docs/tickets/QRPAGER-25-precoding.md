@@ -216,8 +216,23 @@ input events and costs no request until it fires, at which point it costs exactl
 * **duplicate** — `POST /v1/auth/logout` is idempotent by construction and already answers the
   same way whether a session existed (`routes/auth.php` makes that an anti-oracle property). A
   double-tap on sign-out therefore cannot produce a wrong answer. Issuing a device token is
-  **not** idempotent and must not be made to look like it is: the screen's confirm step is what
-  stands between a double-tap and two credentials, and the list shows what exists.
+  **not** idempotent and must not be made to look like it is: ~~the screen's confirm step is what
+  stands between a double-tap and two credentials~~, and the list shows what exists.
+  > ⚠ **CORRECTED 2026-11-02 — `§11` SECURITY L-2 / QA M-8, AND THE STRUCK CLAUSE WAS FALSE WHEN
+  > IT WAS WRITTEN.** There is no confirm step on the issue path. Removal is confirmed
+  > (`StaffDevices.tsx` renders *"Remove this screen?"* in place of the button); **issuing is a
+  > single submit**, `<Button type="submit" data-issue-device="true">` carried no `loading` and
+  > `onIssue` was fire-and-forget, so two taps on a kitchen tablet minted two 30-day
+  > `pager:read` credentials and `setIssued()` overwrote the first plaintext — an unintended
+  > live row the person was never told about. Nothing leaked (the discarded plaintext reaches
+  > nothing and `DeviceTokens::issue()` cannot read it back) and the row is visible and
+  > revocable, which is why the reviewer graded it Low.
+  >
+  > **This answer described a control that did not exist, which is worse than describing none:**
+  > it is the reasoning that stopped the guard being written. The control now is an in-flight
+  > flag on the form — the submit is `disabled` with `aria-busy` while a request is outstanding
+  > and the handler refuses a second call — and the test is the reviewer's own criterion: two
+  > submits, exactly one `POST /v1/devices`.
 * **crash mid-way** — a passkey ceremony abandoned between *options* and *credential* leaves a
   single-use server-side challenge that the next ceremony replaces. Nothing is committed by a
   half-finished sign-in, because the session is written only by `auth.passkeys.login`.
@@ -298,9 +313,36 @@ sign-out. **No tenant id and no user id is rendered anywhere** — asserted, not
 | `loading` | the staff loading primitive, with an announced label |
 | `ready` | the chrome and the child screen |
 | `error` | the staff error primitive **with a retry** |
-| `offline` | the offline primitive; the chrome stays, so the person is not thrown out of the app by a dropped packet |
+| `offline` | the offline primitive, **without the chrome** — see the correction below |
 | `unauthenticated` | a redirect to S1, not an error — an expired session is normal, not a fault |
 | `locked` | S3, full-screen, over everything |
+
+> ⚠ **CORRECTED 2026-11-02 — `§11` QA M-9. THE `error` AND `offline` ROWS SAID THE CHROME STAYS,
+> AND THE IMPLEMENTATION DELIBERATELY DOES THE OPPOSITE: `StaffApp.tsx` renders the shell only
+> in `ready`, and `apps/web/test/staff-build-surface.test.ts` ASSERTS the absence. The reviewer
+> is right that the spec was not amended, and amending it is this note rather than a quiet edit
+> to the row above.**
+>
+> **Why the implementation is what ships.** The chrome is the restaurant's name, the person's
+> name, their role and a *"Sign out"* button — it exists only once `GET /v1/tenant` has
+> answered. The first version did render it in every phase but `locked`, and the defect was
+> found in the BUILD OUTPUT rather than by a test: `/staff` and `/staff/devices` are statically
+> prerendered, so both shipped documents carried `qr-staff__restaurant`, a `Sign out` button and
+> *"Signed in as "* with an empty name — to a caller who had presented no credential at all. A
+> phase-gated chrome is what removes that, and "no chrome until the restaurant is known" is one
+> rule covering the prerender, the transient `offline` and the `error` phase alike.
+>
+> **What the struck clause was protecting, and how it is still met.** It was about not throwing
+> a person out of the app over one dropped packet — and that property is kept by the STATE, not
+> by the chrome: `offline` renders the offline primitive with a retry affordance that calls
+> `load()` on the person's own action, the session is untouched, and a successful retry returns
+> to `ready` with the chrome back. Nobody is signed out and nothing is lost. What the person
+> does not see for those seconds is the restaurant's name — which the application does not
+> reliably know at that moment, and inventing a header for it is the half-truth `§12` refuses.
+>
+> Recorded as a **decide-and-record**, not a stop: this is my own pre-coding specification
+> rather than an approved design in the ticket, and the reason it changed was measured after it
+> was written.
 
 **Exact copy.** EN: *"Signed in as {name}"* · *"Sign out"* · *"Something went wrong on our
 side. Nothing you did caused it."* / *"Try again"* · *"No connection. We will keep trying."*

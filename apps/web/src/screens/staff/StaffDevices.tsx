@@ -1,5 +1,5 @@
 import { Button, Field, StaffState } from '@qrpager/ui'
-import { useState, type SyntheticEvent } from 'react'
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
 
 import type { Translate } from '../../copy/index.ts'
 import type { IssuedDevice, StaffDevice } from '../../staff/api.ts'
@@ -57,6 +57,43 @@ export function StaffDevices({
   formatDate,
 }: StaffDevicesProps) {
   const [adding, setAdding] = useState(false)
+  /*
+   * ⚠ A **REF** AS WELL AS STATE, AND THE REF IS THE GUARD — MEASURED, NOT PREFERRED.
+   *
+   * The first version checked the state variable only, and `staff-flows.test.tsx` caught it by
+   * dispatching three submits in ONE tick: all three passed, because every handler in a tick
+   * reads the same render's closure, where the flag is still `false`. React had scheduled the
+   * update and not yet applied it.
+   *
+   * ⚠ AND THE COMPONENT-LEVEL TEST PASSED THE WHOLE TIME, FOR THE WRONG REASON: `fireEvent`
+   * wraps each call in `act()`, which flushes the update between dispatches and hands the next
+   * handler a fresh closure. A guard that only works when something flushes between the taps is
+   * a guard against the slow double-tap and not against the fast one -- and "two taps on a
+   * kitchen tablet" is the fast one.
+   *
+   * The ref is written synchronously, so the second handler in the same tick sees it. The state
+   * stays because the BUTTON needs it: a ref change does not re-render, and `disabled` plus
+   * `aria-busy` have to arrive on screen.
+   */
+  /** True while a `POST /v1/devices` is outstanding. See `submit()` below. */
+  const [issuing, setIssuing] = useState(false)
+  const issuingRef = useRef(false)
+
+  /*
+   * The only signal this component gets that the parent's attempt resolved: `issued` becomes
+   * non-null on success, and `state` moves to `error` / `permission-denied` on failure.
+   *
+   * ⚠ UP HERE WITH THE OTHER HOOKS, NOT BESIDE `submit()` WHERE IT READS BETTER. This
+   * component early-returns for `issued`, `loading`, `permission-denied`, `error` and
+   * `offline` before it reaches the form, and a hook after a conditional return is called on
+   * some renders and not others — React's own words for it, measured the moment the first
+   * version ran: *"Rendered fewer hooks than expected. This may be caused by an accidental
+   * early return statement."*
+   */
+  useEffect(() => {
+    issuingRef.current = false
+    setIssuing(false)
+  }, [issued, state])
   const [name, setName] = useState('')
   const [removing, setRemoving] = useState<string | null>(null)
 
@@ -128,8 +165,34 @@ export function StaffDevices({
     )
   }
 
+  /*
+   * ⚠ ISSUING IS GUARDED AGAINST A SECOND TAP, AND IT WAS NOT — `§11` SECURITY L-2 / QA M-8.
+   *
+   * The submit carried no `loading` and `onIssue` is fire-and-forget (`StaffApp` passes
+   * `(name) => void onIssue(name)`), so two taps on a greasy kitchen tablet minted **two**
+   * `pager:read` credentials at 30 days each, and `setIssued()` overwrote the first — leaving a
+   * live row the person was never shown and never asked for. Nothing leaked: the discarded
+   * plaintext reaches nothing, `DeviceTokens::issue()` cannot read it back, and the row is
+   * visible and revocable in the list below. An unintended credential is still a credential.
+   *
+   * ⚠ AND THE PRE-CODING `§6` ANSWER CLAIMED A CONTROL THAT DID NOT EXIST — *"the screen's
+   * confirm step is what stands between a double-tap and two credentials"*. Removal is
+   * confirmed; issuing never was. That sentence is why nobody wrote this guard, which makes it
+   * worse than saying nothing, and it is struck in `QRPAGER-25-precoding.md` rather than
+   * quietly corrected.
+   *
+   * The flag is this component's own because no prop reports an issue in flight: `state` stays
+   * `ready` for the whole round trip, and the outcome arrives as either a non-null `issued` or
+   * a changed `state`. Resetting on both is why the guard cannot latch — a failed attempt
+   * leaves the form usable, which on a wall-mounted tablet matters more than the double-tap it
+   * prevents.
+   */
   const submit = (event: SyntheticEvent): void => {
     event.preventDefault()
+    if (issuingRef.current) return
+
+    issuingRef.current = true
+    setIssuing(true)
     onIssue(name)
   }
 
@@ -223,7 +286,12 @@ export function StaffDevices({
             required
           />
           <div className="qr-staff-actions">
-            <Button type="submit" data-issue-device="true">
+            <Button
+              type="submit"
+              loading={issuing}
+              loadingLabel={t('staff.devices.creating')}
+              data-issue-device="true"
+            >
               {t('staff.devices.create')}
             </Button>
             <Button

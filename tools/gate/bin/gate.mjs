@@ -90,15 +90,6 @@ const steps = [
   ['pnpm', ['run', 'format:check']],
   ['pnpm', ['run', 'typecheck']],
   ['pnpm', ['run', 'tokens:check']],
-  /**
-   * ⚠ THE REPOSITORY'S ACCOUNT OF ITSELF, CHECKED RATHER THAN TRUSTED. `§11` round one's
-   * rulings (b) and (c), and both were real at `a6f9a47`: `§0` said `§5` held 171 rows while
-   * the table held 205 and still said Task 9 must not start, and a committed `gate:e2e`
-   * transcript recorded `EXIT=1` while `§4a` claimed all three gates green. `CLAUDE.md` makes
-   * `§0` the one input a cold session trusts, so a stale `§0` is not a documentation lapse.
-   * `--self-test` proves each check on a deliberately bad input.
-   */
-  ['pnpm', ['run', 'records:check']],
   // §11.7's dependency clause, and it DID NOT EXIST. The ticket's §4.3 said `pnpm audit`
   // "is run as part of the gate and its output is committed" and it was in no script, no
   // workflow and no evidence file -- while the first run returned five advisories (2 high,
@@ -153,6 +144,42 @@ const steps = [
    * a hole.
    */
   ['pnpm', ['run', 'test:browser']],
+  /**
+   * ⚠ THE REPOSITORY'S ACCOUNT OF ITSELF, CHECKED RATHER THAN TRUSTED. `§11` round one's
+   * rulings (b) and (c), and both were real at `a6f9a47`: `§0` said `§5` held 171 rows while
+   * the table held 205 and still said Task 9 must not start, and a committed `gate:e2e`
+   * transcript recorded `EXIT=1` while `§4a` claimed all three gates green. `CLAUDE.md` makes
+   * `§0` the one input a cold session trusts, so a stale `§0` is not a documentation lapse.
+   * `--self-test` proves each check on a deliberately bad input.
+   *
+   * ⚠⚠ IT IS THE **LAST** STEP AS OF 2026-11-02, AND IT WAS STEP 8 OF 13 — WHICH DEADLOCKED
+   * EVERY NEW TASK'S FIRST MEASUREMENT. `§11` QA H-3 found 10a's `§0` figures resting on an
+   * UNTRACKED placeholder transcript; this is why that placeholder existed, and the finding's
+   * instance was fixed before its cause was understood.
+   *
+   * The deadlock, exactly: `(b4)` compares every total `§0` states against the committed
+   * transcript for the in-flight ticket, and the transcript IS this run's own output. Run
+   * early, the check reads a `§0` that cannot yet be right — the figures come from steps that
+   * have not happened — so the gate dies at step 8, the test steps never run, and the
+   * transcript never acquires the totals that would let the check pass. The only ways out were
+   * a hand-made placeholder (what Task 9 and 10a both did, and what QA H-3 correctly called
+   * evidence that is not evidence) or deleting the figures from `§0`, which leaves the cell's
+   * `pnpm gate` claim matching a SUPERSEDED clause's number — history read as a live claim,
+   * the hazard `checkStatedCounts` was written for.
+   *
+   * Run last, the loop converges honestly in two passes and neither pass states anything it
+   * has not measured: pass one produces a transcript carrying the real totals and reddens HERE
+   * if `§0` disagrees; `§0` is then written from that transcript and pass two is green with the
+   * same numbers. No placeholder, nothing edited by hand.
+   *
+   * ⚠ THE COST, STATED: a stale `§0` is now a red that arrives ~10 minutes in rather than one
+   * minute in, which is against this file's own cheapest-first ordering. That ordering is a
+   * convenience; a check that cannot be satisfied without fabricating its own evidence is a
+   * defect, so the convenience loses. `ci-parity.test.mjs` asserts membership in both halves
+   * rather than position, so CI is unaffected — and the CI job runs it after its own test
+   * steps for the same reason.
+   */
+  ['pnpm', ['run', 'records:check']],
 ]
 
 for (const [command, args] of steps) {

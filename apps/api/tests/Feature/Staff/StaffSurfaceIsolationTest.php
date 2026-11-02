@@ -301,6 +301,179 @@ it('derives the staff surface from the router, and every route is covered by thi
     expect($unnamed)->toBe([], 'these staff routes have no name: '.implode(', ', $unnamed));
 });
 
+it('accounts for every /v1 route the sweep does NOT cover, with the test that does', function (): void {
+    /*
+     * ⚠ `§11` SECURITY L-7 / QA L-1: THE DERIVATION MISSED `/v1/auth/*` AND SAID NOTHING.
+     *
+     * `mountedStaffRoutes()` selects routes behind `RequireAbility`, which is a real mechanism
+     * and a NARROWER set than "every mounted staff route" — the words 10a's invariant is
+     * written in. Twelve `/v1/auth/*` routes carry no ability middleware (they are how a
+     * credential is presented, so there is no ability to check yet), and four customer pager
+     * routes are a different surface entirely. All sixteen were simply absent from the sweep,
+     * and absent in the way that costs most: the file's own case asserted that the derivation
+     * covered everything *it* derived.
+     *
+     * One of the sixteen is a genuine cross-tenant lever — `POST /v1/auth/tenant` takes a
+     * `tenant_id` in the BODY, so the path-parameter machinery above cannot reach it at all.
+     * The case after this one drives it.
+     *
+     * So the complement is ENUMERATED here with a reason and a named covering test each. This
+     * is not the sweep, and it does not pretend to be: it is the mechanism that makes a route
+     * added outside `RequireAbility` fail a test instead of quietly joining a blind spot.
+     */
+    $covered = array_keys(mountedStaffRoutes());
+
+    /**
+     * Every `/v1` route NOT behind `RequireAbility`, why, and what covers it.
+     *
+     * @var array<string, string>
+     */
+    $outside = [
+        // THE CREDENTIAL SURFACE. No ability is checkable before a credential is presented,
+        // which is why `RequireAbility` is absent rather than forgotten.
+        'auth.login' => 'presents a credential · AuthLoginTest, SessionPolicyTest',
+        'auth.logout' => 'destroys the session · SessionPolicyTest, StaffSessionPolicyTest',
+        'auth.me' => 'the caller\'s OWN identity, never another tenant\'s · StaffContractTest',
+        'auth.tenant' => 'selects a tenant · the case below, PlatformAdminIsNotABypassTest',
+        'auth.passkeys.options' => 'registration options for the caller · PasskeyCeremonyTest',
+        'auth.passkeys.register' => 'registers a credential for the caller · PasskeyCeremonyTest',
+        'auth.passkeys.login-options' => 'pre-session, by design · PasskeyCeremonyTest',
+        'auth.passkeys.login' => 'presents a credential · PasskeyCeremonyTest',
+        'auth.two-factor.enable' => 'the caller\'s own second factor · TwoFactorTest',
+        'auth.two-factor.confirm' => 'the caller\'s own second factor · TwoFactorTest',
+        'auth.two-factor.disable' => 'the caller\'s own second factor · TwoFactorTest',
+        'auth.two-factor.challenge' => 'completes a login · TwoFactorTest, StaffContractTest',
+        // THE CUSTOMER SURFACE. A different principal (a QR token, not a staff session), and
+        // `PagerIdorTest` is the file that drives IT across the boundary.
+        'pager.customer.session' => 'customer surface, token principal · PagerIdorTest',
+        'pager.customer.status' => 'customer surface, token principal · PagerIdorTest',
+        'pager.customer.subscribe' => 'customer surface, token principal · PagerIdorTest',
+        'pager.customer.unsubscribe' => 'customer surface, token principal · PagerIdorTest',
+    ];
+
+    $all = [];
+
+    /** @var RoutingRoute $route */
+    foreach (Route::getRoutes() as $route) {
+        $uri = '/'.ltrim($route->uri(), '/');
+
+        if (! str_starts_with($uri, '/v1')) {
+            continue;
+        }
+
+        $all[] = $route->getName() ?? '(unnamed) '.$uri;
+    }
+
+    sort($all);
+
+    // ⚠ EXACT ON BOTH SIDES AND ON THE TOTAL. 14 swept + 16 accounted for = 30 `/v1` routes.
+    // A route added anywhere fails one of these three, and a route MOVED from one set to the
+    // other fails two of them.
+    expect($all)->toHaveCount(30, 'the /v1 surface changed size: '.implode(', ', $all));
+    expect($covered)->toHaveCount(14);
+    expect($outside)->toHaveCount(16);
+
+    $unaccounted = array_values(array_diff($all, $covered, array_keys($outside)));
+
+    expect($unaccounted)->toBe([], 'these /v1 routes are in neither the sweep nor the accounted list: '.implode(', ', $unaccounted));
+
+    // And nothing claims to be in both, which would let a route be "covered" by a sentence
+    // while the sweep stopped reaching it.
+    $both = array_values(array_intersect($covered, array_keys($outside)));
+
+    expect($both)->toBe([], 'these routes are both swept and excused: '.implode(', ', $both));
+
+    /*
+     * Every excuse names a covering test rather than only a reason -- a reason alone is the
+     * shape of a deferral, and this list is an account of coverage.
+     *
+     * ⚠ `str_contains(...)->toBeTrue($message)` AND NOT `toContain($needle, $message)`.
+     * Pest's `toContain` takes a VARIADIC list of needles and no message, so the two-argument
+     * form asserts that the subject contains the failure message too -- which is how the
+     * first version of this loop failed with *"To contain: the entry for auth.login gives no
+     * covering test"*. In the NEGATED form the same mistake is worse and silent: `not
+     * ->toContain($x, $message)` passes as long as the message is absent, so a guard written
+     * that way is always green.
+     */
+    foreach ($outside as $name => $why) {
+        expect(str_contains($why, '·'))->toBeTrue("the entry for {$name} gives no covering test");
+    }
+});
+
+it('refuses POST /v1/auth/tenant aimed at a tenant the caller is not in, which no path parameter can reach', function (): void {
+    /*
+     * ⚠ THE ONE ROUTE OUTSIDE THE SWEEP THAT IS A REAL CROSS-TENANT LEVER — `§11` SECURITY
+     * L-7 / QA L-1.
+     *
+     * `POST /v1/auth/tenant` takes its `tenant_id` in the BODY, so the sweep above — which
+     * substitutes real ids into path PARAMETERS — cannot reach it however many routes it
+     * derives. And it is the highest-value target on the staff surface: succeeding here would
+     * put beta's tenant id into alpha's session, after which every scoped query in the
+     * application would run against beta legitimately.
+     *
+     * Driven with beta's REAL id, by two actors: a member of alpha only, and the
+     * two-membership user that 10a makes real (selecting a third tenant they are in no
+     * relation to). 404 both times — the row is invisible, which is the same answer the rest
+     * of the surface gives — and no datum of beta's in either body.
+     */
+    $alpha = $this->makeTenant();
+    $beta = $this->makeTenant();
+    $gamma = $this->makeTenant();
+
+    // A MEMBER OF ALPHA ONLY.
+    $stranger = staffUserInTenants([$alpha]);
+
+    $this->postJson('/v1/auth/login', [
+        'email' => $stranger['email'],
+        'password' => $stranger['password'],
+    ])->assertStatus(200);
+
+    $refused = $this->postJson('/v1/auth/tenant', ['tenant_id' => $beta]);
+
+    $refused->assertStatus(404);
+    expect(str_contains((string) $refused->getContent(), $beta))->toBeFalse(
+        'the refusal echoed the tenant id back, which is a membership oracle',
+    );
+
+    // ⚠ AND THE SESSION DID NOT MOVE. The status is about the answer; this is about the
+    // state, and a 404 that switched the session anyway is the defect this case is for.
+    $me = $this->getJson('/v1/auth/me');
+
+    $me->assertStatus(200);
+    expect($me->json('active_tenant'))->toBe($alpha, 'a refused switch moved the session anyway');
+
+    $this->postJson('/v1/auth/logout')->assertStatus(204);
+
+    // THE TWO-MEMBERSHIP USER, SWITCHING TO A THIRD TENANT. The actor who resolves a tenant
+    // legitimately is the one most likely to reach another's row -- CASE 3's argument, applied
+    // to the switch itself.
+    $both = staffUserInTenants([$alpha, $beta]);
+
+    $this->postJson('/v1/auth/login', [
+        'email' => $both['email'],
+        'password' => $both['password'],
+    ])->assertStatus(200);
+
+    $this->postJson('/v1/auth/tenant', ['tenant_id' => $alpha])->assertStatus(204);
+
+    $refusedThird = $this->postJson('/v1/auth/tenant', ['tenant_id' => $gamma]);
+
+    $refusedThird->assertStatus(404);
+    expect(str_contains((string) $refusedThird->getContent(), $gamma))->toBeFalse(
+        'the refusal echoed the third tenant id back',
+    );
+
+    // Still alpha, not gamma and not beta: a refused switch must not land the session
+    // anywhere at all.
+    expect($this->getJson('/v1/auth/me')->json('active_tenant'))->toBe($alpha);
+
+    // THE POSITIVE CONTROL. Beta is a tenant this user IS in, so the switch must SUCCEED --
+    // without it every assertion above would pass against a route that refuses everything,
+    // which is the chooser broken rather than the boundary held.
+    $this->postJson('/v1/auth/tenant', ['tenant_id' => $beta])->assertStatus(204);
+    expect($this->getJson('/v1/auth/me')->json('active_tenant'))->toBe($beta);
+});
+
 it('refuses a staff member of tenant A on every mounted staff route aimed at tenant B\'s REAL rows', function (): void {
     // CASE 2. The invariant, over the derived surface, with ids that exist.
     $theirs = $this->makeTenant();

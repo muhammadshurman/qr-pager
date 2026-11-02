@@ -130,7 +130,7 @@ it('does not carry a removed row as a live entry as well', function (): void {
 });
 
 it('attributes an R-191-shaped red by its SQLSTATE and frame, in a file no name list carries', function (): void {
-    [$code, $output] = classify('r191-attributed.txt');
+    [$code, $output] = classify('r191-moved-frame.txt');
 
     expect($output)->toContain('ATTRIBUTED RED')
         ->and($output)->toContain('R-191')
@@ -208,6 +208,41 @@ it('attributes the same fault on ANOTHER connection, which is what proved the ma
     // cannot pass against a matcher that went back to pinning either one.
     expect(str_contains($fixture, 'Connection: pgsql,'))->toBeTrue('the fixture is not on another connection');
     expect(str_contains($fixture, 'TRUNCATE'))->toBeFalse('the fixture carries a TRUNCATE after all');
+});
+
+it('calls an app-code 08006 REAL even when its trace lists TestCase -- §11 QA M-4', function (): void {
+    /*
+     * ⚠ THE REVIEWER'S OWN FALSIFICATION, COMMITTED AS A FIXTURE. `§11` QA M-4.
+     *
+     * The first widening of this matcher keyed the frame on `(?:Connector|TestCase)\.php:\d+`,
+     * and `bin/classify-reds` applies `frame` to the WHOLE failure block rather than to the
+     * raising frame. A real Pest block routinely lists `tests/TestCase.php` in its trace — so
+     * the reviewer took `r191-wrong-frame.txt`, the control for an 08006 raised from
+     * `app/Features/Pager/PagerSessions.php:204`, added ONE `tests/TestCase.php` line inside
+     * its block, and `classify-reds` answered **ATTRIBUTED, exit 2**.
+     *
+     * That is the dangerous direction and not a cosmetic one: a genuine connection defect in
+     * application code would have been waved off as a host flake, on a surface where that
+     * could be a security test. `TestCase` was in the alternation only to keep a PRE-CAPTURE
+     * construction matching; that fixture is deleted rather than edited to fit, and the frame
+     * is now `Connector.php` alone — the connect path, which is the only thing this row's own
+     * `why_not_a_code_defect` measurement identifies and the only thing no code in this
+     * repository can cause.
+     */
+    [$code, $output] = classify('r191-app-code-with-testcase-frame.txt');
+
+    expect($output)->toContain('REAL RED')
+        ->and($code)->toBe(1);
+
+    // Not vacuous: the fixture really does carry both halves of the trap -- an 08006 timeout
+    // AND a TestCase frame -- so a matcher that went back to the alternation would attribute
+    // it and this case would fail.
+    $fixture = (string) file_get_contents(base_path('tests/fixtures/classify-reds/r191-app-code-with-testcase-frame.txt'));
+
+    expect(str_contains($fixture, 'SQLSTATE[08006]'))->toBeTrue();
+    expect(str_contains($fixture, 'timeout expired'))->toBeTrue();
+    expect(str_contains($fixture, 'tests/TestCase.php'))->toBeTrue();
+    expect(str_contains($fixture, 'Connector.php'))->toBeFalse('the fixture carries a connect frame, so it is not app-code');
 });
 
 it('calls the SAME SQLSTATE at a different frame a REAL red -- the control that matters', function (): void {

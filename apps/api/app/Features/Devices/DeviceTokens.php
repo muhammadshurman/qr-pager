@@ -238,16 +238,33 @@ final class DeviceTokens
      * minting history decides, and `§6` Q5 wants that answer to be a number rather than
      * "however many they have made". `self::LIST_LIMIT` is it.
      *
-     * ⚠ AND THE LIMIT APPLIES TO THE PREFILTERED SET, NOT TO THE CHECKED SET, which is
-     * worth saying rather than leaving for a reviewer to work out. The `LIKE` is a
-     * prefilter over a text column and the exact pin membership is re-tested in PHP below,
-     * so in principle a row could satisfy the `LIKE`, fill a limit slot and then be
-     * dropped -- hiding a real row. For that to happen, a row would have to contain
-     * `tenant:<uuid>` as a SUBSTRING of some other ability string while not containing it
-     * as an element, and `abilities` is written only by `issue()` five lines up, which
-     * writes the pin as its own element. So the divergence is unreachable by any path this
-     * application has; it is not impossible by the column's definition, which is why the
-     * exact re-check stays.
+     * ⚠ THE MATCH IS `jsonb @>` AND IT USED TO BE `like '%pin%'` -- `§11` SECURITY L-1.
+     *
+     * Two things were wrong with the pattern match, and the second is the one that mattered:
+     *
+     *   - a LEADING wildcard cannot use an index under any circumstances, so the read was a
+     *     sequential scan of `personal_access_tokens` -- every tenant's rows, on a route a
+     *     kitchen screen's settings page calls;
+     *   - the limit applied to the PREFILTERED set rather than the checked one. The pattern
+     *     is a substring test, the exact pin membership was re-tested in PHP below, so a row
+     *     could satisfy the `LIKE`, fill a limit slot and then be dropped -- hiding a real
+     *     row from the person reading the list. That needed `tenant:<uuid>` to appear as a
+     *     substring of some other ability string without being an element, which nothing in
+     *     this application writes; it was unreachable rather than impossible, and the
+     *     paragraph explaining why was longer than the fix.
+     *
+     * `abilities::jsonb @> '["tenant:<uuid>"]'` is the exact element test, in SQL, so the
+     * limit now applies to the set the method returns. Measured on the test database
+     * (2026-11-02, Postgres 16, 10 rows): both forms plan a `Seq Scan`, so this is not yet
+     * faster -- what it is, is exact, and indexable. The index that would make it cheap is a
+     * GIN over `((abilities::jsonb))`, which is a migration on a Sanctum table and belongs to
+     * the task that owns performance: `§5` `R-223`.
+     *
+     * The PHP re-check below stays. With `@>` it can no longer drop a row -- anything SQL
+     * matches, it matches -- so it is redundant BY CONSTRUCTION rather than by argument, and
+     * it is kept because the column is `text`: a row written by anything other than
+     * `issue()` five lines up (a Sanctum upgrade, a manual repair) is JSON this method has
+     * not seen, and the cheap exact test over a decoded array costs one `in_array` per row.
      *
      * @return list<array{id: string, name: string, expires_at: string|null, last_used_at: string|null}>
      */
@@ -256,10 +273,10 @@ final class DeviceTokens
         $rows = DB::select(
             'select id, name, expires_at, last_used_at, abilities
                from personal_access_tokens
-              where abilities::text like ?
+              where abilities::jsonb @> ?::jsonb
               order by created_at desc
               limit ?',
-            ['%'.TenantPin::for($tenantId).'%', max(1, $limit)],
+            [(string) json_encode([TenantPin::for($tenantId)]), max(1, $limit)],
         );
 
         $out = [];
@@ -267,9 +284,9 @@ final class DeviceTokens
         foreach ($rows as $row) {
             $abilities = json_decode((string) ($row->abilities ?? '[]'), true);
 
-            // The LIKE above is a prefilter and not the check: a pattern match over a text
-            // column is the wrong thing to trust for tenancy, so membership of the pin is
-            // re-tested exactly here. Belt and braces, and the braces are the exact match.
+            // Redundant by construction now that the SQL match is `@>` (see the docblock),
+            // and kept because `abilities` is a `text` column: JSON written by anything but
+            // `issue()` is JSON this method has not seen.
             if (! is_array($abilities) || ! in_array(TenantPin::for($tenantId), $abilities, true)) {
                 continue;
             }

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { forgetStaffSession, signInAsStaff, staffFixture } from './support/e2e.ts'
+import { echoCount, leaksIn } from './support/isolation.ts'
 
 /**
  * ================================================================================
@@ -81,9 +82,21 @@ test.describe('§12 on the staff shell', () => {
 
     const boxes = await targets(page)
 
-    // Not vacuous: the shell HAS controls. An exact lower bound rather than "some", so a
-    // page that rendered none would fail here instead of passing with an empty sweep.
-    expect(boxes.length).toBeGreaterThanOrEqual(2)
+    /*
+     * Not vacuous: the shell HAS controls, and the sweep found ALL of them.
+     *
+     * ⚠ AN EQUALITY WITH THE PAGE'S OWN COUNT, AND IT WAS `toBeGreaterThanOrEqual(2)` —
+     * `§11` QA L-4. The absolute number cannot be pinned here and that is not laziness:
+     * `StaffHome` renders the add-a-passkey button only where `passkeysAvailable()` is true,
+     * which is Chromium-with-a-virtual-authenticator and not WebKit, so the count genuinely
+     * differs per project. What IS exact is that the sweep saw every control the page has —
+     * asked a second way, through a locator rather than through `targets()`'s own selector,
+     * so a sweep that silently covered a subset fails.
+     */
+    const declared = await page.locator('button:visible, a[href]:visible, input:visible').count()
+
+    expect(declared, 'the shell rendered no controls at all').toBeGreaterThanOrEqual(2)
+    expect(boxes.length, 'the 44px sweep did not see every control on the page').toBe(declared)
 
     for (const box of boxes) {
       expect(box.width, `"${box.name}" is ${String(box.width)}px wide`).toBeGreaterThanOrEqual(44)
@@ -111,8 +124,16 @@ test.describe('§12 on the staff shell', () => {
      */
     const controls = await page.locator('button:visible, a[href]:visible, input:visible').count()
 
-    // Not vacuous: the shell HAS controls, and the count is what bounds the loop below.
-    expect(controls).toBeGreaterThanOrEqual(2)
+    /*
+     * Not vacuous: the shell HAS controls, and this count bounds the loop below.
+     *
+     * ⚠ THIS ONE STAYS A BOUND, WITH THE REASON STATED — `§11` QA L-4 asked for exact values
+     * and here there is not one to state: the add-a-passkey button exists only where
+     * `passkeysAvailable()` is true, so the control count differs between the six projects by
+     * design. The exact claim this case makes is the EQUALITY below — every control Tab
+     * reached — which is stronger than any number would be and holds in all six.
+     */
+    expect(controls, 'the shell rendered no controls at all').toBeGreaterThanOrEqual(2)
 
     const seen: { name: string; width: string; style: string }[] = []
 
@@ -140,10 +161,15 @@ test.describe('§12 on the staff shell', () => {
       seen.push(ring)
     }
 
-    // ⚠ EVERY CONTROL WAS ACTUALLY REACHED, asserted rather than hoped. A Tab order that
-    // escaped the document after one step would leave `seen` with one entry and every
-    // assertion below would pass.
-    expect(seen.length, 'Tab did not reach every visible control').toBeGreaterThanOrEqual(2)
+    /*
+     * ⚠ EVERY CONTROL WAS ACTUALLY REACHED, AS AN EQUALITY — `§11` QA L-4, and the floor it
+     * replaces was the weaker half of this case. A Tab order that escaped the document after
+     * one step left `seen` with one entry and passed `>= 2` as soon as there were two
+     * controls; `=== controls` says what the sentence above it always claimed.
+     */
+    expect(seen.length, `Tab reached ${String(seen.length)} of ${String(controls)} controls`).toBe(
+      controls,
+    )
 
     for (const ring of seen) {
       expect(ring.style, `"${ring.name}" has outline-style ${ring.style}`).not.toBe('none')
@@ -200,6 +226,13 @@ test.describe('§12 on the staff shell', () => {
     // the vacuous shape `a11y.spec.ts`'s own reduced-motion pair is built to avoid.
     const ordinary = await measure()
 
+    /*
+     * A BOUND, AND `§11` QA L-4's answer for it is the reason rather than a number: which
+     * elements animate depends on which controls the project rendered (the add-a-passkey
+     * button is Chromium-only here), so the exact count is not one fact. What matters is that
+     * the set is non-empty BEFORE the preference and empty after, and the `toEqual([])` below
+     * is the exact half.
+     */
     expect(
       ordinary.length,
       'nothing on the staff shell animates at all, so the reduction below measures nothing',
@@ -367,9 +400,21 @@ test.describe('§12 on the staff shell', () => {
       return out
     })
 
-    // Not vacuous: the selectors matched something. Four of the five are always present on a
-    // signed-in shell; the state ones depend on the view, so the floor is three.
-    expect(pairs.length).toBeGreaterThanOrEqual(3)
+    /*
+     * Not vacuous: the selectors matched, and the three that are ALWAYS on a signed-in shell
+     * are named rather than counted.
+     *
+     * ⚠ NAMED, NOT `toBeGreaterThanOrEqual(3)` — `§11` QA L-4. A count of three passed if the
+     * three that matched were the two state selectors plus one of the chrome ones, which is a
+     * different measurement wearing the same number. The two `qr-staff-state__*` selectors
+     * stay unasserted because whether a state is on screen depends on the view, and that is a
+     * property of the page rather than of this check.
+     */
+    const matched = pairs.map((pair) => pair.selector)
+
+    for (const always of ['.qr-staff__restaurant', '.qr-staff__person', '.qr-staff__role']) {
+      expect(matched, `the shell did not render ${always}`).toContain(always)
+    }
 
     for (const pair of pairs) {
       // WCAG AA: 4.5:1 for body text, 3:1 for large text (18.66px bold or 24px). The kit's
@@ -412,19 +457,32 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
 
       if (token !== null) headers['X-XSRF-TOKEN'] = token
 
-      const attempts: [string, string, string, unknown][] = [
-        ['ready', 'POST', `/v1/pager-sessions/${beta.session_id}/ready`, {}],
-        ['renotify', 'POST', `/v1/pager-sessions/${beta.session_id}/renotify`, {}],
-        ['complete', 'POST', `/v1/pager-sessions/${beta.session_id}/complete`, {}],
-        ['cancel', 'POST', `/v1/pager-sessions/${beta.session_id}/cancel`, {}],
-        ['member.update', 'PATCH', `/v1/members/${beta.membership_id}`, { role: 'manager' }],
-        ['member.destroy', 'DELETE', `/v1/members/${beta.membership_id}`, null],
-        ['device.destroy', 'DELETE', `/v1/devices/${beta.device_id}`, null],
+      /*
+       * ⚠ EACH ATTEMPT CARRIES THE ID IT PUT IN ITS OWN PATH, which the first version of this
+       * sweep did not record — and not recording it is what made the leak check vacuous for
+       * seven of eleven answers (`§11` QA M-3 / SECURITY L-3). `classifyAppearance` needs it
+       * to tell *"the server echoed back the id I just sent"* from *"the server told me about
+       * another one of beta's rows"*, and those two differ only by which id it is.
+       */
+      const attempts: [string, string, string, unknown, string | null][] = [
+        ['ready', 'POST', `/v1/pager-sessions/${beta.session_id}/ready`, {}, beta.session_id],
+        ['renotify', 'POST', `/v1/pager-sessions/${beta.session_id}/renotify`, {}, beta.session_id],
+        ['complete', 'POST', `/v1/pager-sessions/${beta.session_id}/complete`, {}, beta.session_id],
+        ['cancel', 'POST', `/v1/pager-sessions/${beta.session_id}/cancel`, {}, beta.session_id],
+        [
+          'member.update',
+          'PATCH',
+          `/v1/members/${beta.membership_id}`,
+          { role: 'manager' },
+          beta.membership_id,
+        ],
+        ['member.destroy', 'DELETE', `/v1/members/${beta.membership_id}`, null, beta.membership_id],
+        ['device.destroy', 'DELETE', `/v1/devices/${beta.device_id}`, null, beta.device_id],
       ]
 
-      const out: { name: string; status: number; body: string }[] = []
+      const out: { name: string; status: number; body: string; ownId: string | null }[] = []
 
-      for (const [name, method, path, body] of attempts) {
+      for (const [name, method, path, body, ownId] of attempts) {
         const response = await fetch(path, {
           method,
           headers,
@@ -432,10 +490,11 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
           ...(body === null ? {} : { body: JSON.stringify(body) }),
         })
 
-        out.push({ name, status: response.status, body: await response.text() })
+        out.push({ name, status: response.status, body: await response.text(), ownId })
       }
 
-      // And the reads, which take no id and must carry nothing of beta's.
+      // And the reads, which take no id and must carry nothing of beta's -- `ownId: null`, so
+      // for these the echo exemption cannot apply at all.
       for (const [name, path] of [
         ['tenant', '/v1/tenant'],
         ['board', '/v1/pager-sessions'],
@@ -444,7 +503,7 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
       ] as const) {
         const response = await fetch(path, { headers, credentials: 'same-origin' })
 
-        out.push({ name, status: response.status, body: await response.text() })
+        out.push({ name, status: response.status, body: await response.text(), ownId: null })
       }
 
       return out
@@ -472,23 +531,33 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
       expect(result.status, `${result.name} answered ${String(result.status)}`).toBe(200)
     }
 
-    // And nothing of beta's is in ANY answer -- keyed or not. The keyed paths echo their own
-    // id back in the problem document's `instance`, which is the caller's own input and not a
-    // leak, so those ids are excluded from their own request's body the same way the PHP half
-    // excludes them.
-    for (const result of results) {
-      for (const [what, id] of Object.entries(fixture.beta)) {
-        if (what === 'name') continue
-        if (result.body.includes(id) && results.indexOf(result) < 7) continue
+    /*
+     * AND NOTHING OF BETA'S IS IN ANY ANSWER — keyed or not.
+     *
+     * ⚠ THE RULE IS `support/isolation.ts` NOW, AND IT USED TO BE THIS LINE:
+     *
+     *     if (result.body.includes(id) && results.indexOf(result) < 7) continue
+     *
+     * — which reads as *"the keyed paths echo their own id in `instance`, and that is the
+     * caller's own input"* and MEANS *"for the first seven answers, skip the leak check
+     * exactly when it would fail"*. `§11` QA M-3 / SECURITY L-3. A 404 for beta's session
+     * that also carried beta's `membership_id` or `device_id` passed this sweep silently,
+     * and those are the disclosures the invariant is about.
+     *
+     * The tolerated appearance is now the narrow one the reasoning justifies: the id THIS
+     * request named, in a problem document's `instance`, and nowhere else in it.
+     * `support/test/isolation.test.ts` drives seven leak shapes past that rule — which is the
+     * half this round cannot prove, since a real disclosure would have to exist first.
+     */
+    expect(leaksIn(results, fixture.beta), 'beta was disclosed to alpha').toEqual([])
 
-        expect(
-          result.body.includes(id),
-          `${result.name} carried beta's ${what} to alpha's owner`,
-        ).toBe(false)
-      }
-
-      expect(result.body.includes(fixture.beta.name), `${result.name} named beta`).toBe(false)
-    }
+    /*
+     * And the echo is COUNTED, exactly. Seven keyed attempts, each echoing its own path id in
+     * `instance` once. Pinned rather than bounded so that an eighth echo — a read starting to
+     * quote an id, a new field carrying one — is a failure a person reads, not a number that
+     * drifts.
+     */
+    expect(echoCount(results, fixture.beta), 'the echo count moved').toBe(7)
   })
 
   test('locks the shell after idle, and the session is dead on the server afterwards', async ({
@@ -511,9 +580,44 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
     await page.locator('[data-sign-out="true"]').click()
     await page.waitForSelector('[data-locked="true"]', { timeout: 30_000 })
 
-    const after = await page.evaluate(async () => (await fetch('/v1/tenant')).status)
+    /*
+     * ⚠ THE CLIENT HALF IS INSTANTANEOUS AND IS ASSERTED FIRST. The overlay is up and the
+     * restaurant, the person and the role are out of the document ALREADY -- before the server
+     * has answered anything. That is the property `§11` SECURITY M-1 bought and it is the half
+     * that protects an unattended screen: whoever walks up sees nothing.
+     */
+    const covered = (await page.locator('body').textContent()) ?? ''
 
-    expect(after, 'the server session survived the lock').toBe(401)
+    expect(covered).not.toContain(staffFixture().alpha.name)
+
+    /*
+     * ⚠ AND THE SERVER HALF IS AWAITED RATHER THAN SAMPLED ONCE — AND THE SINGLE SAMPLE WAS A
+     * RACE I INTRODUCED, measured in `gate:e2e` round 3: **3 of 6 staff projects red** with
+     * *"the server session survived the lock"* (`staff-firefox-ltr`, `staff-webkit-ltr`,
+     * `staff-webkit-rtl`; chromium passed, which is how a race presents).
+     *
+     * `§11` SECURITY M-1 said `lock()` must not `await signOut()`: against a
+     * reachable-but-dead route a bare `fetch` has no `AbortController`, so the promise can be
+     * pending for the browser's whole connect timeout — tens of seconds with the restaurant's
+     * name, the person's name and the device list still rendered on an unattended screen. The
+     * fix drops the data and raises the overlay FIRST and lets the logout fly. The cost, which
+     * is this: `[data-locked="true"]` no longer implies *the server session is already gone* —
+     * it implies *the request has been sent*.
+     *
+     * So the assertion follows the behaviour instead of the behaviour following the assertion,
+     * and it is written out rather than relaxed quietly: the session must die, and it must die
+     * without anything else happening — no reload, no second sign-out, no further interaction.
+     * A lock that never destroyed the session fails here after the full timeout, which is the
+     * defect this case has always existed to catch. The residual window between the overlay and
+     * the 401 is milliseconds on a working network; on a dead one the cookie survives until the
+     * server's own 120-minute expiry, which is `§5` `R-220` and is recorded there.
+     */
+    await expect
+      .poll(async () => page.evaluate(async () => (await fetch('/v1/tenant')).status), {
+        message: 'the server session survived the lock',
+        timeout: 15_000,
+      })
+      .toBe(401)
 
     // This case destroyed the shared session on purpose, so the next one must not spend five
     // seconds discovering that. `signInAsStaff` verifies a restored session anyway -- this is

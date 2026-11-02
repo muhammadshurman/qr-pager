@@ -35,3 +35,9 @@ docs/
 
 # Git-ignored: the gate log directory, and the browser container's HOME (Task 9).
 storage/
+
+# A scratch tree `packages/ui/test/staff-state.test.tsx` writes a deliberately-wrong fixture
+# into, so `tsc` can be run at it from inside the package. Created and removed per run.
+# Ignored here as well as in eslint.config.mjs and packages/ui/tsconfig.json, because this
+# repository has three tools that walk the tree and forgetting the third is the normal outcome.
+packages/ui/test/.generated/

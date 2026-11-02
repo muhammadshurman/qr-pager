@@ -60,10 +60,25 @@ describe('the linters do not walk a reviewer worktree', () => {
 
     const ignores = flat.flatMap((entry) => entry.ignores ?? [])
 
-    // Not vacuous: there IS an ignore list, and it still carries the entries whose absence
-    // caused the two earlier instances of this same defect.
-    expect(ignores.length).toBeGreaterThan(3)
-    expect(ignores).toContain('.claude/**')
+    /*
+     * Not vacuous: there IS an ignore list, and it still carries the entries whose absence
+     * caused the two earlier instances of this same defect.
+     *
+     * ⚠ EXACT, AND IT WAS `toBeGreaterThan(3)` — `§11` QA L-4. The length of this list is
+     * knowable: it is twelve, here, now. A floor passes while an entry is quietly removed,
+     * which is the whole failure mode this file exists for, so the count is pinned and
+     * adding an ignore is a deliberate edit to a test.
+     */
+    expect(ignores.length).toBe(12)
+    expect(ignores).toContain('.claude/worktrees/**')
+
+    /*
+     * ⚠ AND NOT THE WHOLE DIRECTORY — `§11` QA L-2. The first version ignored `.claude/**`,
+     * which also dropped the three TRACKED files under it: the two `§11` reviewer briefs and
+     * the `task` command. Pinned as an absence, because the narrowing is the fix and a
+     * re-broadening would otherwise pass every other assertion in this file.
+     */
+    expect(ignores).not.toContain('.claude/**')
     expect(ignores).toContain('storage/**')
     expect(ignores).toContain('**/node_modules/**')
   })
@@ -94,13 +109,71 @@ describe('the linters do not walk a reviewer worktree', () => {
     expect(isExempt(real), 'the CSS walk would skip the real kit stylesheet').toBe(false)
   })
 
-  it('keeps the two exclusions in step, so a third linter is the only thing left to forget', () => {
-    // The two walks are independent implementations of one decision, and a decision expressed
-    // twice is a decision that can be half-applied. Named here so a reviewer can see the pair
-    // rather than find one of them.
+  it('keeps the exclusions in step, and the third linter has its own test in the PHP gate', () => {
+    // The walks are independent implementations of one decision, and a decision expressed
+    // three times is a decision that can be two-thirds applied. The third is
+    // `SourceGuard::markdownFiles()`, which runs from `apps/api` under `composer guard` and
+    // is asserted by `tests/Feature/Architecture/GuardWorktreeScopeTest.php` -- named here so
+    // a reader finds the set rather than this pair.
     const worktreeDirectory = join(REPO, '.claude', 'worktrees', 'sec-10a')
 
     expect(isExempt(worktreeDirectory)).toBe(true)
-    expect(isExempt(join(REPO, '.claude'))).toBe(true)
+
+    /*
+     * ⚠ `.claude` ITSELF IS **NOT** EXEMPT — `§11` QA L-2, and this assertion is the reverse
+     * of what it was. Excluding the directory also excluded the three tracked files in it,
+     * which are repository content: the two `§11` briefs and the `task` command. A walker
+     * that quietly stops covering real files is the same defect as one that covers three
+     * copies of them.
+     */
+    expect(isExempt(join(REPO, '.claude'))).toBe(false)
+    expect(isExempt(join(REPO, '.claude', 'agents', 'qa-reviewer.md'))).toBe(false)
+  })
+})
+
+describe('Playwright collects the browser specs and nothing else', () => {
+  /**
+   * ⚠ MEASURED AS A RED `gate:e2e`, AND IT COST A FULL ROUND. `browser/support/isolation.ts`
+   * is a pure module with Vitest tests beside it (`§11` QA M-3 — the cross-tenant sweep's leak
+   * RULE, which no browser round can prove without a real disclosure to detect). Playwright's
+   * default pattern accepts any `.test.ts` under `testDir`, and the two kit projects select by
+   * `testIgnore` rather than `testMatch`, so they collected *everything else* — including that
+   * file. `pnpm run gate:e2e` then imported a Vitest suite into Playwright and died at
+   * collection, inside `describe()`, before one browser case ran.
+   *
+   * Two runners now share `browser/`, so which files each one claims is a property with a
+   * test. Imported rather than grepped, for `eslint.config.mjs`'s reason one case up: the same
+   * sitting also closed a block comment early, in this very config, with a glob that ended in
+   * a star and a slash — and only an import catches both the entry and the syntax.
+   */
+  it('excludes the Vitest tree from every project, by the config Playwright loads', async () => {
+    const config = await import(join(REPO, 'playwright.config.ts'))
+    const resolved = config.default
+
+    expect(resolved.testDir).toBe('./browser')
+
+    // The top level, for the projects that declare no ignore of their own.
+    expect(resolved.testIgnore).toContain('**/support/test/**')
+
+    // Not vacuous: there ARE projects, and the count is exact so a project added without a
+    // selector fails here rather than silently inheriting the default pattern.
+    expect(resolved.projects).toHaveLength(22)
+
+    for (const project of resolved.projects) {
+      const selects = project.testMatch !== undefined
+      const ignores = (project.testIgnore ?? []).includes('**/support/test/**')
+
+      /*
+       * ⚠ THE RULE, AND IT IS NOT "has a testIgnore". Playwright project options REPLACE the
+       * top-level ones rather than merging, so a project with its own `testIgnore` does not
+       * inherit the line above — which is exactly how the defect arrived. A project is safe
+       * only if it names what it WANTS (`testMatch`), or if its own ignore list carries the
+       * Vitest tree.
+       */
+      expect(
+        selects || ignores,
+        `project "${project.name}" would collect browser/support/test/** — give it a testMatch, or add the ignore to its own list`,
+      ).toBe(true)
+    }
   })
 })

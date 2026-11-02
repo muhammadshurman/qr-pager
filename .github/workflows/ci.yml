@@ -653,12 +653,6 @@ jobs:
       - name: The generated token artefacts are not stale
         run: pnpm run tokens:check
 
-      # §11 round one rulings (b) and (c): §0's stated state against the tags and the ledger,
-      # and every committed gate transcript against its own exit code. Both failures were real
-      # at a6f9a47 and both were found by a reviewer rather than by a gate.
-      - name: §0 and the committed transcripts agree with reality
-        run: pnpm run records:check
-
       # §11.7's dependency clause, and it existed nowhere before this fix. The first run
       # returned five advisories -- 2 high, 3 moderate -- against a diff that adds 3,184
       # lockfile lines. `--audit-level low` so no severity is filtered out silently. The two
@@ -690,6 +684,20 @@ jobs:
       # R-118 exists to refuse.
       - name: The browser checks — R-118's four clauses
         run: pnpm run test:browser
+
+      # §11 round one rulings (b) and (c): §0's stated state against the tags and the ledger,
+      # and every committed gate transcript against its own exit code. Both failures were real
+      # at a6f9a47 and both were found by a reviewer rather than by a gate.
+      #
+      # ⚠ AFTER THE TEST STEPS AS OF 2026-11-02, AND IT USED TO BE BEFORE THEM. The reason is
+      # written out in `tools/gate/bin/gate.mjs` beside the same step: check (b4) compares the
+      # totals §0 states against the transcript of this very run, so running it first
+      # deadlocks a task's FIRST measurement -- the gate dies before the totals exist, and the
+      # only ways past are a hand-made placeholder (§11 QA H-3's finding) or deleting the
+      # figures from §0. `ci-parity.test.mjs` asserts that both halves RUN this step rather
+      # than where, so the two stay in step by membership and this comment carries the order.
+      - name: §0 and the committed transcripts agree with reality
+        run: pnpm run records:check
 
       # ⚠ ON EVERY PUSH, NOT AT THE END OF A TASK, AND THAT IS THE RULING THIS FAMILY EARNED.
       # A fresh-clone pass was a thing a builder ran once, by hand, when they remembered --

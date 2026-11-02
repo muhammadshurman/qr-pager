@@ -150,6 +150,9 @@ export const AR: Record<CopyKey, string> = {
   'staff.lock.title': 'الشاشة مقفلة',
   'staff.lock.body': 'لا يوجد أحد مسجّل الدخول على هذه الشاشة. سجّل الدخول بمفتاح المرور للمتابعة.',
   'staff.lock.signIn': 'تسجيل الدخول',
+  'staff.signedout.title': 'تم تسجيل الخروج',
+  'staff.signedout.body':
+    'لم تعد هذه الشاشة مسجّلة الدخول. سجّل الدخول بمفتاح المرور عندما تكون مستعدًا.',
 
   // -------------------------------------------------------------------- kitchen screens
   'staff.devices.title': 'شاشات المطبخ',
@@ -164,6 +167,7 @@ export const AR: Record<CopyKey, string> = {
   'staff.devices.name.label': 'ما اسم هذه الشاشة؟',
   'staff.devices.name.hint': 'اسم تتعرّف عليه، مثل طاولة التسليم أو الشوّاية.',
   'staff.devices.create': 'أنشئها',
+  'staff.devices.creating': 'جارٍ تهيئة الشاشة…',
   'staff.devices.cancel': 'إلغاء',
   'staff.devices.issued.title': 'أعدّ الشاشة بهذا',
   'staff.devices.issued.warning':

@@ -141,7 +141,14 @@ describe('every staff route, derived from the build', () => {
 
     const documents = prerenderedStaffDocuments()
 
-    expect(documents.length).toBeGreaterThan(0)
+    /*
+     * ⚠ THE EXACT PAIR, BY NAME, AND IT WAS `toBeGreaterThan(0)` — `§11` QA L-4. Two
+     * documents are built and both are swept below; a floor of zero would pass against a
+     * build that emitted one of them, which is exactly the half-swept state this case is
+     * about. The same two routes are pinned in the case above, from the ROUTER's side, so
+     * the build and the declaration are held to each other.
+     */
+    expect(documents.map((document) => document.route)).toEqual(['/staff', '/staff/devices'])
 
     for (const { route, html } of documents) {
       for (const marker of CHROME) {

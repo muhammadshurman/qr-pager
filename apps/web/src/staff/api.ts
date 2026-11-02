@@ -56,14 +56,38 @@ export type StaffResult<T> =
 
 export interface StaffTenant {
   readonly name: string
-  readonly slug: string
+  /**
+   * The restaurant's own timezone, which the device list's dates are rendered in.
+   *
+   * ⚠ `slug` AND `status` WERE HERE AND ARE GONE — `§11` QA L-5. Nothing rendered either, and
+   * a field a client holds is a field a later change renders: the whole reason `GET /v1/tenant`
+   * exists is that a slug is not a name, and `browser/staff.spec.ts` asserts the slug never
+   * reaches the page. Holding it in client state was one commit away from contradicting that.
+   * The ROUTE still returns both — a published response shape is not changed in place (`§6`) —
+   * and this is the client declining to keep them.
+   */
   readonly timezone: string
-  readonly status: string
 }
 
 export interface StaffMembership {
   readonly tenantId: string
   readonly role: string
+  /**
+   * The restaurant's own slug.
+   *
+   * ⚠ CARRIED FOR THE CHOOSER AND FOR NOTHING ELSE — `§11` QA H-2. `/v1/auth/me` has always
+   * returned it; the client ignored it, and the chooser fell back to the ROLE WORD for every
+   * membership. Two memberships of the same role then rendered two buttons both reading
+   * *"Owner"* under *"Which restaurant?"* — and that actor is not hypothetical: it is
+   * `R-119`'s own residual and the very actor `StaffSurfaceIsolationTest` case 3 constructs.
+   *
+   * A slug is an identifier, which `§12` would rather not put on a screen — but it is the
+   * restaurant's OWN label, the caller already holds a membership in it, and it is the only
+   * datum available before a tenant is selected. Two distinguishable buttons beat two
+   * identical ones. `R-222` carries the proper fix (the name) with the `§4` tension that
+   * makes it a decision rather than a patch.
+   */
+  readonly slug: string
 }
 
 export interface StaffIdentity {
@@ -225,7 +249,9 @@ export function fetchIdentity(apiBase: string): Promise<StaffResult<StaffIdentit
       const tenantId = row === null ? null : asString(row.tenant_id)
       const role = row === null ? null : asString(row.role)
 
-      if (tenantId !== null && role !== null) memberships.push({ tenantId, role })
+      if (tenantId !== null && role !== null) {
+        memberships.push({ tenantId, role, slug: (row === null ? null : asString(row.slug)) ?? '' })
+      }
     }
 
     return { name, memberships, activeTenant: asString(root.active_tenant) }
@@ -247,12 +273,7 @@ export function fetchTenant(apiBase: string): Promise<StaffResult<StaffTenant>> 
     // the fallback is what would make that happen.
     if (name === null) return null
 
-    return {
-      name,
-      slug: asString(tenant.slug) ?? '',
-      timezone: asString(tenant.timezone) ?? 'UTC',
-      status: asString(tenant.status) ?? 'active',
-    }
+    return { name, timezone: asString(tenant.timezone) ?? 'UTC' }
   })
 }
 

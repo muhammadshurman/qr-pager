@@ -105,3 +105,51 @@ it('prunes the reviewer worktrees from the canonical-doc walk', function (): voi
         exec('rm -rf '.escapeshellarg($root));
     }
 });
+
+it('still walks the TRACKED files under .claude, which the first prune dropped', function (): void {
+    /*
+     * ⚠ `§11` QA L-2, AND IT IS THE OTHER HALF OF THE CASE ABOVE. The prune started life as
+     * the directory name `.claude`, which pruned the worktrees AND the three files under that
+     * path that are tracked repository content: `.claude/agents/qa-reviewer.md`,
+     * `.claude/agents/security-reviewer.md` and `.claude/commands/task.md` — the `§11` briefs
+     * this guard's rules are about. A guard that silently stops guarding real files is the
+     * same class of defect as one that reports three copies of them, only quieter: nothing
+     * fails, and the coverage is gone.
+     *
+     * Driven the only way that proves it: a violation is PLANTED under `.claude/` outside the
+     * worktrees, and the guard must still catch it. A `str_contains` over the prune list would
+     * pass against a walk that read the list and ignored it.
+     */
+    $root = storage_path('framework/testing/guard-scope-'.bin2hex(random_bytes(6)));
+    $guardRoot = $root.'/apps/api';
+    $docs = $root.'/docs';
+    $tracked = $root.'/.claude/agents';
+    $worktree = $root.'/.claude/worktrees/qa-probe/docs';
+
+    foreach ([$guardRoot, $docs, $tracked, $worktree] as $directory) {
+        expect(mkdir($directory, 0o755, true))->toBeTrue();
+    }
+
+    $blueprint = (string) file_get_contents(base_path('../../docs/BLUEPRINT.md'));
+
+    expect($blueprint)->not->toBe('');
+
+    file_put_contents($docs.'/BLUEPRINT.md', $blueprint);
+    // Under `.claude` but NOT under a worktree: in scope, and a byte-identical second copy.
+    file_put_contents($tracked.'/BLUEPRINT.md', $blueprint);
+    // Under a worktree: out of scope, and the same copy. Both are present at once so the case
+    // distinguishes the two paths rather than testing them in separate worlds.
+    file_put_contents($worktree.'/BLUEPRINT.md', $blueprint);
+
+    try {
+        $violations = (new SourceGuard($guardRoot))->scanCanonicalDocs();
+        $paths = array_map(static fn (Violation $v): string => $v->file, $violations);
+
+        // EXACTLY ONE, and it is the tracked one. The worktree copy is pruned, the tracked
+        // copy is not, and the count is what distinguishes "narrowed correctly" from either
+        // "still pruning everything" (zero) or "pruning nothing" (two).
+        expect($paths)->toBe(['.claude/agents/BLUEPRINT.md']);
+    } finally {
+        exec('rm -rf '.escapeshellarg($root));
+    }
+});

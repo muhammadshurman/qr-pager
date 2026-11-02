@@ -39,6 +39,19 @@ const EXEMPT_PREFIXES = [
   'tools/design-tokens/fixtures',
   // The Laravel half. Not this workspace, and `composer guard` rule 11 covers it.
   'apps/api',
+  /*
+   * `§11`'s REVIEWER WORKTREES, for the reason `eslint.config.mjs` records at length: the two
+   * reviewers run concurrently in detached worktrees under `.claude/worktrees/`, so the
+   * ordinary state of this repository DURING a review round is that two copies of it exist
+   * inside it. This walk would scan all three, and its FLOOR check would pass comfortably
+   * while every finding was reported three times.
+   *
+   * ⚠ A PREFIX AND NOT THE SEGMENT `.claude` — `§11` QA L-2. As a skipped segment it also
+   * skipped the three TRACKED files under that directory (the `§11` briefs and the `task`
+   * command), and a scanner quietly dropping real files is the same defect as one scanning
+   * three copies of them. Only the worktrees are excluded, and only under this path.
+   */
+  '.claude/worktrees',
 ]
 
 /**
@@ -50,14 +63,7 @@ const EXEMPT_PREFIXES = [
  * the token file reached through a workspace symlink. A linter that reports its own
  * dependencies' code has no signal left in it.
  */
-/*
- * `.claude` joined on 2026-11-02, for the reason `eslint.config.mjs` records at length: `§11`'s
- * two reviewers now run concurrently in detached worktrees under `.claude/worktrees/`, so the
- * ordinary state of this repository DURING a review round is that two copies of it exist
- * inside it. This walk would scan all three and its FLOOR check would pass comfortably while
- * every finding was reported three times.
- */
-const EXEMPT_SEGMENTS = ['node_modules', '.next', 'coverage', 'dist', '.git', 'out', '.claude']
+const EXEMPT_SEGMENTS = ['node_modules', '.next', 'coverage', 'dist', '.git', 'out']
 
 export function isExempt(path) {
   const rel = relative(ROOT, path).split(sep).join('/')
