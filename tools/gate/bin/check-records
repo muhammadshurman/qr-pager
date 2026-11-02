@@ -594,11 +594,14 @@ export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
   ]
 
   let compared = 0
+  let stated = 0
 
   for (const claim of claims) {
     // Nothing stated is not a failure: `§0` states the totals its own in-flight gate has
     // produced, and a task mid-round has legitimately not produced all four yet.
     if (claim.stated === null) continue
+
+    stated += 1
 
     if (claim.text.kind === 'untracked') {
       fail(
@@ -640,10 +643,47 @@ export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
   }
 
   /**
-   * Not vacuous: `§0` states four totals and the transcripts for the in-flight ticket are
-   * committed, so a run that compared none of them means a pattern has drifted, not that the
-   * record is clean. That is the dead-code shape round two's QA M-4 found one check along.
+   * THE VACUITY GUARD. A run that compared nothing has checked nothing, and saying so is the
+   * dead-code shape round two's QA M-4 found one check along.
+   *
+   * ⚠ **CORRECTED AT 10b, 2026-11-02, AND THE OLD VERSION'S OWN MESSAGE WAS A FALSE CLAIM —
+   * which is the exact defect family this whole script exists to catch, arriving inside it.**
+   *
+   * It read `if (compared === 0)` and nothing else, on the premise written above it that
+   * *"`§0` states four totals and the transcripts for the in-flight ticket are committed"*.
+   * That premise is false for a task that has just started: `§0.2` (b4)'s own documented
+   * ordering is **state the sha, run the gate, then commit the transcript and the figure in
+   * one commit** — so there is a legitimate window in which `§0` states NO total for the
+   * in-flight ticket and no transcript exists yet. In that window the guard fired with the
+   * words *"`§0` states gate totals for QRPAGER-26"* while `§0` stated none. Measured on
+   * 10b's first `records:check` after its provenance was restated.
+   *
+   * TWO CONDITIONS NOW, and the second is what the message always assumed:
+   *
+   *   1. **nothing was stated** — because when a claim IS stated, every path above either
+   *      compares it or fails it, so `compared === 0` with `stated > 0` means a failure is
+   *      already recorded and this would name the same defect twice;
+   *   2. **a transcript for the in-flight ticket is nevertheless TRACKED** — which is the
+   *      real drift case: the evidence is committed, so the run happened, so `§0` should be
+   *      able to state its figure and a pattern that reads none has moved.
+   *
+   * Neither condition weakens it. The defect it was built for — a stated figure the check
+   * silently skipped — is caught by the `absent`, `untracked` and unreadable branches above,
+   * each of which fails rather than continuing quietly.
    */
+  if (stated === 0) {
+    const evidence = ['gate-php', 'gate-frontend', 'e2e'].map((suffix) => transcript(suffix))
+
+    if (evidence.some((found) => found.kind === 'text')) {
+      fail(
+        'records(b4)',
+        `${ticket} has a committed gate transcript and §0 states no total this check can read — either the run's figures were never written into §0, or a pattern here has drifted`,
+      )
+    }
+
+    return
+  }
+
   if (compared === 0) {
     fail(
       'records(b4)',
@@ -656,9 +696,22 @@ const SELF_TESTS = [
   {
     what: 'a §5 row count that disagrees with the table',
     run: () => {
+      /*
+       * ⚠ ANCHORED TO THE *Open debt* CELL SINCE 10b, AND THE UNANCHORED VERSION WENT
+       * SILENTLY INERT. It replaced the FIRST `§5 holds N rows` anywhere in the file, on the
+       * assumption that the first one is the claim `checkRowCount` reads. That stopped being
+       * true the moment another `§0` cell quoted the figure — 10b's *Next up* cell did,
+       * explaining a correction to it — because the *Next up* cell comes FIRST in the file.
+       * So the plant landed in the quotation, the *Open debt* cell still agreed with the
+       * table, and this control reported MISSES: measured on 10b's own `--self-test`.
+       *
+       * Anchored, it plants where the check looks, whatever else in `§0` mentions the number.
+       * Same lesson as the three self-tests below, which is four instances in one file of a
+       * fixture that depended on the repository being in a particular shape.
+       */
       const plan = readFileSync(PLAN, 'utf8').replace(
-        /`§5` holds \*{0,2}(\d+)\*{0,2} rows/,
-        '`§5` holds **1** rows',
+        /^(\| \*\*Open debt[^\n]*?)`§5` holds \*{0,2}\d+\*{0,2} rows/m,
+        '$1`§5` holds **1** rows',
       )
       const before = failures.length
       checkRowCount(plan)
@@ -775,11 +828,59 @@ const SELF_TESTS = [
      */
     what: 'a §0 that states a gate total with no committed transcript behind it (QA M-11)',
     run: () => {
-      const plan = readFileSync(PLAN, 'utf8')
+      /*
+       * ⚠ HERMETIC SINCE 10b, AND THE THIRD TIME THIS FILE HAS LEARNED THE SAME LESSON. It
+       * read the LIVE `§0` and depended on it stating a total — so the moment 10b restated
+       * its provenance and legitimately stated none (the ordering `§0.2` (b4) prescribes),
+       * this control stopped exercising its own clause. It still PASSED, because the old
+       * vacuity guard fired on the empty case, which is worse than failing: a control that
+       * passes for a different reason than the one it names is a control nobody can read.
+       *
+       * The two self-tests above carry the same correction in their own words — *"a control
+       * that only works while the repository is in one particular state is not a control"* —
+       * so this follows their shape: synthetic on the `§0` side, real nowhere it does not
+       * need to be. A minimal `§0` states a figure for a ticket, against `docs/`, which
+       * exists (so the function's own `existsSync` guard does not swallow the fixture) and
+       * holds no `QRPAGER-NN-gate-*.txt`.
+       */
+      const synthetic = [
+        '# PLAN',
+        '',
+        '| **Next up** | `QRPAGER-99` · `composer gate` all green, **1234** passed |',
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
       const before = failures.length
-      checkStatedCounts(plan, join(REPO, 'docs'))
+      checkStatedCounts(synthetic, join(REPO, 'docs'))
 
       return failures.length > before
+    },
+  },
+  {
+    /**
+     * The OTHER side of the same guard, and it is new at 10b because the correction above
+     * created the state it covers: a `§0` that states NOTHING for its in-flight ticket, with
+     * no transcript committed yet, must NOT be flagged. That is the honest window between
+     * restating the provenance sha and running the gate, and the old guard failed it with a
+     * message asserting the opposite of what `§0` said.
+     */
+    what: 'a §0 mid-round that states no total and has no transcript yet is NOT flagged',
+    run: () => {
+      const synthetic = [
+        '# PLAN',
+        '',
+        '| **Next up** | `QRPAGER-99` is in flight and has measured nothing yet. |',
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic, join(REPO, 'docs'))
+
+      return failures.length === before
     },
   },
   {
