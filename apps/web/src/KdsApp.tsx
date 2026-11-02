@@ -293,6 +293,23 @@ export function KdsApp({ apiBase, locale, store, fetcher, random }: KdsAppProps)
 
   /* ------------------------------------------------------------------------- derived */
 
+  /**
+   * The clock the readouts are measured against: the last ATTEMPT, or the last confirmed
+   * answer before any attempt has finished.
+   *
+   * ⚠ **THIS MAKES THE WAITING TIMES KEEP TICKING THROUGH AN OUTAGE, AND IT IS A DELIBERATE
+   * DIVERGENCE FROM THE STAFF BOARD.** `StaffApp` recomputes its own `elapsed` from
+   * `Date.now()` with `[pagers]` as the dependency, so during a run of failed polls the rows
+   * do not change, the memo does not re-evaluate, and every waiting time FREEZES at the last
+   * successful answer. That is defensible on a hand-held board somebody is holding.
+   *
+   * It is wrong on a wall screen. A kitchen keeps these rows through an outage on purpose
+   * (`kds/resync.ts`), and a frozen clock beside a kept row understates how long an order has
+   * been waiting — in the direction that matters, because the whole reason a cook looks at the
+   * number is to notice the one that has been there twenty minutes. `attemptedAt` moves on
+   * every attempt including a failed one, so the readouts advance while the screen is offline
+   * and the staleness marker says the ROWS are old rather than the times.
+   */
   const now = attemptedAt ?? confirmedAt
   const staleSince = useMemo(() => {
     if (confirmedAt === null) return null
