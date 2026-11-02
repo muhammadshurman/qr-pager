@@ -531,7 +531,7 @@ test.describe('§12 on the staff shell', () => {
 
       expect(
         pair.ratio,
-        `${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1`,
+        `${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1 — ${pair.ink} on ${pair.paper}`,
       ).toBeGreaterThanOrEqual(bar)
     }
   })
@@ -943,10 +943,25 @@ test.describe('10b’s board, in a real browser', () => {
  * and the helpers are `support/a11y.ts`'s — one implementation, shared with the kitchen screen,
  * carrying the four e2e rounds' worth of corrections that taught each of them its shape.
  */
+/*
+ * ⚠ **THE MARKER IS THE LOADED SCREEN AND NOTHING ELSE, AND THE COMMA THAT USED TO BE HERE
+ * COST A FAILURE NOBODY COULD HAVE DIAGNOSED.**
+ *
+ * It read `'[data-team="true"], .qr-staff-state__title'` — and `.qr-staff-state__title` is what
+ * `StaffState` renders for `empty`, `error`, `offline` and `permission-denied` too. So a project
+ * where the fetch had not landed satisfied the wait on a FAILURE state and then measured it:
+ * `staff-webkit-rtl` reported `.qr-staff-state__title is 1.77:1 at 20px` on the team screen
+ * while the same case passed in the other five projects. A measurement whose subject depends on
+ * timing is not a measurement.
+ *
+ * Required markers only. If the screen does not load, the case now fails on the WAIT — naming
+ * the screen and the selector — instead of quietly measuring something else and reporting a
+ * contrast figure for it.
+ */
 const NEW_STAFF_SCREENS = [
-  { nav: 'history', marker: '[data-history="true"], .qr-staff-state__title' },
+  { nav: 'history', marker: '[data-history="true"]' },
   { nav: 'issue', marker: '[data-issue="idle"]' },
-  { nav: 'team', marker: '[data-team="true"], .qr-staff-state__title' },
+  { nav: 'team', marker: '[data-team="true"]' },
 ] as const
 
 test.describe('§12 on 10d’s and 10e’s screens', () => {
@@ -1047,7 +1062,7 @@ test.describe('§12 on 10d’s and 10e’s screens', () => {
 
         expect(
           pair.ratio,
-          `${screen.nav}: ${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1`,
+          `${screen.nav}: ${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1 — ${pair.ink} on ${pair.paper}`,
         ).toBeGreaterThanOrEqual(bar)
       }
     })

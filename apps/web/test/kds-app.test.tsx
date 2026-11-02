@@ -480,6 +480,241 @@ describe('what this surface is not', () => {
   })
 })
 
+describe('what it resolves for itself when nothing is injected', () => {
+  /*
+   * ⚠ EVERY OTHER CASE IN THIS FILE INJECTS `locale` AND `store`, WHICH IS RIGHT FOR THEM AND
+   * LEAVES TWO EFFECTS UNDRIVEN — both of them the ones the real app actually takes. They are
+   * driven here, against the real `navigator` and the real `localStorage`.
+   *
+   * ⚠ AND BOTH RESOLVE IN AN EFFECT RATHER THAN AT FIRST RENDER, which is the property these
+   * cases protect: these routes are statically prerendered, so a direct read of `navigator` or
+   * `window` during the render would be a hydration mismatch on the customer's and the
+   * kitchen's first paint alike. `PagerJourney` and `StaffApp` take the same shape.
+   */
+  it('reads the language from the BROWSER when no locale is injected', async () => {
+    const { fetcher } = harness([board([ROW_A])])
+    const { store } = memoryStore('code')
+
+    // `ar-JO` rather than a bare `ar`: real devices send a region subtag, and `browserLocale`
+    // matches on the PRIMARY one for exactly that reason.
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['ar-JO', 'en'])
+
+    const { container } = render(<KdsApp apiBase="" store={store} fetcher={fetcher} />)
+
+    const ar = translatorFor('ar')
+
+    expect(await screen.findByText(ar('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+    expect(container.querySelector('[dir="rtl"]')).toBeTruthy()
+
+    vi.restoreAllMocks()
+  })
+
+  it('falls back to English when the browser offers nothing it knows', async () => {
+    const { fetcher } = harness([board([ROW_A])])
+    const { store } = memoryStore('code')
+
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['fr-FR'])
+
+    const { container } = render(<KdsApp apiBase="" store={store} fetcher={fetcher} />)
+
+    expect(await screen.findByText(t('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+    expect(container.querySelector('[dir="ltr"]')).toBeTruthy()
+
+    vi.restoreAllMocks()
+  })
+
+  it('reads the real localStorage when no store is injected', async () => {
+    const { fetcher } = harness([board([ROW_A])])
+
+    window.localStorage.setItem('qrpager.kds.token', 'real-code')
+
+    try {
+      render(<KdsApp apiBase="" locale="en" fetcher={fetcher} />)
+
+      expect(await screen.findByText(t('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+    } finally {
+      // Removed in a `finally`, so a failing assertion cannot leak a credential-shaped value
+      // into the next case's `localStorage` -- which would make that case pass for the wrong
+      // reason and this one hard to re-run.
+      window.localStorage.removeItem('qrpager.kds.token')
+    }
+  })
+
+  it('shows setup when the real localStorage holds nothing', async () => {
+    const { calls, fetcher } = harness([board([])])
+
+    window.localStorage.removeItem('qrpager.kds.token')
+
+    render(<KdsApp apiBase="" locale="en" fetcher={fetcher} />)
+
+    expect(await screen.findByText(t('kds.setup.title'))).toBeTruthy()
+    expect(calls).toHaveLength(0)
+  })
+})
+
+describe('a throttled kitchen screen — R-224 on a third surface', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shows the throttle copy and keeps the code, because a 429 is not a refusal', async () => {
+    /*
+     * ⚠ `R-224`'s WHOLE POINT, ON THE SURFACE IT MATTERS MOST. That row exists because a 429
+     * fell through to `{kind:'server'}` and a throttled staff screen read *"Something went
+     * wrong on our side. Nothing you did caused it."* — both halves false under a rate limit.
+     * `kds/api.ts` has its own `throttled` kind for the same reason, and the copy says the
+     * screen will refresh itself because it will.
+     *
+     * The code is NOT dropped: a throttle says nothing about whether the credential is valid,
+     * and discarding it would send somebody to find a manager over a rate limit.
+     */
+    const { fetcher } = harness([
+      new Response(null, { status: 429, headers: { 'Retry-After': '30' } }),
+    ])
+    const { store, read } = memoryStore('code')
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    render(<KdsApp apiBase="" locale="en" store={store} fetcher={fetcher} random={() => 0.5} />)
+
+    expect(await screen.findByText(t('kds.throttled.title'))).toBeTruthy()
+    expect(screen.getByText(t('kds.throttled.body'))).toBeTruthy()
+    expect(read()).toBe('code')
+    // And no action is offered: the screen resumes itself, so a button would be a second 429.
+    expect(screen.queryByRole('button', { name: t('kds.retry') })).toBeNull()
+  })
+
+  it('honours the server’s own Retry-After rather than its own doubling', async () => {
+    /*
+     * A server that is already refusing knows better than a client's arithmetic.
+     * `delayFromAnswerMs` takes the hint, jitters it and caps it — so with `random` pinned at
+     * the midpoint the next poll is exactly 30 s away, and nothing happens before then.
+     */
+    const { calls, fetcher } = harness([
+      new Response(null, { status: 429, headers: { 'Retry-After': '30' } }),
+      board([ROW_A]),
+    ])
+    const { store } = memoryStore('code')
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    render(<KdsApp apiBase="" locale="en" store={store} fetcher={fetcher} random={() => 0.5} />)
+
+    await screen.findByText(t('kds.throttled.title'))
+
+    const afterFirst = calls.length
+
+    // One second short of the hint: nothing more is asked.
+    await vi.advanceTimersByTimeAsync(29_000)
+    expect(calls.length).toBe(afterFirst)
+
+    // And past it: the screen resumes itself, which is what the copy promised.
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(await screen.findByText(t('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+  })
+
+  it('maps a 5xx to the error state, which is a fault rather than a throttle', async () => {
+    const { fetcher } = harness([new Response(null, { status: 503 })])
+    const { store } = memoryStore('code')
+
+    render(<KdsApp apiBase="" locale="en" store={store} fetcher={fetcher} />)
+
+    expect(await screen.findByText(t('kds.error.title'))).toBeTruthy()
+    expect(screen.getByRole('button', { name: t('kds.retry') })).toBeTruthy()
+  })
+})
+
+describe('the retry affordance and the default fetcher', () => {
+  it('polls immediately when the empty state’s action is pressed', async () => {
+    // `§12` requires an empty state to offer a next action that WORKS. Checking now is a real
+    // one -- it polls rather than waiting for the tick -- so it is driven rather than assumed.
+    const { calls, fetcher } = harness([board([]), board([ROW_A])])
+    const { store } = memoryStore('code')
+
+    render(<KdsApp apiBase="" locale="en" store={store} fetcher={fetcher} />)
+
+    await screen.findByText(t('kds.empty.title'))
+
+    const before = calls.length
+
+    fireEvent.click(screen.getByRole('button', { name: t('kds.empty.action') }))
+
+    expect(await screen.findByText(t('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+    expect(calls.length).toBeGreaterThan(before)
+  })
+
+  it('uses the GLOBAL fetch when none is injected, which is what the real app does', async () => {
+    /*
+     * ⚠ EVERY OTHER CASE INJECTS A FETCHER, SO THE `?? fetch` FALLBACK WENT UNDRIVEN — and it
+     * is the only path production takes. A default that no test exercises is a default whose
+     * first run is on a wall in a kitchen.
+     */
+    const { store } = memoryStore('code')
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          status: 200,
+          ok: true,
+          json: () => Promise.resolve({ sessions: [ROW_A] }),
+          headers: { get: () => null },
+        } as unknown as Response),
+      ),
+    )
+
+    try {
+      render(<KdsApp apiBase="" locale="en" store={store} />)
+
+      expect(await screen.findByText(t('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('the staleness marker', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('says when the rows were last confirmed once they are older than one interval', async () => {
+    /*
+     * ⚠ COMPUTED FROM A TIMESTAMP AND RECOMPUTED ON EVERY ATTEMPT, which is `§11` QA H-1's
+     * lesson from the staff board: a memo whose dependencies only change on SUCCESS can never
+     * fire, because at the instant of success `confirmedAt === now`. `attemptedAt` moves on
+     * every attempt including a failed one, which is both the trigger and the honest clock.
+     */
+    const { fetcher } = harness([board([ROW_A]), new TypeError('Failed to fetch')])
+    const { store } = memoryStore('code')
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    render(<KdsApp apiBase="" locale="en" store={store} fetcher={fetcher} random={() => 0.5} />)
+
+    await screen.findByText(t('kds.order', { reference: 'KDS-AAA' }))
+
+    /*
+     * ⚠ **TWO FAILED POLLS, NOT ONE, AND THE OFF-BY-ONE IS THE REASON — it cost a red.**
+     *
+     * The first attempt advanced by `interval + 1` and expected the marker. It does not
+     * appear: with `random` pinned at the midpoint the jitter contributes nothing, so the next
+     * poll fires at exactly `T0 + interval` and sets `attemptedAt` there. `isKdsStale` is a
+     * STRICT comparison — `now - confirmed > interval` — so a gap of exactly one interval is
+     * not stale, which is correct: the rows are precisely as old as the cadence promises.
+     *
+     * The SECOND failed poll is the first one that makes them older than that, and it comes
+     * after the backoff has doubled to 10 s. Advancing past both is what reaches the state.
+     */
+    await vi.advanceTimersByTimeAsync(KDS_INTERVAL_SECONDS * 1000 + 1)
+    await vi.advanceTimersByTimeAsync(KDS_INTERVAL_SECONDS * 2 * 1000 + 1)
+
+    const marker = await screen.findByText(/Last updated/)
+
+    expect(marker.getAttribute('data-kds-stale')).toBe('true')
+    // And the rows are still there, which is what makes the marker a kindness rather than an
+    // excuse for having blanked them.
+    expect(screen.getByText(t('kds.order', { reference: 'KDS-AAA' }))).toBeTruthy()
+  })
+})
+
 describe('the poll loop', () => {
   it('stops when the component unmounts, so a superseded run cannot resurrect itself', async () => {
     const { calls, fetcher } = harness([board([ROW_A])])

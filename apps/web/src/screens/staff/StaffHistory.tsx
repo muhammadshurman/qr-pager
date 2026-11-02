@@ -60,6 +60,16 @@ export interface StaffHistoryProps {
   readonly onApply: () => void
   readonly onClear: () => void
   readonly onRetry: () => void
+  /**
+   * Go to the screen that starts a pager.
+   *
+   * ⚠ A SEPARATE CALLBACK FROM `onRetry`, AND THE FIRST VERSION REUSED IT — so the *no orders
+   * yet* empty state offered a button reading *"Start a pager"* that REFETCHED THE HISTORY.
+   * `§12`'s clause is *no empty state without a next action*, and an action whose label
+   * promises one thing and does another is worse than none: a person presses it, the screen
+   * does not change, and they conclude the product is broken.
+   */
+  readonly onStart: () => void
   /** Null when nothing is wrong with the draft; otherwise the sentence to show. */
   readonly rangeProblem: 'tooWide' | 'backwards' | null
   /** Open the sheet screen for one order — the lost-sheet path. */
@@ -96,6 +106,7 @@ export function StaffHistory({
   onApply,
   onClear,
   onRetry,
+  onStart,
   rangeProblem,
   onReissue,
   formatTime,
@@ -291,7 +302,8 @@ export function StaffHistory({
             state="empty"
             title={t('staff.history.none.title')}
             description={t('staff.history.none.body')}
-            action={{ label: t('staff.history.none.action'), onAction: onRetry }}
+            // `onStart`, not `onRetry` -- the label says *Start a pager* and must do that.
+            action={{ label: t('staff.history.none.action'), onAction: onStart }}
           />
         )
       ) : (
@@ -303,7 +315,14 @@ export function StaffHistory({
               // The REFERENCE, not the id -- `§12` forbids an unexplained identifier, and
               // `staff-screens.test.tsx` asserts no uuid reaches the rendered output.
               data-history-order={order.orderReference}
-              data-history-status={order.status}
+              /*
+               * ⚠ `data-history-ORDER-status`, NOT `data-history-status` — the two collided and
+               * a test found it. The status TOGGLES above carry `data-history-status`, so one
+               * selector matched five toggles and every row: a browser case counting toggles
+               * got six, and a case selecting a row by status would have matched a filter
+               * control. Two different things cannot share an attribute name.
+               */
+              data-history-order-status={order.status}
             >
               <div>
                 <p className="qr-staff-list__name">

@@ -989,10 +989,23 @@ export function StaffApp({
       return
     }
 
-    // A 422 is the order reference's own character class, and the screen says which characters
-    // are allowed rather than repeating the server's sentence.
+    /*
+     * ⚠ MAPPED FROM `validation`, WHICH DID NOT EXIST UNTIL 10d — AND THE `invalid` PHASE WAS
+     * A DEAD STATE UNTIL IT DID. `call()` folded a 422 into `server` through its
+     * `!response.ok` fallthrough, so this branch read `result.kind === 'server' ? 'error' :
+     * 'invalid'` and `invalid` was unreachable: its copy existed in both launch languages and
+     * no event could produce it. That is `R-205`'s shape, and a test driving a real 422 is
+     * what found it.
+     *
+     * Written as an exhaustive map rather than nested ternaries, so a kind added to
+     * `StaffFailure` later lands in `error` by default and is visible here as a gap.
+     */
     setIssuePhase(
-      result.kind === 'unreachable' ? 'offline' : result.kind === 'server' ? 'error' : 'invalid',
+      result.kind === 'unreachable'
+        ? 'offline'
+        : result.kind === 'validation'
+          ? 'invalid'
+          : 'error',
     )
   }, [apiBase, issueReference, clearTenantData])
 
@@ -1151,9 +1164,19 @@ export function StaffApp({
       return
     }
 
-    // A 422 is the address's own shape. `forbidden` is the seniority ceiling, and the picker
-    // should have made it unreachable — so if it arrives, the honest sentence is the ceiling's.
-    setTeamNotice(result.kind === 'forbidden' ? 'seniority' : 'invalid-address')
+    /*
+     * `validation` is the address's own shape — a 422, which since 10d is its own kind rather
+     * than a `server` in disguise. `forbidden` is the seniority ceiling, and the picker should
+     * have made it unreachable, so if it arrives the honest sentence is the ceiling's.
+     * Anything else is a failure nobody can act on specifically.
+     */
+    setTeamNotice(
+      result.kind === 'forbidden'
+        ? 'seniority'
+        : result.kind === 'validation'
+          ? 'invalid-address'
+          : 'failed',
+    )
   }, [apiBase, newMemberEmail, newMemberRole, loadTeam, clearTenantData])
 
   const onChangeMemberRole = useCallback(
@@ -1548,6 +1571,11 @@ export function StaffApp({
             void loadHistory(NO_HISTORY_FILTERS)
           }}
           onRetry={() => void loadHistory(appliedFilters)}
+          onStart={() => {
+            // The empty state's own next action, and it navigates rather than refetching —
+            // `StaffHistory`'s `onStart` docblock has what reusing `onRetry` cost.
+            onNavigate?.('issue')
+          }}
           rangeProblem={rangeProblem}
           onReissue={(order) => {
             /*

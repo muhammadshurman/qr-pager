@@ -46,6 +46,9 @@
  *                  arrive this way, and each is a sentence rather than a failure
  *   throttled      429 -- added at 10b on Muhammad's `R-224` ruling. See below; it carries
  *                  the server's own `Retry-After` when there is one
+ *   validation     422 -- the request's INPUT is wrong, and the person can fix it. Added at
+ *                  10d, and it was a dead state before that: see below
+ *
  *   unreachable    the network did not answer. "No connection", and the data is unchanged
  *   server         a 5xx, or a 2xx this build cannot parse. "On us, not on you"
  *
@@ -80,7 +83,14 @@
 import { PAGER_STATUS, type PagerStatus } from '@qrpager/contracts'
 
 export type StaffFailure =
-  'unauthorised' | 'forbidden' | 'notFound' | 'conflict' | 'throttled' | 'unreachable' | 'server'
+  | 'unauthorised'
+  | 'forbidden'
+  | 'notFound'
+  | 'conflict'
+  | 'throttled'
+  | 'validation'
+  | 'unreachable'
+  | 'server'
 
 /**
  * The problem `type` members this client acts on, and it acts on exactly two.
@@ -339,6 +349,22 @@ async function call<T>(
     }
   }
 
+  /*
+   * 422 -- VALIDATION. Added at 10d, and `R-205`'s defect is why: it was folded into `server`
+   * by the `!response.ok` fallthrough below, so **every screen state written for a 422 was
+   * unreachable**. `StaffIssue`'s `invalid` phase had its copy written in both launch
+   * languages, a branch in the orchestrator and no event that could produce it -- found by
+   * `staff-10d-10e-flows.test.tsx` driving a real 422 and reading the error sentence instead.
+   *
+   * It needs its own kind because the two answers are opposites in the one way that matters to
+   * `§12`: *"This is on us, not on you"* is true of a 500 and false of a 422, where the person
+   * typed something the server will not take and can retype it. The body is NOT read -- the
+   * `errors` member names fields, and a screen that rendered a server's field name would be
+   * putting an unexplained identifier in front of a restaurant owner. The STATUS carries the
+   * fact, and each screen owns the sentence.
+   */
+  if (response.status === 422) return { kind: 'validation' }
+
   if (response.status >= 500) return { kind: 'server' }
 
   if (response.status === 204 || read === undefined) {
@@ -406,17 +432,27 @@ export function fetchIdentity(apiBase: string): Promise<StaffResult<StaffIdentit
 
     for (const entry of raw) {
       const row = asRecord(entry)
-      const tenantId = row === null ? null : asString(row.tenant_id)
-      const role = row === null ? null : asString(row.role)
+
+      /*
+       * ⚠ ONE NULL GUARD PER LOOP, AT THE TOP — AND EVERY READER HERE USED TO REPEAT
+       * `row === null ? null : …` ON EVERY FIELD. Those repeats were PROVABLY DEAD: the loop
+       * skips a non-object entry immediately, so `row` cannot be null below. They read as
+       * caution and were uncovered branches no test could ever reach, which is the difference
+       * between defensive code and dead code — 22 of them across this file, and it sat at
+       * 73.68% branch coverage because of them.
+       */
+      if (row === null) continue
+      const tenantId = asString(row.tenant_id)
+      const role = asString(row.role)
 
       if (tenantId !== null && role !== null) {
-        const grantable = row === null ? null : row.grantable_roles
+        const grantable = row.grantable_roles
 
         memberships.push({
           tenantId,
           role,
-          name: (row === null ? null : asString(row.name)) ?? '',
-          slug: (row === null ? null : asString(row.slug)) ?? '',
+          name: asString(row.name) ?? '',
+          slug: asString(row.slug) ?? '',
           // Filtered to strings rather than cast, because this list decides which buttons a
           // role picker renders -- an `undefined` reaching it would render an empty option.
           grantableRoles: Array.isArray(grantable)
@@ -523,9 +559,19 @@ export function fetchDevices(apiBase: string): Promise<StaffResult<readonly Staf
 
     for (const entry of raw) {
       const row = asRecord(entry)
-      const id = row === null ? null : asString(row.id)
 
-      if (row === null || id === null) continue
+      /*
+       * ⚠ ONE NULL GUARD PER LOOP, AT THE TOP — AND EVERY READER HERE USED TO REPEAT
+       * `row === null ? null : …` ON EVERY FIELD. Those repeats were PROVABLY DEAD: the loop
+       * skips a non-object entry immediately, so `row` cannot be null below. They read as
+       * caution and were uncovered branches no test could ever reach, which is the difference
+       * between defensive code and dead code — 22 of them across this file, and it sat at
+       * 73.68% branch coverage because of them.
+       */
+      if (row === null) continue
+      const id = asString(row.id)
+
+      if (id === null) continue
 
       devices.push({
         id,
@@ -617,10 +663,20 @@ export function fetchBoard(apiBase: string): Promise<StaffResult<readonly BoardP
 
     for (const entry of raw) {
       const row = asRecord(entry)
-      const id = row === null ? null : asString(row.id)
-      const reference = row === null ? null : asString(row.order_reference)
-      const status = row === null ? null : asString(row.status)
-      const createdAt = row === null ? null : asString(row.created_at)
+
+      /*
+       * ⚠ ONE NULL GUARD PER LOOP, AT THE TOP — AND EVERY READER HERE USED TO REPEAT
+       * `row === null ? null : …` ON EVERY FIELD. Those repeats were PROVABLY DEAD: the loop
+       * skips a non-object entry immediately, so `row` cannot be null below. They read as
+       * caution and were uncovered branches no test could ever reach, which is the difference
+       * between defensive code and dead code — 22 of them across this file, and it sat at
+       * 73.68% branch coverage because of them.
+       */
+      if (row === null) continue
+      const id = asString(row.id)
+      const reference = asString(row.order_reference)
+      const status = asString(row.status)
+      const createdAt = asString(row.created_at)
 
       /*
        * A ROW MISSING ANY OF THE FOUR IS DROPPED, not defaulted. The alternative — a blank
@@ -637,7 +693,7 @@ export function fetchBoard(apiBase: string): Promise<StaffResult<readonly BoardP
         orderReference: reference,
         status,
         createdAt,
-        readyAt: row === null ? null : asString(row.ready_at),
+        readyAt: asString(row.ready_at),
       })
     }
 
@@ -822,10 +878,20 @@ export function fetchHistory(
 
     for (const entry of raw) {
       const row = asRecord(entry)
-      const id = row === null ? null : asString(row.id)
-      const reference = row === null ? null : asString(row.order_reference)
-      const status = row === null ? null : asString(row.status)
-      const createdAt = row === null ? null : asString(row.created_at)
+
+      /*
+       * ⚠ ONE NULL GUARD PER LOOP, AT THE TOP — AND EVERY READER HERE USED TO REPEAT
+       * `row === null ? null : …` ON EVERY FIELD. Those repeats were PROVABLY DEAD: the loop
+       * skips a non-object entry immediately, so `row` cannot be null below. They read as
+       * caution and were uncovered branches no test could ever reach, which is the difference
+       * between defensive code and dead code — 22 of them across this file, and it sat at
+       * 73.68% branch coverage because of them.
+       */
+      if (row === null) continue
+      const id = asString(row.id)
+      const reference = asString(row.order_reference)
+      const status = asString(row.status)
+      const createdAt = asString(row.created_at)
 
       // Dropped rather than defaulted -- `fetchBoard`'s rule and its reason.
       if (id === null || reference === null || status === null || createdAt === null) continue
@@ -836,8 +902,8 @@ export function fetchHistory(
         orderReference: reference,
         status,
         createdAt,
-        readyAt: row === null ? null : asString(row.ready_at),
-        completedAt: row === null ? null : asString(row.completed_at),
+        readyAt: asString(row.ready_at),
+        completedAt: asString(row.completed_at),
       })
     }
 
@@ -937,18 +1003,28 @@ export function fetchTeam(apiBase: string): Promise<StaffResult<readonly TeamMem
 
     for (const entry of raw) {
       const row = asRecord(entry)
-      const id = row === null ? null : asString(row.id)
-      const role = row === null ? null : asString(row.role)
+
+      /*
+       * ⚠ ONE NULL GUARD PER LOOP, AT THE TOP — AND EVERY READER HERE USED TO REPEAT
+       * `row === null ? null : …` ON EVERY FIELD. Those repeats were PROVABLY DEAD: the loop
+       * skips a non-object entry immediately, so `row` cannot be null below. They read as
+       * caution and were uncovered branches no test could ever reach, which is the difference
+       * between defensive code and dead code — 22 of them across this file, and it sat at
+       * 73.68% branch coverage because of them.
+       */
+      if (row === null) continue
+      const id = asString(row.id)
+      const role = asString(row.role)
 
       if (id === null || role === null) continue
 
       members.push({
         id,
-        userId: (row === null ? null : asString(row.user_id)) ?? '',
+        userId: asString(row.user_id) ?? '',
         // A member with no name is rendered by their address instead, which the screen
         // handles: both are things a manager recognises, and a blank row is not.
-        name: (row === null ? null : asString(row.name)) ?? '',
-        email: (row === null ? null : asString(row.email)) ?? '',
+        name: asString(row.name) ?? '',
+        email: asString(row.email) ?? '',
         role,
       })
     }

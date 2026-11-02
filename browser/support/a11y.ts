@@ -77,6 +77,17 @@ export interface ContrastPair {
   readonly selector: string
   readonly ratio: number
   readonly size: number
+  /**
+   * The resolved pair, as the engine reported it.
+   *
+   * ⚠ CARRIED SO A FAILURE IS DIAGNOSABLE WITHOUT GUESSING, which cost a round to learn:
+   * `staff-webkit-rtl` reported `.qr-staff-state__title is 1.77:1 at 20px` and the message
+   * said nothing about WHICH colours produced 1.77 — so the cause (the case had measured a
+   * transient failure state, because its wait marker also matched one) had to be reasoned out
+   * rather than read. A ratio with no pair behind it is a number you cannot act on.
+   */
+  readonly ink: string
+  readonly paper: string
 }
 
 /**
@@ -123,7 +134,13 @@ export async function contrastPairs(
       return [255, 255, 255]
     }
 
-    const out: { selector: string; ratio: number; size: number }[] = []
+    const out: {
+      selector: string
+      ratio: number
+      size: number
+      ink: string
+      paper: string
+    }[] = []
 
     for (const selector of list) {
       const element = document.querySelector(selector)
@@ -131,11 +148,19 @@ export async function contrastPairs(
       if (element === null) continue
 
       const resolved = getComputedStyle(element)
-      const ink = luminance(parse(resolved.color))
-      const paper = luminance(ground(element))
+      const inkRgb = parse(resolved.color)
+      const paperRgb = ground(element)
+      const ink = luminance(inkRgb)
+      const paper = luminance(paperRgb)
       const ratio = (Math.max(ink, paper) + 0.05) / (Math.min(ink, paper) + 0.05)
 
-      out.push({ selector, ratio, size: Number.parseFloat(resolved.fontSize) })
+      out.push({
+        selector,
+        ratio,
+        size: Number.parseFloat(resolved.fontSize),
+        ink: `rgb(${inkRgb.join(', ')})`,
+        paper: `rgb(${paperRgb.join(', ')})`,
+      })
     }
 
     return out

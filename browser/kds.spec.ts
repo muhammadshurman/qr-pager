@@ -135,7 +135,7 @@ test.describe('§12 on the kitchen screen', () => {
 
       expect(
         pair.ratio,
-        `${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1`,
+        `${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1 — ${pair.ink} on ${pair.paper}`,
       ).toBeGreaterThanOrEqual(bar)
     }
   })

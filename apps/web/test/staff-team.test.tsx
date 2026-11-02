@@ -116,6 +116,68 @@ describe('the picker offers only what the server would accept', () => {
   })
 })
 
+describe('the add form’s role picker', () => {
+  it('reports a chosen role to the caller', () => {
+    // Radio buttons rather than a `<select>`: three options on a tablet are three 44px targets,
+    // and a native select is one target that opens an OS picker this app cannot size — the one
+    // place `§12`'s target-size clause cannot be met by our own CSS.
+    const { props } = mount({ adding: true, addRole: 'staff' })
+
+    fireEvent.click(document.querySelector('[data-team-role="manager"]')!)
+
+    expect(props.onAddRole).toHaveBeenCalledWith('manager')
+  })
+
+  it('will not submit without an address or without a role', () => {
+    const noEmail = mount({ adding: true, email: '  ', addRole: 'staff' })
+
+    expect(screen.getByRole('button', { name: t('staff.team.add.submit') })).toHaveProperty(
+      'disabled',
+      true,
+    )
+    noEmail.unmount()
+
+    const noRole = mount({ adding: true, email: 'a@b.test', addRole: '' })
+
+    expect(screen.getByRole('button', { name: t('staff.team.add.submit') })).toHaveProperty(
+      'disabled',
+      true,
+    )
+    noRole.unmount()
+
+    const both = mount({ adding: true, email: 'a@b.test', addRole: 'staff' })
+
+    expect(screen.getByRole('button', { name: t('staff.team.add.submit') })).toHaveProperty(
+      'disabled',
+      false,
+    )
+    fireEvent.submit(document.querySelector('[data-team-add="true"]')!)
+    expect(both.props.onAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a typed address, and cancels without sending', () => {
+    const { props } = mount({ adding: true })
+
+    fireEvent.change(document.querySelector('[data-team-email="true"]')!, {
+      target: { value: 'new@example.test' },
+    })
+    expect(props.onEmail).toHaveBeenCalledWith('new@example.test')
+
+    fireEvent.click(screen.getByRole('button', { name: t('staff.team.add.cancel') }))
+    expect(props.onCancelAdd).toHaveBeenCalledTimes(1)
+    expect(props.onAdd).not.toHaveBeenCalled()
+  })
+
+  it('shows the busy label while an add is in flight', () => {
+    mount({ adding: true, email: 'a@b.test', addRole: 'staff', busy: true })
+
+    expect(screen.getByRole('button', { name: t('staff.team.add.working') })).toHaveProperty(
+      'disabled',
+      true,
+    )
+  })
+})
+
 describe('the caller’s own row', () => {
   it('is marked, and carries no controls at all', () => {
     /*
