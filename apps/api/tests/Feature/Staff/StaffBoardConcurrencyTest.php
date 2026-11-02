@@ -183,6 +183,13 @@ it('produces one notification and one terminal state when two staff clients mark
             fclose($child['pipes'][2]);
             proc_close($child['handle']);
 
+            /*
+             * ⚠ STDERR IS WHERE THE CHILD'S EXCEPTION MESSAGE GOES NOW — `§11` SECURITY L-9 —
+             * so this assertion is also the diagnostic. The child prints only a class name on
+             * stdout, because the parent interpolates stdout into its own failure message and
+             * that message lands in a COMMITTED transcript; a `QueryException` there would
+             * carry the statement and its bindings.
+             */
             expect($stderr)->toBe('', "a client process wrote to stderr: {$stderr}");
         }
 

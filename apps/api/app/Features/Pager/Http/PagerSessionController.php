@@ -66,9 +66,30 @@ final class PagerSessionController
     #[DocResponse(status: 403, description: 'That is not permitted.', type: ProblemDocument::class)]
     public function index(): JsonResponse
     {
-        return response()->json([
-            'sessions' => $this->sessions->board($this->tenant()),
-        ]);
+        /*
+         * ⚠ `private, no-store`, ADDED AT 10b's FIX ROUND — `§11` SECURITY M-2, and it is the
+         * clause `§4 › Realtime` asks of a polling endpoint: *short-TTL cache headers*.
+         *
+         * This route had NO headers at all and relied on the framework default, which the
+         * reviewer measured rather than assumed: Symfony computes `no-cache, private` for a
+         * bare `JsonResponse`. So there was never a shared-cache or CDN cross-tenant leak —
+         * `private` forbids that — and the residual is the one every sibling on this surface
+         * already guards against by hand: `no-cache` permits the DEVICE's own HTTP cache to
+         * STORE the body, so a shared kitchen tablet would keep one restaurant's order board
+         * on disk across the lock, the sign-out and the next person's sign-in.
+         *
+         * Every neighbour sets it deliberately — `store()` and `state()` below,
+         * `TenantController`, `DeviceController`, `CustomerPagerController` — and
+         * `StaffShellEndpointsTest` asserts it for `/v1/tenant` with the words *"Nothing
+         * shared may cache a restaurant's data off a shared kitchen device."* The board is
+         * the one route polled every five seconds by every screen in the kitchen, so it is
+         * the last one that should have been relying on a default.
+         */
+        return new JsonResponse(
+            ['sessions' => $this->sessions->board($this->tenant())],
+            200,
+            ['Cache-Control' => 'private, no-store'],
+        );
     }
 
     #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]

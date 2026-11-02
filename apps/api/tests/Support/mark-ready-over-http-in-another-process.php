@@ -86,6 +86,29 @@ require __DIR__.'/../../vendor/autoload.php';
 $app = require __DIR__.'/../../bootstrap/app.php';
 $app->make(ConsoleKernel::class)->bootstrap();
 
+/*
+ * ⛔ LOCAL AND TESTING ONLY, AND THIS IS THE FIRST SUPPORT CHILD TO NEED IT — `§11`
+ * SECURITY L-10.
+ *
+ * The five children beside this one call a SERVICE. This one FORGES A CREDENTIAL: it writes
+ * the `web` guard's login key into a Redis session for whatever uuid arrives on argv and
+ * mints the matching encrypted cookie. Exploiting that needs local code execution plus
+ * `APP_KEY`, by which point an attacker has more than this gives them — but `§11` SEC M-6's
+ * own argument for guarding the `bin/` fixtures was that *these ship inside `apps/api`, which
+ * Task 13 packages wholesale*, and that argument reaches `tests/` just as far.
+ *
+ * Fails CLOSED: an unset or unrecognised `APP_ENV` is neither `local` nor `testing`.
+ */
+if (! $app->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this forges a staff session cookie and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
 $tenantId = (string) ($argv[1] ?? '');
 $sessionId = (string) ($argv[2] ?? '');
 $userId = (string) ($argv[3] ?? '');
@@ -168,6 +191,20 @@ try {
     fwrite(STDOUT, "http:{$status}:{$word}\n");
     exit(0);
 } catch (Throwable $e) {
-    fwrite(STDOUT, 'error:'.get_class($e).':'.$e->getMessage()."\n");
+    /*
+     * ⚠ THE CLASS AND A FIXED PHRASE, NEVER `getMessage()` — `§11` SECURITY L-9.
+     *
+     * The parent interpolates whatever this prints into its own failure message, and that
+     * message lands in `docs/tickets/QRPAGER-26-gate-php.txt`, which is committed. A
+     * `QueryException` on this path carries the statement AND its bound parameters, and
+     * `§4 › Edge & ops` says a stack trace never carries SQL or bound parameters. Today's
+     * bindings are uuids so nothing secret was at stake; the transcript is the wrong place to
+     * discover that it changed.
+     *
+     * The class alone is enough to diagnose with — it says WHICH layer failed — and the full
+     * message is still in the gate log's own stderr capture for anybody debugging live.
+     */
+    fwrite(STDOUT, 'error:'.get_class($e).":see stderr, not printed here\n");
+    fwrite(STDERR, $e->getMessage()."\n");
     exit(1);
 }

@@ -197,9 +197,13 @@ echo json_encode([
         'order_reference' => 'A-101',
         'second_session_id' => $alphaSecond->session->id,
         'second_order_reference' => 'A-102',
-        // The raw token of the first, for the *under 2 s* measurement only. It exists once,
-        // at generation, and this is that moment.
-        'token' => $alphaFirst->token->reveal(),
+        /*
+         * ⚠ NO RAW TOKEN. One was printed here and `§11` SECURITY L-2 found that NOTHING read
+         * it: `tools/gate/lib/ready-latency.mjs` issues its own pagers through
+         * `bin/issue-board-pager`, because a session goes to `ready` exactly once and five
+         * runs need five. So this was a live credential written to disk for no consumer. The
+         * justification it carried was falsified by the very script it named.
+         */
     ],
     'owner' => [
         'email' => $owner['email'],

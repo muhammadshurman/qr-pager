@@ -62,7 +62,18 @@ use Illuminate\Support\Facades\DB;
  * is load-bearing rather than tidy: a `SECURITY DEFINER` function is executable by `PUBLIC`
  * by default, so without it every role on the cluster could read every user's memberships
  * under the tenant bypass. `MembershipFunctionGrantTest` reads `pg_proc.proacl` back as an
- * exact two-entry set, so a third grantee fails the suite rather than passing quietly.
+ * exact two-entry set, so a third grantee fails the suite rather than passing quietly — and
+ * it also pins `prosecdef`, the owning role (with `rolsuper` and `rolbypassrls` both false),
+ * the pinned `search_path`, and the FIVE returned column names, so a later
+ * `RETURNS SETOF tenants` fails there too.
+ *
+ * ⚠ **THAT SENTENCE WAS A FALSE CLAIM WHEN THIS MIGRATION WAS WRITTEN, AND `§11` SECURITY
+ * H-1 CAUGHT IT: THE TEST IT NAMED DID NOT EXIST.** A grep for the name over the whole
+ * repository returned exactly one hit — the citation itself. The ACL was correct, which the
+ * reviewer established by reading `proacl` back from the live cluster, so nothing was ever
+ * exposed. What was wrong is worse than a missing control: a citation that would stop the
+ * next reader looking for one. The test exists now, written in the fix round, and
+ * `PagerTokenLookupTest` had been the precedent for the sibling function since Task 3.
  *
  * The body is otherwise **byte-identical to the one it replaces**, including the bypass
  * restore on the error path — which exists because the transaction-scoped third argument

@@ -187,20 +187,21 @@ export interface StaffFixture {
     readonly name: string
     readonly slug: string
     readonly membership_id: string
-    /** 10b: alpha's own live pagers, so the board has rows to render and act on. */
+    /**
+     * 10b: alpha's own live pagers, so the board has rows to render and act on.
+     *
+     * ⚠ A RAW `token` WAS HERE AND IS GONE — `§11` SECURITY L-2. It was added "for the
+     * under-2s measurement" and **nothing ever read it**: that proof issues its own pagers
+     * through `bin/issue-board-pager`, as its own header says, because a session goes to
+     * `ready` exactly once and five runs need five. So the fixture was writing a live
+     * credential to disk for no consumer — bounded by mode 600, `umask 077`, a git-ignored
+     * `/storage/` and a local-only tenant, and still a credential at rest that bought
+     * nothing. The reviewer found the stated justification falsified by the code it named.
+     */
     readonly session_id: string
     readonly order_reference: string
     readonly second_session_id: string
     readonly second_order_reference: string
-    /**
-     * The RAW token of the first pager, for the *under 2 s* measurement only.
-     *
-     * That figure is staff click → the CUSTOMER's rendered ready state, so the harness has
-     * to open the customer page for a session the staff board can act on. It exists once, at
-     * generation, which is why the fixture carries it and nothing reads it back from the
-     * database — `§4 › Data` makes that impossible by design.
-     */
-    readonly token: string
   }
   readonly owner: { readonly email: string; readonly password: string; readonly name: string }
   readonly beta: {
@@ -259,7 +260,15 @@ export function staffFixture(): StaffFixture {
     ['alpha', 'session_id'],
     ['alpha', 'order_reference'],
     ['alpha', 'second_session_id'],
-    ['alpha', 'token'],
+    /*
+     * ⚠ `second_order_reference` WAS MISSING FROM THIS LIST AND TWO ASSERTIONS DEPENDED ON
+     * IT — found independently by both reviewers (`§11` QA L-18, SECURITY L-8). On an empty
+     * string `expect(references[0]).toContain('')` is trivially true and
+     * `filter({ hasText: '' })` matches every row, so the "newest first" ordering assertion
+     * and the cancel case's row selection would both have passed against a fixture that
+     * never wrote it.
+     */
+    ['alpha', 'second_order_reference'],
   ] as const) {
     const value = raw[section]?.[key]
 

@@ -667,9 +667,25 @@ export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
    *      real drift case: the evidence is committed, so the run happened, so `§0` should be
    *      able to state its figure and a pattern that reads none has moved.
    *
-   * Neither condition weakens it. The defect it was built for — a stated figure the check
-   * silently skipped — is caught by the `absent`, `untracked` and unreadable branches above,
-   * each of which fails rather than continuing quietly.
+   * ⚠ **IT DOES REFUSE STRICTLY LESS THAN IT DID, AND THE FIRST VERSION OF THIS COMMENT SAID
+   * OTHERWISE — `§11` QA H-7, which is right.** The sentence here read *"Neither condition
+   * weakens it"*, and the code contradicts it: the state *`§0` states no gate figure and no
+   * transcript is committed* used to fail and now passes. That state was **this task's own at
+   * the time**, which is exactly the shape a reviewer should distrust — a gate narrowed by the
+   * task it was failing.
+   *
+   * So what the narrowing does and does not refuse, written out rather than asserted away:
+   *
+   *   STILL REFUSED  a stated figure with no transcript · with an untracked one · with one
+   *                  this check cannot read a total out of · with a total that disagrees.
+   *                  Each is a `fail()` above, and none of them was touched.
+   *   STILL REFUSED  a committed transcript with no figure stated beside it — the new
+   *                  condition, which is the real drift case, and which has its own
+   *                  self-test below (it did not, which was half of H-7).
+   *   NO LONGER      the honest window `§0.2` (b4) itself prescribes: state the sha, run the
+   *   REFUSED        gate, then commit the transcript and the figure together. In that window
+   *                  there is nothing to compare and the old guard fired with a message
+   *                  asserting the opposite of what `§0` said.
    */
   if (stated === 0) {
     const evidence = ['gate-php', 'gate-frontend', 'e2e'].map((suffix) => transcript(suffix))
@@ -860,11 +876,53 @@ const SELF_TESTS = [
   },
   {
     /**
-     * The OTHER side of the same guard, and it is new at 10b because the correction above
-     * created the state it covers: a `§0` that states NOTHING for its in-flight ticket, with
-     * no transcript committed yet, must NOT be flagged. That is the honest window between
-     * restating the provenance sha and running the gate, and the old guard failed it with a
-     * message asserting the opposite of what `§0` said.
+     * ⚠ THE NEW `fail()`'s OWN CONTROL, ADDED AT 10b's FIX ROUND — `§11` QA H-7, which found
+     * the refusal shipped with no self-test beside it. *An unproven guard is not a guard*,
+     * and a guard added in the same hunk that narrowed its neighbour is the one most worth
+     * proving.
+     *
+     * THE STATE IT MUST REFUSE: a transcript for the in-flight ticket IS committed — so the
+     * run happened — and `§0` states no figure this check can read. That is the drift case
+     * the narrowing deliberately keeps, and it is the reason the narrowing is not simply a
+     * hole: the evidence exists and the record is silent about it.
+     *
+     * Real on the evidence side and synthetic on the `§0` side, which is this file's settled
+     * shape for a hermetic fixture: the ticket named is the live in-flight one, so its
+     * tracked transcript is found, and the minimal `§0` states nothing.
+     */
+    what: 'a §0 that states no total while a transcript IS committed (QA H-7)',
+    run: () => {
+      const ticket = inFlightTicket(readFileSync(PLAN, 'utf8'))
+
+      if (ticket === null) return false
+
+      const transcript = join(REPO, 'docs', 'tickets', `${ticket}-gate-php.txt`)
+
+      // The control for the control: with no committed transcript there is nothing for this
+      // case to be about, and reporting `catches` would be the vacuity it exists to refuse.
+      if (!existsSync(transcript)) return false
+
+      const synthetic = [
+        '# PLAN',
+        '',
+        `| **Next up** | \`${ticket}\` is in flight and this cell states no figure at all. |`,
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * The OTHER side of the same guard: a `§0` that states NOTHING for its in-flight ticket,
+     * with no transcript committed yet, must NOT be flagged. That is the honest window
+     * between restating the provenance sha and running the gate, and the old guard failed it
+     * with a message asserting the opposite of what `§0` said.
      */
     what: 'a §0 mid-round that states no total and has no transcript yet is NOT flagged',
     run: () => {

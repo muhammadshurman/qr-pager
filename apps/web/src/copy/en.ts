@@ -148,6 +148,9 @@ export const EN = {
   // R-224 came to exist -- a single mapping serving two situations that differ in exactly the
   // way that matters.
   'staff.signin.throttled': 'Too many tries. Wait a minute, then sign in again.',
+  // Its own second sentence — `§11` QA M-11 found the passkey BUTTON'S LABEL rendered here,
+  // which told a rate-limited person to do the rate-limited thing.
+  'staff.signin.throttled.body': 'Signing in again straight away will not work yet.',
 
   // ---------------------------------------------------------------------- the shell
   'staff.shell.signedIn': 'Signed in as {name}',
@@ -156,6 +159,11 @@ export const EN = {
   'staff.shell.error.title': 'Something went wrong on our side.',
   'staff.shell.error.body': 'Nothing you did caused it.',
   'staff.shell.error.retry': 'Try again',
+  // `R-224`'s third surface — `§11` QA H-3. The shell retries ITSELF on the same jittered
+  // backoff the board uses, which is what makes "you do not need to do anything" true here
+  // rather than a sentence over a screen that has stopped.
+  'staff.shell.throttled.title': 'Catching up.',
+  'staff.shell.throttled.body': 'This is taking a moment. You do not need to do anything.',
   'staff.shell.offline.title': 'No connection.',
   'staff.shell.offline.body': 'We will keep trying.',
   // The role as a WORD. `tenant_role` carries `owner`/`manager`/`staff`; these are what a
@@ -166,10 +174,13 @@ export const EN = {
   'staff.role.staff': 'Staff',
   'staff.nav.today': 'Today',
   'staff.nav.devices': 'Kitchen screens',
-  'staff.home.title': 'You are signed in.',
-  'staff.home.body':
-    'The order board arrives next. For now you can set up the kitchen screens that will show it.',
-  'staff.home.action': 'Kitchen screens',
+  /*
+   * ⚠ `staff.home.*`'s THREE KEYS WERE HERE AND ARE GONE — `§11` QA L-19. They belonged to
+   * `StaffHome`, which 10b deleted, and one of them had become false: *"The order board
+   * arrives next."* on a surface whose board had arrived. Nothing read them, and because the
+   * key count is pinned the check was counting dead copy. Removed rather than kept "in case",
+   * which is how a catalogue grows a shadow.
+   */
   'staff.passkey.add': 'Add a passkey to this device',
   'staff.passkey.added': 'This device can sign you in with a passkey now.',
   'staff.passkey.failed': 'That did not work. Try again, or sign in with your password next time.',
@@ -182,7 +193,11 @@ export const EN = {
   // "status", no "renotify" -- a restaurant manager reads no documentation.
   'staff.board.title': 'Orders',
   'staff.board.order': 'Order {reference}',
-  'staff.board.waiting': 'Waiting {duration}',
+  // ⚠ `staff.board.waiting` WAS `'Waiting {duration}'` AND THE PLACEHOLDER NEVER RENDERED —
+  // `§11` QA M-13. The duration is a live readout from `ElapsedTimer`, not a string this
+  // catalogue can interpolate, so the key is now just the WORD and the component puts it
+  // beside the clock. `§12` S6 is amended to match, dated and attributed.
+  'staff.board.waitingLabel': 'Waiting',
   'staff.board.open': 'Open order {reference}',
   // The status as a WORD, one per status the generated contract declares. `StatusBadge`
   // takes a `Record<PagerStatus, string>`, so a status added in PHP fails the TypeScript

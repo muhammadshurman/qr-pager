@@ -124,6 +124,7 @@ export const AR: Record<CopyKey, string> = {
   'staff.signin.code': 'الرمز',
   'staff.signin.choose': 'أي مطعم؟',
   'staff.signin.throttled': 'محاولات كثيرة. انتظر دقيقة ثم سجّل الدخول مرة أخرى.',
+  'staff.signin.throttled.body': 'إعادة تسجيل الدخول فورًا لن تنجح بعد.',
 
   // ---------------------------------------------------------------------- the shell
   'staff.shell.signedIn': 'مسجّل الدخول بصفة {name}',
@@ -132,6 +133,8 @@ export const AR: Record<CopyKey, string> = {
   'staff.shell.error.title': 'حدث خطأ من جهتنا.',
   'staff.shell.error.body': 'لم يكن ذلك بسببك.',
   'staff.shell.error.retry': 'حاول مرة أخرى',
+  'staff.shell.throttled.title': 'جارٍ اللحاق.',
+  'staff.shell.throttled.body': 'يستغرق هذا لحظة. لا حاجة لأي إجراء منك.',
   'staff.shell.offline.title': 'لا يوجد اتصال.',
   'staff.shell.offline.body': 'سنواصل المحاولة.',
   'staff.role.owner': 'المالك',
@@ -139,9 +142,6 @@ export const AR: Record<CopyKey, string> = {
   'staff.role.staff': 'موظف',
   'staff.nav.today': 'اليوم',
   'staff.nav.devices': 'شاشات المطبخ',
-  'staff.home.title': 'تم تسجيل دخولك.',
-  'staff.home.body': 'لوحة الطلبات ستأتي لاحقًا. يمكنك الآن إعداد شاشات المطبخ التي ستعرضها.',
-  'staff.home.action': 'شاشات المطبخ',
   'staff.passkey.add': 'أضف مفتاح مرور إلى هذا الجهاز',
   'staff.passkey.added': 'يمكن لهذا الجهاز تسجيل دخولك بمفتاح المرور الآن.',
   'staff.passkey.failed':
@@ -150,7 +150,7 @@ export const AR: Record<CopyKey, string> = {
   // ------------------------------------------------------------------- the board (10b)
   'staff.board.title': 'الطلبات',
   'staff.board.order': 'طلب {reference}',
-  'staff.board.waiting': 'منذ {duration}',
+  'staff.board.waitingLabel': 'منذ',
   'staff.board.open': 'افتح الطلب {reference}',
   'staff.board.status.waiting': 'قيد التحضير',
   'staff.board.status.ready': 'جاهز',

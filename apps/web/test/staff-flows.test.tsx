@@ -1,9 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as PasskeyModule from '../src/staff/passkey.ts'
 import { StaffApp } from '../src/StaffApp.tsx'
-import { BOARD_INTERVAL_SECONDS } from '../src/staff/board.ts'
+import {
+  BACKOFF_CAP_SECONDS,
+  BOARD_INTERVAL_SECONDS,
+  MAX_CONSECUTIVE_FAILURES,
+} from '../src/staff/board.ts'
 import { translatorFor } from '../src/copy/index.ts'
 import type { PasskeyOutcome } from '../src/staff/passkey.ts'
 
@@ -1316,6 +1320,384 @@ describe('the board, through the real client — 10b', () => {
     })
 
     expect(everything()).not.toContain('A-128')
+  })
+})
+
+describe('R-224 and the board’s staleness, through the real client — 10b’s FIX ROUND', () => {
+  /*
+   * ================================================================================
+   * EVERY CASE HERE IS A `§11` ROUND-ONE FINDING, DRIVEN
+   * ================================================================================
+   *
+   * `§11`'s merge rule is *every Critical and High fixed with a regression test*, and the
+   * reviewers established by probe that four of these behaviours did not exist and one of
+   * them had no test that could tell it from its own absence. So each case names its finding
+   * and asserts the POSITIVE — the sentence that must appear, the state that must be
+   * reachable — rather than an absence that would hold either way. That is H-4's lesson
+   * applied to the rest of the round.
+   */
+
+  /**
+   * Advance the fake clock by exactly `seconds`, with React's work flushed.
+   *
+   * ⚠ **`act()` IS NOT OPTIONAL HERE, AND LEAVING IT OUT IS H-4's LESSON AGAIN.**
+   * `vi.advanceTimersByTimeAsync` fires the timer and resolves the fetch, but the resulting
+   * `setState` calls are not flushed into the DOM outside `act`, so the document a following
+   * assertion reads is the one from BEFORE the poll. Every assertion that is an ABSENCE
+   * passes anyway — which is why the existing 429 cases in this file work without it, and
+   * exactly why `§11` QA H-4 could revert the fix under them and see nothing move. A case
+   * that asserts a POSITIVE change needs the change to have happened.
+   *
+   * Measured while writing these cases: without `act`, the staleness memo was observed
+   * recomputing twice (both with `gap: 0`) and the marker never appeared, against a
+   * component that is correct.
+   */
+  const advance = async (seconds: number): Promise<void> => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(seconds * 1000 + 1)
+    })
+  }
+
+  const letTheTimerFire = async (): Promise<void> => {
+    await advance(BOARD_INTERVAL_SECONDS)
+  }
+
+  it('QA H-1: shows the staleness marker once the board stops being confirmed', async () => {
+    /*
+     * The marker could NEVER render: `staleSince` was a memo over values that change only on
+     * a SUCCESSFUL poll, and at that instant `confirmedAt === now`. Through a run of failures
+     * nothing in its dependency list moved, so it was never recomputed — the reviewer measured
+     * ten rejected polls across 800 s of fake-timer time and found no marker and no offline
+     * notice, because the rows are deliberately kept. "Keep the rows" was a lie without it.
+     */
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': [
+        { status: 200, body: { sessions: [BOARD_PAGER] } },
+        'unreachable',
+        'unreachable',
+        'unreachable',
+      ],
+    })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    })
+
+    // Fresh: no marker, because the rows ARE current.
+    expect(document.querySelector('[data-board-stale="true"]')).toBeNull()
+
+    await letTheTimerFire()
+
+    /*
+     * ⚠ STILL NOT STALE AFTER EXACTLY ONE INTERVAL, AND THIS IS THE BOUNDARY RATHER THAN A
+     * MISS. `isStale` is a strict `>`, and with the jitter pinned at its midpoint the first
+     * failed poll lands exactly one interval after the last confirmation — so the data is one
+     * interval old, which is the freshest a polled board is ever guaranteed to be. Saying
+     * *last updated* then would mark every healthy board stale once, between a poll and its
+     * answer.
+     *
+     * The first version of this case stopped here and reported the component broken. It was
+     * the test that was wrong, and the boundary is worth asserting rather than stepping over.
+     */
+    expect(document.querySelector('[data-board-stale="true"]')).toBeNull()
+
+    /*
+     * ⚠ TEN SECONDS, NOT FIVE: the client has already backed off once, so the next poll is a
+     * DOUBLING away and a second five-second advance fires nothing. Advancing by the interval
+     * again is the other mistake this case made — the clock moved and the poll did not, which
+     * reads exactly like a component that stopped updating.
+     */
+    await advance(BOARD_INTERVAL_SECONDS * 2)
+
+    /*
+     * ⚠ THE POSITIVE ASSERTION, SYNCHRONOUS AFTER AN `act`-WRAPPED ADVANCE. Two failed polls,
+     * so what is on screen is now older than one interval, and the marker names when it was
+     * last confirmed. A `waitFor` here would hide whether the render had happened at all.
+     */
+    expect(document.querySelector('[data-board-stale="true"]')).not.toBeNull()
+    expect(document.querySelector('[data-board-stale="true"]')?.textContent).toContain(
+      t('staff.board.stale', { time: '' }).replace('{time}', '').trim(),
+    )
+
+    // And the rows are still there, which is the property the marker makes honest.
+    expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+  })
+
+  it('QA H-2 / SEC M-4: a 429 on sign-in says WAIT, and never “that did not work”', async () => {
+    // The stage, its copy in both languages and the type forbidding an action were all built
+    // — and no call site ever set it. A rate-limited person was told their credential was
+    // wrong and to try the one thing that would 429 again.
+    stack({
+      ...SIGNED_OUT,
+      'POST /v1/auth/login': { status: 429, headers: { 'Retry-After': '60' } },
+    })
+
+    render(<StaffApp apiBase="" view="home" locale="en" />)
+    await signInHeading()
+    await fillCredentials()
+    press(t('staff.signin.submit'))
+
+    await waitFor(() => {
+      expect(screen.getByText(t('staff.signin.throttled'))).toBeDefined()
+    })
+
+    // ⚠ AND THE FALSE SENTENCE IS GONE. Asserting only the new copy would pass against a
+    // screen that showed both.
+    expect(everything()).not.toContain(t('staff.signin.failed'))
+
+    // The form stays usable, which is the whole difference from the board's throttle: on
+    // sign-in the person must act, later.
+    expect(document.querySelector('[data-passkey-signin="true"]')).not.toBeNull()
+  })
+
+  it('QA H-2: the second factor throttles too, which is the 5-per-minute bucket', async () => {
+    // `auth-2fa` is 5/minute, so this is the throttle a person meets by mistyping — the most
+    // likely of the four to be reached in ordinary use.
+    stack({
+      ...SIGNED_OUT,
+      'POST /v1/auth/login': { status: 200, body: { two_factor_required: true } },
+      'POST /v1/auth/two-factor/challenge': { status: 429 },
+    })
+
+    render(<StaffApp apiBase="" view="home" locale="en" />)
+    await signInHeading()
+    await fillCredentials()
+    press(t('staff.signin.submit'))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(t('staff.signin.code'))).toBeDefined()
+    })
+
+    fireChange(screen.getByLabelText(t('staff.signin.code')), '123456')
+    press(t('staff.signin.submit'))
+
+    await waitFor(() => {
+      expect(screen.getByText(t('staff.signin.throttled'))).toBeDefined()
+    })
+
+    expect(everything()).not.toContain(t('staff.signin.failed'))
+  })
+
+  it('QA H-3: a throttled SHELL says what R-224 ruled, not “something went wrong on our side”', async () => {
+    /*
+     * `R-224`'s *review by* cell names the acceptance in so many words — *"the state added to
+     * §12 S2"* — and `§12` S2 IS the shell. The first fix added the state to the board and to
+     * sign-in and left `load()` funnelling every non-ok answer into `error`, so a throttled
+     * `/v1/auth/me` still read R-224's own sentence, on the very endpoint R-224 was measured
+     * on.
+     */
+    stack({ 'GET /v1/auth/me': { status: 429, headers: { 'Retry-After': '45' } } })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.shell.throttled.title'))).toBeDefined()
+    })
+
+    expect(screen.getByText(t('staff.shell.throttled.body'))).toBeDefined()
+
+    // ⚠ THE SENTENCE R-224 IS ABOUT IS ABSENT.
+    expect(everything()).not.toContain(t('staff.shell.error.title'))
+    expect(everything()).not.toContain(t('staff.shell.error.body'))
+
+    // ⚠ AND NOTHING TO PRESS, which is what makes "you do not need to do anything" true: the
+    // shell schedules its own retry. A button here would be a second 429.
+    expect(document.querySelector('[data-state="throttled"] button')).toBeNull()
+  })
+
+  it('QA H-3: the throttled shell RESUMES ITSELF, which is what makes its copy honest', async () => {
+    const scripted = stack({
+      'GET /v1/auth/me': [{ status: 429 }, { status: 200, body: identity() }],
+      'GET /v1/tenant': {
+        status: 200,
+        body: { tenant: { name: RESTAURANT, timezone: 'Asia/Riyadh' } },
+      },
+      'GET /v1/pager-sessions': { status: 200, body: { sessions: [] } },
+    })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.shell.throttled.title'))).toBeDefined()
+    })
+
+    expect(scripted.calls('GET /v1/auth/me')).toHaveLength(1)
+
+    // The shell's own backoff: one failure, so one doubling of the board interval.
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_SECONDS * 2 * 1000 + 1)
+
+    // ⚠ ASSERTED ON THE SECOND CALL, not only on the paint: a shell that merely re-rendered
+    // would satisfy a copy assertion while still having stopped.
+    await vi.waitFor(() => {
+      expect(scripted.calls('GET /v1/auth/me')).toHaveLength(2)
+      expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+    })
+  })
+
+  it('QA M-14: the board’s throttled notice appears only once the backoff window is exhausted', async () => {
+    /*
+     * The TRUE branch of `shouldTellThem` was never driven: the arithmetic had unit tests and
+     * the screen had a prop-level render, and the one orchestration case was the NEGATIVE.
+     * This drives the composition — a run of 429s until the window is exhausted — and asserts
+     * both halves of the ruling: silent before, speaking after.
+     */
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': [
+        { status: 200, body: { sessions: [BOARD_PAGER] } },
+        ...Array.from({ length: MAX_CONSECUTIVE_FAILURES }, () => ({ status: 429 }) as const),
+      ],
+    })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    })
+
+    /*
+     * ⚠ ONE ATTEMPT PER ADVANCE, BY THE EXACT NEXT DELAY — and advancing by the CAP instead
+     * is what the first version did and why it reported *"the board spoke after 3
+     * throttle(s)"*. The delays double (5, 10, 20, 40, 80, then the 120 s cap), so a single
+     * 120-second advance fires the 5 s timer, then the 10 s one, then the 20 s one inside the
+     * remaining window: three attempts consumed by one advance, and the loop's own counter
+     * then described something that had not happened. Stepping by the delay the client will
+     * actually have chosen is the only way the count means what the assertion says.
+     */
+    const delayFor = (failures: number): number =>
+      Math.min(BOARD_INTERVAL_SECONDS * 2 ** failures, BACKOFF_CAP_SECONDS)
+
+    for (let attempt = 1; attempt < MAX_CONSECUTIVE_FAILURES; attempt += 1) {
+      await advance(delayFor(attempt - 1))
+
+      expect(
+        document.querySelector('[data-board-throttled="true"]'),
+        `the board spoke after ${String(attempt)} throttle(s), before the window was exhausted`,
+      ).toBeNull()
+    }
+
+    await advance(delayFor(MAX_CONSECUTIVE_FAILURES - 1))
+
+    expect(document.querySelector('[data-board-throttled="true"]')).not.toBeNull()
+
+    // The rows are STILL there: the ruling says the copy appears, not that the board goes.
+    expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+  })
+
+  it('SEC M-3: a poll already in flight when the shell locks cannot write its rows back', async () => {
+    /*
+     * The run token covered a SCHEDULED TIMER and not a REQUEST IN FLIGHT. `lock()` does not
+     * await, the component stays mounted, and the pending answer then repopulated `pagers` —
+     * so the NEXT person to sign in got the previous occupant's orders until the first poll
+     * answered. On a shared kitchen tablet with two restaurants that is a cross-tenant render.
+     *
+     * The board's answer is held open deliberately and released AFTER the lock, which is the
+     * window the fix closes and which no settled-board test can reach.
+     */
+    let releaseBoard: ((value: Response) => void) | undefined
+
+    const held = new Promise<Response>((resolve) => {
+      releaseBoard = resolve
+    })
+
+    const json = (status: number, body: unknown): Response =>
+      ({
+        status,
+        ok: status >= 200 && status < 300,
+        json: () => Promise.resolve(body),
+        headers: { get: () => null },
+      }) as unknown as Response
+
+    let boardCalls = 0
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: unknown) => {
+        const path = String(input).replace(/^https?:\/\/[^/]+/, '')
+
+        if (path === '/v1/auth/me') return Promise.resolve(json(200, identity()))
+        if (path === '/v1/tenant') {
+          return Promise.resolve(json(200, { tenant: { name: RESTAURANT, timezone: 'UTC' } }))
+        }
+        if (path === '/v1/auth/logout') return Promise.resolve(json(204, null))
+        if (path === '/v1/auth/login') return Promise.resolve(json(200, {}))
+
+        if (path === '/v1/pager-sessions') {
+          boardCalls += 1
+
+          /*
+           * ⚠ BOTH READS ARE HELD, AND THE SECOND ONE IS WHAT MAKES THIS DETERMINISTIC.
+           *
+           * The first is released after the lock — that is the in-flight write-back under
+           * test. The second, which the board issues on the NEXT sign-in, is held for ever,
+           * so the board has no fresh data of its own and what it renders is whatever
+           * survived in state. Letting that second read answer would race the assertion and
+           * clear the rows for the wrong reason.
+           */
+          return boardCalls === 1 ? held : new Promise<Response>(() => undefined)
+        }
+
+        return Promise.resolve(json(404, {}))
+      }),
+    )
+
+    render(<StaffApp apiBase="" view="home" locale="en" />)
+
+    // The chrome is up, so the shell is `ready` and the board's first read is in flight.
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+    })
+
+    press(t('staff.shell.signOut'))
+
+    await waitFor(() => {
+      expect(screen.getByText(t('staff.signedout.title'))).toBeDefined()
+    })
+
+    // NOW the held board answer lands, after the lock. This is the write-back.
+    await act(async () => {
+      releaseBoard?.(json(200, { sessions: [BOARD_PAGER] }))
+      await Promise.resolve()
+    })
+
+    // Nothing of that restaurant's is on the locked screen.
+    expect(everything()).not.toContain('A-128')
+
+    /*
+     * ⚠ AND NOW THE SECOND PERSON SIGNS IN, WHICH IS THE HALF THAT ACTUALLY BITES AND THE
+     * HALF THE FIRST VERSION OF THIS CASE MISSED.
+     *
+     * The locked phase renders only the overlay, so a write-back behind it is invisible and
+     * an assertion that stops at the lock PASSES AGAINST THE DEFECT — measured: with the
+     * run-token check reverted, the version of this case that ended above stayed green.
+     * `afterCredential()` does not clear tenant data, so the next successful sign-in sets
+     * `phase = 'ready'` with whatever is in state — and on a shared kitchen tablet with two
+     * restaurants that is one occupant's orders rendered to the next.
+     */
+    press(t('staff.lock.signIn'))
+    await signInHeading()
+    await fillCredentials()
+    press(t('staff.signin.submit'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+    })
+
+    // ⚠ BY VALUE, over text AND attributes. The order reference belongs to one restaurant, so
+    // §12's lock clause covers it as much as the restaurant's own name.
+    expect(everything()).not.toContain('A-128')
+    expect(everything()).not.toContain(BOARD_PAGER.id)
   })
 })
 

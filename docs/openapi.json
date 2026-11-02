@@ -138,6 +138,14 @@
                                     ]
                                 }
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
                         }
                     },
                     "422": {
@@ -372,6 +380,14 @@
                                             "type": "string"
                                         }
                                     ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
                                 }
                             }
                         }
@@ -1482,6 +1498,14 @@
                                     "required": [
                                         "sessions"
                                     ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
                                 }
                             }
                         }

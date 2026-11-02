@@ -295,6 +295,33 @@ AR: *"الطلبات"* · *"طلب {reference}"* · *"منذ {duration}"* ·
 enum value), and the elapsed time. **No session id, no tenant id, no token, no customer
 anything** — there is no customer identity in this product to show. Asserted, not intended.
 
+> ⚠ **AMENDED IN PLACE 2026-11-02, AFTER `§11` ROUND ONE — QA M-10 and M-13. Three strings
+> were written DURING the coding rather than before it, and `§12`'s first line is that every
+> screen is specified before it is coded. Recorded here rather than back-dated.**
+>
+> - **`staff.board.open` — *"Open order {reference}"*.** The accessible name of the control
+>   that opens a row's panel. It was not in the table above because the table described the
+>   STATES and not the row's own controls; the omission is the spec's rather than the screen's.
+> - **`staff.board.retry` — *"Try again"*.** The action on `error` and `offline`. The table
+>   says those states carry a retry and never named its words.
+> - **`staff.board.waitingLabel` — *"Waiting"* / *"منذ"*, and it REPLACES
+>   *"Waiting {duration}"*.** QA M-13 measured that the placeholder never rendered: the
+>   duration is a live readout from `ElapsedTimer`, not a string this catalogue can
+>   interpolate, so what shipped was a bare `mm:ss` with the word only in `aria-label`. The
+>   word is now beside the clock, and the spec says what actually renders rather than a
+>   sentence nothing could produce.
+>
+> **AND THE CHOOSER'S FALLBACK LADDER IS RECORDED — QA L-20.** S2 below says the chooser
+> labels by the restaurant's NAME, which is `R-222`'s ruling, and said nothing about what
+> happens when a payload carries no name. The code falls back **name → slug → role word**,
+> and the middle rung is a DNS label, which is exactly what `R-222` exists to get off a
+> screen. It is kept deliberately and it is a decide-and-record rather than an oversight: the
+> rung below it is the ROLE WORD, and two owner memberships both rendering *"Owner"* is the
+> ambiguity `§11` QA H-2 found at 10a. A unique-but-ugly label beats two identical ones, and
+> `/v1/auth/me` always carries both — `StaffBoardEndpointsTest` pins the name against the row
+> and asserts it differs from the slug, so the ladder's second rung is unreachable in practice
+> rather than merely unlikely.
+
 ## S7 · Pager detail — a panel over the board, not a route
 
 **Purpose.** Do the one thing this order needs: tell them it is ready, buzz them again, say
@@ -304,12 +331,19 @@ they collected it, or cancel.
 | --- | --- |
 | `idle` | the order, its status, and the actions legal **for that status** |
 | `working` | the pressed action becomes busy; nothing else moves |
-| `done` | the panel closes and the board refreshes immediately rather than at the next tick |
+| `stale` | ⚠ **ADDED 2026-11-02, AFTER `§11` ROUND ONE — QA M-10.** A 409 that is NOT an expiry: the order moved on, so the panel says so and the board has been refreshed. Without it a conflict fell to `failed`, whose *"try again"* is wrong for a state where retrying changes nothing |
 | `confirm-cancel` | cancel is destructive in effect, so `§12` requires it confirmed and marked not reversible |
 | `limit` | the renotify cap is reached — a real 409, with the next action in words |
 | `expired` | the session passed its two-hour TTL; the action is a new code, not a retry |
 | `gone` | a 404: somebody else finished it. Not an error — the board was simply out of date |
 | `failed` | anything else. *Nothing has changed* is the load-bearing half |
+
+> ⚠ **AND `done` WAS IN THIS TABLE AND IS NOT A STATE — QA M-10.** It read *"the panel closes
+> and the board refreshes immediately rather than at the next tick"*, which describes what
+> happens on SUCCESS: the panel closes, so there is no state to be in. `DetailPhase` has eight
+> cases and `done` was never one of them. The behaviour it described is real and is asserted
+> (`staff-flows.test.tsx` checks the transition call AND the immediate re-read); what was
+> wrong was calling it a state in a table of states.
 
 **Which actions are legal is read from the status, not from the button's own memory**, so two
 staff cannot both be offered *"Tell them it is ready"* for a session one of them has already
@@ -337,8 +371,38 @@ AR: *"أبلغه أن الطلب جاهز"* · *"نبّهه مرة أخرى"* ·
 wait before trying again."* So `SignInStage` gains `throttled`, the form stays usable, and the
 sentence tells them to wait — where the board's tells them to do nothing.
 
-**Exact copy.** EN: *"Too many tries. Wait a minute, then sign in again."*
-AR: *"محاولات كثيرة. انتظر دقيقة ثم سجّل الدخول مرة أخرى."*
+**Exact copy.** EN: *"Too many tries. Wait a minute, then sign in again."* ·
+*"Signing in again straight away will not work yet."*
+AR: *"محاولات كثيرة. انتظر دقيقة ثم سجّل الدخول مرة أخرى."* ·
+*"إعادة تسجيل الدخول فورًا لن تنجح بعد."*
+
+> ⚠ **THE SECOND SENTENCE WAS MISSING AND THE SCREEN RENDERED THE PASSKEY BUTTON'S LABEL IN
+> ITS PLACE — `§11` QA M-11.** *"Use your passkey"* under *"Too many tries. Wait a minute"*
+> tells a rate-limited person to do the rate-limited thing, which is `R-224`'s own defect
+> reproduced inside `R-224`'s fix. `StaffState`'s `throttled` case requires a description, and
+> this state now has one of its own.
+
+## S2b · The shell — a THIRD throttled surface, added after `§11` round one
+
+⚠ **`R-224`'s *review by* cell names the acceptance as *"the state added to `§12` S2"*, and
+`§12` S2 IS THE SHELL — which the first version of this specification missed entirely** (`§11`
+QA H-3). The board (S6) and sign-in (S1) got the state; `load()` kept funnelling every non-`ok`
+answer into `error`, so a throttled `/v1/auth/me` still read *"Something went wrong on our
+side. Nothing you did caused it."* — the exact sentence `R-224` was filed about, on the exact
+endpoint it was measured on.
+
+**And the shell is the BOARD's case rather than sign-in's, because it was made so.** It loads
+once, so it had neither property the ruling splits on: *you need do nothing* would have been a
+lie over a screen that had stopped, and a *try again* button would have been a second 429. It
+now schedules its own retry on the same jittered backoff the board uses, which makes the
+sentence true and makes `ThrottledState` — which has no `action` member — the right primitive.
+
+| State | What is shown |
+| --- | --- |
+| `throttled` | the throttled primitive, **no action**, and a retry already scheduled |
+
+**Exact copy.** EN: *"Catching up."* / *"This is taking a moment. You do not need to do
+anything."* AR: *"جارٍ اللحاق."* / *"يستغرق هذا لحظة. لا حاجة لأي إجراء منك."*
 
 ## S2 · The shell — the chooser labels by NAME
 

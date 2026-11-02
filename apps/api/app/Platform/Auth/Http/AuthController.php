@@ -107,7 +107,17 @@ final class AuthController
             $this->activeTenant->select($request, $userId, $memberships[0]->tenantId);
         }
 
-        return response()->json($this->identity($user, $userId));
+        /*
+         * ⚠ `private, no-store` ON BOTH IDENTITY RESPONSES, ADDED AT 10b's FIX ROUND — `§11`
+         * SECURITY M-2. This payload carries the person's name and, since `R-222`, **the name
+         * of every restaurant they are staff of**, and both answers had no cache headers at
+         * all: the framework default is `no-cache, private`, which forbids a shared cache but
+         * PERMITS the device's own to store the body. On a shared kitchen tablet that leaves
+         * one person's restaurant names on disk across the lock and the next person's
+         * sign-in. Every sibling on this surface sets the header by hand; these two were the
+         * ones relying on a default, and `R-222` is what made them worth more.
+         */
+        return $this->identityResponse($user, $userId);
     }
 
     /**
@@ -178,7 +188,22 @@ final class AuthController
             return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
         }
 
-        return response()->json($this->identity($user, (string) $user->getKey()));
+        return $this->identityResponse($user, (string) $user->getKey());
+    }
+
+    /**
+     * The identity payload, with the cache posture both call sites need.
+     *
+     * One helper rather than two header arrays, so a third caller cannot be added without it
+     * — which is the same reasoning `RouteAbilities` applies to authorisation one layer up.
+     */
+    private function identityResponse(User $user, string $userId): JsonResponse
+    {
+        return new JsonResponse(
+            $this->identity($user, $userId),
+            200,
+            ['Cache-Control' => 'private, no-store'],
+        );
     }
 
     /** @return array<string, mixed> */

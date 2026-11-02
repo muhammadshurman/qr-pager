@@ -25,6 +25,7 @@ import {
   completeTwoFactor,
   type BoardPager,
   type IssuedDevice,
+  type StaffFailure,
   type StaffDevice,
   type StaffIdentity,
   type StaffResult,
@@ -99,7 +100,27 @@ export interface StaffAppProps {
   readonly random?: () => number
 }
 
-type Phase = 'loading' | 'signed-out' | 'ready' | 'locked' | 'error' | 'offline'
+/**
+ * The shell's phases.
+ *
+ * ⚠ `throttled` ARRIVED AT 10b's FIX ROUND, FROM `§11` QA H-3, AND IT IS `R-224`'s THIRD
+ * SURFACE. That row's *review by* cell names the acceptance in so many words — *"with the
+ * copy ruled and **the state added to `§12` S2**"* — and `§12` **S2 is the shell**. The first
+ * version of this fix added `throttled` to the board (S6) and to sign-in (S1) and left the
+ * shell funnelling every non-`ok` answer into `error`, so a throttled `/v1/auth/me` still
+ * read *"Something went wrong on our side. Nothing you did caused it."* — `R-224`'s own
+ * sentence, on the very endpoint `R-224` was measured on.
+ *
+ * ⚠ **AND THE SHELL RESUMES ITSELF RATHER THAN OFFERING A BUTTON, which is what makes its
+ * copy true.** Muhammad's ruling splits the two surfaces by whether anything is required of
+ * the person: on the board nothing is, because it polls; on sign-in something is, because
+ * nothing retries for them. The shell had neither property — it loads once — so a *you need
+ * do nothing* sentence would have been a lie and a *try again* button would have been a
+ * second 429. It now schedules its own retry on the same jittered backoff the board uses,
+ * which makes it the board's case rather than sign-in's, and the kit's `ThrottledState` —
+ * which has no `action` member at all — is then exactly the right primitive.
+ */
+type Phase = 'loading' | 'signed-out' | 'ready' | 'locked' | 'error' | 'offline' | 'throttled'
 
 export function StaffApp({
   apiBase,
@@ -175,14 +196,45 @@ export function StaffApp({
   const [boardPhase, setBoardPhase] = useState<BoardPhase>('loading')
   const [detail, setDetail] = useState<DetailPhase>('idle')
   const [selected, setSelected] = useState<string | null>(null)
-  /** When the newest ANSWER arrived. A server timestamp's local counterpart, in ms. */
+  /** When the newest SUCCESSFUL answer arrived. A server timestamp's local counterpart, in ms. */
   const [confirmedAt, setConfirmedAt] = useState<number | null>(null)
+  /**
+   * When the newest poll ATTEMPT finished, successful or not.
+   *
+   * ⚠ **THIS EXISTS BECAUSE `§11` QA H-1 PROVED THE STALENESS MARKER COULD NEVER RENDER, AND
+   * THE CAUSE IS WORTH KEEPING: THE MEMO HAD NOTHING TO RE-EVALUATE ON.**
+   *
+   * `staleSince` was a `useMemo` over `[confirmedAt, resolved, pagers]`, and all three change
+   * only on a SUCCESSFUL poll — at which instant `confirmedAt === now`, so `isStale(now, now)`
+   * is false by construction. Through a run of failures nothing in the dependency list moved
+   * (the failure counters are refs, and `boardPhase` saturates), so the memo was never
+   * recomputed and the marker stayed `null` for ever. The reviewer measured it: one success
+   * then ten rejected polls across 800 s of fake-timer time rendered the row with **no
+   * staleness marker and no offline notice**, because the rows are deliberately kept.
+   *
+   * That made "keep the rows" into a lie rather than a kindness: the precoding document's own
+   * justification for keeping them is that the marker says when they were last confirmed.
+   *
+   * So the memo now depends on a value that moves on every ATTEMPT. It is state rather than a
+   * ref for exactly that reason — a ref would update without re-rendering, which is the
+   * original defect wearing a different variable.
+   */
+  const [attemptedAt, setAttemptedAt] = useState<number | null>(null)
   /** Consecutive failed polls. 0 after any 200. Drives the backoff and `shouldTellThem`. */
   const failuresRef = useRef(0)
   /** The server's own `Retry-After` from the last 429, in seconds, or null. */
   const retryAfterRef = useRef<number | null>(null)
   /** A monotonic token so a poll scheduled by a superseded run cannot resurrect itself. */
   const pollRunRef = useRef(0)
+  /**
+   * The server's `Retry-After` from a throttled SHELL load, in seconds, or null.
+   *
+   * Separate from the board's, because the two surfaces back off independently and sharing
+   * one value would make a throttled shell inherit the board's failure count.
+   */
+  const shellRetryRef = useRef<number | null>(null)
+  /** How many times the shell load has been refused in a row. Drives its own backoff. */
+  const shellFailuresRef = useRef(0)
   /** `Math.random` in the app, a sequence in the tests. */
   const randomRef = useRef<() => number>(random ?? Math.random)
 
@@ -208,6 +260,7 @@ export function StaffApp({
     setSelected(null)
     setDetail('idle')
     setConfirmedAt(null)
+    setAttemptedAt(null)
     failuresRef.current = 0
     retryAfterRef.current = null
     // Supersede any poll already scheduled, so a timer armed before the lock cannot write
@@ -227,6 +280,13 @@ export function StaffApp({
 
     if (who.kind === 'unreachable') {
       setPhase('offline')
+
+      return
+    }
+
+    if (who.kind === 'throttled') {
+      shellRetryRef.current = who.retryAfter
+      setPhase('throttled')
 
       return
     }
@@ -264,6 +324,13 @@ export function StaffApp({
       return
     }
 
+    if (restaurant.kind === 'throttled') {
+      shellRetryRef.current = restaurant.retryAfter
+      setPhase('throttled')
+
+      return
+    }
+
     if (restaurant.kind !== 'ok') {
       setPhase('error')
 
@@ -271,9 +338,39 @@ export function StaffApp({
     }
 
     setTenant(restaurant.value)
+    shellFailuresRef.current = 0
+    shellRetryRef.current = null
     setPhase('ready')
     setSignInStage('idle')
   }, [apiBase, clearTenantData])
+
+  /**
+   * A throttled shell retries itself, which is the half that makes its copy honest.
+   *
+   * `§11` QA H-3. The delay is the same arithmetic the board uses — the server's own
+   * `Retry-After` when it sent one, otherwise the jittered doubling — so a shell and a board
+   * refused by the same bucket do not hammer it on two different cadences.
+   *
+   * ⚠ IT IS ARMED ONLY IN THE `throttled` PHASE, so nothing retries in `error` or `offline`:
+   * those two keep their explicit retry button, because a 5xx and a dead network are not
+   * things a timer should paper over. And it increments the failure count BEFORE computing
+   * the delay, so a run of refusals backs off rather than retrying at a fixed interval.
+   */
+  useEffect(() => {
+    if (phase !== 'throttled') return
+    if (typeof window === 'undefined') return
+
+    shellFailuresRef.current += 1
+
+    const timer = setTimeout(
+      () => void load(),
+      nextBoardDelayMs(shellFailuresRef.current, shellRetryRef.current, randomRef.current),
+    )
+
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [phase, load])
 
   useEffect(() => {
     void load()
@@ -376,6 +473,36 @@ export function StaffApp({
     await load()
   }, [load])
 
+  /**
+   * The stage a failed credential attempt lands on.
+   *
+   * ⚠ **THIS EXISTS BECAUSE `R-224`'s SIGN-IN HALF SHIPPED UNREACHABLE — `§11` QA H-2 AND
+   * SECURITY M-4, found independently by both reviewers.** The `throttled` stage was built,
+   * its copy written in both launch languages, and the kit type made an actionless throttle
+   * the only thing that compiles — and then no call site ever set it: every failure path
+   * collapsed to `'failed'`, so a rate-limited person read *"That did not work. Try your
+   * passkey again, or use your password."* and was told to do the one thing that would 429
+   * again. `grep -rn "setSignInStage('throttled')"` returned **zero hits**.
+   *
+   * That is `R-205`'s dead-state shape — a screen state no event can produce — inside the fix
+   * for a row about exactly that. It is one function now rather than four branches, so a
+   * fifth credential path cannot forget it.
+   *
+   * `auth-2fa` is **5 requests a minute**, so five mistyped codes reach the throttle; it is
+   * the most likely of the four to be met in ordinary use.
+   *
+   * Everything that is not a throttle or a dead network stays ONE message. Separating a wrong
+   * password from an unknown address is the oracle `§4 › Security`'s single-message refusal
+   * rule exists to close, and a 429 is not that kind of distinction: it says nothing about
+   * whether the credential was right.
+   */
+  const stageForFailure = useCallback((kind: StaffFailure): SignInStage => {
+    if (kind === 'unreachable') return 'offline'
+    if (kind === 'throttled') return 'throttled'
+
+    return 'failed'
+  }, [])
+
   const onPasskey = useCallback(async (): Promise<void> => {
     setSignInStage('working')
 
@@ -412,19 +539,9 @@ export function StaffApp({
         return
       }
 
-      if (result.kind === 'unreachable') {
-        setSignInStage('offline')
-
-        return
-      }
-
-      // Everything else is one message. Separating a wrong password from an unknown address
-      // is the oracle `§4 › Security`'s single-message refusal rule exists to close, and the
-      // server already answers alike -- a client that split them would re-open it from this
-      // side.
-      setSignInStage('failed')
+      setSignInStage(stageForFailure(result.kind))
     },
-    [apiBase, afterCredential],
+    [apiBase, afterCredential, stageForFailure],
   )
 
   const onTwoFactor = useCallback(
@@ -437,9 +554,10 @@ export function StaffApp({
         return
       }
 
-      setSignInStage(result.kind === 'unreachable' ? 'offline' : 'failed')
+      // `auth-2fa` is 5/minute, so this is the throttle a person meets by mistyping.
+      setSignInStage(stageForFailure(result.kind))
     },
-    [apiBase, afterCredential],
+    [apiBase, afterCredential, stageForFailure],
   )
 
   const onChoose = useCallback(
@@ -447,14 +565,14 @@ export function StaffApp({
       const result = await selectTenant(apiBase, tenantId)
 
       if (result.kind !== 'ok') {
-        setSignInStage('failed')
+        setSignInStage(stageForFailure(result.kind))
 
         return
       }
 
       await afterCredential()
     },
-    [apiBase, afterCredential],
+    [apiBase, afterCredential, stageForFailure],
   )
 
   /* ------------------------------------------------------------- the board's poll loop */
@@ -478,7 +596,33 @@ export function StaffApp({
    *   anything else   `error`.
    */
   const pollBoard = useCallback(async (): Promise<void> => {
+    const run = pollRunRef.current
     const result = await fetchBoard(apiBase)
+
+    /*
+     * ⚠ **THE RUN TOKEN IS CHECKED HERE, AFTER THE AWAIT, AND `§11` SECURITY M-3 IS WHY.**
+     *
+     * `clearTenantData()` increments this token and its own comment claimed that superseded
+     * "any poll already scheduled". It did — a SCHEDULED TIMER. It did nothing about a
+     * request ALREADY IN FLIGHT: `lock()` does not await `signOut()` (deliberately, `§11`
+     * SECURITY M-1), the component stays mounted, and this function's own resolution then
+     * ran `setPagers(...)` and `setBoardPhase('ready')` AFTER the lock had emptied them.
+     *
+     * Nothing renders while `locked` or `signed-out`, so no tenant datum was on screen — but
+     * `afterCredential()` does not clear, so **the next person to sign in got the previous
+     * occupant's rows** until the first poll answered. On a shared kitchen tablet with two
+     * restaurants that is a cross-tenant render, and `§12`'s *a locked shell holds no tenant
+     * datum* was false in state meanwhile.
+     *
+     * And the window is **user-controllable rather than a timing coincidence**: the board's
+     * failure states offer a retry that calls this function, so pressing *Try again* and then
+     * *Sign out* opens it deliberately.
+     *
+     * One comparison, before any `setState`, covers every branch below.
+     */
+    if (pollRunRef.current !== run) return
+
+    setAttemptedAt(Date.now())
 
     if (result.kind === 'ok') {
       failuresRef.current = 0
@@ -813,10 +957,21 @@ export function StaffApp({
    * case the marker exists for.
    */
   const staleSince = useMemo(() => {
-    if (confirmedAt === null || !isStale(confirmedAt, Date.now())) return null
+    /*
+     * ⚠ MEASURED AGAINST THE LAST ATTEMPT, NOT AGAINST `Date.now()` — `§11` QA H-1.
+     *
+     * `Date.now()` inside a memo is read only when a dependency changes, so the old version
+     * evaluated it exactly when `confirmedAt === now` and could never be true. `attemptedAt`
+     * moves on every poll including a failed one, which is both the trigger to recompute and
+     * the honest clock to compare against: the question is *how old is what you are looking
+     * at*, and the answer is the gap between the last successful answer and the last time we
+     * asked.
+     */
+    if (confirmedAt === null || attemptedAt === null) return null
+    if (!isStale(confirmedAt, attemptedAt)) return null
 
     return new Intl.DateTimeFormat(resolved, { timeStyle: 'short' }).format(confirmedAt)
-  }, [confirmedAt, resolved, pagers])
+  }, [confirmedAt, attemptedAt, resolved])
 
   /** The loading / error / offline view, used with and without the chrome. */
   const unresolved = (): React.ReactNode => {
@@ -831,6 +986,21 @@ export function StaffApp({
           title={t('staff.shell.offline.title')}
           description={t('staff.shell.offline.body')}
           action={{ label: t('staff.shell.error.retry'), onAction: () => void load() }}
+        />
+      )
+    }
+
+    /*
+     * `R-224`'s third surface — `§11` QA H-3. NO ACTION, and the kit's type is what enforces
+     * that: this shell retries itself on the effect above, so there is nothing to press and a
+     * button would be a second 429.
+     */
+    if (phase === 'throttled') {
+      return (
+        <StaffState
+          state="throttled"
+          title={t('staff.shell.throttled.title')}
+          description={t('staff.shell.throttled.body')}
         />
       )
     }

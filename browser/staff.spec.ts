@@ -76,9 +76,40 @@ async function targets(page: Page): Promise<{ name: string; width: number; heigh
   })
 }
 
+/**
+ * Open the board's detail panel, so the `§12` sweeps measure S7's controls too.
+ *
+ * ⚠ **ADDED AT 10b's FIX ROUND — `§11` QA M-15.** All three sweeps ran immediately after
+ * `signInAsStaff()`, with no row opened, so the panel's seven controls — *Tell them it is
+ * ready*, *Buzz them again*, *They collected it*, *Cancel this order*, *Close* and the
+ * confirm pair — and the board's own two new text classes were measured by NOTHING, on the
+ * surface whose ticket calls contrast and target size *functional* requirements rather than
+ * aspirations. The panel's buttons are the shared `Button` primitive measured elsewhere, which
+ * is mitigation and not a measurement of this screen.
+ *
+ * It returns whether a panel opened, so a sweep can say so rather than silently covering the
+ * chrome alone: a board with no live row is a legitimate state of the fixture, and a sweep
+ * that quietly measured less would be the vacuous half of this very finding.
+ */
+async function openDetailPanel(page: Page): Promise<boolean> {
+  const opener = page.locator('[data-board="true"] [data-action="open"]').first()
+
+  if ((await opener.count()) === 0) return false
+
+  await opener.click()
+  await page.waitForSelector('[data-detail="true"]', { timeout: 30_000 })
+
+  return true
+}
+
 test.describe('§12 on the staff shell', () => {
   test('gives every interactive box at least 44px on both axes', async ({ page }) => {
     await signInAsStaff(page)
+
+    // S7's controls, in the same sweep as the chrome's — `§11` QA M-15.
+    const panel = await openDetailPanel(page)
+
+    expect(panel, 'no board row to open, so the panel\u2019s controls went unmeasured').toBe(true)
 
     const boxes = await targets(page)
 
@@ -106,6 +137,12 @@ test.describe('§12 on the staff shell', () => {
 
   test('draws a visible focus ring on every control reachable by keyboard', async ({ page }) => {
     await signInAsStaff(page)
+
+    // S7's controls too — `§11` QA M-15. Tab reaches them only once the panel is open.
+    expect(
+      await openDetailPanel(page),
+      'the panel did not open, so its focus rings went unmeasured',
+    ).toBe(true)
 
     /*
      * ⚠ REAL `Tab` PRESSES, AND `element.focus()` DOES NOT WORK — MEASURED, NOT REASONED.
@@ -343,6 +380,12 @@ test.describe('§12 on the staff shell', () => {
   }) => {
     await signInAsStaff(page)
 
+    // S7's controls and the board's own two text classes — `§11` QA M-15.
+    expect(
+      await openDetailPanel(page),
+      'the panel did not open, so its contrast went unmeasured',
+    ).toBe(true)
+
     const pairs = await page.evaluate(() => {
       const parse = (value: string): [number, number, number] => {
         const parts = value.match(/[\d.]+/g) ?? []
@@ -384,6 +427,16 @@ test.describe('§12 on the staff shell', () => {
         '.qr-staff__role',
         '.qr-staff-state__title',
         '.qr-staff-state__description',
+        /*
+         * ⚠ 10b's OWN TEXT, ADDED AT THE FIX ROUND — `§11` QA M-15. This list was 10a's five
+         * chrome selectors, so the board's row title and its quiet notices were never
+         * measured. `--color-ink-mid` is an approved AA token (`QRPAGER-15-contrast-table.md`)
+         * — which is a reason to expect a pass, not a measurement of one.
+         */
+        '.qr-staff-list__name',
+        '.qr-staff-list__waiting',
+        '.qr-staff-board__stale',
+        '.qr-staff-warning',
       ]) {
         const element = document.querySelector(selector)
 
@@ -712,21 +765,59 @@ test.describe('10b’s board, in a real browser', () => {
     expect(visible).not.toContain(fixture.alpha.id)
   })
 
+  /**
+   * One row, by its order reference, with the status attribute ON the row.
+   *
+   * ⚠ **THE FIRST VERSION OF THIS LOOKED FOR `[data-pager-status]` AS A DESCENDANT, AND IT
+   * COULD NEVER MATCH — 12 e2e failures across all six staff projects, found by this
+   * ticket's own gate rather than by a reviewer.** `StaffBoard` writes the attribute on the
+   * `<li>` itself, so `row.locator('[data-pager-status="ready"]')` searched inside the row
+   * for an element that is the row, waited the full 60 s and reported `0 elements`. An
+   * assertion that cannot pass is the mirror of a vacuous one: it fails honestly, but it
+   * tests nothing until it is fixed, and it cost a whole e2e round to learn.
+   *
+   * Composed as ONE selector so the attribute is matched where it lives.
+   */
+  function rowFor(page: Page, reference: string, status?: string) {
+    const selector =
+      status === undefined
+        ? '[data-board="true"] .qr-staff-list__item'
+        : `[data-board="true"] .qr-staff-list__item[data-pager-status="${status}"]`
+
+    return page.locator(selector).filter({ hasText: reference })
+  }
+
+  /*
+   * ⚠ THE TWO ACTING CASES RUN IN **ONE** PROJECT, AND THAT IS A SCOPE RATHER THAN A SKIP.
+   *
+   * The six staff projects share one fixture and one database. The first project to mark
+   * A-101 ready leaves it `ready` for the other five — at which point the panel correctly
+   * offers *They collected it* and *Buzz them again* rather than *Tell them it is ready*, so
+   * the case would be asserting a precondition the previous project consumed. Making each
+   * project issue its own pager means a spec reaching for PHP, which is the harness boundary
+   * this suite does not cross.
+   *
+   * What is engine-dependent on this screen is `§12` — the rendered box, the resolved colour
+   * pair, the focus ring, the mirroring — and every one of those is measured in all six
+   * projects by the sweeps above, which now open the panel too. A POST and a re-render are
+   * not engine-dependent, and `browser/staff-passkey.spec.ts` is the standing precedent for
+   * a Chromium-only case with a stated reason.
+   */
+  const ACTING_PROJECT = 'staff-chromium-ltr'
+
   test('marks an order ready through the real stack, and the board converges on it', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== ACTING_PROJECT,
+      `the acting cases run in ${ACTING_PROJECT} only — see the comment above for why, and the §12 sweeps cover all six`,
+    )
+
     const fixture = await signInAsStaff(page)
 
     await boardReferences(page)
 
-    /*
-     * The row for A-101 specifically, found by the label the board renders for it. Scoping
-     * by the row is what makes this a test of the DETAIL panel rather than of whichever
-     * button the page happened to render first.
-     */
-    const row = page
-      .locator('[data-board="true"] .qr-staff-list__item')
-      .filter({ hasText: fixture.alpha.order_reference })
+    const row = rowFor(page, fixture.alpha.order_reference)
 
     await row.locator('[data-action="open"]').click()
     await row.locator('[data-action="ready"]').click()
@@ -739,31 +830,26 @@ test.describe('10b’s board, in a real browser', () => {
      * 10b's invariant, driven rather than reasoned. A disappearing button would also be
      * satisfied by a panel that merely closed.
      */
-    await expect(
-      page
-        .locator('[data-board="true"] .qr-staff-list__item')
-        .filter({ hasText: fixture.alpha.order_reference })
-        .locator('[data-pager-status="ready"]'),
-    ).toHaveCount(1, { timeout: 60_000 })
+    await expect(rowFor(page, fixture.alpha.order_reference, 'ready')).toHaveCount(1, {
+      timeout: 60_000,
+    })
 
     // And the OTHER pager is untouched, which is what makes the transition keyed rather than
     // broad -- the same property `PagerIdorTest` asserts on the server, seen from the screen.
-    await expect(
-      page
-        .locator('[data-board="true"] .qr-staff-list__item')
-        .filter({ hasText: fixture.alpha.second_order_reference })
-        .locator('[data-pager-status="waiting"]'),
-    ).toHaveCount(1)
+    await expect(rowFor(page, fixture.alpha.second_order_reference, 'waiting')).toHaveCount(1)
   })
 
-  test('confirms a cancellation before it sends anything', async ({ page }) => {
+  test('confirms a cancellation before it sends anything', async ({ page }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== ACTING_PROJECT,
+      `the acting cases run in ${ACTING_PROJECT} only — see the comment above for why`,
+    )
+
     const fixture = await signInAsStaff(page)
 
     await boardReferences(page)
 
-    const row = page
-      .locator('[data-board="true"] .qr-staff-list__item')
-      .filter({ hasText: fixture.alpha.second_order_reference })
+    const row = rowFor(page, fixture.alpha.second_order_reference)
 
     await row.locator('[data-action="open"]').click()
     await row.locator('[data-action="cancel"]').click()
@@ -771,7 +857,7 @@ test.describe('10b’s board, in a real browser', () => {
     // The confirmation is on screen and the row is STILL waiting -- a destructive action
     // whose first tap already fired it has a dialog and no confirmation.
     await expect(row.locator('[data-action="cancel"]')).toHaveCount(0)
-    await expect(row.locator('[data-pager-status="waiting"]')).toHaveCount(1)
+    await expect(rowFor(page, fixture.alpha.second_order_reference, 'waiting')).toHaveCount(1)
 
     /*
      * ⚠ AND THE REFUSAL IS LEFT UNCONFIRMED ON PURPOSE. This case asserts the confirmation

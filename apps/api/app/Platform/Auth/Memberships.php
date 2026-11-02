@@ -42,7 +42,7 @@ use Illuminate\Support\Str;
  *    `MembershipCallSiteTest` pins both. `MembershipCallSiteTest` greps the tree and
  *    fails on a sixth, because "the user id comes from the guard" is a property of the call
  *    site and not of this file.
- * 3. **The SQL is `select * from public.user_memberships(?)`** — a function with one
+ * 3. **The SQL names its columns and calls `public.user_memberships(?)`** — a function with one
  *    exact-match uuid parameter, compared with `=` inside its body. No input shape THIS
  *    CLASS can send returns a second user's memberships.
  *
@@ -59,8 +59,18 @@ use Illuminate\Support\Str;
  *    pinned by `MembershipCallSiteTest`, and `MembershipEnumerationTest` pins the absence of
  *    the database-level bound as a measured fact rather than leaving it to be rediscovered.
  *    `R-108` owns the question of whether that is acceptable.
- * 4. **The function is `RETURNS TABLE` with four named columns** (§2.8 rule 1), so nothing
- *    else from `tenant_users` can come back even if this class asked for it.
+ * 4. **The function is `RETURNS TABLE` with FIVE named columns** (§2.8 rule 1), so nothing
+ *    else from `tenant_users` or `tenants` can come back even if this class asked for it.
+ *
+ *    ⚠ **FOUR UNTIL 10b, FIVE SINCE — `tenant_name`, on Muhammad's `R-222` ruling.** Both of
+ *    these numbered points said something false after that migration and `§11` SECURITY L-6
+ *    found them: this one still said *four*, and point 3 still said *`select *`* while the
+ *    reader below had just been changed to name its columns explicitly, with a comment saying
+ *    *never `select *`*. Two statements in the file's own stated BOUND, contradicting the
+ *    code beneath them. The file's history is why it matters: its point 2 carries the note
+ *    *"THIS COUNT HAS NOW BEEN WRONG TWICE"*, and this is the third count in it to go stale.
+ *    `MembershipFunctionGrantTest` now pins the column set against the catalogue, so the
+ *    number here has a test behind it rather than a reader's attention.
  * 5. **`EXECUTE` is granted to `qrpager_app` alone**, after `REVOKE ALL … FROM PUBLIC`.
  *
  * ================================================================================

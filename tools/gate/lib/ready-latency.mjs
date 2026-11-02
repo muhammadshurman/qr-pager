@@ -51,10 +51,25 @@ const fixture = JSON.parse(readFileSync(join(REPO, process.env.QRPAGER_E2E_STAFF
 
 /** One fresh waiting pager in alpha, through the real service. */
 function issuePager(run) {
+  /*
+   * ⚠ `APP_ENV` IS **NOT** SET HERE, AND IT WAS — `§11` SECURITY M-5.
+   *
+   * This read `env: { ...process.env, APP_ENV: 'local', … }`, which made
+   * `bin/issue-board-pager`'s fail-closed environment guard unreachable from the one call
+   * site that uses it — while `DB_*` still came from `.env`. So on a host whose `.env` points
+   * at anything real, `pnpm gate:ready-latency` would have written tenants, pager sessions,
+   * outbox and audit rows as the database owner and printed a raw QR token, with the guard
+   * built to stop exactly that sitting one frame away and never consulted.
+   *
+   * That guard exists because of `§11` SEC M-6 one task ago. Hard-coding past it from the
+   * caller is the same defect as not having it, with a comment claiming otherwise.
+   *
+   * `PAO_DISABLE` stays: it is about console FORMATTING, not about what may run.
+   */
   const out = execFileSync('php', ['bin/issue-board-pager', fixture.alpha.id, `L-${run}`], {
     cwd: join(REPO, 'apps', 'api'),
     encoding: 'utf8',
-    env: { ...process.env, APP_ENV: 'local', PAO_DISABLE: '1' },
+    env: { ...process.env, PAO_DISABLE: '1' },
   })
 
   return JSON.parse(out.trim().split('\n').at(-1))
@@ -154,7 +169,16 @@ if (figures.length > 0) {
   const sorted = [...figures].sort((a, b) => a - b)
   const median = sorted[Math.floor(sorted.length / 2)]
 
-  console.log(`  all five            ${figures.map(String).join(', ')} ms`)
+  /*
+   * ⚠ THE LABEL COUNTS WHAT IT PRINTS — `§11` QA L-21. This said *"all five"* over however
+   * many runs produced a figure, so a 3-of-5 run printed three numbers under a five-run
+   * heading and a median over three. The script does exit 1 in that case, so the figure
+   * would never have been used — but a transcript that reads as a five-run median is the
+   * kind of artefact `§4a` keeps catching, and it would outlive the exit code.
+   */
+  console.log(
+    `  all ${String(figures.length)} of ${String(RUNS)}      ${figures.map(String).join(', ')} ms`,
+  )
   console.log(`  MEDIAN              ${String(median)} ms`)
   console.log(`  §3 row 10's bar     ${String(BAR_MS)} ms`)
   console.log(

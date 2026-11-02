@@ -304,3 +304,10 @@
   font-size: var(--size-16);
   color: var(--color-ink-mid);
 }
+
+/* The board row's "Waiting" label, beside the elapsed readout — `§11` QA M-13. It is a word
+   rather than an icon because `§12`'s bar is a person who reads no documentation, and a bare
+   mm:ss on a wall screen two metres away reads as a time of day. */
+.qr-staff-list__waiting {
+  color: var(--color-ink-mid);
+}

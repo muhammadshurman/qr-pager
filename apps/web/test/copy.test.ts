@@ -61,8 +61,24 @@ describe('the copy catalogue', () => {
      * those are two situations, not one message, so they are two keys and `§12` S1's own
      * stage case asserts each is silent on the other's sentence.
      *
+     * ⚠ **STILL 163 AFTER 10b's FIX ROUND, AND THE ARITHMETIC IS WORTH STATING BECAUSE THE
+     * NUMBER NOT MOVING IS EXACTLY WHAT A PINNED COUNT CANNOT SEE.** Three keys left and
+     * three arrived, so the total is unchanged while the catalogue is not:
+     *
+     *   OUT  `staff.home.title` · `.body` · `.action` — `StaffHome`'s, deleted with the
+     *        screen, and one of them had become FALSE (*"The order board arrives next."* on a
+     *        surface whose board had arrived). `§11` QA L-19: nothing read them, so the pin
+     *        was counting dead copy.
+     *   IN   `staff.shell.throttled.title` · `.body` — `R-224`'s third surface (`§11` QA H-3)
+     *        — and `staff.signin.throttled.body`, the sign-in notice's own second sentence,
+     *        which was rendering the passkey BUTTON'S LABEL (`§11` QA M-11).
+     *   AND  `staff.board.waiting` is renamed `staff.board.waitingLabel`, because its
+     *        `{duration}` placeholder never rendered (`§11` QA M-13): the duration is a live
+     *        readout, not a string this catalogue can interpolate.
+     *
      * The count is pinned rather than omitted because a key SILENTLY DELETED from both files
-     * at once is the one change key-parity cannot see.
+     * at once is the one change key-parity cannot see — and this round is the case where that
+     * guard had to be read rather than trusted.
      */
     expect(en.length).toBe(163)
   })

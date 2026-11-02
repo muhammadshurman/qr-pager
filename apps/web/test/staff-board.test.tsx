@@ -113,6 +113,29 @@ describe('the board', () => {
     }
   })
 
+  it('renders the waiting WORD beside the elapsed readout, not only in the accessible name', () => {
+    /*
+     * ⚠ NOTHING ASSERTED THE ELAPSED READOUT AT ALL — `§11` QA M-13 — and what shipped was a
+     * bare `mm:ss` with *"Waiting"* living only in `aria-label`, because the copy's
+     * `{duration}` placeholder was interpolated with an empty string and trimmed. `§12` S6
+     * specifies *"Waiting {duration}"*; on a screen read at two metres a clock-shaped number
+     * with no label can be taken for a time of day.
+     */
+    render(<StaffBoard {...props()} />)
+
+    // The word is VISIBLE text, not an attribute.
+    expect(screen.getByText(t('staff.board.waitingLabel'))).toBeDefined()
+
+    // And the readout itself: 185 seconds is 03:05, formatted by the kit's own timer.
+    expect(document.querySelector('.qr-timer__value')?.textContent).toBe('03:05')
+
+    // The accessible name still carries the pair, so a screen reader is not told a bare
+    // number either.
+    expect(document.querySelector('.qr-timer')?.getAttribute('aria-label')).toContain(
+      t('staff.board.waitingLabel'),
+    )
+  })
+
   it('renders NOT ONE identifier — no session id anywhere in the document', () => {
     const id = '01a199c4-7f3e-7000-8000-0123456789ab'
 
@@ -282,11 +305,20 @@ describe('the detail panel', () => {
     expect(ready?.textContent).toBe(t('staff.detail.working'))
     expect((ready as HTMLButtonElement | null)?.disabled).toBe(true)
 
-    // Cancel keeps its own label while something else is in flight, because it opens a
-    // CONFIRMATION rather than sending anything -- relabelling it "Sending…" would say an
-    // order was being cancelled when nothing had been.
-    expect(document.querySelector('[data-action="cancel"]')?.textContent).toBe(
-      t('staff.detail.cancel'),
-    )
+    /*
+     * ⚠ CANCEL KEEPS ITS LABEL **AND STAYS ENABLED**, and the second half is new — `§11` QA
+     * L-17. This case's NAME has always said *"and never the cancel"*, and the body asserted
+     * only the label while `disabled={detail === 'working'}` applied to every button
+     * including this one: a test name stating a contract its body never reached, which is a
+     * defect family `§4a` records by name.
+     *
+     * The name was the right behaviour. Cancel opens a CONFIRMATION and sends nothing, so
+     * there is no in-flight request for it to guard against, and greying it out while
+     * something else is sending reads as *you may not cancel this*.
+     */
+    const cancel = document.querySelector('[data-action="cancel"]')
+
+    expect(cancel?.textContent).toBe(t('staff.detail.cancel'))
+    expect((cancel as HTMLButtonElement | null)?.disabled).toBe(false)
   })
 })

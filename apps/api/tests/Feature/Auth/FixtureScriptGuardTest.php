@@ -80,7 +80,38 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
     $usersBefore = (int) DB::connection('pgsql_root')->table('users')->count();
     $tenantsBefore = (int) DB::connection('pgsql_root')->table('tenants')->count();
 
-    foreach (['bin/issue-harness-user', 'bin/issue-pager-session'] as $script) {
+    /*
+     * ⚠ DERIVED FROM `bin/` RATHER THAN LISTED — `§11` SECURITY L-1. This was a hard-coded
+     * pair, and 10b added `bin/issue-board-pager` (which writes rows as the owner AND prints
+     * a raw QR token) while `bin/issue-staff-fixture` had never been in it either: two
+     * guarded scripts whose guard nothing exercised. *An unproven guard is not a guard*, and
+     * a list somebody has to remember to extend is how this one got two entries behind.
+     *
+     * The derivation is a grep for the guard's own refusal string over `bin/`, so a NEW
+     * fixture script is covered the moment it carries the guard — and one that carries no
+     * guard is reported by the vacuity check below rather than silently skipped.
+     */
+    $guarded = [];
+
+    foreach (glob(base_path('bin/issue-*')) ?: [] as $path) {
+        if (str_contains((string) file_get_contents($path), 'refusing to run')) {
+            $guarded[] = 'bin/'.basename($path);
+        }
+    }
+
+    sort($guarded);
+
+    // Not vacuous, and an EXACT set: a grep that silently stopped matching would make the
+    // loop below iterate nothing and this case pass having proven nothing — which is the
+    // shape `MembershipCallSiteTest`'s own planted-call-site control exists for.
+    expect($guarded)->toBe([
+        'bin/issue-board-pager',
+        'bin/issue-harness-user',
+        'bin/issue-pager-session',
+        'bin/issue-staff-fixture',
+    ]);
+
+    foreach ($guarded as $script) {
         [$status, $output] = runFixtureScript($script, 'production');
 
         expect($status)->toBe(1, "{$script} did not exit 1 under APP_ENV=production");

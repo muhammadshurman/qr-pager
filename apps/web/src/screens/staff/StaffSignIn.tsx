@@ -225,7 +225,15 @@ export function StaffSignIn({
           <StaffState
             state="throttled"
             title={t('staff.signin.throttled')}
-            description={t('staff.signin.passkey')}
+            /*
+             * ⚠ ITS OWN SENTENCE, AND THE FIRST VERSION PUT THE PASSKEY BUTTON'S LABEL HERE
+             * — `§11` QA M-11. *"Use your passkey"* under *"Too many tries. Wait a minute"*
+             * tells a rate-limited person to do the rate-limited thing, which is the defect
+             * `R-224` is about, reproduced inside `R-224`'s own fix. `§12` S1 specifies ONE
+             * sentence for this state; this is the second half of it, saying what the wait
+             * is for rather than naming a control.
+             */
+            description={t('staff.signin.throttled.body')}
           />
         )}
 

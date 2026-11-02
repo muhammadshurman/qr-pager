@@ -407,6 +407,22 @@ it('keeps internal rationale out of every published description — R-052, R-056
                 "a published description carries [{$forbidden}]: ".substr($description, 0, 120),
             );
         }
+
+        /*
+         * ⚠ ANY `§5` ROW ID, NOT ONLY THE FIRST HUNDRED — `§11` SECURITY L-7.
+         *
+         * The literal list above carries `R-0`, which was written when the table ended in the
+         * nineties and which matches `R-001`…`R-099` and nothing else. 10b published a
+         * description citing **`R-222`** and this check passed it: the reviewer found the
+         * narrative in the committed spec, and `OpenApiSpecTest` — the control for exactly
+         * that — could not see it because the row ids had outgrown the prefix.
+         *
+         * A pattern rather than a longer list, so the table growing past `R-999` is the only
+         * thing that can age it, and `R-0` stays above for the message it produces.
+         */
+        expect((bool) preg_match('/\bR-\d{3}\b/', $description))->toBeFalse(
+            'a published description cites a §5 row id: '.substr($description, 0, 120),
+        );
     }
 });
 

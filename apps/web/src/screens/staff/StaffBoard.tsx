@@ -228,7 +228,16 @@ export function StaffBoard({
                 <p className="qr-staff-list__name">
                   {t('staff.board.order', { reference: pager.orderReference })}
                 </p>
-                <p className="qr-staff-list__meta">
+                {/*
+                  ⚠ A `div`, NOT A `p` — `§11` QA M-12. `ElapsedTimer` renders its own `<p
+                  className="qr-timer">`, so a `<p>` wrapper put a paragraph inside a
+                  paragraph: React logged *"In HTML, <p> cannot be a descendant of <p>"* on
+                  every render and the suite passed anyway. A browser's parser closes the
+                  outer `<p>` at the inner one, so a server render of this subtree and the
+                  client tree would disagree about the DOM. `StaffDevices` uses `<span>`
+                  children in this same class, which is why its own test logs nothing.
+                */}
+                <div className="qr-staff-list__meta">
                   <StatusBadge
                     status={pager.status}
                     // Derived from the one Record above rather than written out here: an
@@ -242,11 +251,21 @@ export function StaffBoard({
                       expired: t(STATUS_COPY.expired),
                     }}
                   />
+                  {/*
+                    ⚠ THE WORD IS RENDERED, NOT ONLY ANNOUNCED — `§11` QA M-13. This built the
+                    accessible name by interpolating an EMPTY duration and trimming, so the
+                    visible row was a bare `mm:ss` with *"Waiting"* living only in
+                    `aria-label`: `§12` S6 specifies *"Waiting {duration}"* and what shipped
+                    was a clock-shaped number that, on a screen read at two metres, could be
+                    taken for a time of day. The label is now beside the readout, and the
+                    timer's own `aria-label` still carries the pair for a screen reader.
+                  */}
+                  <span className="qr-staff-list__waiting">{t('staff.board.waitingLabel')}</span>
                   <ElapsedTimer
                     seconds={elapsed[pager.id] ?? 0}
-                    label={t('staff.board.waiting', { duration: '' }).trim()}
+                    label={t('staff.board.waitingLabel')}
                   />
-                </p>
+                </div>
               </div>
 
               {open ? (
@@ -288,7 +307,19 @@ export function StaffBoard({
                         <Button
                           key={action}
                           variant={action === 'cancel' ? 'quiet' : 'primary'}
-                          disabled={detail === 'working'}
+                          /*
+                           * ⚠ CANCEL IS NEVER DISABLED, AND THE TEST NAME SAID SO BEFORE THE
+                           * CODE DID — `§11` QA L-17. The case is called *"disables the acting
+                           * buttons while a transition is in flight, and never the cancel"*,
+                           * and `disabled={detail === 'working'}` applied to every button
+                           * `legalActions()` produces, cancel included; the body only asserted
+                           * cancel's label, so the name stated a contract the body never
+                           * reached. The NAME is the right behaviour: cancel opens a
+                           * CONFIRMATION and sends nothing, so there is no in-flight request
+                           * for it to guard against, and greying it out while something else
+                           * is sending reads as *you may not cancel this*.
+                           */
+                          disabled={detail === 'working' && action !== 'cancel'}
                           data-action={action}
                           onClick={() => {
                             if (action === 'ready') onReady(pager.id)

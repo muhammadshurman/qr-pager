@@ -69,6 +69,28 @@ it('lists the restaurant\'s waiting and ready pagers, newest first, with the key
         ->assertJsonPath('sessions.0.status', PagerStatus::Waiting->value)
         ->assertJsonPath('sessions.0.ready_at', null);
 
+    /*
+     * ⚠ `Cache-Control: private, no-store`, AS AN EXACT HEADER — `§11` SECURITY M-2. The
+     * board had none and relied on Symfony's `no-cache, private` default, which forbids a
+     * SHARED cache and permits the DEVICE's own to store the body: a shared kitchen tablet
+     * would keep one restaurant's order board on disk across the lock and the next person's
+     * sign-in. `§4 › Realtime` asks a polling endpoint for short-TTL cache headers, and this
+     * is the route polled every five seconds by every screen in the room.
+     *
+     * ⚠ BOTH DIRECTIVES, EACH ASSERTED, RATHER THAN THE WHOLE STRING. The first version of
+     * this pinned the literal `private, no-store` and failed against a correct response:
+     * Symfony NORMALISES and reorders the header, so what arrives is `no-store, private`.
+     * Pinning the order would make the assertion about Symfony's sort rather than about the
+     * posture. `StaffShellEndpointsTest` already asserts the same pair this way for
+     * `/v1/tenant`, which is the shape followed here.
+     *
+     * `no-store` is the load-bearing one and is asserted explicitly: the framework default
+     * is `no-cache, private`, which also contains `private`, so a `private`-only assertion
+     * would have passed against the very default this fix replaces.
+     */
+    expect($response->headers->get('Cache-Control'))->toContain('no-store')
+        ->and($response->headers->get('Cache-Control'))->toContain('private');
+
     // ⚠ AND THE SESSION'S TOKEN IS NOWHERE IN THE DOCUMENT, asserted rather than assumed.
     // `token_hash` is not in `board()`'s select list and `qrpager_app` cannot read it at
     // all (§2.7 makes it write-only) -- but the assertion is about the RESPONSE, which is
@@ -157,6 +179,11 @@ it('publishes the restaurant NAME on /v1/auth/me, which is what the chooser labe
     $row = withTenant($tenant, fn () => DB::selectOne('select name, slug from tenants'));
 
     $response = $this->getJson('/v1/auth/me')->assertOk();
+
+    // `§11` SECURITY M-2, on the payload `R-222` made worth more: this answer now carries the
+    // name of every restaurant the caller is staff of.
+    expect($response->headers->get('Cache-Control'))->toContain('no-store')
+        ->and($response->headers->get('Cache-Control'))->toContain('private');
 
     $response->assertJsonPath('memberships.0.name', $row->name)
         // `slug` STAYS: `§6` says a published path is never changed in place, so the member
