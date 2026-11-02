@@ -79,8 +79,44 @@ describe('the copy catalogue', () => {
      * The count is pinned rather than omitted because a key SILENTLY DELETED from both files
      * at once is the one change key-parity cannot see — and this round is the case where that
      * guard had to be read rather than trusted.
+     *
+     * ⚠ **194 AT 10c, AND THE THIRTY-ONE ARE THE KITCHEN DISPLAY** (`/kds`, `QRPAGER-27`): the
+     * setup screen and its one refusal, the orders and their five status words, the four
+     * states (`empty`, `error`, `offline`, `throttled`) and the two-step removal of the
+     * screen's own code. They are `kds.*` rather than `staff.*` because the surface has a
+     * different reader — **nobody is signed in**, so no string addresses a known person and
+     * none says *you* — and because the word for the pasted credential is *code* throughout,
+     * never *token*. `en.ts`'s own 10c header has both rules.
+     *
+     * The five status words are deliberately present and four of them are UNREACHABLE on that
+     * screen: `PagerSessions::board()` selects only `waiting` and `ready`. `StatusBadge` takes
+     * a `Record<PagerStatus, string>`, so the generated mirror requires an entry for every
+     * status PHP declares — which is `§6.2` doing its job on a screen where the extra entries
+     * cannot render, and is cheaper than a partial map that would let a new PHP status reach a
+     * kitchen as its raw enum value.
      */
-    expect(en.length).toBe(163)
+    /*
+     * ⚠ **282 AT 10e, AND THE EIGHTY-EIGHT ARE 10d's AND 10e's THREE SCREENS.** Past orders
+     * with its four filter controls and its TWO empty states; starting a pager and the sheet;
+     * Muhammad's re-issue ruling rendered as a confirmation; and the staff screen with the two
+     * refusals `QRPAGER-29 §6` calls the hard half of that ticket.
+     *
+     * Three groups of keys are worth finding in the catalogue rather than only counting:
+     *
+     *   **The two history empty states** (`staff.history.empty.*` and `staff.history.none.*`).
+     *   They are two because the NEXT ACTION differs — with filters on, widen; with none, start
+     *   an order — and `§12` requires an empty state to offer one that works. One state with
+     *   one button would be wrong in one of the two cases, and wrong in the worse direction.
+     *
+     *   **The re-issue copy** (`staff.issue.reissue.*`). `QRPAGER-28 §2` requires the screen to
+     *   say *printing a new sheet makes the old code stop working* in plain words, confirmed
+     *   and marked not reversible. The word *reprint* appears nowhere in either catalogue,
+     *   because a reprint is physically unavailable and naming it would promise it.
+     *
+     *   **The three member refusals** (`staff.team.denied.*`). None of them says *role*,
+     *   *privilege*, *permission* or *senior*, and each says what to DO.
+     */
+    expect(en.length).toBe(282)
   })
 
   it('has no empty value in either language', () => {
@@ -165,9 +201,23 @@ describe('the copy catalogue', () => {
      */
     const files = screenFiles(SCREEN_DIR)
 
-    // 7 at Task 9, 10 at Task 10a. An exact count, so a screen added in a directory this
-    // walk does not reach fails here rather than going unscanned.
-    expect(files.length).toBe(10)
+    /*
+     * 7 at Task 9, 10 at Task 10a, 12 at 10c. An exact count, so a screen added in a directory
+     * this walk does not reach fails here rather than going unscanned — which is the defect
+     * this case's own header records from Task 10a, when the flat read saw seven files and
+     * entered no directories.
+     *
+     * 10c's two are `screens/kds/KdsSetup.tsx` and `screens/kds/KdsBoard.tsx`, in a THIRD
+     * directory under `src/screens` — so this count moving is also the evidence that the
+     * recursive walk reached a directory that did not exist when it was written.
+     */
+    /*
+     * 15 at 10e: `StaffHistory`, `StaffIssue` and `StaffTeam` join `screens/staff/`. The count
+     * is exact so a screen added in a directory this walk does not reach fails here rather than
+     * going unscanned — which is the defect this case's header records from Task 10a, when the
+     * flat read saw seven files and entered no directories.
+     */
+    expect(files.length).toBe(15)
 
     for (const file of files) {
       const source = readFileSync(file, 'utf8')

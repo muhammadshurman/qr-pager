@@ -1,0 +1,124 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * THE DISPATCH COUNT, SERVER-SIDE. 10c's INVARIANT NEEDS AN ORACLE AND THIS IS IT.
+ * ================================================================================
+ *
+ * `QRPAGER-27 §0`, verbatim: *"Asserted by dropping the network in a real browser, counting
+ * dispatches on the server before and after the reconnect, and asserting the two counts are
+ * equal."* And `§5`: *"The count must be a **server-side** count on both sides of the
+ * reconnect. A client-side tally is the thing under test, not the oracle."*
+ *
+ * ================================================================================
+ * WHY THE OUTBOX IS WHERE A DISPATCH IS COUNTED
+ * ================================================================================
+ *
+ * `QRPAGER-27 §0`'s own reasoning: **C5** makes the worker the only sender, so a reconnect
+ * that re-queues is a duplicate **AT THE OUTBOX** — and *"a UI that looks right after
+ * reconnect proves nothing"*. Counting rendered rows would measure the screen; counting
+ * `outbox` rows measures whether a customer's phone will buzz twice.
+ *
+ * ⚠ AND IT IS A COUNT OF ROWS, NOT OF DISTINCT `dedupe_key`s, WHICH IS THE WHOLE POINT.
+ * `PagerSessions::enqueue()` writes a `dedupe_key` and the table has a unique constraint over
+ * it, so a second identical enqueue would be REFUSED by Postgres rather than inserted. That
+ * constraint is a good thing and it is also exactly why this script must count rows: if the
+ * count were over distinct keys, a duplicate insert that the constraint happened not to catch
+ * — a repeatable event such as `renotify`, whose key carries an attempt number — would be
+ * invisible to the oracle. Counting rows means the number goes up whenever ANYTHING was
+ * enqueued, which is the question being asked.
+ *
+ * ================================================================================
+ * IT RUNS ON THE HOST, AND THAT IS WHY IT IS A `bin` SCRIPT RATHER THAN AN ENDPOINT
+ * ================================================================================
+ *
+ * The alternative shapes were both worse:
+ *
+ *   - **A test-only HTTP route** would be a route, which means it is in the router, which
+ *     means `StaffSurfaceIsolationTest`'s derived sweep has to account for it and
+ *     `RoleMatrixTest` has to grow a cell for it — a permanent widening of the authorisation
+ *     surface for a measurement. `routes/harness.php` exists for the one case that genuinely
+ *     needed it and its own comment calls that *"a test fixture with a URL"*; a second one for
+ *     a count is not worth the same cost.
+ *   - **Counting from inside the node proof** needs a Postgres client in `node_modules`, which
+ *     this workspace deliberately does not have.
+ *
+ * So the proof shells out to this, on the host, exactly as `lighthouse-proof` extracts its
+ * token on the host and passes it in. The reason that pattern exists is in
+ * `tools/browsers/bin/e2e`: the browsers image carries **PHP 8.2** and `apps/api` requires
+ * >= 8.4.1, so anything that loads `vendor/autoload.php` dies on `platform_check.php` inside
+ * the container. `tools/gate/bin/kds-resync-proof` therefore runs the browser natively rather
+ * than through `tools/browsers/bin/browsers`, and says so.
+ *
+ * ⛔ LOCAL AND TESTING ONLY, failing CLOSED on an unset or unrecognised `APP_ENV` — the same
+ * guard every sibling in this directory carries (`§11` round one SEC M-6): this bootstraps the
+ * real kernel and reads inside a tenant scope as the database owner.
+ *
+ * USAGE:  php bin/count-dispatches <tenant-uuid> [session-uuid]
+ * PRINTS: one JSON line -- {"tenant_id":"…","session_id":"…"|null,"dispatches":N}
+ */
+
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this reads real rows inside a tenant scope and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+$tenant = (string) ($argv[1] ?? '');
+$session = isset($argv[2]) && $argv[2] !== '' ? (string) $argv[2] : null;
+
+// Shape-checked before a scope is opened on it, which is `bin/issue-board-pager`'s own rule:
+// this value becomes a tenant scope and `§4 › Realtime` makes that a thing to validate rather
+// than trust.
+if (! Str::isUuid($tenant)) {
+    fwrite(STDERR, "refusing to run: '{$tenant}' is not a tenant uuid.\n");
+
+    exit(1);
+}
+
+if ($session !== null && ! Str::isUuid($session)) {
+    fwrite(STDERR, "refusing to run: '{$session}' is not a session uuid.\n");
+
+    exit(1);
+}
+
+/*
+ * Counted INSIDE the tenant's own scope, through the ordinary app connection — so row-level
+ * security is in force and this script can only ever see the tenant it was given. That is not
+ * a convenience: an oracle that read with the owner's bypass could count another restaurant's
+ * rows into this restaurant's figure, and the number would be wrong in the direction that
+ * reports a leak where there is none.
+ */
+$count = withTenant($tenant, function () use ($session): int {
+    $query = DB::table('outbox');
+
+    if ($session !== null) {
+        $query->where('pager_session_id', $session);
+    }
+
+    return $query->count();
+});
+
+echo json_encode([
+    'tenant_id' => $tenant,
+    'session_id' => $session,
+    'dispatches' => $count,
+], JSON_THROW_ON_ERROR), "\n";

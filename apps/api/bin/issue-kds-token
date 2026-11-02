@@ -1,0 +1,131 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * ONE KDS DEVICE TOKEN, PLAINTEXT, FOR AN EXISTING RESTAURANT. 10c's PROOF NEEDS IT.
+ * ================================================================================
+ *
+ * `QRPAGER-27 §0`'s assertion is driven *"in a real browser"*, and the real browser has to
+ * reach `/kds` as a kitchen screen does: by holding a device token. A token's plaintext half
+ * exists exactly once, at generation — `DeviceTokens::issue()` returns it and nothing can
+ * recover it afterwards — so a harness that needs to present one has to be handed it at that
+ * moment or never.
+ *
+ * ⚠ WHY `bin/issue-staff-fixture` DOES NOT ALREADY DO THIS, since it mints a device token
+ * already. Its own comment says why, and the reasoning was right at the time:
+ *
+ *   *"AND NO DEVICE TOKEN PLAINTEXT IS PRINTED. The second restaurant's device token is
+ *   created so its ID exists to be aimed at; the token itself is discarded here rather than
+ *   carried, because nothing in the suite needs to USE it and a credential nobody needs is a
+ *   credential nobody should be handed."*
+ *
+ * 10c is the task that makes something need to use one. **The beta token is still not
+ * printed** — that one exists to be aimed at by `StaffSurfaceIsolationTest`'s cross-tenant
+ * cases, and widening it to plaintext would hand out a credential for the restaurant the
+ * suite's isolation cases are about. This script mints a SEPARATE token, for whichever tenant
+ * it is given, which in practice is the fixture's `alpha`. That keeps the credential nobody
+ * needs undisclosed and the one 10c needs scoped to the restaurant 10c drives.
+ *
+ * ⚠ AND IT IS A SECRET OF THE FIXTURE RATHER THAN OF THE SYSTEM, which is the same
+ * distinction `issue-staff-fixture` draws about the owner's password and
+ * `bin/issue-pager-session` about a pager token: a throwaway credential for one suite run,
+ * against a local development database, written by the harness to a git-ignored file at mode
+ * 600 under `umask 077`. It is scoped to one tenant, one ability (`pager:read`) and a
+ * sixty-minute TTL rather than the thirty days a real kitchen screen gets, because a suite run
+ * is minutes and a credential should not outlive its purpose.
+ *
+ * ⛔ LOCAL AND TESTING ONLY, failing CLOSED on an unset or unrecognised `APP_ENV` — the guard
+ * every sibling here carries (`§11` round one SEC M-6): this bootstraps the real kernel and
+ * mints a real credential as the database owner.
+ *
+ * USAGE:  php bin/issue-kds-token <tenant-uuid> [name]
+ * PRINTS: one JSON line -- {"device_id":"…","token":"…","tenant_id":"…"}
+ */
+
+use App\Domain\Auth\Ability;
+use App\Domain\Tenancy\TenantRole;
+use App\Features\Devices\DeviceTokens;
+use App\Models\User;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this mints a real credential as the database owner and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+$tenant = (string) ($argv[1] ?? '');
+$name = (string) ($argv[2] ?? 'E2E kitchen');
+
+if (! Str::isUuid($tenant)) {
+    fwrite(STDERR, "refusing to run: '{$tenant}' is not a tenant uuid.\n");
+
+    exit(1);
+}
+
+/*
+ * ⚠ ISSUED BY A REAL OWNER OF THIS TENANT, NOT BY AN ARBITRARY USER — and the lookup is what
+ * makes that true rather than assumed.
+ *
+ * `DeviceToken`'s docblock states the rule the resolver actually applies: *"the tenant in the
+ * token is a CLAIM, and a claim is not an authority … `AuthenticatedTenantResolver` resolves
+ * the tenant from the holder's own memberships first and then requires the token's tenant to
+ * equal it."* So a token issued to a user with no membership in `$tenant` resolves NOTHING,
+ * every poll from the browser is a 401, and the proof would fail with the screen reporting a
+ * refused code — a harness defect that looks exactly like the application being broken.
+ */
+$ownerId = withTenant(
+    $tenant,
+    fn (): ?string => DB::table('tenant_users')
+        ->where('role', TenantRole::Owner->value)
+        ->orderBy('created_at')
+        ->value('user_id'),
+);
+
+if (! is_string($ownerId) || $ownerId === '') {
+    fwrite(STDERR, "refusing to run: tenant {$tenant} has no owner to issue a device token as.\n");
+
+    exit(1);
+}
+
+$issued = $app->make(DeviceTokens::class)->issue(
+    issuer: User::query()->findOrFail($ownerId),
+    tenantId: $tenant,
+    name: $name,
+    ability: Ability::PagerRead,
+    ttlMinutes: 60,
+    actorIp: null,
+);
+
+// Read back before printing, which is `issue-staff-fixture`'s own control: a harness that
+// silently minted nothing would hand the proof an unusable credential, and the proof would
+// then report a 401 as a product failure.
+$stored = DB::table('personal_access_tokens')->where('id', $issued['id'])->count();
+
+if ($stored !== 1) {
+    fwrite(STDERR, "refusing to continue: the device token was not stored.\n");
+
+    exit(1);
+}
+
+echo json_encode([
+    'device_id' => $issued['id'],
+    'token' => $issued['token'],
+    'tenant_id' => $tenant,
+], JSON_THROW_ON_ERROR), "\n";

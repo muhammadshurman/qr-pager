@@ -224,4 +224,187 @@ export const AR: Record<CopyKey, string> = {
   'staff.devices.error.body': 'لم يتغيّر شيء. حاول مرة أخرى.',
   'staff.devices.offline.title': 'لا يوجد اتصال.',
   'staff.devices.offline.body': 'الشاشات كما هي. حاول مرة أخرى عند عودة الشبكة.',
+
+  /* ================================================================================
+   * TASK 10c — شاشة المطبخ (`/kds`)
+   * ================================================================================
+   *
+   * Two things this surface does to Arabic that the other two do not, and both are about
+   * the reader rather than the script:
+   *
+   *  - **NOBODY IS SIGNED IN**, so nothing here is addressed to a known person. The staff
+   *    copy uses the second person throughout («لقد نبّهته», «سجّل الدخول»); this screen
+   *    does not know who is in front of it, so every string is impersonal — «أعدّ» and
+   *    «انسخه» appear only on the setup screen, which somebody IS standing at.
+   *  - **«الرمز», NEVER a transliteration of *token*.** `staff.devices.issued.*` already
+   *    calls it «الرمز» on the screen that produces it, and these two screens are the two
+   *    ends of one errand, so they use one word for the thing being carried.
+   *
+   * The order reference and the elapsed clock stay `dir="ltr"` by the kit, as everywhere
+   * else — `QRPAGER-15 §6` trap 2.
+   */
+
+  // ------------------------------------------------------------------ setting one up
+  'kds.setup.title': 'إعداد شاشة المطبخ هذه',
+  'kds.setup.body':
+    'الصق الرمز من صفحة «شاشات المطبخ» في المطعم. بعد ذلك ستعرض هذه الشاشة الطلبات من تلقاء نفسها، دون أن يسجّل أحد الدخول إليها.',
+  'kds.setup.code.label': 'الرمز',
+  'kds.setup.code.hint': 'ظهر مرة واحدة فقط، عند إنشاء الشاشة.',
+  'kds.setup.submit': 'اعرض الطلبات',
+  'kds.setup.working': 'جارٍ التحقق من الرمز…',
+  'kds.setup.refused':
+    'هذا الرمز لم يعد صالحًا. أنشئ شاشة مطبخ جديدة من صفحة «شاشات المطبخ» والصق الرمز الجديد هنا.',
+
+  // ------------------------------------------------------------------- the orders
+  'kds.title': 'الطلبات',
+  'kds.order': 'طلب {reference}',
+  'kds.waitingLabel': 'الانتظار',
+  'kds.status.waiting': 'قيد التحضير',
+  'kds.status.ready': 'جاهز',
+  'kds.status.completed': 'تم التسليم',
+  'kds.status.cancelled': 'ملغى',
+  'kds.status.expired': 'منتهي الصلاحية',
+  'kds.empty.title': 'لا يوجد طلب في الانتظار.',
+  'kds.empty.body': 'يظهر الطلب هنا بمجرد إنشاء جهاز نداء له.',
+  'kds.empty.action': 'تحقّق الآن',
+  'kds.error.title': 'لم نتمكّن من تحميل الطلبات.',
+  'kds.error.body': 'لم يتغيّر شيء. حاول مرة أخرى.',
+  'kds.offline.title': 'لا يوجد اتصال.',
+  'kds.offline.body': 'هذه آخر الطلبات التي تمكّنّا من الوصول إليها. قد تكون حالتها تغيّرت.',
+  'kds.retry': 'حاول مرة أخرى',
+  'kds.throttled.title': 'جارٍ اللحاق بالتحديثات.',
+  'kds.throttled.body': 'ستُحدَّث الطلبات من تلقاء نفسها بعد لحظات.',
+  'kds.stale': 'آخر تحديث {time}',
+
+  // -------------------------------------------------------------- taking it off the wall
+  'kds.forget': 'إزالة رمز هذه الشاشة',
+  'kds.forget.title': 'إزالة رمز هذه الشاشة؟',
+  'kds.forget.body':
+    'ستتوقف هذه الشاشة عن عرض الطلبات فورًا، ولا يمكن استخدام الرمز مرة أخرى. سيحتاج أحدهم إلى إنشاء شاشة مطبخ جديدة لإعادتها.',
+  'kds.forget.confirm': 'إزالة الرمز',
+  'kds.forget.keep': 'استمرار عرض الطلبات',
+
+  /* ================================================================================
+   * TASK 10d — الطلبات السابقة، وإصدار ورقة النداء
+   * ================================================================================
+   *
+   * `QRPAGER-28 §3`'s zero-technical bar, in Arabic. The words deliberately NOT used:
+   * «جلسة» (session), «رمز مميز» (token), «فلتر»/«مرشّح» (filter), «استعلام» (query). A date
+   * range is «من» and «إلى», an order has «رقم», and a sheet has «رمز».
+   *
+   * ⚠ «إعادة الإصدار» AND NOT «إعادة الطباعة», which is Muhammad's ruling carried into the
+   * language: a sheet is re-ISSUED, never re-printed, and the Arabic has to make the same
+   * distinction the English does or the screen would promise something physically unavailable.
+   */
+
+  // ------------------------------------------------------------------------- history
+  'staff.nav.history': 'الطلبات السابقة',
+  'staff.history.title': 'الطلبات السابقة',
+  'staff.history.lede': 'كل الطلبات في الأشهر الثلاثة الماضية. الأحدث أولًا.',
+  'staff.history.filter.status': 'اعرض هذه فقط',
+  'staff.history.filter.from': 'من',
+  'staff.history.filter.to': 'إلى',
+  'staff.history.filter.reference': 'رقم الطلب',
+  'staff.history.filter.reference.hint': 'اكتب أي جزء منه.',
+  'staff.history.filter.apply': 'اعرض هذه الطلبات',
+  'staff.history.filter.clear': 'اعرض الكل',
+  'staff.history.started': 'بدأ {time}',
+  'staff.history.ready': 'جهز {time}',
+  'staff.history.collected': 'تم التسليم {time}',
+  'staff.history.empty.title': 'لا يوجد طلب يطابق ما طلبته.',
+  'staff.history.empty.body': 'جرّب مدة أوسع، أو امسح ما اخترته.',
+  'staff.history.empty.action': 'اعرض الكل',
+  'staff.history.none.title': 'لا توجد طلبات بعد.',
+  'staff.history.none.body': 'تظهر الطلبات هنا بعد أن تبدأ جهاز نداء لأحدها.',
+  'staff.history.none.action': 'ابدأ جهاز نداء',
+  'staff.history.error.title': 'لم نتمكّن من تحميل الطلبات السابقة.',
+  'staff.history.error.body': 'لم يتغيّر شيء. حاول مرة أخرى.',
+  'staff.history.offline.title': 'لا يوجد اتصال.',
+  'staff.history.offline.body': 'حاول مرة أخرى عند عودة الشبكة.',
+  'staff.history.retry': 'حاول مرة أخرى',
+  'staff.history.range.tooWide': 'هذه مدة طويلة. اختر ثلاثة أشهر أو أقل.',
+  'staff.history.range.backwards': 'التاريخ الثاني قبل الأول.',
+
+  // ------------------------------------------------------- issuing a sheet (10d)
+  'staff.nav.issue': 'ابدأ جهاز نداء',
+  'staff.issue.title': 'ابدأ جهاز نداء',
+  'staff.issue.lede': 'أعطِ الطلب رقمًا، ثم اطبع الورقة وسلّمها للعميل.',
+  'staff.issue.reference.label': 'ما رقم الطلب؟',
+  'staff.issue.reference.hint': 'أي رقم تستخدمه على الفاتورة، مثل A-14 أو 102.',
+  'staff.issue.create': 'أنشئ الورقة',
+  'staff.issue.creating': 'جارٍ إنشاء الورقة…',
+  'staff.issue.sheet.title': 'اطبع هذه وسلّمها للعميل',
+  'staff.issue.sheet.order': 'طلب {reference}',
+  'staff.issue.sheet.instruction': 'يمسح العميل الرمز، وننبّه هاتفه عندما يصبح الطلب جاهزًا.',
+  'staff.issue.sheet.print': 'اطبعها',
+  'staff.issue.sheet.done': 'تم',
+  'staff.issue.sheet.once':
+    'يُعرض هذا الرمز مرة واحدة. إذا فقدت الورقة، افتح الطلب من «الطلبات السابقة» وأنشئ ورقة جديدة — وعندها تتوقف الورقة القديمة عن العمل.',
+  'staff.issue.error.title': 'لم نتمكّن من بدء جهاز النداء.',
+  'staff.issue.error.body': 'لم يتغيّر شيء. حاول مرة أخرى.',
+  'staff.issue.offline.title': 'لا يوجد اتصال.',
+  'staff.issue.offline.body': 'لم يبدأ شيء. حاول مرة أخرى عند عودة الشبكة.',
+  'staff.issue.reference.invalid': 'رقم الطلب يقبل الحروف والأرقام والمسافات و - _ # . / فقط.',
+
+  // ----------------------------------------------------- re-issuing a sheet (10d)
+  'staff.issue.reissue': 'أنشئ ورقة جديدة لهذا الطلب',
+  'staff.issue.reissue.title': 'إنشاء ورقة جديدة؟',
+  'staff.issue.reissue.body':
+    'إنشاء ورقة جديدة يوقف عمل الرمز القديم. إذا كانت الورقة القديمة مع العميل فلن تنبّهه بعد الآن. لا يمكن التراجع عن هذا.',
+  'staff.issue.reissue.confirm': 'أنشئ ورقة جديدة',
+  'staff.issue.reissue.keep': 'أبقِ القديمة',
+  'staff.issue.reissue.working': 'جارٍ إنشاء الورقة الجديدة…',
+  'staff.issue.reissue.finished':
+    'هذا الطلب منتهٍ بالفعل، وورقة جديدة لن تنبّه أحدًا. ابدأ جهاز نداء جديدًا.',
+  'staff.issue.reissue.expired': 'انتهت صلاحية هذا الطلب. ابدأ جهاز نداء جديدًا.',
+  'staff.issue.reissue.gone': 'هذا الطلب لم يعد هنا. راجع «الطلبات السابقة».',
+
+  /* ================================================================================
+   * TASK 10e — إدارة فريق العمل
+   * ================================================================================
+   *
+   * `QRPAGER-29 §6`'s hard half, in Arabic: the two refusals. Neither says «دور» (role),
+   * «صلاحية» (privilege) or «أعلى رتبة» (senior) — each says what the person can do and what
+   * to do about it, which is the same choice the English makes.
+   */
+  'staff.nav.team': 'فريق العمل',
+  'staff.team.title': 'فريق العمل',
+  'staff.team.lede': 'كل من يمكنه تسجيل الدخول إلى هذا المطعم.',
+  'staff.team.you': 'هذا أنت',
+  'staff.team.empty.title': 'لا يعمل أحد آخر هنا بعد.',
+  'staff.team.empty.body': 'أضف شخصًا لديه حساب بالفعل ليتمكّن من تسجيل الدخول.',
+  'staff.team.empty.action': 'أضف شخصًا',
+  'staff.team.add': 'أضف شخصًا',
+  'staff.team.add.title': 'إضافة شخص إلى هذا المطعم',
+  'staff.team.add.email': 'بريده الإلكتروني',
+  'staff.team.add.email.hint': 'يحتاج إلى حساب بالفعل. لن نرسل له رسالة.',
+  'staff.team.add.role': 'ما الذي يمكنه فعله؟',
+  'staff.team.add.submit': 'أضفه',
+  'staff.team.add.working': 'جارٍ الإضافة…',
+  'staff.team.add.cancel': 'إلغاء',
+  'staff.team.add.unknown':
+    'لم نتمكّن من إضافة هذا البريد. يحتاج إلى حساب هنا أولًا — اطلب منه التسجيل ثم أضفه.',
+  'staff.team.add.invalid': 'هذا لا يبدو بريدًا إلكترونيًا.',
+  'staff.team.role.change': 'تغيير ما يمكن لـ {name} فعله',
+  'staff.team.role.working': 'جارٍ الحفظ…',
+  'staff.team.remove': 'إزالة {name}',
+  'staff.team.remove.title': 'إزالة {name}؟',
+  'staff.team.remove.body':
+    'لن يتمكّن من تسجيل الدخول إلى هذا المطعم بعد الآن. حسابه نفسه لا يُحذف، ويمكنك إضافته مرة أخرى.',
+  'staff.team.remove.confirm': 'أزِله',
+  'staff.team.remove.keep': 'أبقِه',
+  'staff.team.denied.seniority':
+    'لا يمكنك أن تمنح أحدًا أكثر مما تملك أنت. اطلب من المالك أن يفعل ذلك.',
+  'staff.team.denied.ownRole':
+    'لا يمكنك تغيير ما تستطيع فعله بنفسك. اطلب من شخص آخر هنا أن يغيّره لك.',
+  'staff.team.denied.lastOwner':
+    'كل مطعم يحتاج إلى مالك واحد على الأقل. اجعل شخصًا آخر مالكًا أولًا، ثم غيّر هذا.',
+  'staff.team.denied.title': 'لا يمكنك تغيير فريق العمل.',
+  'staff.team.denied.body': 'يمكن للمالك أو المدير فقط. اطلب ذلك من أحدهما.',
+  'staff.team.error.title': 'لم نتمكّن من تحميل فريق العمل.',
+  'staff.team.error.body': 'لم يتغيّر شيء. حاول مرة أخرى.',
+  'staff.team.offline.title': 'لا يوجد اتصال.',
+  'staff.team.offline.body': 'القائمة كما هي. حاول مرة أخرى عند عودة الشبكة.',
+  'staff.team.retry': 'حاول مرة أخرى',
+  'staff.team.failed': 'لم تنجح العملية. لم يتغيّر شيء — حاول مرة أخرى.',
 }

@@ -119,7 +119,10 @@ export function checkRowCount(plan) {
   const claimed = /`§5` holds \*{0,2}(\d+)\*{0,2} rows/.exec(cell)
 
   if (claimed === null) {
-    fail('records(b1)', 'the §0 *Open debt* cell states no `§5` row count, so the count cannot be checked')
+    fail(
+      'records(b1)',
+      'the §0 *Open debt* cell states no `§5` row count, so the count cannot be checked',
+    )
 
     return
   }
@@ -174,13 +177,19 @@ export function checkTagReality(plan) {
   const unknown = [...new Set(named)].filter((t) => !tags.includes(t))
 
   if (unknown.length > 0) {
-    fail('records(b2)', `§0's *Last completed* cell names tags that do not exist: ${unknown.join(', ')}`)
+    fail(
+      'records(b2)',
+      `§0's *Last completed* cell names tags that do not exist: ${unknown.join(', ')}`,
+    )
   }
 
   const latest = tags[tags.length - 1]
 
   if (!named.includes(latest)) {
-    fail('records(b2)', `the latest tag is ${latest} and §0's *Last completed* cell does not name it`)
+    fail(
+      'records(b2)',
+      `the latest tag is ${latest} and §0's *Last completed* cell does not name it`,
+    )
   }
 }
 
@@ -210,11 +219,12 @@ function inFlightTicket(plan) {
 }
 
 export function checkTranscripts(inFlight, dir = join(REPO, 'docs', 'tickets')) {
-
   if (!existsSync(dir)) return
 
   const head = git('rev-parse', 'HEAD')
-  const current = new Set(git('show', '--name-only', '--format=', 'HEAD').split('\n').filter(Boolean))
+  const current = new Set(
+    git('show', '--name-only', '--format=', 'HEAD').split('\n').filter(Boolean),
+  )
 
   for (const name of readdirSync(dir)) {
     if (!/-(gate|e2e|three-runs|fresh-clone)[a-z-]*\.txt$/.test(name)) continue
@@ -278,7 +288,10 @@ export function checkTranscripts(inFlight, dir = join(REPO, 'docs', 'tickets')) 
     }
 
     if (/gate: FAILED|did not complete|FAILED --/.test(text)) {
-      fail('records(c)', `docs/tickets/${name} contains a failure line, so it is not evidence of a green gate`)
+      fail(
+        'records(c)',
+        `docs/tickets/${name} contains a failure line, so it is not evidence of a green gate`,
+      )
     }
 
     /**
@@ -400,7 +413,7 @@ export function checkStatedHead(plan, headSha = null) {
     if (bare === null) {
       fail(
         'records(b3)',
-        '§0\'s *Next up* cell states no `Gates measured at <sha>`, so the figures beside it have no provenance',
+        "§0's *Next up* cell states no `Gates measured at <sha>`, so the figures beside it have no provenance",
       )
     }
 
@@ -412,7 +425,10 @@ export function checkStatedHead(plan, headSha = null) {
   try {
     resolved = gitQuiet('rev-parse', '--verify', `${stated[1]}^{commit}`)
   } catch {
-    fail('records(b3)', `§0 names \`${stated[1]}\` as the measured commit and it does not resolve in this repository`)
+    fail(
+      'records(b3)',
+      `§0 names \`${stated[1]}\` as the measured commit and it does not resolve in this repository`,
+    )
 
     return
   }
@@ -741,7 +757,7 @@ const SELF_TESTS = [
      * `task-9-customer-pwa` is `8027ad9`"* with `HEAD` one commit further on, and this script
      * reported agreement. The fixture is that sentence, against a `HEAD` that is not it.
      */
-    what: "a §0 whose `Head on ... is <sha>` disagrees with HEAD (the c6f5fc0 / 8027ad9 instance)",
+    what: 'a §0 whose `Head on ... is <sha>` disagrees with HEAD (the c6f5fc0 / 8027ad9 instance)',
     run: () => {
       const plan = readFileSync(PLAN, 'utf8').replace(
         /^\| \*\*Next up\*\*/m,
@@ -805,7 +821,7 @@ const SELF_TESTS = [
      * built claiming that number **plus one**. Same defect — a stated total disagreeing with
      * its own committed transcript — and it depends on nothing but one tracked file.
      */
-    what: "a §0 test count that disagrees with its own transcript (the 812-against-814 instance)",
+    what: 'a §0 test count that disagrees with its own transcript (the 812-against-814 instance)',
     run: () => {
       const php = join(REPO, 'docs', 'tickets', 'QRPAGER-25-gate-php.txt')
 
@@ -886,21 +902,45 @@ const SELF_TESTS = [
      * the narrowing deliberately keeps, and it is the reason the narrowing is not simply a
      * hole: the evidence exists and the record is silent about it.
      *
-     * Real on the evidence side and synthetic on the `§0` side, which is this file's settled
-     * shape for a hermetic fixture: the ticket named is the live in-flight one, so its
-     * tracked transcript is found, and the minimal `§0` states nothing.
+     * ⚠ **IT USED TO TAKE THE TICKET FROM THE LIVE `§0` AND THAT MADE IT THE FIFTH CONTROL IN
+     * THIS FILE TO DEPEND ON THE REPOSITORY BEING IN A PARTICULAR SHAPE.** It read
+     * `inFlightTicket(PLAN)` and bailed with `return false` when that ticket had no committed
+     * `-gate-php.txt` — which is a perfectly ordinary state (it is the honest mid-round window
+     * (b4) itself prescribes, and it is every state of a task that commits no transcripts at
+     * all). `false` means *the check did not catch it*, so the self-test reported **MISSES** for
+     * a case whose fixture had simply not been built, and `ci-parity.test.mjs` failed with it.
+     *
+     * Measured on 2026-11-03: `§0` was restated to name `QRPAGER-27` first, that ticket has no
+     * transcript, and this control went from `catches` to `MISSES` with nothing about the check
+     * having changed.
+     *
+     * The file's own sentence, written four times already: *a control that only works while the
+     * repository is in one particular state is not a control.* So the fixture is now built from
+     * **any** ticket that has a committed transcript, found by looking, and it fails loudly if
+     * there is none rather than reporting a miss. The `§0` side stays synthetic.
      */
     what: 'a §0 that states no total while a transcript IS committed (QA H-7)',
     run: () => {
-      const ticket = inFlightTicket(readFileSync(PLAN, 'utf8'))
+      /*
+       * ANY ticket with a committed `-gate-php.txt`, not the in-flight one. The property under
+       * test is *evidence exists and `§0` is silent about it*, and which ticket supplies the
+       * evidence is irrelevant to it — so taking the live one coupled this control to the one
+       * thing it has no business depending on.
+       */
+      const dir = join(REPO, 'docs', 'tickets')
+      const ticket = readdirSync(dir)
+        .map((name) => /^(QRPAGER-\d+)-gate-php\.txt$/.exec(name)?.[1])
+        .find((found) => found !== undefined)
 
-      if (ticket === null) return false
-
-      const transcript = join(REPO, 'docs', 'tickets', `${ticket}-gate-php.txt`)
-
-      // The control for the control: with no committed transcript there is nothing for this
-      // case to be about, and reporting `catches` would be the vacuity it exists to refuse.
-      if (!existsSync(transcript)) return false
+      if (ticket === undefined) {
+        // ⚠ A THROW AND NOT A `return false`. There is no committed gate transcript anywhere in
+        // the repository, so this control cannot be built — and saying *MISSES* would blame the
+        // check for a fixture that does not exist, which is the defect this rewrite is about.
+        throw new Error(
+          'no committed QRPAGER-*-gate-php.txt was found, so the (b4) drift control cannot be ' +
+            'built — this is a broken fixture, not a missed catch',
+        )
+      }
 
       const synthetic = [
         '# PLAN',
@@ -1074,7 +1114,7 @@ checkStatedCounts(plan)
 checkTranscripts(inFlightTicket(plan))
 
 if (failures.length > 0) {
-  console.error('check-records: the repository\'s account of itself is wrong:')
+  console.error("check-records: the repository's account of itself is wrong:")
   for (const f of failures) console.error(`  ${f}`)
   process.exit(1)
 }

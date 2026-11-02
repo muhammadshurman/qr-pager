@@ -90,10 +90,27 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
      * The derivation is a grep for the guard's own refusal string over `bin/`, so a NEW
      * fixture script is covered the moment it carries the guard — and one that carries no
      * guard is reported by the vacuity check below rather than silently skipped.
+     *
+     * ⚠ **THE GLOB WAS `bin/issue-*` AND IS NOW `bin/*`, BECAUSE THE PATTERN WAS ITSELF THE
+     * HARD-CODED LIST THIS COMMENT CLAIMS TO HAVE REPLACED.** Found at 10c, by the script that
+     * fell outside it: `bin/count-dispatches` reads real rows inside a tenant scope and carries
+     * the identical guard, and `issue-*` could not see it — so a sixth guarded script existed
+     * with nothing exercising its guard, which is exactly the two-entries-behind state
+     * `§11` SECURITY L-1 found and this derivation was written to end.
+     *
+     * The property is *every script under `bin/` that refuses outside local/testing really does
+     * refuse*, and the honest derivation of that is the refusal string over the whole directory.
+     * Nothing else in `bin/` contains it — the proofs and the gate runners write no rows of
+     * their own — so widening the glob adds exactly the scripts that opted in by carrying the
+     * guard, which is what makes this derived rather than listed.
      */
     $guarded = [];
 
-    foreach (glob(base_path('bin/issue-*')) ?: [] as $path) {
+    foreach (glob(base_path('bin/*')) ?: [] as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
         if (str_contains((string) file_get_contents($path), 'refusing to run')) {
             $guarded[] = 'bin/'.basename($path);
         }
@@ -105,8 +122,14 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
     // loop below iterate nothing and this case pass having proven nothing — which is the
     // shape `MembershipCallSiteTest`'s own planted-call-site control exists for.
     expect($guarded)->toBe([
+        // 10c's, and the one that proved the old `issue-*` glob was a list. It reads real rows
+        // inside a tenant scope as the oracle for `QRPAGER-27 §0`'s dispatch count.
+        'bin/count-dispatches',
         'bin/issue-board-pager',
         'bin/issue-harness-user',
+        // 10c's. A device token's plaintext half exists exactly once, at generation, so the
+        // resync proof has to be handed one to present at `/kds`.
+        'bin/issue-kds-token',
         'bin/issue-pager-session',
         'bin/issue-staff-fixture',
     ]);

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# =============================================================================
+# `KDS SURVIVES A NETWORK DROP AND RESYNCS WITHOUT DUPLICATE NOTIFICATIONS`
+# `§3` ROW 10's THIRD CLAUSE, sharpened by `QRPAGER-27 §0` into a server-side count
+# =============================================================================
+#
+# The clause, verbatim from the ticket written before the work:
+#
+#   "A KDS that loses the network mid-shift and reconnects re-sends NO notification and shows
+#    NO duplicate row. Asserted by dropping the network in a real browser, counting dispatches
+#    on the server before and after the reconnect, and asserting the two counts are equal."
+#
+# `§3.1` row 10 (3) says why the count is at the outbox: the worker is the only sender (C5), so
+# a reconnect that re-queues is a duplicate AT THE OUTBOX -- and "a UI that looks right after
+# reconnect proves nothing".
+#
+# The sequence, the reason the staff transition happens INSIDE the outage, and the three
+# vacuity guards are in `tools/gate/lib/kds-resync.mjs`. This script is the harness.
+#
+# =============================================================================
+# ⚠ IT RUNS THE BROWSER NATIVELY, NOT THROUGH `tools/browsers/bin/browsers`, AND THE
+#   REASON IS A HARD CONSTRAINT RATHER THAN A PREFERENCE
+# =============================================================================
+#
+# `QRPAGER-27 §5`: "The count must be a server-side count on both sides of the reconnect. A
+# client-side tally is the thing under test, not the oracle." The only server-side reader in
+# this repository is `apps/api`, which requires PHP >= 8.4.1 -- and the browsers image carries
+# **PHP 8.2**. `tools/gate/lib/ready-latency.mjs` records what that cost when it was found at
+# run time: "the first real run died on platform_check.php".
+#
+# So the counting and the driving have to be in the same process, and that process has to be on
+# the host. Two shapes were considered and rejected:
+#
+#   * a test-only HTTP count endpoint -- `apps/api/bin/count-dispatches`'s header has the
+#     argument: a route is in the router, so the derived authorisation sweeps have to account
+#     for it for ever, which is a permanent widening of the authorisation surface for a
+#     measurement;
+#   * a file handshake between a host counter and a containerised browser -- two processes
+#     agreeing on a moment through the filesystem, which is a race this proof would then also
+#     be measuring.
+#
+# ⚠ THE COST, STATED: **this proof runs in CHROMIUM ONLY.** It is a network-interception and
+# dispatch-counting proof rather than an engine-difference one, which is the argument
+# `playwright.config.ts` already makes for its own `chromium` projects ("these four clauses are
+# about our own CSS resolving, not about engine differences") and for `passkey-chromium` ("no
+# other engine exposes an equivalent in any runner"). The KDS screen's rendering across three
+# engines and both directions is `browser/kds.spec.ts`'s, which DOES run the full matrix.
+#
+# This host launches chromium natively (measured: chromium OK, firefox absent), and CI installs
+# all browsers natively -- so the native path is the one both take.
+#
+# USAGE: run through `tools/browsers/bin/e2e` with QRPAGER_E2E_KDS_RESYNC=1, which stands the
+#        stack up, issues the pager and mints the device token. Standalone it refuses: the
+#        origins and the fixtures come from that harness.
+set -uo pipefail
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+for required in QRPAGER_E2E_BASE QRPAGER_E2E_STAFF_FIXTURE QRPAGER_E2E_KDS_TOKEN QRPAGER_E2E_KDS_PAGER; do
+  if [ -z "${!required:-}" ]; then
+    echo "FATAL: ${required} is unset. Run this through tools/browsers/bin/e2e with" >&2
+    echo "       QRPAGER_E2E_KDS_RESYNC=1, which composes the origins and the fixtures." >&2
+    exit 1
+  fi
+done
+
+# ⚠ PHP IS CHECKED BEFORE THE BROWSER IS LAUNCHED, and its VERSION is checked rather than its
+# presence. The whole reason this script runs natively is that the containerised PHP is too old;
+# discovering that after a browser has driven a seven-step scenario would waste the run and
+# report the failure as the scenario's.
+if ! command -v php >/dev/null 2>&1; then
+  echo "FATAL: php is not on PATH. This proof's oracle is a server-side count and needs it." >&2
+  exit 1
+fi
+
+php_ok="$(php -r 'echo version_compare(PHP_VERSION, "8.4.1", ">=") ? "yes" : "no";' 2>/dev/null || true)"
+
+if [ "$php_ok" != "yes" ]; then
+  echo "FATAL: php $(php -r 'echo PHP_VERSION;' 2>/dev/null || echo '?') is too old; apps/api needs >= 8.4.1." >&2
+  echo "       This proof must run on the HOST for that reason -- see this script's header." >&2
+  exit 1
+fi
+
+echo "kds-resync-proof — §3 row 10's third clause, by QRPAGER-27 §0's method"
+echo "  commit              $(git rev-parse --short HEAD)"
+echo "  at                  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "  origin              ${QRPAGER_E2E_BASE}"
+echo "  php                 $(php -r 'echo PHP_VERSION;')"
+echo "  node                $(node --version)"
+# The engine build, so the figure names its toolchain rather than "chromium" -- the rank-1
+# brief's trap 5, and the same reason `tools/browsers/bin/browsers` prints its versions.
+echo "  chromium            $(node -e 'process.stdout.write(require("playwright").chromium.executablePath())' 2>/dev/null || echo 'unknown')"
+echo "  engines             chromium only — see this script's header for why, and the cost"
+echo
+
+node "${REPO}/tools/gate/lib/kds-resync.mjs"
+status=$?
+
+echo
+echo "EXIT=${status}"
+
+exit "${status}"

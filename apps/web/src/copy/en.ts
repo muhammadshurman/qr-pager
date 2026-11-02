@@ -287,6 +287,239 @@ export const EN = {
   'staff.devices.offline.title': 'No connection.',
   'staff.devices.offline.body':
     'The screens are unchanged. Try again once you are back on a network.',
+
+  /* ================================================================================
+   * TASK 10c — THE KITCHEN DISPLAY (`/kds`). A THIRD READER, AND THE HARDEST ONE.
+   * ================================================================================
+   *
+   * `QRPAGER-27 §6`: *"A kitchen screen is greasy, bright and viewed from two metres —
+   * contrast and target size are **functional** requirements here."* Two rules on top of the
+   * staff surface's three, and both are about the reader rather than the layout:
+   *
+   *   - **NOBODY IS SIGNED IN**, so no string here addresses a known person and none says
+   *     *you*. The staff board can say *"You have buzzed them as many times as we allow"*;
+   *     this screen does not know who is standing in front of it.
+   *   - **THE WORD *CODE*, NEVER *TOKEN*.** What gets pasted at setup is a bearer credential;
+   *     the person pasting it is whoever is mounting the tablet. `staff.devices.issued.*`
+   *     already calls it a code on the screen that produces it, and these two screens are the
+   *     two ends of one errand — so they use one word for the thing being carried.
+   */
+
+  // ------------------------------------------------------------------ setting one up
+  'kds.setup.title': 'Set up this kitchen screen',
+  'kds.setup.body':
+    'Paste the code from the restaurant\u2019s Kitchen screens page. This screen will then show the orders on its own, with nobody signing in to it.',
+  'kds.setup.code.label': 'The code',
+  'kds.setup.code.hint': 'It was shown once, when the screen was created.',
+  'kds.setup.submit': 'Show the orders',
+  'kds.setup.working': 'Checking the code\u2026',
+  // `§12`: every error says what to DO. The remedy is a NEW code, because a code that has
+  // been refused cannot be repaired from this screen -- and it deliberately does not
+  // speculate about which of the three causes it was (wrong, expired, removed): all three
+  // have the same remedy and naming them would be three sentences for one action.
+  'kds.setup.refused':
+    'That code does not work any more. Create a new kitchen screen on the Kitchen screens page and paste the new code here.',
+
+  // ------------------------------------------------------------------- the orders
+  'kds.title': 'Orders',
+  'kds.order': 'Order {reference}',
+  // The WORD beside the live clock, never interpolated into it -- `§11` QA M-13's lesson on
+  // the staff board: a duration is a live readout and a catalogue cannot interpolate one, so
+  // a `'Waiting {duration}'` key renders a bare `mm:ss` that reads as a time of day.
+  'kds.waitingLabel': 'Waiting',
+  'kds.status.waiting': 'Preparing',
+  'kds.status.ready': 'Ready',
+  // Unreachable on this screen -- `PagerSessions::board()` selects only the two live statuses
+  // -- and present because `StatusBadge` takes a `Record<PagerStatus, string>` and the
+  // generated mirror is the source. A status added in PHP must fail this build rather than
+  // render its enum value in a kitchen.
+  'kds.status.completed': 'Collected',
+  'kds.status.cancelled': 'Cancelled',
+  'kds.status.expired': 'Expired',
+  'kds.empty.title': 'Nothing is waiting.',
+  'kds.empty.body': 'An order appears here as soon as a pager is started for it.',
+  'kds.empty.action': 'Check now',
+  'kds.error.title': 'The orders could not be loaded.',
+  'kds.error.body': 'Nothing has changed. Try again.',
+  'kds.offline.title': 'No connection.',
+  // ⚠ TWO JOBS, AND THE SECOND IS THE ONE THAT MATTERS ON A WALL. It is the body of the
+  // full-screen state when there is nothing to show, AND the banner above the orders when
+  // there are -- because the orders are KEPT through an outage (`kds/resync.ts`) and a
+  // kitchen reading a kept list needs to be told it is a kept list.
+  'kds.offline.body': 'These are the last orders we could reach. They may have moved on.',
+  'kds.retry': 'Try again',
+  // R-224, and the board's wording rather than sign-in's: nothing is required of the person
+  // and the screen resumes itself. So there is no action copy, and `StaffState`'s `throttled`
+  // case has no `action` member for one to be rendered into.
+  'kds.throttled.title': 'Catching up.',
+  'kds.throttled.body': 'The orders will refresh themselves in a moment.',
+  'kds.stale': 'Last updated {time}',
+
+  // -------------------------------------------------------------- taking it off the wall
+  'kds.forget': 'Remove this screen\u2019s code',
+  // Destructive in effect -- the screen goes dark until somebody with a staff account returns
+  // with a new code -- so `§12` wants it confirmed and marked not reversible. The body says
+  // what happens to the SCREEN, which is the consequence being decided about.
+  'kds.forget.title': 'Remove this screen\u2019s code?',
+  'kds.forget.body':
+    'This screen will stop showing orders straight away, and the code cannot be used again. Somebody will have to create a new kitchen screen to bring it back.',
+  'kds.forget.confirm': 'Remove the code',
+  'kds.forget.keep': 'Keep showing orders',
+
+  /* ================================================================================
+   * TASK 10d — HISTORY WITH FILTERS, AND ISSUING A PAGER SHEET
+   * ================================================================================
+   *
+   * `QRPAGER-28 §3` makes `§12`'s zero-technical-background bar the HARD half of this ticket
+   * rather than the accessibility half, and states it as three mechanical clauses:
+   *
+   *   NO UNEXPLAINED IDENTIFIER anywhere on either screen.
+   *   NO EMPTY STATE WITHOUT A NEXT ACTION.
+   *   EVERY ERROR SAYS WHAT TO DO rather than what failed.
+   *
+   * *A restaurant owner reads no documentation.* So: no *session*, no *token*, no *filter*,
+   * no *query*, no *status*. An order is an order, a code is a code, and a date range is
+   * *"from"* and *"to"*.
+   */
+
+  // ------------------------------------------------------------------------- history
+  'staff.nav.history': 'Past orders',
+  'staff.history.title': 'Past orders',
+  'staff.history.lede': 'Every order from the last three months. Newest first.',
+  // The filter controls. `staff.history.filter.status` labels a group of toggles, and the
+  // status words themselves are `staff.board.status.*` -- one set of words for one set of
+  // states, across the board, the kitchen screen and this screen.
+  'staff.history.filter.status': 'Show only these',
+  'staff.history.filter.from': 'From',
+  'staff.history.filter.to': 'To',
+  'staff.history.filter.reference': 'Order number',
+  'staff.history.filter.reference.hint': 'Type any part of it.',
+  'staff.history.filter.apply': 'Show these orders',
+  'staff.history.filter.clear': 'Show everything',
+  'staff.history.started': 'Started {time}',
+  'staff.history.ready': 'Ready {time}',
+  'staff.history.collected': 'Collected {time}',
+  // The empty state has TWO forms, because the next action differs and `§12` requires one
+  // that works. With filters on, the action is to clear them; with none on, the restaurant
+  // genuinely has no past orders and the action is to start one.
+  'staff.history.empty.title': 'No orders match what you asked for.',
+  'staff.history.empty.body': 'Try a wider date range, or clear what you have chosen.',
+  'staff.history.empty.action': 'Show everything',
+  'staff.history.none.title': 'No orders yet.',
+  'staff.history.none.body': 'Orders appear here once you have started a pager for one.',
+  'staff.history.none.action': 'Start a pager',
+  'staff.history.error.title': 'We could not load the past orders.',
+  'staff.history.error.body': 'Nothing has changed. Try again.',
+  'staff.history.offline.title': 'No connection.',
+  'staff.history.offline.body': 'Try again once you are back on a network.',
+  'staff.history.retry': 'Try again',
+  // The range refusal, in a person's words rather than the server's. The server's own message
+  // names a number of days; this one names what to do about it.
+  'staff.history.range.tooWide': 'That is a long time to ask for. Choose three months or less.',
+  'staff.history.range.backwards': 'The second date is before the first one.',
+
+  // ------------------------------------------------------- issuing a sheet (10d)
+  'staff.nav.issue': 'Start a pager',
+  'staff.issue.title': 'Start a pager',
+  'staff.issue.lede': 'Give the order a number, then print the sheet and hand it over.',
+  'staff.issue.reference.label': 'What is the order number?',
+  'staff.issue.reference.hint': 'Whatever you call it on the ticket, like A-14 or 102.',
+  'staff.issue.create': 'Make the sheet',
+  'staff.issue.creating': 'Making the sheet\u2026',
+  // The sheet itself. The code is shown ONCE and the copy says so plainly -- the same
+  // sentence `staff.devices.issued.warning` makes about a kitchen screen's code, because it
+  // is the same fact about the same kind of value.
+  'staff.issue.sheet.title': 'Print this and give it to the customer',
+  'staff.issue.sheet.order': 'Order {reference}',
+  'staff.issue.sheet.instruction': 'They scan the code, and we buzz their phone when it is ready.',
+  'staff.issue.sheet.print': 'Print it',
+  'staff.issue.sheet.done': 'Done',
+  'staff.issue.sheet.once':
+    'This code is shown once. If you lose the sheet, open the order from Past orders and make a new one \u2014 the old sheet then stops working.',
+  'staff.issue.error.title': 'We could not start the pager.',
+  'staff.issue.error.body': 'Nothing has changed. Try again.',
+  'staff.issue.offline.title': 'No connection.',
+  'staff.issue.offline.body': 'Nothing has been started. Try again once you are back on a network.',
+  'staff.issue.reference.invalid':
+    'An order number can use letters, digits, spaces and - _ # . / only.',
+
+  // ----------------------------------------------------- re-issuing a sheet (10d)
+  //
+  // ⚠ MUHAMMAD's RULING, `QRPAGER-28 §2`: *a sheet is RE-ISSUED, never reprinted* -- and
+  // `§2`'s first bullet says the screen must say this *"to the staff member in plain words,
+  // not system vocabulary: printing a new sheet makes the old code stop working."* That
+  // sentence is `staff.issue.reissue.body` almost verbatim, because it was already the right
+  // one. Destructive in effect, so `§12` wants it confirmed and marked not reversible.
+  'staff.issue.reissue': 'Make a new sheet for this order',
+  'staff.issue.reissue.title': 'Make a new sheet?',
+  'staff.issue.reissue.body':
+    'Printing a new sheet makes the old code stop working. If the customer still has the old sheet, it will not buzz them any more. You cannot undo this.',
+  'staff.issue.reissue.confirm': 'Make a new sheet',
+  'staff.issue.reissue.keep': 'Keep the old one',
+  'staff.issue.reissue.working': 'Making the new sheet\u2026',
+  'staff.issue.reissue.finished':
+    'That order is already finished, so a new sheet would buzz nobody. Start a new pager instead.',
+  'staff.issue.reissue.expired': 'That order has run out. Start a new pager instead.',
+  'staff.issue.reissue.gone': 'That order is not here any more. Check Past orders.',
+
+  /* ================================================================================
+   * TASK 10e — STAFF MANAGEMENT
+   * ================================================================================
+   *
+   * `QRPAGER-29 §6`: *"The hard half here is the zero-technical-background bar on a REFUSAL:
+   * 'you cannot give someone a role above your own' has to read as a sentence a restaurant
+   * manager understands, in both launch languages, and a removal is destructive in effect so
+   * `§12` requires it confirmed."*
+   *
+   * So the two refusals below are the copy that mattered most on this screen, and neither
+   * uses the word *role*, *privilege*, *permission* or *senior*.
+   */
+  'staff.nav.team': 'Staff',
+  'staff.team.title': 'Staff',
+  'staff.team.lede': 'Everybody who can sign in to this restaurant.',
+  'staff.team.you': 'This is you',
+  'staff.team.empty.title': 'Nobody else works here yet.',
+  'staff.team.empty.body': 'Add somebody who already has an account and they can sign in.',
+  'staff.team.empty.action': 'Add somebody',
+  'staff.team.add': 'Add somebody',
+  'staff.team.add.title': 'Add somebody to this restaurant',
+  'staff.team.add.email': 'Their email address',
+  'staff.team.add.email.hint': 'They need an account already. We will not email them.',
+  'staff.team.add.role': 'What can they do?',
+  'staff.team.add.submit': 'Add them',
+  'staff.team.add.working': 'Adding them\u2026',
+  'staff.team.add.cancel': 'Cancel',
+  // ⚠ ONE MESSAGE FOR AN UNKNOWN ADDRESS, AND IT MUST STAY ONE. `MemberController::store()`
+  // answers 404 for an address that has no account AND for one this caller may not see,
+  // deliberately, so the platform's `users` table is not an account-existence oracle. Two
+  // sentences here would undo on the screen what the server is careful about.
+  'staff.team.add.unknown':
+    'We could not add that address. They need an account here first \u2014 ask them to sign up, then add them.',
+  'staff.team.add.invalid': 'That does not look like an email address.',
+  'staff.team.role.change': 'Change what {name} can do',
+  'staff.team.role.working': 'Saving\u2026',
+  'staff.team.remove': 'Remove {name}',
+  'staff.team.remove.title': 'Remove {name}?',
+  'staff.team.remove.body':
+    'They will not be able to sign in to this restaurant any more. Their account itself is not deleted, and you can add them back.',
+  'staff.team.remove.confirm': 'Remove them',
+  'staff.team.remove.keep': 'Keep them',
+  // ⚠ THE TWO REFUSALS `QRPAGER-29 §6` CALLS THE HARD HALF. Neither says *role*, *senior*,
+  // *privilege* or *permission*, and each says what to DO.
+  'staff.team.denied.seniority':
+    'You cannot give somebody more than you have yourself. Ask an owner to do it.',
+  'staff.team.denied.ownRole':
+    'You cannot change what you yourself can do. Ask somebody else here to change it for you.',
+  'staff.team.denied.lastOwner':
+    'Every restaurant needs at least one owner. Make somebody else an owner first, then change this.',
+  'staff.team.denied.title': 'You cannot change the staff.',
+  'staff.team.denied.body': 'Only the owner or a manager can. Ask one of them.',
+  'staff.team.error.title': 'We could not load the staff.',
+  'staff.team.error.body': 'Nothing has changed. Try again.',
+  'staff.team.offline.title': 'No connection.',
+  'staff.team.offline.body': 'The list is unchanged. Try again once you are back on a network.',
+  'staff.team.retry': 'Try again',
+  'staff.team.failed': 'That did not go through. Nothing has changed \u2014 try again.',
 } as const
 
 /** Every copy id. Derived, never listed -- see the header. */

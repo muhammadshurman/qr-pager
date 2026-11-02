@@ -466,3 +466,86 @@ export async function signInAsStaff(page: Page): Promise<StaffFixture> {
 export function forgetStaffSession(): void {
   staffCookies = null
 }
+
+/* ================================================================================ */
+/* 10c's KITCHEN SCREEN. A THIRD SURFACE, AND A THIRD CREDENTIAL.                     */
+/* ================================================================================ */
+
+export interface KdsFixture {
+  /** The device token's plaintext. Minted per run by `bin/issue-kds-token`. */
+  readonly token: string
+  readonly device_id: string
+  readonly tenant_id: string
+}
+
+let kdsCached: KdsFixture | null = null
+
+/**
+ * The kitchen screen's code for this run.
+ *
+ * ⚠ IT THROWS RATHER THAN SKIPPING, for `sessions()`'s reason: *a reasoned skip is not a
+ * measurement*, and a `§12` sweep of a surface that quietly did not run is a green gate with
+ * the load-bearing assertion unevaluated.
+ *
+ * It is ALPHA's token, not beta's. `bin/issue-staff-fixture` deliberately discards beta's
+ * device-token plaintext — that one exists to be AIMED AT by the cross-tenant cases, and
+ * handing it out would be handing over a credential for the restaurant those cases are about.
+ */
+export function kdsFixture(): KdsFixture {
+  if (kdsCached !== null) return kdsCached
+
+  const path = process.env.QRPAGER_E2E_KDS_TOKEN
+
+  if (path === undefined || path === '') {
+    throw new Error(
+      'QRPAGER_E2E_KDS_TOKEN is unset. The kitchen screen authenticates with a DEVICE TOKEN ' +
+        'whose plaintext exists exactly once, at generation -- run this through ' +
+        '`tools/browsers/bin/e2e`, which mints one with `apps/api/bin/issue-kds-token`. It ' +
+        'does not skip: 10c ships on a surface with no other browser evidence behind it.',
+    )
+  }
+
+  const repo = join(import.meta.dirname, '..', '..')
+  const raw = JSON.parse(readFileSync(join(repo, path), 'utf8')) as Record<string, unknown>
+
+  // Read back, so a fixture that wrote a partial document cannot make the sweep set up a
+  // screen with an empty credential and report a 401 as a product failure.
+  for (const key of ['token', 'device_id', 'tenant_id'] as const) {
+    const value = raw[key]
+
+    if (typeof value !== 'string' || value === '') {
+      throw new Error(`the kitchen-screen fixture carries no ${key}`)
+    }
+  }
+
+  kdsCached = raw as unknown as KdsFixture
+
+  return kdsCached
+}
+
+/**
+ * Set a kitchen screen up and wait until it is showing orders.
+ *
+ * The code is pasted into the real field and submitted through the real form, which is how a
+ * kitchen screen is set up — `src/kds/storage.ts` records why the token is not in the URL.
+ */
+export async function openKds(page: Page): Promise<KdsFixture> {
+  const fixture = kdsFixture()
+
+  await navigate(page, `${origin()}/kds`)
+  await page.waitForSelector('[data-kds-view="setup"]', { timeout: 60_000 })
+  await page.locator('[data-kds-code="true"]').fill(fixture.token)
+  await page.getByRole('button', { name: /show the orders|اعرض الطلبات/i }).click()
+
+  /*
+   * ⚠ WAITED FOR `ready` OR `empty`, NOT ONLY `ready`. The staff fixture gives alpha two live
+   * pagers, so `ready` is the expected view — but the resync proof's own pager is marked ready
+   * and then collected in some orderings, and a suite that demanded rows would fail on a state
+   * that is correct. Either view proves the code was accepted, which is what this helper is for.
+   */
+  await page.waitForSelector('[data-kds-view="ready"], [data-kds-view="empty"]', {
+    timeout: 60_000,
+  })
+
+  return fixture
+}

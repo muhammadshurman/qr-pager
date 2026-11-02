@@ -115,6 +115,26 @@ const NOT_PLAYWRIGHT = ['**/support/test/**'] as const
 const STAFF_SPECS = ['**/staff.spec.ts'] as const
 
 /**
+ * TASK 10c's KITCHEN SCREEN. `§12` in full on a THIRD surface, in the same six projects as the
+ * staff shell — three engines × both directions, on a wall tablet.
+ *
+ * ⚠ IT RUNS IN THE `staff-*` PROJECTS RATHER THAN IN ITS OWN SET, and the reason is the
+ * viewport and the locale, which are exactly the staff ones: a kitchen screen is the surface
+ * `TABLET` was chosen FOR (`§12`'s own words are *greasy, bright and viewed from two metres*),
+ * and Arabic is a launch language on it as much as anywhere. A separate project family would
+ * duplicate six configurations to say the same thing.
+ *
+ * It needs the stack and a SECURE origin — the latter because `localStorage` is the credential
+ * store and a browser treats storage differently on an insecure origin — and both come with
+ * the staff projects' own `baseURL` and `ignoreHTTPSErrors`.
+ *
+ * ⚠ AND IT IS NOT IN `STAFF_SPECS` ITSELF, because the two files are selected together but
+ * ignored separately: the kit projects below list every stack spec in their `testIgnore`, and
+ * folding the two names into one constant would hide which of them a reader is excluding.
+ */
+const KDS_SPECS = ['**/kds.spec.ts'] as const
+
+/**
  * The staff passkey ceremony. `PASSKEY_SPECS` proves `R-100` against Task 5's harness PAGE;
  * this proves the same ceremony against **10a's own screen**, which is what `QRPAGER-25 §4`
  * asks for in those words -- *"not against Task 5's harness page"*.
@@ -187,6 +207,7 @@ export default defineConfig({
         ...PASSKEY_SPECS,
         ...STAFF_SPECS,
         ...STAFF_PASSKEY_SPECS,
+        ...KDS_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'] },
@@ -203,6 +224,7 @@ export default defineConfig({
         ...PASSKEY_SPECS,
         ...STAFF_SPECS,
         ...STAFF_PASSKEY_SPECS,
+        ...KDS_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
@@ -282,7 +304,7 @@ export default defineConfig({
         ] as const
       ).map(([direction, locale]) => ({
         name: `staff-${engine.name}-${direction}`,
-        testMatch: [...STAFF_SPECS],
+        testMatch: [...STAFF_SPECS, ...KDS_SPECS],
         use: {
           ...engine.device,
           baseURL: process.env.QRPAGER_E2E_BASE,

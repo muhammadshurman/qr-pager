@@ -543,6 +543,40 @@ cp "${issued_dir}/staff-fixture.json" "$staff_fixture"
 chmod 600 "$staff_fixture"
 say "created the staff fixture -> ${staff_fixture} (git-ignored, mode 600)"
 
+# ------------------------------------------- Task 10c's kitchen-screen code (QRPAGER-27)
+#
+# `/kds` authenticates with a DEVICE TOKEN, and a token's plaintext half exists exactly once at
+# generation -- `DeviceTokens::issue()` returns it and nothing can recover it. So a browser that
+# is to reach that screen as a kitchen screen does has to be handed one here or never.
+#
+# ⚠ MINTED FOR EVERY RUN RATHER THAN ONLY FOR THE RESYNC PROOF, because `browser/kds.spec.ts`
+# needs it too -- that spec is the `§12` sweep of this surface across three engines and both
+# directions, and the proof is one chromium scenario. One fixture, two consumers.
+#
+# ⚠ AND IT IS **ALPHA's**, NOT BETA's. `bin/issue-staff-fixture` deliberately discards beta's
+# device token plaintext: that one exists to be AIMED AT by the cross-tenant cases, and handing
+# it out would be handing over a credential for the restaurant those cases are about. This is a
+# separate token for the restaurant the suite drives.
+kds_alpha_id="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['alpha']['id'])
+" "$staff_fixture")"
+
+kds_token="${LOG_DIR}/e2e-kds-token.json"
+
+if ! (cd "${REPO}/apps/api" && php bin/issue-kds-token "$kds_alpha_id" 'E2E kitchen') >"$kds_token"; then
+  say 'FAILED: could not mint a KDS device token'
+  cat "$kds_token" >&2
+  exit 1
+fi
+
+chmod 600 "$kds_token"
+say "minted a kitchen-screen code -> ${kds_token} (git-ignored, mode 600)"
+
 # ------------------------------------------------------------------- the three engines
 #
 # ⚠ ONE STACK FOR BOTH MEASUREMENTS. `QRPAGER_E2E_LIGHTHOUSE=1` adds the Lighthouse proof
@@ -556,6 +590,7 @@ export QRPAGER_E2E_SESSIONS="storage/logs/e2e-sessions.json"
 export QRPAGER_E2E_API_BASE="${TLS_API_ORIGIN}"
 export QRPAGER_E2E_HARNESS_USER="storage/logs/e2e-harness-user.json"
 export QRPAGER_E2E_STAFF_FIXTURE="storage/logs/e2e-staff-fixture.json"
+export QRPAGER_E2E_KDS_TOKEN="storage/logs/e2e-kds-token.json"
 
 if [ "${QRPAGER_E2E_SUITE:-1}" = "1" ]; then
   say "running the journey suite"
@@ -653,6 +688,77 @@ sys.stdout.write(data['alpha']['id'])
 
   QRPAGER_E2E_LATENCY_PAGERS="storage/logs/e2e-latency-pagers.json" \
     "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/ready-latency-proof
+fi
+
+# --------------------------------------------- 10c's resync proof (QRPAGER-27 §0), opt-in
+#
+# ⚠ THE ONE PROOF IN THIS FILE THAT IS **NOT** RUN THROUGH `tools/browsers/bin/browsers`, and
+# the reason is a hard constraint rather than an oversight. Its oracle is a SERVER-SIDE
+# dispatch count taken on both sides of the reconnect (`QRPAGER-27 §5`: *"a client-side tally
+# is the thing under test, not the oracle"*), the only server-side reader here is `apps/api`,
+# and `apps/api` requires PHP >= 8.4.1 while the browsers image carries 8.2 -- the wall the
+# latency proof already hit and recorded. Counting and driving therefore have to happen in one
+# process on the HOST, so the proof launches chromium itself.
+#
+# `tools/gate/bin/kds-resync-proof`'s header carries the full argument, the two rejected
+# alternatives, and the cost stated plainly: that proof is chromium-only. The KDS screen's
+# rendering across three engines and both directions is `browser/kds.spec.ts`'s, which runs in
+# the full matrix above.
+#
+# It needs two fixtures the suite does not: a device token's PLAINTEXT (minted here, because a
+# token's raw half exists exactly once at generation) and its own waiting pager. Both are
+# created on the host for the same PHP reason, and both land in `LOG_DIR` under this script's
+# `umask 077`.
+if [ "${QRPAGER_E2E_KDS_RESYNC:-0}" = "1" ]; then
+  say "running 10c's resync proof by the method in QRPAGER-27 §0"
+
+  alpha_id="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['alpha']['id'])
+" "$staff_fixture")"
+
+  # The code is minted once, above, for the suite AND for this proof -- see the note there.
+
+  # ⚠ ITS OWN PAGER, NOT THE FIXTURE's. The proof marks an order READY inside the outage, and a
+  # session goes to `ready` exactly once -- so sharing `alpha.session_id` with the staff suite
+  # would make whichever ran second drive an idempotent no-op that writes no outbox row, and
+  # the proof's `before >= 1` vacuity guard would fail for a reason that is not a defect. Same
+  # reasoning `bin/issue-board-pager`'s header gives for issuing five.
+  kds_pager="${LOG_DIR}/e2e-kds-pager.json"
+
+  if ! (cd "${REPO}/apps/api" && php bin/issue-board-pager "$alpha_id" 'KDS-RESYNC') >"$kds_pager"; then
+    say 'FAILED: could not issue the pager for the resync proof'
+    cat "$kds_pager" >&2
+    exit 1
+  fi
+
+  chmod 600 "$kds_pager"
+
+  # Not vacuous: both files carry what the proof reads, checked HERE rather than inside the
+  # proof -- a missing fixture should fail as a harness problem and not as a clause failure.
+  if ! python3 -c "
+import json
+import pathlib
+import sys
+
+pager = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+
+for key in ('session_id', 'order_reference'):
+    value = pager.get(key)
+    if not isinstance(value, str) or value == '':
+        sys.stderr.write('the resync fixture carries no %s\\n' % key)
+        raise SystemExit(1)
+" "$kds_pager"; then
+    say 'FAILED: the resync proof fixtures are incomplete'
+    exit 1
+  fi
+
+  QRPAGER_E2E_KDS_PAGER="storage/logs/e2e-kds-pager.json" \
+    "${REPO}/tools/gate/bin/kds-resync-proof"
 fi
 
 say "green"
