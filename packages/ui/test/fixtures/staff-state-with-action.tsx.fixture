@@ -1,0 +1,38 @@
+// THE CONTROL. Every render below is CORRECT and must compile cleanly.
+//
+// Without it, the bad-fixture case above would pass against a `tsc` invocation that fails on
+// anything at all -- a wrong tsconfig, an unresolved import, a missing JSX setting. A red
+// that is the harness breaking rather than the rule biting is the defect
+// `apps/api/bin/_revert-proof.sh` exists because of, one language over.
+import { StaffState } from '../../src/staff/StaffState.tsx'
+
+export function GoodEmpty() {
+  return (
+    <StaffState
+      state="empty"
+      title="No kitchen screen is set up yet."
+      description="Set one up and it will show this restaurant's orders."
+      action={{ label: 'Set up a kitchen screen', onAction: () => undefined }}
+    />
+  )
+}
+
+export function GoodDenied() {
+  // `permission-denied` takes NO action, deliberately: retrying changes nothing, so offering
+  // a button would be a lie. Its next action is in the words.
+  return (
+    <StaffState
+      state="permission-denied"
+      title="You cannot change the kitchen screens."
+      description="Only the owner or a manager can. Ask one of them."
+    />
+  )
+}
+
+export function GoodLoading() {
+  return <StaffState state="loading" loadingLabel="Loading" />
+}
+
+export function GoodReady() {
+  return <StaffState state="ready">anything</StaffState>
+}

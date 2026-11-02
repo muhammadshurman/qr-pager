@@ -32,3 +32,13 @@ export { StateView, VIEW_STATES } from './StateView.tsx'
 export type { StateViewProps, ViewState } from './StateView.tsx'
 export { StatusBadge, STATUS_TONES, ALL_PAGER_STATUSES } from './StatusBadge.tsx'
 export type { StatusBadgeProps } from './StatusBadge.tsx'
+
+/* ------------------------------------------------- the staff layer, added at Task 10a */
+export { StaffState, STAFF_STATES, StaffShell, LockScreen } from './staff/index.ts'
+export type {
+  StaffAction,
+  StaffStateProps,
+  StaffStateName,
+  StaffShellProps,
+  LockScreenProps,
+} from './staff/index.ts'

@@ -23,6 +23,20 @@ import type { CopyKey } from '../src/copy/en.ts'
 
 const SCREEN_DIR = join(import.meta.dirname, '..', 'src', 'screens')
 
+/** Every `.tsx` under `src/screens`, at any depth. Absolute paths. */
+function screenFiles(dir: string): string[] {
+  const out: string[] = []
+
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+
+    if (entry.isDirectory()) out.push(...screenFiles(full))
+    else if (entry.name.endsWith('.tsx')) out.push(full)
+  }
+
+  return out.sort()
+}
+
 describe('the copy catalogue', () => {
   it('has exactly the same keys in both launch languages, in both directions', () => {
     const en = Object.keys(EN).sort()
@@ -32,7 +46,10 @@ describe('the copy catalogue', () => {
     // type, and an EXTRA Arabic key -- a renamed English id leaving its translation behind
     // -- is caught only here.
     expect(ar).toEqual(en)
-    expect(en.length).toBe(62)
+    // 62 at Task 9, 121 at Task 10a: the staff surface's sign-in, shell, lock and kitchen
+    // screens. The count is pinned rather than omitted because a key SILENTLY DELETED from
+    // both files at once is the one change key-parity cannot see.
+    expect(en.length).toBe(121)
   })
 
   it('has no empty value in either language', () => {
@@ -107,12 +124,22 @@ describe('the copy catalogue', () => {
      * the two `aria-label`s that ARE copy are built from `t()` calls, which this would not
      * flag either way.
      */
-    const files = readdirSync(SCREEN_DIR).filter((name) => name.endsWith('.tsx'))
+    /**
+     * ⚠ RECURSIVE SINCE TASK 10a, AND THE FLAT VERSION WOULD HAVE MISSED THE WHOLE STAFF
+     * SURFACE. `readdirSync(SCREEN_DIR)` saw seven files and no directories; 10a put its
+     * screens in `screens/staff/`, which a flat read does not enter -- so this assertion
+     * would have gone on passing while covering none of the new code. The defect would have
+     * been invisible from the result: a green case that scans nothing looks exactly like a
+     * green case that scans everything.
+     */
+    const files = screenFiles(SCREEN_DIR)
 
-    expect(files.length).toBe(7)
+    // 7 at Task 9, 10 at Task 10a. An exact count, so a screen added in a directory this
+    // walk does not reach fails here rather than going unscanned.
+    expect(files.length).toBe(10)
 
     for (const file of files) {
-      const source = readFileSync(join(SCREEN_DIR, file), 'utf8')
+      const source = readFileSync(file, 'utf8')
       // Strip comments first: a prose docblock is full of sentences.
       const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
       const text = [...code.matchAll(/>\s*([A-Za-z][A-Za-z ,.'"!?-]{3,})\s*</g)].map((m) => m[1])

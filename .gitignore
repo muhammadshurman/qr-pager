@@ -76,3 +76,7 @@ out/
 # `git add -A` sweeps them up as embedded git repositories, which is how one reached a
 # commit on 2026-11-02. Never committed.
 /.claude/worktrees/
+
+# Task 10a: the scratch tree `packages/ui/test/staff-state.test.tsx` compiles its
+# deliberately-wrong fixtures in. Created and removed per run; never committed.
+/packages/ui/test/.generated/

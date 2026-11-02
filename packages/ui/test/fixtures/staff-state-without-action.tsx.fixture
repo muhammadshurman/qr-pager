@@ -1,0 +1,26 @@
+// DELIBERATELY WRONG. Each of the three renders below must produce a TYPE ERROR.
+//
+// `.fixture` rather than `.tsx` so no build, typecheck or lint pass ever reads it as source
+// -- the same reason `tools/design-tokens/fixtures/bad-component.tsx.fixture` carries that
+// suffix. `packages/ui/test/staff-state.test.tsx` feeds it to `tsc` on purpose.
+//
+// WHAT IS BEING PROVEN: that `§12`'s "no empty state without a next action" is enforced by
+// the TYPE and not by a reviewer noticing. An unproven guard is not a guard, and a
+// discriminated union that happened to admit the actionless shape would be indistinguishable
+// from the real one by reading it.
+import { StaffState } from '../../src/staff/StaffState.tsx'
+
+export function ActionlessEmpty() {
+  // BAD: `empty` with no `action`. This is the exact shape §12 forbids.
+  return <StaffState state="empty" title="Nothing here" description="Nothing at all" />
+}
+
+export function ActionlessError() {
+  // BAD: `error` with no `action`.
+  return <StaffState state="error" title="It broke" description="Sorry" />
+}
+
+export function ActionlessOffline() {
+  // BAD: `offline` with no `action`.
+  return <StaffState state="offline" title="No connection" description="Try later" />
+}

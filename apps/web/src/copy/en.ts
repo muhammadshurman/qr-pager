@@ -109,6 +109,99 @@ export const EN = {
   'a11y.loading': 'Checking your order',
   'a11y.productMark': 'QR Pager',
   'a11y.statusRegion': 'Order status',
+
+  /* ================================================================================
+   * TASK 10a — THE STAFF SURFACE. A different reader, and `§12`'s zero-technical bar.
+   * ================================================================================
+   *
+   * Specified in `docs/tickets/QRPAGER-25.md` and in `QRPAGER-25`'s pre-coding comment
+   * before any of these screens was coded. Three rules shaped every string below and they
+   * are the zero-technical-background clause rather than style:
+   *
+   *   - NO UNEXPLAINED IDENTIFIER. Not a uuid, not a slug, not an ability string, not a
+   *     `tenant_role` value. "Kitchen screen", not `pager:read`.
+   *   - NO EMPTY STATE WITHOUT A NEXT ACTION. Every `empty` string below has an action
+   *     string beside it, and `StaffState`'s type will not compile without one.
+   *   - EVERY ERROR SAYS WHAT TO DO, not what failed. No status code, no "API", no
+   *     "token", no "session".
+   */
+
+  // ----------------------------------------------------------------- staff sign-in
+  'staff.signin.title': 'Sign in',
+  'staff.signin.passkey': 'Use your passkey',
+  'staff.signin.password': 'Use a password instead',
+  'staff.signin.working': 'Signing you in…',
+  // ONE message for every cause, deliberately. Distinguishing "no such account" from
+  // "wrong password" lets a form probe whether an address has an account here.
+  'staff.signin.failed': 'That did not work. Try your passkey again, or use your password.',
+  'staff.signin.offline': 'No connection. Check the network and try again.',
+  'staff.signin.unsupported': 'This browser cannot use passkeys. Use your password instead.',
+  'staff.signin.email': 'Email',
+  'staff.signin.passwordLabel': 'Password',
+  'staff.signin.submit': 'Sign in',
+  'staff.signin.twoFactor': 'Enter the 6-digit code from your authenticator app.',
+  'staff.signin.code': 'Code',
+  'staff.signin.choose': 'Which restaurant?',
+
+  // ---------------------------------------------------------------------- the shell
+  'staff.shell.signedIn': 'Signed in as {name}',
+  'staff.shell.signOut': 'Sign out',
+  'staff.shell.loading': 'Loading',
+  'staff.shell.error.title': 'Something went wrong on our side.',
+  'staff.shell.error.body': 'Nothing you did caused it.',
+  'staff.shell.error.retry': 'Try again',
+  'staff.shell.offline.title': 'No connection.',
+  'staff.shell.offline.body': 'We will keep trying.',
+  // The role as a WORD. `tenant_role` carries `owner`/`manager`/`staff`; these are what a
+  // person reads, and the mapping lives at one call site so an enum case can never reach a
+  // screen.
+  'staff.role.owner': 'Owner',
+  'staff.role.manager': 'Manager',
+  'staff.role.staff': 'Staff',
+  'staff.nav.today': 'Today',
+  'staff.nav.devices': 'Kitchen screens',
+  'staff.home.title': 'You are signed in.',
+  'staff.home.body':
+    'The order board arrives next. For now you can set up the kitchen screens that will show it.',
+  'staff.home.action': 'Kitchen screens',
+
+  // ----------------------------------------------------------------------- the lock
+  'staff.lock.title': 'Screen locked',
+  'staff.lock.body': 'Nobody is signed in on this screen. Sign in with your passkey to carry on.',
+  'staff.lock.signIn': 'Sign in',
+
+  // -------------------------------------------------------------------- kitchen screens
+  'staff.devices.title': 'Kitchen screens',
+  'staff.devices.lede': 'A kitchen screen shows the orders without anybody signing in to it.',
+  'staff.devices.empty.title': 'No kitchen screen is set up yet.',
+  'staff.devices.empty.body': 'Set one up and it will show this restaurant\u2019s orders.',
+  'staff.devices.empty.action': 'Set up a kitchen screen',
+  'staff.devices.add': 'Set up a kitchen screen',
+  'staff.devices.expires': 'Stops working on {date}',
+  'staff.devices.lastUsed': 'Last used {when}',
+  'staff.devices.neverUsed': 'Not used yet',
+  'staff.devices.name.label': 'What is this screen called?',
+  'staff.devices.name.hint': 'Something you will recognise, like the pass counter or the grill.',
+  'staff.devices.create': 'Create it',
+  'staff.devices.cancel': 'Cancel',
+  'staff.devices.issued.title': 'Set up the screen with this',
+  'staff.devices.issued.warning':
+    'Copy this now. It is shown once and cannot be shown again. If you lose it, remove this screen and set up a new one.',
+  'staff.devices.issued.done': 'I have copied it',
+  'staff.devices.remove': 'Remove',
+  'staff.devices.remove.title': 'Remove this screen?',
+  'staff.devices.remove.body':
+    'The screen will stop working straight away. You can set up a new one afterwards.',
+  'staff.devices.remove.confirm': 'Remove',
+  'staff.devices.remove.keep': 'Keep it',
+  'staff.devices.denied.title': 'You cannot change the kitchen screens.',
+  'staff.devices.denied.body':
+    'Only the owner or a manager can set up kitchen screens. Ask one of them.',
+  'staff.devices.error.title': 'We could not load the kitchen screens.',
+  'staff.devices.error.body': 'Nothing has changed. Try again.',
+  'staff.devices.offline.title': 'No connection.',
+  'staff.devices.offline.body':
+    'The screens are unchanged. Try again once you are back on a network.',
 } as const
 
 /** Every copy id. Derived, never listed -- see the header. */
