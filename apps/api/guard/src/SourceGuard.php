@@ -1765,7 +1765,30 @@ final class SourceGuard
             return [];
         }
 
-        $pruned = ['.git', 'vendor', 'node_modules', 'storage', 'build', 'guard/fixtures'];
+        /*
+         * ⚠ `.claude` JOINED THIS LIST ON 2026-11-02, AND IT IS THE THIRD LINTER TO NEED IT.
+         *
+         * `§0.2` (b) made `§11`'s two reviewers run AT THE SAME TIME, each in its own detached
+         * worktree under `.claude/worktrees/`. `.gitignore` excludes that path, which keeps
+         * the worktrees out of COMMITS and does nothing to a walk of the filesystem -- so from
+         * Task 10a onward the ordinary state of this repository DURING a review round is that
+         * two complete copies of it exist inside it.
+         *
+         * Measured: with two worktrees present, `composer guard` reported **4 violations** and
+         * every one was a copy of a file that is correct --
+         * `.claude/worktrees/qa-10a/docs/PLAN.md` *"carries a task-table heading, and C7
+         * allows exactly one"*. A `C7` violation is one of the loudest things this guard can
+         * say, and it was saying it about a review in progress.
+         *
+         * ⚠ AND IT IS THE THIRD. `eslint.config.mjs` and `tools/design-tokens/bin/scan-css.mjs`
+         * were given the same exclusion earlier the same night, and
+         * `tools/gate/test/lint-scope.test.mjs` ended with *"a third linter is the only thing
+         * left to forget"*. It was forgotten, and `composer guard` -- which runs AFTER
+         * `pnpm lint` in no ordering either script controls -- found it. `§7`: a recurrence
+         * means the mechanism was missing, so `GuardWorktreeScopeTest` now asserts the
+         * exclusion on this walk rather than trusting a third list to stay in step.
+         */
+        $pruned = ['.git', 'vendor', 'node_modules', 'storage', 'build', 'guard/fixtures', '.claude'];
         $files = [];
 
         $iterator = new \RecursiveIteratorIterator(
