@@ -135,8 +135,28 @@ export async function fetchKdsBoard(
     return { kind: 'unreachable' }
   }
 
-  // 419 is a CSRF answer and cannot reach a bearer GET, so it is deliberately not listed here
-  // the way `staff/api.ts` lists it: this surface has no session to mismatch.
+  /*
+   * 401 OR 403 — ONE ANSWER, AND THAT IS A DECISION RATHER THAN A SHORTCUT.
+   *
+   * On the staff surface the two differ and `staff/api.ts` keeps them apart for a good reason:
+   * a 403 there means *this person may not do this*, which is a sentence about a role and has a
+   * different remedy from *sign in again*.
+   *
+   * On this surface they collapse, because a device token holds exactly one ability and reaches
+   * exactly one route. The only ways to get a 403 here are a token whose abilities no longer
+   * include `pager:read` or whose tenant pin no longer matches its issuer's membership — and in
+   * both cases the remedy is identical to a 401's and is the only one available on a wall
+   * tablet: **this screen needs a new code from the staff surface.** Two sentences saying that
+   * would be two ways of writing one instruction, and `§12` would rather have one.
+   *
+   * ⚠ 419 IS DELIBERATELY NOT LISTED, unlike in `staff/api.ts`: that is a CSRF answer and
+   * cannot reach a bearer GET, because this surface has no session to mismatch.
+   *
+   * ⚠ AND THIS REASONING USED TO HANG ON AN EXPORTED CONST — `KDS_FORBIDDEN_IS_UNAUTHORISED` —
+   * WITH NO CONSUMER ANYWHERE. A value invented to carry a comment is dead code that reads as
+   * API, and the next person to see it exported would reasonably wonder who reads it. The
+   * comment belongs on the branch it describes.
+   */
   if (response.status === 401 || response.status === 403) return { kind: 'unauthorised' }
 
   if (response.status === 429) {
@@ -183,19 +203,3 @@ export async function fetchKdsBoard(
 
   return { kind: 'ok', orders }
 }
-
-/**
- * ⚠ 403 IS MAPPED ONTO `unauthorised` ABOVE, AND THAT IS A DECISION RATHER THAN A SHORTCUT.
- *
- * On the staff surface the two differ and `staff/api.ts` keeps them apart for a good reason: a
- * 403 there means *this person may not do this*, which is a sentence about a role and has a
- * different remedy from *sign in again*.
- *
- * On this surface they collapse, because a device token holds exactly one ability and reaches
- * exactly one route. The only ways to get a 403 here are a token whose abilities no longer
- * include `pager:read` or whose tenant pin no longer matches its issuer's membership — and in
- * both cases the remedy is identical to a 401's and is the only one available on a wall
- * tablet: **this screen needs a new code from the staff surface.** Two sentences saying that
- * would be two ways of writing the same instruction, and `§12` would rather have one.
- */
-export const KDS_FORBIDDEN_IS_UNAUTHORISED = true

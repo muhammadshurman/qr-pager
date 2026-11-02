@@ -145,12 +145,6 @@ final class PagerHistoryFilters
         );
     }
 
-    /** No filters at all — the screen's first paint. */
-    public static function unfiltered(): self
-    {
-        return new self(statuses: [], from: null, to: null, reference: null);
-    }
-
     /**
      * The start of the day, in UTC.
      *
@@ -189,34 +183,20 @@ final class PagerHistoryFilters
         return array_map(static fn (PagerStatus $s): string => $s->value, $this->statuses);
     }
 
-    /**
-     * Which dimensions are actually set, by the names in `DIMENSIONS`.
+    /*
+     * ⚠ TWO METHODS WERE HERE AND ARE DELETED, AND ONE OF THEM CARRIED A FALSE CLAIM.
      *
-     * Used by the audit context and by the isolation test's failure messages, so a failing
-     * combination is reported in the screen's own vocabulary rather than as a query string.
+     * `activeDimensions()` returned which dimensions were set and its docblock said it was
+     * *"used by the audit context and by the isolation test's failure messages"*. It was used
+     * by NEITHER: `PagerHistoryIsolationTest` builds its own label from the combination it is
+     * driving, and this route writes no audit row. Zero call sites, measured — and a comment
+     * asserting a caller that does not exist is worse than the dead code it describes, because
+     * the next reader trusts it.
      *
-     * @return list<string>
+     * `unfiltered()` was a convenience with no caller either; the client's own
+     * `NO_HISTORY_FILTERS` is the TypeScript end and `fromValidated([])` is the PHP one.
+     *
+     * Found by the CI step this branch had not run locally — `php artisan test --coverage
+     * --min=90` — which is the gate that makes unused code cost something.
      */
-    public function activeDimensions(): array
-    {
-        $active = [];
-
-        if ($this->hasStatuses()) {
-            $active[] = 'status';
-        }
-
-        if ($this->from !== null) {
-            $active[] = 'from';
-        }
-
-        if ($this->to !== null) {
-            $active[] = 'to';
-        }
-
-        if ($this->hasReference()) {
-            $active[] = 'reference';
-        }
-
-        return $active;
-    }
 }
