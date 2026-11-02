@@ -27,15 +27,25 @@
   "flakes": [
     {
       "row": "R-191",
-      "with": ["R-092 (fault one)", "R-049", "R-047", "R-058"],
+      "with": [
+        "R-092 (fault one)",
+        "R-049",
+        "R-047",
+        "R-058"
+      ],
       "title": "08006 connect timeout on pgsql_owner at TestCase::setUp's TRUNCATE, striking a random test",
       "owner": "Task 13 (infrastructure)",
       "rate": "3 of 3 full `composer gate` runs red at a6ece55; 0 of 2 under a bare `php artisan test`. Predecessor R-092 measured 3 red in 10 full-suite runs at 056d7a1 (2026-10-27), 2 of those this family.",
       "measured": "2026-10-31/2026-11-01 at a6ece55; R-092 2026-10-27 at 056d7a1",
       "identities": [
-        "AuditLogAssertionTest", "TenantContextTest", "ShedLoadTest", "EnumContractTest",
-        "BootstrapDatabaseCommandTest", "MemberConcurrencyTest (stated as a hypothesis, not a cause)",
-        "BootstrapLoggingTest (as R-092)", "PagerTransactionTest (as R-092)",
+        "AuditLogAssertionTest",
+        "TenantContextTest",
+        "ShedLoadTest",
+        "EnumContractTest",
+        "BootstrapDatabaseCommandTest",
+        "MemberConcurrencyTest (stated as a hypothesis, not a cause)",
+        "BootstrapLoggingTest (as R-092)",
+        "PagerTransactionTest (as R-092)",
         "ReadinessCarrierTest (as R-092, third symptom)",
         "PasskeyTest (2026-11-02 at e761f2c, on pgsql_owner at the TRUNCATE)",
         "PanelProblemPageTest (2026-11-02 at 94f5b5b, on pgsql at a users SELECT -- the symptom that proved the matcher narrower than the cause)"
@@ -122,18 +132,32 @@
     },
     {
       "row": "R-172",
-      "with": ["R-185", "R-092 (fault two)", "R-160", "R-166", "R-169"],
+      "with": [
+        "R-185",
+        "R-092 (fault two)",
+        "R-160",
+        "R-166",
+        "R-169"
+      ],
       "title": "OutboxWorker::claim() returns ZERO rows where the test expects one, under full-suite load",
       "owner": "Task 12",
-      "rate": "2 failures in roughly 7 full-suite runs on task-8b-precoding (2026-11-01); 8 of 8 green for the file in isolation; the §11 QA round did not reproduce it in 3 full runs at 5f7ffdc. Predecessor R-092 fault two: 1 red in 10 full-suite runs at 056d7a1.",
-      "measured": "2026-11-01 on task-8b-precoding; R-092 2026-10-27 at 056d7a1",
+      "rate": "2 failures in roughly 7 full-suite runs on task-8b-precoding (2026-11-01); 8 of 8 green for the file in isolation; the §11 QA round did not reproduce it in 3 full runs at 5f7ffdc. Predecessor R-092 fault two: 1 red in 10 full-suite runs at 056d7a1. ⚠ AND ONCE MORE ON 2026-11-02 at da551e6, in `bin/fresh-clone-proof` -- `OutboxCrashTest.php:184`, `toMatchArray(['claimed' => 1, 'sent' => 1])` answering claimed 0 -- which is this family's symptom in a FOURTH file and was reported as a REAL red because this matcher is a name list and that name was not on it.",
+      "measured": "2026-11-01 on task-8b-precoding; R-092 2026-10-27 at 056d7a1; OutboxCrashTest 2026-11-02 at da551e6",
       "identities": [
-        "OutboxWorkerTest", "OutboxLeaseTest", "WorkOutboxCommandTest (as R-092, the --limit 2 claim shortfall)"
+        "OutboxWorkerTest",
+        "OutboxLeaseTest",
+        "WorkOutboxCommandTest (as R-092, the --limit 2 claim shortfall)",
+        "OutboxCrashTest (measured 2026-11-02 at da551e6, in a fresh clone)"
       ],
       "match": {
-        "tests": ["OutboxWorkerTest", "OutboxLeaseTest", "WorkOutboxCommandTest"]
+        "tests": [
+          "OutboxWorkerTest",
+          "OutboxLeaseTest",
+          "WorkOutboxCommandTest",
+          "OutboxCrashTest"
+        ]
       },
-      "why_not_a_code_defect": "⚠ UNRESOLVED, AND THAT IS WHY THIS ENTRY IS THE WEAKER OF THE TWO. R-185 exists precisely because R-172's diagnosis is a hypothesis presented as a cause: nothing yet distinguishes 'the test's own fixture races' from 'claim() drops work under load', and the second would be a failure of TASK 4's NAMED INVARIANT rather than a flaky test. Strongly load-correlated (the failing run took 335.53s against a typical ~205s). An entry here attributes the red to a named row; it does NOT certify the row's diagnosis. If this family is ever reproduced in isolation, it leaves this file and becomes a Task 4 defect."
+      "why_not_a_code_defect": "⚠ UNRESOLVED, AND THAT IS WHY THIS ENTRY IS THE WEAKER OF THE TWO. R-185 exists precisely because R-172's diagnosis is a hypothesis presented as a cause: nothing yet distinguishes 'the test's own fixture races' from 'claim() drops work under load', and the second would be a failure of TASK 4's NAMED INVARIANT rather than a flaky test. Strongly load-correlated (the failing run took 335.53s against a typical ~205s). An entry here attributes the red to a named row; it does NOT certify the row's diagnosis. If this family is ever reproduced in isolation, it leaves this file and becomes a Task 4 defect. ⚠ WHY THIS STAYS A NAME LIST RATHER THAN A MECHANISM REGEX, decided 2026-11-02 when it under-matched: the mechanism is `claim()` returning fewer rows than the test seeded, and a signature keyed on that would match a GENUINE claim() regression just as well -- which is `§11` QA M-4's defect exactly, in the direction that loses a real red instead of raising a false alarm. Under-matching costs one re-run and a reading; over-matching costs a regression nobody sees. So the list grows by MEASUREMENT: a fifth file will again read as a REAL red, and that is the intended behaviour rather than a gap."
     }
   ],
   "removed": [

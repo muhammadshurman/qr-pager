@@ -254,6 +254,84 @@ it('calls the SAME SQLSTATE at a different frame a REAL red -- the control that 
         ->and($code)->toBe(1, $output);
 });
 
+it('attributes R-172 in the FOURTH file it struck, which a name list had to be told about', function (): void {
+    /*
+     * ⚠ MEASURED 2026-11-02 AT `da551e6`, inside `bin/fresh-clone-proof`, and reported as a
+     * **REAL RED**: `OutboxCrashTest.php:184`'s
+     * `toMatchArray(['claimed' => 1, 'sent' => 1])` answered `claimed` 0. That is `R-172`'s
+     * symptom exactly — `OutboxWorker::claim()` returning fewer rows than the test seeded,
+     * under full-suite load — in a file its name list did not carry, so the classifier called
+     * the gate broken and the verdict said *"do not re-run"*.
+     *
+     * The file's own README says a family that strikes a different file every time cannot be
+     * matched by name. `R-172` IS matched by name, and this is the measurement that proved the
+     * name list is not the family.
+     */
+    [$code, $output] = classify('r172-outbox-crash.txt');
+
+    expect($output)->toContain('ATTRIBUTED RED')
+        ->and($output)->toContain('R-172')
+        ->and($output)->toContain('Task 12')
+        ->and($output)->toMatch('/REAL REDS[^\n]*: 0/')
+        ->and($code)->toBe(2, $output);
+});
+
+it('keeps every named identity on the matcher, so the two lists cannot drift apart', function (): void {
+    /*
+     * ⚠ THE MECHANISM AGAINST THE RECURRENCE, AND `§7` IS WHY IT EXISTS RATHER THAN A SHARPER
+     * EYE. `R-172` recorded `OutboxCrashTest`-shaped strikes in its prose and its `identities`
+     * grew over three tasks, while `match.tests` did not — so the entry DESCRIBED a family it
+     * could not attribute. Nothing failed, which is the whole problem: an unmatchable entry is
+     * indistinguishable from a working one until a red lands on it.
+     *
+     * Every identity that NAMES a test class must be on that family's `tests` list. Identities
+     * are prose — *"WorkOutboxCommandTest (as R-092, the --limit 2 claim shortfall)"* — so the
+     * leading class name is taken and the rest is commentary; an identity explicitly marked as
+     * a hypothesis is skipped, because a guess about a cause is not a measured strike.
+     */
+    $drifted = [];
+
+    foreach (flakeList()['flakes'] as $flake) {
+        // A signature-matched family needs no name list at all -- `R-191` strikes a random
+        // file, which is the case this must not demand names for.
+        if (($flake['match']['signature'] ?? null) !== null) {
+            continue;
+        }
+
+        $named = $flake['match']['tests'] ?? [];
+
+        foreach ($flake['identities'] as $identity) {
+            if (str_contains($identity, 'hypothesis')) {
+                continue;
+            }
+
+            $class = (string) preg_replace('/\s.*$/', '', trim($identity));
+
+            if (! str_ends_with($class, 'Test')) {
+                continue;
+            }
+
+            if (! in_array($class, $named, true)) {
+                $drifted[] = $flake['row'].' names '.$class.' as an identity but cannot match it';
+            }
+        }
+    }
+
+    expect($drifted)->toBe([], implode('; ', $drifted));
+
+    // Not vacuous: there IS a name-matched family with identities to check, so a pass means
+    // the lists agree rather than that the loop found nothing to compare.
+    $checked = 0;
+
+    foreach (flakeList()['flakes'] as $flake) {
+        if (($flake['match']['signature'] ?? null) === null) {
+            $checked += count($flake['match']['tests'] ?? []);
+        }
+    }
+
+    expect($checked)->toBe(4, 'the name-matched families carry no test names, so nothing was compared');
+});
+
 it('never masks a real red with an attributed one beside it', function (): void {
     [$code, $output] = classify('mixed.txt');
 
