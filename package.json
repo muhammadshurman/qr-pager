@@ -25,7 +25,8 @@
     "audit": "pnpm audit --audit-level low",
     "gate": "node tools/gate/bin/gate.mjs",
     "gate:e2e": "tools/browsers/bin/e2e",
-    "gate:lighthouse": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_LIGHTHOUSE=1 tools/browsers/bin/e2e"
+    "gate:lighthouse": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_LIGHTHOUSE=1 tools/browsers/bin/e2e",
+    "gate:ready-latency": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_READY_LATENCY=1 tools/browsers/bin/e2e"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

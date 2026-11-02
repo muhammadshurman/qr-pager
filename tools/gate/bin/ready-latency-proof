@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# =============================================================================
+# `MARK-READY ROUND TRIP UNDER 2 s TO THE CUSTOMER DEVICE` — `§3` ROW 10, BY THE
+# METHOD `§3.1` ROW 10 WRITES AND MUHAMMAD APPROVED ON 2026-11-02
+# =============================================================================
+#
+# The method was written into `§3.1` row 10 and `QRPAGER-26 §1(a)` BEFORE this task's first
+# implementation commit, and approved as proposed. This script implements exactly it, and each
+# part is marked with the clause it comes from so a reviewer can read the two side by side:
+#
+#   (a) from the STAFF CLICK to the CUSTOMER'S RENDERED READY STATE. Not to a 200, not to a
+#       Redis write — the clause says *to the customer device*, and a figure taken anywhere
+#       earlier is a different claim wearing the same number.
+#   (b) on the REAL STACK, which is `tools/browsers/bin/e2e`'s: the real API against the
+#       composed Postgres and Redis, the production build of `apps/web`, over TLS, one origin.
+#   (c) over the POLLING path, because push is Apple's and Google's and is not drivable by a
+#       runner (`R-211`) — and because `O2` makes polling the product's floor, so the polling
+#       figure is the one a customer is guaranteed.
+#   (d) FIVE RUNS, the MEDIAN is the figure, and ALL FIVE are reported.
+#   (e) the LOAD-INVARIANT HALF stated beside it, the reasoning that moved `R-205`.
+#
+# =============================================================================
+# ⚠ WHAT THIS SCRIPT EXPECTS TO MEASURE, STATED BEFORE IT RUNS
+# =============================================================================
+#
+# **The median cannot come in under 2 s over polling at the current interval, and that is
+# arithmetic rather than a defect in anything 10b built.** `config('pager.poll_interval')` is
+# **7 seconds**; a customer's wait for the next poll after a staff click is uniform over one
+# interval, so the expected median is ~3.5 s. `QRPAGER-26-precoding.md §12` raises it as a
+# flag before any code was written, and it is restated here so that reading the transcript
+# needs no second document.
+#
+# **So this script REPORTS and does not FAIL on the median.** That is `lighthouse-proof`'s
+# own shape and its reason: a bar whose instrument cannot reach it measures the instrument
+# rather than the product, and under `§11`'s round limit a misleading red costs a round. What
+# it fails on is clause (e) — the load-invariant half — because that is the part this task
+# controls.
+#
+#   LOAD-INVARIANT, AND FATAL:  every run's customer page must reach `ready` AT ALL, over
+#                               polling, with no push and no reload. That is the product
+#                               claim; the clock is how fast it happens to be today.
+#   REPORTED, NOT FATAL:        the five wall-clock figures and their median.
+#
+# Shortening the customer interval is the one lever, and it is a SCALE decision rather than a
+# builder's: `§2.11` sizes ElastiCache at ~300 000 Redis operations/second from that very
+# number. Raised in 10b's handover with this measurement attached.
+#
+# USAGE: run through `tools/browsers/bin/e2e` with QRPAGER_E2E_READY_LATENCY=1, which stands
+#        the stack up first. Standalone it will refuse: the origins come from that harness.
+set -uo pipefail
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+for required in QRPAGER_E2E_BASE QRPAGER_E2E_STAFF_FIXTURE; do
+  if [ -z "${!required:-}" ]; then
+    echo "FATAL: ${required} is unset. Run this through tools/browsers/bin/e2e with" >&2
+    echo "       QRPAGER_E2E_READY_LATENCY=1, which composes the origins and the fixture." >&2
+    exit 1
+  fi
+done
+
+echo "ready-latency-proof — §3 row 10, by §3.1 row 10's method"
+echo "  commit              $(git rev-parse --short HEAD)"
+echo "  at                  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "  origin              ${QRPAGER_E2E_BASE}"
+echo "  customer interval   $(cd "${REPO}/apps/api" && PAO_DISABLE=1 php -r 'require "vendor/autoload.php"; $a = require "bootstrap/app.php"; $a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo (int) config("pager.poll_interval");') s"
+echo "  node                $(node --version)"
+echo
+
+node "${REPO}/tools/gate/lib/ready-latency.mjs"
+status=$?
+
+echo
+echo "EXIT=${status}"
+
+exit "${status}"

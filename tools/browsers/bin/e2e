@@ -589,4 +589,20 @@ sys.stdout.write(data['waiting']['token'])
     "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/lighthouse-proof
 fi
 
+# ------------------------------------------------- 10b's *under 2 s* measurement
+#
+# ⚠ THE SAME STACK AGAIN, AND FOR THE SAME REASON THE LIGHTHOUSE BRANCH ABOVE GIVES: the
+# figure is staff click -> the CUSTOMER's rendered ready state, which needs the real API, the
+# production build, both surfaces and one origin. Standing a second stack up would make the
+# number describe a different stack from the one the suite just ran against.
+#
+# It issues its OWN pagers rather than using the fixture's two, because a session goes to
+# `ready` exactly once -- the proof's own header has that -- so it needs `php
+# bin/issue-board-pager`, which is why the API's directory and `APP_ENV` are passed through.
+if [ "${QRPAGER_E2E_READY_LATENCY:-0}" = "1" ]; then
+  say "running the under-2s measurement by the method in §3.1 row 10"
+
+  "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/ready-latency-proof
+fi
+
 say "green"

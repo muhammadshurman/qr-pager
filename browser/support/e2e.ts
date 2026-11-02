@@ -187,6 +187,20 @@ export interface StaffFixture {
     readonly name: string
     readonly slug: string
     readonly membership_id: string
+    /** 10b: alpha's own live pagers, so the board has rows to render and act on. */
+    readonly session_id: string
+    readonly order_reference: string
+    readonly second_session_id: string
+    readonly second_order_reference: string
+    /**
+     * The RAW token of the first pager, for the *under 2 s* measurement only.
+     *
+     * That figure is staff click → the CUSTOMER's rendered ready state, so the harness has
+     * to open the customer page for a session the staff board can act on. It exists once, at
+     * generation, which is why the fixture carries it and nothing reads it back from the
+     * database — `§4 › Data` makes that impossible by design.
+     */
+    readonly token: string
   }
   readonly owner: { readonly email: string; readonly password: string; readonly name: string }
   readonly beta: {
@@ -235,6 +249,17 @@ export function staffFixture(): StaffFixture {
     ['beta', 'session_id'],
     ['beta', 'membership_id'],
     ['beta', 'device_id'],
+    /*
+     * ⚠ 10b's FOUR, AND THEY ARE HELD TO THE SAME READ-BACK FOR THE SAME REASON ONE LAYER
+     * OVER. The cross-tenant cases above are negatives, and an empty id makes them pass for
+     * free. The BOARD cases are positives — a row rendered, a target measured, a transition
+     * driven — and an empty id makes those fail in a way that looks like the screen is
+     * broken rather than like the fixture is. Both directions want the id to exist.
+     */
+    ['alpha', 'session_id'],
+    ['alpha', 'order_reference'],
+    ['alpha', 'second_session_id'],
+    ['alpha', 'token'],
   ] as const) {
     const value = raw[section]?.[key]
 

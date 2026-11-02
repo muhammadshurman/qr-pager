@@ -124,6 +124,29 @@ $betaOwner = $makeUser('Lina Qasem', $beta['id'], TenantRole::Owner);
 $sessions = $app->make(PagerSessions::class);
 $betaSession = withTenant($beta['id'], fn () => $sessions->create($beta['id'], 'B-1'));
 
+/*
+ * ⚠ ALPHA'S OWN WAITING PAGER, ADDED AT 10b, AND THE SUITE CANNOT BE WRITTEN WITHOUT IT.
+ *
+ * 10a's fixture gave alpha a membership and no pager session, which was right: its screens
+ * were a shell and a device list. 10b's screen IS the board, so a fixture with no live pager
+ * in the tenant the browser signs into leaves every board case asserting an EMPTY board —
+ * the `§12` target-size and contrast clauses would measure nothing, and the mark-ready case
+ * would have nothing to mark. That is the vacuous-assertion shape this script's own header
+ * is about, pointed at the new screen.
+ *
+ * TWO of them, so "newest first" is a real ordering rather than a list of one, and the
+ * references are DISTINCT so a test can tell the two rows apart.
+ *
+ * The RAW TOKEN of the first is printed, because the *under 2 s* measurement needs it: that
+ * figure is staff click → the CUSTOMER's rendered ready state, so the harness has to be able
+ * to open the customer page for a session the staff board can act on. It is the same
+ * decision this script already takes about the owner's password — a throwaway credential for
+ * one suite run, written by the harness to a git-ignored file at mode 600 — and
+ * `bin/issue-pager-session` is the precedent for printing a pager token at all.
+ */
+$alphaFirst = withTenant($alpha['id'], fn () => $sessions->create($alpha['id'], 'A-101'));
+$alphaSecond = withTenant($alpha['id'], fn () => $sessions->create($alpha['id'], 'A-102'));
+
 $betaDevice = $app->make(DeviceTokens::class)->issue(
     issuer: User::query()->findOrFail($betaOwner['id']),
     tenantId: $beta['id'],
@@ -148,6 +171,8 @@ foreach ([
     'beta session' => withTenant($beta['id'], fn () => DB::table('pager_sessions')->where('id', $betaSession->session->id)->count()),
     'beta membership' => withTenant($beta['id'], fn () => DB::table('tenant_users')->where('id', $betaMembership)->count()),
     'beta device' => DB::table('personal_access_tokens')->where('id', $betaDevice['id'])->count(),
+    'alpha board' => withTenant($alpha['id'], fn () => DB::table('pager_sessions')
+        ->whereIn('id', [$alphaFirst->session->id, $alphaSecond->session->id])->count()),
 ] as $what => $count) {
     if ($count < 1) {
         fwrite(STDERR, "refusing to print a fixture whose {$what} was not created.\n");
@@ -165,6 +190,16 @@ echo json_encode([
             $alpha['id'],
             fn () => (string) DB::table('tenant_users')->where('user_id', $colleague['id'])->value('id'),
         ),
+        // 10b's board. Two live pagers, newest last in this document and newest FIRST on the
+        // board -- the ordering is the server's and the suite asserts it rather than assuming
+        // it from the order here.
+        'session_id' => $alphaFirst->session->id,
+        'order_reference' => 'A-101',
+        'second_session_id' => $alphaSecond->session->id,
+        'second_order_reference' => 'A-102',
+        // The raw token of the first, for the *under 2 s* measurement only. It exists once,
+        // at generation, and this is that moment.
+        'token' => $alphaFirst->token->reveal(),
     ],
     'owner' => [
         'email' => $owner['email'],

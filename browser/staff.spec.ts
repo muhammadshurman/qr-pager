@@ -671,3 +671,114 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
     }
   })
 })
+
+test.describe('10b’s board, in a real browser', () => {
+  /**
+   * The board's rows, newest first.
+   *
+   * ⚠ MEASURED FROM THE PAGE'S OWN MARKUP RATHER THAN FROM THE API. The point of a browser
+   * case is the rendered result: a server that ordered correctly and a client that re-sorted
+   * would both pass an assertion made against the response.
+   */
+  async function boardReferences(page: Page): Promise<string[]> {
+    await page.waitForSelector('[data-board="true"] .qr-staff-list__item', { timeout: 60_000 })
+
+    return page.locator('[data-board="true"] .qr-staff-list__name').allInnerTexts()
+  }
+
+  test('renders the restaurant’s live pagers, newest first, and no identifier', async ({
+    page,
+  }) => {
+    const fixture = await signInAsStaff(page)
+
+    const references = await boardReferences(page)
+
+    /*
+     * ⚠ NEWEST FIRST, AS AN ORDERED ASSERTION OVER THE FIXTURE'S OWN TWO. The fixture
+     * creates A-101 then A-102, so A-102 is the newer and must be the FIRST row. A
+     * `toContain` pair would pass against a board that rendered them backwards, which in a
+     * kitchen means reading the oldest order as the one that just came in.
+     */
+    expect(references[0]).toContain(fixture.alpha.second_order_reference)
+    expect(references[1]).toContain(fixture.alpha.order_reference)
+
+    // AND NOT ONE IDENTIFIER, over the whole rendered document rather than over the rows:
+    // the session id reaches the client because every action needs it in a path, and must
+    // reach nothing a person or a screenshot can see.
+    const visible = await page.locator('body').innerText()
+
+    expect(visible).not.toContain(fixture.alpha.session_id)
+    expect(visible).not.toContain(fixture.alpha.second_session_id)
+    expect(visible).not.toContain(fixture.alpha.id)
+  })
+
+  test('marks an order ready through the real stack, and the board converges on it', async ({
+    page,
+  }) => {
+    const fixture = await signInAsStaff(page)
+
+    await boardReferences(page)
+
+    /*
+     * The row for A-101 specifically, found by the label the board renders for it. Scoping
+     * by the row is what makes this a test of the DETAIL panel rather than of whichever
+     * button the page happened to render first.
+     */
+    const row = page
+      .locator('[data-board="true"] .qr-staff-list__item')
+      .filter({ hasText: fixture.alpha.order_reference })
+
+    await row.locator('[data-action="open"]').click()
+    await row.locator('[data-action="ready"]').click()
+
+    /*
+     * ⚠ THE ASSERTION IS THE ROW'S OWN STATUS ATTRIBUTE, NOT THE BUTTON DISAPPEARING.
+     *
+     * `data-pager-status` is written from the status the SERVER last sent, so this waits for
+     * a board that has been re-read and re-rendered — which is the convergence clause of
+     * 10b's invariant, driven rather than reasoned. A disappearing button would also be
+     * satisfied by a panel that merely closed.
+     */
+    await expect(
+      page
+        .locator('[data-board="true"] .qr-staff-list__item')
+        .filter({ hasText: fixture.alpha.order_reference })
+        .locator('[data-pager-status="ready"]'),
+    ).toHaveCount(1, { timeout: 60_000 })
+
+    // And the OTHER pager is untouched, which is what makes the transition keyed rather than
+    // broad -- the same property `PagerIdorTest` asserts on the server, seen from the screen.
+    await expect(
+      page
+        .locator('[data-board="true"] .qr-staff-list__item')
+        .filter({ hasText: fixture.alpha.second_order_reference })
+        .locator('[data-pager-status="waiting"]'),
+    ).toHaveCount(1)
+  })
+
+  test('confirms a cancellation before it sends anything', async ({ page }) => {
+    const fixture = await signInAsStaff(page)
+
+    await boardReferences(page)
+
+    const row = page
+      .locator('[data-board="true"] .qr-staff-list__item')
+      .filter({ hasText: fixture.alpha.second_order_reference })
+
+    await row.locator('[data-action="open"]').click()
+    await row.locator('[data-action="cancel"]').click()
+
+    // The confirmation is on screen and the row is STILL waiting -- a destructive action
+    // whose first tap already fired it has a dialog and no confirmation.
+    await expect(row.locator('[data-action="cancel"]')).toHaveCount(0)
+    await expect(row.locator('[data-pager-status="waiting"]')).toHaveCount(1)
+
+    /*
+     * ⚠ AND THE REFUSAL IS LEFT UNCONFIRMED ON PURPOSE. This case asserts the confirmation
+     * EXISTS; it does not press through, because cancelling consumes the fixture's second
+     * pager and the case above needs it waiting. The confirmed path is driven in
+     * `apps/web/test/staff-flows.test.tsx` against a scripted stack, where consuming a row
+     * costs nothing — the split is deliberate rather than a gap.
+     */
+  })
+})
