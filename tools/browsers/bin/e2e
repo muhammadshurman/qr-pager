@@ -602,7 +602,52 @@ fi
 if [ "${QRPAGER_E2E_READY_LATENCY:-0}" = "1" ]; then
   say "running the under-2s measurement by the method in §3.1 row 10"
 
-  "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/ready-latency-proof
+  # ⚠ THE PAGERS ARE ISSUED HERE, ON THE HOST, AND NOT INSIDE THE PROOF — because the proof
+  # runs in the BROWSERS CONTAINER and that image carries PHP 8.2 while `apps/api` requires
+  # >= 8.4.1. The first version shelled out to `php bin/issue-board-pager` from the node
+  # script and died on `platform_check.php`: *"Your Composer dependencies require a PHP
+  # version >= 8.4.1. You are running 8.2.35."*
+  #
+  # This is `lighthouse-proof`'s own shape, which extracts its token on the host and passes it
+  # in: anything needing PHP happens out here, and the container only drives browsers. It also
+  # removes the child process `§11` SECURITY M-5 was about — there is no `APP_ENV` to get
+  # wrong from a caller, because there is no caller.
+  #
+  # FIVE, because `§3.1` row 10's method says five runs and a session goes to `ready` exactly
+  # once: measuring one session five times would measure one transition and four no-ops.
+  # The tenant the staff fixture's owner is a member of, read from the fixture this run just
+  # wrote rather than from a second source.
+  alpha_id="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['alpha']['id'])
+" "$staff_fixture")"
+
+  latency_pagers="${REPO}/apps/api/storage/logs/e2e-latency-pagers.json"
+  : >"$latency_pagers"
+  chmod 600 "$latency_pagers"
+
+  for run in 1 2 3 4 5; do
+    if ! (cd "${REPO}/apps/api" && php bin/issue-board-pager "$alpha_id" "L-${run}") >>"$latency_pagers"; then
+      echo "FATAL: could not issue pager ${run} for the latency measurement" >&2
+      exit 1
+    fi
+  done
+
+  # Not vacuous: five lines or the proof has nothing to measure and would report a median over
+  # whatever it got.
+  issued="$(wc -l <"$latency_pagers")"
+
+  if [ "$issued" -ne 5 ]; then
+    echo "FATAL: expected 5 issued pagers for the latency measurement, got ${issued}" >&2
+    exit 1
+  fi
+
+  QRPAGER_E2E_LATENCY_PAGERS="storage/logs/e2e-latency-pagers.json" \
+    "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/ready-latency-proof
 fi
 
 say "green"

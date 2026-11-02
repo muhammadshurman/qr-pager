@@ -35,7 +35,6 @@
  * reasoning `§3.1` row 4's p99 method states for the polling endpoint.
  */
 
-import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
@@ -49,30 +48,32 @@ const BAR_MS = 2000
 const base = process.env.QRPAGER_E2E_BASE
 const fixture = JSON.parse(readFileSync(join(REPO, process.env.QRPAGER_E2E_STAFF_FIXTURE), 'utf8'))
 
-/** One fresh waiting pager in alpha, through the real service. */
-function issuePager(run) {
-  /*
-   * ⚠ `APP_ENV` IS **NOT** SET HERE, AND IT WAS — `§11` SECURITY M-5.
-   *
-   * This read `env: { ...process.env, APP_ENV: 'local', … }`, which made
-   * `bin/issue-board-pager`'s fail-closed environment guard unreachable from the one call
-   * site that uses it — while `DB_*` still came from `.env`. So on a host whose `.env` points
-   * at anything real, `pnpm gate:ready-latency` would have written tenants, pager sessions,
-   * outbox and audit rows as the database owner and printed a raw QR token, with the guard
-   * built to stop exactly that sitting one frame away and never consulted.
-   *
-   * That guard exists because of `§11` SEC M-6 one task ago. Hard-coding past it from the
-   * caller is the same defect as not having it, with a comment claiming otherwise.
-   *
-   * `PAO_DISABLE` stays: it is about console FORMATTING, not about what may run.
-   */
-  const out = execFileSync('php', ['bin/issue-board-pager', fixture.alpha.id, `L-${run}`], {
-    cwd: join(REPO, 'apps', 'api'),
-    encoding: 'utf8',
-    env: { ...process.env, PAO_DISABLE: '1' },
-  })
+/**
+ * The five pagers, issued on the HOST by `tools/browsers/bin/e2e` before this ran.
+ *
+ * ⚠ **IT USED TO SHELL OUT TO `php bin/issue-board-pager` FROM HERE AND THAT CANNOT WORK:
+ * this file runs inside the BROWSERS CONTAINER, whose image carries PHP 8.2 while `apps/api`
+ * requires >= 8.4.1.** The first real run died on `platform_check.php` — *"Your Composer
+ * dependencies require a PHP version >= 8.4.1. You are running 8.2.35."* — which is a
+ * measurement that could never have been taken rather than a figure that came out wrong.
+ *
+ * `lighthouse-proof` already had the right shape: anything needing PHP happens on the host
+ * and is passed in. That also removes the child process `§11` SECURITY M-5 was about — there
+ * is no `APP_ENV` for a caller to get wrong, because there is no caller.
+ *
+ * One JSON object per line, five lines, and the harness refuses to continue without exactly
+ * five.
+ */
+const pagers = readFileSync(join(REPO, process.env.QRPAGER_E2E_LATENCY_PAGERS), 'utf8')
+  .split('\n')
+  .filter((line) => line.trim() !== '')
+  .map((line) => JSON.parse(line))
 
-  return JSON.parse(out.trim().split('\n').at(-1))
+if (pagers.length !== RUNS) {
+  console.error(
+    `FATAL: expected ${String(RUNS)} issued pagers and found ${String(pagers.length)} — the method says five runs`,
+  )
+  process.exit(1)
 }
 
 const browser = await chromium.launch({
@@ -101,7 +102,7 @@ try {
   await staff.waitForSelector('[data-staff-shell="true"]', { timeout: 60_000 })
 
   for (let run = 1; run <= RUNS; run += 1) {
-    const pager = issuePager(run)
+    const pager = pagers[run - 1]
 
     // The customer, on its own context — a different device, with no staff cookie.
     const customerContext = await browser.newContext({ ignoreHTTPSErrors: true })

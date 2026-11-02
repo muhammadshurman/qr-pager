@@ -52,7 +52,7 @@ set -uo pipefail
 cd "$(dirname "$0")/../../.."
 REPO="$(pwd)"
 
-for required in QRPAGER_E2E_BASE QRPAGER_E2E_STAFF_FIXTURE; do
+for required in QRPAGER_E2E_BASE QRPAGER_E2E_STAFF_FIXTURE QRPAGER_E2E_LATENCY_PAGERS; do
   if [ -z "${!required:-}" ]; then
     echo "FATAL: ${required} is unset. Run this through tools/browsers/bin/e2e with" >&2
     echo "       QRPAGER_E2E_READY_LATENCY=1, which composes the origins and the fixture." >&2
@@ -64,7 +64,23 @@ echo "ready-latency-proof — §3 row 10, by §3.1 row 10's method"
 echo "  commit              $(git rev-parse --short HEAD)"
 echo "  at                  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "  origin              ${QRPAGER_E2E_BASE}"
-echo "  customer interval   $(cd "${REPO}/apps/api" && PAO_DISABLE=1 php -r 'require "vendor/autoload.php"; $a = require "bootstrap/app.php"; $a->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo (int) config("pager.poll_interval");') s"
+# ⚠ READ FROM THE CONFIG FILE RATHER THAN BY BOOTING LARAVEL. This script runs inside the
+# browsers container (PHP 8.2 against an 8.4 requirement), so anything that loads
+# `vendor/autoload.php` dies on `platform_check.php` — the same wall the pager issuing hit.
+# A grep of the one config line is enough for a transcript header, and it names where it came
+# from so nobody mistakes it for a measured value.
+# `|| true` so a pipeline that matches nothing does not abort the substitution under
+# pipefail, and then an EXPLICIT refusal: an empty interval printed into a transcript header
+# is a hole that reads like a value, and this figure is the whole reason the median below is
+# reported rather than enforced.
+customer_interval="$(grep -oE "'poll_interval' => [0-9]+" "${REPO}/apps/api/config/pager.php" | grep -oE '[0-9]+$' || true)"
+
+if [ -z "$customer_interval" ]; then
+  echo "FATAL: could not read 'poll_interval' out of apps/api/config/pager.php" >&2
+  exit 1
+fi
+
+echo "  customer interval   ${customer_interval} s (config/pager.php)"
 echo "  node                $(node --version)"
 echo
 
