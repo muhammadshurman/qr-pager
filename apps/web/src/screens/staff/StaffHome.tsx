@@ -23,12 +23,21 @@ import type { Translate } from '../../copy/index.ts'
 export interface StaffHomeProps {
   readonly t: Translate
   readonly onDevices: () => void
-  /** Offered only when this browser can run a ceremony and the person may add one. */
-  readonly onAddPasskey?: () => void
-  readonly addPasskeyLabel?: string
+  /** Offered only when this browser can run a ceremony. */
+  readonly onAddPasskey?: (() => void) | undefined
+  /**
+   * What happened last time the person asked. `null` while they have not.
+   *
+   * ⚠ NOT OPTIONAL-AND-FORGOTTEN, which it was. The first version called `registerPasskey()`
+   * and DISCARDED its result, so the button did nothing observable whether the ceremony
+   * succeeded, was cancelled or was refused by the server. `§12`'s zero-technical-background
+   * bar is *every error says what to do*, and silence says nothing at all -- the person taps
+   * again, which is the behaviour a silent failure always produces.
+   */
+  readonly passkeyNotice?: 'added' | 'failed' | null
 }
 
-export function StaffHome({ t, onDevices, onAddPasskey, addPasskeyLabel }: StaffHomeProps) {
+export function StaffHome({ t, onDevices, onAddPasskey, passkeyNotice }: StaffHomeProps) {
   return (
     <>
       <StaffState
@@ -37,12 +46,23 @@ export function StaffHome({ t, onDevices, onAddPasskey, addPasskeyLabel }: Staff
         description={t('staff.home.body')}
         action={{ label: t('staff.home.action'), onAction: onDevices }}
       />
-      {onAddPasskey !== undefined && addPasskeyLabel !== undefined && (
+      {onAddPasskey !== undefined && (
         <div className="qr-staff-actions">
           <Button variant="quiet" onClick={onAddPasskey} data-add-passkey="true">
-            {addPasskeyLabel}
+            {t('staff.passkey.add')}
           </Button>
         </div>
+      )}
+      {passkeyNotice === 'added' && (
+        // `role="status"` rather than `alert`: it is good news and not an interruption.
+        <p className="qr-staff-state__description" role="status" data-passkey-notice="added">
+          {t('staff.passkey.added')}
+        </p>
+      )}
+      {passkeyNotice === 'failed' && (
+        <p className="qr-staff-state__title" role="alert" data-passkey-notice="failed">
+          {t('staff.passkey.failed')}
+        </p>
       )}
     </>
   )

@@ -187,14 +187,36 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null
 }
 
-/** Who is asking, and which restaurants they may act in. Also primes the CSRF cookie. */
+/**
+ * Who is asking, and which restaurants they may act in. Also primes the CSRF cookie.
+ *
+ * ⚠ THE NAME IS UNDER `user`, NOT AT THE TOP LEVEL, AND THE FIRST VERSION OF THIS READ IT
+ * FROM THE WRONG PLACE. `AuthController::identity()` returns
+ * `{ user: { id, name, email, … }, memberships, active_tenant }`; this read `data.name`,
+ * which is always absent -- so `name` was `''` and the shell rendered *"Signed in as "* with
+ * a hole in it. That is the exact `§12` defect this task asserts against elsewhere, and the
+ * unit test did not catch it because the FAKE returned the shape the client expected rather
+ * than the shape the server sends.
+ *
+ * The mechanism against a repeat is not a sharper eye: it is
+ * `apps/api/tests/Feature/Staff/StaffContractTest.php`, which drives the real endpoint and
+ * pins every key this function reads. A client reader and a server shape are a contract
+ * across two languages, and the only honest place to assert one is against the real
+ * response.
+ */
 export function fetchIdentity(apiBase: string): Promise<StaffResult<StaffIdentity>> {
   return call(apiBase, 'GET', '/v1/auth/me', undefined, (data) => {
     const root = asRecord(data)
 
     if (root === null) return null
 
-    const name = asString(root.name) ?? ''
+    const user = asRecord(root.user)
+    const name = user === null ? null : asString(user.name)
+
+    // No fallback to the email and none to a placeholder. A shell that cannot say who is
+    // signed in shows its error state, which is honest; "Signed in as " is not.
+    if (name === null) return null
+
     const raw = Array.isArray(root.memberships) ? root.memberships : []
     const memberships: StaffMembership[] = []
 
@@ -239,12 +261,39 @@ export function selectTenant(apiBase: string, tenantId: string): Promise<StaffRe
   return call(apiBase, 'POST', '/v1/auth/tenant', { tenant_id: tenantId })
 }
 
-export function signInWithPassword(
+/**
+ * Exchange an address and a password for a session, or for a second-factor challenge.
+ *
+ * ⚠ A 2FA-ARMED ACCOUNT ANSWERS **200** WITH `{"two_factor_required": true}`, NOT A 4xx, AND
+ * THE FIRST VERSION OF THIS MAPPED 403 TO THAT STATE. Measured in
+ * `AuthController::login()`: `response()->json(['two_factor_required' => true], 200)`. So the
+ * code field was unreachable -- a screen state in `SignInStage` that no event could produce,
+ * which is the same dead-state shape `R-205`'s `error.unknown` had in Task 9 and which
+ * `browser/one-handed.spec.ts` found there by iterating the state list and timing out.
+ *
+ * It is a distinct result rather than a boolean on `ok`, because the SCREEN differs: a 200
+ * that signed you in and a 200 that wants six digits are not the same answer, and a client
+ * that treated them alike would show a shell with no session behind it.
+ */
+export type PasswordOutcome =
+  { readonly kind: 'ok' } | { readonly kind: 'two-factor' } | { readonly kind: StaffFailure }
+
+export async function signInWithPassword(
   apiBase: string,
   email: string,
   password: string,
-): Promise<StaffResult<void>> {
-  return call(apiBase, 'POST', '/v1/auth/login', { email, password })
+): Promise<PasswordOutcome> {
+  const result = await call<'ok' | 'two-factor'>(
+    apiBase,
+    'POST',
+    '/v1/auth/login',
+    { email, password },
+    (data) => (asRecord(data)?.two_factor_required === true ? 'two-factor' : 'ok'),
+  )
+
+  if (result.kind !== 'ok') return { kind: result.kind }
+
+  return result.value === 'two-factor' ? { kind: 'two-factor' } : { kind: 'ok' }
 }
 
 export function completeTwoFactor(apiBase: string, code: string): Promise<StaffResult<void>> {

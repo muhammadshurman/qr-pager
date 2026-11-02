@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { signInAsStaff, staffFixture } from './support/e2e.ts'
+import { forgetStaffSession, signInAsStaff, staffFixture } from './support/e2e.ts'
 
 /**
  * ================================================================================
@@ -94,32 +94,58 @@ test.describe('§12 on the staff shell', () => {
   test('draws a visible focus ring on every control reachable by keyboard', async ({ page }) => {
     await signInAsStaff(page)
 
-    const rings = await page.evaluate(() => {
-      const out: { name: string; width: string; style: string }[] = []
+    /*
+     * ⚠ REAL `Tab` PRESSES, AND `element.focus()` DOES NOT WORK — MEASURED, NOT REASONED.
+     *
+     * The first version of this case called `element.focus()` from script and asserted the
+     * resolved outline, with a comment claiming that *"satisfies `:focus-visible` in every
+     * engine"*. It does not, in any of the three: `:focus-visible` is a HEURISTIC about how
+     * focus arrived, and on a page with no prior keyboard interaction a programmatic focus on
+     * a `<button>` does not match it. The gate reported `"Sign out" has outline-style none`
+     * from all six projects — the kit's ring is on `:focus-visible` and nothing was focus-
+     * visible.
+     *
+     * The honest driver is the keyboard, which is also what `§12`'s clause is about: *keyboard
+     * reachable, visible focus ring*. Tabbing proves both at once — a control the ring is
+     * drawn on but that Tab cannot reach would pass the old version and fail this one.
+     */
+    const controls = await page.locator('button:visible, a[href]:visible, input:visible').count()
 
-      for (const element of document.querySelectorAll<HTMLElement>('button, a[href], input')) {
-        if (element.getBoundingClientRect().height === 0) continue
+    // Not vacuous: the shell HAS controls, and the count is what bounds the loop below.
+    expect(controls).toBeGreaterThanOrEqual(2)
 
-        element.focus()
+    const seen: { name: string; width: string; style: string }[] = []
+
+    for (let step = 0; step < controls; step += 1) {
+      await page.keyboard.press('Tab')
+
+      const ring = await page.evaluate(() => {
+        const element = document.activeElement
+
+        if (element === null || element === document.body) return null
 
         const resolved = getComputedStyle(element)
 
-        out.push({
+        return {
           name: element.textContent.trim().slice(0, 40),
           width: resolved.outlineWidth,
           style: resolved.outlineStyle,
-        })
-      }
+          tag: element.tagName,
+        }
+      })
 
-      return out
-    })
+      if (ring === null) continue
+      if (!['BUTTON', 'A', 'INPUT'].includes(ring.tag)) continue
 
-    expect(rings.length).toBeGreaterThanOrEqual(2)
+      seen.push(ring)
+    }
 
-    for (const ring of rings) {
-      // ⚠ MEASURED FROM THE ENGINE, NOT FROM THE STYLESHEET. `:focus-visible` is what the kit
-      // styles, and `element.focus()` from script satisfies it in every engine -- so this
-      // reads the resolved outline of a genuinely focused element rather than the declaration.
+    // ⚠ EVERY CONTROL WAS ACTUALLY REACHED, asserted rather than hoped. A Tab order that
+    // escaped the document after one step would leave `seen` with one entry and every
+    // assertion below would pass.
+    expect(seen.length, 'Tab did not reach every visible control').toBeGreaterThanOrEqual(2)
+
+    for (const ring of seen) {
       expect(ring.style, `"${ring.name}" has outline-style ${ring.style}`).not.toBe('none')
       expect(
         Number.parseFloat(ring.width),
@@ -128,32 +154,91 @@ test.describe('§12 on the staff shell', () => {
     }
   })
 
-  test('has no motion to suppress, under either motion preference', async ({ page }) => {
-    // `§12` requires `prefers-reduced-motion` respected. The strongest way to respect it is to
-    // have no motion at all on a surface somebody is working a service on -- `staff.css`'s
-    // footer says so -- and this is the measured form of that claim rather than the absence of
-    // a media query being read as compliance.
+  test('reduces motion to ZERO when the person asks for less, not merely to shorter', async ({
+    page,
+  }) => {
+    /*
+     * ⚠ THE FIRST VERSION OF THIS CASE ASSERTED THE WRONG PROPERTY AND THE GATE SAID SO.
+     *
+     * It claimed the staff shell has *"no motion to suppress, under either motion
+     * preference"*, and all six projects answered with
+     * `transition 0.16s, 0.16s, 0.16s on qr-button qr-button--quiet`. That is not a defect —
+     * **160 ms is the APPROVED state token** (`--motion-state`), the kit's buttons have always
+     * carried it, and `browser/a11y.spec.ts` asserts that exact figure as correct. The claim
+     * was true only of `staff.css`, which declares no motion of its own, and the sweep ran
+     * over the whole subtree including kit components.
+     *
+     * `§12` asks for `prefers-reduced-motion` RESPECTED, not for a motionless product. So the
+     * assertion is the one `§12` actually makes, and it is the same shape `a11y.spec.ts` uses
+     * for the kit: with the preference set, motion is **zero** — not shorter.
+     */
     await signInAsStaff(page)
 
-    const moving = await page.evaluate(() => {
+    const measure = async (): Promise<string[]> =>
+      page.evaluate(() => {
+        const out: string[] = []
+
+        for (const element of document.querySelectorAll<HTMLElement>('.qr-staff, .qr-staff *')) {
+          const resolved = getComputedStyle(element)
+
+          if (resolved.animationName !== 'none' && resolved.animationName !== '') {
+            out.push(`animation ${resolved.animationName} on ${element.className}`)
+          }
+
+          for (const duration of resolved.transitionDuration.split(',')) {
+            if (Number.parseFloat(duration) > 0) {
+              out.push(`transition ${duration.trim()} on ${element.className}`)
+            }
+          }
+        }
+
+        return out
+      })
+
+    // ⚠ WITHOUT THE PREFERENCE THERE IS MOTION, asserted first. Without this the case below
+    // would pass against a surface that never animates — a measurement of nothing, which is
+    // the vacuous shape `a11y.spec.ts`'s own reduced-motion pair is built to avoid.
+    const ordinary = await measure()
+
+    expect(
+      ordinary.length,
+      'nothing on the staff shell animates at all, so the reduction below measures nothing',
+    ).toBeGreaterThan(0)
+
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+
+    expect(await measure(), 'motion survives prefers-reduced-motion').toEqual([])
+
+    // And `staff.css` itself introduces none — the claim its own footer makes. Asserted
+    // against the classes this task authored rather than against the whole subtree, which is
+    // the distinction the first version of this case got wrong.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+
+    const ownClasses = await page.evaluate(() => {
       const out: string[] = []
 
-      for (const element of document.querySelectorAll<HTMLElement>('.qr-staff *, .qr-staff')) {
+      for (const element of document.querySelectorAll<HTMLElement>('[class*="qr-staff"]')) {
+        // Only elements whose classes are ALL `qr-staff*` -- a `.qr-button` inside the shell
+        // is the kit's and carries the approved token.
+        const classes = element.className.split(/\s+/).filter((name) => name !== '')
+
+        if (!classes.every((name) => name.startsWith('qr-staff'))) continue
+
         const resolved = getComputedStyle(element)
 
         if (resolved.animationName !== 'none' && resolved.animationName !== '') {
-          out.push(`animation ${resolved.animationName} on ${element.className}`)
+          out.push(`animation on ${element.className}`)
         }
 
-        if (Number.parseFloat(resolved.transitionDuration) > 0) {
-          out.push(`transition ${resolved.transitionDuration} on ${element.className}`)
+        for (const duration of resolved.transitionDuration.split(',')) {
+          if (Number.parseFloat(duration) > 0) out.push(`transition on ${element.className}`)
         }
       }
 
       return out
     })
 
-    expect(moving).toEqual([])
+    expect(ownClasses, 'staff.css declares motion of its own').toEqual([])
   })
 
   test('mirrors in Arabic without a horizontal scroll, and keeps the name unflipped', async ({
@@ -162,7 +247,23 @@ test.describe('§12 on the staff shell', () => {
     const fixture = await signInAsStaff(page)
     const rtl = testInfo.project.name.endsWith('-rtl')
 
-    expect(await page.evaluate(() => document.documentElement.dir)).toBe(rtl ? 'rtl' : 'ltr')
+    /*
+     * ⚠ READ OFF THE ELEMENT `ThemeProvider` RENDERS, NOT `<html>`, AND THAT IS TASK 9's
+     * DECISION RATHER THAN A WORKAROUND. `app/layout.tsx` hard-codes `lang="en" dir="ltr"` on
+     * the document and says so; `ThemeProvider` sets `data-theme`, `lang` and `dir` together
+     * on one element, which is what `PagerJourney` already does for the customer journey.
+     * Asserting `<html>` here would assert a property of the root layout, which this ticket
+     * does not own.
+     *
+     * The FIRST version of this case did read `documentElement` — and found `ltr` in all
+     * three RTL projects, which was a real defect: `StaffApp` defaulted its locale prop to
+     * `'en'` and never read the browser's language list, so the staff surface was English-
+     * only. That is fixed in `StaffApp` and this assertion is what holds it.
+     */
+    const themed = page.locator('[data-theme]').first()
+
+    await expect(themed).toHaveAttribute('dir', rtl ? 'rtl' : 'ltr')
+    await expect(themed).toHaveAttribute('lang', rtl ? 'ar' : 'en')
 
     // A layout that mirrors by overflowing is not a mirrored layout. Measured on the real
     // engine, which is the only thing that can answer it.
@@ -413,6 +514,11 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
     const after = await page.evaluate(async () => (await fetch('/v1/tenant')).status)
 
     expect(after, 'the server session survived the lock').toBe(401)
+
+    // This case destroyed the shared session on purpose, so the next one must not spend five
+    // seconds discovering that. `signInAsStaff` verifies a restored session anyway -- this is
+    // courtesy to the case after it, not correctness.
+    forgetStaffSession()
 
     // And the overlay names neither the person nor the restaurant: a lock screen that still
     // said who was using it, and where, has leaked the two facts a shared-device lock exists

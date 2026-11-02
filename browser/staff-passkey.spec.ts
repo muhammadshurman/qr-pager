@@ -116,18 +116,41 @@ test.describe('10a — a passkey registered and used through the staff screen', 
     //    `POST /v1/auth/passkeys` with the `X-XSRF-TOKEN` read from `document.cookie`.
     await page.locator('[data-add-passkey="true"]').click()
 
-    // The authenticator really holds a credential now, read FROM THE ENGINE rather than
-    // inferred from a response this page deliberately does not display.
-    await expect
-      .poll(
-        async () =>
-          (await cdp.send('WebAuthn.getCredentials', { authenticatorId })).credentials.length,
-        {
-          message: `no credential was created. page errors: ${JSON.stringify(pageErrors)}`,
-          timeout: 30_000,
-        },
-      )
-      .toBe(1)
+    /*
+     * ⚠ THE SCREEN SAYS IT WORKED, AND THAT IS ASSERTED FIRST BECAUSE THE FIRST VERSION OF
+     * THIS CASE COULD NOT TELL. It polled `WebAuthn.getCredentials` and required one
+     * credential -- but `navigator.credentials.create()` writes to the AUTHENTICATOR whether
+     * or not our POST succeeds, so that count is 1 even when the server refused the
+     * attestation. On 10a's first full `gate:e2e` run it was exactly that: the engine held a
+     * credential, the server had stored nothing (an origin mismatch), and the poll passed
+     * while the registration had failed.
+     *
+     * Three checks now, in this order, because they can disagree and the disagreement is the
+     * interesting case: the SCREEN's report, then the SERVER's record, then the engine's.
+     */
+    await expect(
+      page.locator('[data-passkey-notice="added"]'),
+      `the screen did not report a registered passkey. page errors: ${JSON.stringify(pageErrors)}`,
+    ).toBeVisible({ timeout: 30_000 })
+
+    // THE SERVER's OWN RECORD. `AuthController::identity()` reports `passkeys_enabled` from
+    // the user's stored credentials, so this is true only if the attestation was accepted and
+    // persisted -- the half the CDP credential count cannot see.
+    expect(
+      await page.evaluate(async () => {
+        const response = await fetch('/v1/auth/me', { headers: { Accept: 'application/json' } })
+        const body = (await response.json()) as { user?: { passkeys_enabled?: boolean } }
+
+        return body.user?.passkeys_enabled === true
+      }),
+      'the server stored no passkey, so the registration was refused',
+    ).toBe(true)
+
+    // And the authenticator holds exactly one, read from the engine. Kept as a THIRD check
+    // rather than the first: it rules out a server that recorded a credential nobody made.
+    const { credentials } = await cdp.send('WebAuthn.getCredentials', { authenticatorId })
+
+    expect(credentials.length).toBe(1)
 
     // 3. Lock the screen. This destroys the SERVER session, so step 4 cannot pass on the
     //    password session -- which is the same reason `passkey.spec.ts` signs out between

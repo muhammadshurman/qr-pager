@@ -32,6 +32,37 @@ const RESTAURANT = 'Al Baik Jeddah'
 const PERSON = 'Hiba Mansour'
 const TENANT_ID = '01a199c4-7f3e-7000-8000-0123456789ab'
 
+/**
+ * ⚠ THE FAKE'S SHAPE IS THE SERVER'S, AND THE FIRST VERSION OF IT WAS NOT.
+ *
+ * `AuthController::identity()` nests the person under `user`; this file's fake returned a
+ * top-level `name`, so `fetchIdentity` read the key it expected rather than the key the
+ * server sends -- and every case here passed while the real shell rendered *"Signed in as "*
+ * with a hole in it. A fake written to match the client is a fake that cannot find this
+ * class of bug.
+ *
+ * The mechanism against a repeat is `apps/api/tests/Feature/Staff/StaffContractTest.php`,
+ * which drives the REAL endpoint and pins every key the client reads. This shape is written
+ * once, here, so the fake and that contract have one place to disagree.
+ */
+function identityPayload(overrides?: {
+  readonly memberships?: unknown
+  readonly activeTenant?: string | null
+}) {
+  return {
+    user: {
+      id: '01a199c4-7f3e-7000-8000-ffffffffffff',
+      name: PERSON,
+      email: 'hiba@example.test',
+      is_platform_admin: false,
+      two_factor_enabled: false,
+      passkeys_enabled: true,
+    },
+    memberships: overrides?.memberships ?? [{ tenant_id: TENANT_ID, role: 'owner' }],
+    active_tenant: overrides?.activeTenant === undefined ? TENANT_ID : overrides.activeTenant,
+  }
+}
+
 interface Call {
   readonly url: string
   readonly method: string
@@ -56,14 +87,7 @@ function stack(options?: { readonly identity?: unknown; readonly tenantStatus?: 
     calls.push({ url, method: init?.method ?? 'GET' })
 
     if (url.endsWith('/v1/auth/me')) {
-      return json(
-        200,
-        options?.identity ?? {
-          name: PERSON,
-          memberships: [{ tenant_id: TENANT_ID, role: 'owner' }],
-          active_tenant: TENANT_ID,
-        },
-      )
+      return json(200, options?.identity ?? identityPayload())
     }
 
     if (url.endsWith('/v1/tenant')) {
@@ -219,6 +243,44 @@ describe('the lock', () => {
     expect(document.querySelector('[data-staff-shell="true"]')).toBeNull()
   })
 
+  it('sends the person back to sign-in rather than restoring the shell, so recovery needs the credential', async () => {
+    // ⚠ THE CLAUSE THIS CASE IS FOR: `§4`'s *"recovery needs the credential again"*. The
+    // overlay has one button, and the thing it must NOT do is put the shell back -- which is
+    // the one-line change somebody would make to "fix" a lock that feels annoying, and which
+    // would turn the whole mechanism into a curtain with a handle on the inside.
+    //
+    // The SERVER half is already gone by then (the logout is asserted in the case above), so
+    // a restored shell would answer 401 to everything and show a blank restaurant name. This
+    // asserts the client does not even try.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    stack()
+
+    render(<StaffApp apiBase="" view="home" idleSeconds={10} />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+    })
+
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-locked="true"]')).not.toBeNull()
+    })
+
+    screen.getByRole('button', { name: t('staff.lock.signIn') }).click()
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: t('staff.signin.title') })).toBeDefined()
+    })
+
+    // Sign-in, not the shell, and still no tenant datum anywhere.
+    expect(document.querySelector('[data-staff-shell="true"]')).toBeNull()
+    expect(everything().includes(RESTAURANT)).toBe(false)
+    expect(everything().includes(PERSON)).toBe(false)
+    expect(document.querySelector('[data-passkey-signin="true"]')).not.toBeNull()
+  })
+
   it('writes nothing to storage, so there is nowhere for a datum to survive', async () => {
     stack()
 
@@ -265,14 +327,13 @@ describe('a user with two memberships and none selected', () => {
     // The actor 10a makes real. `Memberships::sole()` refuses to choose, so every staff
     // route answers 401 until `POST /v1/auth/tenant` -- and this is the screen for it.
     stack({
-      identity: {
-        name: PERSON,
+      identity: identityPayload({
         memberships: [
           { tenant_id: TENANT_ID, role: 'owner' },
           { tenant_id: '01a199c4-7f3e-7000-8000-ba9876543210', role: 'manager' },
         ],
-        active_tenant: null,
-      },
+        activeTenant: null,
+      }),
     })
 
     render(<StaffApp apiBase="" view="home" />)

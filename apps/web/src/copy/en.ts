@@ -164,6 +164,9 @@ export const EN = {
   'staff.home.body':
     'The order board arrives next. For now you can set up the kitchen screens that will show it.',
   'staff.home.action': 'Kitchen screens',
+  'staff.passkey.add': 'Add a passkey to this device',
+  'staff.passkey.added': 'This device can sign you in with a passkey now.',
+  'staff.passkey.failed': 'That did not work. Try again, or sign in with your password next time.',
 
   // ----------------------------------------------------------------------- the lock
   'staff.lock.title': 'Screen locked',

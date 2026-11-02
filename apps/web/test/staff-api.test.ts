@@ -7,6 +7,7 @@ import {
   fetchTenant,
   issueDevice,
   revokeDevice,
+  signInWithPassword,
   signOut,
 } from '../src/staff/api.ts'
 
@@ -182,6 +183,73 @@ describe('the restaurant', () => {
     )
 
     expect((await fetchTenant('')).kind).toBe('server')
+  })
+})
+
+describe('the person', () => {
+  it('reads the name from `user.name`, where the server actually puts it', async () => {
+    // ⚠ THIS CASE EXISTS BECAUSE THE FIRST VERSION READ `data.name` AND EIGHT CASES PASSED
+    // OVER IT. The server nests the person under `user`
+    // (`AuthController::identity()`), the shell rendered "Signed in as " with a hole in it,
+    // and the fakes in `staff-app.test.tsx` returned the shape the CLIENT expected -- which
+    // is a fake that cannot find a disagreement with the server by construction.
+    //
+    // The cross-language half is `apps/api/tests/Feature/Staff/StaffContractTest.php`, which
+    // drives the real endpoint. This is the client half: the payload below is the server's
+    // real shape, and the assertion is that the name is found in it.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        respond(200, {
+          user: { id: 'u1', name: 'Hiba Mansour', email: 'h@example.test' },
+          memberships: [{ tenant_id: 't1', role: 'owner' }],
+          active_tenant: 't1',
+        }),
+      ),
+    )
+
+    const result = await fetchIdentity('')
+
+    expect(result.kind).toBe('ok')
+    expect(result.kind === 'ok' ? result.value.name : null).toBe('Hiba Mansour')
+    expect(result.kind === 'ok' ? result.value.activeTenant : null).toBe('t1')
+    expect(result.kind === 'ok' ? result.value.memberships.length : 0).toBe(1)
+  })
+
+  it('answers server when the name is missing, rather than signing somebody in as nobody', async () => {
+    // No fallback to the email and none to a placeholder: a shell that cannot say who is
+    // signed in shows its error state, which is honest. "Signed in as " is not, and it is
+    // the exact §12 defect this task asserts against on four other screens.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(respond(200, { user: { id: 'u1' }, memberships: [] })),
+    )
+
+    expect((await fetchIdentity('')).kind).toBe('server')
+  })
+
+  it('reads a second factor out of a 200 BODY, because that is how the server asks for one', async () => {
+    // ⚠ 200 AND A FLAG, NOT A 4xx. The client's first version mapped 403 to this, which made
+    // the code field a screen state no event could produce. `AuthController::login()` returns
+    // `response()->json(['two_factor_required' => true], 200)`.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(200, { two_factor_required: true })))
+
+    expect((await signInWithPassword('', 'a@b.test', 'pw')).kind).toBe('two-factor')
+
+    // And a plain 200 with no flag is a completed sign-in. Without this, a client that
+    // answered `two-factor` for every 200 would pass the case above.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(200, { ok: true })))
+
+    expect((await signInWithPassword('', 'a@b.test', 'pw')).kind).toBe('ok')
+
+    // A refused password is one message, whatever the status.
+    for (const status of [401, 403, 422]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(status, {})))
+
+      const outcome = await signInWithPassword('', 'a@b.test', 'pw')
+
+      expect(outcome.kind, `${String(status)} should not be two-factor`).not.toBe('two-factor')
+    }
   })
 })
 

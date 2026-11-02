@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { Page } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 
 /**
  * ================================================================================
@@ -202,15 +202,57 @@ export function staffFixture(): StaffFixture {
   return staffCached
 }
 
+/** The cookies of the last successful staff login, reused across cases. See below. */
+let staffCookies: Awaited<ReturnType<BrowserContext['cookies']>> | null = null
+
 /**
  * Sign in as the staff fixture's owner, through the real login form on 10a's own screen.
  *
  * The PASSWORD path, deliberately: this helper is used by the `§12` and isolation cases,
  * which are about the shell rather than about the ceremony, and a WebAuthn ceremony needs CDP
  * and therefore one engine. `browser/staff-passkey.spec.ts` drives the passkey path.
+ *
+ * ================================================================================
+ * ⚠ ONE LOGIN PER SESSION, REUSED — AND THE RATE LIMITER IS WHY
+ * ================================================================================
+ *
+ * The first version logged in from scratch in every case: six projects times seven cases is
+ * **forty-two logins from one IP in ten minutes**, against `config/ratelimit.php`'s
+ * `auth-login` bucket. Measured consequence in the first full `gate:e2e` run: Chromium's
+ * cases passed, then **five cases across firefox and webkit timed out at 30 s** waiting for a
+ * shell that never arrived — because the eleventh login onward was a 429.
+ *
+ * **The limiter was right and the spec was wrong.** `R-063`'s own clause is that a limit is
+ * proven by being driven, and `RateLimitTest` drives this bucket to a real 429 on purpose; a
+ * browser suite that trips it is a suite modelling something no restaurant does. One person
+ * signs in once and works a shift.
+ *
+ * So the cookies of the first successful login are kept for the process and re-added to each
+ * new context. **It is verified rather than assumed**: after restoring, the shell has to
+ * appear, and if it does not — which is exactly what happens after a case that locks the
+ * screen and destroys the session server-side — the helper falls back to a real login and
+ * refreshes the cache. A cache that silently served a dead session would turn every later
+ * case into a sign-in-screen assertion failure with no hint of the cause.
  */
 export async function signInAsStaff(page: Page): Promise<StaffFixture> {
   const fixture = staffFixture()
+  const context = page.context()
+
+  if (staffCookies !== null) {
+    await context.addCookies(staffCookies)
+    await page.goto('/staff')
+
+    // A short wait, not the full 30 s: a restored session either works immediately or is
+    // dead, and spending the whole budget here would make the fallback below useless.
+    const restored = await page
+      .waitForSelector('[data-staff-shell="true"]', { timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false)
+
+    if (restored) return fixture
+
+    staffCookies = null
+  }
 
   await page.goto('/staff')
   await page.getByRole('button', { name: /use a password instead|استخدم كلمة المرور/i }).click()
@@ -219,5 +261,18 @@ export async function signInAsStaff(page: Page): Promise<StaffFixture> {
   await page.locator('[data-password-signin="true"]').click()
   await page.waitForSelector('[data-staff-shell="true"]', { timeout: 30_000 })
 
+  staffCookies = await context.cookies()
+
   return fixture
+}
+
+/**
+ * Forget the cached session.
+ *
+ * Called by a case that deliberately destroys the server session, so the next case does not
+ * spend five seconds discovering it. Not required for correctness — the verification above
+ * covers it — but it keeps a locking case from taxing the one after it.
+ */
+export function forgetStaffSession(): void {
+  staffCookies = null
 }

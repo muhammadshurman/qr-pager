@@ -12,6 +12,7 @@ use App\Platform\Auth\RequestPrincipal;
 use App\Platform\Auth\TwoFactorSecrets;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\TenantContext;
+use App\Platform\Auth\PasskeyOrigins;
 use App\Platform\Database\TenantScopeGuard;
 use App\Platform\Http\ActiveMembership;
 use App\Platform\Http\PacedProblemDocument;
@@ -413,5 +414,26 @@ class AppServiceProvider extends ServiceProvider
         // be the thing that is missing -- see TenantScopeGuard for why the attachment
         // is beforeExecuting() and not DB::listen().
         $this->app->make(TenantScopeGuard::class)->listen($this->app->make(Dispatcher::class));
+
+        /*
+         * ================================================================================
+         * THE PASSKEY ORIGIN ALLOW-LIST, SET HERE AND NOT IN A CONFIG FILE
+         * ================================================================================
+         *
+         * `App\Platform\Auth\PasskeyOrigins` carries the whole argument, including the
+         * MEASUREMENT that a published `config/passkeys.php` is silently ignored for every key
+         * the vendor file also has on `laravel/framework v13.38.0`. In one line: a published
+         * file would look authoritative and do nothing.
+         *
+         * ⚠ IN `boot()` AND NOT IN `register()`, AND THAT IS THE WHOLE MECHANISM.
+         * `PasskeysServiceProvider::register()` calls `mergeConfigFrom`, so its defaults are
+         * in place by the time any provider boots; a `config()` call from a `register()` here
+         * could run before it and be overwritten. `boot()` runs after every `register()`, so
+         * this is the first point at which the application can have the last word.
+         *
+         * Task 10a is the first task with a WebAuthn ceremony on a page Laravel does not
+         * serve, which is why the need appears now and not at Task 5.
+         */
+        config(['passkeys.allowed_origins' => PasskeyOrigins::allowed()]);
     }
 }

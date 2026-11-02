@@ -46,10 +46,10 @@ describe('the copy catalogue', () => {
     // type, and an EXTRA Arabic key -- a renamed English id leaving its translation behind
     // -- is caught only here.
     expect(ar).toEqual(en)
-    // 62 at Task 9, 121 at Task 10a: the staff surface's sign-in, shell, lock and kitchen
-    // screens. The count is pinned rather than omitted because a key SILENTLY DELETED from
+    // 62 at Task 9, 124 at Task 10a: the staff surface's sign-in, shell, lock, kitchen
+    // screens and the add-a-passkey outcome. The count is pinned rather than omitted because a key SILENTLY DELETED from
     // both files at once is the one change key-parity cannot see.
-    expect(en.length).toBe(121)
+    expect(en.length).toBe(124)
   })
 
   it('has no empty value in either language', () => {

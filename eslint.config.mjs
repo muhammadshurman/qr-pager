@@ -27,6 +27,27 @@ export default tseslint.config(
       // left in it, which is the same argument `scan-css.mjs`'s `EXEMPT_SEGMENTS` makes
       // about `node_modules`.
       'storage/**',
+      // ⚠ `§11`'s REVIEWER WORKTREES, AND THIS WAS A MEASURED GATE DEFECT RATHER THAN
+      // TIDYING.
+      //
+      // `.gitignore` already excludes `/.claude/worktrees/`, which keeps them out of COMMITS
+      // and does nothing about a linter: `eslint .` walks the filesystem, so two detached
+      // worktrees of this repository made one run lint THREE COPIES of it. Measured on
+      // 2026-11-02 while 10a's reviewers were being set up: a clean tree went from 0 findings
+      // to 3,914, every one of them under a worktree path, and the real ones -- if there had
+      // been any -- would have been unfindable in the noise.
+      //
+      // It is worse than noise. `§0.2` (b) made the two `§11` reviewers run AT THE SAME TIME
+      // in their own worktrees, so from Task 10a onward the ordinary state of this repository
+      // DURING a review round is that two copies of it exist inside it. A gate whose result
+      // depends on whether a review happens to be in flight is not a gate.
+      //
+      // ⚠ AND IT IS LINE COMMENTS RATHER THAN A BLOCK, DELIBERATELY. The first version of
+      // this note was a `/* … */` block that quoted the glob `.claude/worktrees/` followed by
+      // a star and a slash -- which CLOSED the comment three lines early and made the whole
+      // config a syntax error: `eslint .` died with `Invalid or unexpected token` and no
+      // finding at all, which is a worse gate result than 3,914 of them.
+      '.claude/**',
       '**/dist/**',
       'apps/api/**',
       // Generated. The gate byte-diffs each against its generator's output, so a lint fix

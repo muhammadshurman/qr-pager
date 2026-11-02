@@ -50,7 +50,14 @@ const EXEMPT_PREFIXES = [
  * the token file reached through a workspace symlink. A linter that reports its own
  * dependencies' code has no signal left in it.
  */
-const EXEMPT_SEGMENTS = ['node_modules', '.next', 'coverage', 'dist', '.git', 'out']
+/*
+ * `.claude` joined on 2026-11-02, for the reason `eslint.config.mjs` records at length: `§11`'s
+ * two reviewers now run concurrently in detached worktrees under `.claude/worktrees/`, so the
+ * ordinary state of this repository DURING a review round is that two copies of it exist
+ * inside it. This walk would scan all three and its FLOOR check would pass comfortably while
+ * every finding was reported three times.
+ */
+const EXEMPT_SEGMENTS = ['node_modules', '.next', 'coverage', 'dist', '.git', 'out', '.claude']
 
 export function isExempt(path) {
   const rel = relative(ROOT, path).split(sep).join('/')

@@ -22,6 +22,7 @@ import {
   type StaffIdentity,
   type StaffTenant,
 } from './staff/api.ts'
+import { browserLocale } from './pager/locale.ts'
 import { registerPasskey, signInWithPasskey, passkeysAvailable } from './staff/passkey.ts'
 import { watchForIdle } from './staff/session.ts'
 
@@ -71,8 +72,8 @@ export type StaffView = 'home' | 'devices'
 export interface StaffAppProps {
   readonly apiBase: string
   readonly view: StaffView
-  /** Injected in tests. The real app reads the document's own locale. */
-  readonly locale?: Locale
+  /** Injected in tests. The real app reads the BROWSER's own language list. */
+  readonly locale?: Locale | undefined
   /** Injected in tests, so the lock does not need fifteen real minutes to fire. */
   readonly idleSeconds?: number
   /** Injected in tests. The real app navigates. */
@@ -81,8 +82,37 @@ export interface StaffAppProps {
 
 type Phase = 'loading' | 'signed-out' | 'ready' | 'locked' | 'error' | 'offline'
 
-export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate }: StaffAppProps) {
-  const t = useMemo(() => translatorFor(locale), [locale])
+export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: StaffAppProps) {
+  /*
+   * ⚠ THE LANGUAGE COMES FROM THE BROWSER, AND THE FIRST VERSION OF THIS HARD-CODED `'en'`.
+   *
+   * It defaulted the prop to `'en'` and nothing ever overrode it, so the staff surface was
+   * English-only -- `§12` names Arabic a launch language and requires an RTL-safe layout, and
+   * a surface that never renders RTL satisfies neither however carefully its stylesheet uses
+   * logical properties. **Found by the browser gate**: the three `staff-*-rtl` projects set
+   * `locale: 'ar-JO'` on the context and measured `dir` as `ltr`.
+   *
+   * `browserLocale()` is Task 9's resolver and is reused rather than re-implemented: it
+   * matches on the PRIMARY SUBTAG, which is the half a `===` against `LOCALES` gets wrong --
+   * real devices send `ar-JO` and `en-GB`, never a bare `ar`.
+   *
+   * ⚠ DETECTED IN AN EFFECT, NOT AT FIRST RENDER, which is `PagerJourney`'s own pattern and
+   * for its reason: these routes are statically prerendered, so the server render has no
+   * `navigator` and a direct read would be a hydration mismatch. The first paint is the
+   * fallback language and the effect corrects it before anything but the loading state is on
+   * screen.
+   */
+  const [detected, setDetected] = useState<Locale | null>(locale ?? null)
+
+  useEffect(() => {
+    if (locale !== undefined) return
+    if (typeof navigator === 'undefined') return
+
+    setDetected(browserLocale(navigator))
+  }, [locale])
+
+  const resolved: Locale = detected ?? 'en'
+  const t = useMemo(() => translatorFor(resolved), [resolved])
 
   const [phase, setPhase] = useState<Phase>('loading')
   const [signInStage, setSignInStage] = useState<SignInStage>('idle')
@@ -93,6 +123,7 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
     'loading' | 'ready' | 'error' | 'offline' | 'permission-denied'
   >('loading')
   const [issued, setIssued] = useState<IssuedDevice | null>(null)
+  const [passkeyNotice, setPasskeyNotice] = useState<'added' | 'failed' | null>(null)
 
   /** One function, and it is the whole of "the shell holds no tenant datum". */
   const clearTenantData = useCallback((): void => {
@@ -100,6 +131,7 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
     setTenant(null)
     setDevices(null)
     setIssued(null)
+    setPasskeyNotice(null)
     setDevicesPhase('loading')
   }, [])
 
@@ -238,17 +270,27 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
         return
       }
 
+      // ⚠ `two-factor` IS A 200, NOT A 4xx, AND THE FIRST VERSION OF THIS MAPPED 403 TO IT
+      // -- which made the code field a state no event could produce. `signInWithPassword`
+      // reads `two_factor_required` out of the body for that reason; the mapping is in one
+      // place and the screen just follows it.
+      if (result.kind === 'two-factor') {
+        setSignInStage('two-factor')
+
+        return
+      }
+
       if (result.kind === 'unreachable') {
         setSignInStage('offline')
 
         return
       }
 
-      // A 2FA-armed account answers the login with something this client cannot act on
-      // directly; the challenge is the next step either way, and a wrong password lands on
-      // `failed` from the same branch. Separating them here would be the oracle S1's note
-      // refuses.
-      setSignInStage(result.kind === 'forbidden' ? 'two-factor' : 'failed')
+      // Everything else is one message. Separating a wrong password from an unknown address
+      // is the oracle `§4 › Security`'s single-message refusal rule exists to close, and the
+      // server already answers alike -- a client that split them would re-open it from this
+      // side.
+      setSignInStage('failed')
     },
     [apiBase, afterCredential],
   )
@@ -353,7 +395,23 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
   )
 
   const onAddPasskey = useCallback(async (): Promise<void> => {
-    await registerPasskey(apiBase, 'this device')
+    setPasskeyNotice(null)
+
+    const outcome = await registerPasskey(apiBase, 'this device')
+
+    // ⚠ THE OUTCOME IS SHOWN, AND THE FIRST VERSION THREW IT AWAY. `registerPasskey()`
+    // returns a discriminated result precisely so a screen can say what happened; a call
+    // that ignores it leaves the person tapping a button that does nothing observable.
+    //
+    // `cancelled` shows NOTHING, deliberately: the person dismissed the system prompt
+    // themselves, and telling them their own action did not work is noise.
+    if (outcome.kind === 'ok') {
+      setPasskeyNotice('added')
+
+      return
+    }
+
+    if (outcome.kind !== 'cancelled') setPasskeyNotice('failed')
   }, [apiBase])
 
   /* ----------------------------------------------------------------------- rendering */
@@ -366,13 +424,13 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
 
       // The restaurant's own timezone, which is why `GET /v1/tenant` carries it: a kitchen
       // screen showing UTC is showing a time nobody in the building is living in.
-      return new Intl.DateTimeFormat(locale, {
+      return new Intl.DateTimeFormat(resolved, {
         dateStyle: 'medium',
         timeStyle: 'short',
         timeZone: tenant?.timezone ?? 'UTC',
       }).format(when)
     },
-    [locale, tenant],
+    [resolved, tenant],
   )
 
   /** The loading / error / offline view, used with and without the chrome. */
@@ -427,15 +485,15 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
       <StaffHome
         t={t}
         onDevices={() => onNavigate?.('devices')}
-        {...(passkeysAvailable() ? { onAddPasskey: () => void onAddPasskey() } : {})}
-        {...(passkeysAvailable() ? { addPasskeyLabel: t('staff.signin.passkey') } : {})}
+        onAddPasskey={passkeysAvailable() ? () => void onAddPasskey() : undefined}
+        passkeyNotice={passkeyNotice}
       />
     )
   }
 
   if (phase === 'locked') {
     return (
-      <ThemeProvider locale={locale}>
+      <ThemeProvider locale={resolved} as="div">
         <LockScreen
           title={t('staff.lock.title')}
           description={t('staff.lock.body')}
@@ -451,7 +509,7 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
 
   if (phase === 'signed-out') {
     return (
-      <ThemeProvider locale={locale}>
+      <ThemeProvider locale={resolved} as="div">
         <StaffSignIn
           t={t}
           stage={signInStage}
@@ -488,7 +546,7 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
    */
   if (phase !== 'ready' || tenant === null || identity === null) {
     return (
-      <ThemeProvider locale={locale}>
+      <ThemeProvider locale={resolved} as="div">
         <div className="qr-staff">
           <main className="qr-staff__main">{unresolved()}</main>
         </div>
@@ -499,7 +557,7 @@ export function StaffApp({ apiBase, view, locale = 'en', idleSeconds, onNavigate
   const role = identity.memberships.find((m) => m.tenantId === identity.activeTenant)?.role ?? ''
 
   return (
-    <ThemeProvider locale={locale}>
+    <ThemeProvider locale={resolved} as="div">
       <StaffShell
         restaurant={tenant.name}
         person={identity.name}
