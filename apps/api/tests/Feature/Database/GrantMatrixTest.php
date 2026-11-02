@@ -42,10 +42,33 @@ it('grants UPDATE on no tenant_id column anywhere', function (): void {
     }
 });
 
-it('grants the app exactly the pager_sessions updates the state machine needs', function (): void {
+it('grants the app exactly the pager_sessions updates the state machine needs, plus 10d\'s rotation', function (): void {
+    /*
+     * ⚠ `token_hash` JOINED AT TASK 10d AND IT IS A CHANGE TO A DELIBERATE POSTURE, not a
+     * filled gap. `2026_11_02_130000_grant_pager_token_rotation.php` carries the full argument:
+     * Muhammad's ruling (`QRPAGER-28 §2`) makes a sheet RE-ISSUABLE and never reprintable,
+     * which means a token rotation on the existing row, which the write-once grant refused —
+     * found by the database answering `SQLSTATE[42501]`, not by reading the migration.
+     *
+     * The three alternatives (terminate-and-recreate, an owner-connection write, and this) are
+     * measured there. The short version of why this one: the app role can ALREADY set `status`
+     * on every session in its tenant, so it can already void every live pager AND notify every
+     * one of those customers that their order is cancelled — rotating a hash is the quieter
+     * half of a harm already available.
+     *
+     * ⚠ **AND `SELECT (token_hash)` IS STILL NOT GRANTED**, which is the half that keeps
+     * `§4 › Data`'s *stored as a hash only* true at the role layer. `PagerGrantNarrowingTest`
+     * asserts that absence directly and pins all three privilege sets on this table.
+     */
     expect(Schema::grantedColumns('qrpager_app', 'pager_sessions', 'UPDATE'))->toBe([
-        'cancelled_at', 'completed_at', 'last_notified_at', 'ready_at', 'renotify_count', 'status', 'updated_at',
+        'cancelled_at', 'completed_at', 'last_notified_at', 'ready_at', 'renotify_count',
+        'status', 'token_hash', 'updated_at',
     ]);
+
+    // The bound that makes the addition above proportionate, asserted beside it rather than
+    // only in the other file: replaceable, never readable.
+    expect(in_array('token_hash', Schema::grantedColumns('qrpager_app', 'pager_sessions', 'SELECT'), true))
+        ->toBeFalse('the app role can READ a pager token hash');
 });
 
 it('grants the worker only the expiry columns on pager_sessions', function (): void {

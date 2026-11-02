@@ -3,20 +3,31 @@
 import { Button, LockScreen, StaffShell, StaffState, ThemeProvider, type Locale } from '@qrpager/ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { translatorFor } from './copy/index.ts'
+import { translatorFor, type CopyKey } from './copy/index.ts'
 import { StaffBoard, type BoardPhase, type DetailPhase } from './screens/staff/StaffBoard.tsx'
+import { StaffHistory, type HistoryPhase } from './screens/staff/StaffHistory.tsx'
+import { StaffIssue, type IssuePhase } from './screens/staff/StaffIssue.tsx'
+import { StaffTeam, type TeamNotice, type TeamPhase } from './screens/staff/StaffTeam.tsx'
 import { StaffDevices } from './screens/staff/StaffDevices.tsx'
 import { StaffSignIn, roleKey, type SignInStage } from './screens/staff/StaffSignIn.tsx'
 import {
+  NO_HISTORY_FILTERS,
   PROBLEM_EXPIRED,
+  addTeamMember,
   cancelSession,
+  changeTeamMemberRole,
   completeSession,
   fetchBoard,
   fetchDevices,
+  fetchHistory,
   fetchIdentity,
+  fetchTeam,
   fetchTenant,
   issueDevice,
+  issueSheet,
   markSessionReady,
+  reissueSheet,
+  removeTeamMember,
   renotifySession,
   revokeDevice,
   selectTenant,
@@ -24,12 +35,16 @@ import {
   signOut,
   completeTwoFactor,
   type BoardPager,
+  type HistoryFilters,
+  type HistoryOrder,
   type IssuedDevice,
+  type IssuedSheet,
   type StaffFailure,
   type StaffDevice,
   type StaffIdentity,
   type StaffResult,
   type StaffTenant,
+  type TeamMember,
   type TransitionOutcome,
 } from './staff/api.ts'
 import { nextBoardDelayMs, isStale, shouldTellThem } from './staff/board.ts'
@@ -79,7 +94,25 @@ import { watchForIdle } from './staff/session.ts'
  * then expires on its own, which is the fallback rather than the mechanism.
  */
 
-export type StaffView = 'home' | 'devices'
+/**
+ * Every staff route, and the union IS the route set.
+ *
+ * ⚠ FIVE AT 10e, AND `apps/web/test/staff-build-surface.test.ts` DERIVES THE ROUTES FROM THE
+ * BUILD AND PINS THEM AGAINST THIS LIST'S LENGTH. A view added here without a route, or a
+ * route added without a view, fails there rather than rendering the board at an unexpected
+ * path — which is what a `default` branch in `body()` would do silently.
+ *
+ *   `home`      the live board and the pager detail           10b
+ *   `devices`   kitchen screens                               10a
+ *   `history`   past orders, with filters                     10d
+ *   `issue`     start a pager, and re-issue a sheet           10d
+ *   `team`      the restaurant's staff                        10e
+ *
+ * The KDS (`/kds`) is deliberately NOT here: it is a different authentication surface with a
+ * different app (`KdsApp`), and `app/staff/layout.tsx`'s own note records why the two are not
+ * one component with a flag.
+ */
+export type StaffView = 'home' | 'devices' | 'history' | 'issue' | 'team'
 
 export interface StaffAppProps {
   readonly apiBase: string
@@ -181,6 +214,40 @@ export function StaffApp({
    * from and the wrong one for an action somebody just took.
    */
   const [lockReason, setLockReason] = useState<'idle' | 'signed-out'>('idle')
+
+  /* ------------------------------------------------- past orders and the sheet, 10d */
+
+  const [history, setHistory] = useState<readonly HistoryOrder[]>([])
+  const [historyPhase, setHistoryPhase] = useState<HistoryPhase>('loading')
+  /**
+   * The filters IN FORCE and the filters BEING EDITED, as two values.
+   *
+   * ⚠ TWO AND NOT ONE, AND THE EMPTY STATE IS WHY. `StaffHistory` picks between two empty
+   * states by asking whether any filter is set — and the honest question is *what produced the
+   * answer on screen*, not *what has the person since typed*. With one value, clearing the
+   * date control would flip the empty state's copy and its button before the refetch landed,
+   * so a person would read *"No orders yet"* about a restaurant whose orders they had just
+   * filtered away.
+   */
+  const [appliedFilters, setAppliedFilters] = useState<HistoryFilters>(NO_HISTORY_FILTERS)
+  const [draftFilters, setDraftFilters] = useState<HistoryFilters>(NO_HISTORY_FILTERS)
+
+  const [issuePhase, setIssuePhase] = useState<IssuePhase>('idle')
+  const [issueReference, setIssueReference] = useState('')
+  const [sheet, setSheet] = useState<IssuedSheet | null>(null)
+  /** The order a re-issue is being confirmed for: its id to send, its reference to show. */
+  const [reissuing, setReissuing] = useState<{ id: string; reference: string } | null>(null)
+
+  /* ------------------------------------------------------------- the staff, 10e */
+
+  const [team, setTeam] = useState<readonly TeamMember[]>([])
+  const [teamPhase, setTeamPhase] = useState<TeamPhase>('loading')
+  const [teamNotice, setTeamNotice] = useState<TeamNotice | null>(null)
+  const [teamBusy, setTeamBusy] = useState(false)
+  const [addingMember, setAddingMember] = useState(false)
+  const [newMemberEmail, setNewMemberEmail] = useState('')
+  const [newMemberRole, setNewMemberRole] = useState('')
+  const [removingMember, setRemovingMember] = useState<TeamMember | null>(null)
 
   /* ------------------------------------------------------------------- the board, 10b */
 
@@ -800,6 +867,335 @@ export function StaffApp({
 
   /* ------------------------------------------------------------------ kitchen screens */
 
+  /* ------------------------------------------------- past orders and the sheet, 10d */
+
+  /**
+   * Load the history for one filter set.
+   *
+   * ⚠ IT TAKES THE FILTERS AS AN ARGUMENT RATHER THAN READING THE STATE, so the caller decides
+   * which set this answer belongs to and `appliedFilters` is written in the same tick. Reading
+   * state here would make the load depend on a render having happened first, which is the race
+   * that puts an answer for one filter set under another set's empty-state copy.
+   */
+  const loadHistory = useCallback(
+    async (filters: HistoryFilters): Promise<void> => {
+      setHistoryPhase('loading')
+
+      const result = await fetchHistory(apiBase, filters)
+
+      if (result.kind === 'ok') {
+        setHistory(result.value)
+        setAppliedFilters(filters)
+        setHistoryPhase('ready')
+
+        return
+      }
+
+      if (result.kind === 'unauthorised') {
+        clearTenantData()
+        setPhase('signed-out')
+
+        return
+      }
+
+      // `forbidden` means this person does not hold `pager:history`, which is nobody today —
+      // staff, manager and owner all hold it — but is reachable the moment the matrix changes,
+      // and the honest screen is a refusal rather than an error.
+      if (result.kind === 'forbidden') {
+        setHistoryPhase('permission-denied')
+
+        return
+      }
+
+      /*
+       * A 422 is NOT an error state here: it means the range this screen sent was refused, and
+       * the screen already shows why beside the date control. Showing *"We could not load the
+       * past orders"* over a form whose own field says *"That is a long time to ask for"* would
+       * be two answers to one mistake. The draft keeps the previous rows, so nothing blanks.
+       */
+      setHistoryPhase(result.kind === 'unreachable' ? 'offline' : 'error')
+    },
+    [apiBase, clearTenantData],
+  )
+
+  /**
+   * Whether the draft range is one the server would refuse, computed on this side.
+   *
+   * ⚠ NOT A SECOND IMPLEMENTATION OF VALIDATION — it is `§12`'s *a screen never offers an
+   * action the server refuses*, and it answers before a round trip rather than after one. The
+   * SERVER is still the authority: `PagerHistoryRequest` checks both clauses, and a draft that
+   * slipped past this one is refused there. The two numbers agree because
+   * `MAX_RANGE_DAYS` is pinned across the boundary by `apps/web/test/history-filters.test.ts`.
+   */
+  const rangeProblem = useMemo((): 'tooWide' | 'backwards' | null => {
+    const { from, to } = draftFilters
+
+    if (from === null || to === null) return null
+
+    const start = Date.parse(from)
+    const end = Date.parse(to)
+
+    if (Number.isNaN(start) || Number.isNaN(end)) return null
+    if (end < start) return 'backwards'
+
+    // 92 days, which is `PagerHistoryFilters::MAX_RANGE_DAYS`. Inclusive of both ends, so the
+    // comparison is on the SPAN rather than on the difference plus one.
+    return Math.floor((end - start) / 86_400_000) > 92 ? 'tooWide' : null
+  }, [draftFilters])
+
+  const onCreateSheet = useCallback(async (): Promise<void> => {
+    const reference = issueReference.trim()
+
+    if (reference === '') return
+
+    setIssuePhase('working')
+
+    const result = await issueSheet(apiBase, reference)
+
+    if (result.kind === 'ok') {
+      setSheet(result.value)
+      setIssuePhase('issued')
+      // Cleared on success, so the next order starts from an empty field rather than from the
+      // previous one's number — which on a counter is how two orders get the same sheet.
+      setIssueReference('')
+
+      return
+    }
+
+    if (result.kind === 'unauthorised') {
+      clearTenantData()
+      setPhase('signed-out')
+
+      return
+    }
+
+    // A 422 is the order reference's own character class, and the screen says which characters
+    // are allowed rather than repeating the server's sentence.
+    setIssuePhase(
+      result.kind === 'unreachable' ? 'offline' : result.kind === 'server' ? 'error' : 'invalid',
+    )
+  }, [apiBase, issueReference, clearTenantData])
+
+  const onConfirmReissue = useCallback(async (): Promise<void> => {
+    if (reissuing === null) return
+
+    setIssuePhase('reissuing')
+
+    const result = await reissueSheet(apiBase, reissuing.id)
+
+    if (result.kind === 'ok') {
+      setSheet(result.value)
+      setReissuing(null)
+      setIssuePhase('issued')
+      // The history is now stale for this order — its code changed — so it is refetched under
+      // the filters currently in force rather than left showing a sheet that no longer exists.
+      void loadHistory(appliedFilters)
+
+      return
+    }
+
+    setReissuing(null)
+
+    if (result.kind === 'unauthorised') {
+      clearTenantData()
+      setPhase('signed-out')
+
+      return
+    }
+
+    /*
+     * ⚠ EVERY BRANCH IS A REAL SERVER ANSWER, which is `R-205`'s lesson: a screen state no
+     * event can produce is a dead state. `reissue` answers 404 for an order this restaurant
+     * cannot see and 409 for one that is finished or past its expiry — and the two 409s are
+     * told apart by the problem `type`, exactly as the board's detail panel does, because the
+     * remedies differ: a finished order needs a new pager, an expired one needs a new pager,
+     * and a missing one needs the person to look at the list again.
+     */
+    if (result.kind === 'notFound') {
+      setIssuePhase('gone')
+
+      return
+    }
+
+    if (result.kind === 'conflict') {
+      setIssuePhase(result.problem?.endsWith(PROBLEM_EXPIRED) === true ? 'expired' : 'finished')
+
+      return
+    }
+
+    setIssuePhase(result.kind === 'unreachable' ? 'offline' : 'error')
+  }, [apiBase, reissuing, appliedFilters, loadHistory, clearTenantData])
+
+  /* ------------------------------------------------------------- the staff, 10e */
+
+  const loadTeam = useCallback(async (): Promise<void> => {
+    setTeamPhase('loading')
+
+    const result = await fetchTeam(apiBase)
+
+    if (result.kind === 'ok') {
+      setTeam(result.value)
+      setTeamPhase('ready')
+
+      return
+    }
+
+    if (result.kind === 'forbidden') {
+      // `members:read` is held by owner and manager and by neither staff nor a device token,
+      // so a staff member landing here is the ORDINARY case rather than a fault.
+      setTeamPhase('permission-denied')
+
+      return
+    }
+
+    if (result.kind === 'unauthorised') {
+      clearTenantData()
+      setPhase('signed-out')
+
+      return
+    }
+
+    setTeamPhase(result.kind === 'unreachable' ? 'offline' : 'error')
+  }, [apiBase, clearTenantData])
+
+  /**
+   * What the screen says after one refused member action.
+   *
+   * ⚠ **A 403 HAS TWO CAUSES ON THIS SURFACE AND THEY NEED DIFFERENT SENTENCES**, and the
+   * server deliberately does not distinguish them in the body: `MemberActionDenied` renders as
+   * `ProblemType::Forbidden`, whose title is a fixed phrase, because `§4 › Edge & ops`'s
+   * envelope carries no message.
+   *
+   * So the CLIENT distinguishes them by what it asked for, which is sound here and only here:
+   * the picker offers a role only if it is in `grantableRoles`, so a 403 on a role the picker
+   * offered cannot be a seniority refusal — leaving the self-role clause as the one remaining
+   * reading. `MemberSeniorityTest` drives both refusals server-side, so neither sentence rests
+   * on this inference being right about the server.
+   *
+   * ⚠ AND A 404 IS THE LAST-OWNER RULE RATHER THAN A MISSING ROW, which is the one place this
+   * mapping is a genuine guess. `MemberController` answers 404 for a member this tenant cannot
+   * see AND for a refused demotion, deliberately and indistinguishably — so a row the screen
+   * just listed answering 404 is far more likely to be the rule than a row that vanished
+   * between two requests. The copy names the rule and offers the remedy; the list is refetched
+   * either way, so a row that really did vanish disappears from the screen.
+   */
+  const noticeForRefusal = useCallback((kind: StaffFailure, offeredRole: boolean): TeamNotice => {
+    if (kind === 'forbidden') return offeredRole ? 'own-role' : 'seniority'
+    if (kind === 'notFound') return 'last-owner'
+
+    return 'failed'
+  }, [])
+
+  const onAddMember = useCallback(async (): Promise<void> => {
+    const email = newMemberEmail.trim()
+
+    if (email === '' || newMemberRole === '') return
+
+    setTeamBusy(true)
+    setTeamNotice(null)
+
+    const result = await addTeamMember(apiBase, email, newMemberRole)
+
+    setTeamBusy(false)
+
+    if (result.kind === 'ok') {
+      setAddingMember(false)
+      setNewMemberEmail('')
+      await loadTeam()
+
+      return
+    }
+
+    if (result.kind === 'unauthorised') {
+      clearTenantData()
+      setPhase('signed-out')
+
+      return
+    }
+
+    /*
+     * A 404 here is *no account with that address* and NOT the last-owner rule — `store()`
+     * cannot reach that rule at all. So this path does not use `noticeForRefusal`, which would
+     * map it to `last-owner` and tell a manager about owners when the answer is about an
+     * address. One mapping that was wrong in one of two situations is what `R-224` was.
+     */
+    if (result.kind === 'notFound') {
+      setTeamNotice('unknown-address')
+
+      return
+    }
+
+    if (result.kind === 'server') {
+      setTeamNotice('failed')
+
+      return
+    }
+
+    // A 422 is the address's own shape. `forbidden` is the seniority ceiling, and the picker
+    // should have made it unreachable — so if it arrives, the honest sentence is the ceiling's.
+    setTeamNotice(result.kind === 'forbidden' ? 'seniority' : 'invalid-address')
+  }, [apiBase, newMemberEmail, newMemberRole, loadTeam, clearTenantData])
+
+  const onChangeMemberRole = useCallback(
+    async (member: TeamMember, role: string): Promise<void> => {
+      setTeamBusy(true)
+      setTeamNotice(null)
+
+      const result = await changeTeamMemberRole(apiBase, member.id, role)
+
+      setTeamBusy(false)
+
+      if (result.kind === 'ok') {
+        await loadTeam()
+
+        return
+      }
+
+      if (result.kind === 'unauthorised') {
+        clearTenantData()
+        setPhase('signed-out')
+
+        return
+      }
+
+      // `offeredRole` is true because this role came from the picker, which only offers what
+      // `grantableRoles` holds -- so a 403 here reads as the self-role clause.
+      setTeamNotice(noticeForRefusal(result.kind, true))
+      await loadTeam()
+    },
+    [apiBase, loadTeam, noticeForRefusal, clearTenantData],
+  )
+
+  const onConfirmRemoveMember = useCallback(async (): Promise<void> => {
+    if (removingMember === null) return
+
+    setTeamBusy(true)
+    setTeamNotice(null)
+
+    const result = await removeTeamMember(apiBase, removingMember.id)
+
+    setTeamBusy(false)
+    setRemovingMember(null)
+
+    if (result.kind === 'ok') {
+      await loadTeam()
+
+      return
+    }
+
+    if (result.kind === 'unauthorised') {
+      clearTenantData()
+      setPhase('signed-out')
+
+      return
+    }
+
+    // `offeredRole` is false: a removal asks for no role at all, so a 403 cannot be the
+    // self-role clause and the remaining reading is the seniority ceiling.
+    setTeamNotice(noticeForRefusal(result.kind, false))
+    await loadTeam()
+  }, [apiBase, removingMember, loadTeam, noticeForRefusal, clearTenantData])
+
   const loadDevices = useCallback(async (): Promise<void> => {
     setDevicesPhase('loading')
 
@@ -832,6 +1228,53 @@ export function StaffApp({
     if (phase !== 'ready' || view !== 'devices') return
     void loadDevices()
   }, [phase, view, loadDevices])
+
+  /*
+   * ⚠ ONE EFFECT PER VIEW, AND NOT ONE EFFECT WITH A SWITCH. Each has its own dependency list,
+   * so a change to the history loader cannot re-trigger the team load — which is what a single
+   * effect depending on all three callbacks would do, refetching two screens a person is not
+   * looking at every time one callback's identity changed.
+   *
+   * ⚠ AND THE HISTORY EFFECT DEPENDS ON `view` AND `loadHistory` BUT **NOT** ON
+   * `appliedFilters` OR `draftFilters`. It is the FIRST load for this screen; every later one
+   * is driven by *Show these orders*. Depending on the filters would refetch on every keystroke
+   * in the reference box — a request per character, against a rate limit — which is the shape
+   * `§4 › Realtime` keeps the customer poll away from for the same reason one surface over.
+   */
+  useEffect(() => {
+    if (phase !== 'ready' || view !== 'history') return
+    void loadHistory(NO_HISTORY_FILTERS)
+    // No `eslint-disable` here: this workspace installs no `react-hooks` plugin, so there is
+    // no exhaustive-deps rule to silence -- and a disable comment for a rule that does not
+    // exist is itself an error (`Definition for rule ... was not found`). The dependency list
+    // is complete as written: `NO_HISTORY_FILTERS` is a module constant and `loadHistory`
+    // takes the filters as an argument precisely so this effect's identity is stable.
+  }, [phase, view, loadHistory])
+
+  useEffect(() => {
+    if (phase !== 'ready' || view !== 'team') return
+    void loadTeam()
+  }, [phase, view, loadTeam])
+
+  /*
+   * ⚠ THE SHEET IS DROPPED WHEN THE PERSON LEAVES THE SCREEN, AND THAT IS A CREDENTIAL
+   * DECISION RATHER THAN TIDYING.
+   *
+   * `qrPayload` is a working pager: anyone who scans it is that customer. Keeping it in state
+   * while somebody looks at the team list means a tablet left on the staff screen still holds
+   * it, and coming back to *Start a pager* would redisplay a sheet for an order already handed
+   * over — which a person would read as the CURRENT order's code and print.
+   *
+   * So leaving `issue` clears it. `apps/web/test/staff-flows.test.tsx` drives the navigation
+   * and asserts the payload is gone from the rendered tree afterwards.
+   */
+  useEffect(() => {
+    if (view === 'issue') return
+
+    setSheet(null)
+    setIssuePhase('idle')
+    setReissuing(null)
+  }, [view])
 
   const onIssue = useCallback(
     async (name: string): Promise<void> => {
@@ -1015,8 +1458,186 @@ export function StaffApp({
     )
   }
 
+  /**
+   * The ACTIVE membership — the one the session is acting in.
+   *
+   * ⚠ MATCHED ON `activeTenant` RATHER THAN TAKING `memberships[0]`, which is the bug a
+   * two-membership user makes real. `/v1/auth/me` returns every active membership and the
+   * chooser is how one is selected, so index 0 is whichever the cross-tenant function happened
+   * to return first — and a person who holds `owner` in one restaurant and `staff` in another
+   * would get the wrong ceiling on whichever screen read it. `StaffSurfaceIsolationTest`'s
+   * third case constructs exactly that actor.
+   */
+  const activeMembership = useMemo(
+    () => identity?.memberships.find((m) => m.tenantId === identity.activeTenant) ?? null,
+    [identity],
+  )
+
+  /**
+   * The roles this caller may grant, from the server. 10e.
+   *
+   * Empty when there is no active membership, which makes the picker offer nothing rather than
+   * everything — the safe direction, and the one a person reads as *ask a manager*.
+   */
+  const grantableRoles = useMemo(() => activeMembership?.grantableRoles ?? [], [activeMembership])
+
+  /**
+   * The caller's OWN membership id, so the team screen can mark their row and withhold its
+   * controls.
+   *
+   * ⚠ IT COMES FROM THE MEMBER LIST, NOT FROM `/v1/auth/me`, AND THAT IS NOT AN OVERSIGHT.
+   * `/v1/auth/me` publishes `memberships[].tenant_id` and the user's id — but NOT the
+   * `tenant_users.id`, which is what `members.update` takes in its path and therefore what
+   * `refuseSelfRoleChange()` compares. So the only way to know which ROW is yours is to find
+   * the row whose `user_id` is yours, in the list this screen already fetched.
+   *
+   * Null when the list has not loaded or the caller is somehow not in it; the screen then
+   * marks no row, which is a screen that offers a control the server refuses — caught by the
+   * 403 and its sentence rather than silently. Stated because the alternative reading (mark
+   * every row as yours) would be the unsafe direction.
+   */
+  const ownMembershipId = useMemo(() => {
+    const userId = identity?.userId ?? ''
+
+    // An empty id matches no row, so a server that sent no `user.id` marks nothing rather than
+    // marking the first row -- which would hide the controls on somebody else's row and show
+    // them on the caller's, i.e. exactly backwards.
+    if (userId === '') return null
+
+    return team.find((member) => member.userId === userId)?.id ?? null
+  }, [identity, team])
+
   const body = (): React.ReactNode => {
     if (phase !== 'ready') return unresolved()
+
+    if (view === 'history') {
+      return (
+        <StaffHistory
+          t={t}
+          phase={historyPhase}
+          orders={history}
+          applied={appliedFilters}
+          draft={draftFilters}
+          onDraft={setDraftFilters}
+          onApply={() => void loadHistory(draftFilters)}
+          onClear={() => {
+            setDraftFilters(NO_HISTORY_FILTERS)
+            void loadHistory(NO_HISTORY_FILTERS)
+          }}
+          onRetry={() => void loadHistory(appliedFilters)}
+          rangeProblem={rangeProblem}
+          onReissue={(order) => {
+            /*
+             * The lost-sheet path `staff.issue.sheet.once` promises. It carries the order to
+             * the sheet screen and opens the CONFIRMATION there rather than re-issuing from
+             * here — the ruling requires a confirmation, and one fired from a list row is one
+             * a person reaches with a mis-tap while scrolling.
+             */
+            setReissuing({ id: order.id, reference: order.orderReference })
+            setIssuePhase('confirm-reissue')
+            onNavigate?.('issue')
+          }}
+          formatTime={formatDate}
+        />
+      )
+    }
+
+    if (view === 'issue') {
+      return (
+        <StaffIssue
+          t={t}
+          phase={issuePhase}
+          reference={issueReference}
+          onReference={setIssueReference}
+          onCreate={() => void onCreateSheet()}
+          sheet={sheet}
+          onPrint={() => {
+            // The browser's own print dialog. Nothing is uploaded and nothing is rendered
+            // server-side: the sheet on screen IS the artefact, which is why `@media print`
+            // in `staff.css` is what shapes the paper rather than a second template.
+            if (typeof window !== 'undefined') window.print()
+          }}
+          onDone={() => {
+            setSheet(null)
+            setIssuePhase('idle')
+          }}
+          reissuing={reissuing?.reference ?? null}
+          onConfirmReissue={() => void onConfirmReissue()}
+          onCancelReissue={() => {
+            setReissuing(null)
+            setIssuePhase('idle')
+          }}
+          renderCode={(svg) => (
+            /*
+             * ⚠ THE SVG COMES FROM THE SERVER AND IS INSERTED AS MARKUP. `PagerSheet`'s
+             * docblock has why the server draws it (no QR encoder in this workspace, and the
+             * page that would run one holds a live pager token) and what it guarantees: rects
+             * and one group, no `<image>`, no external reference, no script.
+             *
+             * `dangerouslySetInnerHTML` is the honest API for inserting markup and the name is
+             * doing its job here rather than being worked around — the alternative, parsing the
+             * SVG into React elements, would be a second encoder's worth of code to avoid a
+             * word. `apps/web/test/staff-issue.test.tsx` asserts the shape against the REAL
+             * server-produced string.
+             *
+             * ⚠ AND THE PAYLOAD ITSELF IS NOT RENDERED ANYWHERE — not as text, not in a
+             * `data-*` attribute, not in an `alt`. The accessible name on the wrapper names the
+             * ORDER, because a screen reader reading 128 random bits aloud is both useless and
+             * a credential spoken out loud in a restaurant.
+             */
+            <div
+              className="qr-staff-sheet__image"
+              role="img"
+              aria-label={t('staff.issue.sheet.order', { reference: sheet?.orderReference ?? '' })}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          )}
+        />
+      )
+    }
+
+    if (view === 'team') {
+      return (
+        <StaffTeam
+          t={t}
+          phase={teamPhase}
+          members={team}
+          ownMembershipId={ownMembershipId}
+          grantableRoles={grantableRoles}
+          notice={teamNotice}
+          onRetry={() => void loadTeam()}
+          adding={addingMember}
+          busy={teamBusy}
+          onOpenAdd={() => {
+            setAddingMember(true)
+            setTeamNotice(null)
+            // The picker starts on the LEAST senior role this caller may grant, so the default
+            // is the safe one -- a form whose default is `owner` is one somebody submits.
+            setNewMemberRole(grantableRoles[grantableRoles.length - 1] ?? '')
+          }}
+          onCancelAdd={() => {
+            setAddingMember(false)
+            setNewMemberEmail('')
+            setTeamNotice(null)
+          }}
+          email={newMemberEmail}
+          onEmail={setNewMemberEmail}
+          addRole={newMemberRole}
+          onAddRole={setNewMemberRole}
+          onAdd={() => void onAddMember()}
+          onChangeRole={(member, role) => void onChangeMemberRole(member, role)}
+          removing={removingMember}
+          onOpenRemove={(member) => {
+            setRemovingMember(member)
+            setTeamNotice(null)
+          }}
+          onConfirmRemove={() => void onConfirmRemoveMember()}
+          onCancelRemove={() => {
+            setRemovingMember(null)
+          }}
+        />
+      )
+    }
 
     if (view === 'devices') {
       return (
@@ -1179,23 +1800,37 @@ export function StaffApp({
            * than colour alone, so which one you are on is in the accessible tree and not
            * only in the paint -- `§12`'s *visible focus ring* clause's sibling.
            */
+          /*
+           * ⚠ DERIVED FROM ONE LIST RATHER THAN WRITTEN OUT FIVE TIMES. At two entries the
+           * repetition was readable; at five it is five places to forget `aria-current`, which
+           * is the half that is only in the accessible tree and which nobody notices missing.
+           *
+           * The list is `StaffView`-typed, so a view added to that union and not to this list
+           * is a type error at the `map` rather than a screen with no way to reach it — which
+           * is what `/staff/devices` was before 10a's own fix round added navigation at all.
+           */
           <>
-            <Button
-              variant={view === 'home' ? 'secondary' : 'quiet'}
-              onClick={() => onNavigate?.('home')}
-              aria-current={view === 'home' ? 'page' : undefined}
-              data-nav="home"
-            >
-              {t('staff.nav.today')}
-            </Button>
-            <Button
-              variant={view === 'devices' ? 'secondary' : 'quiet'}
-              onClick={() => onNavigate?.('devices')}
-              aria-current={view === 'devices' ? 'page' : undefined}
-              data-nav="devices"
-            >
-              {t('staff.nav.devices')}
-            </Button>
+            {(
+              [
+                ['home', 'staff.nav.today'],
+                ['history', 'staff.nav.history'],
+                ['issue', 'staff.nav.issue'],
+                ['team', 'staff.nav.team'],
+                ['devices', 'staff.nav.devices'],
+              ] as const satisfies readonly (readonly [StaffView, CopyKey])[]
+            ).map(([entry, key]) => (
+              <Button
+                key={entry}
+                variant={view === entry ? 'secondary' : 'quiet'}
+                onClick={() => onNavigate?.(entry)}
+                // `aria-current="page"` rather than colour alone, so which one you are on is in
+                // the accessible tree and not only in the paint.
+                aria-current={view === entry ? 'page' : undefined}
+                data-nav={entry}
+              >
+                {t(key)}
+              </Button>
+            ))}
           </>
         }
       >

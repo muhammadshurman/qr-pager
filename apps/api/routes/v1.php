@@ -112,6 +112,49 @@ Route::middleware([RequireAbility::class])->group(function (): void {
         Route::post('/{session}/cancel', [PagerSessionController::class, 'cancel'])
             ->whereUuid('session')
             ->name('pager.sessions.cancel');
+
+        /*
+         * THE HISTORY SCREEN, ADDED AT TASK 10d.
+         *
+         * ⚠ IT IS ON `pager:history` AND NOT ON `pager:read`, WHICH IS THE ONE THING A
+         * REVIEWER SHOULD CHECK ON THIS ROUTE. `pager:read` is the single ability a KDS device
+         * token may carry, and `RequestPrincipal::may()` requires both the matrix and the
+         * token's abilities to allow -- so mapping this to `pager:read` would make a
+         * restaurant's entire order record readable by every wall-mounted kitchen screen, on a
+         * thirty-day credential, with no session. `Ability::PagerHistory`'s docblock carries
+         * the argument; `issuableToDevice()` stays a closed list of one, so a device cannot be
+         * issued this at all.
+         *
+         * ⚠ `history` IS DECLARED AFTER THE `{session}` ROUTES AND THERE IS NO COLLISION, which
+         * is worth saying because this is exactly where one would hide. Every `{session}` route
+         * above is a POST at `/{session}/<verb>` -- a two-segment path -- and this is a GET at
+         * one segment. There is no `GET /pager-sessions/{session}` anywhere in this file, so
+         * `history` cannot be shadowed by a uuid pattern, and `whereUuid` would refuse the
+         * literal string in any case.
+         *
+         * Its filters are a GET QUERY rather than a POST body: this is a read, it is
+         * bookmarkable, and `§4 › Data` keeps secrets out of query strings -- a status list and
+         * a date range are not secrets. The order REFERENCE is in the query too, which is the
+         * one value worth a second thought; it is printed on a physical ticket and shown on a
+         * board, so it is not a credential, and the raw TOKEN never appears in any path or
+         * query anywhere in this application.
+         */
+        Route::get('history', [PagerSessionController::class, 'history'])
+            ->name('pager.sessions.history');
+
+        /*
+         * RE-ISSUING A SHEET, ADDED AT TASK 10d by Muhammad's ruling (`QRPAGER-28 §2`): *a
+         * sheet is RE-ISSUED, never reprinted.*
+         *
+         * On `pager:create`'s bucket and `pager:create`'s ability, because it is the same act:
+         * a CSPRNG draw that mints a credential. `PagerSessions::reissue()` has why it is a
+         * token rotation on the existing row rather than a new session, and why it notifies
+         * nobody.
+         */
+        Route::post('/{session}/reissue', [PagerSessionController::class, 'reissue'])
+            ->whereUuid('session')
+            ->middleware([RateLimit::class.':pager-create'])
+            ->name('pager.sessions.reissue');
     });
 
     /*

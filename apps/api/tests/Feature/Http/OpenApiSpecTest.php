@@ -80,9 +80,15 @@ it('describes exactly the routes that exist, and not the fallback', function ():
         '/v1/members',
         '/v1/members/{member}',
         '/v1/pager-sessions',
+        // Task 10d's two. `history` is a one-segment GET and cannot be shadowed by the
+        // `{session}` pattern below -- `routes/v1.php` has the argument and
+        // `PagerRouteSurfaceTest` pins the whole verb-and-path set.
+        '/v1/pager-sessions/history',
         '/v1/pager-sessions/{session}/cancel',
         '/v1/pager-sessions/{session}/complete',
         '/v1/pager-sessions/{session}/ready',
+        // Muhammad's re-issue ruling, `QRPAGER-28 §2`.
+        '/v1/pager-sessions/{session}/reissue',
         '/v1/pager-sessions/{session}/renotify',
         // Task 4's customer surface. Under the same /v1 prefix -- the versioning policy is
         // about the public path, not about which file a route lives in -- and on a
@@ -530,7 +536,15 @@ it('publishes a security requirement on EVERY operation, and the staff routes ar
     // FOURTEEN as of Task 10a, which added `GET /v1/devices` and `GET /v1/tenant`. Both
     // are named below rather than only counted, so a route that quietly became public is a
     // failure here and not a reading of the diff.
-    expect($authenticated)->toHaveCount(14)
+    //
+    // SIXTEEN as of Task 10d: `GET /v1/pager-sessions/history` and
+    // `POST /v1/pager-sessions/{session}/reissue`. Both are named below for the same reason,
+    // and the history route is the one to look at -- it is a READ of a restaurant's whole
+    // order record, so a version of it that published no security requirement would be a
+    // public endpoint serving tenant data.
+    expect($authenticated)->toHaveCount(16)
+        ->and($authenticated)->toContain('GET /v1/pager-sessions/history')
+        ->and($authenticated)->toContain('POST /v1/pager-sessions/{session}/reissue')
         ->and($authenticated)->toContain('POST /v1/pager-sessions')
         ->and($authenticated)->toContain('GET /v1/pager-sessions')
         ->and($authenticated)->toContain('GET /v1/members')
@@ -736,7 +750,14 @@ it('publishes every problem document under the media type the API really sends, 
     // a refusal a client has to handle is part of the published contract rather than an
     // implementation detail -- which is why it moves this count, and why this case caught
     // the change rather than taking it on trust.
-    expect($seen)->toBe(71, 'the spec publishes '.$seen.' problem responses, not the 71 the thirty routes declare')
+    /*
+     * 77 as of Task 10d. The two new routes declare six problem responses between them:
+     * `history` publishes 401/403/422 (it is the first staff READ that takes input, so it is
+     * the first that can answer 422) and `reissue` publishes 401/404/409 — the same three the
+     * four transitions declare, because it is refused in the same two ways and by the same
+     * `refuseIfPastTtl()`.
+     */
+    expect($seen)->toBe(77, 'the spec publishes '.$seen.' problem responses, not the 77 the routes declare')
         ->and($alternatives)->toBe([], 'published under more than one media type: '.implode(', ', $alternatives))
         ->and($wrongType)->toBe([], 'published under a media type no response sends: '.implode(', ', $wrongType));
 });
@@ -833,7 +854,14 @@ it('produces the security and media-type decisions in the GENERATOR, not only in
         // 66 at Task 5's `§11` review, whose sixty-sixth was `two-factor/enable`'s 409.
         // The five new problem responses are `GET /v1/devices`'s 401 and 403 and
         // `GET /v1/tenant`'s 401, 403 and 404.
-        ->and($authenticated)->toHaveCount(14)
+        //
+        // SIXTEEN and 77 as of Task 10d. The two routes are
+        // `GET /v1/pager-sessions/history` and `POST /v1/pager-sessions/{session}/reissue`;
+        // their six problem responses are 401/403/422 and 401/404/409. Both figures are
+        // asserted in the committed-spec cases above as well, and this case exists so the
+        // GENERATOR and the ARTEFACT cannot drift apart -- a regenerated spec that happened to
+        // match a stale pin would otherwise pass.
+        ->and($authenticated)->toHaveCount(16)
         ->and($jsonProblems)->toBe([], 'a problem document is still published as application/json: '.implode(', ', $jsonProblems))
-        ->and($problemResponses)->toHaveCount(71);
+        ->and($problemResponses)->toHaveCount(77);
 });

@@ -32,6 +32,31 @@ enum Ability: string
     /** Move a session to ready, or re-notify one that already is. */
     case PagerNotify = 'pager:notify';
 
+    /**
+     * Read the restaurant's PAST orders — the history screen, with its filters.
+     *
+     * ADDED AT TASK 10d (`QRPAGER-28`), and it is a separate ability rather than a reuse of
+     * `PagerRead` for one reason, which is worth stating because reuse was the obvious call:
+     * **`PagerRead` is the one ability a KDS device token may carry.**
+     *
+     * `RequestPrincipal::may()` requires BOTH the matrix and the token's own abilities to
+     * allow, so a history route mapped to `PagerRead` would be reachable by **every kitchen
+     * screen** — a wall-mounted tablet in a kitchen, with no session and a thirty-day
+     * credential, able to read every order the restaurant has ever taken. That is a real
+     * widening and it would have been invisible: the route would simply work, and no test
+     * asserts an ability it was never given.
+     *
+     * The live board and the historical record are two different reads with two different
+     * audiences. `PagerRead` is *"the active pager board … the KDS screen's whole job"*; this
+     * is the back office. `issuableToDevice()` below stays a closed list of one, so a device
+     * can never be issued this at all — which makes the separation structural rather than a
+     * matrix cell somebody could edit.
+     *
+     * Held by staff, manager and owner alike: a member of staff looking up an order from an
+     * hour ago is ordinary work, and `§12`'s reader is a restaurant with three people in it.
+     */
+    case PagerHistory = 'pager:history';
+
     /** Complete or cancel a session. */
     case PagerResolve = 'pager:resolve';
 

@@ -140,6 +140,8 @@ function staffRouteBodies(): array
         'members.destroy' => [],
         'devices.store' => ['name' => 'kitchen', 'ability' => Ability::PagerRead->value, 'ttl_minutes' => 60],
         'devices.destroy' => [],
+        // Task 10d's. `pager.sessions.history` is a GET and needs no entry.
+        'pager.sessions.reissue' => [],
     ];
 }
 
@@ -267,10 +269,18 @@ it('derives the staff surface from the router, and every route is covered by thi
     // added to routes/v1.php would simply not be swept, and nothing would say so.
     $routes = mountedStaffRoutes();
 
-    // Not vacuous: the surface is not empty, and the count is asserted as an exact value
-    // rather than "more than zero" -- a derivation that silently returned one route would
-    // otherwise pass. 14 at 10a: 6 pager, 4 members, 3 devices, 1 tenant.
-    expect($routes)->toHaveCount(14, 'the derived staff surface changed size: '.implode(', ', array_keys($routes)));
+    /*
+     * Not vacuous: the surface is not empty, and the count is asserted as an exact value
+     * rather than "more than zero" -- a derivation that silently returned one route would
+     * otherwise pass. 14 at 10a: 6 pager, 4 members, 3 devices, 1 tenant.
+     *
+     * 16 at 10d: `pager.sessions.history` and `pager.sessions.reissue`. Both are swept here
+     * for their ability and their path, and `history` additionally has its OWN isolation file
+     * — `PagerHistoryIsolationTest` — because this sweep structurally cannot reach what that
+     * route leaks: it takes no path parameter, so there is nothing foreign to substitute, and
+     * the cross-tenant question is about the CONTENT of a 200 rather than a refusal.
+     */
+    expect($routes)->toHaveCount(16, 'the derived staff surface changed size: '.implode(', ', array_keys($routes)));
 
     // The three parameter names this file fills. A route carrying a fourth fails here,
     // naming it, rather than being swept with an unsubstituted placeholder in its path.
@@ -366,11 +376,11 @@ it('accounts for every /v1 route the sweep does NOT cover, with the test that do
 
     sort($all);
 
-    // ⚠ EXACT ON BOTH SIDES AND ON THE TOTAL. 14 swept + 16 accounted for = 30 `/v1` routes.
+    // ⚠ EXACT ON BOTH SIDES AND ON THE TOTAL. 16 swept + 16 accounted for = 32 `/v1` routes.
     // A route added anywhere fails one of these three, and a route MOVED from one set to the
-    // other fails two of them.
-    expect($all)->toHaveCount(30, 'the /v1 surface changed size: '.implode(', ', $all));
-    expect($covered)->toHaveCount(14);
+    // other fails two of them. (14 + 16 = 30 at 10a; 10d added two swept routes.)
+    expect($all)->toHaveCount(32, 'the /v1 surface changed size: '.implode(', ', $all));
+    expect($covered)->toHaveCount(16);
     expect($outside)->toHaveCount(16);
 
     $unaccounted = array_values(array_diff($all, $covered, array_keys($outside)));
@@ -647,7 +657,11 @@ it('refuses a user who belongs to BOTH tenants, with A selected, on every route 
 
     // Not vacuous: the keyed routes are the whole point of this case, so their number is
     // asserted. 7 at 10a -- four transitions, two keyed member routes, one device revoke.
-    expect($keyed)->toBe(7, 'the keyed-route count changed, so this case swept a different surface');
+    // 8 at 10d: `pager.sessions.reissue`, which takes a session id in its path and is
+    // therefore a real cross-tenant lever. (`pager.sessions.history` takes NO path parameter,
+    // so it is not keyed and this case cannot reach what it leaks -- `PagerHistoryIsolationTest`
+    // drives that over the body of a 200 instead.)
+    expect($keyed)->toBe(8, 'the keyed-route count changed, so this case swept a different surface');
 
     // And beta is untouched.
     $after = withTenant($beta, fn () => DB::table('pager_sessions')->where('id', $betaIds['session'])->value('status'));

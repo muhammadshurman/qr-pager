@@ -112,10 +112,27 @@ describe('every staff route, derived from the build', () => {
     const declared = declaredStaffRoutes()
     const prerendered = prerenderedStaffDocuments().map((document) => document.route)
 
-    // Not vacuous: there IS a staff surface. An exact count, so a route added in a
-    // directory this walk does not reach fails here rather than going unswept.
-    expect(declared.length).toBe(2)
-    expect(declared).toEqual(['/staff', '/staff/devices'])
+    /*
+     * Not vacuous: there IS a staff surface. An exact count, so a route added in a directory
+     * this walk does not reach fails here rather than going unswept.
+     *
+     * FIVE at 10e, and the list is sorted: `/staff` (the board, 10b), `/staff/devices` (kitchen
+     * screens, 10a), `/staff/history` and `/staff/issue` (10d), `/staff/team` (10e). It matches
+     * `StaffView`'s union and `StaffNavigator`'s `PATHS` map — three lists that must agree, and
+     * the other two are held to each other by the compiler.
+     *
+     * ⚠ `/kds` IS DELIBERATELY NOT HERE. It is a different authentication surface with its own
+     * app, and its prerendered document has its own sweep in `kds-build-surface.test.ts` —
+     * including the one property this file cannot state for it, that it declares no manifest.
+     */
+    expect(declared.length).toBe(5)
+    expect(declared).toEqual([
+      '/staff',
+      '/staff/devices',
+      '/staff/history',
+      '/staff/issue',
+      '/staff/team',
+    ])
 
     // ⚠ EVERY DECLARED ROUTE HAS A PRERENDERED DOCUMENT. A staff route that became
     // dynamic -- a server component reading a cookie, a `force-dynamic`, a server action --
@@ -148,7 +165,13 @@ describe('every staff route, derived from the build', () => {
      * about. The same two routes are pinned in the case above, from the ROUTER's side, so
      * the build and the declaration are held to each other.
      */
-    expect(documents.map((document) => document.route)).toEqual(['/staff', '/staff/devices'])
+    expect(documents.map((document) => document.route)).toEqual([
+      '/staff',
+      '/staff/devices',
+      '/staff/history',
+      '/staff/issue',
+      '/staff/team',
+    ])
 
     for (const { route, html } of documents) {
       for (const marker of CHROME) {

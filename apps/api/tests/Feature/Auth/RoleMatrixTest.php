@@ -165,6 +165,25 @@ function staffRoutes(): array
             'body' => [],
             'targets' => false,
         ],
+        // ---------------------------------------------------------------- Task 10d's two
+        //
+        // `history` takes no path parameter and `targets` is therefore false: the
+        // other-tenant column for it is about the CONTENT of a 200 rather than a refusal,
+        // which no path substitution can express. `PagerHistoryIsolationTest` drives that —
+        // 128 derived filter combinations in both directions — and the cell here is the
+        // ability question only.
+        'pager.sessions.history' => [
+            'method' => 'getJson',
+            'path' => fn (string $t, string $s): string => '/v1/pager-sessions/history',
+            'body' => [],
+            'targets' => false,
+        ],
+        'pager.sessions.reissue' => [
+            'method' => 'postJson',
+            'path' => fn (string $t, string $s): string => "/v1/pager-sessions/{$s}/reissue",
+            'body' => [],
+            'targets' => true,
+        ],
     ];
 }
 
@@ -259,18 +278,33 @@ it('grants each principal exactly the abilities the matrix names, and nothing by
     expect(RoleMatrix::all())->toBe([
         'platform_admin' => [],
         'owner' => [
-            'pager:read', 'pager:create', 'pager:notify', 'pager:resolve',
+            'pager:read', 'pager:create', 'pager:notify', 'pager:resolve', 'pager:history',
             'members:read', 'members:write', 'devices:write', 'tenant:read',
         ],
         'manager' => [
-            'pager:read', 'pager:create', 'pager:notify', 'pager:resolve',
+            'pager:read', 'pager:create', 'pager:notify', 'pager:resolve', 'pager:history',
             'members:read', 'members:write', 'devices:write', 'tenant:read',
         ],
         // `tenant:read` JOINED AT TASK 10a AND IT IS THE FLOOR, NOT A PRIVILEGE: every
         // person who signs in has to be told which restaurant they signed in to, and §12
         // forbids answering that with a slug. The cell to look at is `device`, which does
         // NOT hold it -- see below.
-        'staff' => ['pager:read', 'pager:create', 'pager:notify', 'pager:resolve', 'tenant:read'],
+        //
+        // ⚠ `pager:history` JOINED AT TASK 10d AND THE CELL TO LOOK AT IS AGAIN `device`,
+        // WHICH DOES NOT HOLD IT — and that is the entire reason the ability exists rather
+        // than the history route reusing `pager:read`. `pager:read` is the ONE ability
+        // `Ability::issuableToDevice()` will issue to a device token, and
+        // `RequestPrincipal::may()` requires both the matrix and the token's own abilities to
+        // allow — so the history route on `pager:read` would have made a restaurant's whole
+        // order record readable by every wall-mounted kitchen screen, on a thirty-day
+        // credential, with no session, and nothing would have failed.
+        //
+        // Held by STAFF as well as by manager and owner: looking up an order from an hour ago
+        // is ordinary work in a restaurant with three people in it.
+        'staff' => [
+            'pager:read', 'pager:create', 'pager:notify', 'pager:resolve', 'pager:history',
+            'tenant:read',
+        ],
         'device' => ['pager:read'],
     ]);
 

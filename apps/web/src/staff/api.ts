@@ -163,9 +163,46 @@ export interface StaffMembership {
    * makes it a decision rather than a patch.
    */
   readonly slug: string
+  /**
+   * The roles this membership may grant to somebody else. 10e.
+   *
+   * ⚠ PUBLISHED BY THE SERVER RATHER THAN COMPUTED HERE, AND THAT IS `§6.2` RATHER THAN
+   * LAZINESS. The client already holds `role`, so it COULD derive the list — and that would be
+   * a second implementation of `TenantRole::maySeniorityGrant()` in TypeScript, which is
+   * exactly the duplicated-source defect the generated status mirror exists to prevent one
+   * contract over. One source, on the ladder, in PHP.
+   *
+   * It is what the role picker offers, so a manager's picker has no *Owner* option at all —
+   * `§12`'s bar is that a screen never offers an action the server refuses. **It is not the
+   * enforcement**: `MemberDirectory` checks independently on every write, reading the actor's
+   * role from the database inside the tenant's scope, because `R-106` was found by driving the
+   * route rather than the screen.
+   *
+   * Empty when the server sent nothing readable, which makes the picker offer nothing rather
+   * than everything — the safe direction, and the one a staff member reads as *ask a manager*.
+   */
+  readonly grantableRoles: readonly string[]
 }
 
 export interface StaffIdentity {
+  /**
+   * The caller's OWN user id. Added at 10e, and it is held for exactly ONE comparison.
+   *
+   * ⚠ IT IS NEVER RENDERED, AND THAT IS THE WHOLE JUSTIFICATION FOR HOLDING IT. 10a's
+   * `StaffTenant` note records the rule this is tested against — *"a field a client holds is a
+   * field a later change renders"* — and `slug` and `status` were dropped from that type for
+   * it. This one stays because the staff screen cannot do its job without it and nothing else
+   * answers the question.
+   *
+   * The question: WHICH ROW of `/v1/members` is yours. `§4 › Security` forbids an actor
+   * changing their own role, so that row must not offer a role picker — and `members.update`
+   * takes a `tenant_users.id` in its path, which `/v1/auth/me` does not publish. Matching the
+   * member list's `user_id` against this is the only available join.
+   *
+   * `apps/web/test/staff-screens.test.tsx` already asserts no uuid reaches the rendered output
+   * of any staff screen, which is the mechanical half of *never rendered*.
+   */
+  readonly userId: string
   readonly name: string
   readonly memberships: readonly StaffMembership[]
   readonly activeTenant: string | null
@@ -219,7 +256,7 @@ function base(apiBase: string): string {
 
 async function call<T>(
   apiBase: string,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   read?: (data: unknown) => T | null,
@@ -358,6 +395,7 @@ export function fetchIdentity(apiBase: string): Promise<StaffResult<StaffIdentit
 
     const user = asRecord(root.user)
     const name = user === null ? null : asString(user.name)
+    const userId = user === null ? null : asString(user.id)
 
     // No fallback to the email and none to a placeholder. A shell that cannot say who is
     // signed in shows its error state, which is honest; "Signed in as " is not.
@@ -372,16 +410,32 @@ export function fetchIdentity(apiBase: string): Promise<StaffResult<StaffIdentit
       const role = row === null ? null : asString(row.role)
 
       if (tenantId !== null && role !== null) {
+        const grantable = row === null ? null : row.grantable_roles
+
         memberships.push({
           tenantId,
           role,
           name: (row === null ? null : asString(row.name)) ?? '',
           slug: (row === null ? null : asString(row.slug)) ?? '',
+          // Filtered to strings rather than cast, because this list decides which buttons a
+          // role picker renders -- an `undefined` reaching it would render an empty option.
+          grantableRoles: Array.isArray(grantable)
+            ? grantable.filter((value): value is string => typeof value === 'string')
+            : [],
         })
       }
     }
 
-    return { name, memberships, activeTenant: asString(root.active_tenant) }
+    // The id is read but is NOT required: a shell that cannot say who is signed in shows its
+    // error state (that is what `name` being null does), and one that cannot identify the
+    // caller's own member row renders no controls on it -- a screen with one control missing
+    // rather than a screen that will not load.
+    return {
+      userId: userId ?? '',
+      name,
+      memberships,
+      activeTenant: asString(root.active_tenant),
+    }
   })
 }
 
@@ -676,4 +730,253 @@ export function cancelSession(
   id: string,
 ): Promise<StaffResult<TransitionOutcome>> {
   return transition(apiBase, id, 'cancel')
+}
+
+/* ================================================================================ */
+/* THE HISTORY, THE SHEET AND THE TEAM — added at 10d and 10e                        */
+/* ================================================================================ */
+
+/**
+ * The filter dimensions the history screen offers, and the ONE list of them on this side.
+ *
+ * ⚠ IT MIRRORS `PagerHistoryFilters::DIMENSIONS` AND IS HELD TO IT BY A TEST, NOT BY CARE.
+ * 10d's named invariant is *"every filter combination reachable from the UI returns only rows
+ * of the caller's own tenant"*, and the PHP sweep derives its 128 combinations from that
+ * constant. A filter this client could send that the constant does not name would be a
+ * combination the sweep never drives — so `apps/web/test/history-filters.test.ts` asserts the
+ * two lists are identical, reading the PHP file.
+ *
+ * Not generated, deliberately: the generator (`contracts:export`) mirrors DATABASE ENUMS, and
+ * a filter list is not one. A four-element list pinned by a cross-language test is the honest
+ * shape at this size; generating it would mean teaching the generator a second kind of thing.
+ */
+export const HISTORY_DIMENSIONS = ['status', 'from', 'to', 'reference'] as const
+
+export interface HistoryFilters {
+  /** Empty means EVERY status, which is what an untoggled filter means. See the PHP. */
+  readonly statuses: readonly PagerStatus[]
+  readonly from: string | null
+  readonly to: string | null
+  readonly reference: string | null
+}
+
+/** No filters at all — the screen's first paint. */
+export const NO_HISTORY_FILTERS: HistoryFilters = {
+  statuses: [],
+  from: null,
+  to: null,
+  reference: null,
+}
+
+/** One past order, as the history screen shows it. */
+export interface HistoryOrder {
+  readonly id: string
+  readonly orderReference: string
+  readonly status: PagerStatus
+  readonly createdAt: string
+  readonly readyAt: string | null
+  readonly completedAt: string | null
+}
+
+/**
+ * The query string for one filter set.
+ *
+ * ⚠ BUILT WITH `URLSearchParams` AND `status` REPEATED RATHER THAN COMMA-JOINED, because that
+ * is the shape `PagerHistoryRequest` validates: `status` is an ARRAY rule, and its internal
+ * notes say why — a comma list needs a parser, a parser is a second place where *which
+ * statuses were asked for* is decided, and a parser that silently dropped an unknown value
+ * would turn a typo into a WIDER query rather than a 422.
+ *
+ * Exported so `history-filters.test.ts` can assert the exact string for each combination
+ * rather than inferring it from a rendered screen.
+ */
+export function historyQueryString(filters: HistoryFilters): string {
+  const query = new URLSearchParams()
+
+  for (const status of filters.statuses) query.append('status[]', status)
+
+  // Omitted when null rather than sent empty: `from=` would be a present-but-blank parameter,
+  // and `nullable` accepts it — so it would pass validation and then not filter, which is a
+  // screen whose date control silently does nothing.
+  if (filters.from !== null) query.set('from', filters.from)
+  if (filters.to !== null) query.set('to', filters.to)
+  if (filters.reference !== null) query.set('reference', filters.reference)
+
+  return query.toString()
+}
+
+/** The restaurant's past orders, filtered. Newest first, at most 100. */
+export function fetchHistory(
+  apiBase: string,
+  filters: HistoryFilters,
+): Promise<StaffResult<readonly HistoryOrder[]>> {
+  const query = historyQueryString(filters)
+  const path = query === '' ? '/v1/pager-sessions/history' : `/v1/pager-sessions/history?${query}`
+
+  return call(apiBase, 'GET', path, undefined, (data) => {
+    const raw = asRecord(data)?.sessions
+
+    if (!Array.isArray(raw)) return null
+
+    const orders: HistoryOrder[] = []
+
+    for (const entry of raw) {
+      const row = asRecord(entry)
+      const id = row === null ? null : asString(row.id)
+      const reference = row === null ? null : asString(row.order_reference)
+      const status = row === null ? null : asString(row.status)
+      const createdAt = row === null ? null : asString(row.created_at)
+
+      // Dropped rather than defaulted -- `fetchBoard`'s rule and its reason.
+      if (id === null || reference === null || status === null || createdAt === null) continue
+      if (!isPagerStatus(status)) continue
+
+      orders.push({
+        id,
+        orderReference: reference,
+        status,
+        createdAt,
+        readyAt: row === null ? null : asString(row.ready_at),
+        completedAt: row === null ? null : asString(row.completed_at),
+      })
+    }
+
+    return orders
+  })
+}
+
+/**
+ * A pager sheet: the order it is for, and the payload to encode in the QR code.
+ *
+ * ⚠ `qrPayload` IS A CREDENTIAL AND IT EXISTS EXACTLY ONCE. `PagerToken::qrPayload()` emits
+ * `{landing_url}#{token}` and the raw token can never be recovered — which is the whole of
+ * Muhammad's re-issue ruling. So nothing in this client stores it, logs it or puts it in a
+ * URL: it is held in component state until the sheet is printed and dropped on navigation.
+ */
+export interface IssuedSheet {
+  readonly id: string
+  readonly orderReference: string
+  readonly qrPayload: string
+  /**
+   * The scannable code, drawn by the SERVER as an SVG string.
+   *
+   * ⚠ DRAWN THERE AND NOT HERE, AND IT IS A SUPPLY-CHAIN DECISION — `PagerSheet`'s docblock
+   * carries it. There is no QR encoder in this workspace, a QR encoder is a few hundred lines
+   * of Reed-Solomon arithmetic nobody here would review line by line, and the page that would
+   * run it is the page holding a live pager token. `bacon/bacon-qr-code` is already installed
+   * and already reviewed (Fortify's 2FA needs it), and 10d promoted it to a direct dependency
+   * so the sheet does not rest on another package's choice.
+   *
+   * It is markup, so it is rendered with `dangerouslySetInnerHTML` — and the name is doing its
+   * job, so the bound is stated where the value is declared: this string is built by
+   * `PagerSheet::svg()` from `<rect>` elements and one `<g>`, with no `<image>`, no external
+   * reference and no script. `apps/web/test/staff-issue.test.tsx` asserts that against the
+   * REAL server-produced string rather than against a fixture, which is the only form of that
+   * assertion worth having.
+   */
+  readonly qrSvg: string
+}
+
+function readSheet(data: unknown): IssuedSheet | null {
+  const root = asRecord(data)
+  const session = asRecord(root?.session)
+  const id = session === null ? null : asString(session.id)
+  const reference = session === null ? null : asString(session.order_reference)
+  const payload = asString(root?.qr_payload)
+  const svg = asString(root?.qr_svg)
+
+  // All four or nothing. A sheet without its code is a sheet nobody can scan, and rendering
+  // one with a hole where the QR goes is worse than showing the failure state: a staff member
+  // would print it and hand it over.
+  if (id === null || reference === null || payload === null || svg === null) return null
+
+  return { id, orderReference: reference, qrPayload: payload, qrSvg: svg }
+}
+
+/** Start a pager for an order, and get the sheet to print. */
+export function issueSheet(
+  apiBase: string,
+  orderReference: string,
+): Promise<StaffResult<IssuedSheet>> {
+  return call(apiBase, 'POST', '/v1/pager-sessions', { order_reference: orderReference }, readSheet)
+}
+
+/**
+ * Give an existing order a NEW code. The old one stops working immediately.
+ *
+ * Muhammad's ruling (`QRPAGER-28 §2`): *a sheet is RE-ISSUED, never reprinted.* The screen
+ * says that to the staff member in plain words and confirms before sending, because the effect
+ * is destructive and not reversible — `staff.issue.reissue.*`.
+ */
+export function reissueSheet(apiBase: string, id: string): Promise<StaffResult<IssuedSheet>> {
+  return call(
+    apiBase,
+    'POST',
+    `/v1/pager-sessions/${encodeURIComponent(id)}/reissue`,
+    undefined,
+    readSheet,
+  )
+}
+
+/** One member of the restaurant's staff. */
+export interface TeamMember {
+  readonly id: string
+  readonly userId: string
+  readonly name: string
+  readonly email: string
+  readonly role: string
+}
+
+export function fetchTeam(apiBase: string): Promise<StaffResult<readonly TeamMember[]>> {
+  return call(apiBase, 'GET', '/v1/members', undefined, (data) => {
+    const raw = asRecord(data)?.members
+
+    if (!Array.isArray(raw)) return null
+
+    const members: TeamMember[] = []
+
+    for (const entry of raw) {
+      const row = asRecord(entry)
+      const id = row === null ? null : asString(row.id)
+      const role = row === null ? null : asString(row.role)
+
+      if (id === null || role === null) continue
+
+      members.push({
+        id,
+        userId: (row === null ? null : asString(row.user_id)) ?? '',
+        // A member with no name is rendered by their address instead, which the screen
+        // handles: both are things a manager recognises, and a blank row is not.
+        name: (row === null ? null : asString(row.name)) ?? '',
+        email: (row === null ? null : asString(row.email)) ?? '',
+        role,
+      })
+    }
+
+    return members
+  })
+}
+
+/** Add somebody who already has an account. */
+export function addTeamMember(
+  apiBase: string,
+  email: string,
+  role: string,
+): Promise<StaffResult<void>> {
+  // Lower-cased HERE as well as on the server, because `StoreMemberRequest` requires
+  // `lowercase` and a tablet keyboard capitalises the first letter of a field by default --
+  // so a manager typing an address correctly would read a 422 about case.
+  return call(apiBase, 'POST', '/v1/members', { email: email.trim().toLowerCase(), role })
+}
+
+export function changeTeamMemberRole(
+  apiBase: string,
+  id: string,
+  role: string,
+): Promise<StaffResult<void>> {
+  return call(apiBase, 'PATCH', `/v1/members/${encodeURIComponent(id)}`, { role })
+}
+
+export function removeTeamMember(apiBase: string, id: string): Promise<StaffResult<void>> {
+  return call(apiBase, 'DELETE', `/v1/members/${encodeURIComponent(id)}`)
 }

@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "bacon/bacon-qr-code": "^3.0",
         "dedoc/scramble": "0.13.50",
         "filament/filament": "^5.11",
         "laravel/fortify": "^1.41",

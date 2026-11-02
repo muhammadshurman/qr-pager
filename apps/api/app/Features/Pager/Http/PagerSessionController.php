@@ -6,6 +6,7 @@ namespace App\Features\Pager\Http;
 
 use App\Features\Pager\PagerSessions;
 use App\Features\Pager\PagerSessionState;
+use App\Features\Pager\PagerSheet;
 use App\Platform\Http\Middleware\RequireTenantScope;
 use App\Platform\Http\ProblemDocument;
 use App\Platform\Http\ValidationProblemDocument;
@@ -53,8 +54,9 @@ final class PagerSessionController
     /**
      * Create a pager session.
      *
-     * Issues a single-use token for one order and returns the payload to encode in a QR
-     * code. The token is returned by this call only and cannot be retrieved afterwards.
+     * Issues a single-use token for one order and returns both the payload to encode in a QR
+     * code and a ready-made SVG of that code, sized by the page that renders it. The token is
+     * returned by this call only and cannot be retrieved afterwards.
      */
     /**
      * List the restaurant's active pagers.
@@ -106,9 +108,12 @@ final class PagerSessionController
         // reveal() is called HERE and nowhere else in the application. This is the only
         // moment the raw token can reach the QR code, and PagerToken makes every other
         // way of getting at it either a redacted marker or an error.
+        $payload = $issued->token->qrPayload((string) config('pager.landing_url'));
+
         return new JsonResponse([
             'session' => $issued->session->toArray(),
-            'qr_payload' => $issued->token->qrPayload((string) config('pager.landing_url')),
+            'qr_payload' => $payload,
+            'qr_svg' => PagerSheet::svg($payload),
         ], 201, ['Cache-Control' => 'no-store']);
     }
 
@@ -170,6 +175,58 @@ final class PagerSessionController
     public function cancel(Request $request, string $session): JsonResponse
     {
         return $this->state($this->sessions->cancel($this->tenant(), $session, actorIp: $request->ip()));
+    }
+
+    /**
+     * List the restaurant's past orders.
+     *
+     * Filter by any combination of order state, a date range of up to 92 days, and part of an
+     * order reference. Newest first. Returns at most 100 orders.
+     */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
+    #[DocResponse(status: 200, description: 'The matching orders for this restaurant.')]
+    #[DocResponse(status: 403, description: 'That is not permitted.', type: ProblemDocument::class)]
+    #[DocResponse(status: 422, description: 'A filter did not pass validation.', type: ValidationProblemDocument::class)]
+    public function history(PagerHistoryRequest $request): JsonResponse
+    {
+        // `private, no-store` for `§11` SECURITY M-2's reason, which is stronger here than on
+        // the board: this response is a restaurant's ORDER RECORD, and a shared kitchen tablet
+        // keeping it in its own HTTP cache would survive the lock, the sign-out and the next
+        // person's sign-in.
+        return new JsonResponse(
+            ['sessions' => $this->sessions->history($this->tenant(), $request->filters())],
+            200,
+            ['Cache-Control' => 'private, no-store'],
+        );
+    }
+
+    /**
+     * Issue a new code for an existing order.
+     *
+     * The previous code stops working immediately and cannot be recovered. Use this when a
+     * printed sheet is lost or unreadable; the order itself is unchanged and the customer is
+     * not notified. Returns the new payload and a ready-made SVG of the new code. An order
+     * that is already finished, cancelled or expired is refused.
+     */
+    #[DocResponse(status: 401, description: 'No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.', type: ProblemDocument::class)]
+    #[DocResponse(status: 200, description: 'The session, and the new QR payload to encode.')]
+    #[DocResponse(status: 404, description: 'No such session in this tenant.', type: ProblemDocument::class)]
+    #[DocResponse(status: 409, description: 'The order is already finished, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
+    public function reissue(Request $request, string $session): JsonResponse
+    {
+        $issued = $this->sessions->reissue($this->tenant(), $session, actorIp: $request->ip());
+
+        // reveal() is called HERE and in `store()` and nowhere else in the application. This is
+        // the only other moment a raw token can reach a QR code, and it exists because the raw
+        // value of the PREVIOUS one never can -- Muhammad's ruling: a sheet is re-issued, never
+        // reprinted.
+        $payload = $issued->token->qrPayload((string) config('pager.landing_url'));
+
+        return new JsonResponse([
+            'session' => $issued->session->toArray(),
+            'qr_payload' => $payload,
+            'qr_svg' => PagerSheet::svg($payload),
+        ], 200, ['Cache-Control' => 'no-store']);
     }
 
     private function state(PagerSessionState $state): JsonResponse

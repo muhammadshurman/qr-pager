@@ -78,10 +78,17 @@ deptrac:
     # failure: `Uncovered: 0` is the figure §4a records, so a new library has to be added
     # here or that figure moves. Minishlink (web-push) and GuzzleHttp (the PSR-18 client
     # behind it) joined at Task 4.
+    #
+    # BaconQrCode joined at Task 10d, which draws the scannable half of a pager sheet
+    # (`App\Features\Pager\PagerSheet`). It was ALREADY installed as a transitive dependency
+    # of Fortify -- `twoFactorQrCodeSvg()` -- and 10d promoted it to a direct requirement of
+    # `composer.json` rather than leaning on that: a transitive dependency is one another
+    # package may drop at its next minor, and a printed sheet is not a thing to lose that way.
+    # Adding it here rather than letting `Uncovered` move is what this comment asks of it.
     - name: Framework
       collectors:
         - type: classLike
-          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery|Minishlink|GuzzleHttp|Filament|Livewire)\\.*
+          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery|Minishlink|GuzzleHttp|Filament|Livewire|BaconQrCode)\\.*
 
     # DELIBERATELY REPURPOSED AT TASK 5, not deleted. QRPAGER-12 §6 required any rule
     # that existed only to contain the pre-Task-5 stub to be "either removed or

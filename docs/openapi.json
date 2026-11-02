@@ -97,6 +97,11 @@
                                                             },
                                                             "principal": {
                                                                 "type": "string"
+                                                            },
+                                                            "grantable_roles": {
+                                                                "type": "array",
+                                                                "description": "The roles this membership may grant to somebody else. Added at 10e.",
+                                                                "items": {}
                                                             }
                                                         },
                                                         "required": [
@@ -104,7 +109,8 @@
                                                             "slug",
                                                             "name",
                                                             "role",
-                                                            "principal"
+                                                            "principal",
+                                                            "grantable_roles"
                                                         ]
                                                     }
                                                 },
@@ -352,6 +358,11 @@
                                                             },
                                                             "principal": {
                                                                 "type": "string"
+                                                            },
+                                                            "grantable_roles": {
+                                                                "type": "array",
+                                                                "description": "The roles this membership may grant to somebody else. Added at 10e.",
+                                                                "items": {}
                                                             }
                                                         },
                                                         "required": [
@@ -359,7 +370,8 @@
                                                             "slug",
                                                             "name",
                                                             "role",
-                                                            "principal"
+                                                            "principal",
+                                                            "grantable_roles"
                                                         ]
                                                     }
                                                 },
@@ -1590,11 +1602,15 @@
                                         },
                                         "qr_payload": {
                                             "type": "string"
+                                        },
+                                        "qr_svg": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
                                         "session",
-                                        "qr_payload"
+                                        "qr_payload",
+                                        "qr_svg"
                                     ]
                                 }
                             }
@@ -2048,6 +2064,291 @@
                     },
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/pager-sessions/history": {
+            "get": {
+                "operationId": "pager.sessions.history",
+                "description": "Filter by any combination of order state, a date range of up to 92 days, and part of an\norder reference. Newest first. Returns at most 100 orders.",
+                "summary": "List the restaurant's past orders",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "status[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "enum": [
+                                "waiting",
+                                "ready",
+                                "completed",
+                                "cancelled",
+                                "expired"
+                            ],
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "waiting",
+                                    "ready",
+                                    "completed",
+                                    "cancelled",
+                                    "expired"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "reference",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "pattern": "^[A-Za-z0-9 \\-_#.\\/]+$",
+                            "maxLength": 32
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The matching orders for this restaurant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "sessions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "order_reference": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "ready_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "completed_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "order_reference",
+                                                    "status",
+                                                    "created_at",
+                                                    "ready_at",
+                                                    "completed_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "sessions"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A filter did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/pager-sessions/{session}/reissue": {
+            "post": {
+                "operationId": "pager.sessions.reissue",
+                "description": "The previous code stops working immediately and cannot be recovered. Use this when a\nprinted sheet is lost or unreadable; the order itself is unchanged and the customer is\nnot notified. Returns the new payload and a ready-made SVG of the new code. An order\nthat is already finished, cancelled or expired is refused.",
+                "summary": "Issue a new code for an existing order",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session, and the new QR payload to encode.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer"
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        },
+                                        "qr_payload": {
+                                            "type": "string"
+                                        },
+                                        "qr_svg": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "session",
+                                        "qr_payload",
+                                        "qr_svg"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such session in this tenant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The order is already finished, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
                             "application/problem+json": {
                                 "schema": {

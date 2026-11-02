@@ -103,6 +103,23 @@ final class RouteAbilities
         // scope cannot escalate" would be a claim about a token that can reach nothing, and
         // a token that can reach nothing cannot be shown not to escalate.
         'pager.sessions.index' => Ability::PagerRead,
+
+        // ---------------------------------------------------------------- Task 10d's
+        //
+        // ⚠ `pager:history` AND NOT `pager:read`, AND THE DIFFERENCE IS A KITCHEN SCREEN.
+        // `pager:read` is the only ability `Ability::issuableToDevice()` will issue to a device
+        // token, and `RequestPrincipal::may()` requires BOTH the matrix and the token's own
+        // abilities -- so this route on `pager:read` would be reachable by every wall-mounted
+        // screen in every kitchen, reading the restaurant's whole order record on a thirty-day
+        // credential. The live board and the historical record are two reads with two
+        // audiences; `Ability::PagerHistory`'s docblock has the full argument.
+        'pager.sessions.history' => Ability::PagerHistory,
+
+        // Re-issuing a sheet is `pager:create`'s act: a CSPRNG draw that mints a credential.
+        // Not `pager:notify` -- it notifies nobody -- and not a new ability, because the holder
+        // set would be identical to `pager:create`'s and a second ability with the same holders
+        // is a distinction with no difference (`devices.index`'s own reasoning, one route over).
+        'pager.sessions.reissue' => Ability::PagerCreate,
     ];
 
     /** The ability this route name requires, or null when the route is not mapped. */

@@ -90,6 +90,11 @@ final class RoleMatrix
             Ability::PagerCreate,
             Ability::PagerNotify,
             Ability::PagerResolve,
+            // Task 10d. The history screen. Held by staff because looking up an order from an
+            // hour ago is ordinary work in a restaurant with three people in it -- and NOT
+            // held by `Device`, which is the whole reason it is not `PagerRead`
+            // (`Ability::PagerHistory`'s docblock has the measurement).
+            Ability::PagerHistory,
             // Task 10a. Every person who signs in has to be told which restaurant they
             // signed in to, so this is the floor rather than a privilege. `Device` does
             // NOT hold it -- Ability::TenantRead's docblock has the reason, and it is not
@@ -103,6 +108,7 @@ final class RoleMatrix
             Ability::PagerCreate,
             Ability::PagerNotify,
             Ability::PagerResolve,
+            Ability::PagerHistory,
             Ability::MembersRead,
             Ability::MembersWrite,
             Ability::DevicesWrite,
@@ -118,6 +124,7 @@ final class RoleMatrix
             Ability::PagerCreate,
             Ability::PagerNotify,
             Ability::PagerResolve,
+            Ability::PagerHistory,
             Ability::MembersRead,
             Ability::MembersWrite,
             Ability::DevicesWrite,

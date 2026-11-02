@@ -311,3 +311,66 @@
 .qr-staff-list__waiting {
   color: var(--color-ink-mid);
 }
+
+/* ================================================================================ */
+/* 10d's FILTER GROUPS AND 10e's ROLE PICKER                                         */
+/* ================================================================================ */
+
+/*
+ * `fieldset`/`legend` rather than a div with a heading, which `StaffHistory` and `StaffTeam`
+ * both explain: a group of related toggles needs a group NAME a screen reader announces when
+ * focus enters it, and that is the only construct that does it without ARIA.
+ *
+ * The browser's default fieldset border and padding are removed, because the kit draws groups
+ * with spacing rather than with chrome -- `§12`'s *no library default look*, which here is the
+ * BROWSER's default look.
+ */
+.qr-staff-filter__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+/*
+ * ⚠ THE WHOLE LABEL IS THE TARGET, NOT THE CHECKBOX. A native checkbox renders at ~13px in
+ * every engine and `§12`'s floor is 44px on both axes — which cannot be met by styling the
+ * input, because its box is drawn by the platform. Wrapping it in a label that is itself
+ * `--target-min` tall makes the TAPPABLE area compliant (a click anywhere on a label toggles
+ * its control), and `browser/staff.spec.ts` measures the rendered box of this element rather
+ * than of the input.
+ */
+.qr-staff-filter__toggle {
+  display: inline-flex;
+  gap: var(--space-8);
+  align-items: center;
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-12);
+  font-size: var(--size-16);
+  background-color: var(--color-surface);
+  border: var(--focus-width) solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+}
+
+/*
+ * ⚠ `:focus-within` AND NOT `:focus`. The focusable element is the INPUT inside this label, so
+ * a ring on the label itself would never render — `§11`'s own lesson about `:focus-visible`
+ * being a heuristic about how focus arrived, one element over. The ring is drawn on the
+ * wrapper so the whole 44px target is visibly focused, which is what a person tabbing sees.
+ */
+.qr-staff-filter__toggle:focus-within {
+  outline: var(--focus-width) solid var(--color-signal);
+  outline-offset: var(--focus-offset);
+}
+
+/* The printable sheet. Centred and bounded, because it is read at arm's length and then
+   printed — the one staff surface whose output is paper. */
+.qr-staff-sheet__code {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--space-24);
+}

@@ -24,25 +24,75 @@ use Illuminate\Support\Facades\Route;
  * below is that instance.
  */
 
-it('serves every pager route under /v1 and by POST only', function (): void {
+it('serves every pager route under /v1, with the reads as GET and every write as POST', function (): void {
+    /*
+     * ⚠ **KEYED BY VERB AND PATH, NOT BY PATH — AND THE OLD KEYING MASKED A ROUTE, WHICH IS
+     * WORTH RECORDING BECAUSE THIS CASE CLAIMS TO SEE *EVERY* PAGER ROUTE.**
+     *
+     * It was `$pager[$route->uri()] = $route->methods()` with `expect($pager)->toHaveCount(5)`
+     * and a *"POST only"* assertion over the result. `pager.sessions.index` (GET) and
+     * `pager.sessions.store` (POST) **share the path `v1/pager-sessions`**, and `index` is
+     * declared first — so the second write to that key overwrote the GET and the loop below
+     * never saw it. The case asserted *POST only* over a surface it had silently removed the
+     * one GET from, and it had been that way since Task 5 added `index`.
+     *
+     * Found at 10d, by the route count moving: 5 → 7 with two routes added, which only adds up
+     * if one of the seven had been invisible.
+     *
+     * Keyed by `"VERB path"` now, so collisions are impossible and the count is the real number
+     * of routes. 7 at 10d: 2 reads (`index`, `history`) and 5 writes (`store` and the four
+     * transitions) plus `reissue` — which is 8... and that arithmetic is exactly why the
+     * assertion below enumerates the READS by name instead of trusting a total.
+     */
     $pager = [];
 
     foreach (Route::getRoutes() as $route) {
-        if (str_contains($route->uri(), 'pager-sessions')) {
-            $pager[$route->uri()] = $route->methods();
+        if (! str_contains($route->uri(), 'pager-sessions')) {
+            continue;
+        }
+
+        foreach (array_diff($route->methods(), ['HEAD', 'OPTIONS']) as $verb) {
+            $pager[$verb.' '.$route->uri()] = $route->getName();
         }
     }
 
-    expect($pager)->toHaveCount(5);
+    ksort($pager);
 
-    foreach ($pager as $uri => $methods) {
-        // "Every public route is under /v1" (§3 row 2). A published path is never changed
-        // in place, so this list is the contract rather than an inventory.
-        expect($uri)->toStartWith('v1/pager-sessions');
+    /*
+     * The surface, as an EXACT SET rather than a count — so a route added, renamed, moved to a
+     * different verb or given a second verb fails here and names itself. *Assert exact values,
+     * never ranges*, applied to a route table.
+     */
+    expect($pager)->toBe([
+        'GET v1/pager-sessions' => 'pager.sessions.index',
+        'GET v1/pager-sessions/history' => 'pager.sessions.history',
+        'POST v1/pager-sessions' => 'pager.sessions.store',
+        'POST v1/pager-sessions/{session}/cancel' => 'pager.sessions.cancel',
+        'POST v1/pager-sessions/{session}/complete' => 'pager.sessions.complete',
+        'POST v1/pager-sessions/{session}/ready' => 'pager.sessions.ready',
+        'POST v1/pager-sessions/{session}/reissue' => 'pager.sessions.reissue',
+        'POST v1/pager-sessions/{session}/renotify' => 'pager.sessions.renotify',
+    ]);
 
-        // POST only. These are not idempotent in the HTTP sense of GET, and the four
-        // transitions change state; HEAD comes free with GET and neither should exist here.
-        expect(array_values(array_diff($methods, ['POST'])))->toBe([], "{$uri} answers more than POST");
+    foreach ($pager as $key => $name) {
+        // "Every public route is under /v1" (§3 row 2). A published path is never changed in
+        // place, so this list is the contract rather than an inventory.
+        expect($key)->toContain('v1/pager-sessions');
+
+        /*
+         * THE VERB MATCHES WHAT THE ROUTE DOES, and the two GETs are named rather than
+         * excused. `index` is the board and `history` is the record: both are reads that take
+         * no body and change nothing, so a GET is correct and is also what makes them
+         * cacheable-in-principle — which is why both set `private, no-store` by hand.
+         *
+         * Everything else changes state and is a POST. A write reachable by GET would be
+         * triggerable by a prefetch, a link or an `<img src>`, which for `ready` means a
+         * customer's phone buzzing because somebody pasted a URL into a chat.
+         */
+        $verb = explode(' ', $key)[0];
+        $isRead = in_array($name, ['pager.sessions.index', 'pager.sessions.history'], true);
+
+        expect($verb)->toBe($isRead ? 'GET' : 'POST', "{$key} uses the wrong verb for what it does");
     }
 });
 
@@ -59,6 +109,11 @@ it('denies every pager route when no tenant resolves, with no detail about why',
         ['POST', "/v1/pager-sessions/{$session}/renotify", []],
         ['POST', "/v1/pager-sessions/{$session}/complete", []],
         ['POST', "/v1/pager-sessions/{$session}/cancel", []],
+        // Task 10d's two. Deny-by-default is a property of the `api` middleware group, so a
+        // route added to `routes/v1.php` inherits it -- and that is precisely the kind of
+        // thing worth driving rather than inheriting by argument.
+        ['GET', '/v1/pager-sessions/history', []],
+        ['POST', "/v1/pager-sessions/{$session}/reissue", []],
     ] as [$method, $route, $body]) {
         $response = $this->json($method, $route, $body);
 
