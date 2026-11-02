@@ -72,10 +72,43 @@
  * not a style.
  */
 .qr-button:focus-visible,
-.qr-field__input:focus-visible,
 .qr-ready__acknowledge:focus-visible,
 .qr-progress:focus-visible,
 [data-active='true']:focus-visible {
+  outline: var(--focus-width) solid var(--color-brand);
+  outline-offset: var(--focus-offset);
+}
+
+/*
+ * ⚠ **AND A FIELD'S RING HANGS ON `:focus`, NOT `:focus-visible`, BECAUSE ONE ENGINE DOES NOT
+ * MATCH `:focus-visible` ON A DATE INPUT AT ALL. MEASURED, NOT READ.**
+ *
+ * WebKit does not match `:focus-visible` on `<input type="date">` AT ALL -- not even when the
+ * control was reached by a real `Tab` press. Probed at `playwright` 1.64.1's pinned WebKit on
+ * a page carrying nothing but this rule: a `<button>` resolved `:focus true, :focus-visible
+ * true, outline solid 2px`; an `<input type="text">` the same; and `<input type="date">`
+ * resolved **`:focus true, :focus-visible FALSE, outline-style none`** on each of the three
+ * presses that walk its segments. Chromium matched both on every control.
+ *
+ * So a ring hung on `:focus-visible` alone is INVISIBLE on a date field in Safari, which is
+ * `§12`'s *visible focus ring* clause failing on a real browser rather than a test artefact --
+ * and 10d's history screen is the first screen in this product to have one. Found by
+ * `browser/staff.spec.ts`'s sweep: `staff-webkit-ltr` and `staff-webkit-rtl`, *2 of 17 controls
+ * have no visible focus ring -- sweep-11: reached as <input type=date> with outline-style none*.
+ *
+ * `:focus` is the answer, and `.qr-field__input` is lifted OUT of the rule above rather than
+ * listed in both -- one element, one rule. It covers **every** `.qr-field__input` rather than `[type='date']`
+ * alone -- deliberately, because a type list is a list that the next screen's `type="time"` or
+ * `type="month"` is not on, and the defect returns silently with no test to catch it until
+ * somebody runs a WebKit sweep over a screen nobody has built yet. `Field` renders a text-entry
+ * control and nothing else (its own docblock: *"a labelled text input"*), and a ring on a
+ * focused text field is what every browser's default stylesheet does anyway.
+ *
+ * The cost is that CLICKING a field now draws the ring, in every engine. `:focus-visible` is
+ * kept for `.qr-button` and the rest, where the heuristic earns its place: a ring that appears
+ * under the pointer on a button is noise. On a field it is the native convention.
+ */
+.qr-field__input:focus {
   outline: var(--focus-width) solid var(--color-brand);
   outline-offset: var(--focus-offset);
 }
