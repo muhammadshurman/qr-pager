@@ -31,7 +31,17 @@ import {
  */
 
 function answer(status: number, body?: unknown, parseFails = false) {
-  return vi.fn(() =>
+  /*
+   * ⚠ THE SIGNATURE IS GIVEN AS A GENERIC RATHER THAN AS PARAMETERS THE BODY IGNORES, and both
+   * wrong ways were tried. `vi.fn(() => …)` types `mock.calls` as an array of EMPTY TUPLES, so
+   * `calls[0]?.[0]` is a compile error (*"Tuple type '[]' of length '0' has no element at index
+   * '0'"*) and the only way past it is an `as` cast — which is the thing that would also hide a
+   * genuinely wrong index. Declaring `_input`/`_init` fixes the types and trips
+   * `no-unused-vars`, because this config sets no `argsIgnorePattern`. The generic gives the
+   * recorded arguments their types with nothing unused and no cast, which is the form
+   * `staff-flows.test.tsx` already uses for its own mocks.
+   */
+  return vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(() =>
     Promise.resolve({
       status,
       ok: status >= 200 && status < 300,
@@ -63,9 +73,9 @@ describe('the CSRF cookie', () => {
     vi.stubGlobal('fetch', fetcher)
 
     return fetchBoard('').then(() => {
-      const headers = fetcher.mock.calls[0]?.[1]?.headers as Record<string, string>
+      const headers = fetcher.mock.calls[0]?.[1]?.headers as Record<string, string> | undefined
 
-      expect(headers['X-XSRF-TOKEN']).toBe('a+b==')
+      expect(headers?.['X-XSRF-TOKEN']).toBe('a+b==')
     })
   })
 
@@ -86,9 +96,9 @@ describe('the CSRF cookie', () => {
 
     expect(result.kind).toBe('ok')
 
-    const headers = fetcher.mock.calls[0]?.[1]?.headers as Record<string, string>
+    const headers = fetcher.mock.calls[0]?.[1]?.headers as Record<string, string> | undefined
 
-    expect(headers['X-XSRF-TOKEN']).toBeUndefined()
+    expect(headers?.['X-XSRF-TOKEN']).toBeUndefined()
   })
 })
 

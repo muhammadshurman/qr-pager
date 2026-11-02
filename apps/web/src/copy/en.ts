@@ -452,8 +452,16 @@ export const EN = {
   // one. Destructive in effect, so `§12` wants it confirmed and marked not reversible.
   'staff.issue.reissue': 'Make a new sheet for this order',
   'staff.issue.reissue.title': 'Make a new sheet?',
+  // ⚠ THE SECOND SENTENCE WAS FALSE AND IS CORRECTED — `R-232`, MEASURED. It read *"If the
+  // customer still has the old sheet, it will not buzz them any more"*, and
+  // `PagerReissueTest` shows that is untrue for a customer who had ALREADY SCANNED: the old
+  // code can no longer be scanned (the hash is rotated) but it can still POLL, because
+  // `/v1/pager/status` resolves through a Redis pointer keyed on the old token and `reissue()`
+  // cannot delete that key — the one value needed to build it is the one value the app role is
+  // forbidden to read. Muhammad's own sentence is kept verbatim because it is true; what
+  // follows it now says what actually happens instead of what would be convenient.
   'staff.issue.reissue.body':
-    'Printing a new sheet makes the old code stop working. If the customer still has the old sheet, it will not buzz them any more. You cannot undo this.',
+    'Printing a new sheet makes the old code stop working: nobody can scan it again. If the customer already scanned the old sheet, they will still be told when the order is ready. You cannot undo this.',
   'staff.issue.reissue.confirm': 'Make a new sheet',
   'staff.issue.reissue.keep': 'Keep the old one',
   'staff.issue.reissue.working': 'Making the new sheet\u2026',

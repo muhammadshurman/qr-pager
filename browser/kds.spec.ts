@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import {
   aaBar,
   contrastPairs,
+  describeMissed,
   focusRings,
   resetTabOrder,
   tagControls,
@@ -92,12 +93,12 @@ test.describe('§12 on the kitchen screen', () => {
     // A generous budget: the assertion is the SET reached, not the number of presses, so a
     // press spent on a scrollable container costs nothing. `support/a11y.ts` has the two e2e
     // rounds that taught this.
-    const seen = await focusRings(page, ids.length * 3 + 6)
-    const missed = ids.filter((id) => !seen.has(id))
+    const sweep = await focusRings(page, ids.length * 3 + 6)
+    const missed = ids.filter((id) => !sweep.seen.has(id))
 
     expect(
       missed,
-      `Tab never reached, or drew no ring on, ${String(missed.length)} of ${String(ids.length)} controls: ${missed.join(', ')}`,
+      `${String(missed.length)} of ${String(ids.length)} controls have no visible focus ring — ${describeMissed(sweep, ids)}`,
     ).toEqual([])
   })
 

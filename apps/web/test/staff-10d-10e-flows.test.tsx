@@ -299,7 +299,11 @@ describe('the issue view', () => {
 
     fireEvent.click(screen.getByRole('button', { name: t('staff.issue.sheet.done') }))
 
-    expect(document.querySelector('[data-issue-reference="true"]')!.value).toBe('')
+    // `querySelector<HTMLInputElement>` rather than a cast: the generic is what gives the
+    // element its type, and a cast is the thing that would also hide a wrong selector.
+    expect(document.querySelector<HTMLInputElement>('[data-issue-reference="true"]')?.value).toBe(
+      '',
+    )
   })
 
   it('maps a 422 to the character-class sentence rather than an error state', async () => {
@@ -535,8 +539,10 @@ describe('the team view', () => {
 
     fireEvent.click(screen.getByRole('button', { name: t('staff.team.add') }))
 
-    expect(document.querySelector('[data-team-role="staff"]')!.checked).toBe(true)
-    expect(document.querySelector('[data-team-role="owner"]')!.checked).toBe(false)
+    expect(document.querySelector<HTMLInputElement>('[data-team-role="staff"]')?.checked).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('[data-team-role="owner"]')?.checked).toBe(
+      false,
+    )
   })
 
   it('maps a 404 on ADD to the address sentence and NOT to the last-owner one', async () => {

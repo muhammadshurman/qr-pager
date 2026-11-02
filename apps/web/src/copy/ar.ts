@@ -349,8 +349,10 @@ export const AR: Record<CopyKey, string> = {
   // ----------------------------------------------------- re-issuing a sheet (10d)
   'staff.issue.reissue': 'أنشئ ورقة جديدة لهذا الطلب',
   'staff.issue.reissue.title': 'إنشاء ورقة جديدة؟',
+  // `R-232` — the English carries the measurement; the Arabic makes the same distinction
+  // between «لا يمكن مسحه» (cannot be scanned) and still being notified.
   'staff.issue.reissue.body':
-    'إنشاء ورقة جديدة يوقف عمل الرمز القديم. إذا كانت الورقة القديمة مع العميل فلن تنبّهه بعد الآن. لا يمكن التراجع عن هذا.',
+    'إنشاء ورقة جديدة يوقف عمل الرمز القديم: لن يتمكّن أحد من مسحه مرة أخرى. وإذا كان العميل قد مسح الورقة القديمة بالفعل فسيُبلَّغ عند جهوز طلبه. لا يمكن التراجع عن هذا.',
   'staff.issue.reissue.confirm': 'أنشئ ورقة جديدة',
   'staff.issue.reissue.keep': 'أبقِ القديمة',
   'staff.issue.reissue.working': 'جارٍ إنشاء الورقة الجديدة…',

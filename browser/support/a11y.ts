@@ -266,8 +266,22 @@ export async function resetTabOrder(page: Page, anchor: string): Promise<void> {
  * The keyboard is also what the clause is about — *keyboard reachable, visible focus ring* —
  * and tabbing proves both at once.
  */
-export async function focusRings(page: Page, budget: number): Promise<Set<string>> {
+export async function focusRings(page: Page, budget: number): Promise<FocusSweep> {
   const seen = new Set<string>()
+  /**
+   * What the engine resolved for each control Tab actually REACHED, ring or no ring.
+   *
+   * ⚠ **COLLECTED SO A MISS IS DIAGNOSABLE IN ONE RUN, which cost a CI cycle to learn.** The
+   * first version returned only the set that got a ring, so a failure said *"Tab never reached,
+   * or drew no ring on, 2 of 17 controls: sweep-11, sweep-12"* — which does not say WHICH of
+   * the two things happened, and the two have opposite causes: never reached is a tab-order
+   * problem, reached-without-a-ring is a CSS one. On `staff-webkit-*` those two ids were the
+   * native `<input type="date">` controls and there was no way to tell from the message.
+   *
+   * The shell's own focus case in `staff.spec.ts` keeps a richer inline loop for exactly this
+   * reason; this brings the shared helper up to it.
+   */
+  const reached = new Map<string, { tag: string; type: string; outline: string; width: number }>()
 
   for (let press = 0; press < budget; press++) {
     await page.keyboard.press('Tab')
@@ -285,14 +299,52 @@ export async function focusRings(page: Page, budget: number): Promise<Set<string
 
       return {
         id,
+        tag: active.tagName.toLowerCase(),
+        type: active.getAttribute('type') ?? '',
         outline: style.outlineStyle,
         width: Number.parseFloat(style.outlineWidth),
       }
     })
 
     if (ring === null) continue
+
+    reached.set(ring.id, {
+      tag: ring.tag,
+      type: ring.type,
+      outline: ring.outline,
+      width: ring.width,
+    })
+
     if (ring.outline !== 'none' && ring.width > 0) seen.add(ring.id)
   }
 
-  return seen
+  return { seen, reached }
+}
+
+/** What one Tab sweep found: which controls drew a ring, and what each reached one resolved. */
+export interface FocusSweep {
+  readonly seen: Set<string>
+  readonly reached: Map<string, { tag: string; type: string; outline: string; width: number }>
+}
+
+/**
+ * A failure message that says WHICH of the two things went wrong, per control.
+ *
+ * *never reached* is a tab-order defect; *reached, outline none* is a CSS one. A message that
+ * conflates them is a message that needs another run to act on.
+ */
+export function describeMissed(sweep: FocusSweep, ids: readonly string[]): string {
+  return ids
+    .filter((id) => !sweep.seen.has(id))
+    .map((id) => {
+      const found = sweep.reached.get(id)
+
+      if (found === undefined) return `${id}: NEVER REACHED by Tab`
+
+      return (
+        `${id}: reached as <${found.tag}${found.type === '' ? '' : ` type=${found.type}`}> ` +
+        `with outline-style ${found.outline} width ${String(found.width)}`
+      )
+    })
+    .join(' · ')
 }

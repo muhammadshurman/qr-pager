@@ -88,6 +88,88 @@ it('gives the same order a new code, and the OLD code stops working — the ruli
     expect(resolveToken($this, $newToken))->toBe(200, 'the new code does not resolve');
 });
 
+it('leaves the OLD code able to POLL until its Redis pointer expires — the ruling\'s residual', function (): void {
+    /*
+     * ================================================================================
+     * ⚠ THIS CASE ASSERTS A LIMIT RATHER THAN A GUARANTEE, AND IT IS HERE BECAUSE THE
+     *   SCREEN'S COPY WAS WRITTEN AS THOUGH THE LIMIT DID NOT EXIST
+     * ================================================================================
+     *
+     * The case above proves the old code cannot be RESOLVED after a re-issue: a fresh scan of
+     * the old sheet answers 404, because `PagerTokenLookup` compares against
+     * `pager_sessions.token_hash` and that column has been rotated.
+     *
+     * **The POLLING path is different and `§4 › Realtime` makes it so deliberately.**
+     * `/v1/pager/status` is a *Redis-only read, zero Postgres queries*: it resolves the token
+     * through the pointer `pager:tok:{sha256(token)}`, which `remember()` wrote with a TTL when
+     * the customer first scanned. Rotating the hash does not touch that key. So a customer who
+     * had ALREADY scanned the old sheet keeps polling successfully until the pointer expires.
+     *
+     * ⚠ **AND `reissue()` CANNOT INVALIDATE IT, WHICH IS A CONSEQUENCE OF A DELIBERATE POSTURE
+     * RATHER THAN AN OVERSIGHT.** The pointer key is derived from the OLD token, and the old
+     * raw token is unrecoverable by design (that is the whole premise of the ruling). Its hash
+     * is in `token_hash`, which `qrpager_app` **cannot read at all** (`§2.7`, and
+     * `PagerGrantNarrowingTest` asserts that absence as the bound that matters). So the one
+     * value needed to build the key is the one value the application is forbidden to have.
+     * `PagerProjection::forget()` exists and takes a `PagerToken`, which is exactly what is
+     * unavailable here.
+     *
+     * The residual is `R-232`, with the three ways out costed there. What is fixed in the same
+     * commit is the COPY: `staff.issue.reissue.body` claimed *"If the customer still has the
+     * old sheet, it will not buzz them any more"*, which this case shows is false for a
+     * customer who had already scanned. It now says what is true.
+     *
+     * ⚠ AND IT IS NOT A LEAK. The pointer resolves to the SAME session in the SAME tenant, and
+     * its holder is the person who legitimately held that token. What they keep receiving is
+     * the status of their own order — arguably the kinder outcome, and certainly not another
+     * restaurant's data.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $created = $this->postJson('/v1/pager-sessions', ['order_reference' => 'RE-POLL'])
+        ->assertStatus(201);
+
+    $sessionId = $created->json('session.id');
+    $oldPayload = $created->json('qr_payload');
+    $oldToken = substr($oldPayload, (int) strpos($oldPayload, '#') + 1);
+
+    // The customer scans, which is what writes the pointer and the projection.
+    expect(resolveToken($this, $oldToken))->toBe(200);
+
+    $poll = fn (string $token): int => (function () use ($token): int {
+        return $this->postJson('/v1/pager/status', ['token' => $token])->status();
+    })->call($this);
+
+    // Not vacuous: the old code polls NOW, so the comparison after the re-issue means something.
+    expect($poll($oldToken))->toBe(200, 'the freshly scanned code could not poll');
+
+    $reissued = $this->postJson("/v1/pager-sessions/{$sessionId}/reissue")->assertOk();
+    $newPayload = $reissued->json('qr_payload');
+    $newToken = substr($newPayload, (int) strpos($newPayload, '#') + 1);
+
+    // THE HALF THAT HOLDS: a fresh scan of the old sheet is refused.
+    expect(resolveToken($this, $oldToken))->toBe(
+        404,
+        'the old code can still be SCANNED, which would break the ruling outright',
+    );
+
+    /*
+     * THE LIMIT, asserted as the behaviour it is. If a later change invalidates the pointer —
+     * by any of `R-232`'s routes — this case goes red and should: the row would be closed and
+     * the copy would go back to the stronger sentence.
+     */
+    expect($poll($oldToken))->toBe(
+        200,
+        'the old code can no longer poll — if that is intended, close R-232 and strengthen '
+        .'staff.issue.reissue.body back to "it will not buzz them any more"',
+    );
+
+    // And the new code works on both paths, so the re-issue produced a usable sheet.
+    expect(resolveToken($this, $newToken))->toBe(200);
+    expect($poll($newToken))->toBe(200);
+});
+
 it('keeps the SAME session, the same order reference and the same status — one order, not two', function (): void {
     /*
      * `PagerSessions::reissue()`'s docblock rejects three alternative shapes and this is the

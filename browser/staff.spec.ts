@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   aaBar,
   contrastPairs,
+  describeMissed,
   focusRings,
   resetTabOrder,
   tagControls,
@@ -1023,12 +1024,12 @@ test.describe('§12 on 10d’s and 10e’s screens', () => {
 
       expect(ids.length, 'no controls were tagged').toBeGreaterThan(0)
 
-      const seen = await focusRings(page, ids.length * 3 + 6)
-      const missed = ids.filter((id) => !seen.has(id))
+      const sweep = await focusRings(page, ids.length * 3 + 6)
+      const missed = ids.filter((id) => !sweep.seen.has(id))
 
       expect(
         missed,
-        `${screen.nav}: Tab never reached, or drew no ring on, ${String(missed.length)} of ${String(ids.length)} controls: ${missed.join(', ')}`,
+        `${screen.nav}: ${String(missed.length)} of ${String(ids.length)} controls have no visible focus ring — ${describeMissed(sweep, ids)}`,
       ).toEqual([])
     })
 
