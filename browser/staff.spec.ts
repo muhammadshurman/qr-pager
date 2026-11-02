@@ -612,11 +612,34 @@ test.describe('10a’s invariant, driven from inside the browser with a real coo
      * the 401 is milliseconds on a working network; on a dead one the cookie survives until the
      * server's own 120-minute expiry, which is `§5` `R-220` and is recorded there.
      */
+    /*
+     * ⚠ A FETCH THAT CANNOT BE MADE IS "NOT YET", NOT A FAILURE — measured inside
+     * `final-evidence`'s `frontend-three-green-runs`, run 2 of 3 at `cd8a4ba`:
+     * `page.evaluate: NetworkError when attempting to fetch resource.` escaped the polled
+     * callback and failed the case under the message *"the server session survived the lock"*,
+     * which is the one thing that had NOT been established. One transient refusal from the TLS
+     * front, on the second of three consecutive stack bring-ups, read as a security regression.
+     *
+     * The claim is *the session is dead*, and a network error is evidence of neither side of
+     * it. Returning a sentinel keeps the poll asking for its whole budget and keeps the
+     * failure message true: if the session really does survive, this still fails after 15 s
+     * with that exact sentence.
+     */
     await expect
-      .poll(async () => page.evaluate(async () => (await fetch('/v1/tenant')).status), {
-        message: 'the server session survived the lock',
-        timeout: 15_000,
-      })
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            try {
+              return (await fetch('/v1/tenant')).status
+            } catch {
+              return -1
+            }
+          }),
+        {
+          message: 'the server session survived the lock',
+          timeout: 15_000,
+        },
+      )
       .toBe(401)
 
     // This case destroyed the shared session on purpose, so the next one must not spend five
