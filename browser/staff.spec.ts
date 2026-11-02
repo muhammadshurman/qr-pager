@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 
+import {
+  aaBar,
+  contrastPairs,
+  focusRings,
+  resetTabOrder,
+  tagControls,
+  targets,
+} from './support/a11y.ts'
 import { forgetStaffSession, signInAsStaff, staffFixture } from './support/e2e.ts'
 import { echoCount, leaksIn } from './support/isolation.ts'
 
@@ -46,35 +54,30 @@ interface BetaIds {
   readonly device_id: string
 }
 
-/** Every interactive box on the page, with its rendered size and its accessible name. */
-async function targets(page: Page): Promise<{ name: string; width: number; height: number }[]> {
-  return page.evaluate(() => {
-    const found: { name: string; width: number; height: number }[] = []
-
-    for (const element of document.querySelectorAll('button, a[href], input, [role="button"]')) {
-      const box = element.getBoundingClientRect()
-
-      // Zero-sized elements are not rendered -- a collapsed disclosure's contents, for
-      // instance -- and measuring them would fail the clause for boxes nobody can tap.
-      if (box.width === 0 && box.height === 0) continue
-
-      // Composed rather than chained with `??` or `||`: `textContent` is non-null on an
-      // element, so a `??` on it is provably dead and `||` is refused for being the looser
-      // operator. The fallback is for a control whose name is an attribute -- an icon-only
-      // button, which this surface has none of today and a later one might.
-      const text = element.textContent.trim()
-      const label = element.getAttribute('aria-label') ?? ''
-
-      found.push({
-        name: (text === '' ? label : text).slice(0, 40),
-        width: Math.round(box.width),
-        height: Math.round(box.height),
-      })
-    }
-
-    return found
-  })
-}
+/*
+ * ⚠ `targets()`, `contrastPairs()`, `tagControls()`, `resetTabOrder()`, `focusRings()` AND
+ * `aaBar()` MOVED TO `support/a11y.ts` AT 10e's ACCESSIBILITY PASS, and the move is the point
+ * rather than tidying.
+ *
+ * They were defined here and were exactly right there while there was one staff surface. Task
+ * 10 added four screens and a whole second surface (`/kds`, a `Principal::Device` credential),
+ * and a second copy of a contrast evaluator is a second place for the luminance formula to be
+ * subtly wrong — which is the class of defect that reads as a pass.
+ *
+ * Every comment that recorded WHY one of them is shaped as it is travelled with it, because
+ * those comments are the four e2e rounds this file paid for: the programmatic-focus finding,
+ * the mid-document tab start, Firefox's sequential-navigation point, and the scrollable
+ * container that made a count-based sweep report a correct screen as unreachable.
+ *
+ * ⚠ **ONE EXCEPTION, NAMED RATHER THAN GLOSSED: THE SHELL's OWN FOCUS-RING CASE BELOW KEEPS
+ * ITS OWN TAB LOOP** instead of calling `focusRings()`. It collects the resolved
+ * `outlineWidth` and `outlineStyle` and the accessible name PER CONTROL, so its failure names
+ * the control and says what its outline resolved to; the helper returns only the set that got
+ * a ring, which is all the new sweeps need and is a thinner message. Replacing it would trade
+ * a debugging affordance this file earned for a line of deduplication, so it stays — and this
+ * note exists because "one implementation" would otherwise be a claim the file contradicts
+ * twenty lines down.
+ */
 
 /**
  * Open the board's detail panel, so the `§12` sweeps measure S7's controls too.
@@ -488,72 +491,22 @@ test.describe('§12 on the staff shell', () => {
       'the panel did not open, so its contrast went unmeasured',
     ).toBe(true)
 
-    const pairs = await page.evaluate(() => {
-      const parse = (value: string): [number, number, number] => {
-        const parts = value.match(/[\d.]+/g) ?? []
-
-        return [Number(parts[0] ?? 0), Number(parts[1] ?? 0), Number(parts[2] ?? 0)]
-      }
-
-      const channel = (byte: number): number => {
-        const v = byte / 255
-
-        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-      }
-
-      const luminance = ([r, g, b]: [number, number, number]): number =>
-        0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-
-      /** The nearest ancestor with a non-transparent background. */
-      const ground = (element: Element): [number, number, number] => {
-        let current: Element | null = element
-
-        while (current !== null) {
-          const background = getComputedStyle(current).backgroundColor
-
-          if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') {
-            return parse(background)
-          }
-
-          current = current.parentElement
-        }
-
-        return [255, 255, 255]
-      }
-
-      const out: { selector: string; ratio: number; size: number }[] = []
-
-      for (const selector of [
-        '.qr-staff__restaurant',
-        '.qr-staff__person',
-        '.qr-staff__role',
-        '.qr-staff-state__title',
-        '.qr-staff-state__description',
-        /*
-         * ⚠ 10b's OWN TEXT, ADDED AT THE FIX ROUND — `§11` QA M-15. This list was 10a's five
-         * chrome selectors, so the board's row title and its quiet notices were never
-         * measured. `--color-ink-mid` is an approved AA token (`QRPAGER-15-contrast-table.md`)
-         * — which is a reason to expect a pass, not a measurement of one.
-         */
-        '.qr-staff-list__name',
-        '.qr-staff-list__waiting',
-        '.qr-staff-board__stale',
-        '.qr-staff-warning',
-      ]) {
-        const element = document.querySelector(selector)
-
-        if (element === null) continue
-
-        const resolved = getComputedStyle(element)
-        const ink = luminance(parse(resolved.color))
-        const paper = luminance(ground(element))
-        const ratio = (Math.max(ink, paper) + 0.05) / (Math.min(ink, paper) + 0.05)
-
-        out.push({ selector, ratio, size: Number.parseFloat(resolved.fontSize) })
-      }
-
-      return out
-    })
+    /*
+     * The selector list is this screen's; the MEASUREMENT is `support/a11y.ts`'s, shared with
+     * the kitchen screen. The inline evaluator that used to live here is gone — see the note
+     * above the helpers' former home for why one implementation rather than two.
+     */
+    const pairs = await contrastPairs(page, [
+      '.qr-staff__restaurant',
+      '.qr-staff__person',
+      '.qr-staff__role',
+      '.qr-staff-state__title',
+      '.qr-staff-state__description',
+      '.qr-staff-list__name',
+      '.qr-staff-list__waiting',
+      '.qr-staff-board__stale',
+      '.qr-staff-warning',
+    ])
 
     /*
      * Not vacuous: the selectors matched, and the three that are ALWAYS on a signed-in shell
@@ -572,9 +525,9 @@ test.describe('§12 on the staff shell', () => {
     }
 
     for (const pair of pairs) {
-      // WCAG AA: 4.5:1 for body text, 3:1 for large text (18.66px bold or 24px). The kit's
-      // headings are 28px, so they take the large-text bar and nothing else does.
-      const bar = pair.size >= 24 ? 3 : 4.5
+      // WCAG AA's bar for this rendered size. `aaBar()` is shared, so the two sweeps in this
+      // repository cannot disagree about where large text begins.
+      const bar = aaBar(pair.size)
 
       expect(
         pair.ratio,
@@ -969,4 +922,179 @@ test.describe('10b’s board, in a real browser', () => {
      * costs nothing — the split is deliberate rather than a gap.
      */
   })
+})
+
+/* ================================================================================ */
+/* THE `§12` PASS OVER 10d's AND 10e's THREE NEW SCREENS — the ONE pass `§0.0e` keeps  */
+/* ================================================================================ */
+
+/**
+ * `§0.0e` drops the per-ticket accessibility sweep and keeps **one pass at the very end across
+ * all screens**. This is the staff half of it; `browser/kds.spec.ts` is 10c's.
+ *
+ * ⚠ **IT VISITS EACH SCREEN THROUGH THE REAL NAVIGATION RATHER THAN BY URL**, which is the
+ * stronger driver and costs nothing: a route reachable only by typing its path is a route the
+ * nav forgot, and that was a real hole on this surface once — `§12` S2's content inventory
+ * named navigation and the first version of the shell passed `nav={null}`, leaving
+ * `/staff/devices` reachable only by the browser's back button, which a kiosk tablet has not
+ * got.
+ *
+ * The three mechanical clauses are measured per screen. They are the ones jsdom cannot answer,
+ * and the helpers are `support/a11y.ts`'s — one implementation, shared with the kitchen screen,
+ * carrying the four e2e rounds' worth of corrections that taught each of them its shape.
+ */
+const NEW_STAFF_SCREENS = [
+  { nav: 'history', marker: '[data-history="true"], .qr-staff-state__title' },
+  { nav: 'issue', marker: '[data-issue="idle"]' },
+  { nav: 'team', marker: '[data-team="true"], .qr-staff-state__title' },
+] as const
+
+test.describe('§12 on 10d’s and 10e’s screens', () => {
+  for (const screen of NEW_STAFF_SCREENS) {
+    test(`gives every interactive box at least 44px on the ${screen.nav} screen`, async ({
+      page,
+    }) => {
+      await signInAsStaff(page)
+      await page.locator(`[data-nav="${screen.nav}"]`).click()
+      await page.waitForSelector(screen.marker, { timeout: 60_000 })
+
+      const boxes = await targets(page)
+      const declared = await page.locator('button:visible, a[href]:visible, input:visible').count()
+
+      /*
+       * Not vacuous, and asked a SECOND WAY so a sweep that covered a subset fails — `§11`
+       * QA L-4's lesson. Every one of these screens has at least the shell's five nav buttons
+       * and its sign-out, so the floor is generous and still a floor.
+       */
+      expect(declared, `the ${screen.nav} screen rendered no controls`).toBeGreaterThanOrEqual(6)
+      expect(
+        boxes.length,
+        `the 44px sweep did not see every control on the ${screen.nav} screen`,
+      ).toBe(declared)
+
+      for (const box of boxes) {
+        /*
+         * ⚠ 10d's FILTER TOGGLES AND 10e's ROLE PICKER ARE NATIVE CHECKBOXES AND RADIOS, which
+         * render at ~13px in every engine and CANNOT be styled to 44 — the box is drawn by the
+         * platform. `staff.css` makes the WRAPPING LABEL the target instead, and `targets()`
+         * measures the label for exactly that reason. A sweep that measured the input would
+         * fail a screen that is correct, which is why that rule is in the helper rather than
+         * being an exception listed here.
+         */
+        expect(
+          box.width,
+          `${screen.nav}: "${box.name}" is ${String(box.width)}px wide`,
+        ).toBeGreaterThanOrEqual(44)
+        expect(
+          box.height,
+          `${screen.nav}: "${box.name}" is ${String(box.height)}px tall`,
+        ).toBeGreaterThanOrEqual(44)
+      }
+    })
+
+    test(`draws a visible focus ring on every control of the ${screen.nav} screen`, async ({
+      page,
+    }) => {
+      await signInAsStaff(page)
+      await page.locator(`[data-nav="${screen.nav}"]`).click()
+      await page.waitForSelector(screen.marker, { timeout: 60_000 })
+
+      // The restaurant name is the first thing in the shell and is plain text — see
+      // `resetTabOrder`'s note on why a click on a non-interactive element is what returns the
+      // engine's sequential-navigation starting point, and why `blur()` alone is not enough.
+      await resetTabOrder(page, '.qr-staff__restaurant')
+
+      const ids = await tagControls(page)
+
+      expect(ids.length, 'no controls were tagged').toBeGreaterThan(0)
+
+      const seen = await focusRings(page, ids.length * 3 + 6)
+      const missed = ids.filter((id) => !seen.has(id))
+
+      expect(
+        missed,
+        `${screen.nav}: Tab never reached, or drew no ring on, ${String(missed.length)} of ${String(ids.length)} controls: ${missed.join(', ')}`,
+      ).toEqual([])
+    })
+
+    test(`meets AA contrast on the ${screen.nav} screen’s own text`, async ({ page }) => {
+      await signInAsStaff(page)
+      await page.locator(`[data-nav="${screen.nav}"]`).click()
+      await page.waitForSelector(screen.marker, { timeout: 60_000 })
+
+      const pairs = await contrastPairs(page, [
+        '.qr-staff-state__title',
+        '.qr-staff-state__description',
+        '.qr-staff-list__name',
+        '.qr-staff-list__meta',
+        '.qr-staff-warning',
+        '.qr-field__label',
+        '.qr-field__hint',
+        // 10d's and 10e's own: the filter/role toggle labels, which carry text on a surface
+        // of their own and are therefore their own pair.
+        '.qr-staff-filter__toggle',
+      ])
+
+      // Not vacuous: at least the screen's heading matched. Named rather than counted, for
+      // `§11` QA L-4's reason.
+      expect(
+        pairs.map((pair) => pair.selector),
+        `the ${screen.nav} screen rendered no heading`,
+      ).toContain('.qr-staff-state__title')
+
+      for (const pair of pairs) {
+        const bar = aaBar(pair.size)
+
+        expect(
+          pair.ratio,
+          `${screen.nav}: ${pair.selector} is ${pair.ratio.toFixed(2)}:1 at ${String(pair.size)}px, under ${String(bar)}:1`,
+        ).toBeGreaterThanOrEqual(bar)
+      }
+    })
+
+    test(`mirrors the ${screen.nav} screen without a horizontal scroll`, async ({
+      page,
+    }, testInfo) => {
+      await signInAsStaff(page)
+      await page.locator(`[data-nav="${screen.nav}"]`).click()
+      await page.waitForSelector(screen.marker, { timeout: 60_000 })
+
+      const rtl = testInfo.project.name.endsWith('-rtl')
+      const direction = await page.locator('[dir]').first().getAttribute('dir')
+
+      expect(direction, `${screen.nav}: the document direction is ${String(direction)}`).toBe(
+        rtl ? 'rtl' : 'ltr',
+      )
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      )
+
+      expect(overflow, `${screen.nav} scrolls horizontally`).toBeLessThanOrEqual(1)
+    })
+
+    test(`renders no identifier on the ${screen.nav} screen`, async ({ page }) => {
+      const fixture = await signInAsStaff(page)
+
+      await page.locator(`[data-nav="${screen.nav}"]`).click()
+      await page.waitForSelector(screen.marker, { timeout: 60_000 })
+
+      const everything = await page.evaluate(() => document.documentElement.outerHTML)
+
+      /*
+       * `§12`'s no-unexplained-identifier clause, and 10d's `§3` makes it that ticket's HARD
+       * half: *no unexplained identifier anywhere on either screen*. The ids checked are real
+       * rows of the restaurant the session is acting in, so a leak is a leak of something that
+       * genuinely exists rather than of a string that matches nothing.
+       */
+      expect(everything, `${screen.nav} renders a session id`).not.toContain(
+        fixture.alpha.session_id,
+      )
+      expect(everything, `${screen.nav} renders a membership id`).not.toContain(
+        fixture.alpha.membership_id,
+      )
+      expect(everything, `${screen.nav} renders the tenant id`).not.toContain(fixture.alpha.id)
+      expect(everything, `${screen.nav} renders the tenant slug`).not.toContain(fixture.alpha.slug)
+    })
+  }
 })
