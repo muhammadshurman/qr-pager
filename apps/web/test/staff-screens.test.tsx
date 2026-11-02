@@ -244,7 +244,15 @@ describe('sign-in', () => {
         onPasskey={vi.fn()}
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
-        memberships={[{ tenantId: 'tenant-a', role: 'owner', name: 'Al Baik', slug: 'al-baik' }]}
+        memberships={[
+          {
+            tenantId: 'tenant-a',
+            role: 'owner',
+            name: 'Al Baik',
+            slug: 'al-baik',
+            grantableRoles: [],
+          },
+        ]}
         onChoose={vi.fn()}
       />,
     )
@@ -299,12 +307,19 @@ describe('sign-in', () => {
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
         memberships={[
-          { tenantId: 'tenant-a', role: 'owner', name: 'Al Baik Jeddah', slug: 'al-baik' },
+          {
+            tenantId: 'tenant-a',
+            role: 'owner',
+            name: 'Al Baik Jeddah',
+            slug: 'al-baik',
+            grantableRoles: [],
+          },
           {
             tenantId: 'tenant-b',
             role: 'owner',
             name: 'Shawarma House',
             slug: 'shawarma-house',
+            grantableRoles: [],
           },
         ]}
         onChoose={vi.fn()}
@@ -356,6 +371,7 @@ describe('sign-in', () => {
             role: 'manager',
             name: '',
             slug: 'kudu-riyadh',
+            grantableRoles: [],
           },
         ]}
         onChoose={vi.fn()}
@@ -373,7 +389,13 @@ describe('sign-in', () => {
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
         memberships={[
-          { tenantId: '01a199c4-7f3e-7000-8000-0123456789ab', role: 'manager', name: '', slug: '' },
+          {
+            tenantId: '01a199c4-7f3e-7000-8000-0123456789ab',
+            role: 'manager',
+            name: '',
+            slug: '',
+            grantableRoles: [],
+          },
         ]}
         onChoose={vi.fn()}
       />,

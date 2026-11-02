@@ -241,8 +241,20 @@ describe('signing in', () => {
     const { props } = signIn({
       stage: 'choose',
       memberships: [
-        { tenantId: 'tenant-a', role: 'owner', name: 'Al Baik Jeddah', slug: 'al-baik' },
-        { tenantId: 'tenant-b', role: 'manager', name: 'Shawarma House', slug: 'shawarma-house' },
+        {
+          tenantId: 'tenant-a',
+          role: 'owner',
+          name: 'Al Baik Jeddah',
+          slug: 'al-baik',
+          grantableRoles: [],
+        },
+        {
+          tenantId: 'tenant-b',
+          role: 'manager',
+          name: 'Shawarma House',
+          slug: 'shawarma-house',
+          grantableRoles: [],
+        },
       ],
     })
 

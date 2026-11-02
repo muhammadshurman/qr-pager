@@ -8,6 +8,7 @@ use App\Domain\Http\ProblemType;
 use App\Domain\Pager\PagerSessionExpired;
 use App\Domain\Pager\PagerSessionNotFound;
 use App\Domain\Pager\PagerTransitionDenied;
+use App\Domain\Tenancy\MemberActionDenied;
 use App\Platform\Database\DatabaseErrorMapper;
 use App\Platform\Database\TenantContextException;
 use App\Platform\Database\UnsafeDatabaseRoleException;
@@ -98,6 +99,31 @@ final class ProblemRenderer
         // which is the whole point of the envelope.
         if ($error instanceof PagerTransitionDenied) {
             return new Problem(ProblemType::Conflict, $instance);
+        }
+
+        /*
+         * TASK 10e's TWO MEMBER-MANAGEMENT REFUSALS — `§4 › Security`'s *no actor may grant a
+         * role senior to its own, assume one, or change its own role at all*.
+         *
+         * **403 AND NOT 404, WHICH IS THE OPPOSITE OF THE RULE TWO CLAUSES UP, AND THE
+         * DIFFERENCE IS WHETHER THE ANSWER DISCLOSES ANYTHING.**
+         *
+         * `PagerSessionNotFound` is a 404 because a 403 there would confirm that a session id
+         * exists in somebody else's restaurant. These two refusals depend on NO fact the
+         * caller does not already hold: seniority compares the role they just requested with
+         * the role they have been acting under, and the self-role clause compares the target
+         * id with their own membership id. There is nothing for a 403 to leak.
+         *
+         * And a 404 here would be actively worse for `§12`: it would tell a manager who tried
+         * to appoint an owner that the person they were looking at does not exist, which is
+         * false, and the screen's sentence would be about the wrong thing.
+         *
+         * `MemberActionDenied`'s docblock carries the ordering that makes this safe on
+         * `store()` — the seniority check runs BEFORE the email lookup, so an unknown address
+         * and a known one answer identically.
+         */
+        if ($error instanceof MemberActionDenied) {
+            return new Problem(ProblemType::Forbidden, $instance);
         }
 
         // A session past its TTL. 409 like the clause above -- the state is what makes

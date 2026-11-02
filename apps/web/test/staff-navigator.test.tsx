@@ -7,6 +7,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 
 const { StaffNavigator } = await import('../src/staff/StaffNavigator.tsx')
 
+import type { StaffView } from '../src/StaffApp.tsx'
+
 /**
  * ================================================================================
  * THE ROUTER ADAPTER. Three lines, and the reason it is tested is coverage honesty.
@@ -40,7 +42,7 @@ describe('the router adapter', () => {
     expect(container.firstChild).not.toBeNull()
   })
 
-  it('pushes /staff/devices for the devices view and /staff for home', async () => {
+  it('pushes the right path for EVERY view, driven through the real nav buttons', async () => {
     // Driven through the real `StaffApp`, whose nav buttons call `onNavigate` -- so this
     // asserts the WIRING and not just a function in isolation.
     vi.stubGlobal(
@@ -80,8 +82,37 @@ describe('the router adapter', () => {
 
     expect(push).toHaveBeenCalledWith('/staff/devices')
 
-    document.querySelector<HTMLButtonElement>('[data-nav="home"]')?.click()
+    /*
+     * ⚠ **EVERY VIEW, AND THE LIST IS EXHAUSTIVE OVER `StaffView` BY TYPE** — `satisfies`
+     * makes a view added to that union without an entry here a compile error.
+     *
+     * This mattered at 10e for a specific reason: `StaffNavigator`'s map was a TERNARY until
+     * then (`next === 'devices' ? '/staff/devices' : '/staff'`), which was correct for two
+     * views and silently wrong for five — every new view would have pushed `/staff` and
+     * rendered the board, so a person pressing *Past orders* would have landed on the board
+     * with no error anywhere. A case that drove only two of five could not have seen it.
+     */
+    const expected = {
+      home: '/staff',
+      history: '/staff/history',
+      issue: '/staff/issue',
+      team: '/staff/team',
+      devices: '/staff/devices',
+    } as const satisfies Record<StaffView, string>
 
-    expect(push).toHaveBeenLastCalledWith('/staff')
+    for (const [view, path] of Object.entries(expected)) {
+      push.mockClear()
+
+      const button = document.querySelector<HTMLButtonElement>(`[data-nav="${view}"]`)
+
+      // Not vacuous: the nav really does carry a control for this view. A `?.click()` on a
+      // missing button is a silent no-op, and the loop would then assert nothing five times.
+      expect(button, `the shell renders no nav control for ${view}`).not.toBeNull()
+
+      button?.click()
+
+      expect(push, `${view} navigated somewhere else`).toHaveBeenCalledWith(path)
+      expect(push).toHaveBeenCalledTimes(1)
+    }
   })
 })

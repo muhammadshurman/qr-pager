@@ -83,20 +83,45 @@ it('never leaves a tenant with zero owners when two owners are demoted at the sa
     foreach (range(1, 3) as $attempt) {
         $tenant = $this->makeTenant();
 
-        // The acting user is an owner, and `actingForTenant` makes the membership. A second
-        // owner makes the race possible: with one owner the rule refuses both callers
-        // trivially and the test would pass against the unlocked code.
-        $this->actingForTenant($tenant, TenantRole::Owner);
+        /*
+         * ⚠ **THE ACTOR IS A MANAGER AND BOTH RACE TARGETS ARE OTHER PEOPLE'S MEMBERSHIPS —
+         * CHANGED AT TASK 10e, AND IT IS THE SCENARIO `QRPAGER-29 §3` Q6 ALREADY NAMED:**
+         * *"two managers demoting two different owners at the same instant."*
+         *
+         * This used to make the acting OWNER one of the two targets. Since 10e,
+         * `§4 › Security`'s third limb — *no actor may … change its own role at all* — refuses
+         * that child before it reaches the owner-count lock, so the race had one real
+         * contender and one `MemberActionDenied`: it would have been asserting 10e's guard
+         * while claiming to assert the lock, and the `['demoted', 'refused']` shape below could
+         * never be produced again.
+         *
+         * Two owners who are not the actor keeps the race exactly as it was. The acting user
+         * holds `manager`, which `requireSeniority()` permits to grant `staff` — the role the
+         * child demotes to — so the only thing that can refuse either child is the last-owner
+         * rule, which is what this file is about.
+         */
+        // The MANAGER who drives both demotions, created first so that the tenant's only
+        // owners are the two race targets. `actingForTenant` makes a new user with a
+        // membership in this tenant and authenticates as them.
+        $this->actingForTenant($tenant, TenantRole::Manager);
 
         $actorUserId = (string) auth()->id();
 
-        $first = withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenant_users')
-            ->where('tenant_id', $tenant)
-            ->where('user_id', $actorUserId)
-            ->value('id'), 'pgsql_owner');
-
+        $first = extraOwner($tenant);
         $second = extraOwner($tenant);
 
+        /*
+         * ⚠ **EXACTLY TWO OWNERS, AND NEITHER IS THE ACTOR. BOTH HALVES MATTER.**
+         *
+         * TWO, because that is what makes the race meaningful: demoting both would leave ZERO,
+         * so the rule must refuse the second — and against an unlocked count both callers see
+         * two owners, each believes it is leaving one behind, and the tenant ends with none.
+         * With three owners both demotions are legal and the lock is never engaged, so the
+         * race would prove nothing.
+         *
+         * NEITHER IS THE ACTOR, because 10e's self-role guard would otherwise refuse one child
+         * before it reached the lock.
+         */
         expect(ownerCountOf($tenant))->toBe(2);
 
         $script = base_path('tests/Support/demote-owner-in-another-process.php');
@@ -182,18 +207,22 @@ it('never leaves a tenant with zero owners when two owners are demoted at the sa
 });
 
 it('still refuses the last owner when nothing is racing it', function (): void {
-    // The sequential half, kept here beside the concurrent one so the lock cannot be
-    // "fixed" by removing the rule: one owner, demotion refused, removal refused, and the
-    // row unchanged after both.
+    /*
+     * The sequential half, kept here beside the concurrent one so the lock cannot be "fixed"
+     * by removing the rule: one owner, demotion refused, removal refused, and the row
+     * unchanged after both.
+     *
+     * ⚠ DRIVEN BY A MANAGER SINCE TASK 10e, for the concurrent case's reason: the actor used to
+     * target their OWN membership, which `§4 › Security`'s self-role limb now refuses earlier
+     * and with a 403 — so the request no longer reached the last-owner rule this case is about.
+     * The self-role refusal has its own cases in `MemberSeniorityTest`.
+     */
     $tenant = $this->makeTenant();
-    $this->actingForTenant($tenant, TenantRole::Owner);
+    $this->actingForTenant($tenant, TenantRole::Manager);
 
-    $actorUserId = (string) auth()->id();
+    $membershipId = extraOwner($tenant);
 
-    $membershipId = withTenant($tenant, fn () => DB::connection('pgsql_owner')->table('tenant_users')
-        ->where('tenant_id', $tenant)
-        ->where('user_id', $actorUserId)
-        ->value('id'), 'pgsql_owner');
+    expect(ownerCountOf($tenant))->toBe(1);
 
     $this->patchJson("/v1/members/{$membershipId}", ['role' => 'staff'])->assertStatus(404);
     $this->deleteJson("/v1/members/{$membershipId}")->assertStatus(404);

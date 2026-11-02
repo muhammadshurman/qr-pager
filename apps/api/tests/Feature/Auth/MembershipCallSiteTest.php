@@ -159,6 +159,26 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
     // the moved line -- but it is also how a pin gets updated mechanically after the third
     // time. Left as it is, because the mechanism belongs to whoever owns this guard and 10b
     // came to build a board; recorded in `§4a`'s 10b notes rather than changed in passing.
+    //
+    // ⚠ **BOTH `AuthController` LINES MOVED A THIRD TIME AT TASK 10e AND NO CALLER CHANGED
+    // AGAIN: `:102` -> `:103` and `:241` -> `:268`.** READ BEFORE UPDATING, which is what this
+    // guard's failure message asks for, and the answers are unchanged:
+    //
+    //   `:103`  `login()`'s `for($userId)`, with `$userId` the id of the user Fortify just
+    //           authenticated. Moved by ONE line, by a `use App\Domain\Tenancy\TenantRole;`
+    //           import at the top of the file.
+    //   `:268`  `identity()`'s `for($userId)`, with `$userId` the value the guard supplied to
+    //           `identityResponse()`. Moved by 27 lines, by a 26-line INTERNAL NOTES comment
+    //           above the method body explaining `memberships[].grantable_roles` — 10e's new
+    //           field — and the same +1 import.
+    //
+    // Neither takes a tenant or a user id from request input, which is the question this test
+    // exists to ask. `git diff --unified=0` on that file reports hunks at `+9`, `+213` and
+    // `+283` — all three ABOVE or AFTER the two calls and none of them at a call — which is the
+    // mechanical form of *no caller changed*.
+    //
+    // That is three rounds of this guard firing on comments and imports, which is the friction
+    // the note above predicted after the third time. It stays as it is for that note's reason.
     expect(membershipCallSites())->toBe([
         'app/Platform/Auth/ActiveTenant.php:111',
         'app/Platform/Auth/AuthenticatedMembership.php:53',
@@ -166,8 +186,8 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
         'app/Platform/Auth/AuthenticatedTenantResolver.php:150',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:162',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:167',
-        'app/Platform/Auth/Http/AuthController.php:102',
-        'app/Platform/Auth/Http/AuthController.php:241',
+        'app/Platform/Auth/Http/AuthController.php:103',
+        'app/Platform/Auth/Http/AuthController.php:268',
         'app/Platform/Auth/RequestPrincipal.php:85',
     ], 'the set of callers of the named cross-tenant membership path changed -- read the '
        .'new one and say where its user id comes from before updating this list');

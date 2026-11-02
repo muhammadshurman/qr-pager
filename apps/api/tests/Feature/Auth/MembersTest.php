@@ -207,15 +207,35 @@ it('refuses to demote or remove the last owner, which is the bound with nothing 
 
     $ownMembership = $this->getJson('/v1/members')->json('members.0.id');
 
-    // Demotion: refused.
+    /*
+     * ⚠ **THE DEMOTION IS NOW DRIVEN BY A MANAGER AND NOT BY THE OWNER THEMSELVES, AND THAT IS
+     * TASK 10e's SELF-ROLE GUARD RATHER THAN A WEAKENING OF THIS CASE.**
+     *
+     * This case used to PATCH the actor's OWN membership, which reached the last-owner rule and
+     * answered 404. Since 10e, `§4 › Security`'s third limb — *no actor may … change its own
+     * role at all* — refuses that **earlier and with a 403**, so the original request no longer
+     * reaches the rule this case is about: it would have been asserting 10e's guard while
+     * claiming to assert the last-owner rule.
+     *
+     * A manager of the same tenant is the actor that still reaches it. The self-role refusal has
+     * its own cases in `MemberSeniorityTest` (*"refuses a MANAGER changing its own role"* and
+     * *"refuses an OWNER changing its own role"*), so nothing is lost by moving this one.
+     */
+    $this->actingForTenant($tenant, TenantRole::Manager);
+
+    // Demotion: refused, and 404 because the last-owner rule is about the TENANT's state.
     $this->patchJson("/v1/members/{$ownMembership}", ['role' => TenantRole::Manager->value])
         ->assertStatus(404);
 
-    // Removal: refused.
+    // Removal: refused. Still 404, and still driven at the last owner -- 10e's guard covers
+    // the ROLE change only, so this half of the case is unchanged.
     $this->deleteJson("/v1/members/{$ownMembership}")->assertStatus(404);
 
-    // Still an owner, and still there.
-    expect($this->getJson('/v1/members')->json('members.0.role'))->toBe(TenantRole::Owner->value);
+    // Still an owner, and still there. Read as the manager, which also proves the two reads
+    // below are of the same tenant the refusals were aimed at.
+    $owner = collect($this->getJson('/v1/members')->json('members'))->firstWhere('id', $ownMembership);
+
+    expect($owner['role'])->toBe(TenantRole::Owner->value);
 
     // NOTHING WAS AUDITED, which is the half that says the refusal is before the write
     // rather than a rollback after it.
@@ -229,7 +249,7 @@ it('allows the demotion once a second owner exists, so the rule is about the LAS
     $tenant = $this->makeTenant();
     $this->actingForTenant($tenant, TenantRole::Owner);
 
-    $ownMembership = $this->getJson('/v1/members')->json('members.0.id');
+    $firstOwner = $this->getJson('/v1/members')->json('members.0.id');
 
     $second = existingAccount();
 
@@ -238,13 +258,21 @@ it('allows the demotion once a second owner exists, so the rule is about the LAS
         'role' => TenantRole::Owner->value,
     ])->assertStatus(201);
 
+    /*
+     * ⚠ THE DEMOTION IS DRIVEN BY A MANAGER FOR THE CASE ABOVE's REASON — 10e's self-role guard
+     * refuses an actor changing their own role, whatever the roles involved and whatever the
+     * owner count. So the positive control has to come from a third party, as it does in use:
+     * one owner demotes another, or a manager does.
+     */
+    $this->actingForTenant($tenant, TenantRole::Manager);
+
     // Two owners now, so demoting one is allowed.
-    $this->patchJson("/v1/members/{$ownMembership}", ['role' => TenantRole::Manager->value])
+    $this->patchJson("/v1/members/{$firstOwner}", ['role' => TenantRole::Manager->value])
         ->assertStatus(200);
 
     $roles = collect($this->getJson('/v1/members')->json('members'))->pluck('role', 'id')->all();
 
-    expect($roles[$ownMembership])->toBe(TenantRole::Manager->value);
+    expect($roles[$firstOwner])->toBe(TenantRole::Manager->value);
 
     // And now the remaining owner cannot be demoted either, because they are the last one.
     $remaining = collect($this->getJson('/v1/members')->json('members'))

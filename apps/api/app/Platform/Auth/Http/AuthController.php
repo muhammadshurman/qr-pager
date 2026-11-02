@@ -6,6 +6,7 @@ namespace App\Platform\Auth\Http;
 
 use App\Domain\Auth\Principal;
 use App\Domain\Http\ProblemType;
+use App\Domain\Tenancy\TenantRole;
 use App\Models\User;
 use App\Platform\Auth\ActiveTenant;
 use App\Platform\Auth\Memberships;
@@ -210,6 +211,32 @@ final class AuthController
     private function identity(User $user, string $userId): array
     {
         /*
+         * INTERNAL NOTES ON `memberships[].grantable_roles`, ADDED AT 10e.
+         *
+         * WHY IT IS PUBLISHED HERE RATHER THAN DERIVED ON THE CLIENT. The staff-management
+         * screen has to offer a role picker, and `§12`'s bar is that a screen never offers an
+         * action the server refuses -- so a manager's picker must have no *Owner* option. The
+         * client already holds `role`, so it COULD compute the list itself: that would be a
+         * second implementation of `TenantRole::maySeniorityGrant()` in TypeScript, which is
+         * precisely the duplicated-source defect `§6.2` mechanises against for the status enum.
+         * One source, derived from the ladder, read by the screen.
+         *
+         * WHY IT WIDENS NO CROSS-TENANT PATH, which is the question any addition to THIS
+         * payload has to answer -- `§2.8` keeps a named list of four cross-tenant reads and
+         * `public.user_memberships()` is one of them. This field is computed from
+         * `$membership->role`, a column that function ALREADY returns and that this payload
+         * ALREADY publishes one line above. It is a pure function of a value the caller is
+         * already being handed, so it discloses nothing new and needs no migration, no grant
+         * change and no edit to `§2.8`'s list. That is the same test `R-222`'s `name` had to
+         * pass, and this one passes it more easily because nothing new is read at all.
+         *
+         * AND IT IS NOT THE ENFORCEMENT. `MemberDirectory::requireSeniority()` checks
+         * independently on every write, reading the actor's role from `tenant_users` inside the
+         * tenant's scope -- because a client is a client, and `R-106` was found by driving the
+         * route rather than the screen.
+         */
+
+        /*
          * INTERNAL NOTES ON `memberships[].name`, ADDED AT 10b -- and they are HERE rather
          * than above the array key they describe, because a comment above a key in this
          * array IS PUBLISHED as that property's description in `docs/openapi.json`. That is
@@ -253,6 +280,11 @@ final class AuthController
                 'name' => $membership->tenantName,
                 'role' => $membership->role->value,
                 'principal' => Principal::fromTenantRole($membership->role)->value,
+                // The roles this membership may grant to somebody else. Added at 10e.
+                'grantable_roles' => array_map(
+                    static fn (TenantRole $r): string => $r->value,
+                    $membership->role->grantableRoles(),
+                ),
             ];
         }
 

@@ -32,8 +32,14 @@ import {
 const t = translatorFor('en')
 
 const MEMBERSHIPS = [
-  { tenantId: 'tenant-a', role: 'owner', name: 'Al Baik Jeddah', slug: 'al-baik' },
-  { tenantId: 'tenant-b', role: 'owner', name: 'Kudu Riyadh', slug: 'kudu' },
+  {
+    tenantId: 'tenant-a',
+    role: 'owner',
+    name: 'Al Baik Jeddah',
+    slug: 'al-baik',
+    grantableRoles: [],
+  },
+  { tenantId: 'tenant-b', role: 'owner', name: 'Kudu Riyadh', slug: 'kudu', grantableRoles: [] },
 ] as const
 
 function mount(stage: SignInStage) {

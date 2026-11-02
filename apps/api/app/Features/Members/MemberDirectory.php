@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Features\Members;
 
 use App\Domain\Audit\AuditActorType;
+use App\Domain\Tenancy\MemberActionDenied;
 use App\Domain\Tenancy\TenantRole;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -96,6 +97,26 @@ final class MemberDirectory
         string $actorUserId,
         ?string $actorIp,
     ): ?array {
+        /*
+         * ⚠ THE SENIORITY CHECK RUNS **BEFORE** THE EMAIL LOOKUP, AND THE ORDER IS THE WHOLE
+         * REASON THIS REFUSAL IS NOT AN ORACLE.
+         *
+         * `QRPAGER-29 §5`: *"`members.store` already answers 404 for an unknown address AND for
+         * one this caller may not see, deliberately, so the platform's `users` table is not an
+         * account-existence oracle. A new seniority refusal must not undo that by answering
+         * distinguishably."*
+         *
+         * Checked first, a request with too senior a role answers **403 whether or not the
+         * address exists**. Checked after the lookup, the pair (404, 403) would have told any
+         * manager whether any address on the platform has an account — by asking for a role
+         * they knew would be refused. Same two statuses, same two code paths, and the ordering
+         * is the difference between a bound and a disclosure.
+         *
+         * It is wrapped in the tenant scope because `requireSeniority()` reads `tenant_users`;
+         * the email lookup below is on the global `users` table and needs none.
+         */
+        withTenant($tenantId, fn () => $this->requireSeniority($role, $actorUserId));
+
         // users is global and RLS-free, so this read needs no scope -- and it is an exact
         // match on a lower-cased email, which users_email_is_lowercase pins as a CHECK.
         $user = DB::selectOne('select id from users where email = ?', [Str::lower($email)]);
@@ -153,6 +174,23 @@ final class MemberDirectory
         return withTenant($tenantId, function () use (
             $tenantId, $membershipId, $role, $actorUserId, $actorIp
         ): bool {
+            /*
+             * TASK 10e's TWO REFUSALS, BEFORE ANYTHING IS LOCKED OR WRITTEN.
+             *
+             * Ordered before `lockOwnerCount()` deliberately: both are decisions about the
+             * CALLER rather than about the tenant's state, so neither needs the lock — and
+             * taking a `FOR UPDATE` on the owner set only to throw it away is a lock held
+             * across a refusal, which on a busy tenant serialises callers who were never going
+             * to be allowed to write.
+             *
+             * The self-role check is first because it is the cheaper comparison and because it
+             * is the clause that holds regardless of which role was asked for: an owner
+             * demoting themselves to staff is refused by `refuseSelfRoleChange()` and would be
+             * permitted by `requireSeniority()`, since `owner` may grant `staff`.
+             */
+            $this->refuseSelfRoleChange($membershipId, $actorUserId);
+            $this->requireSeniority($role, $actorUserId);
+
             // THE OWNER SET IS LOCKED FIRST, and the order of these two reads is the
             // whole of the fix. See lockOwnerCount() -- an unlocked count let two
             // concurrent demotions of two different owners each see two owners and each
@@ -277,6 +315,94 @@ final class MemberDirectory
      * tenant `withTenant()` opened, so a `tenant_id` predicate here would be a second,
      * weaker copy of the control that is already load-bearing.
      */
+    /**
+     * ================================================================================
+     * TASK 10e's ENFORCEMENT. `§4 › Security`'s CLAUSE, AND IT IS NOT IN A FormRequest.
+     * ================================================================================
+     *
+     * *"No actor may grant a role senior to its own, assume one, or change its own role at
+     * all."* In force since 2026-10-28 and, before 10e, enforced nowhere —
+     * `QRPAGER-29 §0` measured it and `R-106` proved it by driving the route: a manager
+     * `PATCH /v1/members/{own-id}` with `role: owner` answered **200**.
+     *
+     * ⚠ **IT CANNOT LIVE IN VALIDATION, AND `QRPAGER-29 §5` SAYS WHY BEFORE THE CODE EXISTED:**
+     * *"A FormRequest sees the requested role and not the target's current one, and the
+     * self-role clause is about the **target id**, not the body — so a rule in `rules()` would
+     * be a check that looks complete and is not."*
+     *
+     * Both halves are here instead, in the service both routes funnel through, inside the same
+     * tenant scope as the write they guard.
+     *
+     * ================================================================================
+     * THE ACTOR'S ROLE IS READ FROM THE DATABASE, NOT PASSED IN
+     * ================================================================================
+     *
+     * `add()` and `changeRole()` could have taken a `TenantRole $actorRole` parameter from the
+     * controller, which already resolves the caller's membership. They deliberately do not.
+     *
+     * A role passed down the stack is a role that was true when the session was established.
+     * A manager demoted five minutes ago still holds a session, and `ActiveTenant`'s copy of
+     * their role is whatever it was at sign-in — so an enforcement that trusted it would let a
+     * demoted manager keep granting for the life of their cookie. Reading `tenant_users`
+     * inside the scope makes the check use the role the actor holds **now**, against the same
+     * table and the same scope as the target's row.
+     *
+     * The cost is one indexed read per write on a table with a `UNIQUE (tenant_id, user_id)`.
+     * That is the correct trade for an authorisation check.
+     *
+     * @throws MemberActionDenied when the actor may not grant this role
+     */
+    private function requireSeniority(TenantRole $granted, string $actorUserId): void
+    {
+        $actorRole = $this->roleOf($actorUserId);
+
+        /*
+         * ⚠ AN ACTOR WITH NO MEMBERSHIP IS REFUSED, NOT WAVED THROUGH. This is unreachable
+         * through routing — `RequireTenantScope` resolves the tenant FROM the caller's
+         * memberships, so a caller with none never reaches a `/v1` route — and it fails closed
+         * anyway, because the alternative is that a `null` here would be read as "no ceiling".
+         * That is the fail-open direction, and it is the one this file's own class docblock
+         * says a reviewer should read hardest.
+         */
+        if ($actorRole === null || ! $actorRole->maySeniorityGrant($granted)) {
+            throw MemberActionDenied::seniority($actorRole ?? TenantRole::Staff, $granted);
+        }
+    }
+
+    /**
+     * `§4 › Security`'s third limb: *…or change its own role at all*.
+     *
+     * ⚠ COMPARED BY MEMBERSHIP ID AND NOT BY USER ID, which is the comparison the clause
+     * actually needs. `changeRole()` is given a `$membershipId` — a `tenant_users.id` — and the
+     * actor is known by their `user_id`. Comparing the two directly would never match and the
+     * guard would be permanently inert: a check that looks complete and is not, which is the
+     * exact shape `QRPAGER-29 §5` warns about one level up. So the actor's own membership row
+     * is resolved first, inside the scope, and the ids are compared.
+     *
+     * @throws MemberActionDenied when the target is the actor's own membership
+     */
+    private function refuseSelfRoleChange(string $membershipId, string $actorUserId): void
+    {
+        $own = DB::selectOne('select id from tenant_users where user_id = ?', [$actorUserId]);
+
+        if ($own !== null && (string) $own->id === $membershipId) {
+            throw MemberActionDenied::ownRole();
+        }
+    }
+
+    /**
+     * The role this user holds in the scoped tenant, or null if they hold none.
+     *
+     * Inside the caller's scope, so it can only ever read a membership of the tenant the
+     * request resolved — the same bound every other statement in this class runs under.
+     */
+    private function roleOf(string $userId): ?TenantRole
+    {
+        $row = DB::selectOne('select role from tenant_users where user_id = ?', [$userId]);
+
+        return $row === null ? null : TenantRole::tryFrom((string) $row->role);
+    }
+
     private function lockOwnerCount(): int
     {
         $rows = DB::select(
