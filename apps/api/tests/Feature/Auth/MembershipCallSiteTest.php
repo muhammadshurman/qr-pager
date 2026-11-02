@@ -141,7 +141,10 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
     // tenant shapes at the staff surface and requires 404 from each, which is the runtime
     // half of the same statement.
     //
-    // ⚠ ONE LINE MOVED AT TASK 10b AND NO CALLER CHANGED: `AuthController:189` -> `:216`.
+    // ⚠ ONE LINE HAS NOW MOVED TWICE AT TASK 10b AND NO CALLER CHANGED EITHER TIME:
+    // `AuthController:189` -> `:216` (the `R-222` internal-notes comment) -> `:241` (the
+    // `identityResponse()` helper `§11` SECURITY M-2's cache header needed). Both shifts are
+    // edits ABOVE the call, and in both the answer to this test's own question is unchanged.
     // READ BEFORE UPDATING, which is what the failure message below asks for, and the answer
     // is the one this list already records for that site: it is `identity()`'s `for($userId)`
     // with `$userId` the value `me()` took from the guard, unchanged in shape and in
@@ -164,7 +167,7 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
         'app/Platform/Auth/AuthenticatedTenantResolver.php:162',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:167',
         'app/Platform/Auth/Http/AuthController.php:102',
-        'app/Platform/Auth/Http/AuthController.php:216',
+        'app/Platform/Auth/Http/AuthController.php:241',
         'app/Platform/Auth/RequestPrincipal.php:85',
     ], 'the set of callers of the named cross-tenant membership path changed -- read the '
        .'new one and say where its user id comes from before updating this list');
