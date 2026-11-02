@@ -39,9 +39,29 @@
         "ReadinessCarrierTest (as R-092, third symptom)"
       ],
       "match": {
-        "signature": "SQLSTATE\\[08006\\][\\s\\S]*?timeout expired",
-        "frame": "TestCase\\.php:112"
+        "signature": "SQLSTATE\\[08006\\][\\s\\S]*?timeout expired[\\s\\S]*?pgsql_owner[\\s\\S]*?TRUNCATE ",
+        "frame": "TestCase\\.php:\\d+"
       },
+      "matcher_history": [
+        "THE FRAME WAS TestCase.php:112 UNTIL 2026-11-02, AND IT HAD BEEN STALE SINCE TASK 9.",
+        "This family strikes setUp()'s TRUNCATE, and Task 9 moved that call site from line 112 to",
+        "222 (git log -- tests/TestCase.php -> 46e3e52). From that commit on, every R-191 red came",
+        "out of bin/classify-reds as a REAL RED. Measured at e761f2c: PasskeyTest failed with",
+        "08006/timeout expired on pgsql_owner at TestCase.php:223 and the verdict was REAL RED,",
+        "1 of 1 failure(s) are on no row -- for a fault whose own row describes it exactly.",
+        "",
+        "A line-pinned frame goes stale whenever the file moves, and the failure mode is the worst",
+        "available: an UNEXPLAINED red, which PLAN 4a calls this project's most expensive defect",
+        "shape. The frame now matches the FILE and any line, and the widening is paid for by making",
+        "the SIGNATURE carry what this family's own title already says -- pgsql_owner and the",
+        "TRUNCATE. The pair is at least as specific as before and no longer depends on a line",
+        "number nobody maintains.",
+        "",
+        "NOT a new entry and NOT a new rate: the family, its owner and its measured rate are",
+        "untouched. What changed is that the matcher matches the family it was measured for.",
+        "KnownFlakeListTest's negative control -- the same SQLSTATE at a DIFFERENT frame must come",
+        "out REAL -- is unchanged and still green, and a third fixture pins the stale-line case."
+      ],
       "why_not_a_code_defect": "Measured to the host, not argued: 300 bare TCP connects to 127.0.0.1:5432 idle gave 0 failed / median 0.0 ms / max 0.9 ms; the same 300 with eight CPU-spinning threads gave 0 failed / median 162.6 ms / p95 320.1 ms / max 35,648 ms -- a 35-second stall on one connect() with no Postgres in the path. The WSL2 + Docker userspace port forward is the cause. qrpager_owner peaked at 2 backends against a CONNECTION LIMIT of 10, so role limits are not it, and no connect_timeout is configured anywhere."
     },
     {

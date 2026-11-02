@@ -25,3 +25,21 @@ real). Those plants are in PLAN §4a with their classifier verdicts.
 
   mixed.txt             One attributed red and one real red in one run. Must exit 1, not 2:
                         a real red is never masked by an attributed one sitting beside it.
+
+r191-moved-frame.txt -- added 2026-11-02, and it is a VERBATIM CAPTURE rather than a
+  constructed shape, which the three fixtures beside it are not.
+
+  It is the real failure block from `composer gate` at e761f2c during Task 10a:
+  `PasskeyTest` struck by R-191's 08006 connect timeout, with the frame at
+  `tests/TestCase.php:223`.
+
+  WHAT IT PINS. R-191's matcher named `TestCase.php:112`, and Task 9 moved that call site to
+  222 (46e3e52). From that commit on, every red of this family came out of `bin/classify-reds`
+  as a REAL RED -- the verdict read "1 of 1 failure(s) are on no row" for a fault whose own row
+  describes it exactly. A line-pinned frame goes stale whenever the file moves, and what it
+  produces is an UNEXPLAINED red, which is the most expensive defect shape this project
+  records.
+
+  So this fixture fails if the frame pattern is ever pinned back to a specific line, and the
+  `r191-wrong-frame.txt` control beside it fails if the pattern is widened to the point of
+  matching any 08006 anywhere. The two together are what keeps the matcher honest.

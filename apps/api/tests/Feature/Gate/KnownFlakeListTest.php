@@ -146,6 +146,35 @@ it('attributes an R-191-shaped red by its SQLSTATE and frame, in a file no name 
     expect($names)->not->toContain('TenantContextTest');
 });
 
+it('attributes an R-191 red whose frame MOVED, which is the defect this matcher shipped with', function (): void {
+    /*
+     * ⚠ A VERBATIM CAPTURE, NOT A CONSTRUCTED SHAPE, AND IT WAS A LIVE DEFECT FOR TWO TASKS.
+     *
+     * R-191's matcher named `TestCase.php:112`. Task 9 moved that call site to 222 (46e3e52),
+     * and from that commit every red of this family came out REAL: measured at e761f2c during
+     * Task 10a, `PasskeyTest` failed with 08006/timeout expired on `pgsql_owner` at
+     * `TestCase.php:223` and the verdict read *"REAL RED. 1 of 1 failure(s) are on no row"* --
+     * for a fault whose own row describes it exactly.
+     *
+     * A line-pinned frame goes stale whenever the file moves, and what it produces is an
+     * UNEXPLAINED red, which `§4a` calls this project's most expensive defect shape. This case
+     * fails if the frame is ever pinned back to a line, and the control below fails if the
+     * pattern is widened to swallow any 08006 anywhere. Neither alone is enough.
+     */
+    [$code, $output] = classify('r191-moved-frame.txt');
+
+    expect($output)->toContain('ATTRIBUTED RED')
+        ->and($output)->toContain('R-191')
+        ->and($code)->toBe(2);
+
+    // And the frame it carries really is NOT the one the matcher used to name, so this case
+    // cannot pass for the old reason.
+    $fixture = (string) file_get_contents(base_path('tests/fixtures/classify-reds/r191-moved-frame.txt'));
+
+    expect(str_contains($fixture, 'TestCase.php:223'))->toBeTrue();
+    expect(str_contains($fixture, 'TestCase.php:112'))->toBeFalse();
+});
+
 it('calls the SAME SQLSTATE at a different frame a REAL red -- the control that matters', function (): void {
     [$code, $output] = classify('r191-wrong-frame.txt');
 
