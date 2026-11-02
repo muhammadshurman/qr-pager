@@ -24,6 +24,19 @@ final readonly class Membership
         public TenantRole $role,
         public TenantStatus $tenantStatus,
         public string $tenantSlug,
+        /**
+         * The restaurant's own name — ADDED AT TASK 10b, `R-222`.
+         *
+         * It is here and not only on `GET /v1/tenant` because the staff restaurant chooser
+         * runs BEFORE a tenant is selected, so there is no scope to read a name inside. The
+         * slug was standing in for it and is a DNS label, which `§12`'s
+         * zero-technical-background bar forbids putting on a screen unexplained.
+         *
+         * `$tenantSlug` stays, and is not deprecated: it is this row's stable identifier in
+         * a log line or a support conversation, where a name is ambiguous between two
+         * branches of the same restaurant. What changed is which one a SCREEN shows.
+         */
+        public string $tenantName = '',
     ) {}
 
     /**

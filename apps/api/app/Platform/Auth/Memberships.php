@@ -112,8 +112,13 @@ final class Memberships
             return $this->memoised[$userId];
         }
 
+        // An explicit column list over the function's own RETURNS TABLE, never `select *`:
+        // the function gained `tenant_name` at 10b (`R-222`), and a star here would have
+        // silently started reading whatever a later migration adds to it. §2.8 rule 1 is
+        // about the function's surface; this is the same discipline on the caller's side.
         $rows = $this->connection->select(
-            'select tenant_id, role, tenant_status, tenant_slug from public.user_memberships(?)',
+            'select tenant_id, role, tenant_status, tenant_slug, tenant_name
+               from public.user_memberships(?)',
             [$userId],
         );
 
@@ -140,6 +145,11 @@ final class Memberships
                 role: $role,
                 tenantStatus: $status,
                 tenantSlug: (string) ($row->tenant_slug ?? ''),
+                // Null-coalesced like the slug beside it, and for the same reason: the
+                // column is NOT NULL in `tenants`, so an absent value here means the
+                // function and this reader have drifted -- and an empty string makes the
+                // chooser fall back to the slug rather than render the word "null".
+                tenantName: (string) ($row->tenant_name ?? ''),
             );
         }
 

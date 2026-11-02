@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# 10b's NAMED INVARIANT, revert-proved: remove the row lock and the two-client race breaks.
+#
+# ===================================================================================
+# WHY THIS SCRIPT EXISTS
+# ===================================================================================
+#
+# `QRPAGER-26 §0`: *"Two staff marking the same session ready at the same instant produce
+# exactly ONE customer notification and ONE terminal state, and both boards converge on it
+# within one poll interval."* `StaffBoardConcurrencyTest` asserts it over HTTP, with two
+# real client sessions in two processes.
+#
+# **An unproven guard is not a guard.** A concurrency test that has never been seen red is
+# indistinguishable from one whose two children never actually overlap -- which is the exact
+# defect `MemberConcurrencyTest`'s `§11` review found in its own file by reverting the lock
+# and measuring the miss rate at one run in five. So this script removes the mechanism the
+# invariant rests on and requires the invariant case to go RED.
+#
+# THE MECHANISM IS `PagerSessions::lock()`'s `for update`. Without it both callers read
+# `waiting`, both pass the transition guard, and both write -- which surfaces either as two
+# outbox rows, two audit rows, two `applied` outcomes, or a `23505` from
+# `UNIQUE (tenant_id, dedupe_key)`. Every one of those fails the invariant case, and the
+# shared machinery below rejects the ones that are the harness breaking rather than the
+# guard being removed.
+#
+# It edits a tracked file and restores it in a trap, including on Ctrl-C. Run it on a clean
+# tree: if it is interrupted hard enough to skip the trap, `git checkout` the file.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
+
+target="app/Features/Pager/PagerSessions.php"
+backup="$(mktemp)"
+
+cp "$target" "$backup"
+trap 'cp "$backup" "$target"; rm -f "$backup"; revert_proof_cleanup' EXIT INT TERM
+
+# THE CONTROL. `PagerIdempotencyTest`'s own two-process case drives the SERVICE and is a
+# different proof of a neighbouring property; it is NOT declared a control here, because
+# removing the lock is expected to redden it too -- declaring something a control that the
+# revert legitimately breaks is how `bin/lease-revert-proof` reported sixteen reds that
+# meant nothing.
+#
+# What IS a control is the SEQUENTIAL half of this ticket's own suite: a single client
+# marking one order ready has no second caller to race, so the lock's absence cannot change
+# its answer. If that moves, the revert broke something other than concurrency.
+revert_proof_init \
+  "tests/Feature/Staff/StaffBoardConcurrencyTest.php tests/Feature/Staff/StaffBoardEndpointsTest.php" \
+  "refuses a transition on another tenant" \
+  "marks one order ready for a single client"
+
+run() { revert_proof_run "$@"; }
+
+echo "10b invariant revert proof — StaffBoardConcurrencyTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+run "baseline — no revert, every case should pass" baseline
+
+cp "$backup" "$target"
+# The `for update` inside lock(). It is the LAST line of that SQL string, so it is matched
+# WITH its closing `',` -- and the replacement keeps that closing quote, or the file stops
+# parsing and every red becomes a PHP fatal rather than an assertion. bin/_revert-proof.sh
+# would then reject the whole run as not-evidence, correctly, and the proof would say
+# nothing: that is rule 3 of the shared machinery, and it is why the quote matters here.
+#
+# ⚠ THE FIRST VERSION MATCHED `for update$` AND MATCHED NOTHING, and the `grep -q` below
+# caught it on the first run: the line reads `for update',`. A sed that changes nothing
+# followed by a green run is exactly the shape that guard exists to refuse, and it is the
+# lease proof's lesson arriving from the other direction -- there the revert was broken,
+# here it was absent, and both look like a passing test.
+sed -i "s|^\( *\)for update',\$|\1-- no lock, REVERTED BY bin/board-race-revert-proof',|" "$target"
+grep -q 'REVERTED BY bin/board-race-revert-proof' "$target" || {
+  echo "FATAL: the 'for update' line was not found -- the revert changed nothing, so a green run would mean nothing"
+  exit 1
+}
+run "revert A — 'for update' removed from PagerSessions::lock()"
+
+# Restored here and not only in the trap, for the reason bin/ttl-revert-proof records: the
+# comparison below runs before the trap fires, so without this it compares a reverted file
+# against its own backup and reports damage.
+cp "$backup" "$target"
+
+if cmp -s "$backup" "$target"; then
+  echo "restored: $target is byte-identical to the copy taken before the revert"
+else
+  echo "WARNING: $target does NOT match the pre-run copy. Restore it from git." >&2
+  exit 1
+fi
+
+echo
+
+revert_proof_verdict "board-race-revert-proof" || exit 1
