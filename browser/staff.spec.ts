@@ -191,6 +191,23 @@ test.describe('§12 on the staff shell', () => {
      * The assertion is unchanged and still an equality. What is fixed is the precondition it
      * always assumed: that tabbing starts from the top.
      */
+    /*
+     * ⚠ **AND `blur()` ALONE IS NOT ENOUGH: FIREFOX KEEPS ITS SEQUENTIAL-NAVIGATION STARTING
+     * POINT WHERE THE CLICK LEFT IT.** With focus merely cleared, Firefox tabbed on from the
+     * opened row and reported *"Tab never reached 3 of 8 controls: sweep-0, sweep-1,
+     * sweep-2"* — the shell's own three, which sit BEFORE the row in document order. Tab ran
+     * to the end of the document and out into the browser chrome rather than cycling back, so
+     * the first three were unreachable from a mid-document start.
+     *
+     * Clicking a NON-INTERACTIVE element moves that starting point without focusing anything,
+     * which is what lets the sweep begin at the top in all three engines. The restaurant name
+     * is the first thing in the shell and is plain text, so the click sets the point and
+     * leaves `document.activeElement` on the body — a programmatic `focus()` would set the
+     * point too and would also make the first control's ring a programmatic focus, which this
+     * case's own header records as NOT matching `:focus-visible` in any engine.
+     */
+    await page.locator('.qr-staff__restaurant').click()
+
     await page.evaluate(() => {
       const active = document.activeElement
 
