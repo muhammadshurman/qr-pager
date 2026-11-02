@@ -46,6 +46,17 @@ export const SIGN_IN_STAGES = [
   'unsupported',
   'two-factor',
   'choose',
+  /**
+   * Too many tries — ADDED AT 10b, `R-224`, and its copy is NOT the board's.
+   *
+   * Muhammad's ruling: *"on the board nothing is required of the person and it resumes
+   * itself; on sign-in they must wait before trying again."* So this stage keeps the form
+   * usable and the sentence tells them to wait, where the board's `throttled` state offers
+   * nothing to press at all. One sentence covering both would be wrong somewhere, which is
+   * how `R-224` came to exist in the first place — one mapping serving two situations that
+   * differ in exactly the way that matters.
+   */
+  'throttled',
 ] as const
 
 export type SignInStage = (typeof SIGN_IN_STAGES)[number]
@@ -203,6 +214,21 @@ export function StaffSignIn({
           />
         )}
 
+        {/*
+          `R-224`. The `throttled` STATE from the kit, so there is no button here either —
+          and that is correct for a different reason than the board's: a *"Try again"* inside
+          this notice would be another 429, while the FORM BELOW stays usable so the person
+          can try once they have waited. The sentence is the action, which is what `§12`
+          means by *every error says what to do*.
+        */}
+        {stage === 'throttled' && (
+          <StaffState
+            state="throttled"
+            title={t('staff.signin.throttled')}
+            description={t('staff.signin.passkey')}
+          />
+        )}
+
         {stage === 'unsupported' && (
           <StaffState
             state="permission-denied"
@@ -301,20 +327,39 @@ export function StaffSignIn({
 /**
  * What a restaurant's button says in the chooser.
  *
- * The slug, with the role word beside it so the person knows what they would be acting AS —
- * two memberships of the same restaurant cannot exist (`tenant_users` is unique on
- * `(tenant_id, user_id)`), so the slug alone is already unique and the role is context rather
- * than disambiguation.
+ * ⚠ **THE RESTAURANT'S NAME, SINCE 10b — `R-222`, ruled by Muhammad on 2026-11-02.** With
+ * the role word beside it, so the person knows what they would be acting AS: two memberships
+ * of the same restaurant cannot exist (`tenant_users` is unique on `(tenant_id, user_id)`),
+ * so the name alone is already unique and the role is context rather than disambiguation.
  *
- * ⚠ IT FALLS BACK TO THE ROLE WORD ONLY IF THE SLUG IS MISSING, which `/v1/auth/me` never
- * does — `StaffContractTest` pins the key. The fallback exists so a malformed payload renders
- * a word rather than an empty button, and `§12` would rather show a cautious true thing than
- * a blank control.
+ * ================================================================================
+ * THE TWO-STEP FALLBACK, AND BOTH STEPS HAVE BEEN THE WHOLE LABEL AT SOME POINT
+ * ================================================================================
+ *
+ *   name  ->  slug  ->  the role word
+ *
+ * The history is worth keeping because each step was somebody's bug. The FIRST version
+ * indexed a name map the app never filled, so every button fell back to the role word and
+ * two owner memberships rendered two identical buttons under *"Which restaurant?"* — `§11`
+ * QA H-2, and that actor is not hypothetical: it is `R-119`'s own residual. The fix carried
+ * the **slug**, which is unique and readable and is a DNS label — `al-baik-jeddah · Owner` —
+ * which `§12`'s zero-technical-background bar forbids on a screen. `R-222` carried the
+ * proper label with the `§4` tension that made it a decision rather than a patch, and the
+ * ruling is: publish the name, because `/v1/auth/me` returns only the caller's own
+ * memberships so the disclosure is bounded.
+ *
+ * So the slug is now the MIDDLE rung rather than the label: it is still better than a role
+ * word, and a payload that somehow carries one and not the other still renders something
+ * unique. `StaffBoardEndpointsTest` pins `name` on the real endpoint and asserts it differs
+ * from the slug, so this function cannot silently fall through to the old label.
  */
 export function chooserLabel(membership: StaffMembership, t: Translate): string {
-  return membership.slug === ''
-    ? t(roleKey(membership.role))
-    : `${membership.slug} · ${t(roleKey(membership.role))}`
+  const role = t(roleKey(membership.role))
+
+  if (membership.name !== '') return `${membership.name} · ${role}`
+  if (membership.slug !== '') return `${membership.slug} · ${role}`
+
+  return role
 }
 
 /**

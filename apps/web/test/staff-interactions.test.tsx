@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { translatorFor } from '../src/copy/index.ts'
 import { StaffDevices } from '../src/screens/staff/StaffDevices.tsx'
-import { StaffHome } from '../src/screens/staff/StaffHome.tsx'
 import { StaffSignIn } from '../src/screens/staff/StaffSignIn.tsx'
 
 /**
@@ -242,14 +241,16 @@ describe('signing in', () => {
     const { props } = signIn({
       stage: 'choose',
       memberships: [
-        { tenantId: 'tenant-a', role: 'owner', slug: 'al-baik' },
-        { tenantId: 'tenant-b', role: 'manager', slug: 'shawarma-house' },
+        { tenantId: 'tenant-a', role: 'owner', name: 'Al Baik Jeddah', slug: 'al-baik' },
+        { tenantId: 'tenant-b', role: 'manager', name: 'Shawarma House', slug: 'shawarma-house' },
       ],
     })
 
-    // The label is the slug plus the role word -- `chooserLabel()` -- so the button is found
-    // by what the app actually renders rather than by a name a test supplied.
-    fireEvent.click(screen.getByRole('button', { name: /shawarma-house/ }))
+    // The label is the NAME plus the role word since 10b (`R-222`) -- `chooserLabel()` -- so
+    // the button is found by what the app actually renders rather than by a string this test
+    // chose. That indirection is the point: when the ruling moved the label from the slug to
+    // the name, this case needed no edit beyond its fixture.
+    fireEvent.click(screen.getByRole('button', { name: /Shawarma House/ }))
 
     // ⚠ THE ONE PLACE A TENANT ID LEAVES THE CLIENT, and it is always one the server offered
     // in `memberships` -- never typed, never from a URL. `POST /v1/auth/tenant` re-verifies
@@ -294,44 +295,25 @@ describe('signing in', () => {
   })
 })
 
-describe('the shell home', () => {
-  it('runs the ceremony only when it is offered, and reports both outcomes', () => {
-    const onAddPasskey = vi.fn()
-
-    const { unmount } = render(<StaffHome t={t} onDevices={vi.fn()} onAddPasskey={onAddPasskey} />)
-
-    fireEvent.click(screen.getByRole('button', { name: t('staff.passkey.add') }))
-    expect(onAddPasskey).toHaveBeenCalledTimes(1)
-    unmount()
-
-    // The notice is what the first version of this screen was missing entirely.
-    const added = render(<StaffHome t={t} onDevices={vi.fn()} passkeyNotice="added" />)
-
-    expect(document.querySelector('[data-passkey-notice="added"]')?.textContent).toBe(
-      t('staff.passkey.added'),
-    )
-    added.unmount()
-
-    const failed = render(<StaffHome t={t} onDevices={vi.fn()} passkeyNotice="failed" />)
-
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe(t('staff.passkey.failed'))
-    failed.unmount()
-
-    // And NOTHING is shown for a cancelled ceremony: the person dismissed the prompt
-    // themselves, so telling them their own action did not work is noise.
-    render(<StaffHome t={t} onDevices={vi.fn()} passkeyNotice={null} />)
-
-    expect(document.querySelector('[data-passkey-notice]')).toBeNull()
-  })
-
-  it('offers no ceremony button at all when the browser cannot run one', () => {
-    render(<StaffHome t={t} onDevices={vi.fn()} />)
-
-    expect(screen.queryByRole('button', { name: t('staff.passkey.add') })).toBeNull()
-    // The next action is still there, which is what §12 requires of the state.
-    expect(screen.getByRole('button', { name: t('staff.home.action') })).toBeDefined()
-  })
-})
+/*
+ * ⚠ `StaffHome`'s TWO CASES ARE GONE FROM HERE AND THE PROPERTIES ARE NOT, 10b.
+ *
+ * That screen is deleted — the board replaces it at `/staff`, which its own docblock said
+ * would happen — and the passkey affordance it carried moved onto `StaffApp`, below the
+ * board, because it is a thing a person does once and the board is what they look at all
+ * day. So the two properties moved with it:
+ *
+ *   the ceremony runs only when offered, and reports BOTH outcomes
+ *      -> apps/web/test/staff-flows.test.tsx, driven through the real orchestrator rather
+ *         than against a screen in isolation, which is strictly stronger: it also proves the
+ *         button is reachable from the shell a person actually sees.
+ *   nothing is shown for a CANCELLED ceremony
+ *      -> the same case, and it is the half most worth keeping: telling somebody their own
+ *         dismissal did not work is noise.
+ *
+ * Written out rather than deleted quietly, because a case that vanishes in a diff reads as
+ * coverage lost.
+ */
 
 /**
  * Submit a form the way a double-tap does: twice more in the SAME tick.

@@ -140,12 +140,33 @@ describe('the staff state type', () => {
 
     expect(errors, `expected three type errors, got ${String(errors)}:\n${bad.output}`).toBe(3)
   }, 60_000)
+
+  it('REFUSES a throttled state that offers an action — R-224, in the type', () => {
+    // THE MIRROR OF THE CASE ABOVE rather than more of the same. That one proves `§12`'s
+    // *no empty state without a next action*; this one proves Muhammad's `R-224` ruling
+    // that a throttled board offers NOTHING to press, because the backoff is already
+    // doing the only thing that works.
+    const bad = compile('staff-state-throttled-with-action.tsx.fixture')
+
+    expect(
+      bad.status,
+      'a throttled state with an action compiled, so R-224 is unenforced',
+    ).not.toBe(0)
+
+    // Names `action`, not merely "some error": an unresolved import would also be
+    // non-zero, which is what the control fixture exists to separate out.
+    expect(bad.output).toContain('action')
+
+    const errors = [...bad.output.matchAll(/error TS\d+/g)].length
+
+    expect(errors, `expected one type error, got ${String(errors)}:\n${bad.output}`).toBe(1)
+  }, 60_000)
 })
 
 describe('the staff state at run time', () => {
-  it('knows all six states and renders each one distinguishably', () => {
+  it('knows all seven states and renders each one distinguishably', () => {
     // The list is exported so a test must cover all of it; a state added without a branch
-    // would render nothing and this would catch it.
+    // would render nothing and this would catch it. `throttled` arrived at 10b (`R-224`).
     expect([...STAFF_STATES]).toEqual([
       'ready',
       'loading',
@@ -153,12 +174,15 @@ describe('the staff state at run time', () => {
       'error',
       'offline',
       'permission-denied',
+      'throttled',
     ])
   })
 
-  it('announces error and offline, and does not announce empty or permission-denied', () => {
-    // `error` and `offline` are events and interrupt; `empty` and `permission-denied` are
-    // answers. Announcing an answer makes a screen reader shout a non-event.
+  it('announces error and offline, and does not announce empty, permission-denied or throttled', () => {
+    // `error` and `offline` are events and interrupt; `empty`, `permission-denied` and
+    // `throttled` are answers. Announcing an answer makes a screen reader shout a
+    // non-event -- and for `throttled` that is `R-224`'s *no message on the first 429*
+    // arriving through the accessibility tree rather than through the paint.
     for (const state of ['error', 'offline'] as const) {
       const { container, unmount } = render(
         <StaffState
@@ -173,9 +197,28 @@ describe('the staff state at run time', () => {
       unmount()
     }
 
-    const { container } = render(<StaffState state="permission-denied" title="t" description="d" />)
+    for (const state of ['permission-denied', 'throttled'] as const) {
+      const { container, unmount } = render(<StaffState state={state} title="t" description="d" />)
 
-    expect(container.querySelector('[role="alert"]')).toBeNull()
+      expect(container.querySelector('[role="alert"]'), state).toBeNull()
+      unmount()
+    }
+  })
+
+  it('offers NO button on a throttled board, which is R-224 ruled rather than styled', () => {
+    // The run-time half of the fixture guard below. Muhammad's ruling: *"on the board
+    // nothing is required of the person and it resumes itself"* -- so the only honest
+    // affordance is none, and a button here would have exactly one effect, another 429.
+    const { container } = render(
+      <StaffState
+        state="throttled"
+        title="The board is catching up."
+        description="It will refresh itself in a moment."
+      />,
+    )
+
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.querySelector('[data-state="throttled"]')).not.toBeNull()
   })
 
   it('gives the loading state an accessible name rather than a bare spinner', () => {

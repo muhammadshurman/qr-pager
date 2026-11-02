@@ -47,17 +47,24 @@ describe('the copy catalogue', () => {
     // -- is caught only here.
     expect(ar).toEqual(en)
     /*
-     * 62 at Task 9, 127 at Task 10a: the staff surface's sign-in, shell, lock, kitchen
-     * screens, the add-a-passkey outcome, the two `staff.signedout.*` keys that `§11` QA L-3
-     * added so a person who PRESSED "Sign out" does not read "Screen locked. Nobody is signed
-     * in on this screen.", and `staff.devices.creating` — the busy label on the issue-device
-     * submit that `§11` SECURITY L-2 required, because a disabled button with no reason reads
-     * as a lockout rather than as work in progress.
+     * 62 at Task 9, 127 at Task 10a, 163 at 10b: the staff surface's sign-in, shell, lock,
+     * kitchen screens, the add-a-passkey outcome, the two `staff.signedout.*` keys that
+     * `§11` QA L-3 added so a person who PRESSED "Sign out" does not read "Screen locked.
+     * Nobody is signed in on this screen.", and `staff.devices.creating` — the busy label on
+     * the issue-device submit that `§11` SECURITY L-2 required, because a disabled button
+     * with no reason reads as a lockout rather than as work in progress.
+     *
+     * ⚠ 10b's THIRTY-SIX are the BOARD and the PAGER DETAIL — every state in
+     * `QRPAGER-26-precoding.md §12` S6/S7 — plus the two `R-224` strings whose whole point
+     * is that they DIFFER: `staff.board.throttled.*` says the person need do nothing, and
+     * `staff.signin.throttled` says they must wait and try again. Muhammad's ruling is that
+     * those are two situations, not one message, so they are two keys and `§12` S1's own
+     * stage case asserts each is silent on the other's sentence.
      *
      * The count is pinned rather than omitted because a key SILENTLY DELETED from both files
      * at once is the one change key-parity cannot see.
      */
-    expect(en.length).toBe(127)
+    expect(en.length).toBe(163)
   })
 
   it('has no empty value in either language', () => {

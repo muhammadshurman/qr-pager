@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { translatorFor } from '../src/copy/index.ts'
 import { StaffDevices } from '../src/screens/staff/StaffDevices.tsx'
-import { StaffHome } from '../src/screens/staff/StaffHome.tsx'
 import { StaffSignIn, roleKey } from '../src/screens/staff/StaffSignIn.tsx'
 
 /**
@@ -245,7 +244,7 @@ describe('sign-in', () => {
         onPasskey={vi.fn()}
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
-        memberships={[{ tenantId: 'tenant-a', role: 'owner', slug: 'al-baik' }]}
+        memberships={[{ tenantId: 'tenant-a', role: 'owner', name: 'Al Baik', slug: 'al-baik' }]}
         onChoose={vi.fn()}
       />,
     )
@@ -300,8 +299,13 @@ describe('sign-in', () => {
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
         memberships={[
-          { tenantId: 'tenant-a', role: 'owner', slug: 'al-baik' },
-          { tenantId: 'tenant-b', role: 'owner', slug: 'shawarma-house' },
+          { tenantId: 'tenant-a', role: 'owner', name: 'Al Baik Jeddah', slug: 'al-baik' },
+          {
+            tenantId: 'tenant-b',
+            role: 'owner',
+            name: 'Shawarma House',
+            slug: 'shawarma-house',
+          },
         ]}
         onChoose={vi.fn()}
       />,
@@ -311,8 +315,19 @@ describe('sign-in', () => {
 
     expect(labels).toHaveLength(2)
     expect(labels[0]).not.toBe(labels[1])
-    expect(labels[0]).toContain('al-baik')
-    expect(labels[1]).toContain('shawarma-house')
+
+    // ⚠ THE NAME, SINCE 10b — `R-222`. This asserted the SLUG, which was the right label
+    // until Muhammad ruled: `al-baik · Owner` is a DNS label with a role word beside it, and
+    // `§12` forbids an unexplained identifier on a screen. The two-same-role case is kept
+    // exactly as it was, because it is the case `§11` QA H-2 found unrendered — what changed
+    // is which unique string distinguishes the two buttons.
+    expect(labels[0]).toContain('Al Baik Jeddah')
+    expect(labels[1]).toContain('Shawarma House')
+
+    // AND THE SLUG IS NOT ON THE SCREEN ANY MORE, which is the half of the ruling a
+    // name-only assertion would miss: the client still RECEIVES it and no longer shows it.
+    expect(document.body.textContent).not.toContain('al-baik')
+    expect(document.body.textContent).not.toContain('shawarma-house')
     // The role word is still there as context -- it is what you would be acting AS.
     expect(labels[0]).toContain(t('staff.role.owner'))
 
@@ -321,10 +336,35 @@ describe('sign-in', () => {
     expect(document.body.textContent).not.toContain('tenant-b')
   })
 
-  it('falls back to the role WORD only when the slug is missing, never to an id', () => {
-    // `/v1/auth/me` always carries a slug -- `StaffContractTest` pins the key -- so this is
-    // the malformed-payload path. It renders a cautious true word rather than a blank button
-    // or a uuid, which is the §12 order of preference.
+  it('falls back name -> slug -> role WORD, and never to an id', () => {
+    // `/v1/auth/me` always carries both -- `StaffContractTest` and `StaffBoardEndpointsTest`
+    // pin the keys -- so these are the malformed-payload paths. Each renders a cautious true
+    // thing rather than a blank button or a uuid, which is the §12 order of preference.
+    //
+    // ⚠ THE MIDDLE RUNG IS ASSERTED TOO, since 10b: the slug was the label and is now the
+    // fallback, so a payload carrying one and not the other still renders something unique.
+    const { unmount } = render(
+      <StaffSignIn
+        t={t}
+        stage="choose"
+        onPasskey={vi.fn()}
+        onPassword={vi.fn()}
+        onTwoFactor={vi.fn()}
+        memberships={[
+          {
+            tenantId: '01a199c4-7f3e-7000-8000-0123456789ab',
+            role: 'manager',
+            name: '',
+            slug: 'kudu-riyadh',
+          },
+        ]}
+        onChoose={vi.fn()}
+      />,
+    )
+
+    expect(document.querySelector('button')?.textContent).toContain('kudu-riyadh')
+    expect(document.body.textContent).not.toContain('01a199c4')
+    unmount()
     render(
       <StaffSignIn
         t={t}
@@ -333,7 +373,7 @@ describe('sign-in', () => {
         onPassword={vi.fn()}
         onTwoFactor={vi.fn()}
         memberships={[
-          { tenantId: '01a199c4-7f3e-7000-8000-0123456789ab', role: 'manager', slug: '' },
+          { tenantId: '01a199c4-7f3e-7000-8000-0123456789ab', role: 'manager', name: '', slug: '' },
         ]}
         onChoose={vi.fn()}
       />,
@@ -366,21 +406,17 @@ describe('the role word', () => {
   })
 })
 
-describe('the shell home', () => {
-  it('says what is true and points at the work that exists, with an action', () => {
-    const onDevices = vi.fn()
-
-    render(<StaffHome t={t} onDevices={onDevices} />)
-
-    expect(screen.getByText(t('staff.home.title'))).toBeDefined()
-    expect(screen.getByRole('button', { name: t('staff.home.action') })).toBeDefined()
-
-    // And it does not say "not built yet", "coming soon" or "Task 10b" -- system vocabulary
-    // about our own delivery plan, on a restaurant owner's screen.
-    const body = document.body.textContent.toLowerCase()
-
-    for (const word of ['coming soon', 'not built', 'task 10', 'todo', 'placeholder']) {
-      expect(body.includes(word), `the home screen says "${word}"`).toBe(false)
-    }
-  })
-})
+/*
+ * ⚠ `StaffHome` IS GONE AND SO IS ITS CASE, 10b. That screen said *you are signed in, the
+ * board arrives next* and its own docblock named this moment: *"When 10b lands, this is the
+ * file whose contents the board replaces."* Its two properties did not evaporate with it,
+ * and both have a new home rather than being dropped:
+ *
+ *   the §12 empty state with a next action  ->  apps/web/test/staff-board.test.tsx, where
+ *                                               the BOARD's empty state is asserted;
+ *   the no-system-vocabulary sweep          ->  the same file, over the board's own copy,
+ *                                               which is now what /staff renders.
+ *
+ * Recorded here rather than deleted silently: a case that disappears in a diff reads as
+ * coverage lost, and this one was moved.
+ */

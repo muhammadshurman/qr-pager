@@ -123,6 +123,7 @@ export const AR: Record<CopyKey, string> = {
   'staff.signin.twoFactor': 'أدخل الرمز المكوّن من ٦ أرقام من تطبيق المصادقة.',
   'staff.signin.code': 'الرمز',
   'staff.signin.choose': 'أي مطعم؟',
+  'staff.signin.throttled': 'محاولات كثيرة. انتظر دقيقة ثم سجّل الدخول مرة أخرى.',
 
   // ---------------------------------------------------------------------- the shell
   'staff.shell.signedIn': 'مسجّل الدخول بصفة {name}',
@@ -145,6 +146,45 @@ export const AR: Record<CopyKey, string> = {
   'staff.passkey.added': 'يمكن لهذا الجهاز تسجيل دخولك بمفتاح المرور الآن.',
   'staff.passkey.failed':
     'لم ينجح ذلك. حاول مرة أخرى، أو سجّل الدخول بكلمة المرور في المرة القادمة.',
+
+  // ------------------------------------------------------------------- the board (10b)
+  'staff.board.title': 'الطلبات',
+  'staff.board.order': 'طلب {reference}',
+  'staff.board.waiting': 'منذ {duration}',
+  'staff.board.open': 'افتح الطلب {reference}',
+  'staff.board.status.waiting': 'قيد التحضير',
+  'staff.board.status.ready': 'جاهز',
+  'staff.board.status.completed': 'تم الاستلام',
+  'staff.board.status.cancelled': 'ملغى',
+  'staff.board.status.expired': 'منتهي',
+  'staff.board.empty.title': 'لا توجد طلبات قيد الانتظار.',
+  'staff.board.empty.body': 'سيظهر الطلب هنا بمجرد إنشاء جهاز نداء له.',
+  'staff.board.empty.action': 'تحقّق من الطلبات الجديدة',
+  'staff.board.error.title': 'لم نتمكّن من تحميل الطلبات.',
+  'staff.board.error.body': 'لم يتغيّر شيء. حاول مرة أخرى.',
+  'staff.board.offline.title': 'لا يوجد اتصال.',
+  'staff.board.offline.body': 'هذه الطلبات من آخر مرة وصلنا فيها إلى الشبكة.',
+  'staff.board.retry': 'حاول مرة أخرى',
+  'staff.board.throttled.title': 'اللوحة تتابع التحديث.',
+  'staff.board.throttled.body': 'ستُحدّث نفسها بعد لحظات. لا حاجة لأي إجراء منك.',
+  'staff.board.stale': 'آخر تحديث {time}',
+
+  // ------------------------------------------------------------------ the pager detail
+  'staff.detail.ready': 'أبلغه أن الطلب جاهز',
+  'staff.detail.renotify': 'نبّهه مرة أخرى',
+  'staff.detail.complete': 'تم استلام الطلب',
+  'staff.detail.cancel': 'إلغاء الطلب',
+  'staff.detail.close': 'إغلاق',
+  'staff.detail.working': 'جارٍ الإرسال…',
+  'staff.detail.cancel.title': 'إلغاء هذا الطلب؟',
+  'staff.detail.cancel.body': 'سيتم إبلاغ العميل بالإلغاء. لا يمكن التراجع عن ذلك.',
+  'staff.detail.cancel.confirm': 'إلغاء الطلب',
+  'staff.detail.cancel.keep': 'الاحتفاظ به',
+  'staff.detail.limit': 'لقد نبّهته العدد المسموح من المرات. ابحث عنه بنفسك.',
+  'staff.detail.expired': 'انتهت صلاحية جهاز النداء. أعطِ العميل رمزًا جديدًا.',
+  'staff.detail.gone': 'هذا الطلب لم يعد على اللوحة. ربما أكمله شخص آخر.',
+  'staff.detail.stale': 'تغيّرت حالة هذا الطلب. تم تحديث اللوحة.',
+  'staff.detail.failed': 'لم تنجح العملية. لم يتغيّر شيء — حاول مرة أخرى.',
 
   // ----------------------------------------------------------------------- the lock
   'staff.lock.title': 'الشاشة مقفلة',

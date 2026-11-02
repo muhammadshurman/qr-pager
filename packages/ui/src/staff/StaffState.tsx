@@ -64,7 +64,35 @@ interface DeniedState {
   readonly description: string
 }
 
-export type StaffStateProps = ReadyState | LoadingState | ActionableState | DeniedState
+/**
+ * Throttled — ADDED AT 10b, and the shape is Muhammad's `R-224` ruling expressed as a type.
+ *
+ * His words: *"on the board nothing is required of the person and it resumes itself; on
+ * sign-in they must wait before trying again."* So on a polled surface a throttle takes
+ * **no action**, and this interface is why that is not merely a convention: like
+ * `DeniedState` above it has a required `description` and **no `action` member at all**, so
+ * an actionless throttle is the only thing that compiles and a button cannot be added here
+ * without someone editing this union and reading this comment.
+ *
+ * The reasoning is `permission-denied`'s, pointed the other way. There, retrying changes
+ * nothing because no permission will arrive; here, retrying changes nothing because the
+ * backoff is already doing the only thing that works, and a *"Try again"* button on a
+ * throttled board is a button whose single effect is another 429.
+ *
+ * ⚠ IT IS NOT A SYNONYM FOR `error`, which is the mapping `R-224` exists because of: 10a's
+ * client mapped **429** onto its `server` kind, so a throttled staff screen read *"Something
+ * went wrong on our side. Nothing you did caused it."* — not our side, and the person's own
+ * repeated action may well have caused it.
+ */
+interface ThrottledState {
+  readonly state: 'throttled'
+  readonly title: string
+  /** Required, for `DeniedState`'s reason: with no button, the words carry the whole answer. */
+  readonly description: string
+}
+
+export type StaffStateProps =
+  ReadyState | LoadingState | ActionableState | DeniedState | ThrottledState
 
 /** Every state this primitive knows, for a test that must cover all of them. */
 export const STAFF_STATES = [
@@ -74,6 +102,7 @@ export const STAFF_STATES = [
   'error',
   'offline',
   'permission-denied',
+  'throttled',
 ] as const
 
 export type StaffStateName = (typeof STAFF_STATES)[number]
@@ -91,8 +120,16 @@ export function StaffState(props: StaffStateProps) {
     )
   }
 
-  // `error` and `offline` interrupt; `empty` and `permission-denied` are answers rather
-  // than events, so they are not announced. Same split as `StateView`, for the same reason.
+  /*
+   * `error` and `offline` interrupt; `empty` and `permission-denied` are answers rather
+   * than events, so they are not announced. Same split as `StateView`, for the same reason.
+   *
+   * ⚠ `throttled` IS ON THE QUIET SIDE, AND THAT IS `R-224`'s *"no message on the first
+   * 429"* ONE LAYER DOWN. The copy only appears once the backoff window is exhausted, and
+   * when it does it describes a situation that is resolving itself — so interrupting a
+   * screen reader mid-service to announce it would be the same defect the ruling is about,
+   * arriving through the accessibility tree instead of through the paint.
+   */
   const announce = props.state === 'error' || props.state === 'offline'
 
   return (
@@ -103,7 +140,7 @@ export function StaffState(props: StaffStateProps) {
     >
       <p className="qr-staff-state__title">{props.title}</p>
       <p className="qr-staff-state__description">{props.description}</p>
-      {props.state !== 'permission-denied' && (
+      {props.state !== 'permission-denied' && props.state !== 'throttled' && (
         <Button variant="secondary" onClick={props.action.onAction}>
           {props.action.label}
         </Button>

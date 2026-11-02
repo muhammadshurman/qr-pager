@@ -142,6 +142,12 @@ export const EN = {
   'staff.signin.twoFactor': 'Enter the 6-digit code from your authenticator app.',
   'staff.signin.code': 'Code',
   'staff.signin.choose': 'Which restaurant?',
+  // R-224, and this is deliberately NOT the board's sentence. Muhammad's ruling: "on the
+  // board nothing is required of the person and it resumes itself; on sign-in they must wait
+  // before trying again." One sentence covering both would be wrong somewhere, which is how
+  // R-224 came to exist -- a single mapping serving two situations that differ in exactly the
+  // way that matters.
+  'staff.signin.throttled': 'Too many tries. Wait a minute, then sign in again.',
 
   // ---------------------------------------------------------------------- the shell
   'staff.shell.signedIn': 'Signed in as {name}',
@@ -167,6 +173,63 @@ export const EN = {
   'staff.passkey.add': 'Add a passkey to this device',
   'staff.passkey.added': 'This device can sign you in with a passkey now.',
   'staff.passkey.failed': 'That did not work. Try again, or sign in with your password next time.',
+
+  // ------------------------------------------------------------------- the board (10b)
+  //
+  // `§12` requires the exact copy before the screen is coded, and every string below is the
+  // one written into `docs/tickets/QRPAGER-26-precoding.md §12` S6/S7 before any of it
+  // existed. Nothing here is system vocabulary: no "session", no "pager session", no
+  // "status", no "renotify" -- a restaurant manager reads no documentation.
+  'staff.board.title': 'Orders',
+  'staff.board.order': 'Order {reference}',
+  'staff.board.waiting': 'Waiting {duration}',
+  'staff.board.open': 'Open order {reference}',
+  // The status as a WORD, one per status the generated contract declares. `StatusBadge`
+  // takes a `Record<PagerStatus, string>`, so a status added in PHP fails the TypeScript
+  // build here rather than rendering its enum value on a kitchen screen.
+  'staff.board.status.waiting': 'Preparing',
+  'staff.board.status.ready': 'Ready',
+  'staff.board.status.completed': 'Collected',
+  'staff.board.status.cancelled': 'Cancelled',
+  'staff.board.status.expired': 'Expired',
+  'staff.board.empty.title': 'No orders are waiting.',
+  // The next action is NOT "start a pager": creating one is 10d's screen and does not exist
+  // yet, and an empty state whose button goes nowhere is worse than one with no button.
+  // Checking now is a real action -- it polls immediately instead of waiting for the tick.
+  'staff.board.empty.body': 'An order appears here as soon as a pager is started for it.',
+  'staff.board.empty.action': 'Check for new orders',
+  'staff.board.error.title': 'We could not load the orders.',
+  'staff.board.error.body': 'Nothing has changed. Try again.',
+  'staff.board.offline.title': 'No connection.',
+  'staff.board.offline.body': 'These are the orders from the last time we reached the network.',
+  'staff.board.retry': 'Try again',
+  // R-224, and the ruling's own words: on the board nothing is required of the person and
+  // it resumes itself. So there is no action copy here -- `StaffState`'s `throttled` case
+  // has no `action` member, so one could not be rendered.
+  'staff.board.throttled.title': 'The board is catching up.',
+  'staff.board.throttled.body':
+    'It will refresh itself in a moment. You do not need to do anything.',
+  'staff.board.stale': 'Last updated {time}',
+
+  // ------------------------------------------------------------------ the pager detail
+  'staff.detail.ready': 'Tell them it is ready',
+  'staff.detail.renotify': 'Buzz them again',
+  'staff.detail.complete': 'They collected it',
+  'staff.detail.cancel': 'Cancel this order',
+  'staff.detail.close': 'Close',
+  'staff.detail.working': 'Sending…',
+  // Destructive in effect, so `§12` wants it confirmed and marked not reversible. The body
+  // says what happens to the CUSTOMER, which is the consequence the person is deciding about.
+  'staff.detail.cancel.title': 'Cancel this order?',
+  'staff.detail.cancel.body': 'The customer is told it is cancelled. You cannot undo this.',
+  'staff.detail.cancel.confirm': 'Cancel the order',
+  'staff.detail.cancel.keep': 'Keep it',
+  'staff.detail.limit': 'You have buzzed them as many times as we allow. Go and find them instead.',
+  'staff.detail.expired': 'This pager has run out. Give the customer a new code.',
+  'staff.detail.gone':
+    'That order is not on the board any more. Somebody else may have finished it.',
+  'staff.detail.stale': 'This order has moved on. The board has been refreshed.',
+  'staff.detail.failed': 'That did not go through. Nothing has changed — try again.',
 
   // ----------------------------------------------------------------------- the lock
   'staff.lock.title': 'Screen locked',

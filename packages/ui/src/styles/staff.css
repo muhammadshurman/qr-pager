@@ -291,3 +291,16 @@
  * and `0s` under BOTH media settings, so this is a measured property rather than an absence
  * a later commit can fill in unnoticed.
  */
+
+/* ------------------------------------------------- the board's quiet notices, added at 10b
+ *
+ * One class for the staleness marker and for `R-224`'s throttle notice, because they are the
+ * same thing on screen: a quiet line above the rows saying something about the data's age
+ * rather than about the data. Neither is an alert and neither takes a button -- the throttle
+ * because the ruling says nothing is required of the person, the staleness because the rows
+ * below it are still correct. */
+.qr-staff-board__stale {
+  margin-block: 0 var(--space-12);
+  font-size: var(--size-16);
+  color: var(--color-ink-mid);
+}

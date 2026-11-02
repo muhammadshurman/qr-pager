@@ -1,0 +1,27 @@
+// DELIBERATELY WRONG. The single render below must produce a TYPE ERROR.
+//
+// `.fixture` rather than `.tsx` so no build, typecheck or lint pass ever reads it as source
+// -- `staff-state-without-action.tsx.fixture` beside it has the reasoning.
+//
+// WHAT IS BEING PROVEN, and it is the MIRROR of that file rather than more of the same.
+// There, `§12`'s *no empty state without a next action* is enforced by the type. Here it is
+// Muhammad's `R-224` ruling: *"on the board nothing is required of the person and it resumes
+// itself"* -- so a throttled state must carry NO action, and offering one would be a button
+// whose single effect is another 429.
+//
+// A convention would not survive the next person who thinks a screen without a button looks
+// unfinished. `ThrottledState` has no `action` member at all, so this does not compile, and
+// adding one means editing the union and reading the comment above it.
+import { StaffState } from '../../src/staff/StaffState.tsx'
+
+export function ThrottledWithAction() {
+  // BAD: a `throttled` state with an action. `R-224` says a throttle offers nothing to press.
+  return (
+    <StaffState
+      state="throttled"
+      title="The board is catching up."
+      description="It will refresh itself in a moment."
+      action={{ label: 'Try again', onAction: () => undefined }}
+    />
+  )
+}

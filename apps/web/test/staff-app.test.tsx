@@ -68,8 +68,20 @@ interface Call {
   readonly method: string
 }
 
-/** A fake stack. Records every call, so the lock's first step is observable. */
-function stack(options?: { readonly identity?: unknown; readonly tenantStatus?: number }) {
+/**
+ * A fake stack. Records every call, so the lock's first step is observable.
+ *
+ * ⚠ `board` DEFAULTS TO AN EMPTY LIST RATHER THAN BEING ABSENT, added at 10b. Before the
+ * board existed this fake answered 404 for anything it did not know, which is right for an
+ * unknown route and wrong for one the shell now polls on every load: every case here would
+ * have rendered the board's error state and re-polled on a timer, so a 404 would have been
+ * indistinguishable from a real failure in the one state these cases are not about.
+ */
+function stack(options?: {
+  readonly identity?: unknown
+  readonly tenantStatus?: number
+  readonly board?: { readonly status: number; readonly body?: unknown }
+}) {
   const calls: Call[] = []
 
   const json = (status: number, body: unknown): Response =>
@@ -102,6 +114,12 @@ function stack(options?: { readonly identity?: unknown; readonly tenantStatus?: 
 
     if (url.endsWith('/v1/devices')) return json(200, { devices: [] })
     if (url.endsWith('/v1/auth/logout')) return json(204, null)
+
+    if (url.endsWith('/v1/pager-sessions')) {
+      const board = options?.board ?? { status: 200, body: { sessions: [] } }
+
+      return json(board.status, board.body ?? {})
+    }
 
     return json(404, {})
   })

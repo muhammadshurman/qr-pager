@@ -4,25 +4,36 @@ import { Button, LockScreen, StaffShell, StaffState, ThemeProvider, type Locale 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { translatorFor } from './copy/index.ts'
+import { StaffBoard, type BoardPhase, type DetailPhase } from './screens/staff/StaffBoard.tsx'
 import { StaffDevices } from './screens/staff/StaffDevices.tsx'
-import { StaffHome } from './screens/staff/StaffHome.tsx'
 import { StaffSignIn, roleKey, type SignInStage } from './screens/staff/StaffSignIn.tsx'
 import {
+  PROBLEM_EXPIRED,
+  cancelSession,
+  completeSession,
+  fetchBoard,
   fetchDevices,
   fetchIdentity,
   fetchTenant,
   issueDevice,
+  markSessionReady,
+  renotifySession,
   revokeDevice,
   selectTenant,
   signInWithPassword,
   signOut,
   completeTwoFactor,
+  type BoardPager,
   type IssuedDevice,
   type StaffDevice,
   type StaffIdentity,
+  type StaffResult,
   type StaffTenant,
+  type TransitionOutcome,
 } from './staff/api.ts'
+import { nextBoardDelayMs, isStale, shouldTellThem } from './staff/board.ts'
 import { browserLocale } from './pager/locale.ts'
+import { elapsedSeconds } from './pager/poll.ts'
 import { registerPasskey, signInWithPasskey, passkeysAvailable } from './staff/passkey.ts'
 import { watchForIdle } from './staff/session.ts'
 
@@ -78,11 +89,26 @@ export interface StaffAppProps {
   readonly idleSeconds?: number
   /** Injected in tests. The real app navigates. */
   readonly onNavigate?: (view: StaffView) => void
+  /**
+   * The board's randomness, injected so a test can assert an EXACT delay.
+   *
+   * `src/pager/poll.ts`'s own practice, and its reason: the jitter's bounds are checked at
+   * the extremes (`0` and `1 - Number.EPSILON`) rather than by sampling and hoping, which is
+   * the *assert exact values, never ranges* discipline applied to something random.
+   */
+  readonly random?: () => number
 }
 
 type Phase = 'loading' | 'signed-out' | 'ready' | 'locked' | 'error' | 'offline'
 
-export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: StaffAppProps) {
+export function StaffApp({
+  apiBase,
+  view,
+  locale,
+  idleSeconds,
+  onNavigate,
+  random,
+}: StaffAppProps) {
   /*
    * ⚠ THE LANGUAGE COMES FROM THE BROWSER, AND THE FIRST VERSION OF THIS HARD-CODED `'en'`.
    *
@@ -135,6 +161,33 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
    */
   const [lockReason, setLockReason] = useState<'idle' | 'signed-out'>('idle')
 
+  /* ------------------------------------------------------------------- the board, 10b */
+
+  /**
+   * ⚠ THE BOARD'S ROWS AND ITS PHASE ARE SEPARATE, AND THAT SEPARATION IS THE DESIGN.
+   *
+   * A failed poll moves the PHASE and leaves the ROWS alone, so the kitchen keeps looking at
+   * the orders it had while the client retries — which is the honest reading of
+   * `{kind:'unreachable'}`: *the data is unchanged*. Folding them into one nullable value
+   * would make every dropped packet blank the board mid-service.
+   */
+  const [pagers, setPagers] = useState<readonly BoardPager[]>([])
+  const [boardPhase, setBoardPhase] = useState<BoardPhase>('loading')
+  const [detail, setDetail] = useState<DetailPhase>('idle')
+  const [selected, setSelected] = useState<string | null>(null)
+  /** When the newest ANSWER arrived. A server timestamp's local counterpart, in ms. */
+  const [confirmedAt, setConfirmedAt] = useState<number | null>(null)
+  /** Consecutive failed polls. 0 after any 200. Drives the backoff and `shouldTellThem`. */
+  const failuresRef = useRef(0)
+  /** The server's own `Retry-After` from the last 429, in seconds, or null. */
+  const retryAfterRef = useRef<number | null>(null)
+  /** A monotonic token so a poll scheduled by a superseded run cannot resurrect itself. */
+  const pollRunRef = useRef(0)
+  /** `Math.random` in the app, a sequence in the tests. */
+  const randomRef = useRef<() => number>(random ?? Math.random)
+
+  randomRef.current = random ?? Math.random
+
   /** One function, and it is the whole of "the shell holds no tenant datum". */
   const clearTenantData = useCallback((): void => {
     setIdentity(null)
@@ -143,6 +196,23 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
     setIssued(null)
     setPasskeyNotice(null)
     setDevicesPhase('loading')
+    /*
+     * ⚠ THE BOARD IS TENANT DATA AND IS DROPPED HERE TOO. Every order reference on it
+     * belongs to one restaurant, so a lock that left them rendered would be the exact thing
+     * `§12`'s lock clause is about — and `staff-app.test.tsx` asserts the clearing rather
+     * than this comment. Adding state to this component without adding it here is the
+     * failure mode, which is why this function is one place and is named as such.
+     */
+    setPagers([])
+    setBoardPhase('loading')
+    setSelected(null)
+    setDetail('idle')
+    setConfirmedAt(null)
+    failuresRef.current = 0
+    retryAfterRef.current = null
+    // Supersede any poll already scheduled, so a timer armed before the lock cannot write
+    // another tenant's rows back into state after it.
+    pollRunRef.current += 1
   }, [])
 
   const load = useCallback(async (): Promise<void> => {
@@ -387,6 +457,203 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
     [apiBase, afterCredential],
   )
 
+  /* ------------------------------------------------------------- the board's poll loop */
+
+  /**
+   * One board read, and the whole of `R-224`'s client half.
+   *
+   * ⚠ **THE PHASE MOVES AND THE ROWS DO NOT**, on every failure kind. That is the design
+   * decision `pagers`/`boardPhase` are two pieces of state for: a kitchen mid-service keeps
+   * looking at the orders it had while this retries.
+   *
+   * The five answers and why each is its own branch:
+   *
+   *   `ok`            rows replaced wholesale, failures reset, the confirmation stamped.
+   *   `unauthorised`  the shift ended or the session expired. **Not an error** — the shell
+   *                   drops to sign-in, which is what 10a's `call()` docblock is about.
+   *   `throttled`     `R-224`. Its OWN phase, never `error`, and the server's `Retry-After`
+   *                   is kept for the next delay because a server that is already refusing
+   *                   knows better than our doubling.
+   *   `unreachable`   `offline`. The wifi, not us.
+   *   anything else   `error`.
+   */
+  const pollBoard = useCallback(async (): Promise<void> => {
+    const result = await fetchBoard(apiBase)
+
+    if (result.kind === 'ok') {
+      failuresRef.current = 0
+      retryAfterRef.current = null
+      setPagers(result.value)
+      setConfirmedAt(Date.now())
+      setBoardPhase('ready')
+
+      return
+    }
+
+    if (result.kind === 'unauthorised') {
+      clearTenantData()
+      setPhase('signed-out')
+
+      return
+    }
+
+    failuresRef.current += 1
+
+    if (result.kind === 'throttled') {
+      retryAfterRef.current = result.retryAfter
+
+      /*
+       * ⚠ **NO MESSAGE ON THE FIRST 429**, which is the ruling's third clause and the one a
+       * UI gets wrong by default. Until the backoff window is exhausted the board stays in
+       * whatever phase it was in — `ready` with its rows, or `loading` on a cold start — and
+       * says nothing, because under a working backoff nothing is required of the person and
+       * a message is a claim that something needs doing.
+       */
+      if (shouldTellThem(failuresRef.current)) setBoardPhase('throttled')
+
+      return
+    }
+
+    retryAfterRef.current = null
+    setBoardPhase(result.kind === 'unreachable' ? 'offline' : 'error')
+  }, [apiBase, clearTenantData])
+
+  /**
+   * The timer. A self-rescheduling `setTimeout`, never `setInterval`.
+   *
+   * ⚠ **`setInterval` WOULD BE WRONG HERE FOR TWO SEPARATE REASONS**, and they compound.
+   * A fixed interval cannot carry a backoff at all — the delay has to be recomputed from the
+   * failure count after each answer. And an interval fires whether or not the previous
+   * request finished, so a slow network produces overlapping reads that can land out of
+   * order and write an older board over a newer one. A chain of timeouts armed *after* each
+   * answer has neither property.
+   *
+   * ⚠ **AND THE RUN TOKEN IS WHAT MAKES A SUPERSEDED LOOP STOP.** React can tear this effect
+   * down and rebuild it — a phase change, a navigation, the lock — while a request is in
+   * flight. Without the token that in-flight answer would arm a fresh timer belonging to a
+   * dead loop, so two chains would run at once and the board would poll at twice its
+   * interval for the rest of the shift. `clearTenantData()` increments the same token, which
+   * is how the lock stops the loop rather than merely clearing what it wrote.
+   */
+  useEffect(() => {
+    if (phase !== 'ready' || view !== 'home') return
+
+    pollRunRef.current += 1
+
+    const run = pollRunRef.current
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const tick = async (): Promise<void> => {
+      await pollBoard()
+
+      if (pollRunRef.current !== run) return
+
+      timer = setTimeout(
+        () => void tick(),
+        nextBoardDelayMs(failuresRef.current, retryAfterRef.current, randomRef.current),
+      )
+    }
+
+    void tick()
+
+    return () => {
+      // The token is bumped as well as the timer cleared: an answer already in flight checks
+      // it before arming the next one, and a `clearTimeout` cannot reach a timer that does
+      // not exist yet.
+      pollRunRef.current += 1
+
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [phase, view, pollBoard])
+
+  /* ----------------------------------------------------------------- acting on a pager */
+
+  /**
+   * What the panel says after one transition, from the server's own answer.
+   *
+   * ⚠ **EVERY BRANCH IS A REAL SERVER ANSWER**, which is `R-205`'s lesson from Task 9: a
+   * screen state no event can produce is a dead state, and `browser/one-handed.spec.ts`
+   * found one there by iterating the list until a case timed out. Each phase below is
+   * reachable, and `staff-flows.test.tsx` drives all of them.
+   *
+   * The board is refreshed immediately on success rather than at the next tick, because the
+   * person just acted and a five-second wait to see their own action land reads as a screen
+   * that did not hear them.
+   */
+  const afterTransition = useCallback(
+    async (result: StaffResult<TransitionOutcome>, action: 'renotify' | 'other'): Promise<void> => {
+      if (result.kind === 'ok') {
+        setDetail('idle')
+        setSelected(null)
+        await pollBoard()
+
+        return
+      }
+
+      if (result.kind === 'unauthorised') {
+        clearTenantData()
+        setPhase('signed-out')
+
+        return
+      }
+
+      // A 404 means the row is gone from this restaurant entirely -- somebody else finished
+      // it and the board had not caught up. Not an error: the board was out of date, which
+      // is a normal thing for a polled board to be.
+      if (result.kind === 'notFound') {
+        setDetail('gone')
+        await pollBoard()
+
+        return
+      }
+
+      if (result.kind === 'conflict') {
+        /*
+         * TWO 409s, AND THE SERVER PUBLISHES THE DISCRIMINATOR. `expired` is its own problem
+         * `type` precisely because the two need different sentences -- `ProblemRenderer`'s
+         * own words: *"an illegal transition is a mistake to correct, an expired session is
+         * one to re-issue."*
+         *
+         * The renotify CAP shares `type` with an illegal transition, so it is distinguished
+         * by the action the person pressed rather than by the body. That is sound here and
+         * only here: the panel offers `renotify` only on a row the server last reported as
+         * `ready`, so *not ready* is unreachable from this button and the cap is the one
+         * remaining reading.
+         */
+        if (result.problem?.endsWith(PROBLEM_EXPIRED) === true) {
+          setDetail('expired')
+        } else if (action === 'renotify') {
+          setDetail('limit')
+        } else {
+          setDetail('stale')
+        }
+
+        await pollBoard()
+
+        return
+      }
+
+      // `forbidden`, `throttled`, `unreachable`, `server`. One sentence, and its
+      // load-bearing half is *nothing has changed* -- which is true of all four, because a
+      // refused transition is not a partial one: Task 3 commits the status, the outbox row
+      // and the audit row together or not at all.
+      setDetail('failed')
+    },
+    [clearTenantData, pollBoard],
+  )
+
+  const act = useCallback(
+    async (
+      id: string,
+      call: (apiBase: string, id: string) => Promise<StaffResult<TransitionOutcome>>,
+      action: 'renotify' | 'other',
+    ): Promise<void> => {
+      setDetail('working')
+      await afterTransition(await call(apiBase, id), action)
+    },
+    [apiBase, afterTransition],
+  )
+
   /* ------------------------------------------------------------------ kitchen screens */
 
   const loadDevices = useCallback(async (): Promise<void> => {
@@ -515,6 +782,42 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
     [resolved, tenant],
   )
 
+  /**
+   * Whole seconds each pager has been waiting, from the SERVER's own `created_at`.
+   *
+   * ⚠ NOT A TICK COUNT, which is `elapsedSeconds`' own reason reused rather than
+   * re-reasoned: a timer in a backgrounded or sleeping tab is throttled or stopped by every
+   * engine, so a self-incrementing counter is wrong by however long the tablet slept — and
+   * wrong in the direction that makes a long wait look short. Recomputed on every render
+   * from two fresh readings instead.
+   *
+   * It re-renders on each poll rather than each second, which is a deliberate trade: a
+   * kitchen needs to know *roughly how long*, and a per-second repaint on a wall tablet is
+   * work for a digit nobody is watching. The customer's own screen has the live timer, where
+   * it is the thing being looked at.
+   */
+  const elapsed = useMemo(() => {
+    const now = Date.now()
+    const out: Record<string, number> = {}
+
+    for (const pager of pagers) out[pager.id] = elapsedSeconds(pager.createdAt, now)
+
+    return out
+  }, [pagers])
+
+  /**
+   * When the board was last confirmed, formatted, or null while it is fresh.
+   *
+   * `isStale` decides, from the timestamp rather than from the phase: a board can be in
+   * `ready` and still be showing rows from before a run of failures, which is exactly the
+   * case the marker exists for.
+   */
+  const staleSince = useMemo(() => {
+    if (confirmedAt === null || !isStale(confirmedAt, Date.now())) return null
+
+    return new Intl.DateTimeFormat(resolved, { timeStyle: 'short' }).format(confirmedAt)
+  }, [confirmedAt, resolved, pagers])
+
   /** The loading / error / offline view, used with and without the chrome. */
   const unresolved = (): React.ReactNode => {
     if (phase === 'loading') {
@@ -563,13 +866,59 @@ export function StaffApp({ apiBase, view, locale, idleSeconds, onNavigate }: Sta
       )
     }
 
+    /*
+     * ⚠ `StaffHome` IS GONE FROM THIS BRANCH AND THE FILE IS DELETED. Its own docblock said
+     * so: *"When 10b lands, this is the file whose contents the board replaces."* It was an
+     * honest interim screen -- *you are signed in, the board arrives next, here is what you
+     * can do now* -- and keeping it beside the board would leave two answers to what `/staff`
+     * is. The passkey affordance it carried has NOT been dropped; it moved below the board,
+     * because it is a thing a person does once and the board is what they look at all day.
+     */
     return (
-      <StaffHome
-        t={t}
-        onDevices={() => onNavigate?.('devices')}
-        onAddPasskey={passkeysAvailable() ? () => void onAddPasskey() : undefined}
-        passkeyNotice={passkeyNotice}
-      />
+      <>
+        <StaffBoard
+          t={t}
+          phase={boardPhase}
+          pagers={pagers}
+          elapsed={elapsed}
+          staleSince={staleSince}
+          onRetry={() => void pollBoard()}
+          selected={selected}
+          onSelect={(id) => {
+            setSelected(id)
+            // The panel's sentence states belong to the attempt that produced them, so
+            // opening or closing a row clears them. Keeping `limit` on screen after the
+            // person moved to another order would be a message about an order they are no
+            // longer looking at.
+            setDetail('idle')
+          }}
+          detail={detail}
+          onReady={(id) => void act(id, markSessionReady, 'other')}
+          onRenotify={(id) => void act(id, renotifySession, 'renotify')}
+          onComplete={(id) => void act(id, completeSession, 'other')}
+          onCancel={() => {
+            setDetail('confirm-cancel')
+          }}
+          onConfirmCancel={(id) => void act(id, cancelSession, 'other')}
+        />
+        {passkeysAvailable() && (
+          <div className="qr-staff-actions">
+            <Button variant="quiet" onClick={() => void onAddPasskey()} data-add-passkey="true">
+              {t('staff.passkey.add')}
+            </Button>
+          </div>
+        )}
+        {passkeyNotice === 'added' && (
+          <p className="qr-staff-state__description" role="status" data-passkey-notice="added">
+            {t('staff.passkey.added')}
+          </p>
+        )}
+        {passkeyNotice === 'failed' && (
+          <p className="qr-staff-state__title" role="alert" data-passkey-notice="failed">
+            {t('staff.passkey.failed')}
+          </p>
+        )}
+      </>
     )
   }
 

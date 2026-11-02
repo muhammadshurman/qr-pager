@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as PasskeyModule from '../src/staff/passkey.ts'
 import { StaffApp } from '../src/StaffApp.tsx'
+import { BOARD_INTERVAL_SECONDS } from '../src/staff/board.ts'
 import { translatorFor } from '../src/copy/index.ts'
 import type { PasskeyOutcome } from '../src/staff/passkey.ts'
 
@@ -60,8 +61,20 @@ const TENANT_A = '01a199c4-7f3e-7000-8000-00000000000a'
 const TENANT_B = '01a199c4-7f3e-7000-8000-00000000000b'
 const DEVICE_ID = '01a199c4-7f3e-7000-8000-00000000d001'
 
-/** One scripted answer: a status with a body, or a connection that never completes. */
-type Answer = { readonly status: number; readonly body?: unknown } | 'unreachable'
+/**
+ * One scripted answer: a status with a body, or a connection that never completes.
+ *
+ * `headers` arrived at 10b with `R-224`: a 429 carries `Retry-After`, and the client reads it
+ * off the response. A fake with no headers at all would make the throttle path throw on a
+ * property access rather than exercise it.
+ */
+type Answer =
+  | {
+      readonly status: number
+      readonly body?: unknown
+      readonly headers?: Readonly<Record<string, string>>
+    }
+  | 'unreachable'
 
 interface Seen {
   readonly key: string
@@ -90,6 +103,14 @@ function identity(options?: {
 
 const SIGNED_OUT: Record<string, Answer> = { 'GET /v1/auth/me': { status: 401 } }
 
+const BOARD_PAGER = {
+  id: '01a199c4-7f3e-7000-8000-00000000p001'.replace('p', 'a'),
+  order_reference: 'A-128',
+  status: 'waiting',
+  created_at: '2026-11-02T10:00:00Z',
+  ready_at: null,
+}
+
 const SIGNED_IN: Record<string, Answer> = {
   'GET /v1/auth/me': { status: 200, body: identity() },
   'GET /v1/tenant': {
@@ -97,6 +118,11 @@ const SIGNED_IN: Record<string, Answer> = {
     body: { tenant: { name: RESTAURANT, timezone: 'Asia/Riyadh' } },
   },
   'GET /v1/devices': { status: 200, body: { devices: [] } },
+  // ⚠ ADDED AT 10b, AND EVERY SIGNED-IN CASE NEEDS IT: the shell POLLS the board on every
+  // load of `/staff`, and this fake THROWS on an unscripted route -- correctly, because an
+  // unscripted call is a call the test did not mean to make. An empty board is the quiet
+  // default so a case about something else is not also a case about the board.
+  'GET /v1/pager-sessions': { status: 200, body: { sessions: [] } },
   'POST /v1/auth/logout': { status: 204 },
 }
 
@@ -153,6 +179,10 @@ function stack(routes: Record<string, Answer | readonly Answer[]>) {
       status: answer.status,
       ok: answer.status >= 200 && answer.status < 300,
       json: () => Promise.resolve(answer.body ?? {}),
+      // A `Headers`-shaped stub rather than a real `Headers`, for the same reason the body
+      // is a thunk: the client reads one method and nothing else, and a fake that answers
+      // more than the client asks for is a fake that can drift from it silently.
+      headers: { get: (name: string) => answer.headers?.[name] ?? null },
     } as unknown as Response)
   })
 
@@ -232,6 +262,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  // ⚠ ADDED AT 10b, AND IT IS NOT HOUSEKEEPING. Three board cases take fake timers to let
+  // the poll timer fire; without this, the NEXT file-order case inherits a frozen clock and
+  // every `waitFor` in it hangs until its own timeout -- which reads as a flake in a case
+  // that never touched a timer. `staff-app.test.tsx` has carried the same line since 10a.
+  vi.useRealTimers()
 })
 
 describe('signing in with a passkey', () => {
@@ -941,8 +976,21 @@ describe('adding a passkey to this device', () => {
 
     expect(screen.queryByRole('button', { name: t('staff.passkey.add') })).toBeNull()
 
-    // And the page's own next action is still there, which is what §12 asks of the state.
-    pressInPage(t('staff.home.action'))
+    // ⚠ AND THE PAGE STILL CARRIES A NEXT ACTION, which is what `§12` asks of the state —
+    // but it is the BOARD's now, not the deleted home screen's. 10b replaced `/staff`'s body,
+    // so what an empty board offers is *"Check for new orders"*, which polls immediately
+    // instead of waiting for the tick. The case is kept rather than dropped because its
+    // point was never which button: it was that the ceremony's absence does not take the
+    // page's own affordance with it.
+    // ⚠ AWAITED, because `shellReady()` waits for the CHROME and the board's first poll is a
+    // second round trip behind it. Pressing straight after it looked for a button on a board
+    // still in its `loading` state — the same "await the something a press reveals" rule
+    // `fillCredentials` below records, one surface over.
+    await waitFor(() => {
+      expect(screen.getByText(t('staff.board.empty.title'))).toBeDefined()
+    })
+
+    pressInPage(t('staff.board.empty.action'))
   })
 })
 
@@ -955,7 +1003,15 @@ describe('navigation out of the shell', () => {
     render(<StaffApp apiBase="" view="home" locale="en" onNavigate={onNavigate} />)
     await shellReady()
 
-    pressInPage(t('staff.home.action'))
+    /*
+     * ⚠ THE **NAV** BUTTON, since 10b. This pressed the home screen's own *"Kitchen
+     * screens"* action, and that screen is deleted — the board replaced it, and a board's
+     * empty state points at the board rather than at another route. The nav entry is now
+     * the only way out of `/staff`, which makes it the thing worth asserting: a wall-mounted
+     * tablet in kiosk mode has no back button, so if the nav does not navigate there is no
+     * second route to this surface at all.
+     */
+    press(t('staff.nav.devices'))
 
     expect(onNavigate).toHaveBeenCalledExactlyOnceWith('devices')
   })
@@ -968,9 +1024,298 @@ describe('navigation out of the shell', () => {
     render(<StaffApp apiBase="" view="home" locale="en" />)
     await shellReady()
 
-    pressInPage(t('staff.home.action'))
+    press(t('staff.nav.devices'))
 
+    // Nothing is thrown and the shell is still there, which is the whole of the optional
+    // call's contract: `onNavigate?.()` on an absent prop is a no-op, not a crash.
     expect(screen.getByRole('heading', { name: RESTAURANT })).toBeDefined()
+  })
+})
+
+describe('the board, through the real client — 10b', () => {
+  const PAGER_PATH = `/v1/pager-sessions/${BOARD_PAGER.id}`
+
+  const boardReady = (): Promise<void> =>
+    waitFor(() => {
+      expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    })
+
+  /** Open the one row's detail panel. */
+  const openDetail = async (): Promise<void> => {
+    await boardReady()
+    press(t('staff.board.open', { reference: 'A-128' }))
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-detail="true"]')).not.toBeNull()
+    })
+  }
+
+  it('polls the board and renders what the server sent', async () => {
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': { status: 200, body: { sessions: [BOARD_PAGER] } },
+    })
+
+    render(<StaffApp apiBase="" view="home" locale="en" />)
+    await boardReady()
+
+    expect(screen.getByText(t('staff.board.status.waiting'))).toBeDefined()
+    // The session id is nowhere, asserted over text AND attributes -- the component-level
+    // case proves it in isolation and this proves it through the whole shell.
+    expect(everything()).not.toContain(BOARD_PAGER.id)
+  })
+
+  /**
+   * Let the poll TIMER fire once, which is the only honest way to provoke a second read.
+   *
+   * ⚠ THE FIRST VERSION OF THESE THREE CASES PRESSED *"Try again"* AND THERE IS NO SUCH
+   * BUTTON when the board has rows: the retry affordance belongs to the failure states, and
+   * those replace the board only when it has nothing to show. So pressing it tested the
+   * state the case was trying to leave.
+   *
+   * With `random` pinned at the midpoint the jitter contributes nothing, so the first delay
+   * is exactly `BOARD_INTERVAL_SECONDS` — an EXACT advance rather than a generous one, which
+   * is the *assert exact values, never ranges* discipline applied to a clock.
+   */
+  const letTheTimerFire = async (): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_SECONDS * 1000 + 1)
+  }
+
+  it('SAYS NOTHING on the first 429 and keeps the rows — R-224, through the real mapping', async () => {
+    /*
+     * ⚠ THIS IS THE CASE `R-224` EXISTS FOR, and it is driven through the real
+     * `src/staff/api.ts` rather than against a mocked result: the defect was a MAPPING --
+     * 429 falling through to `{kind:'server'}` -- so a test that mocked the client's answer
+     * would have mocked away the bug.
+     */
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': [
+        { status: 200, body: { sessions: [BOARD_PAGER] } },
+        { status: 429, headers: { 'Retry-After': '30' } },
+      ],
+    })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    })
+
+    await letTheTimerFire()
+
+    expect(screen.queryByText(t('staff.board.throttled.title'))).toBeNull()
+    expect(screen.queryByText(t('staff.board.throttled.body'))).toBeNull()
+
+    // THE ROWS ARE STILL THERE. The data is not wrong, it is not fresh.
+    expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+
+    // AND THE ERROR STATE'S SENTENCE IS ABSENT, which is the defect in one assertion: the
+    // old mapping rendered *"Something went wrong on our side. Nothing you did caused it."*
+    expect(everything()).not.toContain(t('staff.shell.error.title'))
+    expect(everything()).not.toContain(t('staff.board.error.title'))
+  })
+
+  it('shows the offline state only with nothing to show, and keeps the rows otherwise', async () => {
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': [{ status: 200, body: { sessions: [BOARD_PAGER] } }, 'unreachable'],
+    })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    })
+
+    await letTheTimerFire()
+
+    // Still the row, not the offline screen -- `offline` replaces the board only when the
+    // board has nothing in it.
+    expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    expect(everything()).not.toContain(t('staff.board.offline.title'))
+  })
+
+  it('marks ready through the real route and refreshes the board at once', async () => {
+    const scripted = stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': [
+        { status: 200, body: { sessions: [BOARD_PAGER] } },
+        { status: 200, body: { sessions: [{ ...BOARD_PAGER, status: 'ready' }] } },
+      ],
+      [`POST ${PAGER_PATH}/ready`]: {
+        status: 200,
+        body: { session: { id: BOARD_PAGER.id, status: 'ready', changed: true } },
+      },
+    })
+
+    render(<StaffApp apiBase="" view="home" locale="en" />)
+    await openDetail()
+
+    press(t('staff.detail.ready'))
+
+    // ⚠ THE BOARD IS RE-READ IMMEDIATELY rather than at the next tick, because the person
+    // just acted: a five-second wait to see your own action land reads as a screen that did
+    // not hear you. Asserted on the CALL rather than on the paint, so it cannot pass by the
+    // timer happening to fire.
+    await waitFor(() => {
+      expect(scripted.calls(`POST ${PAGER_PATH}/ready`)).toHaveLength(1)
+      expect(screen.getByText(t('staff.board.status.ready'))).toBeDefined()
+    })
+
+    // And the panel closed, which is what `done` means.
+    expect(document.querySelector('[data-detail="true"]')).toBeNull()
+  })
+
+  it('has a DISTINCT sentence for each refusal, every one from a real server answer', async () => {
+    /*
+     * ⚠ FOUR SERVER ANSWERS, FOUR SENTENCES, DRIVEN. `R-205`'s lesson from Task 9 is that a
+     * screen state no event can produce is a dead state; the component test asserts the
+     * sentences exist, and this asserts each is REACHABLE from the answer it belongs to.
+     *
+     * The renotify cap and an illegal move share the problem `type`, so the panel tells them
+     * apart by the action pressed -- sound only because `renotify` is offered only on a row
+     * the server last reported `ready`, which is why this case drives it on one.
+     */
+    const READY_PAGER = { ...BOARD_PAGER, status: 'ready', ready_at: '2026-11-02T10:02:00Z' }
+    const problem = (type: string) => ({ type: `https://qrpager.dev${type}` })
+
+    const cases = [
+      {
+        name: 'expired',
+        verb: 'renotify',
+        answer: { status: 409, body: problem('/problems/expired') },
+        sentence: t('staff.detail.expired'),
+      },
+      {
+        name: 'limit',
+        verb: 'renotify',
+        answer: { status: 409, body: problem('/problems/conflict') },
+        sentence: t('staff.detail.limit'),
+      },
+      {
+        name: 'gone',
+        verb: 'complete',
+        answer: { status: 404, body: problem('/problems/not-found') },
+        sentence: t('staff.detail.gone'),
+      },
+      {
+        name: 'stale',
+        verb: 'complete',
+        answer: { status: 409, body: problem('/problems/conflict') },
+        sentence: t('staff.detail.stale'),
+      },
+      {
+        name: 'failed',
+        verb: 'complete',
+        answer: { status: 500 },
+        sentence: t('staff.detail.failed'),
+      },
+    ] as const
+
+    for (const scenario of cases) {
+      stack({
+        ...SIGNED_IN,
+        'GET /v1/pager-sessions': { status: 200, body: { sessions: [READY_PAGER] } },
+        [`POST ${PAGER_PATH}/${scenario.verb}`]: scenario.answer,
+      })
+
+      const { unmount } = render(<StaffApp apiBase="" view="home" locale="en" />)
+
+      await openDetail()
+      press(t(scenario.verb === 'renotify' ? 'staff.detail.renotify' : 'staff.detail.complete'))
+
+      await waitFor(() => {
+        expect(
+          document.querySelector(`[data-detail-message="${scenario.name}"]`)?.textContent,
+          scenario.name,
+        ).toBe(scenario.sentence)
+      })
+
+      unmount()
+    }
+  })
+
+  it('confirms a cancellation before sending anything', async () => {
+    const scripted = stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': { status: 200, body: { sessions: [BOARD_PAGER] } },
+      [`POST ${PAGER_PATH}/cancel`]: {
+        status: 200,
+        body: { session: { id: BOARD_PAGER.id, status: 'cancelled', changed: true } },
+      },
+    })
+
+    render(<StaffApp apiBase="" view="home" locale="en" />)
+    await openDetail()
+
+    press(t('staff.detail.cancel'))
+
+    await waitFor(() => {
+      expect(screen.getByText(t('staff.detail.cancel.title'))).toBeDefined()
+    })
+
+    // ⚠ NOTHING HAS BEEN SENT YET, which is the whole of "confirmed": a destructive action
+    // whose first tap already fired it has a confirmation dialog and no confirmation.
+    expect(scripted.calls(`POST ${PAGER_PATH}/cancel`)).toHaveLength(0)
+
+    press(t('staff.detail.cancel.confirm'))
+
+    await waitFor(() => {
+      expect(scripted.calls(`POST ${PAGER_PATH}/cancel`)).toHaveLength(1)
+    })
+  })
+
+  it('drops the board when the shell locks, so a locked screen holds no order', async () => {
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': { status: 200, body: { sessions: [BOARD_PAGER] } },
+    })
+
+    render(<StaffApp apiBase="" view="home" locale="en" idleSeconds={0} />)
+    await boardReady()
+
+    press(t('staff.shell.signOut'))
+
+    await waitFor(() => {
+      expect(screen.getByText(t('staff.signedout.title'))).toBeDefined()
+    })
+
+    // ⚠ BY VALUE, over text AND attributes. Every order reference on the board belongs to one
+    // restaurant, so `§12`'s lock clause covers them as much as it covers the restaurant's
+    // own name — and `clearTenantData()` is one function precisely so that adding board state
+    // without clearing it is caught here.
+    expect(everything()).not.toContain('A-128')
+    expect(everything()).not.toContain(BOARD_PAGER.id)
+  })
+
+  it('drops to sign-in when the board answers 401, which is the end of a shift', async () => {
+    stack({
+      ...SIGNED_IN,
+      'GET /v1/pager-sessions': [
+        { status: 200, body: { sessions: [BOARD_PAGER] } },
+        { status: 401 },
+      ],
+    })
+
+    vi.useFakeTimers()
+
+    render(<StaffApp apiBase="" view="home" locale="en" random={() => 0.5} />)
+    await vi.waitFor(() => {
+      expect(screen.getByText(t('staff.board.order', { reference: 'A-128' }))).toBeDefined()
+    })
+
+    await letTheTimerFire()
+
+    // NOT an error state: a session ending is the normal end of a shift, which is 10a's
+    // `call()` docblock applied to the one route that is read every few seconds.
+    await vi.waitFor(() => {
+      expect(screen.getByRole('heading', { name: t('staff.signin.title') })).toBeDefined()
+    })
+
+    expect(everything()).not.toContain('A-128')
   })
 })
 

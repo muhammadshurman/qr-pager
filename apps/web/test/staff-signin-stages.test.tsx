@@ -32,8 +32,8 @@ import {
 const t = translatorFor('en')
 
 const MEMBERSHIPS = [
-  { tenantId: 'tenant-a', role: 'owner', slug: 'al-baik' },
-  { tenantId: 'tenant-b', role: 'owner', slug: 'kudu' },
+  { tenantId: 'tenant-a', role: 'owner', name: 'Al Baik Jeddah', slug: 'al-baik' },
+  { tenantId: 'tenant-b', role: 'owner', name: 'Kudu Riyadh', slug: 'kudu' },
 ] as const
 
 function mount(stage: SignInStage) {
@@ -179,6 +179,38 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
       }
 
       expect(document.querySelectorAll('button')).toHaveLength(MEMBERSHIPS.length)
+    },
+  },
+
+  /**
+   * `R-224`'s sign-in half, and the assertion that matters is the CONTRAST with the board.
+   *
+   * Muhammad's ruling: *"on the board nothing is required of the person and it resumes
+   * itself; on sign-in they must wait before trying again."* So this stage must say the
+   * waiting sentence, must NOT say the board's *you do not need to do anything*, and must
+   * leave the form usable — because the only thing that helps here is the person acting,
+   * later.
+   */
+  throttled: {
+    says: [t('staff.signin.throttled')],
+    silentOn: [
+      // The board's reassurance would be false here: a sign-in does not happen until they
+      // try again.
+      t('staff.board.throttled.body'),
+      // And the old wrong sentence `R-224` was filed about.
+      t('staff.shell.error.title'),
+    ],
+    andAlso: () => {
+      // THE FORM IS STILL USABLE, which is the whole difference from the board's state.
+      const passkey = passkeyButton()
+
+      expect(passkey).not.toBeNull()
+      expect(passkey?.hasAttribute('disabled')).toBe(false)
+
+      // And the notice itself offers nothing to press -- a "Try again" inside it would be
+      // another 429. `StaffState`'s `throttled` case has no `action` member, so this is the
+      // type's doing rather than this screen's restraint.
+      expect(document.querySelector('[data-state="throttled"] button')).toBeNull()
     },
   },
 }
