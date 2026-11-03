@@ -573,6 +573,15 @@
                     "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
                 }
             }
+        },
+        "template": {
+            "type": "string",
+            "enum": [
+                "classic",
+                "editorial"
+            ],
+            "default": "classic",
+            "description": "How the blocks are arranged. Absent means classic, which is the arrangement every page published before this member existed already used."
         }
     },
     "x-bounds": {

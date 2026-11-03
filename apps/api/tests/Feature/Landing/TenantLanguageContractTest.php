@@ -43,7 +43,12 @@ it('names no direction and no language in the landing document contract', functi
     /** @var array<string, mixed> $decoded */
     $decoded = json_decode($schema, true, 512, JSON_THROW_ON_ERROR);
 
-    expect(array_keys($decoded['properties'] ?? []))->toBe(['blocks', 'theme', 'seo'])
+    // ⚠ AN EXACT LIST, AND IT MOVED ONCE ON PURPOSE. It read `['blocks', 'theme', 'seo']`
+    // until `QRPAGER-33` added `template` on 2026-11-03, and this case going red is the list
+    // doing its job: a member added to the tenant-authored contract has to be acknowledged
+    // here, because the thing being ruled out is a `dir` arriving among them. Keeping it
+    // exact is what makes the three `not->toContain` lines below more than decoration.
+    expect(array_keys($decoded['properties'] ?? []))->toBe(['blocks', 'theme', 'seo', 'template'])
         ->and($schema)->not->toContain('"dir"')
         ->and($schema)->not->toContain('"direction"')
         ->and($schema)->not->toContain('"language"');

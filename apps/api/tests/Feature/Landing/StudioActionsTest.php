@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Landing\DomainStatus;
 use App\Domain\Landing\LandingPageStatus;
+use App\Domain\Landing\LandingTemplate;
 use App\Domain\Tenancy\TenantLanguage;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\FixtureDnsVerifier;
@@ -141,6 +142,93 @@ it('sets the language of the signed-in restaurant and no other, over the panel p
 
     expect((new TenantPageLanguage)->current($tenant))->toBe(TenantLanguage::English)
         ->and((new TenantPageLanguage)->current($other))->toBe(TenantLanguage::Arabic);
+});
+
+it('sets the page arrangement through the builder, and only on the signed-in restaurant', function (): void {
+    /*
+     * ⚠ **`QRPAGER-33` INVARIANT CLAUSE 5, THROUGH THE ONLY PATH THAT EXISTS.** This file's
+     * header says why it is here rather than in a Feature test of the renderer: a GET of a
+     * Filament page never invokes an action, and everything a tenant does in this panel
+     * arrives over `POST /livewire-<hash>/update` -- the endpoint Task 6's security M-1 was
+     * about, which runs neither `SetUpPanel` nor Filament's `Authenticate`.
+     *
+     * The control takes no tenant id: `LandingBuilderPage` re-resolves the tenant from the
+     * authenticated session on every call, which is why there is none to aim elsewhere. So
+     * the property is that a second restaurant's document is untouched by the first pressing
+     * it.
+     *
+     * ================================================================================
+     * ⚠ NO `fillForm()` HERE, AND THAT IS A MEASUREMENT RATHER THAN A STYLE CHOICE
+     * ================================================================================
+     *
+     * `Livewire::test()` MOUNTS the page, and `LandingBuilderPage::mount()` already fills the
+     * form from the stored draft. Calling `fillForm()` after it fills a SECOND time, and the
+     * Builder merges rather than replaces: measured on this fixture, 7 blocks became **14**
+     * after `fillForm()` alone, and **28** once a save had persisted the doubled set -- at
+     * which point `maxItems(24)` refused the save and the real subject of the case silently
+     * stopped being exercised. That is how the first version of this case failed: not on the
+     * arrangement at all, but on `"data.blocks" => ["must not have more than 24 items"]`.
+     *
+     * Mount alone is the real path and gives 7. `R-239` carries the consequence for the
+     * cases above, which do call `fillForm()`.
+     */
+    $other = $this->makeTenant(slug: 'other-arrangement');
+
+    app(LandingPages::class)->saveDraft($other, array_replace(
+        LandingFixtures::fullPage(),
+        ['template' => 'editorial'],
+    ));
+
+    $tenant = $this->actingForTenant(role: TenantRole::Owner);
+
+    // A pre-feature document for this tenant: no `template` member at all.
+    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
+
+    expect(app(LandingPages::class)->draft($tenant)->template)
+        ->toBe(LandingTemplate::Classic, 'a document with no template member did not default to classic');
+
+    $blocksBefore = count(app(LandingPages::class)->draft($tenant)->toArray()['blocks']);
+
+    Livewire::test(LandingBuilderPage::class)
+        ->set('data.template', 'editorial')
+        ->call('save');
+
+    $saved = app(LandingPages::class)->draft($tenant);
+
+    expect($saved->template)->toBe(LandingTemplate::Editorial)
+        // The blocks are untouched, which is what makes this a change of ARRANGEMENT and not
+        // a round trip that happened to end with the right enum.
+        ->and(count($saved->toArray()['blocks']))->toBe($blocksBefore)
+        // The other restaurant is where it was, which is the half the clause is about.
+        ->and(app(LandingPages::class)->draft($other)->template)->toBe(LandingTemplate::Editorial);
+
+    // And back, because `§2.7`'s reasoning for an updatable value applies here too: a
+    // restaurant may change its mind, and a one-way test would not notice if it could not.
+    Livewire::test(LandingBuilderPage::class)
+        ->set('data.template', 'classic')
+        ->call('save');
+
+    expect(app(LandingPages::class)->draft($tenant)->template)->toBe(LandingTemplate::Classic);
+});
+
+it('refuses an arrangement that is not one, from the panel, leaving the document alone', function (): void {
+    // The Livewire payload is client-supplied, so a value outside the enum reaches
+    // `StudioForm::toDocument()` whatever the radio offers -- and `LandingDocument` refuses it
+    // by name before any write. The document is unchanged, which is the assertion: a refusal
+    // that half-wrote would be worse than one that threw.
+    $tenant = $this->actingForTenant(role: TenantRole::Owner);
+
+    app(LandingPages::class)->saveDraft($tenant, array_replace(
+        LandingFixtures::fullPage(),
+        ['template' => 'editorial'],
+    ));
+
+    Livewire::test(LandingBuilderPage::class)
+        ->set('data.template', 'brutalist')
+        ->call('save');
+
+    expect(app(LandingPages::class)->draft($tenant)->template)
+        ->toBe(LandingTemplate::Editorial, 'a non-arrangement reached the stored document');
 });
 
 it('names the side of the commit a publish failed on, and never 500s on a take-down', function (): void {

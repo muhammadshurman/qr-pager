@@ -97,8 +97,12 @@ describe('clause 1 of the invariant -- no hard-coded values in any component', (
       'packages/ui/src/Spinner.tsx',
       'packages/ui/src/StateView.tsx',
       'packages/ui/src/StatusBadge.tsx',
-      'packages/ui/src/templates/sections.tsx',
-      'packages/ui/src/templates/index.tsx',
+      // ⚠ `templates/sections.tsx` AND `templates/index.tsx` WERE HERE UNTIL 2026-11-03.
+      // `QRPAGER-33` retired `packages/ui/src/templates` on Muhammad's ruling, so clause 1 of
+      // the invariant now covers the kit alone. `R-175` and `R-179` are RESTATED with what
+      // remains rather than closed: the vocabulary and pair checks they are about still run
+      // over `kit.css` and `styles/templates.css`, and the narrowing is that no TSX template
+      // source is swept here any more -- because there is none.
     ]
 
     for (const source of sources) {
@@ -148,7 +152,7 @@ describe('the focus ring is never removed -- the half a browser cannot measure',
       'packages/ui/src/OrderReady.tsx',
       'packages/ui/src/StateView.tsx',
       'packages/ui/src/a11y.tsx',
-      'packages/ui/src/templates/sections.tsx',
+      // `templates/sections.tsx` retired with the rest of that directory (QRPAGER-33).
     ]) {
       expect(read(file), `${file} sets a positive tabindex`).not.toMatch(
         /tabIndex[=:]\s*\{?\s*[1-9]/,

@@ -7,7 +7,6 @@
     ".": "./src/index.ts",
     "./locale": "./src/locale.ts",
     "./kit.css": "./src/styles/kit.css",
-    "./templates": "./src/templates/index.ts",
     "./staff.css": "./src/styles/staff.css"
   },
   "scripts": {

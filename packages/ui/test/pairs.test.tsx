@@ -15,12 +15,6 @@ import {
   StatusBadge,
   ThemeProvider,
 } from '../src/index.ts'
-import {
-  TEMPLATES,
-  TEMPLATE_NAMES,
-  type LandingBlock,
-  type LandingPage,
-} from '../src/templates/index.tsx'
 
 afterEach(cleanup)
 
@@ -226,57 +220,13 @@ const RULES = [
 
 // -------------------------------------------------------------- the sample page
 
-const BLOCKS: LandingBlock[] = [
-  {
-    type: 'hero',
-    fields: {
-      heading: 'Qahwa & Co',
-      subheading: 'Specialty coffee on Rainbow Street',
-      cta_label: 'See the menu',
-      cta_url: 'https://example.test/menu',
-    },
-  },
-  {
-    type: 'how_it_works',
-    fields: {
-      heading: 'How the pager works',
-      steps: [{ title: 'Scan', body: 'Point your camera.' }],
-    },
-  },
-  {
-    type: 'menu_highlights',
-    fields: {
-      heading: 'Today',
-      items: [{ name: 'Flat white', description: 'Two shots.', price: '3.50 JOD' }],
-    },
-  },
-  { type: 'gallery', fields: { heading: 'The room' } },
-  {
-    type: 'hours_location',
-    fields: {
-      heading: 'Find us',
-      address: '12 Rainbow Street, Amman',
-      hours: [{ day: 'Monday', hours: '08:00 - 22:00' }],
-      latitude: 31.95,
-      longitude: 35.93,
-    },
-  },
-  {
-    type: 'contact',
-    fields: {
-      heading: 'Contact',
-      email: 'hello@example.test',
-      phone: '+962 6 123 4567',
-      links: [{ label: 'Instagram', url: 'https://example.test/ig' }],
-    },
-  },
-  {
-    type: 'footer',
-    fields: { text: 'Qahwa & Co', links: [{ label: 'Terms', url: 'https://example.test/t' }] },
-  },
-]
-
-/** The badge copy §12 owns; supplied by the caller, so the kit render needs a set. */
+// ⚠ THE LANDING-BLOCK FIXTURE AND ITS `page` WERE HERE AND ARE RETIRED WITH THE WALK THAT
+// READ THEM -- `QRPAGER-33`. They existed only to render the three templates this ruling
+// retired; the kit derivation below builds its own subjects.
+//
+// `BADGE_LABELS` stays, and it was nearly taken with them: it sat between the two and is
+// read by the KIT case below, which is the half that survives. Caught by running the suite
+// (`ReferenceError: BADGE_LABELS is not defined`) rather than by reading the diff.
 const BADGE_LABELS = {
   waiting: 'Waiting',
   ready: 'Ready',
@@ -284,12 +234,6 @@ const BADGE_LABELS = {
   cancelled: 'Cancelled',
   expired: 'Expired',
 } as const
-
-const page: LandingPage = {
-  blocks: BLOCKS,
-  theme: {},
-  seo: { title: null, description: null, og_image: null },
-}
 
 describe('the rendered pairings are derived from the stylesheets', () => {
   it('parses a non-empty rule set from BOTH stylesheets, so nothing is vacuous', () => {
@@ -302,41 +246,26 @@ describe('the rendered pairings are derived from the stylesheets', () => {
     expect(table.pairs.length).toBe(42)
   })
 
-  it.each(TEMPLATE_NAMES)('has every pairing the %s template renders in the table', (name) => {
-    const Template = TEMPLATES[name]
-    const { container } = render(
-      <ThemeProvider>
-        <Template page={page} resolve={() => undefined} />
-      </ThemeProvider>,
-    )
-
-    const pairs = pairsIn(container, RULES)
-    // A template renders text on at least its ground and one card; a walk returning one
-    // pair means the derivation broke rather than the template being plain.
-    expect(pairs.length, `the ${name} walk derived too few pairs`).toBeGreaterThanOrEqual(3)
-
-    const missing: string[] = []
-    for (const pair of pairs) {
-      if (pair.fg.startsWith(protectedPrefix) || pair.bg.startsWith(protectedPrefix)) continue
-      for (const theme of THEMES) {
-        const row = table.pairs.find(
-          (r) => r.theme === theme && r.fg === pair.fg && r.bg === pair.bg,
-        )
-        if (row === undefined) {
-          missing.push(`${name}/${theme}: ${pair.fg} on ${pair.bg} (.${pair.sample}) is in NO row`)
-        } else if (!row.pass) {
-          missing.push(
-            `${name}/${theme}: ${pair.fg} on ${pair.bg} (.${pair.sample}) is ${String(row.ratio)}, FAILING`,
-          )
-        }
-      }
-    }
-    expect(
-      missing,
-      'these pairings are rendered by a landing template and are not a passing row of ' +
-        'generated/contrast.json — §5 requires each template to pass the contrast bar',
-    ).toEqual([])
-  })
+  /*
+   * ⚠ THE PER-TEMPLATE WALK WAS HERE AND IS RETIRED WITH ITS SUBJECT -- `QRPAGER-33`,
+   * Muhammad's ruling of 2026-11-03. It rendered each of `packages/ui/src/templates`'
+   * three templates and required every pairing it painted to be a passing row of
+   * `generated/contrast.json`. That directory is gone: only its own tests imported it and
+   * `@qrpager/ui/templates` did not resolve at all, so it was never a consumed feature.
+   *
+   * ⚠ WHAT IS NARROWED, STATED RATHER THAN LEFT TO BE NOTICED. `R-175` and `R-179` are
+   * about this file and `invariant.test.tsx`, and both are RESTATED rather than closed: the
+   * derivation below still runs over the KIT, and the rule-set case above still parses both
+   * stylesheets. What no longer happens is a walk of a rendered template.
+   *
+   * ⚠ AND `src/styles/templates.css` IS STILL HERE, which is the other half of the same
+   * orphan and is DELIBERATELY NOT REMOVED IN THIS CHANGE. Nothing imports it -- not
+   * `kit.css`, not any app, and its `qr-lp__` classes reach no built bundle (measured) --
+   * but removing it regenerates `generated/contrast.json`, moves this file's 42-pair count,
+   * and edits two tooling tests that read it by name. The ruling named
+   * `packages/ui/src/templates`; this is a sibling decision and `R-240` carries it with the
+   * cost, so it is Muhammad's to take rather than mine to fold in.
+   */
 
   it('has every pairing the KIT components render in the table too', () => {
     // The same derivation over the component kit, in Node. It does not replace the browser

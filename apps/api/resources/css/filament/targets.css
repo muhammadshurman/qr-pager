@@ -65,7 +65,15 @@
   min-height: var(--target-min);
 }
 
-/* Square controls: a floor on both axes, because the target is the icon's box. */
+/* Square controls: a floor on both axes, because the target is the icon's box.
+ *
+ * ⚠ `.fi-radio-input` JOINED AT QRPAGER-33, and it was `PanelTargetTest` that asked for it
+ * rather than a reading of this file: the studio builder's new *Page arrangement* control is
+ * a Filament `Radio`, and the suite reported `fi-radio-input fi-valid` as a rendered
+ * interactive class covered by nothing here. A radio's hit area IS its own box -- the label
+ * beside it is not part of the control -- so it takes both axes like the other square ones,
+ * and not the height-only treatment `.fi-input` gets for being full-width by layout. */
+.fi-radio-input,
 .fi-icon-btn,
 .fi-theme-switcher-btn,
 .fi-pagination-item-btn,

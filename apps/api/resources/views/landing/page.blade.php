@@ -109,7 +109,32 @@ border-radius:var(--radius-small,.25rem);text-decoration:none}
 .row{display:flex;gap:1rem;justify-content:space-between}
 footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-</style>
+{{-- QRPAGER-33: the arrangement's OWN rules, and only the chosen arrangement's.
+
+     NO INTERPOLATION ON THIS LINE AT ALL. The rules are literal text inside an `@if`, so
+     D5's `{{ }}`-never-`{!! !!}` rule has nothing to apply to and no value reaches the
+     `<style>` element from anywhere. An earlier shape echoed a string from the enum and this
+     comment argued about escaping it; both are gone.
+
+     ⚠ NO NEWLINE BEFORE `</style>`, WHICH IS LOAD-BEARING RATHER THAN FUSSY. For `classic`
+     the `@if` is false, so this must emit NOTHING -- a newline here would put one byte into
+     every page published before this feature existed and break `QRPAGER-33`'s invariant
+     clause 2 by exactly that byte. Measured at 4,626 against 4,625 on the attempt that left
+     a Blade comment on a line of its own, which is why the comment closes on the `@if`.
+
+     ⚠ AND THE COMMENT CLOSES ON THIS LINE rather than the one above, for the same reason:
+     a Blade comment on a line of its own leaves that line's newline in the output, which
+     was measured as the one-byte difference (4,626 against 4,625) on the first attempt.
+
+     ⚠ AND THE RULES ARE HERE RATHER THAN ON THE ENUM BECAUSE `composer guard` REFUSED THEM
+     THERE. Rule 11, locked in `PROJECT_INSTRUCTIONS.md §3`: *"a theme overrides TOKENS ONLY
+     -- no <style, no CSS rule"*, scanned over `app/` and `routes/`. A `match` returning CSS
+     from `LandingTemplate` tripped `[css-rule-set]` twice, correctly: the rule exists so CSS
+     lives in CSS. So the arrangement's rules sit beside the page's own, behind one `@if`.
+     Logical properties only, like everything else here, so RTL needs no second rule. --}}@if ($template === \App\Domain\Landing\LandingTemplate::Editorial)
+.band{background:var(--color-surface,#f5f5f5);padding-block:var(--space-section,3rem);padding-inline:1rem;margin-inline:-1rem}
+.wide{margin-inline:-1rem}
+@endif</style>
 </head>
 <body>
 {{--
@@ -129,108 +154,7 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 --}}
 <h1 @class(['sr' => $heroFirst])>{{ $title }}</h1>
 <main>
-@foreach ($blocks as $block)
-@php($f = $block['fields'])
-@switch($block['type'])
-
-@case('hero')
-<section>
-@if ($f['image'] !== null)
-<img src="{{ $asset($f['image']) }}" alt="{{ $f['heading'] }}" loading="lazy">
-@endif
-<h2>{{ $f['heading'] }}</h2>
-@if ($f['subheading'] !== null)<p>{{ $f['subheading'] }}</p>@endif
-@if ($f['cta_label'] !== null && $f['cta_url'] !== null)
-<a class="cta" href="{{ $f['cta_url'] }}" rel="noopener noreferrer nofollow">{{ $f['cta_label'] }}</a>
-@endif
-</section>
-@break
-
-@case('how_it_works')
-<section>
-<h2>{{ $f['heading'] }}</h2>
-<ol class="list">
-@foreach ($f['steps'] ?? [] as $step)
-<li class="card"><h3>{{ $step['title'] }}</h3><p>{{ $step['body'] }}</p></li>
-@endforeach
-</ol>
-</section>
-@break
-
-@case('menu_highlights')
-<section>
-<h2>{{ $f['heading'] }}</h2>
-<div class="grid">
-@foreach ($f['items'] ?? [] as $item)
-<article class="card">
-@if ($item['image'] !== null)
-<img src="{{ $asset($item['image']) }}" alt="{{ $item['name'] }}" loading="lazy">
-@endif
-<h3 class="row"><span>{{ $item['name'] }}</span>@if ($item['price'] !== null)<span>{{ $item['price'] }}</span>@endif</h3>
-@if ($item['description'] !== null)<p>{{ $item['description'] }}</p>@endif
-</article>
-@endforeach
-</div>
-</section>
-@break
-
-@case('gallery')
-<section>
-@if ($f['heading'] !== null)<h2>{{ $f['heading'] }}</h2>@endif
-<div class="grid">
-@foreach ($f['images'] ?? [] as $image)
-<figure style="margin:0">
-<img src="{{ $asset($image['image']) }}" alt="{{ $image['caption'] }}" loading="lazy">
-<figcaption>{{ $image['caption'] }}</figcaption>
-</figure>
-@endforeach
-</div>
-</section>
-@break
-
-@case('hours_location')
-<section>
-<h2>{{ $f['heading'] }}</h2>
-<address>{{ $f['address'] }}</address>
-<table class="list"><caption class="sr">Opening hours</caption><tbody>
-@foreach ($f['hours'] ?? [] as $day)
-<tr><th scope="row">{{ $day['day'] }}</th><td>{{ $day['hours'] }}</td></tr>
-@endforeach
-</tbody></table>
-@if ($map($f) !== null)
-{{-- A LINK, never an embed (§6.4). The three numbers build an href here, so nothing
-     third-party is invited onto a tenant's published page by filling in a form field. --}}
-<p><a href="{{ $map($f) }}" rel="noopener noreferrer nofollow">Open in maps</a></p>
-@endif
-</section>
-@break
-
-@case('contact')
-<section>
-<h2>{{ $f['heading'] }}</h2>
-<ul class="list">
-@if ($f['email'] !== null)<li><a href="mailto:{{ $f['email'] }}">{{ $f['email'] }}</a></li>@endif
-@if ($f['phone'] !== null)<li><a href="tel:{{ $f['phone'] }}">{{ $f['phone'] }}</a></li>@endif
-@foreach ($f['links'] ?? [] as $link)
-<li><a href="{{ $link['url'] }}" rel="noopener noreferrer nofollow">{{ $link['label'] }}</a></li>
-@endforeach
-</ul>
-</section>
-@break
-
-@case('footer')
-<section>
-<p>{{ $f['text'] }}</p>
-<ul class="list">
-@foreach ($f['links'] ?? [] as $link)
-<li><a href="{{ $link['url'] }}" rel="noopener noreferrer nofollow">{{ $link['label'] }}</a></li>
-@endforeach
-</ul>
-</section>
-@break
-
-@endswitch
-@endforeach
+@include('landing.templates.'.$template->value)
 </main>
 <footer>{{ $tenantName }}</footer>
 </body>

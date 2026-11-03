@@ -57,7 +57,12 @@ final class LandingSchema
                 .'`bin/landing-schema-check` fails when this file and the PHP source disagree.',
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => LandingDocument::KEYS,
+            // ⚠ `REQUIRED` AND NOT `KEYS`, AND THE TWO DIVERGED AT `QRPAGER-33`. `KEYS` is
+            // what a document ACCEPTS and now carries `template`; `REQUIRED` is what it must
+            // CARRY and deliberately does not. Generating `required` from the accept-list
+            // would make every document stored before that feature invalid on its next read,
+            // and `LandingDocument::fromStored()` re-validates on every read by design.
+            'required' => LandingDocument::REQUIRED,
             'properties' => [
                 'blocks' => [
                     'type' => 'array',
@@ -66,6 +71,24 @@ final class LandingSchema
                 ],
                 'theme' => self::theme(),
                 'seo' => self::seo(),
+                // ⚠ GENERATED FROM THE ENUM'S OWN CASES, never typed. `QRPAGER-33`. This is
+                // the published half of *"there is no second list"*: a consumer validating
+                // against this file and the builder enforcing `LandingTemplate` are reading
+                // one source, and `bin/landing-schema-check` byte-diffs the committed file
+                // against this encoder so a new case cannot ship without the contract moving.
+                //
+                // `default` is stated as well as `enum`, because the member is OPTIONAL and a
+                // consumer that reads the schema alone would otherwise have no way to know
+                // what an absent `template` means -- which is the one thing about it that is
+                // load-bearing for an existing tenant's page.
+                'template' => [
+                    'type' => 'string',
+                    'enum' => LandingTemplate::values(),
+                    'default' => LandingTemplate::DEFAULT->value,
+                    'description' => 'How the blocks are arranged. Absent means '
+                        .LandingTemplate::DEFAULT->value.', which is the arrangement every '
+                        .'page published before this member existed already used.',
+                ],
             ],
             // Not a JSON Schema keyword, and deliberately kept: a consumer that enforces
             // only the schema would miss the document-level media cap, which is a bound on

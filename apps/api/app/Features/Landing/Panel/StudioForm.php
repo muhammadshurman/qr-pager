@@ -8,10 +8,12 @@ use App\Domain\Landing\BlockSchema;
 use App\Domain\Landing\BlockType;
 use App\Domain\Landing\Field;
 use App\Domain\Landing\FieldKind;
+use App\Domain\Landing\LandingTemplate;
 use App\Domain\Landing\ThemeTokenKind;
 use App\Domain\Landing\ThemeTokens;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -49,13 +51,48 @@ use Filament\Schemas\Components\Section;
 final class StudioForm
 {
     /**
-     * The whole builder: blocks, theme and SEO.
+     * The whole builder: the arrangement, blocks, theme and SEO.
      *
      * @return list<Component>
      */
     public static function schema(MediaOptions $media): array
     {
         return [
+            /*
+             * ================================================================================
+             * THE ARRANGEMENT, FIRST, AND IT IS A DOCUMENT MEMBER — QRPAGER-33
+             * ================================================================================
+             *
+             * ⚠ IN THIS FORM AND NOT BESIDE IT, WHICH IS THE OPPOSITE OF `tenants.language`
+             * (`QRPAGER-30`), AND THE TWO ARE NOT INCONSISTENT. That one is a COLUMN, so a
+             * field inside this schema would have ridden into `toDocument()` as a member
+             * nothing validates. `template` IS a member of the landing document, so this form
+             * is exactly where it belongs: `toDocument()` carries it, `BlockSchema` validates
+             * it, and the publisher reads it off the document with no extra database read.
+             *
+             * ⚠ FIRST, because it changes what every block below it does. A control that
+             * reorders the whole page, placed under the blocks it reorders, reads as a detail.
+             *
+             * `Radio` and not `Select`: there are two options with sentence-long labels, and
+             * `§12`'s zero-technical-background bar is about the LABELS rather than the widget
+             * -- a reader has to see what the choice means without opening a menu. The options
+             * come from the enum's own `cases()`, and the label from `LandingTemplate::label()`
+             * in the panel's locale, so a third arrangement adds a button here with no edit.
+             */
+            Radio::make('template')
+                ->label('Page arrangement')
+                ->helperText('How your blocks are laid out. Publish again to apply a change to your live page.')
+                ->options(collect(LandingTemplate::cases())
+                    ->mapWithKeys(static fn (LandingTemplate $t): array => [
+                        $t->value => $t->label(app()->getLocale()),
+                    ])
+                    ->all())
+                // ⚠ NOT `->required()`. A document stored before this feature has no
+                // `template`, and `fromDocument()` fills the DEFAULT for it rather than
+                // leaving the control empty -- so `required` would be unreachable, and an
+                // unreachable validation rule reads as protection that is not there.
+                ->default(LandingTemplate::DEFAULT->value),
+
             Builder::make('blocks')
                 ->label('Blocks')
                 ->blocks(self::blocks($media))
@@ -259,6 +296,13 @@ final class StudioForm
         return [
             'blocks' => $blocks,
             'theme' => $theme,
+            // QRPAGER-33. A string, not the enum: `toDocument()` returns the shape
+            // `LandingDocument::fromInput()` validates, and validating it is that class's
+            // job rather than this form's. An unknown value from a tampered Livewire
+            // payload is refused there, by name, before any write.
+            'template' => is_string($state['template'] ?? null)
+                ? $state['template']
+                : LandingTemplate::DEFAULT->value,
             'seo' => [
                 'title' => self::blankToNull($state['seo_title'] ?? null),
                 'description' => self::blankToNull($state['seo_description'] ?? null),
@@ -275,7 +319,16 @@ final class StudioForm
      */
     public static function fromDocument(array $document): array
     {
-        $state = ['blocks' => []];
+        $state = [
+            'blocks' => [],
+            // ⚠ THE DEFAULT FOR A DOCUMENT THAT NAMES NONE, which is every document stored
+            // before QRPAGER-33. Without this the control would open empty for an existing
+            // tenant, and their first save would then have to choose -- so opening the
+            // builder would silently become a decision point about their live page.
+            'template' => is_string($document['template'] ?? null)
+                ? $document['template']
+                : LandingTemplate::DEFAULT->value,
+        ];
 
         foreach ((array) ($document['blocks'] ?? []) as $index => $block) {
             if (! is_array($block)) {

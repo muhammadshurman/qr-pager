@@ -38,8 +38,28 @@ namespace App\Domain\Landing;
  */
 final class LandingDocument
 {
-    /** The three top-level keys, and nothing else is accepted. */
-    public const KEYS = ['blocks', 'theme', 'seo'];
+    /**
+     * The top-level keys this document ACCEPTS, and nothing else.
+     *
+     * ⚠ `template` IS ON THIS LIST AND NOT ON `REQUIRED`, AND THE TWO LISTS EXIST BECAUSE OF
+     * THAT. `QRPAGER-33`. Before it there was one list doing both jobs -- the allow-list for
+     * `refuseUnknownKeys()` and the JSON schema's `required` -- which is fine while every
+     * accepted key is also mandatory and wrong the moment one is not.
+     *
+     * Every document stored before `QRPAGER-33` carries no `template` member, and there are
+     * live ones. Putting `template` on `required` would make all of them invalid on the next
+     * read -- and `fromStored()` deliberately re-validates, so "invalid" means a tenant's
+     * published page cannot be republished and their draft cannot be opened. That is the
+     * failure the split prevents, and `TemplateArrangementTest`'s byte-identity case is what
+     * proves it did.
+     */
+    public const KEYS = ['blocks', 'theme', 'seo', 'template'];
+
+    /**
+     * The top-level keys a document MUST carry, which is what the JSON schema's `required`
+     * is generated from. `template` is absent on purpose -- see `KEYS` above.
+     */
+    public const REQUIRED = ['blocks', 'theme', 'seo'];
 
     /**
      * @param  list<array{type: BlockType, fields: array<string, mixed>}>  $blocks
@@ -50,6 +70,7 @@ final class LandingDocument
         public readonly array $blocks,
         public readonly array $theme,
         public readonly array $seo,
+        public readonly LandingTemplate $template = LandingTemplate::DEFAULT,
     ) {}
 
     /** The document a tenant starts with: no blocks, no theme overrides, no SEO. */
@@ -72,8 +93,9 @@ final class LandingDocument
         $blocks = self::blocks($input['blocks'] ?? [], $media);
         $theme = self::theme($input['theme'] ?? []);
         $seo = self::seo($input['seo'] ?? [], $media);
+        $template = self::template($input['template'] ?? null);
 
-        $document = new self($blocks, $theme, $seo);
+        $document = new self($blocks, $theme, $seo, $template);
 
         // ⚠ THE 256 KB BOUND IS CHECKED HERE, AND IT WAS NOT. §6.5 says "every bound is
         // a validator rule with a test, not a comment", and this one was a column CHECK
@@ -152,6 +174,7 @@ final class LandingDocument
             ),
             'theme' => $this->theme,
             'seo' => $this->seo,
+            'template' => $this->template->value,
         ];
     }
 
@@ -535,6 +558,45 @@ final class LandingDocument
         }
 
         return $items;
+    }
+
+    /**
+     * Validate the arrangement, or refuse it by name. `QRPAGER-33`.
+     *
+     * ⚠ **ABSENT IS VALID AND MEANS `classic`; PRESENT-AND-UNKNOWN IS A REFUSAL.** Those are
+     * two different answers to two different questions and the distinction is the whole of
+     * invariant clause 2 and clause 4. A document written before this feature has no
+     * `template` member and must keep publishing exactly as it did; a document naming
+     * `brutalist` is a tenant (or a client) asking for something that does not exist, and
+     * `§12.1` says a refusal names the field.
+     *
+     * ⚠ **AND IT IS REFUSED HERE, BEFORE ANY WRITE, NOT BY THE STUDIO'S FIELD BEING A FIELD.**
+     * `fromStored()` routes through `fromInput()`, so this runs on every read as well as every
+     * save -- which is what makes the clause *"exactly these names, enforced at the schema
+     * boundary"* true of the stored column and not only of the form.
+     */
+    private static function template(mixed $input): LandingTemplate
+    {
+        if ($input === null) {
+            return LandingTemplate::DEFAULT;
+        }
+
+        $template = is_string($input) ? LandingTemplate::tryFrom($input) : null;
+
+        if ($template === null) {
+            /*
+             * The reason names the SET and not the value that was sent. `§4.2`: a refusal may
+             * say what to do, never what exists -- and echoing an unknown value back into a
+             * message is how a validator becomes a reflection point. The set is this
+             * application's own published contract, so naming it tells a tenant what to do.
+             */
+            throw new LandingDocumentInvalid(
+                'template',
+                'must be one of '.implode(', ', LandingTemplate::values()),
+            );
+        }
+
+        return $template;
     }
 
     /**

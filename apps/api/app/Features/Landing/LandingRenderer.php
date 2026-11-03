@@ -53,6 +53,15 @@ final class LandingRenderer
             // template: exactly one h1 for every possible document (§11 QA review).
             'heroFirst' => ($document->toArray()['blocks'][0]['type'] ?? null) === 'hero',
             'themeStyle' => ThemeStylesheet::declarations($document->theme),
+
+            // QRPAGER-33. The arrangement, from the document rather than from the tenant --
+            // which is why this feature adds NO database read anywhere: `template` is a
+            // member of the document the publisher already holds, and this class's promise
+            // of no database and no tenant context is untouched. `page.blade.php` includes
+            // `landing.templates.{$template->value}`, so the set of arrangements is the set
+            // of enum cases and a name that is not one cannot reach a view path -- the value
+            // arrived through `LandingTemplate` and nothing else can construct one.
+            'template' => $document->template,
             'tenantName' => $tenantName,
             'title' => $seo['title'] ?? $tenantName,
             'description' => $seo['description'],
