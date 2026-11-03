@@ -213,10 +213,7 @@ interface ContrastTable {
 const table = JSON.parse(read('packages/tokens/generated/contrast.json')) as ContrastTable
 const protectedPrefix = '--ready-'
 
-const RULES = [
-  ...rulesOf(read('packages/ui/src/styles/kit.css')),
-  ...rulesOf(read('packages/ui/src/styles/templates.css')),
-]
+const RULES = [...rulesOf(read('packages/ui/src/styles/kit.css'))]
 
 // -------------------------------------------------------------- the sample page
 
@@ -238,11 +235,22 @@ const BADGE_LABELS = {
 describe('the rendered pairings are derived from the stylesheets', () => {
   it('parses a non-empty rule set from BOTH stylesheets, so nothing is vacuous', () => {
     const kit = rulesOf(read('packages/ui/src/styles/kit.css'))
-    const templates = rulesOf(read('packages/ui/src/styles/templates.css'))
-    // Both halves, separately: a parser change that stops seeing one file would otherwise
-    // leave the combined count plausible.
+    // ⚠ ONE STYLESHEET SINCE R-240, not two. `styles/templates.css` is deleted: it was the
+    // other half of the orphan QRPAGER-33 retired, and Muhammad's ruling of 2026-11-04
+    // removed it -- "keeping dead CSS because a test counts it is the test deciding the code".
+    // The second half of this assertion went with its subject.
     expect(kit.length, 'no colour rule parsed from kit.css').toBeGreaterThanOrEqual(10)
-    expect(templates.length, 'no colour rule parsed from templates.css').toBeGreaterThanOrEqual(10)
+    /*
+     * ⚠ STILL EXACTLY 42, AND IT DID NOT MOVE -- which was worth measuring rather than
+     * assuming. `R-240` predicted that deleting the stylesheet would "regenerate
+     * contrast.json and move this file's exact pair count", and BOTH halves of that were
+     * wrong: `buildContrastJson()` derives its rows from `contrastPairs()` in
+     * `packages/tokens/src/source.ts` -- FOREGROUND_ROLES x BACKGROUND_ROLES plus FILL_PAIRS,
+     * which are TOKEN ROLES -- and reads no stylesheet at all. So the table is a function of
+     * the token source and is indifferent to which CSS files exist.
+     *
+     * Kept EXACT, per the ruling: a range here would stop the number being evidence.
+     */
     expect(table.pairs.length).toBe(42)
   })
 
@@ -258,13 +266,12 @@ describe('the rendered pairings are derived from the stylesheets', () => {
    * derivation below still runs over the KIT, and the rule-set case above still parses both
    * stylesheets. What no longer happens is a walk of a rendered template.
    *
-   * ⚠ AND `src/styles/templates.css` IS STILL HERE, which is the other half of the same
-   * orphan and is DELIBERATELY NOT REMOVED IN THIS CHANGE. Nothing imports it -- not
-   * `kit.css`, not any app, and its `qr-lp__` classes reach no built bundle (measured) --
-   * but removing it regenerates `generated/contrast.json`, moves this file's 42-pair count,
-   * and edits two tooling tests that read it by name. The ruling named
-   * `packages/ui/src/templates`; this is a sibling decision and `R-240` carries it with the
-   * cost, so it is Muhammad's to take rather than mine to fold in.
+   * ⚠ AND `src/styles/templates.css` IS GONE TOO, ruled by Muhammad on 2026-11-04 (`R-240`,
+   * recorded in `§1`): *"It is the other half of the same orphan and the same ruling retires
+   * it ... keeping dead CSS because a test counts it is the test deciding the code."* What
+   * `R-240` predicted it would cost was measured and was wrong: `contrast.json` did not
+   * regenerate and the 42 did not move, because both are derived from the token source and
+   * not from any stylesheet.
    */
 
   it('has every pairing the KIT components render in the table too', () => {

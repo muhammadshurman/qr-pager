@@ -199,7 +199,8 @@ describe('.gitignore directory patterns', () => {
      *
      * So the walker proves itself against something the REPOSITORY guarantees: a tracked
      * nested directory. `packages/ui/src/styles` is one and it is not optional -- `kit.css`
-     * and `templates.css` live in it and four other tests read them. If the walker cannot
+     * lives in it and other tests read it (`templates.css` did too, until `R-240` deleted it
+     * on 2026-11-04). If the walker cannot
      * descend to it, it cannot have examined anything else either, which is the property
      * the floor was reaching for.
      *

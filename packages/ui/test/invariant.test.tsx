@@ -101,7 +101,8 @@ describe('clause 1 of the invariant -- no hard-coded values in any component', (
       // `QRPAGER-33` retired `packages/ui/src/templates` on Muhammad's ruling, so clause 1 of
       // the invariant now covers the kit alone. `R-175` and `R-179` are RESTATED with what
       // remains rather than closed: the vocabulary and pair checks they are about still run
-      // over `kit.css` and `styles/templates.css`, and the narrowing is that no TSX template
+      // over `kit.css` -- `styles/templates.css` went too, at R-240 -- and the narrowing is
+      // that no TSX template
       // source is swept here any more -- because there is none.
     ]
 
@@ -131,7 +132,8 @@ describe('the focus ring is never removed -- the half a browser cannot measure',
     //
     // The same shape PlatformPanelAccessibilityTest already asserts for the admin panel:
     // "no `outline: none` ... in this task's own markup".
-    for (const file of ['packages/ui/src/styles/kit.css', 'packages/ui/src/styles/templates.css']) {
+    // ⚠ ONE STYLESHEET SINCE R-240: `styles/templates.css` is deleted (Muhammad, 2026-11-04).
+    for (const file of ['packages/ui/src/styles/kit.css']) {
       const css = read(file).replace(/\/\*[\s\S]*?\*\//g, ' ')
       expect(css, `${file} suppresses an outline`).not.toMatch(/outline\s*:\s*(?:none|0)\b/i)
       expect(css, `${file} suppresses an outline via outline-style`).not.toMatch(
@@ -183,10 +185,9 @@ describe('the focus ring is never removed -- the half a browser cannot measure',
  */
 describe('the pair derivation cannot miss a component', () => {
   const kitCss = read('packages/ui/src/styles/kit.css').replace(/\/\*[\s\S]*?\*\//g, ' ')
-  const templatesCss = read('packages/ui/src/styles/templates.css').replace(
-    /\/\*[\s\S]*?\*\//g,
-    ' ',
-  )
+  // ⚠ `templatesCss` WAS HERE AND ITS FILE IS DELETED — R-240, Muhammad 2026-11-04. The
+  // vocabulary sweep below now covers `kit.css` alone, which is every stylesheet that
+  // remains; `R-175` and `R-179` are narrowed to that in `§5` rather than closed.
   const fixture = read('browser/fixtures/kit.html')
 
   it('has every kit class in the browser fixture, so the walk sees every component', () => {
@@ -240,10 +241,7 @@ describe('the pair derivation cannot miss a component', () => {
       return found
     }
 
-    for (const [name, css] of [
-      ['kit.css', kitCss],
-      ['templates.css', templatesCss],
-    ] as const) {
+    for (const [name, css] of [['kit.css', kitCss]] as const) {
       for (const token of used(css, 'color')) {
         if (token === 'transparent' || protectedNames.has(token)) continue
         expect(
@@ -595,7 +593,8 @@ describe('clause 2 -- the order-ready pair is UNREACHABLE from a tenant theme', 
  * `style="…margin-left…"` appears in no rendered markup — but these components carry
  * almost no inline style by design (`§12`'s lint rule forbids a value there), so the
  * assertion was watching the one place the property could not be. Every length in this kit
- * is declared in `kit.css` or `templates.css`, and neither was scanned.
+ * is declared in `kit.css` (and, until R-240 deleted it, `templates.css`), and neither was
+ * scanned.
  *
  * `§6` trap 2 is the clause: *"RTL is not `direction: rtl`. Icons, progress, timers and
  * anything with directional meaning mirror; logos and numbers do not. Arabic is a launch
@@ -618,16 +617,13 @@ describe('RTL is logical properties, not a second stylesheet', () => {
     [/\bborder-(?:top|bottom)-(?:left|right)-radius\s*:/g, 'border-start-start-radius etc.'],
   ]
 
-  const SHEETS = [
-    'packages/ui/src/styles/kit.css',
-    'packages/ui/src/styles/templates.css',
-    'packages/tokens/generated/tokens.css',
-  ]
+  // `styles/templates.css` was the second entry here until R-240 deleted it (2026-11-04).
+  const SHEETS = ['packages/ui/src/styles/kit.css', 'packages/tokens/generated/tokens.css']
 
   it('declares no physical inline-axis property in any stylesheet this task ships', () => {
     const offenders: string[] = []
     for (const sheet of SHEETS) {
-      // Comments stripped FIRST. `templates.css` line 295 documents why `margin-inline`
+      // Comments stripped FIRST. The retired `templates.css` documented why `margin-inline`
       // is used *"and `margin-left: auto` would not"* — a check that read its own
       // documentation as evidence is the mistake this task made three times already.
       const css = read(sheet).replace(/\/\*[\s\S]*?\*\//g, ' ')
@@ -647,10 +643,7 @@ describe('RTL is logical properties, not a second stylesheet', () => {
   it('actually uses the logical spellings, so the check above is not passing on an empty axis', () => {
     // The other half: a kit that declared no inline-axis length at all would satisfy the
     // assertion above for the uninteresting reason. Both stylesheets lay out on that axis.
-    for (const sheet of [
-      'packages/ui/src/styles/kit.css',
-      'packages/ui/src/styles/templates.css',
-    ]) {
+    for (const sheet of ['packages/ui/src/styles/kit.css']) {
       const css = read(sheet).replace(/\/\*[\s\S]*?\*\//g, ' ')
       const logical = [
         ...css.matchAll(/\b(?:margin|padding|border|inset)-inline(?:-(?:start|end))?\s*:/g),

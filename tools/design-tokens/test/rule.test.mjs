@@ -572,11 +572,10 @@ describe('the scanner’s exemptions', () => {
   })
 
   it('exempts NOTHING it should scan, which is the half that keeps the rule honest', () => {
-    for (const path of [
-      'packages/ui/src/styles/kit.css',
-      'packages/ui/src/styles/templates.css',
-      'apps/web/app/globals.css',
-    ]) {
+    // `packages/ui/src/styles/templates.css` was the second entry here and is DELETED --
+    // `R-240`, Muhammad 2026-11-04, the other half of the orphan QRPAGER-33 retired. Its
+    // sibling note below records the identical shape for `apps/site/app/globals.css`.
+    for (const path of ['packages/ui/src/styles/kit.css', 'apps/web/app/globals.css']) {
       expect(isExempt(join(REPO, path)), `${path} must be scanned`).toBe(false)
     }
   })
@@ -594,10 +593,11 @@ describe('the scanner’s exemptions', () => {
    */
   it('walks the real tree and finds every stylesheet this task authors', () => {
     const found = cssFiles(REPO).map((p) => p.replace(`${REPO}/`, ''))
-    for (const expected of [
-      'packages/ui/src/styles/kit.css',
-      'packages/ui/src/styles/templates.css',
-    ]) {
+    // ⚠ ONE KIT STYLESHEET SINCE `R-240`, and the note above already explains why a
+    // hard-coded list here goes stale: `templates.css` is the SECOND entry to leave it,
+    // after `apps/site/app/globals.css`. The floor below is what stops the shrinking list
+    // becoming an empty walk nobody notices.
+    for (const expected of ['packages/ui/src/styles/kit.css']) {
       expect(found, `${expected} was not found by the walk`).toContain(expected)
     }
 

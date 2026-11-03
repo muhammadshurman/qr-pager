@@ -162,12 +162,18 @@ describe('no stylesheet in the workspace reaches a third-party origin', () => {
     // The property from the other side, over every stylesheet rather than the font file
     // alone -- because the way this clause actually breaks is a `<link>` or an `@import`
     // added to a component stylesheet, not an edit to fonts.css.
+    // ⚠ `packages/ui/src/styles/templates.css` WAS THE FOURTH ENTRY AND IS DELETED -- `R-240`,
+    // Muhammad 2026-11-04. It is the fifth hand-written stylesheet list in this repository to
+    // lose that file, which is the argument `rule.test.mjs` already makes against such lists
+    // and the reason the floor assertion there matters more than the names.
     const stylesheets = [
       'packages/tokens/generated/tokens.css',
       'packages/tokens/fonts/fonts.css',
       'packages/ui/src/styles/kit.css',
-      'packages/ui/src/styles/templates.css',
     ]
+
+    // A floor, so a shrinking list cannot become an empty loop that passes.
+    expect(stylesheets.length).toBeGreaterThanOrEqual(3)
     for (const sheet of stylesheets) {
       const css = readFileSync(join(REPO, sheet), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ')
       expect(css, `${sheet} fetches from a remote origin`).not.toMatch(
