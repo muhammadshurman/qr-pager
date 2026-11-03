@@ -50,10 +50,28 @@ $list = json_decode((string) file_get_contents($listPath), true, 512, JSON_THROW
 
 /*
  * THE FAILURE BLOCKS. Pest prints one "FAILED  <Class> > <description>" line per failing
- * case, and the message and frame follow it. The DESCRIPTION IS TRUNCATED with an ellipsis
- * when it is long, which is why nothing here matches on it -- the class is not truncated,
- * and the §5 rows name their flakes by file anyway. A block runs from its FAILED line to
- * the next one, or to the summary.
+ * case, and the message and frame follow it. A block runs from its FAILED line to the next
+ * one, or to the summary.
+ *
+ * ⚠ **THIS COMMENT CLAIMED "THE CLASS IS NOT TRUNCATED" AND THAT IS FALSE. MEASURED
+ * 2026-11-03, QRPAGER-30.** Pest truncates the WHOLE LINE to the terminal width, so what it
+ * cuts depends on how much room the exception-type column takes. One run, two failures in the
+ * SAME file:
+ *
+ *     FAILED  Tests\Feature\Notifications\WorkOutboxComma…      AssertionFailedError
+ *     FAILED  Tests\Feature\Notifications\WorkOutboxCommandTest…  QueryException
+ *
+ * `AssertionFailedError` is six characters longer than `QueryException`, so the first line
+ * lost the class name and the second kept it. `WorkOutboxCommandTest` is on `R-172`'s
+ * `match.tests`, so the SAME family was reported as an ATTRIBUTED red and as a REAL red in
+ * one run, decided by the length of an exception class name.
+ *
+ * `R-172`'s own `rate` field already records the sibling of this -- *"was reported as a REAL
+ * red because this matcher is a name list and that name was not on it"* -- which was a
+ * MISSING name. This is a PRESENT name that arrived cut short, and it fails in the same
+ * direction: a real-red verdict nobody can act on.
+ *
+ * `truncatedName()` below is the fix, and it is deliberately narrow: see its own note.
  */
 $lines = explode("\n", $text);
 $blocks = [];
@@ -99,6 +117,41 @@ $shortName = static function (string $class): string {
     return (string) end($parts);
 };
 
+/**
+ * Did Pest cut this class name short, and if so what is left of it?
+ *
+ * Returns the surviving prefix when the name ends in Pest's ellipsis, and `null` otherwise.
+ *
+ * ⚠ **NARROW ON PURPOSE, THREE WAYS, because a loose matcher here would swallow a real red
+ * and that is the one thing this script must never do.**
+ *
+ *   1. It applies ONLY to a name that actually ends in the ellipsis. An untruncated name is
+ *      still compared with `in_array`, exactly as before, so nothing that works today
+ *      changes behaviour.
+ *   2. The prefix must be at least 8 characters. `Test…` must not match every listed name
+ *      beginning with `Test`.
+ *   3. It must be a prefix of EXACTLY ONE listed name. If a truncation is ambiguous between
+ *      two named families, it stays a real red -- an attribution nobody can place is worse
+ *      than an unexplained failure, which is `known-flakes.json`'s own first rule.
+ *
+ * The residual risk, stated rather than left to be found: a FUTURE test whose name extends a
+ * listed one (`WorkOutboxCommandTestExtra`) could truncate into the listed prefix and be
+ * attributed to that family. It is narrower than the defect it replaces, and
+ * `KnownFlakeListTest` pins the first two guards against fixtures lifted out of the run that
+ * found this. The third has no live instance -- no two names on any `match.tests` list share
+ * an eight-character prefix today -- so that case says so rather than asserting it weakly.
+ */
+$truncatedPrefix = static function (string $short): ?string {
+    // The character Pest uses is U+2026, not three dots.
+    if (! str_ends_with($short, "\u{2026}")) {
+        return null;
+    }
+
+    $prefix = rtrim(mb_substr($short, 0, -1));
+
+    return mb_strlen($prefix) >= 8 ? $prefix : null;
+};
+
 $attributed = [];
 $real = [];
 
@@ -113,6 +166,27 @@ foreach ($blocks as $block) {
         if (in_array($short, $match['tests'] ?? [], true)) {
             $hit = $flake;
             break;
+        }
+
+        /*
+         * By a name Pest cut short. See `$truncatedPrefix`'s note for why this is three
+         * conditions and not one, and the block-parser comment above for the measurement
+         * that made it necessary.
+         */
+        $prefix = $truncatedPrefix($short);
+
+        if ($prefix !== null) {
+            /** @var list<string> $named */
+            $named = $match['tests'] ?? [];
+            $candidates = array_values(array_filter(
+                $named,
+                static fn (string $name): bool => str_starts_with($name, $prefix),
+            ));
+
+            if (count($candidates) === 1) {
+                $hit = $flake;
+                break;
+            }
         }
 
         /*

@@ -276,6 +276,59 @@ it('attributes R-172 in the FOURTH file it struck, which a name list had to be t
         ->and($code)->toBe(2, $output);
 });
 
+it('attributes a red whose CLASS NAME Pest cut short, which it called a real red', function (): void {
+    /*
+     * ⚠ **MEASURED 2026-11-03 AT `773174c`, `QRPAGER-30`, AND THE SAME FILE WAS CLASSIFIED
+     * BOTH WAYS IN ONE RUN.** `bin/classify-reds`' block-parser comment asserted *"the class
+     * is not truncated"*. It is: Pest truncates the whole LINE to the terminal width, so what
+     * gets cut depends on how much room the exception-type column takes.
+     *
+     *     FAILED  Tests\Feature\Notifications\WorkOutboxComma…      AssertionFailedError
+     *     FAILED  Tests\Feature\Notifications\WorkOutboxCommandTest…  QueryException
+     *
+     * `AssertionFailedError` is six characters longer than `QueryException`, so one line lost
+     * the class name and the other kept it — and `WorkOutboxCommandTest` is on `R-172`'s
+     * `match.tests`. The verdict was *"REAL RED. 1 of 3 failure(s) are on no row. This is the
+     * gate failing. Do not re-run."* on a family that has an owner, a date and a measured
+     * rate.
+     *
+     * The fixture is that exact block, lifted out of the run's own log.
+     */
+    [$code, $output] = classify('r172-truncated-class.txt');
+
+    expect($output)->toContain('ATTRIBUTED RED')
+        ->and($output)->toContain('R-172')
+        ->and($output)->toContain('Task 12')
+        ->and($output)->toMatch('/REAL REDS[^\n]*: 0/')
+        ->and($code)->toBe(2, $output);
+});
+
+it('still calls a truncation too short to place a REAL red, which is the control', function (): void {
+    /*
+     * The guard on the fix, and the reason it is not simply "treat a cut name as a match".
+     * `Work…` is four characters; it is a prefix of `WorkOutboxCommandTest` and would also be
+     * a prefix of any future `WorkQueueTest`. A matcher that accepted it would attribute an
+     * unrelated red to `R-172`, which is the one thing `known-flakes.json`'s first rule
+     * forbids: *"a red that is merely unexplained does NOT belong here."*
+     *
+     * Eight characters is the floor. This fixture carries a deliberately long exception class
+     * name so the truncation lands early, which is the mechanism rather than a contrivance.
+     *
+     * ⚠ **THE THIRD GUARD — an ambiguous prefix matching TWO named families — IS NOT DRIVEN,
+     * AND IS NOT CLAIMED TO BE.** No two names on any `match.tests` list share an eight-
+     * character prefix today (`OutboxWorkerTest`, `OutboxLeaseTest`, `WorkOutboxCommandTest`,
+     * `OutboxCrashTest` share at most `Outbox`), so the branch has no live instance and a
+     * fixture for it would have to invent a flake list this test does not read. It is defence
+     * in depth against a future name, stated here rather than asserted weakly — `R-100`'s
+     * precedent for saying so instead.
+     */
+    [$code, $output] = classify('r172-truncated-too-short.txt');
+
+    expect($output)->toContain('REAL RED')
+        ->and($output)->toMatch('/ATTRIBUTED REDS[^\n]*: 0/')
+        ->and($code)->toBe(1, $output);
+});
+
 it('keeps every named identity on the matcher, so the two lists cannot drift apart', function (): void {
     /*
      * ⚠ THE MECHANISM AGAINST THE RECURRENCE, AND `§7` IS WHY IT EXISTS RATHER THAN A SHARPER

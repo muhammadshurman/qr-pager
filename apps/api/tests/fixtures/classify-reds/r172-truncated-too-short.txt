@@ -1,0 +1,5 @@
+   FAILED  Tests\Feature\Notifications\Work…  SomeVeryLongExceptionClassName   
+  Output does not contain "claimed 2".
+
+  at tests/Feature/Notifications/WorkOutboxCommandTest.php:107
+  ➜ 107▕         ->assertExitCode(0);
