@@ -185,6 +185,33 @@ export function checkTagReality(plan) {
 
   const latest = tags[tags.length - 1]
 
+  /**
+   * ⚠ **A COMMIT CANNOT NAME THE TAG THAT POINTS AT IT, AND DEMANDING SO MADE THIS CHECK FAIL
+   * ON EVERY TAG-REF CI RUN.**
+   *
+   * The sequence is forced: the gates are measured, the commit is pushed, CI goes green, THEN
+   * the tag is applied to that commit. `§0` can only name the tag in a LATER commit — so at the
+   * tagged commit itself the cell cannot name it, and there is no ordering that fixes it.
+   * Naming it first would name a tag that does not exist, which is this function's other half.
+   *
+   * CI runs on tag pushes as well as branch pushes, so `refs/tags/task-11a` built `e2e209b` and
+   * `records(b2)` reported *"the latest tag is task-11a and §0's Last completed cell does not
+   * name it"* — the one job to fail in that run, on a condition no commit could have satisfied.
+   * Measured 2026-11-03; the same thing was true of `task-10` and `task-11` and went unnoticed
+   * because nobody read their tag-ref runs.
+   *
+   * So the demand is skipped when **HEAD IS the latest tag's own target**, and only then. One
+   * commit later it bites again, which is the case that matters: `§0` still naming the previous
+   * task after a new tag landed is the drift this check was written for, and it has caught it
+   * twice in two days.
+   */
+  const latestTarget = git('rev-list', '-n', '1', `refs/tags/${latest}`)
+  const head = git('rev-parse', 'HEAD')
+
+  if (latestTarget !== '' && latestTarget === head) {
+    return
+  }
+
   if (!named.includes(latest)) {
     fail(
       'records(b2)',
@@ -817,6 +844,55 @@ const SELF_TESTS = [
       checkStatedHead(plan)
 
       return failures.length === before
+    },
+  },
+  {
+    what: 'a §0 that does not name the latest tag, when HEAD is PAST it',
+    run: () => {
+      /*
+       * (b2)'s own subject, and it had no self-test until Task 11a — which is how its
+       * tag-at-HEAD blind spot survived three tags. The drift it exists for: `§0` still
+       * naming the previous task after a new tag landed.
+       */
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Last completed\*\*[^\n]*$/m,
+        '| **Last completed** | `task-0` and nothing since. |',
+      )
+      const before = failures.length
+      checkTagReality(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    what: 'a §0 that cannot name a tag pointing AT HEAD is NOT flagged (the positive control)',
+    run: () => {
+      /*
+       * ⚠ THE CASE THAT FAILED EVERY TAG-REF CI RUN. The sequence is forced — measure, push,
+       * CI green, THEN tag — so at the tagged commit `§0` cannot yet name its own tag, and no
+       * ordering fixes it. Naming it earlier would name a tag that does not exist, which is
+       * this check's other half.
+       *
+       * The control is driven by TAGGING HEAD inside the test and deleting it afterwards, so
+       * it measures the real `git` path rather than a stub of it. The tag name sorts last
+       * under the numeric comparison `checkTagReality` uses, which is what makes it "latest".
+       */
+      const probe = 'task-zzz-selftest'
+
+      try {
+        git('tag', '-f', probe, 'HEAD')
+
+        const plan = readFileSync(PLAN, 'utf8').replace(
+          /^\| \*\*Last completed\*\*[^\n]*$/m,
+          '| **Last completed** | `task-0` and nothing since. |',
+        )
+        const before = failures.length
+        checkTagReality(plan)
+
+        return failures.length === before
+      } finally {
+        gitQuiet('tag', '-d', probe)
+      }
     },
   },
   {
