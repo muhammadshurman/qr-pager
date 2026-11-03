@@ -160,6 +160,32 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
     // time. Left as it is, because the mechanism belongs to whoever owns this guard and 10b
     // came to build a board; recorded in `§4a`'s 10b notes rather than changed in passing.
     //
+    // ⚠⚠ **A GENUINELY NEW CALLER AT `R-233`, 2026-11-04 — THE FIRST SINCE THIS LIST WAS
+    // WRITTEN, AND THIS GUARD'S QUESTION ANSWERED FOR IT.**
+    // `app/Platform/Tenancy/UserAttachment.php:106`.
+    //
+    // **WHERE ITS USER ID COMES FROM**, which is what the failure message demands before the
+    // list is touched: from `users.id`, read by an EXACT-MATCH lookup on a lower-cased email
+    // address two statements earlier in the same method —
+    // `select id, is_platform_admin from users where email = ?`. It is never a request
+    // parameter, never a path segment and never a tenant-scoped row: `users` is global and
+    // RLS-free (`§2.4`), and the address arrives validated by `StoreMemberRequest` (members
+    // surface) or by the provisioning form.
+    //
+    // **WHY IT CALLS THE PATH AT ALL.** `§4 › Security` requires that an address already
+    // holding ANY membership be refused rather than attached, and that question cannot be
+    // answered inside one tenant's scope. The path `§4 › Tenancy` names — *"a user's own
+    // memberships"* — is the one that answers it, and `TenantProvisioning` had already been
+    // calling it for the same rule since Task 6 with the same reasoning recorded in its
+    // docblock. `R-233` moved that rule into one class with two callers, so this list GAINS
+    // one entry and `TenantProvisioning`'s own call disappears from it: the count of
+    // cross-tenant call sites is unchanged at nine, and what changed is which file holds it.
+    //
+    // **WHAT IT DOES WITH THE RESULT.** `=== []` and nothing else. The function returns
+    // another user's tenant ids, slugs and names; this caller reads only whether the list is
+    // empty, returns an enum case, and `MemberConsentTest` asserts the refusal body names no
+    // tenant.
+    //
     // ⚠ **BOTH `AuthController` LINES MOVED A THIRD TIME AT TASK 10e AND NO CALLER CHANGED
     // AGAIN: `:102` -> `:103` and `:241` -> `:268`.** READ BEFORE UPDATING, which is what this
     // guard's failure message asks for, and the answers are unchanged:
@@ -189,6 +215,7 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
         'app/Platform/Auth/Http/AuthController.php:103',
         'app/Platform/Auth/Http/AuthController.php:268',
         'app/Platform/Auth/RequestPrincipal.php:85',
+        'app/Platform/Tenancy/UserAttachment.php:106',
     ], 'the set of callers of the named cross-tenant membership path changed -- read the '
        .'new one and say where its user id comes from before updating this list');
 });

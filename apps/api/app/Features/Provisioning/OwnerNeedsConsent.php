@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Provisioning;
 
+use App\Domain\Auth\AttachmentRefusal;
 use RuntimeException;
 
 /**
@@ -28,9 +29,16 @@ use RuntimeException;
  */
 final class OwnerNeedsConsent extends RuntimeException
 {
-    public const ALREADY_A_MEMBER = 'already_a_member';
+    /*
+     * ⚠ DERIVED FROM THE ENUM SINCE `R-233`, NOT TYPED. These were two string literals, and
+     * `App\Domain\Auth\AttachmentRefusal` is now the vocabulary both surfaces share -- so a
+     * third case, or a renamed value, cannot leave the panel's reason handling behind. The
+     * constants stay because the panel and its tests read them by name; what changed is that
+     * they can no longer disagree with the rule.
+     */
+    public const ALREADY_A_MEMBER = AttachmentRefusal::AlreadyAMember->value;
 
-    public const PLATFORM_ADMIN = 'platform_admin';
+    public const PLATFORM_ADMIN = AttachmentRefusal::PlatformAdmin->value;
 
     public function __construct(public readonly string $reason)
     {

@@ -9,6 +9,7 @@ use App\Domain\Provisioning\ProvisioningStatus;
 use App\Domain\Tenancy\TenantRole;
 use App\Domain\Tenancy\TenantStatus;
 use App\Platform\Database\DriverError;
+use App\Platform\Tenancy\UserAttachment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -99,22 +100,21 @@ final class TenantProvisioning
      */
     public function refusalForOwnerEmail(string $email): ?string
     {
-        $existing = DB::selectOne(
-            'select id, is_platform_admin from users where email = ?',
-            [Str::lower($email)],
-        );
-
-        if ($existing === null) {
-            return null;
-        }
-
-        if ((bool) $existing->is_platform_admin) {
-            return OwnerNeedsConsent::PLATFORM_ADMIN;
-        }
-
-        return DB::select('select tenant_id from public.user_memberships(?)', [(string) $existing->id]) === []
-            ? null
-            : OwnerNeedsConsent::ALREADY_A_MEMBER;
+        /*
+         * ⚠ DELEGATED SINCE `R-233`, AND THE DELEGATION IS THE FIX RATHER THAN A TIDY-UP.
+         * This method WAS the rule -- the only implementation of `§4 › Security`'s consent
+         * clause anywhere -- and `MemberDirectory::add()` implemented none of it, which is
+         * what `R-233` measured over HTTP. A rule that one of its two surfaces does not call
+         * is not a rule; so it moved to `App\Platform\Auth\UserAttachment`, which both
+         * features reach, and this is now one of its two callers.
+         *
+         * The behaviour here is unchanged by construction: the same two cases in the same
+         * order, the same `null` for an address with no account, and the same strings --
+         * `OwnerNeedsConsent`'s constants ARE the enum's values, so the panel's reason
+         * handling is untouched. `TenantProvisioningTest` is what proves that rather than
+         * this paragraph.
+         */
+        return app(UserAttachment::class)->refusalFor($email)?->value;
     }
 
     /**

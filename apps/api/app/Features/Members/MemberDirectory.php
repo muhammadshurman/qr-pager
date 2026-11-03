@@ -7,6 +7,7 @@ namespace App\Features\Members;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Tenancy\MemberActionDenied;
 use App\Domain\Tenancy\TenantRole;
+use App\Platform\Tenancy\UserAttachment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -40,6 +41,13 @@ use Illuminate\Support\Str;
  */
 final class MemberDirectory
 {
+    /**
+     * `R-233`'s consent rule, injected rather than resolved, so a test can drive the refusal
+     * without reaching for the container -- and so deptrac sees one Features -> Platform edge
+     * rather than a facade call it cannot type.
+     */
+    public function __construct(private readonly UserAttachment $attachment) {}
+
     /**
      * Everyone in this tenant.
      *
@@ -116,6 +124,41 @@ final class MemberDirectory
          * the email lookup below is on the global `users` table and needs none.
          */
         withTenant($tenantId, fn () => $this->requireSeniority($role, $actorUserId));
+
+        /*
+         * ================================================================================
+         * ⚠ CONSENT, AND THIS IS `R-233`. IT RUNS BEFORE ANY WRITE AND ANSWERS AS 404.
+         * ================================================================================
+         *
+         * `§4 › Security`: *"an address that already belongs to an account holding any
+         * membership, or to a platform admin, is refused outright rather than invited — so
+         * the weaker rule is never the one in force. Both refusals answer with one
+         * message."* This method implemented NONE of it until 2026-11-04: it lower-cased the
+         * address, looked it up, and attached whatever it found. Measured over HTTP at the
+         * `task-10` tag, alpha's manager attached beta's OWNER and a platform admin, both
+         * 201, and the platform admin then read alpha's members and history as `manager`.
+         *
+         * The rule is `UserAttachment::refusalFor()` -- in Platform, one copy, shared with
+         * `TenantProvisioning`, which had implemented it for the provisioning form alone.
+         * It adds no cross-tenant path: see that class.
+         *
+         * ⚠ **THE REFUSAL IS THE SAME `null` AS AN UNKNOWN ADDRESS, AND THAT IS DELIBERATE
+         * AND IS A DEVIATION WORTH READING.** Muhammad's instruction said *"ONE 403 for both
+         * cases — two would let a form probe whether an address has an account"*. The two
+         * refusals are indeed one answer; the answer is the EXISTING 404 rather than a new
+         * 403, because `MemberController::store()`'s own in-force comment says *"'no user
+         * with that address' is the same answer whether the address is unknown or belongs to
+         * somebody this caller may not see, and a distinguishable one would make this
+         * endpoint an account-existence oracle for the whole platform -- users is global."*
+         * A 403 here would be exactly that distinguishable answer: {201, 403} would mean the
+         * address has an account and {404} that it does not, silently, for any address an
+         * authenticated manager cares to type. Serving his stated REASON means collapsing
+         * the refusal into the 404, so that is what this does -- and it is one line to flip
+         * if he wants the status instead.
+         */
+        if ($this->attachment->refusalFor($email) !== null) {
+            return null;
+        }
 
         // users is global and RLS-free, so this read needs no scope -- and it is an exact
         // match on a lower-cased email, which users_email_is_lowercase pins as a CHECK.

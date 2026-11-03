@@ -124,6 +124,30 @@ function memberIn(object $test, string $tenantId, TenantRole $role, ?string $ema
     return ['user_id' => $userId, 'membership_id' => $membershipId, 'email' => $address, 'password' => $password];
 }
 
+/**
+ * An account with a password and NO membership anywhere.
+ *
+ * `R-233` made the difference load-bearing: `memberIn()` attaches its user to a tenant, and
+ * since 2026-11-04 an address that already holds a membership is refused outright by
+ * `§4 › Security`'s consent clause. A case about SENIORITY needs a target that consent has
+ * nothing to say about.
+ */
+function unattachedAccount(): array
+{
+    $userId = (string) Str::uuid7();
+    $address = 'u-'.str_replace('-', '', $userId).'@example.test';
+    $password = 'correct-horse-battery-staple';
+
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => $userId,
+        'name' => 'Unattached '.substr($userId, 0, 8),
+        'email' => $address,
+        'password' => Hash::make($password),
+    ]);
+
+    return ['user_id' => $userId, 'email' => $address, 'password' => $password];
+}
+
 /** Sign in as this user over the real login route, so the session is the one a browser holds. */
 function signInAs(object $test, array $member): void
 {
@@ -210,8 +234,22 @@ it('lets a manager appoint a MANAGER and a STAFF member, so the refusal above is
     $tenant = $this->makeTenant();
     memberIn($this, $tenant, TenantRole::Owner);
     $manager = memberIn($this, $tenant, TenantRole::Manager);
-    $peer = memberIn($this, $this->makeTenant(), TenantRole::Staff);
-    $junior = memberIn($this, $this->makeTenant(), TenantRole::Staff);
+
+    /*
+     * ⚠ UNATTACHED ACCOUNTS SINCE `R-233`, AND THIS CASE WAS BUILT ON THE DEFECT. Until
+     * 2026-11-04 the two targets were `memberIn($this, $this->makeTenant(), …)` -- accounts
+     * that already held a membership in ANOTHER restaurant -- and both answered **201**,
+     * because `MemberDirectory::add()` attached whatever the lookup found. That is exactly
+     * what `§4 › Security` forbids and what `R-233` fixed, so this control went 201 -> 404
+     * the moment the rule landed. The fixtures were relying on the bug; the case's own
+     * subject (seniority, not consent) needs targets with no membership anywhere, which is
+     * also what "appoint a manager" means in the product.
+     *
+     * `MemberConsentTest` is where the attached-elsewhere case belongs, and it is driven
+     * there as a refusal.
+     */
+    $peer = unattachedAccount();
+    $junior = unattachedAccount();
 
     signInAs($this, $manager);
 
