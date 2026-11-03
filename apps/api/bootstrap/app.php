@@ -90,16 +90,44 @@ return Application::configure(basePath: dirname(__DIR__))
                 require __DIR__.'/../routes/drain.php';
             }
 
-            // THE WEBAUTHN HARNESS PAGE (Task 5), and the second conditional load. Same
-            // environment condition and for a related reason: PLAN.md §3 row 5 asks for a
-            // minimal unstyled page to exercise navigator.credentials, because the
-            // credential ceremony cannot be driven from HTTP -- and a test fixture with a
-            // URL has no business being reachable in production.
+            // THE WEBAUTHN HARNESS PAGE (Task 5), and the second conditional load.
+            // PLAN.md §3 row 5 asks for a minimal unstyled page to exercise
+            // navigator.credentials, because the credential ceremony cannot be driven from
+            // HTTP -- and a test fixture with a URL has no business being reachable anywhere
+            // but a developer's own machine and the suite.
             //
             // No is_file() check, unlike the drain route: this file IS committed, because
             // the gate names the page as a deliverable rather than as something mounted by
             // compose. So the condition is the environment alone.
-            if (! app()->environment('production')) {
+            //
+            // ================================================================================
+            // ⚠ AN ALLOWLIST, NOT `! environment('production')`. QRPAGER-31, MEASURED.
+            // ================================================================================
+            //
+            // It read `! app()->environment('production')` until 2026-11-03, which admits
+            // EVERY environment name that is not exactly that one. Driven as four real
+            // processes through `tests/Support/get-path-in-another-process.php`, before the
+            // change:
+            //
+            //     local 200 · testing 200 · staging 200 · production 404
+            //
+            // So a staging deployment -- or any env named `demo`, `qa`, `preview`, or
+            // `production-eu` -- served a page carrying an email/password sign-in form, with
+            // its own CSRF token, posting to the real `/v1/auth/login` and
+            // `/v1/auth/passkeys`. Nothing on it is a vulnerability in itself; it is a second
+            // credential surface that no task owns, on a host strangers can reach, and
+            // `§4 › Tenancy`'s "two authentication surfaces, never confused" is the clause it
+            // makes false. Reported from a browser as "a login page renders as unstyled raw
+            // HTML", which it does, by design -- the report was right about the page being
+            // there and wrong about why it looked like that.
+            //
+            // The drain route above keeps `! environment('production')` deliberately and the
+            // two are NOT inconsistent: that one carries a second condition the deployment
+            // artefact cannot satisfy (`routes/drain.php` is never committed, and
+            // RouteSurfaceTest asserts its absence from the repository), so the environment
+            // name is not the only thing standing between it and a request. This page has no
+            // second condition, so its first one has to be the tight one.
+            if (app()->environment(['local', 'testing'])) {
                 require __DIR__.'/../routes/harness.php';
             }
 

@@ -268,7 +268,25 @@ with a membership, which `bin/issue-harness-user` does not currently create (it 
 Task 8. Copy is given in **English and Arabic**, because Arabic is a launch language and `§12`
 requires RTL-safe layout — the copy is part of the spec, not a later pass.
 
-## S1 · Staff sign-in — `/staff/sign-in`
+## S1 · Staff sign-in — served at EVERY `/staff/*` URL, canonically `/staff`
+
+> ⚠ **THIS HEADING READ `/staff/sign-in` UNTIL 2026-11-03, AND NO SUCH ROUTE HAS EVER
+> EXISTED.** Measured: `GET /staff/sign-in` → **404**, Next's own error document. Found while
+> triaging `QRPAGER-31`; the drift and the mechanism that now catches it are `QRPAGER-32`.
+>
+> **The implementation is the half that is right, so the spec is what changed.** `StaffApp`'s
+> docblock states the decision this heading contradicted: *"Nothing protected is
+> server-rendered at any URL, which is why sign-in is a VIEW rather than a route — an
+> unauthenticated request to `/staff/devices` gets the sign-in view at that URL, with no
+> redirect."* A dedicated `/staff/sign-in` route would be strictly worse: a redirect from a
+> protected URL to a sign-in URL announces which URLs are protected, loses the destination the
+> person asked for, and adds a seventh prerendered document whose only content is a screen
+> already served at six others. `app/staff/layout.tsx` carries the same reasoning for
+> `robots: noindex` — *"the sign-in view is served at every `/staff/*` URL to an
+> unauthenticated caller"*.
+>
+> So S1 is a **state of the shell**, not a route, in the same way S3 (*Locked — an overlay, not
+> a route*) is. Everything below is unchanged and still the spec for it.
 
 **Purpose.** Let a member of this restaurant's staff prove who they are, with a passkey, on a
 device that may be shared. Nothing else is on this screen.

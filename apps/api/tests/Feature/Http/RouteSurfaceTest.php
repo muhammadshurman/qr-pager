@@ -56,9 +56,11 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
     // fixture that happens to need a URL.
     //
     // It is NOT under /v1 deliberately: putting it there would publish it into the
-    // versioned public contract, which is worse than an unversioned fixture. And it is not
-    // served in production at all -- the case below drives that, which is what makes this
-    // allowlist entry acceptable rather than a hole.
+    // versioned public contract, which is worse than an unversioned fixture. And it is
+    // served in `local` and `testing` and NOWHERE else -- the case below drives that in six
+    // child processes, which is what makes this allowlist entry acceptable rather than a
+    // hole. ⚠ That sentence read "it is not served in production at all" until 2026-11-03,
+    // and the gap between the two claims was `staging` (QRPAGER-31): measured 200.
     //
     // FOUR PANEL PATHS JOINED AT TASK 6, and they are listed one by one rather than as a
     // `/platform*` prefix on purpose: a wildcard would let a fifth panel route arrive
@@ -276,26 +278,97 @@ it('refuses the three vendor routes it mounts and does not serve', function (): 
         ->toBe([], 'upload-file is back in the guard\'s pattern list');
 });
 
-it('loads the passkey harness page only outside production', function (): void {
-    // The other half of the allowlist entry above: a test fixture with a URL must be
-    // unreachable where it matters.
+/**
+ * GET one path in a child process whose `APP_ENV` this one chooses, and return the status.
+ *
+ * `array_merge(getenv(), …)` and not a bare array: `proc_open`'s `$env` REPLACES the
+ * environment, so a bare array loses `PATH` and everything `.env` resolution needs -- the
+ * lesson `PagerIdempotencyTest` and `MemberConcurrencyTest` both record, where a child that
+ * produced no output at all read as a result rather than as a broken launch. `PAO_DISABLE`
+ * for the reason CLAUDE.md gives: the child's own failure output should be the same artefact
+ * for a person and for an agent.
+ */
+function statusInEnvironment(string $environment, string $path): int
+{
+    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+
+    $process = proc_open(
+        [PHP_BINARY, base_path('tests/Support/get-path-in-another-process.php'), $path],
+        $descriptors,
+        $pipes,
+        base_path(),
+        array_merge(getenv(), ['APP_ENV' => $environment, 'PAO_DISABLE' => '1']),
+    );
+
+    expect($process)->not->toBeFalse("could not start the probe for APP_ENV={$environment}");
+
+    $out = trim((string) stream_get_contents($pipes[1]));
+    $err = trim((string) stream_get_contents($pipes[2]));
+
+    foreach ($pipes as $pipe) {
+        fclose($pipe);
+    }
+
+    $status = proc_close($process);
+
+    expect($status)->toBe(0, "the probe failed under APP_ENV={$environment}: {$err}")
+        ->and($out)->toMatch('/^\d{3}$/', "the probe printed no status under APP_ENV={$environment}: {$out} {$err}");
+
+    return (int) $out;
+}
+
+it('serves the passkey harness page in local and testing and NOWHERE else', function (): void {
+    // ================================================================================
+    // QRPAGER-31. THIS CASE USED TO `grep` bootstrap/app.php, AND THAT IS THE DEFECT.
+    // ================================================================================
     //
-    // Read from bootstrap/app.php, the same way the drain route's condition is read two
-    // cases down, and for the same reason: the environment is global state that a running
-    // test cannot change for a route table that was built at boot. Re-booting a second
-    // application inside the suite to prove one `if` is a worse test than reading the `if`,
-    // and the first version of this case did something worse still -- it asserted the
-    // PREDICATE (`! app()->environment('production')` is false under production), which is
-    // a tautology about PHP rather than a fact about this application.
+    // It asserted the `if` as a STRING -- `toContain("if (! app()->environment('production'))
+    // {\n                require …")` -- having argued that the environment is global state a
+    // running test cannot change for a route table built at boot. The premise is true and the
+    // conclusion does not follow: a route table cannot be rebuilt IN this process, so the
+    // proof belongs in ANOTHER one, which is exactly what `FixtureScriptGuardTest` does for
+    // the two fixture scripts and on the stated grounds that an exit code "cannot be asserted
+    // from a grep".
     //
-    // The route IS present here, which is the positive control: the suite runs as `testing`,
-    // so a condition that excluded everything would fail the line below rather than pass
-    // quietly.
+    // What the string assertion cost, measured as four real processes BEFORE the fix:
+    //
+    //     local 200 · testing 200 · staging 200 · production 404
+    //
+    // `! environment('production')` admits every name that is not exactly that one, so a
+    // staging host served a page with an email/password sign-in form posting to the real
+    // `/v1/auth/login`. The case was green throughout, because the characters it was reading
+    // were the characters it expected -- a test that reads an `if` goes green for every edit
+    // that keeps the spelling and changes the meaning, and for every environment name nobody
+    // thought of when the `if` was written.
+    //
+    // ⚠ `local` AND `testing` ARE THE POSITIVE CONTROLS AND THEY ARE NOT DECORATION. Without
+    // a 200 in this list, a probe that was simply broken -- a bad path, a child that cannot
+    // boot, a typo in the script name -- would 404 everything and read as the strongest
+    // possible pass. The 200s are what make the 404s mean something.
+    $served = ['local', 'testing'];
+    $refused = ['production', 'staging', 'demo', 'qa', 'preview', 'production-eu'];
+
+    foreach ($served as $environment) {
+        expect(statusInEnvironment($environment, '/passkey-harness'))
+            ->toBe(200, "the harness is unreachable under APP_ENV={$environment}, where the suite and the ceremony need it");
+    }
+
+    // The names beyond `production` are the whole point of the change. They are spelled out
+    // rather than generated, because the claim is not "some other name 404s" -- it is that
+    // the guard is an ALLOWLIST, and an allowlist is only demonstrated by names that were
+    // never enumerated anywhere in the application.
+    foreach ($refused as $environment) {
+        expect(statusInEnvironment($environment, '/passkey-harness'))
+            ->toBe(404, "the WebAuthn harness, a second credential surface, is reachable under APP_ENV={$environment}");
+    }
+});
+
+it('keeps the harness page in this process route table, as the allowlist above assumes', function (): void {
+    // The in-process half, kept for one reason: the allowlist case above lists
+    // `/passkey-harness` among the paths served outside `/v1`, and that list is only
+    // meaningful while the route is actually registered here. A condition that excluded
+    // everything would fail this line rather than pass quietly.
     expect(publicRouteUris())->toContain('/passkey-harness');
-
-    $bootstrap = (string) file_get_contents(base_path('bootstrap/app.php'));
-
-    expect($bootstrap)->toContain("if (! app()->environment('production')) {\n                require __DIR__.'/../routes/harness.php';");
 });
 
 it('has removed Laravel /up, the welcome page and both storage routes', function (): void {

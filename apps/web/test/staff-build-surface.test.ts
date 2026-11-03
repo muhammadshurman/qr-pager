@@ -224,3 +224,114 @@ describe('every staff route, derived from the build', () => {
     }
   })
 })
+
+/**
+ * ================================================================================
+ * THE `§12` SPEC's OWN PATHS, HELD AGAINST THE ROUTES THAT EXIST — `QRPAGER-32`
+ * ================================================================================
+ *
+ * **WHY THIS BLOCK EXISTS, MEASURED.** `QRPAGER-25-precoding.md §12` headed screen S1
+ * *"Staff sign-in — `/staff/sign-in`"*, and no such route has ever existed: `GET
+ * /staff/sign-in` answers **404** with Next's own error document. The spec and the
+ * implementation disagreed from 10a's first commit to 2026-11-03, and nothing anywhere
+ * noticed — because nothing read the spec.
+ *
+ * Everything in this file above derives its subjects from the BUILD, which is the right shape
+ * for *"no document carries a tenant datum"* and is exactly the wrong shape for this: a list
+ * derived from the build can never disagree with the build. `§12`'s whole claim is that the
+ * screens are *"specified before they are coded"*, which makes the spec a second source that
+ * has to be reconciled with the first, and the only way to reconcile two sources is to read
+ * both.
+ *
+ * ⚠ **IT PARSES THE SPEC RATHER THAN RESTATING IT.** A list of paths copied out of the
+ * markdown into this file would be a third source, and the drift it is meant to catch is
+ * precisely the one where two sources are left to agree by hand. The headings are the
+ * contract: `## S<n> · <name> — <anything containing a backticked path>`.
+ *
+ * ⚠ **AND "NOT A ROUTE" IS AN ALLOWED ANSWER, SPELLED IN THE HEADING.** S3 is *"Locked — an
+ * overlay, not a route"* and S7 is *"Pager detail — a panel over the board, not a route"*;
+ * S1 is now *"served at EVERY `/staff/*` URL, canonically `/staff`"*. A screen that is a STATE
+ * rather than a URL is a real and common answer, so the test's rule is: a heading that names a
+ * `/staff` path must name one the build serves, and a heading that claims no route must not
+ * name a path at all. Both halves are drivable, which is what keeps the escape hatch from
+ * being a hole.
+ */
+const SPEC_FILES = ['QRPAGER-25-precoding.md', 'QRPAGER-26-precoding.md'] as const
+
+/** Every `§12` screen heading in the staff tickets, with any `/staff…` paths it names. */
+function specifiedScreens(): {
+  readonly file: string
+  readonly heading: string
+  readonly paths: string[]
+}[] {
+  const docs = join(WEB, '..', '..', 'docs', 'tickets')
+  const screens: { file: string; heading: string; paths: string[] }[] = []
+
+  for (const file of SPEC_FILES) {
+    const path = join(docs, file)
+
+    if (!existsSync(path)) {
+      // Not skipped, for the reason this file's header already gives: an absent subject must
+      // fail, or the assertion passes without being evaluated.
+      throw new Error(`the §12 screen spec is absent at ${file}`)
+    }
+
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      if (!/^## S\d+ /.test(line)) {
+        continue
+      }
+
+      screens.push({
+        file,
+        heading: line.replace(/^##\s*/, ''),
+        // `filter` before the cast rather than `?? ''`: an empty string would be a path that
+        // silently matches nothing, which is the vacuous shape. Group 1 is always present
+        // when the regex matches at all, so a dropped entry here would be a regex change.
+        paths: [...line.matchAll(/`(\/staff[a-z0-9/-]*)`/gi)]
+          .map((match) => match[1])
+          .filter((path): path is string => path !== undefined),
+      })
+    }
+  }
+
+  return screens
+}
+
+describe('every path the §12 staff screen spec names', () => {
+  it('is a route this build actually serves', () => {
+    const served = prerenderedStaffDocuments().map((document) => document.route)
+    const screens = specifiedScreens()
+
+    // Not vacuous: there ARE screens, and some of them DO name paths. Without these two the
+    // whole block would pass against a spec file that had been emptied or renamed.
+    expect(screens.length, 'no §12 screen headings were parsed out of the spec').toBeGreaterThan(5)
+    expect(
+      screens.filter((screen) => screen.paths.length > 0).length,
+      'no §12 screen heading names a path, so nothing was compared',
+    ).toBeGreaterThan(2)
+
+    for (const screen of screens) {
+      for (const path of screen.paths) {
+        expect(served, `${screen.file} · ${screen.heading} names ${path}, which 404s`).toContain(
+          path,
+        )
+      }
+    }
+  })
+
+  it('is absent from any heading that claims the screen is not a route', () => {
+    // The other half of the escape hatch. A heading may say "not a route" OR name a path, and
+    // saying both is the drift in its most confusing form: a reader takes the path and a
+    // reviewer takes the disclaimer.
+    for (const screen of specifiedScreens()) {
+      if (!/not a route/i.test(screen.heading)) {
+        continue
+      }
+
+      expect(
+        screen.paths,
+        `${screen.file} · ${screen.heading} says it is not a route and names one anyway`,
+      ).toEqual([])
+    }
+  })
+})

@@ -17,8 +17,14 @@
     framework. A button, a name field and a <pre> for the result. If this ever starts looking
     like a login screen, it has become Task 10's work in the wrong task.
 
-    IT IS NOT SERVED IN PRODUCTION. bootstrap/app.php mounts it only outside `production`,
-    the same two-condition shape as the drain proof's route, and RouteSurfaceTest asserts it.
+    IT IS SERVED IN `local` AND `testing` AND NOWHERE ELSE. bootstrap/app.php mounts it on
+    that allowlist, and RouteSurfaceTest drives six environment names as real child processes
+    to prove it rather than reading the condition.
+
+    ⚠ IT SAID "NOT SERVED IN PRODUCTION ... mounts it only outside `production`" UNTIL
+    2026-11-03, and that was true and insufficient: measured, `APP_ENV=staging` served this
+    page 200. A page with a password field is a credential surface wherever it answers, and
+    this one answers to anyone who can reach the host. `QRPAGER-31`.
 --}}
 <!DOCTYPE html>
 <html lang="en">
