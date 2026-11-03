@@ -4,7 +4,7 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "jsx": "preserve",
-    "types": ["node", "react", "react-dom"],
+    "types": ["node"],
     "plugins": [
       {
         "name": "next"
@@ -15,12 +15,6 @@
     "incremental": true,
     "esModuleInterop": true
   },
-  "include": [
-    "app/**/*.ts",
-    "app/**/*.tsx",
-    "next-env.d.ts",
-    "types/**/*.d.ts",
-    ".next/types/**/*.ts"
-  ],
+  "include": ["app/**/*.ts", "src/**/*.ts", "test/**/*.ts", "next-env.d.ts", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
 }

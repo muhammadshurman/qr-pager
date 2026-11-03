@@ -576,21 +576,35 @@ describe('the scanner’s exemptions', () => {
       'packages/ui/src/styles/kit.css',
       'packages/ui/src/styles/templates.css',
       'apps/web/app/globals.css',
-      'apps/site/app/globals.css',
     ]) {
       expect(isExempt(join(REPO, path)), `${path} must be scanned`).toBe(false)
     }
   })
 
+  /*
+   * ⚠ `apps/site/app/globals.css` WAS NAMED IN BOTH LISTS HERE AND NO LONGER EXISTS. Task 11
+   * (ADR-005) made apps/site the local stand-in for the CDN's `Host` -> prefix mapping: it
+   * renders nothing, ships no stylesheet, and `R-176` is discharged by the surface not
+   * existing rather than by the compile proof that row asked for.
+   *
+   * The two app entries are DERIVED now rather than shortened by one. A hard-coded pair is
+   * precisely what went stale, and it would go stale again the day a third app arrives — so
+   * what is asserted is that every stylesheet the walk finds under `apps/` is scanned, plus a
+   * floor so an empty walk cannot pass.
+   */
   it('walks the real tree and finds every stylesheet this task authors', () => {
     const found = cssFiles(REPO).map((p) => p.replace(`${REPO}/`, ''))
     for (const expected of [
       'packages/ui/src/styles/kit.css',
       'packages/ui/src/styles/templates.css',
-      'apps/web/app/globals.css',
-      'apps/site/app/globals.css',
     ]) {
       expect(found, `${expected} was not found by the walk`).toContain(expected)
+    }
+
+    const appSheets = found.filter((p) => p.startsWith('apps/'))
+    expect(appSheets.length, 'the walk found no app stylesheet at all').toBeGreaterThanOrEqual(1)
+    for (const sheet of appSheets) {
+      expect(isExempt(join(REPO, sheet)), `${sheet} must be scanned`).toBe(false)
     }
     // And nothing from a dependency: a linter that reports its own dependencies' code has
     // no signal left in it.

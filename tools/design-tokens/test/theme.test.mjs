@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -92,8 +92,21 @@ const appCss = () => read('apps/web/app/globals.css')
 const appBase = join(REPO, 'apps/web/app')
 
 describe("Tailwind's default theme, replaced rather than discouraged", () => {
-  it('has both apps import the generated @theme block, after tailwindcss', () => {
-    for (const app of ['web', 'site']) {
+  /*
+   * ⚠ THIS CASE SAID "both apps" AND THERE IS ONE. Task 11 (ADR-005) made apps/site the local
+   * stand-in for the CDN's `Host` -> prefix mapping; it renders nothing and ships no
+   * stylesheet, so there is no Tailwind import in it to order. Derived from what exists
+   * rather than re-listed, for the reason the previous list demonstrates.
+   */
+  it('has every app with a stylesheet import the generated @theme block, after tailwindcss', () => {
+    const apps = readdirSync(join(REPO, 'apps'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name !== 'api')
+      .map((entry) => entry.name)
+      .filter((name) => existsSync(join(REPO, `apps/${name}/app/globals.css`)))
+
+    expect(apps.length, 'no app has a stylesheet at all').toBeGreaterThanOrEqual(1)
+
+    for (const app of apps) {
       const css = read(`apps/${app}/app/globals.css`)
       const tailwind = css.indexOf("@import 'tailwindcss'")
       const theme = css.indexOf("@import '@qrpager/tokens/theme.css'")

@@ -389,7 +389,32 @@ describe('clause 2 -- the order-ready pair is UNREACHABLE from a tenant theme', 
     expect(sheets.length, 'the stylesheet walk found nothing').toBeGreaterThanOrEqual(3)
     expect(sheets).toContain('packages/ui/src/styles/kit.css')
     expect(sheets).toContain('apps/web/app/globals.css')
-    expect(sheets).toContain('apps/site/app/globals.css')
+    /*
+     * ⚠ **`apps/site/app/globals.css` WAS NAMED HERE AND NO LONGER EXISTS, AND THE REPLACEMENT
+     * IS A DERIVATION RATHER THAN A SHORTER LIST.** Task 11 (`ADR-005`) made `apps/site` the
+     * local stand-in for the CDN's `Host` -> prefix mapping: it renders nothing, so it ships
+     * no stylesheet, so there is nothing for a Tailwind default to leak into — which is how
+     * `R-176` is discharged rather than proven.
+     *
+     * A hard-coded pair was the thing that broke when the surface changed, so the claim is
+     * now the general one: every app that HAS a stylesheet is in the walk. That survives an
+     * app being added AND an app's stylesheet being removed, which the pair did not.
+     * `apps/site/test/site-surface.test.ts` holds the other end — that this app has no CSS at
+     * all — so the set cannot shrink in silence.
+     */
+    const appsWithSheets = readdirSync(join(REPO, 'apps'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name !== 'api')
+      .filter((entry) => sheets.some((sheet) => sheet.startsWith(`apps/${entry.name}/`)))
+      .map((entry) => entry.name)
+
+    expect(
+      appsWithSheets.length,
+      'no app stylesheet reached the walk at all',
+    ).toBeGreaterThanOrEqual(1)
+
+    for (const app of appsWithSheets) {
+      expect(sheets).toContain(`apps/${app}/app/globals.css`)
+    }
 
     const offenders: string[] = []
     let declarations = 0
@@ -435,15 +460,25 @@ describe('clause 2 -- the order-ready pair is UNREACHABLE from a tenant theme', 
     ).toEqual([])
   })
 
-  it('(4b) neither app declares a .qr-ready rule of its own, and both load the kit', () => {
-    // The other half of "every stylesheet the screen can use". The apps' own files declare
-    // nothing today, which would make the check above vacuous FOR THEM — so the reason it
-    // is vacuous is itself asserted: they declare no such rule, and the kit they import is
-    // where the rules live and is checked substantively.
-    for (const app of ['web', 'site']) {
-      const css = read(`apps/${app}/app/globals.css`)
-      expect(readyRules(css), `apps/${app} declares its own .qr-ready rule`).toEqual([])
-      expect(css, `apps/${app} does not load the kit`).toContain("@import '@qrpager/ui/kit.css'")
+  it('(4b) no app declares a .qr-ready rule of its own, and each that has a sheet loads the kit', () => {
+    /*
+     * The other half of "every stylesheet the screen can use". The apps' own files declare
+     * nothing today, which would make the check above vacuous FOR THEM — so the reason it is
+     * vacuous is itself asserted: they declare no such rule, and the kit they import is where
+     * the rules live and is checked substantively.
+     *
+     * ⚠ THE LIST WAS `['web', 'site']` AND `apps/site` NO LONGER HAS A STYLESHEET (`ADR-005`,
+     * and `R-176` with it). Derived from the walk now, for the reason case (4) gives: a
+     * hard-coded pair is exactly what goes stale when the surface moves either way.
+     */
+    const appSheets = stylesheetsReachingTheScreen().filter((sheet) => sheet.startsWith('apps/'))
+
+    expect(appSheets.length, 'no app stylesheet reached the walk at all').toBeGreaterThanOrEqual(1)
+
+    for (const sheet of appSheets) {
+      const css = read(sheet)
+      expect(readyRules(css), `${sheet} declares its own .qr-ready rule`).toEqual([])
+      expect(css, `${sheet} does not load the kit`).toContain("@import '@qrpager/ui/kit.css'")
     }
   })
 

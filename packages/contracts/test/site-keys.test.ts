@@ -61,7 +61,7 @@ function expand(pattern: string): string {
 
   if (match === null) throw new Error(`lengthCases pattern not understood: ${pattern}`)
 
-  return 'a'.repeat(Number(match[1])) + match[2]
+  return 'a'.repeat(Number(match[1])) + (match[2] ?? '')
 }
 
 describe('the hostname rule, against the fixture both engines read', () => {

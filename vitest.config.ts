@@ -94,6 +94,22 @@ export default defineConfig({
         },
       },
       {
+        /*
+         * `apps/site` -- the local stand-in for the CDN's `Host` -> prefix mapping (ADR-005).
+         *
+         * `environment: 'node'` because this app has no DOM in it at all: it renders nothing,
+         * ships no stylesheet and has one route handler. What it has is a MAPPING, and the
+         * mapping is where `§3` row 11's invariant lives, so it is tested where the invariant
+         * can be driven over every hostile `Host` a header can carry.
+         */
+        test: {
+          name: 'site',
+          root: './apps/site',
+          environment: 'node',
+          include: ['test/**/*.test.ts'],
+        },
+      },
+      {
         test: {
           // Both tool packages: the design-token rule and the gate's own checks. One
           // project rather than two, because they share an environment and neither has a
@@ -169,6 +185,18 @@ export default defineConfig({
          * code Vitest never executes.
          */
         'browser/support/isolation.ts',
+        /*
+         * Task 11's own code: `apps/site/src/**`, the mapping and the one signed GET.
+         *
+         * ⚠ `apps/site/app/**` IS NOT HERE, and the reason is the same one `apps/web/app/**`
+         * carries two comments up: it is route plumbing -- a `dynamic` declaration and six
+         * lines that read the environment and forward a request. There is no unit in it, and
+         * what it actually produces is asserted by `site-surface.test.ts` (the route is
+         * server-rendered on demand, never prerendered) and by `tools/gate/bin/site-isolation-proof`,
+         * which drives the built app over real HTTP with real `Host` headers. Both are
+         * stronger claims about that file than a line count.
+         */
+        'apps/site/src/**/*.ts',
       ],
       // ⚠ NO BLANKET GLOB OVER EVERY `index.ts`, AND THERE USED TO BE ONE. `§11` round one,
       // QA L-1: it excluded `apps/web/src/copy/index.ts` -- 41 lines holding `interpolate()`

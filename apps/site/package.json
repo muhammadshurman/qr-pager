@@ -10,16 +10,8 @@
   },
   "dependencies": {
     "@qrpager/contracts": "workspace:*",
-    "@qrpager/tokens": "workspace:*",
-    "@qrpager/ui": "workspace:*",
     "next": "15.5.28",
     "react": "19.3.1",
     "react-dom": "19.3.1"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "4.3.3",
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0",
-    "tailwindcss": "4.3.3"
   }
 }
