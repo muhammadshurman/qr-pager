@@ -78,6 +78,20 @@ it('refuses a hostname that is not one, and one that belongs to the platform', f
     // another tenant is served at.
     expect(fn () => domains()->add($tenant, 'other.'.config('landing.platform_domain')))
         ->toThrow(DomainRefused::class, 'belongs to the platform');
+
+    /*
+     * ⚠ **AND THE APEX ITSELF, WHICH WAS `R-150` AND WHICH THIS CASE DID NOT COVER.** The
+     * check was `str_ends_with($hostname, '.'.$platform)`, so the subdomain above was refused
+     * and `pages.qrpager.test` was ACCEPTED. `R-150`'s own text names where that leads:
+     * `LandingPages::publishedPrefixes()` would feed the apex to `deleteDirectory` on
+     * unpublish, so one tenant unpublishing deletes a prefix that is not theirs.
+     *
+     * Closed at Task 11, the task that proves the `Host` -> prefix mapping. Both halves are
+     * driven, because `===` alone would let the subdomain through and `str_ends_with` alone
+     * let the apex through -- and this surface has had the second half wrong once already.
+     */
+    expect(fn () => domains()->add($tenant, (string) config('landing.platform_domain')))
+        ->toThrow(DomainRefused::class, 'belongs to the platform');
 });
 
 it('stays at pending_dns while the challenge is absent or wrong, with a reason and no credit', function (): void {

@@ -77,7 +77,27 @@ final class TenantDomains
             throw new DomainRefused('that is not a hostname we can serve');
         }
 
-        if (str_ends_with($hostname, '.'.config('landing.platform_domain'))) {
+        /*
+         * ⚠ **THE APEX AS WELL AS THE SUBDOMAINS, AND LEAVING IT OUT WAS `R-150`.**
+         *
+         * This was `str_ends_with($hostname, '.'.$platform)`, which refuses
+         * `anything.pages.qrpager.test` and ACCEPTS `pages.qrpager.test` itself. A tenant
+         * holding the platform apex in `tenant_domains` is not a cosmetic problem: that row's
+         * own text records where it leads — `LandingPages::publishedPrefixes()` would feed
+         * the apex to `deleteDirectory` on unpublish, so one tenant unpublishing would delete
+         * a prefix that is not theirs.
+         *
+         * Closed at Task 11 because this is the `Host` -> prefix mapping, which is the second
+         * of the three mechanisms `§3` row 11's invariant has to hold across — the task that
+         * proves the mapping is the task that should not leave a known hole in it.
+         *
+         * An exact match AND the suffix: `===` alone would let `sub.pages.qrpager.test`
+         * through, `str_ends_with` alone lets the apex through, and this surface has had the
+         * second half wrong once already.
+         */
+        $platform = (string) config('landing.platform_domain');
+
+        if ($hostname === $platform || str_ends_with($hostname, '.'.$platform)) {
             throw new DomainRefused('that hostname belongs to the platform and cannot be claimed');
         }
 
