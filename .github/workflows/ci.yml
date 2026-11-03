@@ -439,6 +439,24 @@ jobs:
         working-directory: .
         run: pnpm run gate:e2e
 
+      # ================================================================================
+      # TASK 11's INVARIANT -- IN THIS JOB, AND FOR THE SAME REASON AS THE STEP ABOVE
+      # ================================================================================
+      #
+      # `§3` row 11: *tenant A's page can never render tenant B's content, and can never be
+      # served from tenant B's cache entry.* `apps/site/test/serve.test.ts` drives the mapping
+      # exhaustively with an injected reader; this drives the WHOLE CHAIN -- two tenants
+      # publishing through the real publisher into the real object store, then real `Host`
+      # headers against the production build of apps/site. Two halves can each be perfect
+      # against their own fixture and disagree with each other, and this is the step that
+      # catches that.
+      #
+      # It lives here rather than in the frontend job because it needs PHP, Postgres AND the
+      # object store, which this job already has -- the same argument the e2e step above makes.
+      - name: One tenant's page is never served from another tenant's prefix
+        working-directory: .
+        run: pnpm run gate:site-isolation
+
   frontend:
     name: Frontend workspace — lint, types, Vitest, Playwright, build
     runs-on: ubuntu-latest

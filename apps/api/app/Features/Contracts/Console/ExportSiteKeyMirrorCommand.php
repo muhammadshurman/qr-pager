@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Features\Contracts\Console;
 
-use App\Domain\Contracts\SiteKeyMirror;
+use App\Features\Landing\SiteKeyMirror;
 use Illuminate\Console\Command;
 
 /**
  * Writes the generated TypeScript published-site key mirror to packages/contracts (ADR-005).
  *
  * A sibling of `ExportStatusMirrorCommand` in every respect, deliberately: the document is
- * built in `App\Domain\Contracts\SiteKeyMirror`, which has no framework and no filesystem in
+ * built in `App\Features\Landing\SiteKeyMirror`, which has no framework and no filesystem in
  * it, and this command is the I/O and nothing else.
  *
  * It is a SECOND command rather than a second artifact of the first, because the two mirrors

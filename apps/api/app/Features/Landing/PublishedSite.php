@@ -98,7 +98,7 @@ final class PublishedSite
      * `packages/contracts/src/generated/status.ts` opens by warning about: it agrees on the
      * day it is written and drifts in silence after.
      *
-     * So `App\Domain\Contracts\SiteKeyMirror` READS these constants and emits them, and
+     * So `App\Features\Landing\SiteKeyMirror` READS these constants and emits them, and
      * `composer contracts:check` byte-diffs the result. The pattern is written in a syntax
      * both PCRE and ECMAScript accept -- anchors, character classes, groups, `?` and `+`,
      * and nothing else -- and `docs/contracts/hostnames.json` drives the same

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\Contracts\SiteKeyMirror;
 use App\Features\Landing\PublishedSite;
 use App\Features\Landing\PublishFailed;
+use App\Features\Landing\SiteKeyMirror;
 
 /*
  * ================================================================================

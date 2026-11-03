@@ -132,6 +132,11 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
         'bin/issue-kds-token',
         'bin/issue-pager-session',
         'bin/issue-staff-fixture',
+        // Task 11's. `§3` row 11's invariant needs TWO tenants with real published pages in
+        // the real object store, and a fixture that wrote the bytes itself would be proving
+        // its own layout rather than the publisher's -- so this one goes through
+        // `LandingPages::saveDraft()` and `publish()`, writing to the bucket as the owner.
+        'bin/publish-landing-fixture',
     ]);
 
     foreach ($guarded as $script) {

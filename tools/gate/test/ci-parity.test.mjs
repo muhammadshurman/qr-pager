@@ -112,6 +112,19 @@ const PROVISIONING = [
  */
 const CROSS_HALF_GATE = 'pnpm run gate:e2e'
 
+/**
+ * Task 11's invariant gate, and it is the SECOND cross-half gate for the same reason as the
+ * first: it needs PHP, Postgres and the object store on one side and the production build of
+ * `apps/site` on the other, so it is not a `pnpm gate` step and the parity comparison below
+ * stays exact.
+ *
+ * ⚠ AND IT IS REQUIRED OF CI HERE FOR `R-126`'s REASON, stated two comments up: *a third gate
+ * with no enforcement is `R-126`'s shape*. A proof nobody is required to run is a proof that
+ * stops being run — and this one has a sharper failure mode than most, because it once
+ * reported green four times against a stale build (its own teardown note records it).
+ */
+const INVARIANT_GATE = 'pnpm run gate:site-isolation'
+
 /** Every `pnpm …` command line the frontend job runs, across `run:` scalars and blocks. */
 function ciSteps() {
   return [...frontendJob.matchAll(/^\s*(?:- )?(?:run: )?(pnpm [^\n|>]*)$/gm)]
@@ -153,6 +166,22 @@ describe('the workspace gate and CI run the same steps', () => {
       Object.keys(pkg.scripts),
       'gate:e2e is required of CI and is not a script in package.json',
     ).toContain('gate:e2e')
+  })
+
+  it('requires CI to run Task 11’s invariant gate, in the job that can', () => {
+    expect(
+      gatesJob,
+      `CI's gates job does not run ${INVARIANT_GATE} -- §3 row 11's invariant would then be ` +
+        'verified by no runner, which is the one clause Muhammad named as the cross-tenant ' +
+        'leak this surface can actually produce',
+    ).toContain(INVARIANT_GATE)
+
+    const pkg = JSON.parse(read('package.json'))
+
+    expect(
+      Object.keys(pkg.scripts),
+      'gate:site-isolation is required of CI and is not a script in package.json',
+    ).toContain('gate:site-isolation')
   })
 
   it('runs the cross-half gate in each of three-green-runs runs', () => {

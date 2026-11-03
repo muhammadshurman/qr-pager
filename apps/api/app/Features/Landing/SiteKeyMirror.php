@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Contracts;
-
-use App\Features\Landing\PublishedSite;
+namespace App\Features\Landing;
 
 /**
  * ================================================================================
@@ -40,6 +38,15 @@ use App\Features\Landing\PublishedSite;
  *
  * No framework and no filesystem in here -- a string out, the command does the I/O, the same
  * split `StatusMirror` and `LandingSchema` use.
+ *
+ * ⚠ **IT LIVES IN `Features\\Landing` AND NOT BESIDE `StatusMirror` IN `Domain\\Contracts`, AND
+ * `composer deptrac` IS WHY.** `Domain` may depend on nothing (`deptrac.yaml`'s ruleset:
+ * `Domain: ~`), and this mirror's SOURCE is `PublishedSite`, which is a Feature -- so the
+ * first placement produced six `DependsOnDisallowedLayer` violations in one file.
+ * `StatusMirror` sits in `Domain` legitimately because everything it reads is Domain
+ * (`DatabaseEnums`, `PagerToken`). A mirror belongs in the layer of the thing it mirrors, and
+ * the alternative -- hoisting the key layout into `Domain` -- would be a refactor of Task 7's
+ * code across every call site to satisfy a file placement.
  */
 final class SiteKeyMirror
 {

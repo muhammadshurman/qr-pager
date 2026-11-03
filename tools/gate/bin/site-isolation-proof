@@ -1,0 +1,395 @@
+#!/usr/bin/env bash
+# =============================================================================
+# §3 ROW 11's INVARIANT, DRIVEN OVER REAL HTTP AGAINST REAL PUBLISHED BYTES
+# =============================================================================
+#
+# *Tenant A's page can never render tenant B's content, and can never be served from tenant
+# B's cache entry.* Muhammad named the invariant and the three mechanisms it has to be proven
+# across (2026-11-03), and `PLAN.md §3` row 11 now carries it.
+#
+# `apps/site/test/serve.test.ts` drives the MAPPING exhaustively with an injected reader --
+# every hostile `Host` a header can carry, and the key asked for asserted rather than only the
+# response. What that cannot answer is whether the whole chain agrees: whether the key the
+# publisher WROTE is the key the reader ASKS FOR, through a real `Host` header, a real Next.js
+# server and a real object store. Two halves can each be perfect against their own fixture and
+# disagree with each other; this is the step that would catch that.
+#
+# WHAT IT NEEDS RUNNING, and it FAILS rather than skipping when one is absent -- a reasoned
+# skip is not a measurement, which is `tools/browsers/bin/e2e`'s clause and holds here:
+#
+#   1. the composed Postgres and the object store   `docker compose up -d`
+#   2. apps/api installed                           for the two fixture scripts
+#   3. apps/site built                              `next build && next start`, the production
+#                                                   build -- the dev server ships different
+#                                                   bytes and a different route manifest
+#
+# WHAT IT PROVES, in order:
+#
+#   A. two tenants publish real pages through `LandingPages::publish()` -- not written by this
+#      script, so the keys and the HTML are the publisher's and not a fixture's idea of them
+#   B. each host gets ITS OWN page and NOT the other's, in both orders and then again
+#   C. a legal host that has published NOTHING gets a 404, never a fallback to either page
+#   D. every hostile `Host` shape gets a 404 and no page text at all
+#   E. every answer carries `Vary: Host` -- the cache-key half
+#   F. the store VERIFIES signatures, so the 200s above mean the signature was right rather
+#      than that the store waved them through
+#   G. a republish switches the pointer for its own host and leaves the other host untouched
+#
+# ⛔ LOCAL AND TESTING ONLY. It runs the fixture scripts, which refuse any other `APP_ENV`.
+set -euo pipefail
+umask 077
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+PORT="${QRPAGER_SITE_PROOF_PORT:-3096}"
+WORK="$(mktemp -d)"
+SITE_PID=""
+
+# ⚠ **THE WHOLE PROCESS GROUP, AND KILLING ONLY `$!` COST THIS PROOF ITS MEANING FOR FOUR
+# RUNS.** The server was started as `pnpm … run start &`, so `$!` was **pnpm's** pid and
+# `next start` was its child. Killing pnpm left `next-server` ORPHANED AND STILL LISTENING, so
+# every later run's readiness probe succeeded instantly against a server from an EARLIER
+# build — and the proof reported green four times while driving code that was no longer in the
+# tree. A revert injected into `serve.ts` could not redden it, which is how this was found:
+# the same revert reddened a hand-started server on the same build.
+#
+# A proof that can silently measure a stale build is worse than no proof, because it reports
+# the reassuring answer. Two changes, and both are needed: `setsid` so the server has its own
+# process group and the whole group is killed, and a refusal to start at all when the port is
+# already held — a port in use means something else is listening, and quietly talking to it is
+# exactly the failure above.
+# ⚠ **THE PROCESS GROUP *AND THEN THE PORT*, AND THIS PAIR IS `tools/browsers/bin/e2e`'s
+# RATHER THAN A NEW IDEA — IT HAD ALREADY PAID FOR BOTH HALVES.** Its own note: *"`setsid`
+# plus `kill -- -PGID` fixes that for three of the four. It does NOT fix `next start`, which
+# spawns `next-server` in a NEW process group of its own -- so the port stayed held."*
+#
+# This script rediscovered the consequence the expensive way. It first started the server as
+# `pnpm … run start &`, so `$!` was **pnpm's** pid; killing it left `next-server` orphaned and
+# still listening, and every later run's readiness probe succeeded instantly against a server
+# from an EARLIER BUILD. **The proof reported green four times while driving code that was no
+# longer in the tree** — a revert injected into `serve.ts` could not redden it, while the same
+# revert reddened a hand-started server on the same build. A proof that can silently measure a
+# stale build is worse than none, because it fails in the reassuring direction.
+#
+# `free_port` carries e2e's `|| true` for the reason e2e records (`§11` round two, QA H-1): a
+# port with no listener makes `grep` exit 1, `pipefail` propagates it, and `set -e` then aborts
+# the EXIT trap itself — which on a green run both left the ports held and exited 1.
+stop_group() {
+    [ -n "${1:-}" ] || return 0
+    kill -- "-${1}" 2>/dev/null || kill "${1}" 2>/dev/null || true
+}
+
+free_port() {
+    local port="$1" pid
+
+    pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)"
+
+    [ -n "$pid" ] || return 0
+    kill "$pid" 2>/dev/null || true
+    sleep 0.3
+    kill -9 "$pid" 2>/dev/null || true
+}
+
+cleanup() {
+    stop_group "$SITE_PID"
+    free_port "$PORT"
+    wait 2>/dev/null || true
+    rm -rf "$WORK"
+}
+trap cleanup EXIT INT TERM
+
+fail() {
+    echo "site-isolation-proof: FAILED -- $1" >&2
+    exit 1
+}
+
+CHECKS=0
+check() {
+    # $1 label, $2 expected, $3 actual
+    CHECKS=$((CHECKS + 1))
+    if [ "$2" != "$3" ]; then
+        fail "$1: expected '$2', got '$3'"
+    fi
+    printf '  ok  %s\n' "$1"
+}
+
+# -----------------------------------------------------------------------------
+# A. two tenants, two real published pages
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: publishing two tenants' pages through the real publisher"
+
+cd "$REPO/apps/api"
+
+# ⚠ **THE JSON IS PASSED AS AN ARGUMENT RATHER THAN PIPED, AND `check-shell-evidence` IS WHY.**
+# `X="$(printf … | python3 …)"` is a pipeline assignment under `pipefail`, which that gate
+# flags: the substitution's status belongs to whichever stage failed and the reader cannot
+# tell which. Its message offers `|| true` as the fix *"if finding nothing is a valid
+# outcome"* -- and here it is NOT. A fixture that produced no tenant must abort, not continue
+# with an empty id and fail later somewhere less informative. Dropping the pipe is the
+# stronger fix: one command, one status, `set -e` aborts on a parse failure, and the `[ -n ]`
+# guards below still catch a successful parse of the wrong shape.
+FIXTURE="$(php bin/issue-staff-fixture)"
+ALPHA_ID="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["alpha"]["id"])' "$FIXTURE")"
+BETA_ID="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["beta"]["id"])' "$FIXTURE")"
+
+[ -n "$ALPHA_ID" ] || fail "the staff fixture produced no alpha tenant"
+[ -n "$BETA_ID" ] || fail "the staff fixture produced no beta tenant"
+
+ALPHA_JSON="$(php bin/publish-landing-fixture "$ALPHA_ID" 'Alpha Cafe')"
+BETA_JSON="$(php bin/publish-landing-fixture "$BETA_ID" 'Beta Grill')"
+
+ALPHA_HOST="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname"])' "$ALPHA_JSON")"
+BETA_HOST="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname"])' "$BETA_JSON")"
+
+[ "$ALPHA_HOST" != "$BETA_HOST" ] || fail "both tenants published to one hostname, so nothing below would mean anything"
+
+echo "  alpha -> $ALPHA_HOST"
+echo "  beta  -> $BETA_HOST"
+
+# The store's own credentials, read from the api's env so this script holds no copy of them.
+read_env() {
+    php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach (["bucket", "endpoint", "key", "secret", "region"] as $name) {
+    echo config("filesystems.disks.s3.".$name), "\n";
+}
+'
+}
+
+mapfile -t STORE < <(read_env)
+BUCKET="${STORE[0]:-}"
+ENDPOINT="${STORE[1]:-}"
+KEY_ID="${STORE[2]:-}"
+SECRET="${STORE[3]:-}"
+REGION="${STORE[4]:-us-east-1}"
+
+[ -n "$BUCKET" ] || fail "apps/api has no AWS_BUCKET configured, so there is no store to read"
+[ -n "$ENDPOINT" ] || fail "apps/api has no AWS_ENDPOINT configured, so there is no store to read"
+
+# -----------------------------------------------------------------------------
+# the production build of apps/site, never the dev server
+# -----------------------------------------------------------------------------
+cd "$REPO"
+
+echo "site-isolation-proof: building apps/site"
+pnpm --filter @qrpager/site run build >"$WORK/build.log" 2>&1 \
+    || { tail -20 "$WORK/build.log" >&2; fail "apps/site did not build"; }
+
+# ⚠ THE ROUTE MUST BE DYNAMIC, AND THE BUILD LOG IS WHERE THAT IS VISIBLE. A prerendered
+# answer on this surface is one host's page served to every host, which is the failure the
+# whole invariant is about -- so it is checked here as well as in the source.
+grep -q 'ƒ /\[\[\.\.\.path\]\]' "$WORK/build.log" \
+    || fail "apps/site's catch-all route is not reported as dynamic by the build"
+
+echo "site-isolation-proof: starting apps/site on port $PORT"
+# `PORT` rather than `-- --port`: pnpm passes the `--` through literally to the script, so
+# `next start` received `--port` as a project directory and reported
+# `Invalid project directory provided, no such directory: .../apps/site/--port`. Next reads
+# `PORT` itself, which is also what a container would set.
+QRPAGER_REVERT_HOST="${QRPAGER_REVERT_HOST:-}" # Nothing may already hold the port: see `cleanup`'s note. A reused listener is how this
+# proof spent four runs measuring a build that no longer existed.
+if (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null; then
+    exec 3<&- 2>/dev/null || true
+    fail "port $PORT is already in use -- refusing to start, because talking to somebody else's server is how this proof once measured a stale build. Stop it, or set QRPAGER_SITE_PROOF_PORT."
+fi
+
+# `setsid` so `$SITE_PID` leads its OWN process group and `kill -- -PGID` reaches `next-server`
+# rather than only the pnpm wrapper that spawned it.
+setsid env PORT="$PORT" AWS_BUCKET="$BUCKET" AWS_ENDPOINT="$ENDPOINT" AWS_ACCESS_KEY_ID="$KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION="$REGION" \
+    pnpm --filter @qrpager/site run start >"$WORK/site.log" 2>&1 &
+SITE_PID=$!
+
+for _ in $(seq 1 60); do
+    if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/" -H "Host: ${ALPHA_HOST}" 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+
+curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/" -H "Host: ${ALPHA_HOST}" 2>/dev/null \
+    || { tail -20 "$WORK/site.log" >&2; fail "apps/site never became ready on port $PORT"; }
+
+# `get <host> <path>` -> writes the body to $WORK/body and prints the status
+get() {
+    curl -sS -o "$WORK/body" -D "$WORK/headers" -w '%{http_code}' \
+        "http://127.0.0.1:${PORT}$2" -H "Host: $1"
+}
+
+body_has() { grep -qF "$1" "$WORK/body"; }
+header_is() { grep -iq "^$1: $2" "$WORK/headers"; }
+
+# -----------------------------------------------------------------------------
+# B. each host gets its own page, and not the other's
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: B -- each host gets its own page"
+
+for pair in "${ALPHA_HOST}|Alpha Cafe|Beta Grill" "${BETA_HOST}|Beta Grill|Alpha Cafe" "${ALPHA_HOST}|Alpha Cafe|Beta Grill"; do
+    IFS='|' read -r host mine theirs <<<"$pair"
+
+    status="$(get "$host" "/")"
+    check "$host answers 200" "200" "$status"
+
+    if ! body_has "$mine"; then
+        fail "$host served a page without its own name ('$mine') in it"
+    fi
+    printf '  ok  %s contains its own name\n' "$host"
+    CHECKS=$((CHECKS + 1))
+
+    # ⚠ ASKED THE SECOND WAY. "Mine is present" alone would pass on a page that concatenated
+    # both tenants' content, which is precisely the leak shape.
+    if body_has "$theirs"; then
+        fail "$host served a page containing the OTHER tenant's name ('$theirs') -- CROSS-TENANT LEAK"
+    fi
+    printf '  ok  %s contains nothing of the other tenant\n' "$host"
+    CHECKS=$((CHECKS + 1))
+done
+
+# -----------------------------------------------------------------------------
+# C. a legal host with nothing published gets a 404 and never a fallback
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: C -- an unpublished host falls back to nothing"
+
+# ⚠ **INTERLEAVED, AND EIGHT TIMES, AND THAT IS A REVERT PROOF'S DOING RATHER THAN CAUTION.**
+# The first version asked once, after clause B. A fallback was then injected into `serve()` --
+# `lastGoodKey`, a module-level memo of the last page served successfully, which is the
+# realistic shape of this leak -- and the single probe did NOT catch it, while the same build
+# driven by hand leaked on every one of twenty requests. Whatever the cause (a cold worker, a
+# fresh module scope for that one request), a proof whose verdict depends on which process
+# handles one request is not a proof.
+#
+# So the probe is INTERLEAVED with successful requests to both tenants and repeated: each
+# unpublished request now arrives immediately after a successful one, in whatever process
+# serves it, which is also the realistic sequence -- a visitor hitting an unpublished host
+# while the service is busy with real ones.
+PROBES=8
+for round in $(seq 1 "$PROBES"); do
+    # A real request first, alternating tenants, so any process-local state a leak could use
+    # is populated before the probe that must not use it.
+    if [ $((round % 2)) -eq 0 ]; then
+        get "$ALPHA_HOST" "/" >/dev/null
+    else
+        get "$BETA_HOST" "/" >/dev/null
+    fi
+
+    status="$(get "nobody-published-here.pages.qrpager.test" "/")"
+
+    if [ "$status" != "404" ]; then
+        fail "round $round: an unpublished host answered $status rather than 404 -- a fallback exists"
+    fi
+
+    for name in 'Alpha Cafe' 'Beta Grill'; do
+        if body_has "$name"; then
+            fail "round $round: an unpublished host was served '$name' -- this is the fallback branch that must not exist"
+        fi
+    done
+done
+printf '  ok  an unpublished host answered 404 and leaked nothing, %s times, interleaved\n' "$PROBES"
+CHECKS=$((CHECKS + 1))
+
+# -----------------------------------------------------------------------------
+# D. hostile Host shapes
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: D -- hostile Host headers"
+
+# ⚠ THE PORT FORM IS EXPECTED TO SUCCEED and is here for that reason: a `Host` header
+# legitimately carries one, so `alpha:PORT` must serve alpha. Everything else must not serve
+# anything. Mixing the two in one list, with the expectation stated per case, is what stops
+# this block from quietly becoming "everything 404s" -- which would also pass if the mapping
+# were broken outright.
+status="$(get "${ALPHA_HOST}:${PORT}" "/")"
+check "a Host carrying a port still serves its own page" "200" "$status"
+body_has 'Alpha Cafe' || fail "the port form did not serve alpha's page"
+
+for hostile in \
+    "${ALPHA_HOST}/../${BETA_HOST}" \
+    "${ALPHA_HOST}." \
+    "$(printf '%s' "$ALPHA_HOST" | tr 'a-z' 'A-Z')" \
+    "nope" \
+    ".." \
+    "${ALPHA_HOST}%00" \
+    "${ALPHA_HOST}%2f..%2f${BETA_HOST}"
+do
+    status="$(get "$hostile" "/" || true)"
+    if [ "$status" = "200" ]; then
+        fail "the hostile Host '$hostile' was served a page"
+    fi
+    for name in 'Alpha Cafe' 'Beta Grill'; do
+        if body_has "$name"; then
+            fail "the hostile Host '$hostile' leaked '$name'"
+        fi
+    done
+    printf '  ok  hostile Host refused: %s (%s)\n' "$hostile" "$status"
+    CHECKS=$((CHECKS + 1))
+done
+
+echo "site-isolation-proof: D -- paths that are not the page or one asset"
+
+for path in "/index.html" "/manifest.json" "/assets/../index.html" "/sites/${BETA_HOST}/index.html"; do
+    status="$(get "$ALPHA_HOST" "$path")"
+    check "path refused: $path" "404" "$status"
+done
+
+# -----------------------------------------------------------------------------
+# E. the cache-key half
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: E -- Vary: Host on every answer"
+
+for case in "${ALPHA_HOST}|/" "${ALPHA_HOST}|/nope" "nope|/" "nobody-published-here.pages.qrpager.test|/"; do
+    IFS='|' read -r host path <<<"$case"
+    get "$host" "$path" >/dev/null
+    header_is "vary" "Host" || fail "no 'Vary: Host' on the answer for Host '$host' path '$path'"
+    printf '  ok  Vary: Host on %s%s\n' "$host" "$path"
+    CHECKS=$((CHECKS + 1))
+done
+
+# -----------------------------------------------------------------------------
+# F. the store verifies signatures, so the 200s above mean something
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: F -- the store verifies signatures"
+
+# ⚠ WITHOUT THIS, EVERY 200 ABOVE IS UNINTERPRETABLE. A store that waved signatures through
+# would make a broken signer look perfect, so the control is the NEGATIVE one: the same signed
+# GET with the wrong secret must be refused.
+SIGNER="$REPO/tools/gate/lib/sign-s3-get.mjs"
+[ -f "$SIGNER" ] || fail "the signer helper is missing at $SIGNER"
+
+right="$(AWS_ENDPOINT="$ENDPOINT" AWS_BUCKET="$BUCKET" AWS_ACCESS_KEY_ID="$KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION="$REGION" \
+    node "$SIGNER" "sites/${ALPHA_HOST}/index.html")"
+check "a correctly signed GET of alpha's pointer" "200" "$right"
+
+wrong="$(AWS_ENDPOINT="$ENDPOINT" AWS_BUCKET="$BUCKET" AWS_ACCESS_KEY_ID="$KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="definitely_not_the_secret" AWS_DEFAULT_REGION="$REGION" \
+    node "$SIGNER" "sites/${ALPHA_HOST}/index.html")"
+check "the same GET signed with the wrong secret" "403" "$wrong"
+
+# -----------------------------------------------------------------------------
+# G. the republish path: the pointer switch is per host
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: G -- a republish switches one host's pointer and no other's"
+
+cd "$REPO/apps/api"
+php bin/publish-landing-fixture "$ALPHA_ID" 'Alpha Cafe Rebuilt' >/dev/null
+cd "$REPO"
+
+status="$(get "$ALPHA_HOST" "/")"
+check "alpha answers 200 after a republish" "200" "$status"
+body_has 'Alpha Cafe Rebuilt' || fail "alpha's host did not serve the republished page"
+printf '  ok  alpha serves the republished page\n'
+CHECKS=$((CHECKS + 1))
+
+status="$(get "$BETA_HOST" "/")"
+check "beta answers 200 after alpha's republish" "200" "$status"
+body_has 'Beta Grill' || fail "beta's page changed when alpha republished"
+if body_has 'Alpha Cafe Rebuilt'; then
+    fail "beta's host served alpha's republished page -- CROSS-TENANT LEAK through the pointer switch"
+fi
+printf '  ok  beta is untouched by alpha republishing\n'
+CHECKS=$((CHECKS + 1))
+
+echo
+echo "site-isolation-proof: green -- ${CHECKS} checks, two tenants, real published bytes"
