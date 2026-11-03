@@ -87,9 +87,53 @@ final class PublishedSite
         return self::PREFIX.'/'.$hostname;
     }
 
+    /**
+     * The hostname rule, as DATA rather than as a literal inside the method.
+     *
+     * ⚠ **THESE TWO CONSTANTS EXIST SO THE RULE CAN BE READ BY SOMETHING OTHER THAN PHP, AND
+     * TASK 11 IS WHY.** `apps/site` is the local stand-in for the CDN's `Host` -> prefix
+     * mapping (`ADR-005`), so it has to refuse a hostile `Host` header before it builds a
+     * key -- the same refusal, for the same reason, in TypeScript. A hand-written copy of
+     * this regex over there would be the "second source wearing a disguise" that
+     * `packages/contracts/src/generated/status.ts` opens by warning about: it agrees on the
+     * day it is written and drifts in silence after.
+     *
+     * So `App\Domain\Contracts\SiteKeyMirror` READS these constants and emits them, and
+     * `composer contracts:check` byte-diffs the result. The pattern is written in a syntax
+     * both PCRE and ECMAScript accept -- anchors, character classes, groups, `?` and `+`,
+     * and nothing else -- and `docs/contracts/hostnames.json` drives the same
+     * curated cases through both engines, so the equivalence is MEASURED rather than taken
+     * on the similarity of two regex dialects.
+     *
+     * `isSafeHostname()` is unchanged in behaviour; only the literals moved out of it.
+     */
+    public const HOSTNAME_MAX_LENGTH = 253;
+
+    public const HOSTNAME_PATTERN = '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$';
+
+    /**
+     * ⚠ **THE `D` MODIFIER IS LOAD-BEARING AND ITS ABSENCE WAS A HOLE IN THIS GUARD.**
+     *
+     * PCRE's `$` matches at the end of the subject **or immediately before a final
+     * newline**; ECMAScript's `$` matches only at the very end. So the same pattern
+     * characters meant two different things in the two engines, and the direction of the
+     * difference was the bad one: `"example.test\n"` was **ACCEPTED here** and refused by
+     * the mirror. Measured 2026-11-03, PHP 8.4: `preg_match` returned 1 without `D` and 0
+     * with it, while the JavaScript regex returned false either way. `root()` would have
+     * built the key `sites/example.test\n` -- a *different* prefix from the host's own,
+     * which is the one thing this guard exists to make impossible.
+     *
+     * `D` is the fix rather than `\z`, and that choice is the point: `D` leaves the PATTERN
+     * STRING untouched, so `HOSTNAME_PATTERN` stays a single source that both engines can
+     * read, and only the PHP-side modifier differs. `\z` would have made the two patterns
+     * textually different and reopened the drift the mirror exists to close.
+     *
+     * Found by `docs/contracts/hostnames.json` -- a fixture written to prove the two engines
+     * agree, which found that they did not. Its `example.test\n` case is the regression.
+     */
     public static function isSafeHostname(string $hostname): bool
     {
-        return strlen($hostname) <= 253
-            && preg_match('/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/', $hostname) === 1;
+        return strlen($hostname) <= self::HOSTNAME_MAX_LENGTH
+            && preg_match('/'.self::HOSTNAME_PATTERN.'/D', $hostname) === 1;
     }
 }

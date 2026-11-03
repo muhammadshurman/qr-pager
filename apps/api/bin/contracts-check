@@ -27,3 +27,9 @@ export PAO_DISABLE=1
 # is deliberately NOT offered here: the test of THIS check drives the command directly, with
 # its own --path pointing at a scratch copy.
 php artisan contracts:export --check
+
+# The second mirror, with its own source and its own way of going stale: `PublishedSite`'s key
+# layout and hostname rule, which apps/site reads so it refuses a hostile `Host` with the rule
+# the publisher refuses it with rather than a second one (ADR-005). Two commands, two messages:
+# a single command writing both would fail in a way that names neither.
+php artisan contracts:export-site-keys --check

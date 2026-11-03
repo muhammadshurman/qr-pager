@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Http\ProblemType;
+use App\Features\Contracts\Console\ExportSiteKeyMirrorCommand;
 use App\Features\Contracts\Console\ExportStatusMirrorCommand;
 use App\Features\Landing\Console\AdvanceDomainsCommand;
 use App\Features\Landing\Console\ExportLandingSchemaCommand;
@@ -209,6 +210,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // red. DatabaseEnums::map() is its source, so an enum added to that registry
         // appears in the TypeScript without anyone remembering to add it.
         ExportStatusMirrorCommand::class,
+        // Task 11's generator for the TypeScript published-site key mirror (`ADR-005`).
+        // A SECOND command rather than a second artifact of the one above, because the two
+        // have different sources -- the enum registry there, `PublishedSite` here -- and one
+        // command writing both would go stale in a way that names neither. Not scheduled,
+        // for the same reason as its two siblings: it writes a committed artifact and
+        // `--check` is what keeps it honest.
+        ExportSiteKeyMirrorCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         // GLOBAL, and prepended: the first invariant in §3.1 row 2 is "a request
