@@ -72,6 +72,19 @@ if (! is_string($name) || $name === '') {
 
 $heading = (string) ($argv[2] ?? $name);
 
+/*
+ * ⚠ A REAL THEME, AND AN EMPTY ONE MADE A GATE CLAUSE UNMEASURABLE. The first version
+ * published `'theme' => []`, so `ThemeStylesheet::declarations()` emitted nothing and
+ * `site-isolation-proof`'s clause I -- *per-tenant theme applied FROM TOKENS*, which is
+ * `§3` row 11's own words -- had no custom properties to find. It failed, correctly, on the
+ * fixture rather than on the product.
+ *
+ * The accent is DERIVED FROM THE HEADING so two tenants get two different ones, which is what
+ * lets the proof assert the second way: this tenant's accent is present AND the other
+ * tenant's is absent. A shared theme would pass the first assertion whatever leaked.
+ */
+$accent = '#'.substr(hash('sha256', $heading), 0, 6);
+
 $pages = $app->make(LandingPages::class);
 
 /*
@@ -104,7 +117,12 @@ $pages->saveDraft($tenant, [
             ],
         ],
     ],
-    'theme' => [],
+    'theme' => [
+        'color.accent' => $accent,
+        'font.heading' => 'serif',
+        'radius.large' => '1.5rem',
+        'space.section' => '4rem',
+    ],
     'seo' => [
         'title' => $heading,
         'description' => 'The landing page of '.$heading.'.',
@@ -130,6 +148,8 @@ echo json_encode([
     'tenant_id' => $tenant,
     'hostname' => $row->published_hostname,
     'heading' => $heading,
+    // The proof asserts this value is in THIS tenant's page and not in the other's.
+    'accent' => $accent,
     'checksum' => $row->published_checksum,
 ], JSON_THROW_ON_ERROR), "\n";
 

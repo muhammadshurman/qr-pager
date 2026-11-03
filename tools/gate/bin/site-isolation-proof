@@ -141,6 +141,10 @@ BETA_JSON="$(php bin/publish-landing-fixture "$BETA_ID" 'Beta Grill')"
 
 ALPHA_HOST="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname"])' "$ALPHA_JSON")"
 BETA_HOST="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname"])' "$BETA_JSON")"
+ALPHA_ACCENT="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["accent"])' "$ALPHA_JSON")"
+BETA_ACCENT="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["accent"])' "$BETA_JSON")"
+
+[ "$ALPHA_ACCENT" != "$BETA_ACCENT" ] || fail "both tenants published the same accent, so the theme assertions would mean nothing"
 
 [ "$ALPHA_HOST" != "$BETA_HOST" ] || fail "both tenants published to one hostname, so nothing below would mean anything"
 
@@ -373,8 +377,17 @@ check "the same GET signed with the wrong secret" "403" "$wrong"
 echo "site-isolation-proof: G -- a republish switches one host's pointer and no other's"
 
 cd "$REPO/apps/api"
-php bin/publish-landing-fixture "$ALPHA_ID" 'Alpha Cafe Rebuilt' >/dev/null
+REPUBLISHED_JSON="$(php bin/publish-landing-fixture "$ALPHA_ID" 'Alpha Cafe Rebuilt')"
 cd "$REPO"
+
+# ⚠ THE ACCENT MOVES WITH THE REPUBLISH, AND CLAUSE I READS IT AFTERWARDS. The fixture derives
+# the accent from the heading, so republishing under a new heading gives alpha a new accent --
+# and clause I asserted the FIRST publish's value against the SECOND publish's page, which
+# failed on correct behaviour. Re-read here rather than re-derived, so the proof is told what
+# happened instead of assuming it.
+ALPHA_ACCENT="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["accent"])' "$REPUBLISHED_JSON")"
+
+[ "$ALPHA_ACCENT" != "$BETA_ACCENT" ] || fail "the republished accent collides with beta's, so the theme assertions below would mean nothing"
 
 status="$(get "$ALPHA_HOST" "/")"
 check "alpha answers 200 after a republish" "200" "$status"
@@ -389,6 +402,101 @@ if body_has 'Alpha Cafe Rebuilt'; then
     fail "beta's host served alpha's republished page -- CROSS-TENANT LEAK through the pointer switch"
 fi
 printf '  ok  beta is untouched by alpha republishing\n'
+CHECKS=$((CHECKS + 1))
+
+# -----------------------------------------------------------------------------
+# H. the origin is untouched, proven by there being no origin
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: H -- origin untouched"
+
+# `QRPAGER-18 §5`'s first trap: *"'Origin untouched' must be proven from the origin's own
+# logs, not inferred from a cache header."* This proof goes one better and the stronger form
+# is also the simpler one: **there is no origin running at all.** Nothing in this script
+# starts `php artisan serve`, so if the API's port has no listener and the pages still serve,
+# no request can have reached Laravel — a claim no access log can contradict.
+API_PORT="${QRPAGER_E2E_API_PORT:-8099}"
+
+if (exec 3<>/dev/tcp/127.0.0.1/"$API_PORT") 2>/dev/null; then
+    exec 3<&- 2>/dev/null || true
+    fail "something is listening on the API port $API_PORT, so 'origin untouched' cannot be proven by absence here -- stop it and re-run"
+fi
+printf '  ok  nothing is listening on the API port (%s)\n' "$API_PORT"
+CHECKS=$((CHECKS + 1))
+
+status="$(get "$ALPHA_HOST" "/")"
+check "a page is served with no application process running" "200" "$status"
+body_has 'Alpha Cafe Rebuilt' || fail "the page served with no origin is not the published one"
+printf '  ok  the bytes are the published ones, with no origin to produce them\n'
+CHECKS=$((CHECKS + 1))
+
+# -----------------------------------------------------------------------------
+# I. the theme is applied from tokens, and only from tokens
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: I -- per-tenant theme from tokens"
+
+get "$ALPHA_HOST" "/" >/dev/null
+
+# `§3` row 11: *per-tenant theme applied FROM TOKENS*. The published page carries the theme in
+# ONE style attribute of `<html>`, built by `ThemeStylesheet::declarations()` from the
+# allow-listed token names -- so what is asserted here is that the served bytes carry custom
+# properties and NOT a rule set. `composer guard` rule 11 enforces the no-components half
+# statically; this is the end-to-end half.
+grep -q '<html[^>]*style="[^"]*--' "$WORK/body"     || fail "the served page carries no token custom properties in its html style attribute"
+printf '  ok  the theme arrives as custom properties on one element\n'
+CHECKS=$((CHECKS + 1))
+
+# A tenant cannot reach a RULE. ⚠ **AND THE FIRST VERSION OF THIS ASSERTION ALSO REJECTED `;`,
+# WHICH IS WRONG AND IT FAILED ON A CORRECT PAGE.** A `style` attribute separates its
+# declarations with semicolons: the real page is
+# `style="--color-accent:#be0b5b;--font-heading:ui-serif, Georgia, serif;…"`, and a check that
+# called that an escape was a check measuring its own author's mistake. What would actually be
+# an escape is a BRACE (a declaration closed and a selector opened, which is what `composer
+# guard` rule 11 exists for) or a tag delimiter breaking out of the attribute.
+if grep -qE '<html[^>]*style="[^"]*[{}]' "$WORK/body"; then
+    fail "the html style attribute contains a brace -- a theme token closed its declaration and opened a rule"
+fi
+if grep -qE '<html[^>]*style="[^"]*<' "$WORK/body"; then
+    fail "the html style attribute contains '<' -- a theme token broke out of the attribute"
+fi
+printf '  ok  no rule, no selector and no closed declaration in the theme attribute\n'
+CHECKS=$((CHECKS + 1))
+
+# ⚠ ASKED THE SECOND WAY: this tenant's accent is present AND the other tenant's is absent.
+# The fixture derives each accent from the tenant's own heading precisely so the two differ --
+# a shared theme would satisfy the first half whatever had leaked.
+body_has "$ALPHA_ACCENT" || fail "alpha's page does not carry alpha's own accent ($ALPHA_ACCENT)"
+if body_has "$BETA_ACCENT"; then
+    fail "alpha's page carries BETA's accent ($BETA_ACCENT) -- a cross-tenant theme leak"
+fi
+printf '  ok  this tenant theme and not the other (%s, not %s)\n' "$ALPHA_ACCENT" "$BETA_ACCENT"
+CHECKS=$((CHECKS + 1))
+
+# -----------------------------------------------------------------------------
+# J. SEO and Open Graph carry this tenant's facts and no other's
+# -----------------------------------------------------------------------------
+echo "site-isolation-proof: J -- SEO and Open Graph"
+
+for tag in \
+    '<title>' \
+    '<meta name="description"' \
+    '<meta property="og:title"' \
+    '<meta property="og:description"' \
+    '<meta property="og:url"' \
+    '<link rel="canonical"'
+do
+    body_has "$tag" || fail "the served page carries no $tag"
+    printf '  ok  present: %s\n' "$tag"
+    CHECKS=$((CHECKS + 1))
+done
+
+# ⚠ AND THE CANONICAL NAMES THIS HOST, which is the SEO half of the invariant: a canonical or
+# an `og:url` pointing at another tenant's domain would hand that tenant the search ranking
+# and tell a crawler the two pages are one.
+body_has "https://${ALPHA_HOST}/" || fail "the canonical/og:url does not name this host"
+if body_has "https://${BETA_HOST}/"; then
+    fail "alpha's page names BETA's host in a canonical or og:url -- a cross-tenant SEO leak"
+fi
+printf '  ok  the canonical and og:url name this host and no other\n'
 CHECKS=$((CHECKS + 1))
 
 echo
