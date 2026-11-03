@@ -457,6 +457,15 @@ jobs:
         working-directory: .
         run: pnpm run gate:site-isolation
 
+      # Task 11a's half of the same invariant: the DOMAIN LIFECYCLE. `site-isolation` covers the
+      # cache key, the Host -> prefix mapping and the per-host pointer switch; this covers what
+      # the old hostname serves after a page MOVES (`R-133`) and whether `manifest.json` can
+      # disagree with the `index.html` beside it (`R-170`). Same job, same reason: it needs PHP,
+      # Postgres, the object store and the production build of apps/site all at once.
+      - name: A page that moves hostname leaves no bytes behind it
+        working-directory: .
+        run: pnpm run gate:domain-move
+
   frontend:
     name: Frontend workspace — lint, types, Vitest, Playwright, build
     runs-on: ubuntu-latest

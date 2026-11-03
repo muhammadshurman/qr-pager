@@ -26,6 +26,7 @@
     "gate": "node tools/gate/bin/gate.mjs",
     "gate:e2e": "tools/browsers/bin/e2e",
     "gate:site-isolation": "tools/gate/bin/site-isolation-proof",
+    "gate:domain-move": "tools/gate/bin/domain-move-proof",
     "gate:lighthouse": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_LIGHTHOUSE=1 tools/browsers/bin/e2e",
     "gate:ready-latency": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_READY_LATENCY=1 tools/browsers/bin/e2e",
     "gate:kds-resync": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_KDS_RESYNC=1 tools/browsers/bin/e2e"

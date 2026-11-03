@@ -395,9 +395,33 @@ final class TenantDomains
         //
         // One short transaction for the read; `publish()` below opens its own, and the
         // object writes after it hold none.
-        $published = withTenant($tenantId, static fn (): bool => (string) DB::table('landing_pages')
+        /*
+         * ⚠ **THE OLD HOSTNAME IS READ FROM THE ROW, NOT TAKEN FROM THE CALLER, AND THAT IS
+         * `R-133`'s FIX.**
+         *
+         * `$previousHostname` is the *demoted `tenant_domains` row*, so it is **null for a
+         * tenant's FIRST custom domain** — the platform hostname `{slug}.{platform_domain}`
+         * has no row, because it is the fallback a page is published to before any domain
+         * exists. The method then returned early and left `sites/{slug}.{platform}/index.html`
+         * serving the old page. Measured 2026-11-03 after a real activation: the platform host
+         * served **3 251 bytes with the heading intact and no redirect** while the new host
+         * served its own copy — two live pages for one tenant, the platform one carrying a
+         * canonical that now points elsewhere.
+         *
+         * `landing_pages.published_hostname` is the row's own record of where the page is
+         * live, so it is right for BOTH cases and is one source instead of two: for a second
+         * custom domain it equals `$previousHostname`, and for the first it is the platform
+         * host. It is read HERE, before `publish()` below overwrites it.
+         */
+        /** @var array{status: string, published_hostname: ?string}|null $before */
+        $before = withTenant($tenantId, static fn (): ?array => (array) DB::table('landing_pages')
             ->where('tenant_id', $tenantId)
-            ->value('status') === 'published');
+            ->first(['status', 'published_hostname']) ?: null);
+
+        $published = ($before['status'] ?? null) === 'published';
+        $wasLiveAt = is_string($before['published_hostname'] ?? null) && $before['published_hostname'] !== ''
+            ? $before['published_hostname']
+            : null;
 
         if ($published) {
             // A failure here must not undo the activation: the certificate is real and
@@ -412,12 +436,22 @@ final class TenantDomains
             }
         }
 
-        if ($previousHostname === null) {
+        /*
+         * Where the page WAS live, if anywhere, and never the new host itself — writing a
+         * redirect to itself at its own prefix would replace the page that was just published.
+         *
+         * `$previousHostname` is still honoured when the row records nothing: a domain demoted
+         * from `active` has a prefix of its own that should redirect even if this tenant has
+         * never completed a publish.
+         */
+        $redirectAt = $wasLiveAt !== null && $wasLiveAt !== $hostname ? $wasLiveAt : $previousHostname;
+
+        if ($redirectAt === null || $redirectAt === $hostname) {
             return;
         }
 
         MediaLibrary::disk()->put(
-            PublishedSite::pointer($previousHostname),
+            PublishedSite::pointer($redirectAt),
             View::make('landing.redirect', ['hostname' => $hostname])->render(),
             [
                 'ContentType' => 'text/html; charset=utf-8',
@@ -428,9 +462,9 @@ final class TenantDomains
         );
 
         MediaLibrary::disk()->put(
-            PublishedSite::manifest($previousHostname),
+            PublishedSite::manifest($redirectAt),
             (string) json_encode([
-                'hostname' => $previousHostname,
+                'hostname' => $redirectAt,
                 'redirect_to' => $hostname,
                 'redirected_at' => now()->toIso8601String(),
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),

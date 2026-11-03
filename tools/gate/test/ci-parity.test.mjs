@@ -125,6 +125,13 @@ const CROSS_HALF_GATE = 'pnpm run gate:e2e'
  */
 const INVARIANT_GATE = 'pnpm run gate:site-isolation'
 
+/**
+ * Task 11a's half of the same invariant: the domain lifecycle (`R-133`, `R-170`). A third
+ * cross-half gate, required of CI for the reason the two above give — a gate nobody must run
+ * stops being run, which is `R-126`'s shape.
+ */
+const DOMAIN_MOVE_GATE = 'pnpm run gate:domain-move'
+
 /** Every `pnpm …` command line the frontend job runs, across `run:` scalars and blocks. */
 function ciSteps() {
   return [...frontendJob.matchAll(/^\s*(?:- )?(?:run: )?(pnpm [^\n|>]*)$/gm)]
@@ -182,6 +189,21 @@ describe('the workspace gate and CI run the same steps', () => {
       Object.keys(pkg.scripts),
       'gate:site-isolation is required of CI and is not a script in package.json',
     ).toContain('gate:site-isolation')
+  })
+
+  it('requires CI to run Task 11a’s domain-move gate, in the job that can', () => {
+    expect(
+      gatesJob,
+      `CI's gates job does not run ${DOMAIN_MOVE_GATE} -- R-133 and R-170 are §3 row 11's two ` +
+        'remaining invariant mechanisms and would be verified by no runner',
+    ).toContain(DOMAIN_MOVE_GATE)
+
+    const pkg = JSON.parse(read('package.json'))
+
+    expect(
+      Object.keys(pkg.scripts),
+      'gate:domain-move is required of CI and is not a script in package.json',
+    ).toContain('gate:domain-move')
   })
 
   it('runs the cross-half gate in each of three-green-runs runs', () => {

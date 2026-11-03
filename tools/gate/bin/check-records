@@ -227,6 +227,25 @@ export function checkTranscripts(inFlight, dir = join(REPO, 'docs', 'tickets')) 
   )
 
   for (const name of readdirSync(dir)) {
+    /**
+     * ⚠ **A `-revert-record` TRANSCRIPT IS RED ON PURPOSE AND IS OUTSIDE THIS SET, NAMED HERE
+     * RATHER THAN LEFT TO THE REGEX.** Muhammad's standing instruction of 2026-11-03 requires
+     * every new proof to be SHOWN TO REDDEN once, with the output recorded beside it — so
+     * those transcripts contain `FAILED --` and `EXIT=1` by design, which is the opposite of
+     * what the checks below demand.
+     *
+     * The name does not match the pattern on the next line, so nothing changes mechanically.
+     * It is written down because the `-baseline-` note two comments down makes the rule
+     * explicit for exactly this reason: *"Named rather than inferred, so a transcript cannot
+     * dodge this check by accident."* Somebody widening that pattern to `[a-z-]*` over all
+     * names would otherwise make every revert record a gate failure, and the honest fix then
+     * looks like deleting the evidence.
+     *
+     * The distinction is the one the `-lighthouse` note already draws: a transcript of a
+     * DECLARED non-delivery is evidence, a transcript of a gate that failed is not.
+     */
+    if (name.includes('-revert-record')) continue
+
     if (!/-(gate|e2e|three-runs|fresh-clone)[a-z-]*\.txt$/.test(name)) continue
 
     /**

@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+# =============================================================================
+# THE DOMAIN MOVE, AND THE TWO MECHANISMS §3 ROW 11's INVARIANT HAD NOT PROVEN
+# =============================================================================
+#
+# `site-isolation-proof` covers two of the three mechanisms Muhammad named — the cache key and
+# the `Host` -> prefix mapping — and the per-host pointer switch of the third. What it does NOT
+# cover is the DOMAIN LIFECYCLE: what the old hostname serves after a page moves, and whether
+# `manifest.json` ever disagrees with the `index.html` beside it. Those are `R-133` and
+# `R-170`, Task 11's own rows, and Task 11 is tagged — so Task 11a re-owns and closes them.
+#
+# ⚠ **ONE THING THE BRIEF ASKED FOR CANNOT HAPPEN, AND THE PROOF ASSERTS WHY RATHER THAN
+# SIMULATING IT.** *"A hostname released by tenant A and claimed by tenant B"* has no code path:
+# `tenant_domains_hostname_unique` is GLOBAL (`R-129`), there is **no delete path** (`R-138` —
+# the `DELETE` grant exists and nothing uses it), and the platform hostname is
+# `{slug}.{platform_domain}` where `slug` is unique and **absent from the app role's `UPDATE`
+# grant on `tenants`**. A hostname therefore cannot change hands at all. Clause A drives those
+# three facts against the live catalogue and the live schema, because they are what makes the
+# scenario impossible — and a fact nothing checks is a fact that stops being true.
+#
+# WHAT IT NEEDS RUNNING, and it FAILS rather than skipping when one is absent:
+#   1. the composed Postgres and the object store
+#   2. apps/api installed, with `landing.dns_driver` and `landing.certificate_driver` local
+#   3. apps/site built — the move is asserted over HTTP, against the bytes a visitor gets
+#
+# ⛔ LOCAL AND TESTING ONLY. It runs the fixture scripts, which refuse any other `APP_ENV`.
+set -euo pipefail
+umask 077
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+PORT="${QRPAGER_MOVE_PROOF_PORT:-3091}"
+WORK="$(mktemp -d)"
+SITE_PID=""
+
+# The teardown `site-isolation-proof` paid for: the process GROUP and then the PORT, because
+# `next start` spawns `next-server` in a group of its own and killing the wrapper leaves the
+# port held — which once made a sibling proof report green four times against a stale build.
+stop_group() {
+    [ -n "${1:-}" ] || return 0
+    kill -- "-${1}" 2>/dev/null || kill "${1}" 2>/dev/null || true
+}
+
+free_port() {
+    local port="$1" pid
+
+    pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)"
+
+    [ -n "$pid" ] || return 0
+    kill "$pid" 2>/dev/null || true
+    sleep 0.3
+    kill -9 "$pid" 2>/dev/null || true
+}
+
+cleanup() {
+    stop_group "$SITE_PID"
+    free_port "$PORT"
+    wait 2>/dev/null || true
+    rm -rf "$WORK"
+}
+trap cleanup EXIT INT TERM
+
+fail() {
+    echo "domain-move-proof: FAILED -- $1" >&2
+    exit 1
+}
+
+CHECKS=0
+check() {
+    CHECKS=$((CHECKS + 1))
+    if [ "$2" != "$3" ]; then
+        fail "$1: expected '$2', got '$3'"
+    fi
+    printf '  ok  %s\n' "$1"
+}
+note() {
+    CHECKS=$((CHECKS + 1))
+    printf '  ok  %s\n' "$1"
+}
+
+cd "$REPO/apps/api"
+
+# -----------------------------------------------------------------------------
+# A. a hostname cannot change hands, and these are the three reasons
+# -----------------------------------------------------------------------------
+echo "domain-move-proof: A -- a hostname cannot change hands"
+
+CATALOGUE="$(php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+
+$unique = DB::connection("pgsql_owner")->selectOne(
+    "select count(*) as n from pg_constraint where conname = ?", ["tenant_domains_hostname_unique"]
+);
+$slugUnique = DB::connection("pgsql_owner")->selectOne(
+    "select count(*) as n from pg_constraint where conname = ?", ["tenants_slug_unique"]
+);
+$slugUpdatable = DB::connection("pgsql_owner")->selectOne(
+    "select count(*) as n from information_schema.column_privileges
+      where grantee = ? and table_name = ? and column_name = ? and privilege_type = ?",
+    ["qrpager_app", "tenants", "slug", "UPDATE"]
+);
+echo json_encode([
+    "hostname_unique" => (int) $unique->n,
+    "slug_unique" => (int) $slugUnique->n,
+    "slug_updatable" => (int) $slugUpdatable->n,
+], JSON_THROW_ON_ERROR);
+')"
+
+check "tenant_domains.hostname carries a GLOBAL unique constraint" "1" \
+    "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname_unique"])' "$CATALOGUE")"
+check "tenants.slug carries a unique constraint" "1" \
+    "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["slug_unique"])' "$CATALOGUE")"
+# ⚠ THE ONE THAT MAKES THE PLATFORM HOSTNAME IMMUTABLE. `{slug}.{platform_domain}` is the
+# fallback prefix a page is published to, so a slug the app role could rewrite would be a
+# prefix that could change hands without any domain ever being released.
+check "the app role CANNOT update tenants.slug" "0" \
+    "$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["slug_updatable"])' "$CATALOGUE")"
+
+# No delete path, asserted over the SOURCE: `R-138` records that the grant exists and nothing
+# uses it, which is the half that can regress without the schema changing.
+# ⚠ `--` BEFORE THE PATTERN. Without it `grep` read `->delete(...` as an option bundle and
+# printed `invalid option -- '>'`; the `if` then took its else branch and the check PASSED
+# VACUOUSLY while printing `ok`. A guard that reports success because its own command failed
+# to parse is the reassuring-direction failure this run has now seen three times.
+if grep -rn "tenant_domains" "$REPO/apps/api/app" --include='*.php' \
+    | grep -qiE -- '->delete\(|delete from tenant_domains'; then
+    fail "something in app/ now deletes a tenant_domains row -- R-138's premise is gone and a hostname CAN change hands"
+fi
+note "nothing in app/ deletes a tenant_domains row (R-138's premise)"
+
+# -----------------------------------------------------------------------------
+# B. two tenants, one published at its platform host, then moved
+# -----------------------------------------------------------------------------
+echo "domain-move-proof: B -- publishing two tenants and moving one"
+
+FIXTURE="$(php bin/issue-staff-fixture)"
+ALPHA_ID="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["alpha"]["id"])' "$FIXTURE")"
+BETA_ID="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["beta"]["id"])' "$FIXTURE")"
+
+# ⚠ EACH FIXTURE'S EXIT CODE IS CHECKED BEFORE ITS OUTPUT IS PARSED. Both scripts now exit
+# non-zero on a refusal, and without this guard a refusal reached the proof as a Python
+# `JSONDecodeError` on empty stdout -- which is the right detection reported in a shape that
+# names neither the clause nor the cause.
+ALPHA_JSON="$(php bin/publish-landing-fixture "$ALPHA_ID" 'Alpha Cafe')" \
+    || fail "the publish fixture refused alpha's page; nothing below could mean anything"
+BETA_JSON="$(php bin/publish-landing-fixture "$BETA_ID" 'Beta Grill')" \
+    || fail "the publish fixture refused beta's page; nothing below could mean anything"
+
+ALPHA_PLATFORM="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname"])' "$ALPHA_JSON")"
+BETA_PLATFORM="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["hostname"])' "$BETA_JSON")"
+
+[ "$ALPHA_PLATFORM" != "$BETA_PLATFORM" ] || fail "both tenants share a platform hostname"
+
+# A hostname nobody has claimed, unique per run so repeated runs do not collide with the
+# global unique constraint -- which is itself clause A's point.
+MOVED="alpha-$(date +%s%N | tail -c 9).example.test"
+
+php bin/activate-domain-fixture "$ALPHA_ID" "$MOVED" >"$WORK/moved.json"
+note "alpha's custom domain $MOVED walked the real lifecycle to active"
+
+# ⚠ AND BETA CANNOT CLAIM IT. The refusal is the global unique constraint surfacing, which is
+# clause A asserted from the other side -- as behaviour rather than as catalogue metadata.
+if php bin/activate-domain-fixture "$BETA_ID" "$MOVED" >"$WORK/steal.json" 2>"$WORK/steal.err"; then
+    fail "beta claimed a hostname alpha holds -- a hostname CAN change hands"
+fi
+note "beta is refused when it claims alpha's hostname"
+
+# -----------------------------------------------------------------------------
+# the production build of apps/site, serving the real bytes
+# -----------------------------------------------------------------------------
+cd "$REPO"
+
+read_store() {
+    (cd "$REPO/apps/api" && php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach (["bucket", "endpoint", "key", "secret", "region"] as $name) {
+    echo config("filesystems.disks.s3.".$name), "\n";
+}
+')
+}
+
+mapfile -t STORE < <(read_store)
+BUCKET="${STORE[0]:-}"
+ENDPOINT="${STORE[1]:-}"
+KEY_ID="${STORE[2]:-}"
+SECRET="${STORE[3]:-}"
+REGION="${STORE[4]:-us-east-1}"
+
+[ -n "$BUCKET" ] || fail "apps/api has no AWS_BUCKET configured"
+
+echo "domain-move-proof: building apps/site"
+pnpm --filter @qrpager/site run build >"$WORK/build.log" 2>&1 \
+    || { tail -20 "$WORK/build.log" >&2; fail "apps/site did not build"; }
+
+if (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null; then
+    exec 3<&- 2>/dev/null || true
+    fail "port $PORT is already in use -- refusing to start rather than talk to somebody else's server"
+fi
+
+setsid env PORT="$PORT" AWS_BUCKET="$BUCKET" AWS_ENDPOINT="$ENDPOINT" AWS_ACCESS_KEY_ID="$KEY_ID" \
+    AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION="$REGION" \
+    pnpm --filter @qrpager/site run start >"$WORK/site.log" 2>&1 &
+SITE_PID=$!
+
+for _ in $(seq 1 60); do
+    if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/" -H "Host: ${MOVED}" 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+
+curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/" -H "Host: ${MOVED}" 2>/dev/null \
+    || { tail -20 "$WORK/site.log" >&2; fail "apps/site never became ready on port $PORT"; }
+
+get() {
+    curl -sS -o "$WORK/body" -D "$WORK/headers" -w '%{http_code}' \
+        "http://127.0.0.1:${PORT}$2" -H "Host: $1"
+}
+body_has() { grep -qF "$1" "$WORK/body"; }
+
+# -----------------------------------------------------------------------------
+# C. R-133 -- the old host redirects, and does not go on serving the page
+# -----------------------------------------------------------------------------
+echo "domain-move-proof: C -- R-133, the host a page moved OFF"
+
+status="$(get "$MOVED" "/")"
+check "the new host serves alpha's page" "200" "$status"
+body_has 'Alpha Cafe' || fail "the new host does not serve alpha's page"
+
+status="$(get "$ALPHA_PLATFORM" "/")"
+check "alpha's platform host still answers" "200" "$status"
+
+# ⚠ **THE CLAUSE R-133 IS ABOUT.** Measured before the fix, after a real activation: the
+# platform host served 3 251 bytes with the heading intact and no redirect, while the new host
+# served its own copy -- two live pages for one tenant, the platform one carrying a canonical
+# that now pointed elsewhere.
+body_has 'http-equiv="refresh"' \
+    || fail "alpha's platform host serves no redirect after the move -- R-133 has regressed"
+note "alpha's platform host serves a REDIRECT, not the old page"
+
+if body_has '<h1'; then
+    fail "alpha's platform host still serves page content after the move -- R-133 has regressed"
+fi
+note "the old host carries no page content at all"
+
+body_has "$MOVED" || fail "the redirect does not name the hostname the page moved to"
+note "the redirect names alpha's new host"
+
+# -----------------------------------------------------------------------------
+# D. the redirect cannot cross a tenant boundary
+# -----------------------------------------------------------------------------
+echo "domain-move-proof: D -- the redirect cannot cross a tenant boundary"
+
+for forbidden in "$BETA_PLATFORM" 'Beta Grill'; do
+    if body_has "$forbidden"; then
+        fail "alpha's redirect mentions '$forbidden' -- a redirect crossed a tenant boundary"
+    fi
+done
+note "alpha's redirect mentions nothing of beta's"
+
+# And from beta's side: beta is untouched by alpha's move, in both directions.
+status="$(get "$BETA_PLATFORM" "/")"
+check "beta's platform host still serves beta's page" "200" "$status"
+body_has 'Beta Grill' || fail "beta's page changed when alpha moved"
+for forbidden in 'Alpha Cafe' "$MOVED" 'http-equiv="refresh"'; do
+    if body_has "$forbidden"; then
+        fail "beta's host serves '$forbidden' after alpha's move -- CROSS-TENANT LEAK"
+    fi
+done
+note "beta's host carries no trace of alpha's page, host or redirect"
+
+# -----------------------------------------------------------------------------
+# E. not from the snapshot, not from the manifest, not from any other path
+# -----------------------------------------------------------------------------
+echo "domain-move-proof: E -- no other path serves the moved-off bytes"
+
+# The brief's clause: the old host must not serve A's bytes *from the snapshot, the pointer,
+# the manifest or a stale entry*. The pointer is clause C. The rest are unreachable BY
+# CONSTRUCTION on this surface -- `ADR-005` made the mapping a closed list of two paths -- and
+# that is asserted rather than assumed, because "unreachable" is a claim about code.
+for path in "/manifest.json" "/index.html" "/assets/../index.html"; do
+    status="$(get "$ALPHA_PLATFORM" "$path")"
+    check "the old host refuses $path" "404" "$status"
+done
+
+CHECKSUM="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["checksum"])' "$ALPHA_JSON")"
+status="$(get "$ALPHA_PLATFORM" "/${CHECKSUM}.html")"
+check "the old host refuses its own immutable snapshot by name" "404" "$status"
+
+# -----------------------------------------------------------------------------
+# F. R-170 -- the manifest agrees with the index beside it
+# -----------------------------------------------------------------------------
+echo "domain-move-proof: F -- R-170, manifest and index agree"
+
+cd "$REPO/apps/api"
+
+AGREEMENT="$(php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use App\Features\Landing\MediaLibrary;
+use App\Features\Landing\PublishedSite;
+
+$out = [];
+foreach (array_slice($argv, 1) as $host) {
+    $manifest = MediaLibrary::disk()->get(PublishedSite::manifest($host));
+    $decoded = is_string($manifest) ? json_decode($manifest, true) : null;
+    $index = MediaLibrary::disk()->get(PublishedSite::pointer($host));
+    $claimed = $decoded["checksum"] ?? null;
+    $snapshot = is_string($claimed) ? MediaLibrary::disk()->get(PublishedSite::snapshot($host, $claimed)) : null;
+
+    $out[$host] = [
+        "has_manifest" => $decoded !== null,
+        "claimed" => $claimed,
+        "redirect_to" => $decoded["redirect_to"] ?? null,
+        "index_sha" => is_string($index) ? hash("sha256", $index) : null,
+        "snapshot_matches_index" => is_string($snapshot) && is_string($index) && $snapshot === $index,
+    ];
+}
+echo json_encode($out, JSON_THROW_ON_ERROR);
+' "$MOVED" "$ALPHA_PLATFORM" "$BETA_PLATFORM")"
+
+cd "$REPO"
+
+# ⚠ THE AGREEMENT IS CHECKED AS `manifest.checksum` -> THE SNAPSHOT IT NAMES -> BYTE-EQUAL TO
+# `index.html`, not as two strings being equal. That chain is what the manifest CLAIMS, and it
+# is the claim a CDN would act on.
+for host in "$MOVED" "$BETA_PLATFORM"; do
+    matches="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]]["snapshot_matches_index"])' "$AGREEMENT" "$host")"
+    check "$host: the snapshot its manifest names IS the bytes its index serves" "True" "$matches"
+done
+
+# The moved-off host's manifest is a REDIRECT manifest and must say so rather than go on
+# naming a checksum whose page is no longer there.
+redirect_to="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]]["redirect_to"] or "")' "$AGREEMENT" "$ALPHA_PLATFORM")"
+check "the moved-off host's manifest records where it redirects" "$MOVED" "$redirect_to"
+
+claimed="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]]["claimed"] or "")' "$AGREEMENT" "$ALPHA_PLATFORM")"
+check "the moved-off host's manifest names NO checksum" "" "$claimed"
+
+echo
+echo "domain-move-proof: green -- ${CHECKS} checks, two tenants, one real domain move"

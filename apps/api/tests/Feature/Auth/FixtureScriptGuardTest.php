@@ -124,6 +124,11 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
     expect($guarded)->toBe([
         // 10c's, and the one that proved the old `issue-*` glob was a list. It reads real rows
         // inside a tenant scope as the oracle for `QRPAGER-27 §0`'s dispatch count.
+        // Task 11a's. `R-133` needs a domain that has actually GONE LIVE rather than a row set
+        // to `active` by hand -- activation is what calls `republish()`, which is the code under
+        // test -- so this walks the real lifecycle and writes a DNS zone fixture and a
+        // certificate ledger entry on the way.
+        'bin/activate-domain-fixture',
         'bin/count-dispatches',
         'bin/issue-board-pager',
         'bin/issue-harness-user',

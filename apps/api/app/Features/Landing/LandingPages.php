@@ -383,6 +383,43 @@ final class LandingPages
             'your page is live, but the site metadata beside it could not be written; publish again',
         );
 
+        /*
+         * ⚠ **READ BACK, AND THAT IS `R-170`'s FIX.**
+         *
+         * `write()` only fails when `put()` RETURNS FALSE. The gap that row records is the one
+         * where the manifest write fails, the publish throws `afterRecord`, and the tenant
+         * does not publish again: `index.html` and the row then carry the new checksum while
+         * `manifest.json` names the previous one, indefinitely and in silence.
+         * `PublishedSite` calls the manifest *"what the CDN and Task 11 read to learn what is
+         * live"*, so a consumer that trusts it reads a stale answer.
+         *
+         * The reconciliation is a read of the thing just written. It costs one GET per publish
+         * and it converts a silent disagreement into a reported one, which is the whole
+         * difference: the tenant is told *publish again* with the page already live, rather
+         * than nothing being said to anyone.
+         *
+         * ⚠ **AND IT IS A `put()` THEN A GET RATHER THAN A RETRY LOOP**, deliberately. A retry
+         * would make a flapping store take minutes and would still have to end in a verdict;
+         * one write and one check end in the verdict immediately, and the publish path's whole
+         * posture (`afterRecord`) is already *the page is live, the metadata is not, say so*.
+         *
+         * ⚠ **THE OTHER HALF OF `R-170` IS THAT NOTHING SERVES THIS FILE.** `ADR-005` made
+         * `apps/site` read the POINTER and refuse every other path, so a stale manifest is not
+         * reachable from the serving surface at all -- `site-isolation-proof` asserts
+         * `/manifest.json` answers 404, and `domain-move-proof` asserts the agreement itself.
+         * Both halves are needed: the absence of a consumer today is not a reason to let the
+         * file lie, because the next consumer is a CDN configuration nobody will test.
+         */
+        $written = MediaLibrary::disk()->get(PublishedSite::manifest($hostname));
+        /** @var array{checksum?: string}|null $decoded */
+        $decoded = is_string($written) ? json_decode($written, true) : null;
+
+        if (($decoded['checksum'] ?? null) !== $checksum) {
+            throw PublishFailed::afterRecord(
+                'your page is live, but the site metadata beside it does not match it; publish again'
+            );
+        }
+
         // ---- PHASE 5: reconcile the one window phase 4 leaves open. ---------------
         //
         // ⚠ THIS IS A COMPENSATION, AND IT IS THE ONE SHAPE OF COMPENSATION THIS METHOD
