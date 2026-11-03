@@ -45,6 +45,11 @@ final class LandingRenderer
             'canonical' => 'https://'.$hostname.'/',
             'ogImage' => $seo['og_image'] === null ? null : ($assetUrls[$seo['og_image']] ?? null),
 
+            // R-131, closed. An `Htmlable` rather than `{!! !!}`: see `StructuredData`'s
+            // docblock, and the template's own note on why `{{ }}` is the wrong encoder for
+            // JSON and why D5's rule is not carved out to get this feature.
+            'structuredData' => StructuredData::for($document, $hostname, $tenantName),
+
             // ⚠ 'en' AND 'ltr' ARE DEFAULTS, NOT A DECISION, and that is R-132. There is
             // no per-tenant language anywhere in the data contract -- `tenants` carries a
             // timezone and nothing else -- so this task cannot read one. §12 names Arabic

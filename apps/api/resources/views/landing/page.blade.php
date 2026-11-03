@@ -47,7 +47,25 @@
 <meta property="og:image" content="{{ $ogImage }}">
 @endif
 <link rel="canonical" href="{{ $canonical }}">
+@if ($structuredData !== null)
+<script type="application/ld+json">{{ $structuredData }}</script>
+@endif
 {{--
+    ⚠ THE JSON-LD BLOCK ABOVE IS R-131, CLOSED AT TASK 11 — AND IT IS STILL `{{ }}`.
+
+    The note below is Task 7's and every word of it still holds; it is kept because it is the
+    argument, and the argument is what chose the solution. It named two correct encoders for
+    this position and said D5 forbids the first. `App\Features\Landing\StructuredData` is
+    the SECOND: an Htmlable, which `{{ }}` passes through unescaped, carrying JSON encoded
+    with JSON_HEX_TAG|HEX_AMP|HEX_APOS|HEX_QUOT and WITHOUT JSON_UNESCAPED_SLASHES — so
+    `</script>` inside a tenant's own restaurant name cannot close this element.
+
+    Nothing was carved out to get the feature: `{!! !!}` still appears nowhere in this
+    template's code, the fuzz case below still asserts that, and the encoding decision now
+    lives in a class a test drives with hostile input rather than in a template line.
+
+    ───── Task 7's note, verbatim ─────
+
     ⚠ THERE IS NO JSON-LD BLOCK HERE, AND IT IS DEFERRED RATHER THAN FORGOTTEN (R-131).
 
     §6.4 says structured_data is DERIVED from the SEO fields and never authored, and the
@@ -67,6 +85,7 @@
     the ld+json block is R-131, owned by Task 11 -- the public renderer, which is where
     the page's markup becomes that task's to own.
 --}}
+{{-- (R-131 is closed: the element is at the top of this block's note.) --}}
 <style>
 :root{color-scheme:light dark}
 *{box-sizing:border-box}

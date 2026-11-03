@@ -499,5 +499,45 @@ fi
 printf '  ok  the canonical and og:url name this host and no other\n'
 CHECKS=$((CHECKS + 1))
 
+# ⚠ AND THE STRUCTURED DATA, WHICH IS R-131 AND IS CHECKED AS JSON RATHER THAN AS A SUBSTRING.
+# The whole risk at that position is an unescaped `</script>` producing a block that LOOKS
+# fine in the page source and does not parse, so a grep for the element proves nothing. This
+# extracts it from the served bytes and parses it.
+body_has '<script type="application/ld+json">' \
+    || fail "the served page carries no JSON-LD block (R-131 is recorded as closed)"
+
+python3 - "$WORK/body" "$ALPHA_HOST" "$BETA_HOST" <<'PYEOF'
+import json, re, sys
+
+html = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+host, other = sys.argv[2], sys.argv[3]
+
+blocks = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+
+if len(blocks) != 1:
+    sys.exit(f'expected exactly one ld+json block, found {len(blocks)}')
+
+try:
+    data = json.loads(blocks[0])
+except Exception as error:
+    sys.exit(f'the ld+json block does not parse: {error}')
+
+if data.get('@type') != 'Restaurant':
+    sys.exit(f"@type is {data.get('@type')!r}, not 'Restaurant'")
+
+if data.get('url') != f'https://{host}/':
+    sys.exit(f"url is {data.get('url')!r} rather than this host's")
+
+if other in json.dumps(data):
+    sys.exit("the ld+json names the OTHER tenant's host -- a cross-tenant leak")
+
+# Nothing that could have closed the element survived the encoder.
+for forbidden in ('<', '>'):
+    if forbidden in blocks[0]:
+        sys.exit(f'the ld+json block contains a raw {forbidden!r}')
+PYEOF
+printf '  ok  the JSON-LD parses, names this host, and carries no raw tag delimiter\n'
+CHECKS=$((CHECKS + 1))
+
 echo
 echo "site-isolation-proof: green -- ${CHECKS} checks, two tenants, real published bytes"

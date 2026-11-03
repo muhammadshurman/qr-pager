@@ -114,10 +114,38 @@ function dangerousConstructs(string $html): array
             continue;
         }
 
-        // The template has no script element of its own -- the JSON-LD block is R-131 --
-        // so ANY script element in the output came from a tenant value.
-        if (in_array(strtolower($element->tagName), ['script', 'iframe', 'object', 'embed', 'base', 'form', 'meta'], true)
-            && $element->tagName !== 'meta') {
+        /*
+         * ⚠ **THE TEMPLATE NOW HAS EXACTLY ONE SCRIPT ELEMENT OF ITS OWN, AND THIS CHECK IS
+         * NARROWED RATHER THAN RELAXED.** It used to read *"the template has no script element
+         * of its own -- the JSON-LD block is R-131 -- so ANY script element in the output came
+         * from a tenant value"*, and that stopped being true when Task 11 closed `R-131`.
+         *
+         * The invariant that mattered was never "no `<script>`": it was **nothing
+         * EXECUTABLE**. `application/ld+json` is a data block -- browsers do not execute it,
+         * and its only danger is an unescaped `</script>` inside the JSON, which
+         * `StructuredData` prevents with `JSON_HEX_TAG` and no `JSON_UNESCAPED_SLASHES` and
+         * which `StructuredDataTest` drives with hostile input.
+         *
+         * So one type is admitted, by EXACT MATCH, and every other script element -- including
+         * one with no `type`, which is executable JavaScript by default -- is still a finding.
+         * A tenant value cannot reach the `type` attribute: it is a literal in the template.
+         */
+        $tag = strtolower($element->tagName);
+
+        if ($tag === 'script') {
+            if (strtolower($element->getAttribute('type')) !== 'application/ld+json') {
+                $found[] = '<script>';
+            }
+
+            // And the one admitted type must still be parseable JSON. A block that does not
+            // parse is a block whose encoding failed, which is the failure shape this
+            // position has.
+            if (json_decode($element->textContent, true) === null) {
+                $found[] = '<script type=ld+json does not parse>';
+            }
+        }
+
+        if (in_array($tag, ['iframe', 'object', 'embed', 'base', 'form'], true)) {
             $found[] = '<'.$element->tagName.'>';
         }
 
