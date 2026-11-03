@@ -21,9 +21,15 @@ use App\Domain\Pager\PagerStatus;
 it('mirrors every enum in the registry, so a new one cannot be forgotten', function (): void {
     $generated = StatusMirror::encode();
 
-    // EVERY type in the registry, not a sample. A generator that covered seven of eight
-    // would look correct in a spot check and drop the eighth silently.
-    expect(DatabaseEnums::map())->toHaveCount(8);
+    // EVERY type in the registry, not a sample. A generator that covered eight of nine
+    // would look correct in a spot check and drop the ninth silently.
+    //
+    // ⚠ THE COUNT IS HAND-WRITTEN ON PURPOSE AND IT EARNED ITS KEEP AT QRPAGER-30. Nine
+    // since 2026-11-03, when `tenant_language` joined the registry -- and this line is one of
+    // the two places that turned red for it (the other is
+    // `packages/contracts/test/mirror.test.ts`). A derived count would have made adding a
+    // mirrored type a silent change, which is the opposite of what `§3` row 8 asks of it.
+    expect(DatabaseEnums::map())->toHaveCount(9);
 
     foreach (DatabaseEnums::map() as $type => $class) {
         expect($generated)

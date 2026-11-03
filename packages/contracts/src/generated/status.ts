@@ -11,7 +11,7 @@
  * drifts silently after, and the drift reaches a customer as the wrong status on
  * the screen they are watching.
  *
- * Mirrored types: pager_status, outbox_status, tenant_status, tenant_role, audit_actor_type, provisioning_status, landing_page_status, domain_status
+ * Mirrored types: pager_status, outbox_status, tenant_status, tenant_role, audit_actor_type, provisioning_status, landing_page_status, domain_status, tenant_language
  *
  * The transition tables below are the PHP tables, not a re-derivation. Where an
  * enum declares no transitions it has none -- that is a fact about the status
@@ -167,6 +167,14 @@ export function DomainStatusCanMoveTo(from: DomainStatus, to: DomainStatus): boo
   return DOMAIN_STATUS_TRANSITIONS[from].includes(to)
 }
 
+/** Postgres enum type `tenant_language`, mirrored from TenantLanguage. */
+export const TENANT_LANGUAGE = [
+  'ar',
+  'en',
+] as const
+
+export type TenantLanguage = (typeof TENANT_LANGUAGE)[number]
+
 /**
  * The shape of a presented QR pager token, from App\Domain\Pager\PagerToken.
  *
@@ -203,6 +211,7 @@ export const DATABASE_ENUMS = {
   'provisioning_status': PROVISIONING_STATUS,
   'landing_page_status': LANDING_PAGE_STATUS,
   'domain_status': DOMAIN_STATUS,
+  'tenant_language': TENANT_LANGUAGE,
 } as const
 
 export type DatabaseEnumName = keyof typeof DATABASE_ENUMS

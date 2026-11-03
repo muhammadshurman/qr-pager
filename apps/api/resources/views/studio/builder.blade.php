@@ -38,6 +38,56 @@
         </p>
     </div>
 
+    {{--
+        ================================================================================
+        THE PAGE LANGUAGE (QRPAGER-30). A fieldset of real buttons, one per enum case.
+        ================================================================================
+
+        OUTSIDE the <form> below, deliberately: that form's state is the landing DOCUMENT and
+        `StudioForm::toDocument()` turns all of it into blocks/theme/seo. The language is a
+        column on `tenants`, so a control inside that form would either have to be stripped
+        before the document is built or would ride into it as a member nothing validates.
+
+        A <fieldset> with a <legend>, and each option a real <button> -- §12's own rule for
+        this panel: "every control is a real <button> or <a>, every state is announced in
+        TEXT and never by colour alone". `aria-pressed` is what a screen reader reads to know
+        which one is active; the "Current" word beside it is what a sighted reader with no
+        colour perception reads. Neither is the only signal.
+
+        THE LABELS ARE IN THEIR OWN LANGUAGE, not translated into the panel's. A restaurant
+        choosing Arabic looks for "العربية", and a language picker that renders every option
+        in one language is the one control where translation makes the choice harder. The `lang`
+        attribute on each label is what stops a screen reader pronouncing Arabic as English --
+        and `dir` beside it, because the two are halves of one fact.
+    --}}
+    <fieldset class="fi-section p-16 space-y-8">
+        <legend class="text-base font-semibold">Page language</legend>
+
+        <p class="text-sm">
+            This sets the language and the reading direction of your published page.
+            Publish again to apply a change to your live page.
+        </p>
+
+        <div class="flex flex-wrap gap-12">
+            @foreach ($this->pageLanguages() as $option)
+                @php($isCurrent = $option === $this->pageLanguage())
+
+                <button type="button"
+                        wire:click="setPageLanguage('{{ $option->value }}')"
+                        aria-pressed="{{ $isCurrent ? 'true' : 'false' }}"
+                        class="fi-btn fi-btn-size-md px-16 py-8 rounded-lg underline">
+                    <span lang="{{ $option->value }}" dir="{{ $option->direction() }}">
+                        {{ $option === \App\Domain\Tenancy\TenantLanguage::Arabic ? 'العربية' : 'English' }}
+                    </span>
+
+                    @if ($isCurrent)
+                        <span class="text-sm">(Current)</span>
+                    @endif
+                </button>
+            @endforeach
+        </div>
+    </fieldset>
+
     <form wire:submit="save" class="space-y-24">
         {{ $this->form }}
 

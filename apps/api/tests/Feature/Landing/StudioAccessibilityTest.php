@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tenancy\TenantLanguage;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\PublishedSite;
+use App\Features\Landing\TenantPageLanguage;
 use Tests\Support\ImageFixtures;
 use Tests\Support\LandingFixtures;
 
@@ -203,9 +205,19 @@ it('gives the published page a text alternative for every image and the rules th
 
     expect($xpath->query('//img')?->length)->toBeGreaterThan(0, 'the page under test has no images at all');
 
-    // One h1, and lang and dir are set (R-132 records that they are defaults).
+    // One h1, and `lang`/`dir` are the TENANT's -- not the hard-coded pair this line
+    // asserted until 2026-11-03. It read `'<html lang="en" dir="ltr"'` with the note *"R-132
+    // records that they are defaults"*, and `QRPAGER-30` closed R-132: `tenants.language`
+    // exists, its column default is `ar`, and `makeTenant` writes no language, so this
+    // fixture's page is correctly Arabic and right to left. Read from the enum rather than
+    // re-typed, so the two cannot drift; the per-language cases are
+    // `TenantLanguageTest`'s, and what this file keeps is the accessibility bar's own
+    // clause -- that the pair is declared on the document at all.
+    $language = (new TenantPageLanguage)->current($tenant);
+
     expect($xpath->query('//h1')?->length)->toBe(1)
-        ->and($html)->toContain('<html lang="en" dir="ltr"')
+        ->and($language)->toBe(TenantLanguage::DEFAULT)
+        ->and($html)->toContain('<html lang="'.$language->value.'" dir="'.$language->direction().'"')
         // The rules the four unmeasurable clauses would be computed FROM. Their presence
         // is a fact about the document; whether a browser renders them as a visible ring
         // and a 44 px box is R-118's, and is not claimed here.

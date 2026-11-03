@@ -30,6 +30,12 @@ describe('the generated status mirror', () => {
       'outbox_status',
       'pager_status',
       'provisioning_status',
+      // QRPAGER-30. `tenants.language`, the restaurant's own language; `dir` is derived
+      // from it on both sides and is stored on neither. This list is deliberately a
+      // hand-written one -- it is the one place a type added to `DatabaseEnums::map()` has
+      // to be acknowledged by a human, and it did its job: adding the type turned this case
+      // red before anything consumed the mirror.
+      'tenant_language',
       'tenant_role',
       'tenant_status',
     ])

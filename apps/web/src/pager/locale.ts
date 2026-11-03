@@ -1,4 +1,4 @@
-import { LOCALES, type Locale } from '@qrpager/ui'
+import { LOCALES, type Locale } from '@qrpager/ui/locale'
 
 /**
  * ================================================================================

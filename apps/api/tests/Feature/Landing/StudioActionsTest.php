@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Landing\DomainStatus;
 use App\Domain\Landing\LandingPageStatus;
+use App\Domain\Tenancy\TenantLanguage;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\FixtureDnsVerifier;
 use App\Features\Landing\LandingPages;
@@ -16,6 +17,7 @@ use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishedSite;
 use App\Features\Landing\PublishFailed;
 use App\Features\Landing\TenantDomains;
+use App\Features\Landing\TenantPageLanguage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -92,6 +94,53 @@ it('publishes and unpublishes through the builder', function (): void {
 
     expect(app(LandingPages::class)->state($tenant)['status'])->toBe(LandingPageStatus::Draft)
         ->and(MediaLibrary::disk()->exists(PublishedSite::pointer($state['hostname'])))->toBeFalse();
+});
+
+it('sets the page language through the builder, and refuses anything that is not one', function (): void {
+    // ⚠ THROUGH LIVEWIRE, WHICH IS THE ONLY PATH THAT EXISTS. `QRPAGER-30`. This file's own
+    // header says why: a GET of a Filament page never invokes an action, and everything a
+    // tenant does here arrives over `POST /livewire-<hash>/update` -- the endpoint Task 6's
+    // security M-1 was about, which runs neither `SetUpPanel` nor Filament's `Authenticate`.
+    // So the `abort_unless(canAccess())` this action re-asks for is exercised here or nowhere.
+    $tenant = $this->actingForTenant(role: TenantRole::Owner);
+
+    // The column's default, before anything is pressed: the restaurant that does nothing.
+    expect((new TenantPageLanguage)->current($tenant))->toBe(TenantLanguage::Arabic);
+
+    Livewire::test(LandingBuilderPage::class)->call('setPageLanguage', 'en');
+
+    expect((new TenantPageLanguage)->current($tenant))->toBe(TenantLanguage::English);
+
+    // ⚠ AND BACK, which is the half a one-way test leaves out: `§2.7` puts `language` on the
+    // UPDATE list precisely because a restaurant may change its mind, unlike `slug`.
+    Livewire::test(LandingBuilderPage::class)->call('setPageLanguage', 'ar');
+
+    expect((new TenantPageLanguage)->current($tenant))->toBe(TenantLanguage::Arabic);
+
+    // A value that is not a case is REFUSED and changes nothing. The argument arrives from
+    // the client, so `tryFrom` plus a notification rather than `from`'s ValueError -- which
+    // would be a 500 carrying a class name on an untrusted input.
+    Livewire::test(LandingBuilderPage::class)->call('setPageLanguage', 'fr');
+
+    expect((new TenantPageLanguage)->current($tenant))->toBe(TenantLanguage::Arabic);
+});
+
+it('sets the language of the signed-in restaurant and no other, over the panel path', function (): void {
+    // The standing non-negotiable (`§0.0e`), on the one write this feature adds. The action
+    // takes NO tenant id -- `TenantPanelAccess::tenantId()` re-resolves it from the
+    // authenticated session on every call, which is why there is no id to aim elsewhere --
+    // so the property under test is that a second restaurant's row is untouched by a member
+    // of the first pressing the control.
+    $other = $this->makeTenant(slug: 'other-language');
+
+    (new TenantPageLanguage)->set($other, TenantLanguage::Arabic);
+
+    $tenant = $this->actingForTenant(role: TenantRole::Owner);
+
+    Livewire::test(LandingBuilderPage::class)->call('setPageLanguage', 'en');
+
+    expect((new TenantPageLanguage)->current($tenant))->toBe(TenantLanguage::English)
+        ->and((new TenantPageLanguage)->current($other))->toBe(TenantLanguage::Arabic);
 });
 
 it('names the side of the commit a publish failed on, and never 500s on a take-down', function (): void {

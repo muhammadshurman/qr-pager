@@ -10,6 +10,7 @@ use App\Domain\Landing\LandingPageStatus;
 use App\Domain\Outbox\OutboxStatus;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Provisioning\ProvisioningStatus;
+use App\Domain\Tenancy\TenantLanguage;
 use App\Domain\Tenancy\TenantRole;
 use App\Domain\Tenancy\TenantStatus;
 
@@ -54,6 +55,13 @@ final class DatabaseEnums
             // (PLAN.md §2.5).
             'landing_page_status' => LandingPageStatus::class,
             'domain_status' => DomainStatus::class,
+            // QRPAGER-30. A restaurant's own language, and the `dir` its page is laid out
+            // with -- derived on the enum, never stored (PLAN.md §1's ruling of 2026-11-03).
+            // It is registered HERE and not left as a `varchar` + CHECK because §2.3's
+            // convention is what the ticket's own §5 named as the tiebreaker, and because
+            // this registry is what generates the TypeScript mirror the studio field and
+            // `apps/web` both read -- one source rather than four copies of two strings.
+            'tenant_language' => TenantLanguage::class,
         ];
     }
 }

@@ -1,6 +1,16 @@
 /** The public surface of @qrpager/ui. */
-export { ThemeProvider, useTheme, directionFor, LOCALES, AVAILABLE_THEMES } from './theme.tsx'
-export type { Direction, Locale, ThemeContextValue, ThemeProviderProps } from './theme.tsx'
+export { ThemeProvider, useTheme, AVAILABLE_THEMES } from './theme.tsx'
+export type { ThemeContextValue, ThemeProviderProps } from './theme.tsx'
+
+/*
+ * ⚠ FROM `./locale.ts` AND NOT FROM `./theme.tsx` SINCE QRPAGER-30. They are re-exported
+ * here so every existing import of the barrel keeps working, and they are also reachable as
+ * `@qrpager/ui/locale` -- which is the import a SERVER component must use, because the
+ * barrel reaches `ThemeProvider`'s `useEffect` and Next refuses that. `locale.ts` carries the
+ * measured build error.
+ */
+export { directionFor, LOCALES } from './locale.ts'
+export type { Direction, Locale } from './locale.ts'
 
 export {
   VisuallyHidden,

@@ -7,6 +7,7 @@ namespace App\Features\Landing;
 use App\Domain\Landing\LandingDocument;
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Domain\Landing\LandingPageStatus;
+use App\Domain\Tenancy\TenantLanguage;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -200,7 +201,7 @@ final class LandingPages
     private function publishUnderLock(string $tenantId): PublishedPage
     {
         // ---- PHASE 1: one short transaction, no network inside it. ----------------
-        /** @var array{seenStatus: string, seenPublishedAt: ?string, document: LandingDocument, hostname: string, tenantName: string, assets: array<string, string>} $plan */
+        /** @var array{seenStatus: string, seenPublishedAt: ?string, document: LandingDocument, hostname: string, tenant: object{name: string, language: string}, assets: array<string, string>} $plan */
         $plan = withTenant($tenantId, function () use ($tenantId): array {
             $row = $this->row($tenantId);
 
@@ -250,7 +251,15 @@ final class LandingPages
                 'seenPublishedAt' => $row->publishedAt,
                 'document' => $document,
                 'hostname' => $this->hostnameInScope($tenantId),
-                'tenantName' => (string) DB::table('tenants')->where('id', $tenantId)->value('name'),
+                // ⚠ ONE ROW, TWO COLUMNS, AND IT WAS ALREADY ONE READ. `language` joins
+                // `name` on the row this phase already fetches (QRPAGER-30) rather than
+                // arriving as a second query -- phase 2 is the database-free phase and the
+                // renderer takes the language as an ARGUMENT for exactly that reason.
+                // `§2.8`'s named list of cross-tenant reads is untouched: this is the
+                // tenant's own row, inside its own scope.
+                'tenant' => (object) (array) DB::table('tenants')
+                    ->where('id', $tenantId)
+                    ->first(['name', 'language']),
                 'assets' => $keys,
             ];
         });
@@ -273,7 +282,13 @@ final class LandingPages
             $destinations[$privateKey] = PublishedSite::asset($hostname, $privateKey);
         }
 
-        $html = $this->renderer->render($document, $hostname, $plan['tenantName'], $assetUrls);
+        $html = $this->renderer->render(
+            $document,
+            $hostname,
+            (string) $plan['tenant']->name,
+            $assetUrls,
+            TenantLanguage::from((string) $plan['tenant']->language),
+        );
         $checksum = hash('sha256', $html);
 
         // ---- PHASE 3: the row, and it is the FIRST thing this method writes. ------

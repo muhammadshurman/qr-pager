@@ -6,10 +6,13 @@ namespace App\Features\Landing\Panel\Pages;
 
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Domain\Landing\LandingPageStatus;
+use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\LanguageNotChanged;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishFailed;
+use App\Features\Landing\TenantPageLanguage;
 use App\Platform\Http\TenantPanelAccess;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -90,6 +93,75 @@ class LandingBuilderPage extends Page
     public function state(): array
     {
         return app(LandingPages::class)->state(TenantPanelAccess::tenantId());
+    }
+
+    /**
+     * ================================================================================
+     * THE PAGE LANGUAGE — `QRPAGER-30`, and it is NOT part of the document
+     * ================================================================================
+     *
+     * `tenants.language` is a column, and `dir` is derived from it and never stored
+     * (Muhammad's ruling of 2026-11-03). It is read here rather than held as a property for
+     * the same reason the tenant id is not a property: a value in the Livewire snapshot is a
+     * value the client round-trips and can return changed.
+     *
+     * The CONTROL is a pair of buttons in the view, one per case, and never a text field --
+     * `QRPAGER-30 §3` says *"a two-option choice and never a free-text field"*. The set of
+     * cases is read from the enum, so a third launch language is one PHP case and a migration
+     * rather than an edit here.
+     */
+    public function pageLanguage(): TenantLanguage
+    {
+        return app(TenantPageLanguage::class)->current(TenantPanelAccess::tenantId());
+    }
+
+    /** @return list<TenantLanguage> */
+    public function pageLanguages(): array
+    {
+        return TenantLanguage::cases();
+    }
+
+    public function setPageLanguage(string $language): void
+    {
+        // Re-asked, like every other action on this page: `POST /livewire-<hash>/update`
+        // runs neither `SetUpPanel` nor Filament's `Authenticate` (Task 6 security M-1).
+        abort_unless(static::canAccess(), 403);
+
+        $chosen = TenantLanguage::tryFrom($language);
+
+        if ($chosen === null) {
+            /*
+             * ⚠ `tryFrom` AND A REFUSAL, NOT `from`. The argument arrives from the client, so
+             * an unexpected value is an untrusted input rather than a programming error: a
+             * `ValueError` from `from()` would be a 500 carrying a class name. The column
+             * would refuse it too (`22P02`) -- this is the belt to that brace, and
+             * `§4.2`'s rule keeps the message free of what was sent.
+             */
+            Notification::make()->title('That is not one of the available languages')->danger()->send();
+
+            return;
+        }
+
+        try {
+            app(TenantPageLanguage::class)->set(TenantPanelAccess::tenantId(), $chosen);
+        } catch (LanguageNotChanged $e) {
+            Notification::make()->title($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        /*
+         * ⚠ IT SAYS THE PAGE MUST BE PUBLISHED AGAIN, because it must. `§6.6`'s published
+         * bytes are immutable and the pointer only moves on a republish, so a restaurant that
+         * changed this and walked away would see no change on its live page and would have no
+         * way to know why. `§12`'s zero-technical-background bar makes that sentence part of
+         * the feature rather than a nicety.
+         */
+        Notification::make()
+            ->title('Language saved')
+            ->body('Publish again to apply it to your live page.')
+            ->success()
+            ->send();
     }
 
     public function save(): void

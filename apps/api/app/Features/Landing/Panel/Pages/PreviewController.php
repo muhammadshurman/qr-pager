@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Features\Landing\Panel\Pages;
 
 use App\Domain\Landing\LandingDocumentInvalid;
+use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\LandingRenderer;
 use App\Features\Landing\MediaLibrary;
@@ -62,7 +63,18 @@ class PreviewController
             )->withHeaders(self::headers());
         }
 
-        $name = (string) withTenant($tenantId, static fn () => DB::table('tenants')->value('name'));
+        /*
+         * ⚠ THE NAME AND THE LANGUAGE FROM ONE ROW, BECAUSE THE PREVIEW MUST AGREE WITH THE
+         * PUBLISH. QRPAGER-30. This class's docblock says the preview is *"the tenant's page,
+         * not a panel screen"* and that wrapping it in panel chrome *"would make the preview
+         * show something other than what gets published"* -- a preview rendered `lang="en"
+         * dir="ltr"` for a restaurant whose page publishes as Arabic RTL is the same defect
+         * with a different cause. One row inside the tenant's own scope, as before.
+         */
+        $tenant = withTenant($tenantId, static fn () => DB::table('tenants')->first(['name', 'language']));
+
+        $name = (string) ($tenant->name ?? '');
+        $language = TenantLanguage::from((string) ($tenant->language ?? TenantLanguage::DEFAULT->value));
 
         // The asset URLs a PREVIEW uses are the private library's, read through the
         // panel's own authenticated surface -- not the published `/assets/…` paths,
@@ -75,7 +87,7 @@ class PreviewController
             $assetUrls[$mediaId] = route('filament.studio.preview.asset', ['asset' => $mediaId]);
         }
 
-        return response($renderer->render($document, $hostname, $name, $assetUrls))
+        return response($renderer->render($document, $hostname, $name, $assetUrls, $language))
             ->withHeaders(self::headers());
     }
 
