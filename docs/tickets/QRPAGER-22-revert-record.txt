@@ -1,0 +1,176 @@
+================================================================================
+QRPAGER-22 — THE REVERT RECORD. RED BY DESIGN, SEVEN TIMES.
+================================================================================
+
+Muhammad's standing instruction of 2026-11-03: *EVERY NEW PROOF MUST BE SHOWN TO REDDEN
+ONCE BEFORE IT IS TRUSTED — a deliberate revert of the thing it proves, run once, the
+output recorded beside it.*
+
+⚠ NOT NAMED `-gate-`, `-e2e-`, `-three-runs-` OR `-fresh-clone-`: that is the set
+`check-records` (c) iterates and holds to "no failure line and EXIT=0". A transcript of a
+DECLARED red is evidence; a transcript of a gate that failed is not.
+
+The named invariant these defend, written into QRPAGER-22 before any code:
+
+    A platform admin holding no active support membership can read no tenant row; one
+    holding an active membership can read only that tenant's rows; and expiry or release
+    returns them to the first state with no residual ability.
+
+
+================================================================================
+REVERT 1 of 7 — the expiry stops deciding the principal
+================================================================================
+
+In `App\Domain\Auth\Principal::forMembership()`:
+
+    -   return $expiresAt === null ? self::fromTenantRole($role) : self::Support;
+    +   return self::fromTenantRole($role);
+
+This is the read-only clause's load-bearing line. A support membership stores the role
+`staff`, and `staff` holds `pager:create` and `pager:notify` — both WRITES on a tenant
+table. With the role deciding, every support membership ever taken would have been able to
+open sessions and notify customers.
+
+    ⨯ it holds no write ability on the tenant it DOES have support for
+    ⨯ it takes one, fixes the lifetime at 60 minutes, and resolves the Su…
+    Tests:  2 failed, 25 passed (120 assertions)
+
+
+================================================================================
+REVERT 2 of 7 — the expiry filter removed from the licensed reader
+================================================================================
+
+In `public.user_memberships(uuid)`, applied to the test database directly:
+
+    -   WHERE tu.user_id = p_user_id
+    -     AND (tu.expires_at IS NULL OR tu.expires_at > now());
+    +   WHERE tu.user_id = p_user_id;
+
+This is where *"leaves no residual ability"* actually lives. The filter is in SQL so that
+every reader in the application gets it at once and no code path has to remember.
+
+    ⨯ it frees the slot, so the admin can take support again after one la…
+    ⨯ it reaches nothing at all once the membership has lapsed, over HTTP
+    ⨯ it leaves no ability after EXPIRY, reached by the clock and not by…
+    Tests:  3 failed, 24 passed (121 assertions)
+
+⚠ THE HTTP CASE IS THE ONE THAT MATTERS MOST: with the filter gone, a session established
+while the membership was live kept working after it lapsed. That is the window the clause
+exists to close, and it is invisible to any test that only reads the service.
+
+
+================================================================================
+REVERT 3 of 7 — the one-at-a-time index dropped
+================================================================================
+
+    DROP INDEX tenant_users_one_support_membership;
+
+The service's own check is the friendly answer and NOT the guarantee: two concurrent takes
+both pass it. The partial unique index is what refuses the second.
+
+    ⨯ it enforces one-at-a-time in the DATABASE, not only in the service
+    Tests:  1 failed, 26 passed (125 assertions)
+
+⚠ AND THE OTHER NINE CASES STAYED GREEN, which is the attribution working: the service's
+pre-check still refuses a sequential second take, so only the case that bypasses the
+service and inserts directly can see this.
+
+
+================================================================================
+REVERT 4 of 7 — the members list stops marking support
+================================================================================
+
+In `MemberDirectory::all()`:
+
+    -   'platform_support' => $expiresAt !== null,
+    -   'support_expires_at' => $expiresAt,
+    +   'platform_support' => false,
+    +   'support_expires_at' => null,
+
+`§4 › Tenancy`'s own reasoning for this clause is that *"support a tenant cannot see is
+indistinguishable from an undisclosed cross-tenant read"* — so this revert turns the
+feature into the thing the whole ruling forbids, with every other case still green.
+
+    ⨯ it shows an ACTIVE support membership, marked, with its expiry
+    ⨯ it is visible over HTTP to the restaurant owner, which is where §4…
+      the owner is not told that platform support is inside
+    Tests:  2 failed, 25 passed (119 assertions)
+
+
+================================================================================
+REVERTS 5, 6 AND 7 of 7 — THE BARRIER DIAGNOSTIC, WHICH IS NOT SUPPORT ACCESS
+================================================================================
+
+⚠ WHY A PROOF THAT HAS NOTHING TO DO WITH THE CLAUSE IS IN THIS TICKET'S RECORD.
+
+This branch's own `composer gate` run went RED on `StaffBoardConcurrencyTest`, and its
+whole message was six words: "the two clients never both reached the barrier".
+`bin/classify-reds` returned REAL RED, on no row; the file passed 3 of 3 attempts in
+isolation a minute later; and the CAUSE WAS UNOBTAINABLE, because the parent reads a
+child's streams only AFTER the barrier and the child had died BEFORE announcing itself.
+`tests/known-flakes.json`'s own rules forbid an entry for a red that is merely
+unexplained, so the red could be neither fixed nor filed. `§5 R-241` carries the whole
+measurement; `tests/Support/StartBarrier.php` is the repair, and three reverts of it follow
+because the standing instruction covers every new proof, including one written to make a
+failure legible.
+
+    ------------------------------------------------------------------- REVERT 5 of 7
+    The diagnostic removed — the old six-word message back in `StartBarrier::release()`:
+
+    -   throw new RuntimeException(self::diagnose($barrier, $children));
+    +   throw new RuntimeException('the two clients never both reached the barrier');
+
+    ⨯ it names the child that died before announcing, and carries both o…
+    Tests:  1 failed, 2 passed (13 assertions)
+
+    ------------------------------------------------------------------- REVERT 6 of 7
+    The child bound back under the parent's, which is the latent fault this found:
+
+    -   public const CHILD_SECONDS = 90.0;
+    +   public const CHILD_SECONDS = 10.0;
+
+    Failed asserting that 10.0 is greater than 60.0.
+    ⨯ it waits longer inside the child than outside it, so the parent is the side that…
+    Tests:  1 failed, 2 passed (14 assertions)
+
+    ------------------------------------------------------------------- REVERT 7 of 7
+    The release itself removed, so the green path is proven too and not only the failure
+    path:
+
+    -   touch($barrier.'.go');
+    +   // touch($barrier.'.go');
+
+    a child was not released by the barrier: error:BarrierTimeout:never released, …
+    ⨯ it still releases both children when they both announce            20.03s
+    Tests:  1 failed, 2 passed (19 assertions)
+
+AND THE REAL PATH, REPRODUCED RATHER THAN ARGUED. With a dead session store the real child
+dies exactly where the gate's child died:
+
+    $ REDIS_PORT=1 php artisan test tests/Feature/Staff/StaffBoardConcurrencyTest.php
+
+    the children never all reached the barrier
+    announcements on disk: 0 of 2
+    child 0 (pid 2289322): NEVER ANNOUNCED · exited on its own (exit 1)
+      stdout: error:RedisException:see stderr, not printed here
+      stderr: Connection refused
+    child 1 (pid 2289323): NEVER ANNOUNCED · exited on its own (exit 1)
+      stdout: error:RedisException:see stderr, not printed here
+      stderr: Connection refused
+
+    Tests:  1 failed (2 assertions)
+
+Those three lines per child are what the gate's red did not have. ⚠ THE GATE RED'S OWN
+CAUSE IS STILL UNPROVEN and is NOT attributed to `R-191` on the strength of this: a connect
+stall through the WSL2 + Docker port forward is a hypothesis. What the repair buys is that
+the next occurrence names itself.
+
+
+================================================================================
+GREEN AGAIN, everything restored
+================================================================================
+
+    Tests:  27 passed (125 assertions)     apps/api/tests/Feature/Support/
+    Tests:   3 passed (19 assertions)      apps/api/tests/Unit/StartBarrierTest.php
+
+EXIT=1 (by design, seven times over)
