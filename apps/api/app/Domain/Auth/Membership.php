@@ -37,6 +37,20 @@ final readonly class Membership
          * branches of the same restaurant. What changed is which one a SCREEN shows.
          */
         public string $tenantName = '',
+        /**
+         * When this membership stops granting anything, or `null` for an ordinary one.
+         *
+         * ⚠ **A NON-NULL VALUE MEANS THIS IS A PLATFORM-SUPPORT MEMBERSHIP** (`QRPAGER-22`,
+         * `§4 › Tenancy` 2026-11-04). It is the single source for that fact: the principal,
+         * the owner's "platform support" marker and the one-at-a-time index all read the same
+         * column, and there is no second flag to disagree with it.
+         *
+         * ⚠ **AND AN EXPIRED ONE NEVER REACHES HERE.** `public.user_memberships(uuid)` filters
+         * `expires_at IS NULL OR expires_at > now()` in SQL, so a lapsed membership is absent
+         * rather than present-and-stale. A value in this property is therefore a LIVE expiry,
+         * which is what lets the panel print it without re-checking.
+         */
+        public ?string $expiresAt = null,
     ) {}
 
     /**

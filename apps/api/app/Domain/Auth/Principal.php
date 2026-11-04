@@ -32,6 +32,25 @@ enum Principal: string
     case Staff = 'staff';
     case Device = 'device';
 
+    /**
+     * A platform admin inside a temporary support membership. `QRPAGER-22`.
+     *
+     * ⚠ **A SIXTH PRINCIPAL AND NOT A FOURTH `tenant_role`, WHICH IS THE WHOLE DESIGN.**
+     * `§4 › Tenancy`, 2026-11-04: *"inside it holds only the abilities that membership
+     * grants … It is read-only: it carries no write ability on any tenant table."* A
+     * `support` ROLE would sit on `TenantRole`'s seniority ladder and appear in
+     * `StoreMemberRequest`'s `in:` rule — a role a manager could grant. There is no such
+     * value, so there is nothing to grant: this case is derived from
+     * `tenant_users.expires_at` being non-null, and `RoleMatrix` is where read-only is
+     * enforced.
+     *
+     * It IS tenant-scoped, unlike `PlatformAdmin`: that is the point of the clause. The same
+     * person is `PlatformAdmin` outside a support membership and `Support` inside one, and
+     * `§5`'s *"a platform admin is NOT a tenant bypass"* survives because the membership is
+     * explicit, single, expiring and audited rather than ambient.
+     */
+    case Support = 'support';
+
     /** The principal a tenant membership's role makes its holder. */
     public static function fromTenantRole(TenantRole $role): self
     {
@@ -40,6 +59,20 @@ enum Principal: string
             TenantRole::Manager => self::Manager,
             TenantRole::Staff => self::Staff,
         };
+    }
+
+    /**
+     * The principal a membership makes its holder, expiry included.
+     *
+     * ⚠ **THE EXPIRY WINS OVER THE ROLE, AND IT HAS TO.** A support membership stores the
+     * least-privileged role so that a mis-resolution fails closed; if the role decided, a
+     * support membership would grant `staff` — which holds `pager:create` and
+     * `pager:notify`, both WRITES on a tenant table, and `§4`'s read-only clause would be
+     * false. So a membership that expires resolves `Support` whatever its role says.
+     */
+    public static function forMembership(TenantRole $role, ?string $expiresAt): self
+    {
+        return $expiresAt === null ? self::fromTenantRole($role) : self::Support;
     }
 
     /**

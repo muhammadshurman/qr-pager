@@ -67,6 +67,28 @@ Schedule::command('pager:expire')
     ->withoutOverlapping();
 
 /*
+ * QRPAGER-22 — the support-access sweep, scheduled in the same commit that created it,
+ * because `R-058`'s ruling is that a command registered and scheduled nowhere does not
+ * enforce anything.
+ *
+ * ⚠ **EVERY FIVE MINUTES AND NOT EVERY MINUTE, AND THE REASON IS THAT IT ENFORCES NOTHING.**
+ * A lapsed support membership grants no ability the moment it lapses —
+ * `public.user_memberships()` filters it out in SQL, for every reader at once — so this pass
+ * is not standing between an expired membership and a tenant's data. All it frees is the
+ * admin's one-at-a-time slot, which the partial unique index holds because an index predicate
+ * cannot reference `now()`. Five minutes of lag costs a platform admin a short wait before
+ * taking the next one; one minute of lag would cost five times the connections for nothing.
+ *
+ * `withoutOverlapping()` for the reason `pager:expire` carries: a slow cluster must not stack
+ * a second pass behind the first, each holding one of the worker role's 20 connections. The
+ * statement is a bounded, re-runnable DELETE, so overlapping would be wasteful rather than
+ * wrong — this keeps it from being either.
+ */
+Schedule::command('support:sweep')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+/*
  * TASK 6 — THE TWO PLATFORM COMMANDS, scheduled in the same commit that created them.
  *
  * R-058's ruling is why that is not left for later: "a command registered and scheduled

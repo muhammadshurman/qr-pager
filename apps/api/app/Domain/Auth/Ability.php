@@ -105,6 +105,37 @@ enum Ability: string
     case TenantRead = 'tenant:read';
 
     /**
+     * Does holding this ability let its holder WRITE a tenant table? `QRPAGER-22`.
+     *
+     * ⚠ **IT EXISTS SO THAT `§4 › Tenancy`'s READ-ONLY CLAUSE IS DERIVED RATHER THAN
+     * RESTATED.** The clause (2026-11-04) says a support membership *"carries no write
+     * ability on any tenant table"*, and `RoleMatrix`'s `Support` entry is held to exactly
+     * the set this method calls false. A new ability added to this enum therefore fails
+     * `SupportMembershipTest` until somebody classifies it — which is the point: a
+     * hand-maintained read-only list widens silently the first time anybody adds a
+     * capability, and then the clause is false with every test green.
+     *
+     * `match` and not a property, so exhaustiveness is the compiler's problem.
+     */
+    public function isWrite(): bool
+    {
+        return match ($this) {
+            // Writes a row, or sends a customer a push notification.
+            self::PagerCreate, self::PagerNotify, self::MembersWrite, self::DevicesWrite => true,
+            // Reads only.
+            self::PagerRead, self::PagerHistory, self::MembersRead, self::TenantRead => false,
+            /*
+             * ⚠ `pager:resolve` IS A READ AND IS STILL NOT SUPPORT'S, which is why this
+             * method answers the narrow question and `RoleMatrix` answers the other one. It
+             * is the CUSTOMER token path (`§4 › Tenancy`'s two authentication surfaces), held
+             * by nobody with a session, so classifying it as a read says nothing about who
+             * may hold it.
+             */
+            self::PagerResolve => false,
+        };
+    }
+
+    /**
      * The abilities a KDS device token may be issued with, and it is a closed list of
      * ONE.
      *

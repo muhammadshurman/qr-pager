@@ -279,20 +279,50 @@ it('declares the exact empty-state copy for both lists', function (): void {
 });
 
 it('offers no destructive action on either list, which the audit viewer requires by name', function (): void {
-    // The ticket's §5: "the viewer is read-only by construction -- do not add an edit path."
-    // And for the registry: deleting a provisioning record would orphan a live tenant the
-    // panel cannot see, which is the one destructive act this surface must not offer.
-    //
-    // Asserted on the configuration for the same reason as above, and it is the stronger
-    // place for THIS claim anyway: an action absent from the table object cannot be
-    // rendered by any view.
+    /*
+     * The ticket's §5: "the viewer is read-only by construction -- do not add an edit path."
+     * And for the registry: deleting a provisioning record would orphan a live tenant the
+     * panel cannot see, which is the one destructive act this surface must not offer.
+     *
+     * Asserted on the configuration for the same reason as above, and it is the stronger
+     * place for THIS claim anyway: an action absent from the table object cannot be rendered
+     * by any view.
+     *
+     * ⚠ **THE RESTAURANT LIST NOW HAS TWO ROW ACTIONS AND THIS CASE CHANGED SHAPE AT
+     * `QRPAGER-22`.** It asserted `getRecordActions() === []` for both lists, which pinned
+     * "no row action at all" -- and that was the right pin while the only candidates were
+     * delete and suspend. `§4 › Tenancy`'s support clause (2026-11-04) required an entry
+     * point: a platform admin gets 403 at `/studio` by construction, so without an action the
+     * bridge the ruling names is unreachable.
+     *
+     * So the claim narrows to what it was always ABOUT -- **no DESTRUCTIVE action** -- and
+     * becomes an exact allow-list rather than an emptiness check. `takeSupportAccess` and
+     * `releaseSupportAccess` destroy nothing: one writes a membership that expires in an
+     * hour, the other deletes that same row. A third name appearing here fails until somebody
+     * decides whether it is destructive, which is stronger than `[]` was for the audit list
+     * and no weaker for this one.
+     */
     test()->actingAs(accessibilityAdmin());
+
+    $allowed = [
+        'audit' => [],
+        'restaurants' => ['takeSupportAccess', 'releaseSupportAccess'],
+    ];
 
     foreach ([
         'audit' => PlatformAuditResource::table(configuredTable(ListPlatformAudit::class)),
         'restaurants' => RestaurantResource::table(configuredTable(ListRestaurants::class)),
     ] as $name => $table) {
-        expect($table->getRecordActions())->toBe([], "{$name} offers a row action")
+        $names = array_map(
+            static fn (object $action): string => method_exists($action, 'getName')
+                ? (string) $action->getName()
+                : $action::class,
+            $table->getRecordActions(),
+        );
+
+        expect($names)->toBe($allowed[$name], "{$name}'s row actions are not the allowed set")
+            // Toolbar actions stay empty on BOTH: a bulk action over restaurants is the shape
+            // that turns one mistaken click into every tenant's problem.
             ->and($table->getToolbarActions())->toBe([], "{$name} offers a toolbar action");
     }
 });

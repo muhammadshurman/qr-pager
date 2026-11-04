@@ -9,6 +9,7 @@ use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
 use App\Features\Provisioning\Console\AggregateTenantStatisticsCommand;
 use App\Features\Provisioning\Console\ProvisionTenantsCommand;
+use App\Features\Support\Console\SweepSupportAccessCommand;
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
 use App\Platform\Console\RefreshReadinessCommand;
@@ -222,6 +223,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // command registered and scheduled nowhere does not enforce anything."
         ProvisionTenantsCommand::class,
         AggregateTenantStatisticsCommand::class,
+        // QRPAGER-22's support-access sweep, registered here because it lives in
+        // app/Features and SCHEDULED in routes/console.php in the same commit, which is
+        // R-058's ruling. ⚠ Unlike the two above it enforces NOTHING: a lapsed support
+        // membership grants no ability the instant it lapses, because
+        // `public.user_memberships()` filters it in SQL for every reader at once. All this
+        // frees is the admin's one-at-a-time slot, which a partial unique index holds
+        // because an index predicate cannot reference `now()`. That is why it runs every
+        // five minutes rather than every minute.
+        SweepSupportAccessCommand::class,
         // Task 7's generator for the shared block contract. NOT scheduled, and that is
         // not R-058's shape repeating: it enforces nothing on a timer, it WRITES a
         // committed artifact. What keeps it honest is `--check`, which bin/gate and CI

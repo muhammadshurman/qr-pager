@@ -127,7 +127,7 @@ final class Memberships
         // silently started reading whatever a later migration adds to it. §2.8 rule 1 is
         // about the function's surface; this is the same discipline on the caller's side.
         $rows = $this->connection->select(
-            'select tenant_id, role, tenant_status, tenant_slug, tenant_name
+            'select tenant_id, role, tenant_status, tenant_slug, tenant_name, expires_at
                from public.user_memberships(?)',
             [$userId],
         );
@@ -160,6 +160,9 @@ final class Memberships
                 // function and this reader have drifted -- and an empty string makes the
                 // chooser fall back to the slug rather than render the word "null".
                 tenantName: (string) ($row->tenant_name ?? ''),
+                // QRPAGER-22. Non-null means a platform-support membership; the function has
+                // already dropped any whose expiry has passed, so this is always live.
+                expiresAt: isset($row->expires_at) ? (string) $row->expires_at : null,
             );
         }
 

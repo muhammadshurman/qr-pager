@@ -131,6 +131,42 @@ final class RoleMatrix
             Ability::TenantRead,
         ],
 
+        /*
+         * ================================================================================
+         * SUPPORT — READ-ONLY, AND THE LIST IS DERIVED FROM THAT WORD. `QRPAGER-22`.
+         * ================================================================================
+         *
+         * `§4 › Tenancy`, 2026-11-04: *"It is read-only: it carries no write ability on any
+         * tenant table; a support action that must write is a separate decision and is not
+         * built here."*
+         *
+         * So this entry is every ability that only READS, and nothing else:
+         *
+         *   pager:read     the board
+         *   pager:history  past orders
+         *   members:read   who works here — needed to diagnose an access complaint, which
+         *                  is the commonest reason support is taken at all
+         *   tenant:read    the restaurant's own name
+         *
+         * ⚠ AND THE FOUR THAT ARE DELIBERATELY ABSENT, named so the absence is a decision a
+         * reader can check rather than a list someone forgot to finish: `pager:create`,
+         * `pager:notify` (both write `pager_sessions` and one sends a customer a
+         * notification), `members:write` and `devices:write`. `pager:resolve` is absent too
+         * and is not a staff ability at all — it is the customer token path.
+         *
+         * ⚠ **`SupportMembershipTest` DERIVES THIS RATHER THAN RESTATING IT**: it asserts
+         * that this entry is exactly the set of abilities `Ability::isWrite()` calls false,
+         * so a new write ability added to the enum fails the suite until someone decides
+         * whether support holds it. A hand-checked list would silently widen on the next
+         * ability anybody adds, which is how a read-only clause stops being true.
+         */
+        Principal::Support->value => [
+            Ability::PagerRead,
+            Ability::PagerHistory,
+            Ability::MembersRead,
+            Ability::TenantRead,
+        ],
+
         // Empty on purpose. See the class docblock.
         Principal::PlatformAdmin->value => [],
     ];

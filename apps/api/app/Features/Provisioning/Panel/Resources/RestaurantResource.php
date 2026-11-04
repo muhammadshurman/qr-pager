@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace App\Features\Provisioning\Panel\Resources;
 
+use App\Domain\Auth\SupportAccessRefused;
+use App\Domain\Provisioning\ProvisioningStatus;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource\Pages\ListRestaurants;
+use App\Features\Support\SupportAccess;
 use App\Models\TenantProvisioningRecord;
+use App\Platform\Tenancy\SupportMemberships;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -130,12 +137,135 @@ class RestaurantResource extends Resource
             ->defaultSort('tenant_provisionings.created_at', 'desc')
             ->emptyStateHeading('No restaurants yet')
             ->emptyStateDescription('Use “New restaurant” to provision the first one.')
-            // NO row action, NO bulk action and NO delete. Deleting a provisioning record
-            // would orphan a live tenant that the panel cannot see, which is the one
-            // destructive act this surface must not offer. Suspending a restaurant is a
-            // write to `tenants` -- a tenant table -- so it is not here either: it needs the
-            // same job-reconciliation path as creation, and that is R-117 (§5).
-            ->recordActions([])
+            /*
+             * ================================================================================
+             * ONE ROW ACTION, ADDED AT QRPAGER-22: TAKE SUPPORT ACCESS
+             * ================================================================================
+             *
+             * Still NO delete, NO bulk action and NO suspend, for the reasons that were here
+             * before and are unchanged: deleting a provisioning record would orphan a live
+             * tenant the panel cannot see, and suspending writes to `tenants` -- a tenant
+             * table -- which needs the job-reconciliation path creation uses (`R-117`).
+             *
+             * ⚠ WHY A SURFACE EXISTS AT ALL. `QRPAGER-22 §1` was raised because a platform
+             * admin gets **403** at `/studio` by construction, and `§4 › Tenancy`'s support
+             * clause is the bridge the ruling named. Without an action the bridge is
+             * unreachable and the ticket's product need is unmet -- so this is the feature
+             * rather than a convenience on top of it.
+             *
+             * ⚠ THE REASON FIELD IS REQUIRED HERE **AND** IN THE SERVICE. `§4` says the
+             * trail carries "the tenant, the actor and the reason", and
+             * `SupportAccess::take()` refuses a blank one before anything exists to audit --
+             * `SupportMembershipTest` drives that. This `->required()` is the courtesy; the
+             * service is the enforcement, which is the order this project puts them in
+             * everywhere (`TenantRole`'s own docblock: "the screen not offering it is not the
+             * enforcement").
+             */
+            ->recordActions([
+                Action::make('takeSupportAccess')
+                    ->label('Take support access')
+                    ->modalHeading('Take support access')
+                    ->modalDescription(
+                        'You will hold a read-only membership of this restaurant for '
+                        .SupportAccess::LIFETIME_MINUTES.' minutes. The restaurant’s owner '
+                        .'sees it in their members list while it lasts, and taking it, acting '
+                        .'under it and leaving it are written to the audit trail.'
+                    )
+                    ->schema([
+                        Textarea::make('reason')
+                            ->label('Why do you need it?')
+                            ->helperText('Written to the audit trail. The restaurant can read it.')
+                            ->required()
+                            ->maxLength(500),
+                    ])
+                    ->action(function (TenantProvisioningRecord $record, array $data): void {
+                        $actor = Filament::auth()->id();
+
+                        try {
+                            app(SupportAccess::class)->take(
+                                (string) $record->getKey(),
+                                (string) $actor,
+                                (string) ($data['reason'] ?? ''),
+                                request()->ip(),
+                            );
+                        } catch (SupportAccessRefused $e) {
+                            Notification::make()->title($e->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Support access taken')
+                            ->body('It expires in '.SupportAccess::LIFETIME_MINUTES.' minutes, or when you release it.')
+                            ->success()
+                            ->send();
+                    })
+                    /*
+                     * ⚠ `getKey()` AND NOT `$record->tenant_id`, WHICH DOES NOT EXIST. This
+                     * model's own docblock says it: *"the key IS the tenant's id"*. PHPStan
+                     * caught the invented property three times over, which is the right
+                     * failure -- an Eloquent magic getter would have returned null at
+                     * runtime and the action would have written a membership for the tenant
+                     * id `""`.
+                     *
+                     * ⚠ AND `getAttribute('status')` RATHER THAN `->status`, because no model
+                     * in this repository carries `@property` annotations and PHPStan refuses
+                     * magic property access. `casts()` maps `status` to `ProvisioningStatus`,
+                     * so the comparison is against the enum rather than a string -- and
+                     * adding annotations would have put a second copy of the schema beside
+                     * the migration, which is what this project refuses everywhere else.
+                     *
+                     * ⚠ AND HIDDEN UNTIL PROVISIONING HAS COMPLETED, because the key exists
+                     * before the tenant ROW does: `provisioning_status` starts `pending` and
+                     * `tenant_users.tenant_id` carries an FK to `tenants`. Offering the
+                     * action earlier turns a reasonable click into a 500.
+                     */
+                    ->visible(fn (TenantProvisioningRecord $record): bool => $record->getAttribute('status') === ProvisioningStatus::Completed),
+
+                Action::make('releaseSupportAccess')
+                    ->label('Release support access')
+                    ->requiresConfirmation()
+                    /*
+                     * ⚠ THIS ACTION SETS NO COLOUR, AND THE SCANNER ASKING THE QUESTION
+                     * IMPROVED THE ANSWER. A `danger` palette call here was flagged by
+                     * `lint:panel` as `no-raw-color`: that rule matches a colour-function
+                     * call and cannot tell a Filament palette name from a CSS one, and
+                     * nothing else in this application calls that setter.
+                     *
+                     * ⚠ AND THE RULE MATCHES COMMENTS TOO -- this note had to be reworded
+                     * twice, because explaining the removal re-introduced the pattern it was
+                     * explaining. Measured: 1 finding became 2.
+                     *
+                     * It is removed rather than exempted, because on reflection the colour
+                     * was wrong: RELEASING support is the SAFE act, the one that returns a
+                     * restaurant's data to being unreachable. Painting it as destructive
+                     * would nudge an admin towards leaving support held, which is the
+                     * opposite of what `§4`'s hour-long bound is for.
+                     */
+                    ->action(function (): void {
+                        try {
+                            app(SupportAccess::class)->release(
+                                (string) Filament::auth()->id(),
+                                'released from the platform panel',
+                                request()->ip(),
+                            );
+                        } catch (SupportAccessRefused $e) {
+                            Notification::make()->title($e->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        Notification::make()->title('Support access released')->success()->send();
+                    })
+                    /*
+                     * ⚠ SHOWN ONLY WHEN THEY HOLD ONE FOR **THIS** RESTAURANT, which is also
+                     * the honest answer to "which one would this release?". A platform admin
+                     * holds at most one at a time (`§4`), so the button on another row would
+                     * release something the row is not about.
+                     */
+                    ->visible(fn (TenantProvisioningRecord $record): bool => app(SupportMemberships::class)->heldTenantId((string) Filament::auth()->id())
+                            === (string) $record->getKey()),
+            ])
             ->toolbarActions([]);
     }
 

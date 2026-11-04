@@ -96,7 +96,8 @@
                                                                 "type": "string"
                                                             },
                                                             "principal": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The principal this membership makes its holder."
                                                             },
                                                             "grantable_roles": {
                                                                 "type": "array",
@@ -357,7 +358,8 @@
                                                                 "type": "string"
                                                             },
                                                             "principal": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The principal this membership makes its holder."
                                                             },
                                                             "grantable_roles": {
                                                                 "type": "array",
@@ -1109,6 +1111,15 @@
                                                     },
                                                     "role": {
                                                         "type": "string"
+                                                    },
+                                                    "platform_support": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "support_expires_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
                                                     }
                                                 },
                                                 "required": [
@@ -1116,7 +1127,9 @@
                                                     "user_id",
                                                     "name",
                                                     "email",
-                                                    "role"
+                                                    "role",
+                                                    "platform_support",
+                                                    "support_expires_at"
                                                 ]
                                             }
                                         }

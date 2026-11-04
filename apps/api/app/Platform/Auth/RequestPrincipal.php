@@ -93,7 +93,20 @@ final class RequestPrincipal
         // strange rule, and worse, it would push somebody towards granting PlatformAdmin
         // tenant abilities to fix it -- which is the tenant bypass §5 forbids.
         if ($membership !== null) {
-            return Principal::fromTenantRole($membership->role);
+            /*
+             * ⚠ `forMembership`, NOT `fromTenantRole`, SINCE `QRPAGER-22`. A support
+             * membership stores the least-privileged ROLE so that a mis-resolution fails
+             * closed, and its abilities come from its EXPIRY instead: `§4 › Tenancy`
+             * (2026-11-04) makes support read-only, and `staff` holds `pager:create` and
+             * `pager:notify`, which are writes. If the role decided here, the read-only
+             * clause would be false for every support membership ever taken.
+             *
+             * The case-3-before-case-2 ordering above is untouched and still right: a
+             * platform admin who holds a REAL membership here acts as that member. A support
+             * membership is a real membership — an explicit, single, expiring, audited one —
+             * which is exactly why it resolves through this branch rather than beside it.
+             */
+            return Principal::forMembership($membership->role, $membership->expiresAt);
         }
 
         // CASE 2 -- a platform admin with no membership here. Note what this returns: a

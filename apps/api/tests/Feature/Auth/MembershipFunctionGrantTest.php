@@ -81,7 +81,7 @@ it('is SECURITY DEFINER, owned by the owner role, with search_path pinned', func
         ->and((string) $row->config)->toBe('search_path=pg_catalog, pg_temp');
 });
 
-it('returns exactly the five named columns, and never a table row', function (): void {
+it('returns exactly the six named columns, and never a table row', function (): void {
     /*
      * ⚠ `§2.8` RULE 1 IS WHAT THIS PINS: *never `RETURNS SETOF <table>`* — column grants are
      * not applied to a function's result set, so a `SETOF tenants` here would hand
@@ -97,8 +97,21 @@ it('returns exactly the five named columns, and never a table row', function ():
           where n.nspname = 'public' and p.proname = 'user_memberships'",
     );
 
+    /*
+     * ⚠ SIX SINCE `QRPAGER-22` (2026-11-04), AND THE SIXTH IS THE POINT RATHER THAN A
+     * WIDENING. `expires_at` is what makes a membership a SUPPORT membership, and the
+     * function also filters `expires_at IS NULL OR expires_at > now()` — so an expired
+     * support membership is invisible to the application in SQL, for every caller at once,
+     * before any sweeper runs. `§4 › Tenancy`'s *"leaves no residual ability"* is a property
+     * of the database here rather than of the code that reads it.
+     *
+     * It was FIVE at 10b (`tenant_name`, `R-222`) and FOUR before that. Each growth is a
+     * named column, which is rule 1 holding: the alternative that would actually undo `§2.7`
+     * is `RETURNS SETOF tenant_users`, and that is what this assertion refuses.
+     */
     expect((string) $row->result)->toBe(
         'TABLE(tenant_id uuid, role tenant_role, tenant_status tenant_status, '
-        .'tenant_slug character varying, tenant_name character varying)',
+        .'tenant_slug character varying, tenant_name character varying, '
+        .'expires_at timestamp with time zone)',
     );
 });

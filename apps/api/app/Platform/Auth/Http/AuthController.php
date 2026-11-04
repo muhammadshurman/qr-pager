@@ -273,13 +273,28 @@ final class AuthController
                 continue;
             }
 
+            /*
+             * ⚠ THE RATIONALE FOR `principal` BELOW IS **HERE AND NOT ABOVE THE KEY**, AND
+             * `R-052` IS WHY — measured on this very edit. A comment directly above a key in
+             * this array is PUBLISHED as that property's description in `docs/openapi.json`,
+             * and `OpenApiSpecTest` caught a three-line `QRPAGER-22:` note shipping into the
+             * public spec: *"a published description carries [QRPAGER-]"*. `R-222` hit the
+             * same trap at 10b with a 28-line note and recorded it; this is the second time,
+             * which is why it is written where a reader of this loop will see it.
+             *
+             * What the note said: a support membership reports `support`, NOT the role it
+             * stores. `Principal::forMembership()` lets the expiry win over the role, because
+             * a support membership stores the floor role `staff` and `staff` holds writes. A
+             * client that believed `staff` here would offer buttons the API refuses.
+             */
             $memberships[] = [
                 'tenant_id' => $membership->tenantId,
                 'slug' => $membership->tenantSlug,
                 // The restaurant's name.
                 'name' => $membership->tenantName,
                 'role' => $membership->role->value,
-                'principal' => Principal::fromTenantRole($membership->role)->value,
+                // The principal this membership makes its holder.
+                'principal' => Principal::forMembership($membership->role, $membership->expiresAt)->value,
                 // The roles this membership may grant to somebody else. Added at 10e.
                 'grantable_roles' => array_map(
                     static fn (TenantRole $r): string => $r->value,

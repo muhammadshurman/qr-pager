@@ -306,6 +306,15 @@ it('grants each principal exactly the abilities the matrix names, and nothing by
             'tenant:read',
         ],
         'device' => ['pager:read'],
+        /*
+         * ⚠ SUPPORT, ADDED AT `QRPAGER-22` — READ-ONLY BY `§4 › Tenancy`'s 2026-11-04 clause.
+         * Spelled out here as well as derived in `SupportMembershipTest`, and the two are not
+         * duplicates: that file asserts this cell equals exactly the set
+         * `Ability::isWrite()` calls false, so a new write ability fails the suite; this one
+         * is a human-readable statement of what support can see, which is the thing a
+         * reviewer checks against the clause. One is mechanical totality, the other is intent.
+         */
+        'support' => ['pager:read', 'pager:history', 'members:read', 'tenant:read'],
     ]);
 
     // THE EMPTY CELL IS THE IMPORTANT ONE. A platform admin holds no tenant ability at all,

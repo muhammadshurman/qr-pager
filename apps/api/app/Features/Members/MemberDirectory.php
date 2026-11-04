@@ -59,7 +59,13 @@ final class MemberDirectory
             // An explicit column list and never `select *`: `users` has four columns this
             // role may not read at all (R-006), so a star here would be a 42501 rather
             // than a leak -- but it would be a 42501 on every staff listing.
-            'select tu.id, tu.user_id, tu.role, u.name, u.email
+            // `expires_at` SINCE QRPAGER-22, and it is what makes support VISIBLE. `§4 ›
+            // Tenancy`, 2026-11-04: *"It is visible to the tenant's own owner in their
+            // members list while it is active, marked as platform support with its expiry
+            // — support a tenant cannot see is indistinguishable from an undisclosed
+            // cross-tenant read."* So this is not a nicety: it is the clause that keeps
+            // support distinguishable from the thing the whole ruling forbids.
+            'select tu.id, tu.user_id, tu.role, tu.expires_at, u.name, u.email
                from tenant_users tu
                join users u on u.id = tu.user_id
               order by tu.created_at',
@@ -74,16 +80,62 @@ final class MemberDirectory
                 continue;
             }
 
+            /*
+             * ⚠ A LAPSED SUPPORT MEMBERSHIP IS NOT LISTED, and the clause is why: it says
+             * *"while it is active"*. A row whose hour is up grants nothing, so showing it
+             * would tell a restaurant somebody is inside when nobody is — which is worse
+             * than silence. The sweep deletes it within five minutes either way.
+             *
+             * ⚠ COMPARED AGAINST THE DATABASE'S CLOCK, not PHP's: the expiry was written by
+             * `now()` in Postgres and `public.user_memberships()` filters on `now()` there
+             * too, so using `time()` here would disagree with the resolver by whatever the
+             * two clocks differ by. `MemberSupportVisibilityTest` drives a lapsed row.
+             */
+            $expiresAt = isset($row->expires_at) ? (string) $row->expires_at : null;
+
+            if ($expiresAt !== null && ! $this->isStillActive($expiresAt)) {
+                continue;
+            }
+
+            /*
+             * ⚠ THE RATIONALE FOR THE TWO SUPPORT KEYS IS HERE AND NOT ABOVE THEM, BECAUSE
+             * `R-052`: a comment directly above a key in this array is PUBLISHED as that
+             * property's description in `docs/openapi.json`, and `OpenApiSpecTest` caught it.
+             * Second instance in one change; `R-222` recorded the first at 10b.
+             *
+             * TWO KEYS RATHER THAN ONE, so a client cannot show the badge without the expiry:
+             * `§4 › Tenancy` requires support be *"marked as platform support WITH ITS
+             * EXPIRY"*, and one boolean would let a screen satisfy half of that.
+             */
             $members[] = [
                 'id' => (string) $row->id,
                 'user_id' => (string) $row->user_id,
                 'name' => (string) $row->name,
                 'email' => (string) $row->email,
                 'role' => (string) $row->role,
+                'platform_support' => $expiresAt !== null,
+                'support_expires_at' => $expiresAt,
             ];
         }
 
         return $members;
+    }
+
+    /**
+     * Is this expiry still in the future, by the DATABASE's clock?
+     *
+     * One round trip rather than a PHP comparison, for the reason `all()`'s own note gives:
+     * the expiry and the resolver's filter are both `now()` in Postgres, and a PHP comparison
+     * would disagree with them by whatever the two clocks differ by. A support membership is
+     * an hour long, so that difference is unlikely to matter — and "unlikely to matter" is not
+     * the standard `§4`'s read-only clause is held to everywhere else in this feature.
+     */
+    private function isStillActive(string $expiresAt): bool
+    {
+        /** @var object{active: bool}|null $row */
+        $row = DB::selectOne('select (?::timestamptz > now()) as active', [$expiresAt]);
+
+        return (bool) ($row->active ?? false);
     }
 
     /**
