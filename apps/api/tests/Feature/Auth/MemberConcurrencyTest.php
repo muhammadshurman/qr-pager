@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Tenancy\TenantRole;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\StartBarrier;
 
 /*
  * ================================================================================
@@ -152,24 +153,20 @@ it('never leaves a tenant with zero owners when two owners are demoted at the sa
             expect($children[$i]['handle'])->not->toBeFalse("could not start process {$i}");
         }
 
-        // BOTH BOOTED AND WAITING before either is released, which is what makes the two
-        // transactions start together instead of whenever each finished booting.
-        $deadline = microtime(true) + 30.0;
-
-        // ⚠ THROWS RATHER THAN ASSERTS, and the reason is this project's own evidence
-        // practice. An `expect()` inside a spin loop runs an unpredictable number of times,
-        // so the file's assertion count varied run to run -- measured at 248, 253, 259 and
-        // 264 over four green runs. `§4a` publishes "N passed / M assertions" at a commit for
-        // every figure, and a non-reproducible M makes that figure meaningless.
-        while (count(glob($barrier.'.ready.*') ?: []) < 2) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('the two children never both reached the barrier');
-            }
-
-            usleep(1000);
-        }
-
-        touch($barrier.'.go');
+        /*
+         * BOTH BOOTED AND WAITING before either is released, which is what makes the two
+         * transactions start together instead of whenever each finished booting.
+         *
+         * ⚠ `StartBarrier` RATHER THAN THE SPIN LOOP THAT USED TO BE HERE, for a red this
+         * file has not had and `StaffBoardConcurrencyTest` has: the timeout threw six words
+         * and the parent reads a child's streams only AFTER the barrier, so a child that died
+         * BEFORE announcing had its reason read by nobody. The two copies were identical, and
+         * fixing one would have left the other waiting to spend the same hour. The class also
+         * carries the two bounds, which were WRONG relative to each other here too -- 10s in
+         * the child against 30s in the parent, so the child could time out from the inside
+         * while this process was still legitimately waiting.
+         */
+        StartBarrier::release($barrier, $children);
 
         $outcomes = [];
 

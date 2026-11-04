@@ -5,6 +5,7 @@ use App\Domain\Tenancy\TenantRole;
 use App\Features\Members\MemberDirectory;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
+use Tests\Support\StartBarrier;
 
 /*
  * Demote one tenant owner to staff, in a process of its own.
@@ -56,7 +57,14 @@ if ($barrier !== '') {
     // Spin rather than sleep: the whole point is to start within microseconds of the
     // sibling, and a sleep granularity of milliseconds is the window being removed. Bounded
     // so a lost parent cannot hang a test run forever.
-    $deadline = microtime(true) + 10.0;
+    // ⚠ THE BOUND COMES FROM `Tests\Support\StartBarrier` AND IS LONGER THAN THE PARENT'S,
+    // which is a correctness property rather than tidiness. It was a hard-coded 10s against a
+    // parent that waited 30, so a child that booted fast and a sibling that booted slowly made
+    // THIS process time out from the inside while the parent was still legitimately waiting --
+    // and because the `.ready` file stays on disk, the parent then released a barrier nobody was
+    // waiting on and read `error:BarrierTimeout` as the race's outcome. The parent must always be
+    // the side that times out, because it is the side that can say why.
+    $deadline = microtime(true) + StartBarrier::CHILD_SECONDS;
 
     while (! is_file($barrier.'.go')) {
         if (microtime(true) > $deadline) {

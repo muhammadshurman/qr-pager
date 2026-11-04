@@ -11,6 +11,7 @@ use App\Platform\Auth\ActiveTenant;
 use App\Platform\Auth\Memberships;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\StartBarrier;
 
 /*
  * ================================================================================
@@ -153,26 +154,20 @@ it('produces one notification and one terminal state when two staff clients mark
             expect($children[$i]['handle'])->not->toBeFalse("could not start process {$i}");
         }
 
-        // BOTH BOOTED, both sessions written, both cookies computed, and only then
-        // released -- so the window contains two HTTP requests and nothing else.
-        //
-        // ⚠ THROWS RATHER THAN ASSERTS INSIDE THE SPIN. An `expect()` in a spin loop runs
-        // an unpredictable number of times and makes this file's assertion count vary run
-        // to run; `§4a` publishes "N passed / M assertions" at a commit, and a
-        // non-reproducible M makes that figure meaningless. Measured on
-        // `MemberConcurrencyTest` at 248/253/259/264 over four green runs before its own
-        // fix.
-        $deadline = microtime(true) + 30.0;
-
-        while (count(glob($barrier.'.ready.*') ?: []) < 2) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('the two clients never both reached the barrier');
-            }
-
-            usleep(1000);
-        }
-
-        touch($barrier.'.go');
+        /*
+         * BOTH BOOTED, both sessions written, both cookies computed, and only then released
+         * -- so the window contains two HTTP requests and nothing else.
+         *
+         * ⚠ `StartBarrier` RATHER THAN A SPIN LOOP HERE, AND THE REASON IS THIS FILE'S OWN
+         * RED. The loop that used to sit here threw six words -- "the two clients never both
+         * reached the barrier" -- and the parent reads a child's streams only AFTER the
+         * barrier, so a client that died BEFORE announcing had its reason read by nobody.
+         * That is what this test did in a full `composer gate` run on
+         * `qrpager-22-support-access`, 3 of 3 green in isolation a minute later, cause
+         * unobtainable. The class terminates the children and reports both streams, and its
+         * wait is now above the host's measured worst-case connect (`R-191`).
+         */
+        StartBarrier::release($barrier, $children);
 
         $outcomes = [];
 
