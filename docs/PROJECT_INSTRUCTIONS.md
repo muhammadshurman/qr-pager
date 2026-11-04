@@ -81,6 +81,19 @@ Break any of these and the task is not done.
   cross-tenant read: they can see that a restaurant exists and administer it from outside, and
   cannot see inside it. Support access to a tenant's own data, if ever needed, is a temporary
   audited membership. Added 2026-10-28.
+- **Support access is a temporary, audited membership, never a cross-tenant read.** A
+  platform admin may enter exactly one explicitly chosen tenant's context as a membership
+  that expires, and inside it holds only the abilities that membership grants — RLS stays
+  in force and every query stays tenant-scoped. Taking it, acting under it and leaving it
+  are each written to the audit trail with the tenant, the actor and the reason. A
+  platform admin never holds more than one at a time, and an expired or released
+  membership leaves no residual ability. **Its lifetime is fixed at 60 minutes and is not
+  chosen by the taker.** **It is read-only: it carries no write ability on any tenant
+  table; a support action that must write is a separate decision and is not built here.**
+  **It is visible to the tenant's own owner in their members list while it is active,
+  marked as platform support with its expiry** — support a tenant cannot see is
+  indistinguishable from an undisclosed cross-tenant read. Added 2026-11-04, resolving
+  QRPAGER-22.
 - **Per-tenant statistics are aggregates written to a platform table, never a read of a tenant
   table.** A counter or a timestamp is maintained by a job or the outbox worker — which already
   holds a named cross-tenant path — and the panel reads only that platform row. An aggregate
