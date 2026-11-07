@@ -206,7 +206,7 @@ class RetryingPostgresConnector extends PostgresConnector
                 self::$absorbed++;
 
                 if (self::$recording) {
-                    self::record($config, $attempt, $elapsed, $error);
+                    self::record($config, $attempt, $error);
                 }
             }
         }
@@ -298,17 +298,40 @@ class RetryingPostgresConnector extends PostgresConnector
     /**
      * @param  array<string, mixed>  $config
      */
-    private static function record(array $config, int $attempt, float $elapsed, Throwable $error): void
+    private static function record(array $config, int $attempt, Throwable $error): void
     {
+        /*
+         * ⚠⚠ NO DURATION IN THIS LINE, AND THAT IS THE SECOND CORRECTION TO THIS INSTRUMENT.
+         * IT HAS NOW BEEN WRONG TWICE, IN TWO DIFFERENT WAYS, ON TWO DIFFERENT CLOCKS.
+         *
+         *   `microtime(true)`  reported **66.36s** for two stalls, to the same hundredth of a
+         *                      second, in a run whose slowest test was 6.06s and whose total
+         *                      (276.18s) left no room for 133s of stalling. That is the WALL
+         *                      clock, which WSL2 steps.
+         *   `hrtime(true)`     reported **0.00s** for a real absorbed stall in
+         *                      `gate-20261107T140656Z`. libpq's own minimum `connect_timeout`
+         *                      is 2 seconds, so a `timeout expired` cannot take 5 ms, and the
+         *                      monotonic clock is not the explanation.
+         *
+         * So the figure is REMOVED rather than explained a third time. What this line now
+         * carries is what it can stand behind: that a stall happened, which role and database
+         * it hit, and the driver's own message. `R-185` is this ledger's row about a diagnosis
+         * stated more firmly than its evidence, and a number printed beside a real event is a
+         * claim whether or not anybody asked for one.
+         *
+         * ⚠ THE STALL ITSELF IS NOT IN DOUBT and neither is the bound: the run went GREEN with
+         * the stall absorbed, which is the only thing this report exists to tell anybody.
+         * Timing a connect reliably on this host is a measurement problem that belongs with
+         * **Task 13** under `R-191`, alongside the host fault it would be measuring.
+         */
         $line = sprintf(
-            "%s  absorbed a connect stall: role=%s database=%s host=%s:%s attempt=%d elapsed=%.2fs  %s\n",
+            "%s  absorbed a connect stall: role=%s database=%s host=%s:%s attempt=%d  %s\n",
             gmdate('Y-m-d\TH:i:s\Z'),
             is_scalar($config['username'] ?? null) ? (string) $config['username'] : '?',
             is_scalar($config['database'] ?? null) ? (string) $config['database'] : '?',
             is_scalar($config['host'] ?? null) ? (string) $config['host'] : '?',
             is_scalar($config['port'] ?? null) ? (string) $config['port'] : '?',
             $attempt,
-            $elapsed,
             str_replace("\n", ' | ', $error->getMessage()),
         );
 
