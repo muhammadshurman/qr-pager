@@ -10,6 +10,7 @@ use App\Domain\Tenancy\TenantRole;
 use App\Models\User;
 use App\Platform\Auth\ActiveTenant;
 use App\Platform\Auth\Memberships;
+use App\Platform\Auth\RequestPrincipal;
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Database\Connection;
@@ -21,9 +22,92 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PDO;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
 use Tests\Support\RetryingPostgresConnector;
 use Throwable;
 
+/**
+ * ⚠⚠ A HARNESS DIVERGENCE FROM THE RUNTIME, STATED HERE DELIBERATELY — `R-102`, TASK 12.
+ *
+ * ================================================================================
+ * WHAT IS DIFFERENT, AND THE CHOICE `R-102` PUT TO THIS TASK
+ * ================================================================================
+ *
+ * **This suite runs every simulated request through ONE container.** Octane calls
+ * `forgetScopedInstances()` at each request boundary — `RequestBoundaryTest` proves it on
+ * the real `Laravel\Octane\Worker` — and under FPM each request is a new process. Laravel's
+ * TEST client does neither, so a `scoped()` object built during one `$this->postJson()`
+ * serves every later call in the same test.
+ *
+ * `R-102` offered Task 12 two ways to settle it: *"either `TestCase` forgets scoped
+ * instances between HTTP calls — which makes every feature test run with production's
+ * lifetime and would have caught this without a helper — or the divergence is stated in
+ * `TestCase`'s own docblock so nobody reads a green feature test as evidence about request
+ * isolation. The first is a one-line change with an UNKNOWN BLAST RADIUS across 700 tests,
+ * which is why it is a Task 12 decision and not a Task 5 edit."*
+ *
+ * **This is the second option, and the first was measured before it was declined.**
+ *
+ * ================================================================================
+ * ⚠ WHY THE FLUSH WAS DECLINED — THREE MEASUREMENTS, 2026-11-07
+ * ================================================================================
+ *
+ * **(1) The blast radius is no longer unknown: 5 failures in 1,361 tests.** Four of those
+ * were Task 12's own response-header work. **One was the flush**, and it is not a test
+ * leaning on something it should not:
+ *
+ *     with forgetScopedInstances() before (or after) every call, over the rendered HTML
+ *       /platform            200  links=[platform]
+ *       /platform/audit-log  200  links=[platform]
+ *       /studio              200  links=[platform]      <- WRONG
+ *       /studio/domains      200  links=[platform]      <- WRONG
+ *       /studio/media        200  links=[platform]      <- WRONG
+ *
+ * Filament binds its manager as `scoped('filament')` while `PanelRegistry` is a singleton,
+ * so a forgotten manager resolves the DEFAULT panel's theme and the studio pages ship
+ * 692 kB of the wrong stylesheet. `PanelThemeTest` is `QRPAGER-23`'s control on exactly
+ * that and it caught it. **Both placements were tried** — before the call, and after it,
+ * which is Octane's own order — and both produce the table above. So the flush does not
+ * remove a divergence, it trades a DOCUMENTED one for an UNMEASURED one in panel
+ * rendering. That is the wrong direction. The Filament-under-Octane question it raises
+ * belongs to the task that owns the runtime: **`R-243`, Task 13.**
+ *
+ * **(2) A narrowed flush was then tried** — forgetting only `Memberships`, `ActiveTenant`
+ * and `RequestPrincipal`, the three `AuthOctaneIsolationTest` enumerates — and **no
+ * observable behaviour changed.** `MembersTest`'s second add still answered 201, and a
+ * trace inside `UserAttachment::refusalFor()` showed the membership set still arriving
+ * EMPTY on the second request. A change that cannot be shown to do anything is not worth
+ * the risk of the one it demonstrably breaks, so it was reverted too.
+ *
+ * **(3) The divergence is real and it is worth knowing about, which is why this docblock
+ * is long.** Measured inside one test, on one address, immediately after a successful
+ * `POST /v1/members`:
+ *
+ *     UserAttachment::refusalFor(...)  with the warm reader  ->  null
+ *     UserAttachment::refusalFor(...)  with a fresh reader   ->  "already_a_member"
+ *
+ * ⚠ **AND THE SECOND HALF OF THAT IS UNEXPLAINED AND IS NOT CLAIMED TO BE OTHERWISE.**
+ * `public.user_memberships()` returns **1 row** for that user when called from a test, and
+ * the reader inside the request sees **0**. `R-233`'s refusal demonstrably DOES bite on
+ * the cases it was written for — `MemberConsentTest` drives beta's owner and a platform
+ * admin over HTTP and both are refused — so the rule is not inert. What is not established
+ * is why the same-tenant case answers differently on the request path. It is recorded as
+ * **`R-244`** rather than diagnosed here, because `R-185` is this ledger's own row about a
+ * diagnosis stated more firmly than its evidence.
+ *
+ * ================================================================================
+ * SO: WHAT A GREEN FEATURE TEST IN THIS SUITE DOES *NOT* TELL YOU
+ * ================================================================================
+ *
+ * It does not tell you that per-request state is re-derived per request. Anything this
+ * application memoises in a `scoped()` object may be stale for a whole test and fresh in
+ * production — the gap points the PERMISSIVE way for the suite, so a test can pass where
+ * production fails. The instruments for that property are `AuthOctaneIsolationTest` (all
+ * three auth bindings are forgotten and the rebuilt reader re-reads) and
+ * `RequestBoundaryTest` (Octane really calls the flush), and a test that needs the
+ * property mid-run calls `app()->forgetScopedInstances()` itself, as
+ * `SuspendedTenantCustomerSurfaceTest::suspend()` does and explains.
+ */
 abstract class TestCase extends BaseTestCase
 {
     /**

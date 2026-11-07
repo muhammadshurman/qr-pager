@@ -7,6 +7,7 @@ namespace App\Features\Provisioning\Panel;
 use App\Features\Provisioning\Panel\Pages\PlatformDashboardPage;
 use App\Features\Provisioning\Panel\Resources\PlatformAuditResource;
 use App\Features\Provisioning\Panel\Resources\RestaurantResource;
+use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Panel\ApprovedPalette;
 use Filament\FontProviders\LocalFontProvider;
@@ -156,6 +157,24 @@ class PlatformPanelProvider extends PanelProvider
                 (string) config('design-tokens.fonts.latin.family'),
                 provider: LocalFontProvider::class,
             )
+            // ⚠ THE AVATAR, AND IT IS THE SAME DEFECT AS THE FONT ABOVE THROUGH A SECOND
+            //     FILAMENT DEFAULT NOBODY READ — Task 12. `HasAvatars::$defaultAvatarProvider`
+            //     is `UiAvatarsProvider`, which emits
+            //     `https://ui-avatars.com/api/?name=<THE SIGNED-IN PERSON'S NAME>&…` as the
+            //     avatar's `src`. Captured from a rendered `/platform` on 2026-11-07:
+            //     `…?name=A&format=svg&color=FFFFFF&background=%231f3129`.
+            //
+            //     So every page view of this panel made an authenticated administrator's
+            //     browser hand a staff member's NAME to a third party, with the referrer, the
+            //     IP and the timing. The comment above spends ten lines on not re-adding a
+            //     third-party FONT request to "this very surface" — and a third-party IMAGE
+            //     request carrying a name was already there, because it was a default and the
+            //     font was a call.
+            //
+            //     It was also the ONLY remote origin in either panel's markup, measured across
+            //     all seven panel routes, which is what lets `ContentSecurityPolicy` give the
+            //     panels `default-src 'self'` with no third-party host anywhere in the policy.
+            ->defaultAvatarProvider(LocalAvatarProvider::class)
             // The guard Task 5's login establishes. Named, not defaulted — see the docblock.
             ->authGuard('web')
             // EXPLICIT, not discovered. `discoverResources(in: ..., for: ...)` takes a path

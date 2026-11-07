@@ -84,3 +84,113 @@ Failed asserting that null is of type int.
     268▕     // 32,430 ms is AppPoolSaturator's. The suite's deadline must sit above both, or the retry
   Tests:    1 failed, 5 passed (28 assertions)
   Duration: 7.08s
+
+==========================================================================
+================================================================================
+2. THE NAMED INVARIANT — tests/Feature/Http/SurfaceDisclosureTest.php
+================================================================================
+
+⚠ THE FIRST ATTEMPT AT 2a WAS GREEN AND THE PROOF, NOT THE CODE, WAS AT FAULT.
+  The case looked for 'pager_sessions_gone' and 'select *'; the table is RENAMED, so
+  the failing statement still says 'pager_sessions', and the board selects named
+  columns. Neither needle could ever appear. The needles are now the body measured
+  WITH the renderer removed (32,425 bytes vs the problem document's 149), and the
+  revert below is the re-run.
+
+--- 2a. REVERT: ProblemRenderer unregistered, so Laravel's own renderer answers --
+  ✓ it FINDS every needle when a route really discloses one — the contr… 0.33s  
+  ✓ it discloses nothing across the WHOLE route surface, at APP_DEBUG f… 1.85s  
+  ✓ it keeps a REAL QR token out of every response but the one that min… 1.32s  
+  ⨯ it carries no SQL and no bound parameter out of a REAL database fai… 0.14s  
+  ✓ it leaks nothing through the panel surface either, which is HTML an… 0.29s  
+   FAILED  Tests\Feature\Http\SurfaceDisclosureTest > it carries no SQL and…    
+  To contain: /problems/server-error
+    456▕                 "{$setting}: the 500 body is ".strlen($body).' bytes; the problem document is ~149 '.
+  Tests:    1 failed, 4 passed (24 assertions)
+  Duration: 3.98s
+
+================================================================================
+3. R-234 / R-236 / R-237 AND THE RESPONSE-HARDENING WORK
+================================================================================
+
+--- 3a. R-234 REVERT: the scale unconfined again, as it was before Task 12 ----------
+  ⨯ it ignores the scale under every environment name that is not local… 0.13s  
+  ⨯ it stays at 10 in a REAL production process carrying RATELIMIT_SCAL… 0.42s  
+   FAILED  Tests\Feature\Http\RateLimitScaleTest > it ignores the scale unde…   
+Failed asserting that 200 is identical to 10.
+   FAILED  Tests\Feature\Http\RateLimitScaleTest > it stays at 10 in a REAL…    
+Failed asserting that two strings are identical.
+  Tests:    2 failed, 5 passed (25 assertions)
+
+--- 3b. R-236 REVERT: the idempotent branch answers the REQUEST's role again -------
+  ⨯ it answers the STORED role on an idempotent add, not the one the ca… 0.17s  
+   FAILED  Tests\Feature\Auth\MembersTest > it answers the STORED role on an…   
+  Failed asserting that two strings are identical.
+  Tests:    1 failed, 9 passed (59 assertions)
+
+--- 3c. R-237 REVERT: all six transitions pass actorIp alone, as before Task 12 -----
+  ⨯ it records the calling staff user on every one of the six staff tra… 0.44s  
+  ⨯ it records the caller on a CANCEL too, which the drive above cannot… 0.16s  
+   FAILED  Tests\Feature\Pager\PagerAuditActorTest > it records the calling…    
+  [pager.session.created] is audited with actor_user_id NULL instead of the caller's id
+Failed asserting that null is identical to '01a1b5c7-1928-70b4-b713-b3003a917f34'.
+    110▕             "[{$action}] is audited with actor_user_id ".
+   FAILED  Tests\Feature\Pager\PagerAuditActorTest > it records the caller o…   
+  Failed asserting that null is identical to '01a1b5c7-1a03-7259-9079-238938928e6e'.
+  Tests:    2 failed, 2 passed (21 assertions)
+
+--- 4a. REVERT: HardenResponse unregistered -- R-038's state before Task 12 --------
+  ⨯ it sets every hardening header on EVERY route in the table, driven…  0.47s  
+  ⨯ it denies every sensor capability in Permissions-Policy, from the m… 0.10s  
+  ⨯ it gives EVERY tenant-data route private, no-store — R-235, with no… 0.18s  
+  ⨯ it carries private, no-store on GET /v1/members itself, with a real… 0.14s  
+  ⨯ it gives the JSON surface default-src ’none’ with no unsafe-inline…  0.11s  
+  ⨯ it gives the panel HTML its own policy, with no third-party origin…  0.16s  
+  ⨯ it hardens a 404, a 429 and a rendered exception — the responses no… 0.16s  
+  ⨯ it never REPLACES a policy a response built for itself — the regres… 0.15s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it sets every hardening h…   
+  unhardened responses:
+Failed asserting that two arrays are identical.
+  ➜ 165▕     expect($missing)->toBe([], "unhardened responses:\n  ".implode("\n  ", $missing));
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it denies every sensor ca…   
+Failed asserting that false is true.
+
+--- 4b. REVERT: R-235's own state -- the framework default 'no-cache, private' -----
+  ⨯ it gives EVERY tenant-data route private, no-store — R-235, with no… 0.18s  
+  ⨯ it carries private, no-store on GET /v1/members itself, with a real… 0.14s  
+  ⨯ it hardens a 404, a 429 and a rendered exception — the responses no… 0.16s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it gives EVERY tenant-dat…   
+  responses that may be stored:
+Failed asserting that two arrays are identical.
+  ➜ 240▕     expect($wrong)->toBe([], "responses that may be stored:\n  ".implode("\n  ", $wrong));
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it carries `private, no-s…   
+  Failed asserting that two arrays are identical.
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it hardens a 404, a 429 a…   
+  [404] may be stored
+Failed asserting that two arrays are identical.
+  ➜ 428▕             ->toBe(['no-store', 'private'], "[{$label}] may be stored")
+  Tests:    3 failed, 6 passed (98 assertions)
+
+--- 4c. REVERT: the CSP overwritten again -- tenant content gets the panel policy --
+  ⨯ it never REPLACES a policy a response built for itself — the regres… 0.17s  
+  ⨯ it keeps no-store and the four security headers on the page — S-3,…  0.14s  
+  ⨯ it serves a content security policy on the preview document, not on… 0.20s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it never REPLACES a polic…   
+  To contain: default-src 'none'
+   FAILED  Tests\Feature\Design\PanelProblemPageTest > it keeps no-store and…   
+  To contain: default-src 'none'
+   FAILED  Tests\Feature\Landing\ReviewFixesTest > it serves a content secur…   
+  To contain: default-src 'none'
+  Tests:    3 failed, 37 passed (261 assertions)
+
+--- 4d. REVERT: Laravel's shipped CORS default over /v1 with credentials ----------
+  ⨯ it answers no CORS header to a cross-origin preflight, on any surfa… 0.38s  
+   FAILED  Tests\Feature\Http\CorsPolicyTest > it answers no CORS header to…    
+Failed asserting that 'https://evil.example.com' is null.
+  Tests:    1 failed (1 assertions)
+
+--- 4e. REVERT: Filament's UiAvatarsProvider back -- the name leak, as measured ----
+  ⨯ it serves the panel markup with no third-party request in it — the…  0.17s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the panel marku…   
+Failed asserting that true is false.
+  Tests:    1 failed, 8 passed (109 assertions)

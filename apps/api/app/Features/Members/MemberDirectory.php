@@ -226,16 +226,39 @@ final class MemberDirectory
         return withTenant($tenantId, function () use (
             $tenantId, $userId, $membershipId, $role, $actorUserId, $actorIp
         ): array {
-            $already = DB::selectOne('select id from tenant_users where user_id = ?', [$userId]);
+            // `role` IS SELECTED NOW, AND THAT IS `R-236` -- the response must describe what is
+            // STORED, not what the caller asked for.
+            $already = DB::selectOne('select id, role from tenant_users where user_id = ?', [$userId]);
 
             if ($already !== null) {
-                // Idempotent rather than a 409: adding somebody who is already here is not
-                // an error worth a distinct answer, and UNIQUE (tenant_id, user_id) is what
-                // actually prevents the duplicate.
+                /*
+                 * Idempotent rather than a 409: adding somebody who is already here is not
+                 * an error worth a distinct answer, and UNIQUE (tenant_id, user_id) is what
+                 * actually prevents the duplicate.
+                 *
+                 * ⚠ `R-236`: THIS RETURNED `$role->value` -- THE REQUEST'S ROLE -- WHILE WRITING
+                 * NOTHING, so the body described a change that did not happen. Driven at the
+                 * `task-10` tag: a manager posting an existing **owner**'s address with
+                 * `role: staff` got `201 {"role":"staff"}` while `GET /v1/members` still showed
+                 * `owner`. An operator who trusts the answer believes a privilege was reduced
+                 * when it was not.
+                 *
+                 * ⚠ AND THE FIX IS THE STORED ROLE RATHER THAN A REFUSAL, which is the direction
+                 * the row argues and the direction `R-233` requires. A 409 or a 403 here would
+                 * make this endpoint an existing-membership oracle: `{201}` would mean the
+                 * address is free and `{409}` would mean it is taken, for any address an
+                 * authenticated manager types -- exactly what `MemberController::store()`'s
+                 * in-force one-message property exists to prevent. The idempotency is
+                 * deliberate; only the body was wrong.
+                 *
+                 * NO AUDIT ROW, deliberately and unchanged: nothing was written, and an
+                 * `member.added` row for a membership that already existed would be a false
+                 * entry in an append-only log.
+                 */
                 return [
                     'id' => (string) $already->id,
                     'user_id' => $userId,
-                    'role' => $role->value,
+                    'role' => (string) $already->role,
                 ];
             }
 

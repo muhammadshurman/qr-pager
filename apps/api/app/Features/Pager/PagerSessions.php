@@ -737,11 +737,23 @@ final class PagerSessions
     /**
      * One audit row, inside the caller's transaction.
      *
-     * actor_type is `user` with a NULL actor_user_id until Task 5 exists, and that is the
-     * honest pair rather than a convenient one: a staff member really did this, and we
-     * really cannot say who yet. `system` would be a lie and would make these rows
-     * indistinguishable from the expiry job's, which are the only genuinely actorless
-     * ones. Task 5 fills the id and changes nothing else here.
+     * ⚠ `actor_user_id` IS FILLED NOW, AT TASK 12, AND THIS DOCBLOCK IS WHY IT TOOK SO LONG.
+     * It used to read: *"actor_type is `user` with a NULL actor_user_id until Task 5 exists,
+     * and that is the honest pair rather than a convenient one: a staff member really did
+     * this, and we really cannot say who yet. `system` would be a lie and would make these
+     * rows indistinguishable from the expiry job's, which are the only genuinely actorless
+     * ones. **Task 5 fills the id and changes nothing else here.**"*
+     *
+     * The reasoning was right and the last sentence was a promise nobody kept. Task 5 built
+     * the principals and never returned to these call sites, so `?string $actorUserId = null`
+     * sat here with NO caller passing it from Task 3 until `R-237` found one row of it in a
+     * scoped review of Task 10 -- a `pager.session.reissued` with an IP and nothing else, for
+     * an act that voids a live customer's code. The sweep found all six writes on
+     * `PagerSessionController` doing the same.
+     *
+     * `PagerSessionController::actor()` now supplies it on every one, and the NULL that
+     * remains is honest: the expiry job and the outbox worker have no user, which is what
+     * `actor_type` already distinguishes.
      *
      * `context` carries status values and counts -- our own enum cases and integers. Never
      * the token, never its hash, never anything the caller sent beyond what the column

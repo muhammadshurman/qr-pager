@@ -29,7 +29,43 @@ declare(strict_types=1);
  * decision, which is 10b's (it builds the polled board, where a 429 is most likely).
  */
 
-$scale = max(1, (int) env('RATELIMIT_SCALE', 1));
+/*
+|--------------------------------------------------------------------------
+| RATELIMIT_SCALE is IGNORED outside local and testing — R-234
+|--------------------------------------------------------------------------
+|
+| ⚠ WHAT THIS CLOSES. Every bucket below is built through `$scale`, and nothing confined it
+| to a test environment — so ONE `.env` line in production relaxed the login bound by the
+| same factor as the polling one. At the **20** the browser stack sets, `auth-login` became
+| **200/min/IP** in front of a bcrypt, `auth-2fa` **100/min/IP** in front of a six-digit
+| code, and `devices-issue` **200/min/IP** in front of a credential mint. Accepted 2026-11-03
+| from Task 10's scoped `§11` security review; fixed at Task 12, its owner.
+|
+| ⚠ IGNORED RATHER THAN CLAMPED, WHICH IS THE ROW'S OWN RECOMMENDATION AND THE REASON FOR IT:
+| *"a clamp invites a judgement about how much relaxation is acceptable in production and the
+| answer is none."* A clamp would also have to pick a ceiling per bucket, and the bucket that
+| matters most (`auth-2fa` at 5) has the least room.
+|
+| ⚠ `env('APP_ENV')` AND NOT `app()->environment()`. This file is evaluated by the config
+| loader BEFORE the application's environment is resolved from it, so `app()->environment()`
+| here reads a default rather than the value in force — the row's suggested form, and wrong
+| in this position. `env()` is also what every other key in this directory uses, and `env()`
+| inside `config/` is the one place larastan permits it (the cached-config caveat
+| `TestCase::refuseHalfIsolatedRunner()` records applies to code OUTSIDE config).
+|
+| ⚠ AND A CACHED CONFIG CARRIES THE DECISION, NOT THE KNOB, which is the safe direction: a
+| config cached under `local` and shipped would carry the SCALED numbers, so the clause is
+| asserted against a real `APP_ENV=production` process rather than only in this file.
+| `RateLimitScaleTest` drives a child process with `RATELIMIT_SCALE=20` and
+| `APP_ENV=production` and reads the bounds back out of it.
+|
+| The default stays 1, so nothing changes for anyone who never sets it.
+*/
+$scaleEnvironments = ['local', 'testing'];
+
+$scale = in_array((string) env('APP_ENV', 'production'), $scaleEnvironments, true)
+    ? max(1, (int) env('RATELIMIT_SCALE', 1))
+    : 1;
 
 /**
  * One bucket half, scaled.

@@ -14,6 +14,7 @@ use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
 use App\Platform\Console\RefreshReadinessCommand;
 use App\Platform\Http\Middleware\ArmTenantScopeGuard;
+use App\Platform\Http\Middleware\HardenResponse;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\Middleware\RefuseDeviceToken;
 use App\Platform\Http\Middleware\RefuseUnservedVendorRoutes;
@@ -282,6 +283,28 @@ return Application::configure(basePath: dirname(__DIR__))
         // The lesson belongs here rather than only in the class: a path list in a global
         // middleware is a claim about every panel the application will ever mount.
         $middleware->prepend(RefuseUnservedVendorRoutes::class);
+
+        /*
+         * THE RESPONSE-HARDENING HEADERS, ON EVERY RESPONSE — Task 12, `R-038` and `R-235`.
+         *
+         * ⚠ PREPENDED LAST, SO IT IS THE OUTERMOST MIDDLEWARE, AND THAT IS THE WHOLE
+         * REGISTRATION. A middleware's post-`$next()` code runs on the way back out, outermost
+         * LAST — so the outermost one is the only position that sees the final response
+         * whatever produced it: a controller, a group's refusal, `RefuseUnservedVendorRoutes`'s
+         * own 404, the rate limiter's 429, or the exception handler's problem document.
+         * Anywhere further in and the headers would be missing from exactly the responses an
+         * attacker generates most of.
+         *
+         * `prepend()` pushes to the FRONT, so the LAST call wins the outermost slot. That is
+         * why this sits BELOW the other two rather than above them — ordering that reads as
+         * arbitrary and is not. `ResponseHeaderTest` drives all three route shapes plus a 404,
+         * a 429 and a rendered exception for exactly this reason.
+         *
+         * GLOBAL and not per-group, because `R-038`'s acceptance clause asks for the headers
+         * *"set in one place rather than per controller"* and the two probes are outside every
+         * group. Four controllers agreeing on a cache header is how `R-235` happened.
+         */
+        $middleware->prepend(HardenResponse::class);
 
         // LIVEWIRE'S UPDATE ENDPOINT, metered through the one group it belongs to
         // (security H-2). Filament's tables, modals and forms all talk to the server

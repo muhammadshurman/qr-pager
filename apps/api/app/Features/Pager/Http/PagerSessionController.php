@@ -7,6 +7,7 @@ namespace App\Features\Pager\Http;
 use App\Features\Pager\PagerSessions;
 use App\Features\Pager\PagerSessionState;
 use App\Features\Pager\PagerSheet;
+use App\Models\User;
 use App\Platform\Http\Middleware\RequireTenantScope;
 use App\Platform\Http\ProblemDocument;
 use App\Platform\Http\ValidationProblemDocument;
@@ -102,6 +103,7 @@ final class PagerSessionController
         $issued = $this->sessions->create(
             $this->tenant(),
             $request->orderReference(),
+            actorUserId: $this->actor($request),
             actorIp: $request->ip(),
         );
 
@@ -130,7 +132,9 @@ final class PagerSessionController
     #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function ready(Request $request, string $session): JsonResponse
     {
-        return $this->state($this->sessions->markReady($this->tenant(), $session, actorIp: $request->ip()));
+        return $this->state($this->sessions->markReady(
+            $this->tenant(), $session, actorUserId: $this->actor($request), actorIp: $request->ip(),
+        ));
     }
 
     /**
@@ -145,7 +149,9 @@ final class PagerSessionController
     #[DocResponse(status: 409, description: 'The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.', type: ProblemDocument::class)]
     public function renotify(Request $request, string $session): JsonResponse
     {
-        return $this->state($this->sessions->renotify($this->tenant(), $session, actorIp: $request->ip()));
+        return $this->state($this->sessions->renotify(
+            $this->tenant(), $session, actorUserId: $this->actor($request), actorIp: $request->ip(),
+        ));
     }
 
     /**
@@ -159,7 +165,9 @@ final class PagerSessionController
     #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function complete(Request $request, string $session): JsonResponse
     {
-        return $this->state($this->sessions->complete($this->tenant(), $session, actorIp: $request->ip()));
+        return $this->state($this->sessions->complete(
+            $this->tenant(), $session, actorUserId: $this->actor($request), actorIp: $request->ip(),
+        ));
     }
 
     /**
@@ -174,7 +182,9 @@ final class PagerSessionController
     #[DocResponse(status: 409, description: 'The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function cancel(Request $request, string $session): JsonResponse
     {
-        return $this->state($this->sessions->cancel($this->tenant(), $session, actorIp: $request->ip()));
+        return $this->state($this->sessions->cancel(
+            $this->tenant(), $session, actorUserId: $this->actor($request), actorIp: $request->ip(),
+        ));
     }
 
     /**
@@ -214,7 +224,9 @@ final class PagerSessionController
     #[DocResponse(status: 409, description: 'The order is already finished, or has passed its expiry. The `type` member distinguishes the two.', type: ProblemDocument::class)]
     public function reissue(Request $request, string $session): JsonResponse
     {
-        $issued = $this->sessions->reissue($this->tenant(), $session, actorIp: $request->ip());
+        $issued = $this->sessions->reissue(
+            $this->tenant(), $session, actorUserId: $this->actor($request), actorIp: $request->ip(),
+        );
 
         // reveal() is called HERE and in `store()` and nowhere else in the application. This is
         // the only other moment a raw token can reach a QR code, and it exists because the raw
@@ -256,5 +268,46 @@ final class PagerSessionController
         $tenant = app()->make(RequireTenantScope::BINDING);
 
         return $tenant;
+    }
+
+    /**
+     * WHO DID THIS, for the audit row — `R-237`, and it is the whole file rather than `reissue`.
+     *
+     * ⚠ THE ROW NAMED ONE ROUTE AND ITS REVIEW-BY SAID *"sweep the other pager transitions for
+     * the same shape while in there"*. Swept: **all six** writes on this controller passed
+     * `actorIp` alone, so every `pager.session.*` row in `audit_log` carried
+     * `actor_type = user` with `actor_user_id = NULL` — an IP and nothing else.
+     *
+     * ⚠ AND IT WAS A PROMISE MADE IN TASK 3 AND NOT KEPT IN TASK 5, which is worth naming
+     * because it is why nobody noticed. `PagerSessions::audit()`'s docblock says
+     * *"actor_type is `user` with a NULL actor_user_id **until Task 5 exists** ... Task 5 fills
+     * the id and changes nothing else here"*. Task 5 built the principals and never came back
+     * for the call sites, and the parameter has been `?string $actorUserId = null` with no
+     * caller passing it ever since. The docblock is corrected with this change.
+     *
+     * ⚠ IT THROWS RATHER THAN RETURNING NULL, AND THAT IS SAFE HERE BY A CLOSED LIST RATHER
+     * THAN BY HOPE. The worry on a pager route is a KDS device token, whose `tokenable` is the
+     * ISSUING user — so returning `$user->getKey()` for one would record *Alice marked this
+     * ready* when a shared wall screen Alice provisioned did, which is a FALSE attribution and
+     * worse than the NULL this row is about. It cannot arise: `Ability::issuableToDevice()` is
+     * a closed list of **one**, `pager:read`, and every route on this controller maps to
+     * `pager:create`, `pager:notify` or `pager:resolve` in `RouteAbilities`, each refused 403
+     * by `RequireAbility` before this controller runs. `DeviceTokenScopeTest` holds that
+     * boundary. If the closed list is ever widened, this throw is a loud 500 on the first
+     * device request rather than a quiet lie in an append-only log — which is the direction
+     * this project wants a guard to fail in.
+     *
+     * The same shape as `MemberController::actor()`, deliberately: one way of answering
+     * "who is acting" on the staff surface.
+     */
+    private function actor(Request $request): string
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            throw new RuntimeException('a pager transition needs an actor');
+        }
+
+        return (string) $user->getKey();
     }
 }

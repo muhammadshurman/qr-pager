@@ -329,3 +329,61 @@ it('refuses a malformed role or address before anything is written', function ()
 
     $this->patchJson('/v1/members/'.Str::uuid7(), ['role' => 'platform_admin'])->assertStatus(422);
 });
+
+it('answers the STORED role on an idempotent add, not the one the caller asked for', function (): void {
+    /*
+     * ⚠ `R-236`, accepted 2026-11-03 from Task 10's scoped `§11` security review and fixed at
+     * Task 12, its owner.
+     *
+     * `MemberDirectory::add()`'s idempotent branch returned `'role' => $role->value` — the
+     * REQUEST's role — while writing nothing, so the response described a change that did not
+     * happen. The row's own measurement, driven at the `task-10` tag: a manager posting an
+     * existing **owner**'s address with `role: staff` got `201 {"role":"staff"}` while
+     * `GET /v1/members` still showed `owner`. An operator who trusts the answer believes a
+     * privilege was reduced when it was not.
+     *
+     * ⚠ THE FIX IS THE STORED ROLE AND NOT A REFUSAL, which is the direction the row argues
+     * and the direction `R-233` requires. A 409 or a 403 here would make this endpoint an
+     * existing-membership oracle — `{201}` the address is free, `{409}` it is taken, for any
+     * address an authenticated manager types — which is exactly what
+     * `MemberController::store()`'s in-force one-message property exists to prevent. The
+     * idempotency is deliberate; only the body was wrong.
+     *
+     * ⚠ AND IT IS AN **OWNER** BEING RE-ADDED AS **STAFF**, deliberately: that is the row's
+     * own case and it is the direction that matters. `staff` → `manager` would read as a
+     * privilege the caller was granted; `owner` → `staff` reads as a privilege REMOVED, and an
+     * operator acting on that belief leaves a tenant with an owner it thinks it demoted.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $candidate = existingAccount();
+
+    $this->postJson('/v1/members', [
+        'email' => $candidate['email'],
+        'role' => TenantRole::Owner->value,
+    ])->assertStatus(201)->assertJsonPath('member.role', TenantRole::Owner->value);
+
+    // The premise: the directory really does hold `owner` for this account now.
+    $stored = collect($this->getJson('/v1/members')->json('members'))
+        ->firstWhere('user_id', $candidate['id']);
+
+    expect($stored['role'] ?? null)->toBe(TenantRole::Owner->value);
+
+    // THE ROW'S CASE. A second add asking for `staff` must not answer `staff`.
+    $again = $this->postJson('/v1/members', [
+        'email' => $candidate['email'],
+        'role' => TenantRole::Staff->value,
+    ]);
+
+    $again->assertStatus(201)
+        ->assertJsonPath('member.role', TenantRole::Owner->value)
+        ->assertJsonPath('member.user_id', $candidate['id']);
+
+    // And nothing moved: the body is the only thing that was ever wrong here.
+    $after = collect($this->getJson('/v1/members')->json('members'))
+        ->firstWhere('user_id', $candidate['id']);
+
+    expect($after['role'] ?? null)->toBe(TenantRole::Owner->value, 'the idempotent branch wrote a role')
+        ->and(auditRows($tenant, 'member.role_changed'))->toBe([], 'the idempotent branch audited a change');
+});

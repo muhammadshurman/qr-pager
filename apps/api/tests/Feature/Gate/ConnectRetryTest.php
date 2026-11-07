@@ -193,7 +193,10 @@ it('does NOT retry a refused connection, so the tests that point at a dead port 
     $elapsed = microtime(true) - $started;
 
     expect($message)->not->toBeNull('a dead port connected')
-        ->and($message)->not->toContain('R-191', 'a refusal was annotated as a connect stall')
+        // One needle: Pest's `toContain()` takes further NEEDLES rather than a message, and the
+        // negated two-argument form is silently always green.
+        ->and(str_contains((string) $message, 'R-191'))
+        ->toBeFalse('a refusal was annotated as a connect stall')
         ->and(RetryingPostgresConnector::absorbed())->toBe(0, 'a refusal was retried')
         ->and($elapsed)->toBeLessThan(5.0, 'a refused connect is no longer immediate');
 });

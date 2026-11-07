@@ -8,6 +8,7 @@ use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
+use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Panel\ApprovedPalette;
 use Filament\FontProviders\LocalFontProvider;
@@ -146,6 +147,24 @@ class StudioPanelProvider extends PanelProvider
                 (string) config('design-tokens.fonts.latin.family'),
                 provider: LocalFontProvider::class,
             )
+            // ⚠ THE AVATAR, AND IT IS THE SAME DEFECT AS THE FONT ABOVE THROUGH A SECOND
+            //     FILAMENT DEFAULT NOBODY READ — Task 12. `HasAvatars::$defaultAvatarProvider`
+            //     is `UiAvatarsProvider`, which emits
+            //     `https://ui-avatars.com/api/?name=<THE SIGNED-IN PERSON'S NAME>&…` as the
+            //     avatar's `src`. Captured from a rendered `/platform` on 2026-11-07:
+            //     `…?name=A&format=svg&color=FFFFFF&background=%231f3129`.
+            //
+            //     So every page view of this panel made an authenticated administrator's
+            //     browser hand a staff member's NAME to a third party, with the referrer, the
+            //     IP and the timing. The comment above spends ten lines on not re-adding a
+            //     third-party FONT request to "this very surface" — and a third-party IMAGE
+            //     request carrying a name was already there, because it was a default and the
+            //     font was a call.
+            //
+            //     It was also the ONLY remote origin in either panel's markup, measured across
+            //     all seven panel routes, which is what lets `ContentSecurityPolicy` give the
+            //     panels `default-src 'self'` with no third-party host anywhere in the policy.
+            ->defaultAvatarProvider(LocalAvatarProvider::class)
             ->authGuard('web')
             // EXPLICIT, never discovered. `discoverPages()` takes a directory, so the
             // set of pages would be whatever happens to be in it -- and

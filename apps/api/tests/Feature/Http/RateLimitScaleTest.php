@@ -106,3 +106,197 @@ it('refuses to weaken a bound, whatever the environment says', function (): void
             ->toBe(60, "RATELIMIT_SCALE='{$hostile}' changed a bound");
     }
 });
+
+/*
+ * ================================================================================
+ * R-234 — THE SCALE IS IGNORED OUTSIDE `local` AND `testing`
+ * ================================================================================
+ *
+ * The two cases above pin the DEFAULT at 1 and prove the scale multiplies. Neither says
+ * anything about a production `.env` that carries the value — which is exactly the exposure
+ * `R-234` records: *"ONE `.env` LINE IN PRODUCTION RELAXES THE LOGIN BOUND BY THE SAME FACTOR
+ * AS THE POLLING ONE."* At the 20 the browser stack sets, `auth-login` became 200/min/IP in
+ * front of a bcrypt, `auth-2fa` 100/min/IP in front of a six-digit code and `devices-issue`
+ * 200/min/IP in front of a credential mint.
+ *
+ * Accepted 2026-11-03 from Task 10's scoped `§11` security review; fixed at Task 12, its
+ * named owner. The row's proof-of-fix is quoted in the second case below.
+ */
+
+/**
+ * The config file, re-evaluated under a chosen APP_ENV as well as a chosen scale.
+ *
+ * @return array<string, mixed>
+ */
+function ratelimitConfigIn(string $environment, string $scale): array
+{
+    /*
+     * ⚠ ALL THREE SOURCES, AND THE FIRST DRAFT OF THIS HELPER SET ONLY `putenv()` — WHICH
+     * FAILED LOUDLY AND IS WORTH RECORDING, BECAUSE THE SAME SLIP IN THE OTHER DIRECTION WOULD
+     * HAVE BEEN SILENT.
+     *
+     * Laravel reads `env()` through a repository whose adapter chain consults `$_SERVER` and
+     * `$_ENV` BEFORE the process environment. `phpunit.xml` declares
+     * `<env name="APP_ENV" value="testing"/>`, and PHPUnit writes that into `$_SERVER` and
+     * `$_ENV` as well as through `putenv()` — so a `putenv('APP_ENV=production')` here was
+     * simply outranked and the file kept resolving `testing`. Measured: the first run of the
+     * case below reported *"Failed asserting that 200 is identical to 10"*, i.e. the scale was
+     * still being honoured.
+     *
+     * `RATELIMIT_SCALE` is NOT in `phpunit.xml`, which is why `ratelimitConfig()` above works
+     * with `putenv()` alone and why the gap was not visible until a second variable was added.
+     *
+     * The direction matters: this slip made a real fix look broken. Had the case been written
+     * the other way round — asserting 200 under `local` — it would have passed for the wrong
+     * reason and certified nothing.
+     */
+    $previous = [
+        'putenv' => getenv('APP_ENV'),
+        'server' => $_SERVER['APP_ENV'] ?? null,
+        'env' => $_ENV['APP_ENV'] ?? null,
+    ];
+
+    putenv('APP_ENV='.$environment);
+    $_SERVER['APP_ENV'] = $environment;
+    $_ENV['APP_ENV'] = $environment;
+
+    try {
+        return ratelimitConfig($scale);
+    } finally {
+        if ($previous['putenv'] === false) {
+            putenv('APP_ENV');
+        } else {
+            putenv('APP_ENV='.$previous['putenv']);
+        }
+
+        foreach (['server' => '_SERVER', 'env' => '_ENV'] as $key => $global) {
+            if ($previous[$key] === null) {
+                unset($GLOBALS[$global]['APP_ENV']);
+            } else {
+                $GLOBALS[$global]['APP_ENV'] = $previous[$key];
+            }
+        }
+    }
+}
+
+it('ignores the scale under every environment name that is not local or testing', function (): void {
+    // ⚠ AN ALLOWLIST, PROVEN WITH NAMES THAT ARE ENUMERATED NOWHERE IN THE APPLICATION, and
+    // that is `QRPAGER-31`'s lesson rather than thoroughness for its own sake. The harness
+    // page's guard was `! app()->environment('production')`, which reads as "not production"
+    // and admits every other name: measured, `staging` served a sign-in form posting to the
+    // real /v1/auth/login, and the test was green throughout because it was reading the `if`.
+    //
+    // So `demo`, `qa`, `preview` and `production-eu` are here deliberately. The claim is not
+    // "some other name is refused" -- it is that the condition is an ALLOWLIST, and only a
+    // name nobody wrote down can demonstrate that.
+    $refused = ['production', 'staging', 'demo', 'qa', 'preview', 'production-eu'];
+
+    foreach ($refused as $environment) {
+        $config = ratelimitConfigIn($environment, '20');
+
+        expect($config['buckets']['auth-login']['per_ip']['attempts'])
+            ->toBe(10, "RATELIMIT_SCALE is honoured under APP_ENV={$environment}: a bcrypt is behind this bound")
+            ->and($config['buckets']['auth-2fa']['per_ip']['attempts'])
+            ->toBe(5, "a six-digit code's bound is relaxed under APP_ENV={$environment}")
+            ->and($config['buckets']['devices-issue']['per_ip']['attempts'])
+            ->toBe(10, "a credential mint's bound is relaxed under APP_ENV={$environment}");
+    }
+
+    // ⚠ THE POSITIVE CONTROLS, AND THEY ARE NOT DECORATION. Without them a condition that
+    // refused EVERY environment -- including the one the browser suite needs -- would read as
+    // the strongest possible pass here, and the e2e stack would be back to measuring the
+    // limiter instead of the application (`R-224`'s episode). The two 200s are what make the
+    // 10s above mean something.
+    foreach (['local', 'testing'] as $environment) {
+        expect(ratelimitConfigIn($environment, '20')['buckets']['auth-login']['per_ip']['attempts'])
+            ->toBe(200, "the browser suite cannot raise the bound under APP_ENV={$environment}");
+    }
+});
+
+it('stays at 10 in a REAL production process carrying RATELIMIT_SCALE=20 — the row’s own proof of fix', function (): void {
+    /*
+     * ⚠ WHY A CHILD PROCESS, when the case above already drives six environment names.
+     *
+     * The case above re-`require`s the config FILE, which proves what the file returns. It
+     * cannot prove what a booted application resolved, because `APP_ENV` is read by the config
+     * loader before any test's first line runs — and `R-234`'s proof-of-fix is written about a
+     * process, not a file: *"auth-login stays at 10 with `RATELIMIT_SCALE=20` and
+     * `APP_ENV=production`."*
+     *
+     * It also closes the one thing this fix genuinely cannot decide from inside the file: a
+     * config CACHED under `local` and shipped would carry the scaled numbers. That is a
+     * deployment fault rather than a repository one, and the only instrument that would see it
+     * is a real process, which is this one.
+     *
+     * `array_merge(getenv(), …)` and not a bare array, for the reason `RouteSurfaceTest` and
+     * `MemberConcurrencyTest` both record: `proc_open`'s `$env` REPLACES the environment, so a
+     * bare array loses `PATH` and everything `.env` resolution needs, and a child that
+     * produced no output at all would read as a result.
+     */
+    $read = function (string $environment, string $scale, string $key): string {
+        $process = proc_open(
+            [PHP_BINARY, base_path('tests/Support/get-config-in-another-process.php'), $key],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            base_path(),
+            array_merge(getenv(), [
+                'APP_ENV' => $environment,
+                'RATELIMIT_SCALE' => $scale,
+                'PAO_DISABLE' => '1',
+            ]),
+        );
+
+        expect($process)->not->toBeFalse("could not start the probe for APP_ENV={$environment}");
+
+        $out = trim((string) stream_get_contents($pipes[1]));
+        $err = trim((string) stream_get_contents($pipes[2]));
+
+        foreach ($pipes as $pipe) {
+            fclose($pipe);
+        }
+
+        expect(proc_close($process))
+            ->toBe(0, "the probe failed under APP_ENV={$environment}: {$err}");
+
+        return $out;
+    };
+
+    // The child really is production, read from the child rather than assumed: without this a
+    // mis-passed variable reverses the proof in silence.
+    expect($read('production', '20', 'app.env'))->toBe('production');
+
+    expect($read('production', '20', 'ratelimit.buckets.auth-login.per_ip.attempts'))
+        ->toBe('10', 'a production process honours RATELIMIT_SCALE: the login bound is relaxed 20x');
+
+    expect($read('production', '20', 'ratelimit.buckets.auth-2fa.per_ip.attempts'))
+        ->toBe('5', 'a production process relaxes the second-factor bound');
+
+    // THE POSITIVE CONTROL, in a real process too: a probe that was simply broken would report
+    // the unscaled number for every environment and read as the strongest possible pass.
+    expect($read('local', '20', 'ratelimit.buckets.auth-login.per_ip.attempts'))
+        ->toBe('200', 'the probe reports the unscaled bound even under local: it is measuring nothing');
+});
+
+it('refuses to read a config key that could carry a secret, which is this task’s own invariant', function (): void {
+    // The instrument above boots the real application with the real `.env`, so one dotted
+    // string separates `database.connections.pgsql.password` from a CI log. Task 12's named
+    // invariant is that no surface discloses a secret; a test helper is a surface.
+    $process = proc_open(
+        [PHP_BINARY, base_path('tests/Support/get-config-in-another-process.php'), 'database.connections.pgsql.password'],
+        [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+        base_path(),
+        array_merge(getenv(), ['PAO_DISABLE' => '1']),
+    );
+
+    $out = trim((string) stream_get_contents($pipes[1]));
+    $err = trim((string) stream_get_contents($pipes[2]));
+
+    foreach ($pipes as $pipe) {
+        fclose($pipe);
+    }
+
+    expect(proc_close($process))->not->toBe(0, 'the probe printed a database password')
+        ->and($out)->toBe('', 'the probe printed something for a refused key')
+        ->and($err)->toContain('readable prefixes');
+});
