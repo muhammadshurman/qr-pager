@@ -1,0 +1,135 @@
+task-12 — security hardening: CSP, CORS, limits, fuzzing, ASVS L2, and R-191
+bounded so it no longer costs a re-run
+
+THE INVARIANT, NAMED BEFORE ANY CODE
+
+  §11 makes a falsifiable invariant the precondition for starting, and §3 row 12
+  had none. Muhammad's words, in their own commit (ccb5b54) with nothing else in
+  it:
+
+    "No response from any surface, at any APP_DEBUG setting, carries a secret, a
+     token, a QR value, SQL or a bound parameter — proven by driving the WHOLE
+     route surface, derived from the router rather than hand-written, and
+     asserting zero occurrences in captured bodies, headers and log output."
+
+  SurfaceDisclosureTest drives the route table read from Route::getRoutes(),
+  anonymously and as an owner, at APP_DEBUG false AND true, over bodies AND
+  headers, with needles read from the live configuration and a REAL minted QR
+  token. Its FIRST case is a positive control: a route built to disclose every
+  needle must be FOUND by the same scanner, or no absence assertion in the file
+  means anything.
+
+R-191 — THE MECHANISM, WHICH THE ROW HAD WRONG
+
+  The row read "no connect_timeout is configured anywhere ... so the message is
+  libpq reporting an OS-level connect() that did not complete". The premise is
+  true of this repository and the conclusion does not follow: pdo_pgsql appends
+  connect_timeout ITSELF, from PDO::ATTR_TIMEOUT, defaulting to 30, whenever any
+  driver option is passed — and Illuminate's Connector always passes five.
+
+    ATTR_TIMEOUT = 3     failed in  3.01s   SQLSTATE[08006] ... timeout expired
+    Laravel's defaults   failed in 32.75s   SQLSTATE[08006] ... timeout expired
+
+  So a 30-second deadline nobody chose had been in force since Task 1, against a
+  host whose stall this repository had already measured twice without the two
+  numbers being put together: AppPoolSaturator's 32.430s (read correctly there as
+  SYN retransmission) and R-191's own 35,648ms with 0 OF 300 CONNECTS FAILING.
+  The connects were succeeding; the undocumented deadline expired first.
+
+  Bounded locally and NOTHING in production changes: the deadline is explicit at
+  30 in config/database.php (the value always in force), the suite gets 45, and
+  RetryingPostgresConnector absorbs one stall per connect — bound from
+  Tests\TestCase through db.connector.pgsql, so no production file is touched.
+  THREE GENUINE STALLS WERE ABSORBED ACROSS TEN GATE RUNS ON 2026-11-07, EVERY
+  RUN GOING GREEN. Each would have been a red run before this task. The retry,
+  not the raised deadline, is the load-bearing half: one of those stalls expired
+  the 45s too.
+
+  NOT CLOSED. The host fault is untouched and the production deadline question
+  stays with Task 13. R-241's original red stays UNATTRIBUTED.
+
+WHAT ELSE LANDED
+
+  * R-234 — RATELIMIT_SCALE is ignored outside local/testing, proven in a real
+    APP_ENV=production child process and over six environment names this
+    application enumerates nowhere, with local and testing as positive controls.
+  * R-235 + R-038 — five hardening headers and `private, no-store` as the
+    DEFAULT for every response, from ONE middleware prepended last so it is
+    outermost and sees the refusals a controller never wrote: a 404, a driven
+    429 and a rendered exception are all asserted.
+  * R-236 — the idempotent attach's wrong body. CLOSED AS UNREACHABLE, NOT
+    CORRECTED: R-244's ruling deleted the branch it lived in.
+  * R-237 — which was SIX routes, not one. Every write on PagerSessionController
+    passed actorIp alone, so every pager.session.* row carried an IP and nothing
+    else. Task 3's docblock promised Task 5 would fill the id; Task 5 never did.
+  * R-244 — the consent refusal is ONE path now. A trace inside refusalFor()
+    across two real POSTs in one test: memberships=0 while raw=1, same
+    connection, same call — the request-scoped memo, filled by the first add's
+    own consent check. Production refused and the suite answered 201.
+  * R-102 — settled with its SECOND option after measuring the first: the blunt
+    scoped flush costs one test, and that test is right (all three /studio
+    routes then link the PLATFORM theme). The divergence is stated on TestCase.
+  * CORS closed BY DECISION rather than by config/cors.php being absent.
+  * A seeded, router-derived fuzz suite: ~1,800 requests over bodies, path
+    parameters and headers. The only 5xx in the whole corpus was /readyz's
+    designed 503, excused by path AND status and asserted non-vacuous.
+  * docs/asvs-l2.md — 59 rows over what this codebase actually exposes, 123
+    evidence paths, every one checked by AsvsMappingTest. Verdicts are a closed
+    set of four and two of them say the thing is not done.
+
+A THIRD-PARTY LEAK NOBODY WAS LOOKING FOR
+
+  Both panels used Filament's default UiAvatarsProvider, which put THE SIGNED-IN
+  PERSON'S NAME in a ui-avatars.com URL on every panel page view. It was the only
+  remote origin in either panel, which is what lets the new CSP name no host at
+  all. The same defect QRPAGER-23 SR-4 fixed for the CDN font, through a second
+  default nobody read.
+
+THREE REGRESSIONS THIS TASK INTRODUCED, EACH CAUGHT BY AN INSTRUMENT
+
+  * The hardening middleware OVERWROTE /studio/preview's own
+    `default-src 'none'; sandbox` — a document of TENANT-AUTHORED markup — with
+    script-src 'unsafe-inline' 'unsafe-eval'. PanelProblemPageTest and
+    ReviewFixesTest went red on "To contain: default-src 'none'". It never
+    replaces a policy a response built for itself now.
+  * A Permissions-Policy denied publickey-credentials-get, which is
+    navigator.credentials.get() on the passkey harness. CI run 42372017224:
+    "Expected 'passkey login -> 200', Received 'nothing yet'". Registration uses
+    credentials.create(), never denied, so it failed exactly one leg in — and my
+    own test asserted the denial was safe with a comment that was FALSE. Nothing
+    local could see it: that ceremony cannot be driven from HTTP.
+  * check-records' own self-test could not pass at a tag-ref run (R-245), which
+    is why this tag was moved once, from 73b4b55 to 204cd43.
+
+  bin/gate now prints what it does NOT run, and ends "It is not a prediction of
+  CI."
+
+WHAT IS OPEN, AND WHO OWNS IT
+
+  * R-242 — the panel half of "CSP has no unsafe-inline" cannot be met without
+    replacing vendor markup: Alpine builds functions at run time (6
+    AsyncFunction sites in livewire.js) and the CSP-safe build needs a syntax
+    Filament's markup does not use. The relaxation is a NAMED ALLOWLIST of panel
+    paths with a test asserting every non-panel route keeps the strict policy.
+    THE REAL DEBT IS THE VERIFICATION GAP: nothing drives the panel policy at
+    all. Task 14, due 2026-12-20.
+  * R-243 — Filament's manager is scoped while PanelRegistry is not. Task 13.
+  * R-244's cause is closed; R-172 and R-191 keep their owners.
+  * task-11 and task-11a are DELIBERATELY NOT RE-TAGGED. Their tag-ref runs
+    failed (41627842991; 41651378270, then 41655058406) and R-245 records the
+    cause and the fixing commit. His ruling: a delivery record is allowed to
+    contain a known, explained failure — not a rewritten one.
+
+EVIDENCE AT 204cd43
+
+  composer gate     all 10 steps green, 1392 passed / 13,595 assertions, 302.92s
+  pnpm gate         all 13 steps green, 1204 Vitest, 103 browser cases
+  pnpm run gate:e2e 531 passed / 16 skipped / 0 failed — the full matrix across
+                    all five browser projects, and the proof the passkey
+                    regression is closed under load
+
+  Transcripts: docs/tickets/QRPAGER-19-gate-php.txt, -gate-frontend.txt, -e2e.txt
+  24 proofs shown to redden: docs/tickets/QRPAGER-19-revert-record.txt — four of
+  which had to be re-run because the PROOF was wrong rather than the code.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
