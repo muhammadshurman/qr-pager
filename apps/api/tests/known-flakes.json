@@ -158,6 +158,23 @@
                 ]
             },
             "why_not_a_code_defect": "⚠ UNRESOLVED, AND THAT IS WHY THIS ENTRY IS THE WEAKER OF THE TWO. R-185 exists precisely because R-172's diagnosis is a hypothesis presented as a cause: nothing yet distinguishes 'the test's own fixture races' from 'claim() drops work under load', and the second would be a failure of TASK 4's NAMED INVARIANT rather than a flaky test. Strongly load-correlated (the failing run took 335.53s against a typical ~205s). An entry here attributes the red to a named row; it does NOT certify the row's diagnosis. If this family is ever reproduced in isolation, it leaves this file and becomes a Task 4 defect. ⚠ WHY THIS STAYS A NAME LIST RATHER THAN A MECHANISM REGEX, decided 2026-11-02 when it under-matched: the mechanism is `claim()` returning fewer rows than the test seeded, and a signature keyed on that would match a GENUINE claim() regression just as well -- which is `§11` QA M-4's defect exactly, in the direction that loses a real red instead of raising a false alarm. Under-matching costs one re-run and a reading; over-matching costs a regression nobody sees. So the list grows by MEASUREMENT: a fifth file will again read as a REAL red, and that is the intended behaviour rather than a gap."
+        },
+        {
+            "row": "R-248",
+            "with": [],
+            "title": "cURL 28 operation timeout on Mailpit's HTTP API (/api/v1/info), where the port accepted the connection, /readyz answered 200, and no bytes arrived for the next call inside the 5s budget",
+            "owner": "QRPAGER-34 (CI resilience), item 2",
+            "rate": "1 failure in 3 full-suite runs at tree 62a8a74 on 2026-11-07: GREEN twice in CI run 42420801321 (plain and under coverage, 1392 passed / 13,596 assertions) and RED once in run 42420825707 (1 failed / 1391 passed) -- the same tree both times, two minutes apart, so it is not a property of the tree.",
+            "measured": "2026-11-07 in CI runs 42420801321 and 42420825707 at 62a8a74; the three failure shapes driven in-session 2026-11-08",
+            "identities": [
+                "LocalMailCatcherTest (2026-11-07 at 41be12a, on /api/v1/info with 0 bytes received, after /readyz had answered 200)"
+            ],
+            "match": {
+                "signature": "cURL error 28: Operation timed out after \\d+ milliseconds with 0 bytes received",
+                "frame": "LocalMailCatcherTest\\.php:\\d+"
+            },
+            "why_no_tests_key": "DELIBERATE, AND IT IS THIS ENTRY'S ONLY REAL CONTROL. bin/classify-reds attributes a block by NAME before it ever looks at a signature -- in_array($short, $match['tests'] ?? [], true) then break -- so putting LocalMailCatcherTest on a tests list would attribute EVERY failure of that file, including a genuinely absent mail catcher. That absence is the only thing the test exists to report ('FAILS rather than skipping when it is absent'), so a name entry would swallow the true positive and leave nothing asserting the instrument is there at all. That is the direction of R-172's under-match/over-match note and of the QA M-4 defect: under-matching costs a re-run, over-matching costs a red nobody sees.",
+            "why_not_a_code_defect": "Measured to the three shapes rather than argued, on 2026-11-08 through this project's own Guzzle client at timeout => 5. Nothing listening on 127.0.0.1:9 gave 'cURL error 7: Failed to connect ... Couldn't connect to server' in 0.01s. Packets dropped at 192.0.2.1 (TEST-NET-1, R-191's own idiom) gave 'cURL error 28: Connection timed out after 5058 milliseconds' in 5s. A socket that accepts and never answers gave 'cURL error 28: Operation timed out after 5059 milliseconds with 0 bytes received' in 5s -- CI's string verbatim. So the failure CI saw is a service whose port was open and whose SECOND response never arrived -- /readyz answered 200 and /api/v1/info did not answer at all, which no code in this repository can cause: the test issues two GETs at a 5s budget each and the catcher is a pinned container the runner starts. An ABSENT catcher is cURL 7 and a DIFFERENT shape, which this matcher does not take, so the red that was missing is still reachable. Raising the budget is not the fix and is refused in R-248: a longer timeout detects the instrument's absence more slowly without making it more present."
         }
     ],
     "removed": [
