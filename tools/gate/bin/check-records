@@ -853,15 +853,61 @@ const SELF_TESTS = [
        * (b2)'s own subject, and it had no self-test until Task 11a — which is how its
        * tag-at-HEAD blind spot survived three tags. The drift it exists for: `§0` still
        * naming the previous task after a new tag landed.
+       *
+       * ⚠⚠ IT CREATES THE CONDITION NOW RATHER THAN BORROWING IT FROM THE REPOSITORY, AND
+       * UNTIL TASK 12 THIS CASE COULD NOT PASS AT A TAG-REF CI RUN — MEASURED.
+       *
+       * It used to read the repository's real tags, so "HEAD is PAST the latest tag" was true
+       * only by accident of when it ran. The moment `task-12` was created AT `HEAD` and CI ran
+       * at the tag, `checkTagReality`'s deliberate tag-at-HEAD exemption applied, nothing was
+       * flagged, and this case reported `MISSES` — failing `ci-parity.test.mjs:329` on a tree
+       * that was green on the branch minutes earlier. Run `42384449982` against
+       * `42382039275`, same commit `73b4b55`, different ref.
+       *
+       * ⚠ AND IT IS SELF-INCONSISTENT WITH ITS OWN SIBLING, which is what makes this a defect
+       * rather than bad luck: the next case REQUIRES a tag pointing at `HEAD` and creates one
+       * to get it; this one REQUIRES the opposite. Two cases reading the same real tags cannot
+       * both hold. The sibling already solved it the right way — tag inside the test, delete in
+       * a `finally` — so this one does the same in the other direction: a probe tag that sorts
+       * last, placed one commit BEHIND `HEAD`, which makes `HEAD` past the latest tag whatever
+       * the repository's own tags are doing.
+       *
+       * ⚠ NOT FIXED BY MOVING THE EXEMPTION, deliberately. The exemption is correct and its own
+       * comment says why: the sequence is forced (measure, push, CI green, THEN tag), so at a
+       * tagged commit `§0` cannot yet name its own tag, and naming it earlier would name a tag
+       * that does not exist. The defect was the TEST depending on state it did not control.
+       *
+       * It is also why `task-11`'s tag run failed and `task-11a`'s failed before it passed:
+       * this case was added at Task 11a and has been unable to pass at a tag ref ever since.
        */
-      const plan = readFileSync(PLAN, 'utf8').replace(
-        /^\| \*\*Last completed\*\*[^\n]*$/m,
-        '| **Last completed** | `task-0` and nothing since. |',
-      )
-      const before = failures.length
-      checkTagReality(plan)
+      const probe = 'task-zzz-selftest-behind'
 
-      return failures.length > before
+      let parent
+
+      try {
+        parent = gitQuiet('rev-parse', 'HEAD~1')
+      } catch {
+        // A repository with a single commit cannot have HEAD past anything. Reported as a
+        // MISS rather than silently passing: a self-test that excuses itself is the shape
+        // this whole file exists to refuse. `gitQuiet` THROWS on a non-zero exit — it does
+        // not return null — which is the idiom `checkStatedHead` above uses for the same call.
+        return false
+      }
+
+      try {
+        git('tag', '-f', probe, parent)
+
+        const plan = readFileSync(PLAN, 'utf8').replace(
+          /^\| \*\*Last completed\*\*[^\n]*$/m,
+          '| **Last completed** | `task-0` and nothing since. |',
+        )
+        const before = failures.length
+        checkTagReality(plan)
+
+        return failures.length > before
+      } finally {
+        gitQuiet('tag', '-d', probe)
+      }
     },
   },
   {
