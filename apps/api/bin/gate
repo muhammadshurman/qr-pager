@@ -15,9 +15,19 @@
 # excerpt and the frame list on disk.
 #
 # NOT A REPLACEMENT FOR THE THREE COMMANDS in PROJECT_INSTRUCTIONS.md §6 -- it runs
-# them, in the gate's own order, plus the three this task added (guard, deptrac,
-# openapi:check). Running them by hand stays correct; this is the form that leaves
-# evidence.
+# them, in the gate's own order, plus the five generated-artifact and architecture steps
+# the tasks since have added (guard, deptrac, openapi:check, Task 7's landing:check, and
+# Task 8a's contracts:check). Running the three by hand stays correct; this is the form
+# that leaves evidence.
+#
+# Task 8a's FRONTEND gate is not run from here, deliberately. This script is apps/api's and
+# runs from apps/api; the workspace gate is `pnpm gate` from the repository root, and CI runs
+# the two as separate jobs (ADR-003: "CI gains a second job for the frontend workspace").
+# One script spanning both halves would make a PHP failure and a TypeScript failure
+# indistinguishable in the log, which is the opposite of what this file exists for.
+#
+# The closing line counts the array rather than naming a number, because it said "all six
+# steps green" for the whole of Task 7's build while running seven.
 #
 # First failure stops the run: a stan error makes the suite's result uninteresting, and
 # a half-read log is worse than a short one.
@@ -54,8 +64,75 @@ export PAO_DISABLE=1
 log="storage/logs/gate-$(date -u +%Y%m%dT%H%M%SZ).log"
 : >"$log"
 
+# R-191's ABSORBED CONNECT STALLS, REPORTED AFTER THE SUITE WHETHER IT IS RED OR GREEN.
+#
+# tests/Support/RetryingPostgresConnector absorbs one 08006/timeout expired per connect so a
+# host stall costs a retry instead of a re-run of this gate. That is only acceptable while it
+# is VISIBLE: an absorbed failure nobody can see is the same defect as an unexplained red, from
+# the other side. A host that is degrading shows up here as a rising count.
+#
+# A TIMESTAMP WINDOW RATHER THAN A TRUNCATE, because tools/gate/bin/reviewer-slot runs
+# concurrent runners against their own databases and a truncate would discard the other
+# runner's lines. The connector writes ISO-8601 UTC, which compares lexicographically, and
+# each line names the role and database that stalled.
+absorbed_log="storage/logs/r191-absorbed.log"
+gate_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 echo "gate: full output -> $(pwd)/$log"
 echo
+
+# THE NAMED KNOWN-FLAKE LIST, PRINTED INTO EVERY LOG WHETHER THE RUN GOES RED OR NOT.
+#
+# Task 9's gate says "all previous tasks' tests still pass". Two live intermittent families
+# ride in this suite, so without a named list that clause cannot be discharged honestly --
+# any new red can be attributed to one of them by assertion, and R-185 is this ledger's own
+# row about §6's clause being satisfied probabilistically rather than demonstrably.
+#
+# So the list is tests/known-flakes.json and it is reported SEPARATELY from failures: on a
+# red, bin/classify-reds splits the run into ATTRIBUTED reds (a named row, its owner, its
+# measured rate) and REAL reds (on no row). A red outside the list is a real red.
+#
+# Printed on a GREEN run too, deliberately. A log that names the list is a log in which the
+# list's own staleness is visible -- an entry whose row has been closed should be gone, and
+# that is only noticeable if somebody sees it.
+php bin/known-flakes-summary 2>&1 | tee -a "$log"
+echo | tee -a "$log"
+
+# Print this run's absorbed stalls, or say plainly that there were none.
+#
+# "none" is printed rather than nothing, for the reason the known-flake list is printed on a
+# green run too: a report that is silent when there is nothing to say is indistinguishable
+# from a report that has stopped running.
+report_absorbed_stalls () {
+  echo "=== R-191: connect stalls absorbed during this run" | tee -a "$log"
+
+  if [ ! -f "$absorbed_log" ]; then
+    echo "  none (no $absorbed_log)" | tee -a "$log"
+    return
+  fi
+
+  # Lines at or after this run's start. awk and not grep: the comparison is on the leading
+  # timestamp, and a lexicographic >= on ISO-8601 UTC is a chronological one.
+  #
+  # ⚠ READ ONCE INTO A VARIABLE, AND THE `|| true` IS NOT DECORATION. `tools/gate/bin/
+  # check-shell-evidence` refused the first version of this function -- *"a pipeline assignment
+  # under pipefail with no fallback: the substitution FAILS when a stage matches nothing"* --
+  # which is a true positive: `grep -c .` exits 1 on a count of zero, and this script runs
+  # under `pipefail`. The old form also ran the same awk THREE times and reasoned that the
+  # third could not see zero lines because the first had found some; that is the kind of
+  # argument this linter exists to stop, and it is wrong the moment the file is appended to
+  # concurrently by a second runner.
+  absorbed=$(awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" || true)
+
+  if [ -z "$absorbed" ]; then
+    echo "  none" | tee -a "$log"
+    return
+  fi
+
+  printf '%s\n' "$absorbed" | sed 's/^/  /' | tee -a "$log"
+  count=$(printf '%s\n' "$absorbed" | grep -c . || true)
+  echo "  ⚠ ${count} stall(s) absorbed. Each one would have reddened this run before Task 12." | tee -a "$log"
+}
 
 # composer's own scripts, so this cannot drift from what CI runs.
 steps=(
@@ -64,6 +141,21 @@ steps=(
   "composer guard"
   "composer deptrac"
   "composer openapi:check"
+  "composer landing:check"
+  "composer contracts:check"
+  # ⚠ BEFORE THE SUITE, AND THAT ORDER IS THE WHOLE REASON IT IS HERE. Task 8b's
+  # ->viteTheme() makes public/build/manifest.json a PREREQUISITE of every test that
+  # renders a panel page, and public/build is git-ignored. Measured with it moved aside:
+  # PlatformPanelAccessibilityTest went 13 passed -> 7 failed, each failure a generic 500
+  # body naming nothing. bin/assets also checks the manifest against the themes the
+  # providers register, which a successful build does NOT do.
+  "composer assets"
+  # Known CVEs in apps/api's OWN npm tree -- the half of §11.7 that stopped at the pnpm
+  # workspace. `pnpm audit` reads pnpm-lock.yaml and licences.test.mjs walks the pnpm
+  # store, so 92 packages under apps/api were covered by neither. The licence half is
+  # ApiNpmLicenceTest, in the suite below; this is the network call, which an assertion
+  # cannot be. Fails closed on an unreachable registry: an unmeasured tree is not a pass.
+  "composer deps"
   "php artisan test"
 )
 
@@ -75,10 +167,66 @@ for step in "${steps[@]}"; do
   if ! $step 2>&1 | tee -a "$log"; then
     echo | tee -a "$log"
     echo "gate: FAILED at '$step'. Full output: $(pwd)/$log" | tee -a "$log" >&2
+
+    # ONLY THE SUITE STEP IS CLASSIFIED. A pint, stan, guard, deptrac, assets or deps
+    # failure has nothing to do with a flaky test and feeding one to the classifier would
+    # print "no FAILED block" and say nothing useful. The nine steps above are
+    # deterministic; the suite is the only one with intermittents in it.
+    if [ "$step" = "php artisan test" ]; then
+      php bin/classify-reds "$log" 2>&1 | tee -a "$log"
+      verdict=${PIPESTATUS[0]}
+
+      if [ "$verdict" -eq 2 ]; then
+        echo "gate: ATTRIBUTED RED -- every failure matches a named row. Exit 2." | tee -a "$log" >&2
+        report_absorbed_stalls
+        exit 2
+      fi
+    fi
+
+    report_absorbed_stalls
     exit 1
+  fi
+
+  if [ "$step" = "php artisan test" ]; then
+    report_absorbed_stalls
   fi
 
   echo | tee -a "$log"
 done
 
-echo "gate: all six steps green. Full output: $(pwd)/$log" | tee -a "$log"
+echo "gate: all ${#steps[@]} steps green. Full output: $(pwd)/$log" | tee -a "$log"
+
+# ⚠⚠ WHAT A GREEN RUN HERE DOES **NOT** TELL YOU — Task 12, on his instruction:
+# *"THE PHP JOB IS RED IN CI AND WAS GREEN LOCALLY ON FOUR CONSECUTIVE RUNS. That gap is the
+# same class as the wrong-sha gates and the stale build. Say exactly what CI runs that your
+# local gate does not, and close it at the mechanism."*
+#
+# THE INSTANCE, measured: CI run 42372017224's *"Pint, PHPStan, Pest"* job went red while
+# pint, stan and the 1,388-test suite all passed inside it — because that job ALSO runs
+# `pnpm run gate:e2e`, which this script does not. The failure was a Permissions-Policy
+# denying `navigator.credentials.get()` on `/passkey-harness`, and `routes/harness.php` exists
+# precisely because *"the credential ceremony lives in navigator.credentials and cannot be
+# driven from HTTP"*. So no number of PHP tests could have seen it, and five green runs of this
+# script did not. The same run's frontend job failed at `records:check`, which is a step of
+# `pnpm gate` — and three of its four complaints were against `§0` in this very repository.
+#
+# CLOSED AT THE MECHANISM BY SAYING SO, which is the only closure that does not make every
+# local run 20 minutes longer. A green line above is now followed by the list of what was not
+# run, so nobody reads it as *CI will be green*. `GateScopeTest` asserts this notice is here
+# and that every command it names is a real script, so it cannot rot into a comfortable lie.
+{
+  echo
+  echo "gate: ⚠ THIS IS apps/api's GATE ONLY. CI runs all of the following and this script runs NONE of them:"
+  echo "gate:     pnpm gate          — lint, typecheck, tokens:check, audit, both Next builds,"
+  echo "gate:                          Vitest + coverage, the browser matrix, and records:check"
+  echo "gate:                          (which audits §0 against this repository and has caught"
+  echo "gate:                          a stale row count, a missing provenance sha and an"
+  echo "gate:                          unbacked total)"
+  echo "gate:     pnpm run gate:e2e  — the real API + PWA + TLS fronts in five browser projects."
+  echo "gate:                          The ONLY instrument that executes the panels' and the"
+  echo "gate:                          harness's JavaScript, so anything a browser enforces"
+  echo "gate:                          (CSP, Permissions-Policy, service workers, WebAuthn) is"
+  echo "gate:                          invisible to every step above."
+  echo "gate:     bin/fresh-clone-proof — §6's clause that the gates pass from a clean checkout."
+  echo "gate: A green line above means apps/api's own gate passed. It is not a prediction of CI."
+} | tee -a "$log"

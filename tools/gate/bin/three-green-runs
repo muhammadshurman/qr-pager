@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# THE TAG'S BAR FOR THE FRONTEND WORKSPACE: three CONSECUTIVE green full-suite runs at one
+# commit. `QRPAGER-15 §7`: "Three consecutive green full-suite runs, transcripts committed."
+#
+# The sibling of apps/api/bin/three-green-runs, and committed for the reason that script's
+# header gives: Task 4 met the same bar by running its gate three times by hand and writing
+# the results into a file, and `R-043` is the §5 row about exactly that shape -- a gate
+# clause whose demonstration lives in a session rather than in the repository, so nobody can
+# re-run it. So the loop is committed and the transcript it writes is the artifact.
+#
+# WHAT "CONSECUTIVE" MEANS HERE. One commit, no edits between runs, and a red STOPS the loop
+# rather than being retried until it passes. Three greens out of five attempts is not three
+# consecutive greens, and the difference is the whole point -- it is what distinguishes a
+# suite that passes from a suite that sometimes passes.
+#
+# ⚠ AND WHAT IT RUNS IS THE WHOLE WORKSPACE SUITE, not just Vitest: the Vitest projects, the
+# Playwright browser suite, and both Next builds. A "full suite" that skipped the browser
+# checks would skip the four clauses of `R-118` this task closes, which are the ones that
+# cannot be asserted anywhere else.
+#
+# ⚠ AND FROM TASK 9, `pnpm run gate:e2e` TOO. That is the cross-half gate -- the real API, a
+# real issued token, the production build and a TLS front -- and every browser-only clause of
+# Task 9 is in it. `ci-parity.test.mjs` asserts it is run from here, so this script cannot
+# drift back to proving half the suite three times.
+#
+# THE PHP HALF IS NOT RUN FROM HERE and that is deliberate: apps/api has its own
+# three-green-runs, its suite carries `R-092`'s known intermittent red, and the two halves
+# are separate CI jobs. Mixing them would make one half's flake stop the other's proof.
+set -uo pipefail
+
+cd "$(dirname "$0")/../../.."
+repo="$(pwd)"
+sha="$(git rev-parse HEAD)"
+dirty="$(git status --porcelain)"
+
+runs="${1:-3}"
+
+echo "three-green-runs (frontend workspace)"
+echo "  commit:  $sha"
+echo "  runs:    $runs, consecutive -- a red stops the loop"
+if [ -n "$dirty" ]; then
+    echo
+    echo "  ⚠ THE WORKING TREE IS DIRTY. Three runs at a commit mean nothing if the tree"
+    echo "    changes under them, so this is reported rather than ignored:"
+    echo "$dirty" | sed 's/^/      /'
+fi
+echo
+
+green=0
+for i in $(seq 1 "$runs"); do
+    started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "===== run $i of $runs, started $started ====="
+
+    # ⚠ BOTH GATES, AND THE CROSS-HALF ONE IS WHY. `pnpm gate` is the TypeScript half;
+    # `pnpm run gate:e2e` is Task 9's real-stack suite -- the journey on three engines, the
+    # service worker, the one-handed measurement at 390x844 in both directions, and `R-100`'s
+    # passkey ceremony. Every browser-only clause of that task is in the second one, so a
+    # "full suite" that ran only the first would prove none of them three times.
+    out="$(pnpm gate 2>&1)"
+    status=$?
+
+    if [ "$status" = "0" ]; then
+        e2e_out="$(pnpm run gate:e2e 2>&1)"
+        status=$?
+        out="${out}"$'\n'"${e2e_out}"
+    fi
+
+    # The figures, pulled out so the transcript is readable without the whole log.
+    echo "$out" | grep -E "Tests  [0-9]+ passed|Tests  .*failed|[0-9]+ passed \([0-9.]+m?s\)|^Statements|^Branches|^Functions|^Lines|gate: all|gate: FAILED" || true
+
+    if [ "$status" = "0" ]; then
+        green=$((green + 1))
+        echo "  run $i: GREEN"
+    else
+        echo
+        echo "  run $i: RED. The loop STOPS here -- a red retried until it passes is not a"
+        echo "  consecutive green, and the identity of the red is what matters (R-049)."
+        echo
+        # ⚠ THE PLAYWRIGHT FAILURE HEADER IS IN THIS PATTERN NOW, AND ITS ABSENCE COST A
+        # DIAGNOSIS. This grep claimed to print the red's identity — the comment four lines up
+        # says *"the identity of the red is what matters (R-049)"* — and matched none of
+        # Playwright's own `  N) [project] › file:line › title` lines, so an e2e red reported
+        # `Error: element(s) not found` with no case, no file and no engine. Measured on 10b's
+        # own final-evidence run: the artefact said a browser locator failed and the identity
+        # had to be recovered afterwards from `test-results/`'s error-context files.
+        #
+        # A proof whose failure output cannot name what failed sends the reader somewhere
+        # else, which is the whole thing this script exists to prevent.
+        echo "$out" | grep -E "^ *[0-9]+\) \[|FAIL|✕|×|Error:|AssertionError|gate: FAILED" | head -20
+        echo
+        echo "three-green-runs: FAILED at run $i of $runs, commit $sha"
+        exit 1
+    fi
+    echo
+done
+
+echo "three-green-runs: $green of $runs GREEN, consecutive, at $sha"

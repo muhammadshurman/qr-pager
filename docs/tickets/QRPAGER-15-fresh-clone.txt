@@ -1,0 +1,308 @@
+fresh-clone-proof: cloning 1b382601a9987ee9130db82b47e3e37eee796000 into /tmp/qrpager-frontend-fresh-clone.FpaDFK
+
+== the clone is a clone, not a copy ==
+  absent, as it must be: node_modules
+  absent, as it must be: apps/web/node_modules
+  absent, as it must be: packages/ui/node_modules
+  absent, as it must be: apps/web/.next
+  absent, as it must be: apps/site/.next
+  absent, as it must be: storage/logs
+
+== every file the gate needs is TRACKED ==
+  tracked: package.json
+  tracked: pnpm-lock.yaml
+  tracked: pnpm-workspace.yaml
+  tracked: .nvmrc
+  tracked: .npmrc
+  tracked: tsconfig.base.json
+  tracked: tsconfig.json
+  tracked: eslint.config.mjs
+  tracked: prettier.config.mjs
+  tracked: vitest.config.ts
+  tracked: playwright.config.ts
+  tracked: packages/tokens/generated/tokens.css
+  tracked: packages/tokens/generated/tokens.ts
+  tracked: apps/api/config/design-tokens.php
+  tracked: packages/tokens/generated/contrast.json
+  tracked: packages/tokens/generated/contrast.md
+  tracked: packages/contracts/src/generated/status.ts
+  tracked: packages/tokens/fonts/fonts.css
+  tracked: packages/tokens/fonts/plus-jakarta-sans-latin.woff2
+  tracked: packages/tokens/fonts/tajawal-arabic-400.woff2
+  tracked: packages/tokens/fonts/tajawal-arabic-700.woff2
+  tracked: tools/design-tokens/patterns.mjs
+  tracked: tools/design-tokens/fixtures/bad-component.tsx.fixture
+  tracked: tools/design-tokens/fixtures/good-component.tsx.fixture
+  tracked: tools/design-tokens/fixtures/bad-styles.css.fixture
+  tracked: tools/design-tokens/fixtures/good-styles.css.fixture
+  tracked: browser/fixtures/kit.html
+  tracked: docs/contracts/landing-page.schema.json
+
+== the toolchain the repo pins, not the one the shell happens to have ==
+  .nvmrc                 22
+  packageManager         pnpm@12.16.1
+  engines.node           >=22.12.0
+  node in PATH           v22.23.4
+  playwright pinned at   1.64.1
+
+  pnpm store: WARM (a cache, not a source -- a cold one costs time, not correctness)
+  playwright browsers: present in the host cache (a cache, not a source)
+
+== pnpm install --frozen-lockfile ==
+Scope: all 8 workspace projects
+✓ Lockfile passes supply-chain policies (verified 1h ago)
+Lockfile is up to date, resolution step is skipped
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: /home/pixels/.local/share/pnpm/store/v11
+  Virtual store is at:             node_modules/.pnpm
+Packages: +227
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 227, reused 227, downloaded 0, added 227, done
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.64.1
++ @qrpager/eslint-plugin-design-tokens <- tools/design-tokens
++ @types/node 22.20.5
++ @vitest/coverage-v8 5.0.5
++ eslint 10.13.0
++ playwright 1.64.1
++ prettier 3.9.10
++ typescript 6.0.3
++ typescript-eslint 8.72.1
++ vite 8.3.5
++ vitest 5.0.5
+
+Done in 163ms using pnpm v12.16.1
+
+== the gate, in the clone ==
+$ node tools/gate/bin/gate.mjs
+gate: full output -> /tmp/qrpager-frontend-fresh-clone.FpaDFK/qr-pager/storage/logs/gate-frontend-20261031T183403Z.log
+
+=== pnpm run lint:es
+$ eslint .
+
+=== pnpm run lint:tokens
+design tokens: 5 CSS file(s) scanned, no hard-coded values.
+$ node tools/design-tokens/bin/scan-css.mjs
+
+=== pnpm run lint:shell
+shell evidence: 22 script(s) scanned, no exit-code hazard.
+$ tools/gate/bin/check-shell-evidence
+
+=== pnpm run format:check
+Checking formatting...
+All matched files use Prettier code style!
+$ prettier --check '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'
+
+=== pnpm run typecheck
+Scope: 7 of 8 workspace projects
+tools/gate typecheck$ echo 'no TypeScript in this package' && exit 0
+packages/contracts typecheck$ tsc --noEmit -p tsconfig.json
+tools/design-tokens typecheck$ echo 'no TypeScript in this package (ESLint plugins are .mjs)' && exit 0
+packages/tokens typecheck$ tsc --noEmit -p tsconfig.json
+tools/gate typecheck: no TypeScript in this package
+tools/gate typecheck: Done
+tools/design-tokens typecheck: no TypeScript in this package (ESLint plugins are .mjs)
+tools/design-tokens typecheck: Done
+packages/contracts typecheck: Done
+packages/tokens typecheck: Done
+packages/ui typecheck$ tsc --noEmit -p tsconfig.json
+packages/ui typecheck: Done
+apps/web typecheck$ tsc --noEmit -p tsconfig.json
+apps/site typecheck$ tsc --noEmit -p tsconfig.json
+apps/site typecheck: Done
+apps/web typecheck: Done
+$ pnpm run typecheck:root && pnpm -r --no-bail run typecheck
+$ tsc -p tsconfig.json
+
+=== pnpm run tokens:check
+tokens: packages/tokens/generated/tokens.css is current
+tokens: packages/tokens/generated/theme.css is current
+tokens: packages/tokens/generated/tokens.ts is current
+tokens: apps/api/config/design-tokens.php is current
+tokens: packages/tokens/generated/contrast.json is current
+tokens: packages/tokens/generated/contrast.md is current
+tokens: docs/tickets/QRPAGER-15-contrast-table.md is current
+tokens: all 7 generated artefacts are current.
+$ pnpm --filter @qrpager/tokens run check
+$ node --experimental-strip-types scripts/generate.mjs --check
+
+=== pnpm run audit
+No known vulnerabilities found
+$ pnpm audit --audit-level low
+
+=== pnpm exec vitest run --coverage
+
+ RUN  v5.0.5 /tmp/qrpager-frontend-fresh-clone.FpaDFK/qr-pager
+      Coverage enabled with v8
+
+
+ Test Files  18 passed (18)
+      Tests  516 passed (516)
+   Start at  21:34:17
+   Duration  3.46s (tests 50%, environment 23%, transform 13%, import 8%, setup 4%, worker 2%)
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   92.18 |    90.67 |   98.23 |   93.05 |                   
+ ...tokens/scripts |   82.87 |    77.63 |   96.72 |    82.5 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.32 |    88.23 |     100 |   99.27 | 767               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |   95.65 |    84.44 |   95.45 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   96.87 |    93.75 |      90 |     100 | 266-274,316       
+ ...ign-tokens/bin |   89.23 |    83.33 |     100 |   94.23 |                   
+  scan-css.mjs     |   89.23 |    83.33 |     100 |   94.23 | 145-150,168       
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 92.18% ( 602/653 )
+Branches     : 90.67% ( 389/429 )
+Functions    : 98.23% ( 167/170 )
+Lines        : 93.05% ( 536/576 )
+================================================================================
+
+=== pnpm exec playwright test
+
+Running 66 tests using 2 workers
+
+  ✓   1 [chromium] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (130ms)
+  ✓   2 [chromium-reduced-motion] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (131ms)
+  ✓   3 [chromium-reduced-motion] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (97ms)
+  ✓   4 [chromium] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (97ms)
+  ✓   5 [chromium-reduced-motion] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (90ms)
+  ✓   6 [chromium] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (89ms)
+  ✓   7 [chromium-reduced-motion] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (102ms)
+  ✓   8 [chromium] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (103ms)
+  ✓   9 [chromium-reduced-motion] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (105ms)
+  ✓  10 [chromium] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (103ms)
+  ✓  12 [chromium] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (97ms)
+  ✓  11 [chromium-reduced-motion] › browser/a11y.spec.ts:306:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (99ms)
+  ✓  13 [chromium] › browser/a11y.spec.ts:336:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (88ms)
+  ✓  14 [chromium-reduced-motion] › browser/a11y.spec.ts:336:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (92ms)
+  ✓  15 [chromium] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (72ms)
+  ✓  16 [chromium-reduced-motion] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (69ms)
+  ✓  18 [chromium-reduced-motion] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (73ms)
+  ✓  17 [chromium] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (73ms)
+  ✓  19 [chromium-reduced-motion] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (70ms)
+  ✓  20 [chromium] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (72ms)
+  ✓  21 [chromium] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (68ms)
+  ✓  22 [chromium-reduced-motion] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (69ms)
+  ✓  24 [chromium-reduced-motion] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (71ms)
+  ✓  23 [chromium] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (71ms)
+  ✓  26 [chromium-reduced-motion] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (69ms)
+  ✓  25 [chromium] › browser/a11y.spec.ts:386:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (69ms)
+  ✓  27 [chromium-reduced-motion] › browser/a11y.spec.ts:398:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (42ms)
+  ✓  28 [chromium] › browser/a11y.spec.ts:398:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (42ms)
+  ✓  29 [chromium] › browser/a11y.spec.ts:411:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (72ms)
+  ✓  30 [chromium-reduced-motion] › browser/a11y.spec.ts:411:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (73ms)
+  ✓  32 [chromium-reduced-motion] › browser/a11y.spec.ts:430:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (67ms)
+  ✓  31 [chromium] › browser/a11y.spec.ts:430:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (68ms)
+  ✓  34 [chromium] › browser/a11y.spec.ts:444:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (71ms)
+  ✓  33 [chromium-reduced-motion] › browser/a11y.spec.ts:444:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (71ms)
+  ✓  36 [chromium] › browser/a11y.spec.ts:460:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (74ms)
+  ✓  35 [chromium-reduced-motion] › browser/a11y.spec.ts:460:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (74ms)
+  ✓  37 [chromium] › browser/a11y.spec.ts:481:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (75ms)
+  ✓  38 [chromium-reduced-motion] › browser/a11y.spec.ts:481:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (75ms)
+  ✓  40 [chromium-reduced-motion] › browser/a11y.spec.ts:411:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (70ms)
+  ✓  39 [chromium] › browser/a11y.spec.ts:411:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (70ms)
+  ✓  41 [chromium-reduced-motion] › browser/a11y.spec.ts:430:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (72ms)
+  ✓  42 [chromium] › browser/a11y.spec.ts:430:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (72ms)
+  ✓  44 [chromium-reduced-motion] › browser/a11y.spec.ts:444:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (73ms)
+  ✓  43 [chromium] › browser/a11y.spec.ts:444:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (73ms)
+  ✓  46 [chromium] › browser/a11y.spec.ts:460:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (72ms)
+  ✓  45 [chromium-reduced-motion] › browser/a11y.spec.ts:460:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (74ms)
+  ✓  48 [chromium-reduced-motion] › browser/a11y.spec.ts:481:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (81ms)
+  ✓  47 [chromium] › browser/a11y.spec.ts:481:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (84ms)
+  ✓  49 [chromium-reduced-motion] › browser/a11y.spec.ts:521:3 › R-118 clause 3 — the engine resolves the tokens the table was computed from › every barred pair in the generated table passes, in both themes (1ms)
+  ✓  50 [chromium] › browser/a11y.spec.ts:521:3 › R-118 clause 3 — the engine resolves the tokens the table was computed from › every barred pair in the generated table passes, in both themes (1ms)
+  ✓  51 [chromium-reduced-motion] › browser/a11y.spec.ts:531:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (46ms)
+  ✓  52 [chromium] › browser/a11y.spec.ts:531:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (45ms)
+  ✓  54 [chromium-reduced-motion] › browser/a11y.spec.ts:531:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (45ms)
+  ✓  53 [chromium] › browser/a11y.spec.ts:531:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (46ms)
+  ✓  56 [chromium] › browser/a11y.spec.ts:570:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (54ms)
+  ✓  55 [chromium-reduced-motion] › browser/a11y.spec.ts:570:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (56ms)
+  ✓  58 [chromium-reduced-motion] › browser/a11y.spec.ts:588:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (40ms)
+  ✓  57 [chromium] › browser/a11y.spec.ts:588:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (39ms)
+  ✓  60 [chromium-reduced-motion] › browser/a11y.spec.ts:601:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (40ms)
+  ✓  59 [chromium] › browser/a11y.spec.ts:601:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (41ms)
+  ✓  62 [chromium] › browser/a11y.spec.ts:609:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (80ms)
+  ✓  61 [chromium-reduced-motion] › browser/a11y.spec.ts:609:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (81ms)
+  -  64 [chromium-reduced-motion] › browser/a11y.spec.ts:649:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 160ms
+  ✓  63 [chromium] › browser/a11y.spec.ts:649:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 160ms (79ms)
+  -  66 [chromium] › browser/a11y.spec.ts:674:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter
+  ✓  65 [chromium-reduced-motion] › browser/a11y.spec.ts:674:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter (83ms)
+
+  2 skipped
+  64 passed (3.1s)
+
+=== pnpm --filter @qrpager/web run build
+   ▲ Next.js 15.5.28
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.2s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/4) ...
+   Generating static pages (1/4) 
+   Generating static pages (2/4) 
+   Generating static pages (3/4) 
+ ✓ Generating static pages (4/4)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      123 B         102 kB
+└ ○ /_not-found                            991 B         103 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/349-834a8063ed2c80bd.js         46 kB
+  ├ chunks/b9a823c8-14b9e9e5ff935ad5.js  54.2 kB
+  └ other shared chunks (total)           1.9 kB
+
+
+○  (Static)  prerendered as static content
+
+$ next build
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+
+=== pnpm --filter @qrpager/site run build
+   ▲ Next.js 15.5.28
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.1s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/4) ...
+   Generating static pages (1/4) 
+   Generating static pages (2/4) 
+   Generating static pages (3/4) 
+ ✓ Generating static pages (4/4)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      123 B         102 kB
+└ ○ /_not-found                            991 B         103 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/349-834a8063ed2c80bd.js         46 kB
+  ├ chunks/b9a823c8-14b9e9e5ff935ad5.js  54.2 kB
+  └ other shared chunks (total)           1.9 kB
+
+
+○  (Static)  prerendered as static content
+
+$ next build
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+
+gate: all 11 steps green. Full output: /tmp/qrpager-frontend-fresh-clone.FpaDFK/qr-pager/storage/logs/gate-frontend-20261031T183403Z.log
+
+fresh-clone-proof: GREEN at 1b382601a9987ee9130db82b47e3e37eee796000, in a clone that shares nothing with the working tree.

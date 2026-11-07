@@ -25,8 +25,28 @@ use Illuminate\Support\Str;
  * be distinguishable to a CLIENT -- that was the user's wording when accepting the fix --
  * and `type` is the only part of a problem document a client is told it may switch on.
  *
- * Revert proof: delete the refuseIfPastTtl() call in apply() and the first four cases go
- * green-to-red at 200 instead of 409; delete it in renotify() and the fifth does.
+ * REVERT PROOF -- 6 of these 9 cases are revert-proved, and the three that stay green are
+ * exactly the carve-outs. Re-measured 2026-10-27 by `bin/ttl-revert-proof`, which runs
+ * each half separately, because THIS HEADER USED TO BE WRONG IN BOTH HALVES (R-068): it
+ * said "the first four cases" for apply() and "the fifth" for renotify().
+ *
+ *   delete the refuseIfPastTtl() call in apply() ONLY     -> SIX go red: 1, 2, 3, 4, 8, 9
+ *   delete the refuseIfPastTtl() call in renotify() ONLY  -> ONE goes red: case 2,
+ *                                                           "refuses ready and renotify on
+ *                                                           a past-TTL session that is
+ *                                                           already ready", which is where
+ *                                                           the renotify limb lives
+ *
+ * Case 5, "leaves terminal statuses alone", stays green under BOTH reverts and is meant
+ * to: it is the carve-out that keeps idempotency working on an old completed order, so a
+ * revert of the guard cannot change its answer. Cases 6 and 7 are the other two -- a
+ * cross-tenant 404 and the inside-TTL positive control -- and neither is about the guard
+ * either.
+ *
+ * The aggregate -- 6 of 9 -- is the figure §0, §4a and R-058 quote, and it was right all
+ * along; what was wrong was which call guards which case. `bin/ttl-revert-proof` is in the
+ * repo (R-043) so the next reader checks this claim against a run rather than against
+ * this sentence.
  */
 
 /**

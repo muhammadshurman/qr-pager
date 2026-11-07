@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# =============================================================================
+# `§6`'s EVIDENCE, ONCE, AFTER THE LAST FIX ROUND -- STANDING CHANGE (a) of three
+# =============================================================================
+#
+# ⚠ WHAT THIS EXISTS TO STOP. Task 9 ran its three-green-runs, both fresh-clone proofs and
+# the Lighthouse measurement ONCE PER REVIEW ROUND -- and there were two rounds plus a build
+# pass, so the most expensive evidence in the project was produced three times and only the
+# last set was ever cited. `PROJECT_INSTRUCTIONS.md §6` asks for the evidence; it nowhere asks
+# for it per round. Worse, evidence taken before a fix round describes a tree that the round
+# then changed, which is `§11` round one's QA H-4 exactly -- a figure measured against a
+# parent that has since moved -- so the early sets were not merely wasted, they were
+# CITABLE AND WRONG.
+#
+# So the practice becomes a command: one entry point, run once, after the last fix round.
+# Everything it runs already existed and is unchanged; what is new is that the ORDER and the
+# ONCE are mechanical rather than remembered.
+#
+# ⚠ AND IT REFUSES A DIRTY TREE RATHER THAN REPORTING ONE. Both `three-green-runs` scripts
+# print a warning and continue; for the FINAL evidence that is the wrong default, because the
+# whole artefact is a claim about one commit. `--allow-dirty` is there for a deliberate
+# mid-work rehearsal and says so in the transcript.
+#
+# ⚠ THE TWO HEAVY GATES ARE RUN STRICTLY SEQUENTIALLY, and that is `R-200`'s mechanism one
+# layer out rather than caution: the PHP suite and the E2E use different Postgres databases
+# but SHARE Redis, and `TestCase::setUp`'s `clearPagerProjection()` deletes `t:*:pager:*` and
+# `pager:tok:*` before every test -- which deletes the E2E's live sessions mid-journey. CPU
+# contention is the second reason: both at once turned a green 243-case Vitest run into 11
+# then 12 timeout failures. Nothing here backgrounds anything.
+#
+# WHAT IT DOES NOT DO: it does not decide whether the evidence is good enough, and it does not
+# write `§4a`. It produces the five artefacts and names where each landed.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+allow_dirty=0
+for arg in "$@"; do
+    case "$arg" in
+        --allow-dirty) allow_dirty=1 ;;
+        *) echo "final-evidence: unknown argument '$arg'" >&2; exit 2 ;;
+    esac
+done
+
+sha="$(git rev-parse HEAD)"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+log_dir="${REPO}/storage/final-evidence/${stamp}"
+mkdir -p "$log_dir"
+
+# `|| true`: `git status --porcelain` finding nothing is the GOOD outcome and exits 0, but the
+# assignment is a command substitution in a `pipefail` file, which is the shape `§11` round
+# two's QA H-1 cost a round for.
+dirty="$(git status --porcelain || true)"
+
+echo "final-evidence"
+echo "  commit:     ${sha}"
+echo "  started:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "  logs:       ${log_dir}"
+
+if [ -n "$dirty" ]; then
+    if [ "$allow_dirty" -eq 0 ]; then
+        echo >&2
+        echo "final-evidence: REFUSED -- the working tree is dirty." >&2
+        echo "  Final evidence is a claim about ONE commit, and a tree that changes under the" >&2
+        echo "  runs makes every figure unattributable (§11 round one, QA H-4). Commit first," >&2
+        echo "  or pass --allow-dirty for a deliberate rehearsal." >&2
+        echo >&2
+        echo "$dirty" | sed 's/^/      /' >&2
+        exit 1
+    fi
+
+    echo "  ⚠ DIRTY TREE, running anyway on --allow-dirty. This is a REHEARSAL and the"
+    echo "    figures below must not be cited in §4a:"
+    echo "$dirty" | sed 's/^/      /'
+fi
+
+echo
+
+# ⚠ THE ORDER IS DELIBERATE: cheapest-to-diagnose first, so a trivial red does not arrive 40
+# minutes in. The two three-green-runs come before the fresh clones because a red in the
+# working tree is faster to read than the same red inside a temp clone.
+# ⚠ THE LIGHTHOUSE ENTRY POINT IS THE STACK WRAPPER, NOT THE PROOF SCRIPT, and the first version
+# of this file got that wrong: it called `tools/gate/bin/lighthouse-proof` directly, which refuses
+# with *"QRPAGER_E2E_BASE and QRPAGER_LH_TOKEN are required"* because it will not invent a token --
+# a fabricated one renders the INVALID screen, which is a different and much smaller page. The
+# stack, the real issued session and both variables come from `gate:e2e` under
+# `QRPAGER_E2E_LIGHTHOUSE=1`, which is what `pnpm run gate:lighthouse` is.
+#
+# Each entry is `name:shell command`, run through `bash -c` because the commands are no longer all
+# single words.
+steps=(
+    "php-three-green-runs:apps/api/bin/three-green-runs"
+    "frontend-three-green-runs:tools/gate/bin/three-green-runs"
+    "php-fresh-clone:apps/api/bin/fresh-clone-proof"
+    "frontend-fresh-clone:tools/gate/bin/fresh-clone-proof"
+    "lighthouse:pnpm run gate:lighthouse"
+)
+
+failed=()
+
+for entry in "${steps[@]}"; do
+    name="${entry%%:*}"
+    cmd="${entry#*:}"
+    out="${log_dir}/${name}.log"
+
+    printf '===== %-28s %s\n' "$name" "$(date -u +%H:%M:%SZ)"
+
+    # The status is read directly from the command, not through a pipe and not from `$?` on a
+    # line carrying a substitution -- `check-shell-evidence` rules 2 and 3.
+    set +e
+    bash -c "$cmd" >"$out" 2>&1
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+        echo "      GREEN   -> ${out}"
+    else
+        echo "      RED (exit ${status})  -> ${out}"
+        tail -15 "$out" | sed 's/^/        /'
+        failed+=("${name} (exit ${status})")
+    fi
+done
+
+echo
+echo "final-evidence: commit ${sha}"
+
+if [ "${#failed[@]}" -ne 0 ]; then
+    echo "final-evidence: ${#failed[@]} of ${#steps[@]} artefact(s) RED:" >&2
+    for f in "${failed[@]}"; do echo "  ${f}" >&2; done
+    exit 1
+fi
+
+echo "final-evidence: all ${#steps[@]} artefacts GREEN at ${sha}"

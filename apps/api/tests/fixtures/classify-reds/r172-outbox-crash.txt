@@ -1,0 +1,19 @@
+   FAILED  Tests\Feature\Notifications\OutboxCrashTest > it resumes…  ExpectationFailedException
+
+  Failed asserting that an array has a key 'claimed' with the value 0.
+  Failed asserting that 0 matches expected 1.
+
+  at tests/Feature/Notifications/OutboxCrashTest.php:184
+    180▕
+    181▕     app()->instance(WebPushDispatcher::EDGE, new RecordingPushEdge(201));
+    182▕     app()->forgetInstance(WebPushDispatcher::class);
+    183▕
+  ➜ 184▕     expect(app(OutboxWorker::class)->pass())->toMatchArray(['claimed' => 1, 'sent' => 1]);
+    185▕ });
+    186▕
+
+  1   tests/Feature/Notifications/OutboxCrashTest.php:184
+
+
+  Tests:    1 failed, 1211 passed (10684 assertions)
+  Duration: 217.52s

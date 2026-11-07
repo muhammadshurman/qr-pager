@@ -1,0 +1,17 @@
+   FAILED  Tests\Feature\Auth\PasskeyTest > it bounds the pa…  QueryException
+
+  SQLSTATE[08006] [7] connection to server at "127.0.0.1", port 5432 failed: timeout expired
+  (Connection: pgsql_owner, Host: 127.0.0.1, Port: 5432, Database: qrpager_test,
+  SQL: TRUNCATE push_subscriptions, outbox, pager_sessions, tenant_users, tenant_statistics,
+  tenant_provisionings, landing_pages, media_assets, tenant_domains, tenants, users
+  RESTART IDENTITY CASCADE)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:67
+     63▕     protected function createPdoConnection($dsn, $username, #[\SensitiveParameter] $password, $options)
+     64▕     {
+
+      +9 vendor frames
+  10  tests/TestCase.php:223
+
+
+  Tests:    1 failed, 1196 passed (10586 assertions)

@@ -20,8 +20,12 @@ it('returns zero rows and raises no error on every tenant table with no context'
     // to behave the same way, so both are covered (this test and the next).
     DB::connection('pgsql')->disconnect();
 
+    // Nine since Task 7 added landing_pages, media_assets and tenant_domains. The count is
+    // pinned rather than derived so that a tenant table arriving without a row in
+    // seedEveryTenantTable() fails HERE -- an empty table passes an isolation assertion by
+    // having nothing to leak, which is the vacuous shape §4a records.
     $tables = Schema::tenantScopedTables();
-    expect($tables)->toHaveCount(6);
+    expect($tables)->toHaveCount(9);
 
     foreach ($tables as $table) {
         expect(DB::connection('pgsql')->table($table)->count())

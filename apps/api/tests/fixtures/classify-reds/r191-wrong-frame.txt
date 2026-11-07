@@ -1,0 +1,17 @@
+   FAILED  Tests\Feature\Pager\PagerPollingTest > it answers a live status
+
+  SQLSTATE[08006] connection to server at "127.0.0.1", port 5432 failed: timeout expired
+  (Connection: pgsql, SQL: select * from "pager_sessions" where "id" = ?)
+
+  at app/Features/Pager/PagerSessions.php:204
+    200▕     }
+    201▕
+    202▕     public function find(string $id): ?PagerSession
+    203▕     {
+  ➜ 204▕         return $this->connection()->table('pager_sessions')->find($id);
+    205▕     }
+
+  1   app/Features/Pager/PagerSessions.php:204
+
+
+  Tests:    1 failed, 1153 passed (9800 assertions)

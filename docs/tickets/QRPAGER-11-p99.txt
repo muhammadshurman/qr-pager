@@ -1,0 +1,29 @@
+# bin/poll-latency-proof — measured at 2dac4d4, after the second review round.
+#
+# p99 1.449 ms against a 5 ms budget; zero Postgres statements, two Redis commands.
+# 1.398 ms at 056d7a1; 2.931 ms at bef66a3 on the overnight run's host.
+#
+# RE-RUN RATHER THAN CARRIED, because QA M-3/M-4's fix puts PacedRoute::intervalFor() on
+# the request path of every response this endpoint produces — including the 200 this
+# harness measures, which reads the route's defaults and returns without building a
+# problem document. No change was expected and none appeared; "expected no change" is not
+# a measurement and the budget is 5 ms.
+#
+poll-latency-proof
+  commit       2dac4d4
+  machine      Linux 6.18.54.1-microsoft-standard-WSL2 x86_64, 12 CPU(s), load 3.26 1.45 0.90
+  php          8.4.27
+  mode         full -- properties and timing asserted
+  method       20 warm-up discarded, 200 measured, best p99 of 3 batch(es);
+               wall clock around the whole HTTP kernel call, real Redis, warm projection
+
+  Postgres statements per poll   0  (budget 0)
+  Redis commands in the handler  2  [get,get]  (budget 2)
+
+  batch 1   p50  1.224 ms   p95  1.357 ms   p99  1.449 ms   max  1.483 ms   <- best
+  batch 2   p50  1.230 ms   p95  1.383 ms   p99  1.513 ms   max  2.682 ms
+  batch 3   p50  1.215 ms   p95  1.412 ms   p99  1.543 ms   max  1.587 ms
+
+  REPORTED p99 1.449 ms against a budget of 5.0 ms
+
+poll-latency-proof: zero Postgres, two Redis commands, p99 under budget.

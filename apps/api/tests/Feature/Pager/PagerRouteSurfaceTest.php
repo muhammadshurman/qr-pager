@@ -6,6 +6,10 @@ use App\Domain\Http\ProblemType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
 use App\Features\Pager\Http\PagerSessionController;
+use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RequireTenantScope;
+use App\Platform\Http\Middleware\ShedLoad;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -20,25 +24,75 @@ use Illuminate\Support\Facades\Route;
  * below is that instance.
  */
 
-it('serves every pager route under /v1 and by POST only', function (): void {
+it('serves every pager route under /v1, with the reads as GET and every write as POST', function (): void {
+    /*
+     * ⚠ **KEYED BY VERB AND PATH, NOT BY PATH — AND THE OLD KEYING MASKED A ROUTE, WHICH IS
+     * WORTH RECORDING BECAUSE THIS CASE CLAIMS TO SEE *EVERY* PAGER ROUTE.**
+     *
+     * It was `$pager[$route->uri()] = $route->methods()` with `expect($pager)->toHaveCount(5)`
+     * and a *"POST only"* assertion over the result. `pager.sessions.index` (GET) and
+     * `pager.sessions.store` (POST) **share the path `v1/pager-sessions`**, and `index` is
+     * declared first — so the second write to that key overwrote the GET and the loop below
+     * never saw it. The case asserted *POST only* over a surface it had silently removed the
+     * one GET from, and it had been that way since Task 5 added `index`.
+     *
+     * Found at 10d, by the route count moving: 5 → 7 with two routes added, which only adds up
+     * if one of the seven had been invisible.
+     *
+     * Keyed by `"VERB path"` now, so collisions are impossible and the count is the real number
+     * of routes. 7 at 10d: 2 reads (`index`, `history`) and 5 writes (`store` and the four
+     * transitions) plus `reissue` — which is 8... and that arithmetic is exactly why the
+     * assertion below enumerates the READS by name instead of trusting a total.
+     */
     $pager = [];
 
     foreach (Route::getRoutes() as $route) {
-        if (str_contains($route->uri(), 'pager-sessions')) {
-            $pager[$route->uri()] = $route->methods();
+        if (! str_contains($route->uri(), 'pager-sessions')) {
+            continue;
+        }
+
+        foreach (array_diff($route->methods(), ['HEAD', 'OPTIONS']) as $verb) {
+            $pager[$verb.' '.$route->uri()] = $route->getName();
         }
     }
 
-    expect($pager)->toHaveCount(5);
+    ksort($pager);
 
-    foreach ($pager as $uri => $methods) {
-        // "Every public route is under /v1" (§3 row 2). A published path is never changed
-        // in place, so this list is the contract rather than an inventory.
-        expect($uri)->toStartWith('v1/pager-sessions');
+    /*
+     * The surface, as an EXACT SET rather than a count — so a route added, renamed, moved to a
+     * different verb or given a second verb fails here and names itself. *Assert exact values,
+     * never ranges*, applied to a route table.
+     */
+    expect($pager)->toBe([
+        'GET v1/pager-sessions' => 'pager.sessions.index',
+        'GET v1/pager-sessions/history' => 'pager.sessions.history',
+        'POST v1/pager-sessions' => 'pager.sessions.store',
+        'POST v1/pager-sessions/{session}/cancel' => 'pager.sessions.cancel',
+        'POST v1/pager-sessions/{session}/complete' => 'pager.sessions.complete',
+        'POST v1/pager-sessions/{session}/ready' => 'pager.sessions.ready',
+        'POST v1/pager-sessions/{session}/reissue' => 'pager.sessions.reissue',
+        'POST v1/pager-sessions/{session}/renotify' => 'pager.sessions.renotify',
+    ]);
 
-        // POST only. These are not idempotent in the HTTP sense of GET, and the four
-        // transitions change state; HEAD comes free with GET and neither should exist here.
-        expect(array_values(array_diff($methods, ['POST'])))->toBe([], "{$uri} answers more than POST");
+    foreach ($pager as $key => $name) {
+        // "Every public route is under /v1" (§3 row 2). A published path is never changed in
+        // place, so this list is the contract rather than an inventory.
+        expect($key)->toContain('v1/pager-sessions');
+
+        /*
+         * THE VERB MATCHES WHAT THE ROUTE DOES, and the two GETs are named rather than
+         * excused. `index` is the board and `history` is the record: both are reads that take
+         * no body and change nothing, so a GET is correct and is also what makes them
+         * cacheable-in-principle — which is why both set `private, no-store` by hand.
+         *
+         * Everything else changes state and is a POST. A write reachable by GET would be
+         * triggerable by a prefetch, a link or an `<img src>`, which for `ready` means a
+         * customer's phone buzzing because somebody pasted a URL into a chat.
+         */
+        $verb = explode(' ', $key)[0];
+        $isRead = in_array($name, ['pager.sessions.index', 'pager.sessions.history'], true);
+
+        expect($verb)->toBe($isRead ? 'GET' : 'POST', "{$key} uses the wrong verb for what it does");
     }
 });
 
@@ -55,6 +109,11 @@ it('denies every pager route when no tenant resolves, with no detail about why',
         ['POST', "/v1/pager-sessions/{$session}/renotify", []],
         ['POST', "/v1/pager-sessions/{$session}/complete", []],
         ['POST', "/v1/pager-sessions/{$session}/cancel", []],
+        // Task 10d's two. Deny-by-default is a property of the `api` middleware group, so a
+        // route added to `routes/v1.php` inherits it -- and that is precisely the kind of
+        // thing worth driving rather than inheriting by argument.
+        ['GET', '/v1/pager-sessions/history', []],
+        ['POST', "/v1/pager-sessions/{$session}/reissue", []],
     ] as [$method, $route, $body]) {
         $response = $this->json($method, $route, $body);
 
@@ -325,5 +384,157 @@ it('answers 503 and not 500 when the row lock times out — QA L-7', function ()
             proc_terminate($holder);
             proc_close($holder);
         }
+    }
+});
+
+/**
+ * Every middleware class that will actually run for a route, with groups expanded.
+ *
+ * Route::gatherMiddleware() returns the route's OWN middleware plus the NAMES of the
+ * groups it is in -- so `RequireTenantScope::class` is not in that list for a staff route
+ * at all: the string `api` is, and the class is inside it. The first version of the case
+ * below compared against the unexpanded list and reported that `pager.sessions.store` was
+ * NOT behind RequireTenantScope, which is the opposite of true. A test that reads the
+ * route table has to resolve the table the way the kernel does.
+ *
+ * One level of expansion is enough and is asserted as such: bootstrap/app.php's two groups
+ * (`api`, `customer`) contain classes only, never another group name.
+ *
+ * @return list<string>
+ */
+function effectiveMiddleware(Illuminate\Routing\Route $route): array
+{
+    // RESOLVE THE HTTP KERNEL FIRST, or the groups are not there yet. bootstrap/app.php
+    // registers them inside withMiddleware(), which runs when the HTTP kernel is built --
+    // so in a test that has made no request, getMiddlewareGroups() returns the framework's
+    // defaults and `api` is absent. Measured: without this line the expansion below found
+    // no group named `api`, returned the literal string, and reported that
+    // pager.sessions.store was NOT behind RequireTenantScope. Worse, the two cases after
+    // it still PASSED -- for the wrong reason, because the middleware they look for
+    // happens to sit on the route rather than in the group. A vacuous pass is the failure
+    // mode to design against here, so the assertion below makes an empty expansion fatal.
+    app()->make(Kernel::class);
+
+    $groups = app('router')->getMiddlewareGroups();
+
+    expect($groups)->toHaveKeys(['api', 'customer', 'probe'],
+        'the application middleware groups are not registered, so this expansion proves nothing');
+
+    $resolved = [];
+
+    foreach ($route->gatherMiddleware() as $entry) {
+        if (is_string($entry) && isset($groups[$entry])) {
+            foreach ($groups[$entry] as $inner) {
+                expect(isset($groups[$inner]))->toBeFalse("the group [{$entry}] nests the group [{$inner}]");
+
+                $resolved[] = (string) $inner;
+            }
+
+            continue;
+        }
+
+        $resolved[] = (string) $entry;
+    }
+
+    return $resolved;
+}
+
+it('mounts the customer surface off RequireTenantScope, and the staff surface on it', function (): void {
+    // §4 › Tenancy, "two authentication surfaces, never confused", as a property of the
+    // ROUTE TABLE rather than of a request. A feature test can show that a customer route
+    // answers 200 without a tenant; this shows WHY, and it is the thing that would catch
+    // somebody moving routes/customer.php into the api group -- after which every customer
+    // request would be a 401 and this project's most important journey would be dead.
+    $customer = [
+        'pager.customer.session',
+        'pager.customer.status',
+        'pager.customer.subscribe',
+        'pager.customer.unsubscribe',
+    ];
+
+    $staff = [
+        'pager.sessions.store',
+        'pager.sessions.ready',
+        'pager.sessions.renotify',
+        'pager.sessions.complete',
+        'pager.sessions.cancel',
+    ];
+
+    foreach ($customer as $name) {
+        $route = Route::getRoutes()->getByName($name);
+
+        expect($route)->not->toBeNull("the route {$name} does not exist");
+        expect(in_array(RequireTenantScope::class, effectiveMiddleware($route), true))
+            ->toBeFalse("{$name} is behind RequireTenantScope, so every real customer would get a 401");
+    }
+
+    foreach ($staff as $name) {
+        $route = Route::getRoutes()->getByName($name);
+
+        expect($route)->not->toBeNull("the route {$name} does not exist");
+        expect(in_array(RequireTenantScope::class, effectiveMiddleware($route), true))
+            ->toBeTrue("{$name} is NOT behind RequireTenantScope, so a staff route is unauthenticated");
+    }
+});
+
+it('sheds the live timer and nothing else on the customer surface', function (): void {
+    // §4 › Edge & ops: "Load shedding drops nice-to-haves (live timer, analytics) BEFORE
+    // alerts." The polling endpoint IS the live timer, by that clause's own words, and the
+    // other three are how a customer comes to receive an alert at all -- so shedding them
+    // would drop the alert first and the nice-to-have never.
+    //
+    // Asserted on the route table because it is an ASYMMETRY, and an asymmetry nobody
+    // asserts is a line somebody tidies into consistency.
+    $expected = [
+        'pager.customer.status' => true,
+        'pager.customer.session' => false,
+        'pager.customer.subscribe' => false,
+        'pager.customer.unsubscribe' => false,
+    ];
+
+    foreach ($expected as $name => $shouldShed) {
+        $middleware = effectiveMiddleware(Route::getRoutes()->getByName($name));
+
+        expect(in_array(ShedLoad::class, $middleware, true))->toBe(
+            $shouldShed,
+            $shouldShed
+                ? "{$name} is the live timer and must shed first"
+                : "{$name} is on the alert path and must not shed",
+        );
+    }
+});
+
+it('gives each customer route its own rate-limit bucket, and never the api default', function (): void {
+    // Three routes, three buckets, three different sizes -- the Postgres-backed scan is
+    // 30/minute while the Redis-only poll is 240. A group-level default would silently add
+    // a fourth count to every request and make the three indistinguishable.
+    $expected = [
+        'pager.customer.session' => 'pager-token',
+        'pager.customer.status' => 'pager-poll',
+        'pager.customer.subscribe' => 'pager-subscribe',
+        'pager.customer.unsubscribe' => 'pager-subscribe',
+    ];
+
+    foreach ($expected as $name => $bucket) {
+        $middleware = effectiveMiddleware(Route::getRoutes()->getByName($name));
+
+        expect($middleware)->toContain(RateLimit::class.':'.$bucket)
+            ->and($middleware)->not->toContain(RateLimit::class);
+    }
+});
+
+it('takes no route parameter anywhere on the customer surface, which is the IDOR answer', function (): void {
+    // The session is whatever the token resolves to, so the parameter somebody would
+    // tamper with does not exist. There is nothing to prove inaccessible across tenants
+    // because there is nothing to ask for.
+    foreach (Route::getRoutes()->getRoutes() as $route) {
+        if (! str_starts_with((string) $route->getName(), 'pager.customer.')) {
+            continue;
+        }
+
+        expect($route->parameterNames())->toBe(
+            [],
+            $route->getName().' takes a route parameter, which is an id an attacker can vary',
+        );
     }
 });

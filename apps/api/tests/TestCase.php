@@ -7,19 +7,107 @@ namespace Tests;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Tenancy\TenantRole;
-use App\Platform\Auth\HarnessTenantResolver;
+use App\Models\User;
+use App\Platform\Auth\ActiveTenant;
+use App\Platform\Auth\Memberships;
+use App\Platform\Auth\RequestPrincipal;
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Database\Connection;
-use Illuminate\Database\Connectors\PostgresConnector;
 use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PDO;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
+use Tests\Support\RetryingPostgresConnector;
 use Throwable;
 
+/**
+ * ⚠⚠ A HARNESS DIVERGENCE FROM THE RUNTIME, STATED HERE DELIBERATELY — `R-102`, TASK 12.
+ *
+ * ================================================================================
+ * WHAT IS DIFFERENT, AND THE CHOICE `R-102` PUT TO THIS TASK
+ * ================================================================================
+ *
+ * **This suite runs every simulated request through ONE container.** Octane calls
+ * `forgetScopedInstances()` at each request boundary — `RequestBoundaryTest` proves it on
+ * the real `Laravel\Octane\Worker` — and under FPM each request is a new process. Laravel's
+ * TEST client does neither, so a `scoped()` object built during one `$this->postJson()`
+ * serves every later call in the same test.
+ *
+ * `R-102` offered Task 12 two ways to settle it: *"either `TestCase` forgets scoped
+ * instances between HTTP calls — which makes every feature test run with production's
+ * lifetime and would have caught this without a helper — or the divergence is stated in
+ * `TestCase`'s own docblock so nobody reads a green feature test as evidence about request
+ * isolation. The first is a one-line change with an UNKNOWN BLAST RADIUS across 700 tests,
+ * which is why it is a Task 12 decision and not a Task 5 edit."*
+ *
+ * **This is the second option, and the first was measured before it was declined.**
+ *
+ * ================================================================================
+ * ⚠ WHY THE FLUSH WAS DECLINED — THREE MEASUREMENTS, 2026-11-07
+ * ================================================================================
+ *
+ * **(1) The blast radius is no longer unknown: 5 failures in 1,361 tests.** Four of those
+ * were Task 12's own response-header work. **One was the flush**, and it is not a test
+ * leaning on something it should not:
+ *
+ *     with forgetScopedInstances() before (or after) every call, over the rendered HTML
+ *       /platform            200  links=[platform]
+ *       /platform/audit-log  200  links=[platform]
+ *       /studio              200  links=[platform]      <- WRONG
+ *       /studio/domains      200  links=[platform]      <- WRONG
+ *       /studio/media        200  links=[platform]      <- WRONG
+ *
+ * Filament binds its manager as `scoped('filament')` while `PanelRegistry` is a singleton,
+ * so a forgotten manager resolves the DEFAULT panel's theme and the studio pages ship
+ * 692 kB of the wrong stylesheet. `PanelThemeTest` is `QRPAGER-23`'s control on exactly
+ * that and it caught it. **Both placements were tried** — before the call, and after it,
+ * which is Octane's own order — and both produce the table above. So the flush does not
+ * remove a divergence, it trades a DOCUMENTED one for an UNMEASURED one in panel
+ * rendering. That is the wrong direction. The Filament-under-Octane question it raises
+ * belongs to the task that owns the runtime: **`R-243`, Task 13.**
+ *
+ * **(2) A narrowed flush was then tried** — forgetting only `Memberships`, `ActiveTenant`
+ * and `RequestPrincipal`, the three `AuthOctaneIsolationTest` enumerates — and **no
+ * observable behaviour changed.** `MembersTest`'s second add still answered 201, and a
+ * trace inside `UserAttachment::refusalFor()` showed the membership set still arriving
+ * EMPTY on the second request. A change that cannot be shown to do anything is not worth
+ * the risk of the one it demonstrably breaks, so it was reverted too.
+ *
+ * **(3) The divergence is real and it is worth knowing about, which is why this docblock
+ * is long.** Measured inside one test, on one address, immediately after a successful
+ * `POST /v1/members`:
+ *
+ *     UserAttachment::refusalFor(...)  with the warm reader  ->  null
+ *     UserAttachment::refusalFor(...)  with a fresh reader   ->  "already_a_member"
+ *
+ * ⚠ **AND THE SECOND HALF OF THAT IS UNEXPLAINED AND IS NOT CLAIMED TO BE OTHERWISE.**
+ * `public.user_memberships()` returns **1 row** for that user when called from a test, and
+ * the reader inside the request sees **0**. `R-233`'s refusal demonstrably DOES bite on
+ * the cases it was written for — `MemberConsentTest` drives beta's owner and a platform
+ * admin over HTTP and both are refused — so the rule is not inert. What is not established
+ * is why the same-tenant case answers differently on the request path. It is recorded as
+ * **`R-244`** rather than diagnosed here, because `R-185` is this ledger's own row about a
+ * diagnosis stated more firmly than its evidence.
+ *
+ * ================================================================================
+ * SO: WHAT A GREEN FEATURE TEST IN THIS SUITE DOES *NOT* TELL YOU
+ * ================================================================================
+ *
+ * It does not tell you that per-request state is re-derived per request. Anything this
+ * application memoises in a `scoped()` object may be stale for a whole test and fresh in
+ * production — the gap points the PERMISSIVE way for the suite, so a test can pass where
+ * production fails. The instruments for that property are `AuthOctaneIsolationTest` (all
+ * three auth bindings are forgotten and the rebuilt reader re-reads) and
+ * `RequestBoundaryTest` (Octane really calls the flush), and a test that needs the
+ * property mid-run calls `app()->forgetScopedInstances()` itself, as
+ * `SuspendedTenantCustomerSurfaceTest::suspend()` does and explains.
+ */
 abstract class TestCase extends BaseTestCase
 {
     /**
@@ -39,6 +127,142 @@ abstract class TestCase extends BaseTestCase
      */
     private const SUITE_LOCK_KEY = 2_000_000_049;
 
+    /**
+     * The database every DEFAULT runner shares, mirroring `phpunit.xml`'s own `<env>` value.
+     *
+     * ⚠ A MIRROR, AND IT IS GATE-CHECKED RATHER THAN TRUSTED. `SuiteSerializationTest` parses
+     * `phpunit.xml` and fails if the two disagree, which is the same shape `composer guard`
+     * rule 11c uses (it parses `ThemeTokens` rather than copying it). A silent second copy of
+     * this string is what `§6.2` refuses.
+     */
+    private const SHARED_TEST_DATABASE = 'qrpager_test';
+
+    /** Redis indices a runner gets when nothing overrides them -- `config/database.php`. */
+    private const SHARED_REDIS_DB = '0';
+
+    private const SHARED_REDIS_CACHE_DB = '1';
+
+    /**
+     * The suite lock's key FOR THIS RUNNER'S OWN TEST DATABASE -- standing change (b) of three.
+     *
+     * ⚠ WHY THIS IS NO LONGER A CONSTANT. The lock above serialises every runner against every
+     * other, which is right when they share a database and wrong when they do not. `§11` ran
+     * its two reviewers SEQUENTIALLY for exactly this reason: both worktrees pointed at
+     * `qrpager_test` and at Redis db 0, so the only safe order was one after the other, and a
+     * review round therefore cost twice the wall clock it needed to. `R-200`'s fix made the
+     * reds attributable; it did not make the runs independent.
+     *
+     * The lock exists to protect a DATABASE, so its key now names one. Two runners with
+     * different `DB_DATABASE` take different keys and run at the same time; two runners with
+     * the SAME database still queue, which is `R-049`'s fix and is untouched.
+     *
+     * ⚠ STILL ABOVE 2_000_000_000, BY CONSTRUCTION, and the constant's own docblock says why:
+     * `RoleTimeoutTest` draws its key from `random_int(1, 2_000_000_000)` and THIS lock is
+     * never released, so a key inside that range would not merely clash -- it would hang that
+     * test forever. The offset is taken modulo 1,000,000, so every key this can produce lies
+     * in **[2_000_000_049, 2_001_000_048]** (corrected 2026-11-02 from `2_000_999_048`, which was wrong
+     * by 1,000 -- the scoped review measured the real bound over 200k synthetic names): out of the
+     * drawable range whatever the database is
+     * called.
+     *
+     * ⚠ AND A HASH COLLISION FAILS IN THE SAFE DIRECTION. Two differently-named databases that
+     * land on the same bucket would QUEUE -- today's behaviour for everyone -- rather than
+     * interleave. The unsafe direction would be two runners on ONE database getting two keys,
+     * and that cannot happen: the key is a pure function of the name.
+     */
+    public static function suiteLockKey(): int
+    {
+        $database = config('database.connections.'.DatabaseRoles::connection('app').'.database');
+
+        if (! is_string($database) || $database === '') {
+            throw new RuntimeException(
+                'No test database is configured, so the suite lock cannot be keyed to one. '.
+                'Set DB_DATABASE, or run through tools/gate/bin/reviewer-slot.'
+            );
+        }
+
+        self::refuseHalfIsolatedRunner($database);
+
+        return self::SUITE_LOCK_KEY + (crc32($database) % 1_000_000);
+    }
+
+    /**
+     * A runner with its OWN DATABASE but the SHARED REDIS is refused, loudly, before it runs.
+     *
+     * ⚠ THIS CLOSES A DOOR THE DERIVED LOCK KEY OPENED, and the scoped review of 2026-11-02
+     * (finding B1) is what found it. Before the key was keyed by database, a reviewer who
+     * exported `DB_DATABASE` alone QUEUED on the one constant key and was therefore safe. Now
+     * they get a different key and run CONCURRENTLY with the main checkout while sharing Redis
+     * db 0 -- which is `R-049`'s class of defect (an unattributable red in somebody else's run)
+     * reopened through a door the constant key held shut.
+     *
+     * The failure is not hypothetical: `setUp()`'s own docblock records one runner's saturated
+     * `ReadinessStore` snapshot (60 s TTL) making three `TenantResolutionTest` cases and two
+     * `LogRedactionTest` cases answer 503, and `RateLimitTest` shares Redis counters the same
+     * way. `clearPagerProjection()` deleting `t:*:pager:*` before every test is the other half.
+     *
+     * ⚠ AND THE REDIS INDICES ARE DELIBERATELY *NOT* FOLDED INTO THE LOCK KEY, which is the
+     * obvious fix and the wrong one: it would hand two runners on ONE database two different
+     * keys and let them truncate under each other. Isolation has to be all-or-nothing, so the
+     * mismatch is REFUSED instead -- `tools/gate/bin/reviewer-slot` sets all three together and
+     * is the supported way in.
+     */
+    private static function refuseHalfIsolatedRunner(string $database): void
+    {
+        if ($database === self::SHARED_TEST_DATABASE) {
+            return;
+        }
+
+        /*
+         * ⚠ `config()` AND NOT `env()`, which larastan refuses for a real reason rather than a
+         * stylistic one: `env()` outside the config directory returns NULL once the config is
+         * cached, so the refusal below would have compared against `''` and silently stopped
+         * refusing exactly where a cached config is in play. Reading the CONFIG also reads the
+         * value actually in force, which is what this check is about.
+         */
+        $redis = (string) config('database.redis.default.database', self::SHARED_REDIS_DB);
+        $cache = (string) config('database.redis.cache.database', self::SHARED_REDIS_CACHE_DB);
+
+        if ($redis !== self::SHARED_REDIS_DB && $cache !== self::SHARED_REDIS_CACHE_DB) {
+            return;
+        }
+
+        throw new RuntimeException(
+            "This runner has its own database ({$database}) but the SHARED Redis indices ".
+            "(REDIS_DB={$redis}, REDIS_CACHE_DB={$cache}). That combination runs CONCURRENTLY with ".
+            'every other runner while sharing Redis, so TestCase::setUp()\'s clearPagerProjection() '.
+            "and the ReadinessStore snapshot corrupt each other -- R-049's defect through a door the ".
+            'old constant lock key held shut. Isolation is all-or-nothing: run through '.
+            'tools/gate/bin/reviewer-slot, which sets DB_DATABASE, REDIS_DB and REDIS_CACHE_DB together.'
+        );
+    }
+
+    /**
+     * Every pgsql connection this suite opens goes through R-191's retrying connector.
+     *
+     * ⚠ BOUND HERE AND NOT IN `bootstrap/app.php`, WHICH IS THE WHOLE POINT. The stall is a
+     * property of THIS host's WSL2 + Docker loopback forward, measured and recorded in
+     * `tests/Support/RetryingPostgresConnector.php`; a retry in the application would change
+     * production failure semantics on the path `DatabaseErrorMapper`'s 08006 mapping and the
+     * limiter's fail-open posture are both written against. `ConnectionFactory::createConnector()`
+     * resolves `db.connector.{driver}` from the container when it is bound, which is the
+     * framework's own extension point, so no production file changes at all.
+     *
+     * ⚠ AND IT IS BOUND IN `createApplication()` RATHER THAN IN `setUp()`: connections resolve
+     * lazily, but `setUp()` already connects (the bootstrap, the migrate and the TRUNCATE), so a
+     * binding made there would be made after the connects it exists to protect.
+     *
+     * @return Application
+     */
+    public function createApplication()
+    {
+        $app = parent::createApplication();
+
+        $app->bind('db.connector.pgsql', fn (): RetryingPostgresConnector => new RetryingPostgresConnector);
+
+        return $app;
+    }
+
     private static bool $databaseReady = false;
 
     private static ?string $runMarker = null;
@@ -56,9 +280,32 @@ abstract class TestCase extends BaseTestCase
      * Truncated between tests. audit_log is deliberately absent: it is append-only,
      * so the trigger refuses to truncate it. Tests scope their audit assertions
      * instead of resetting the table.
+     *
+     * TASK 6 ADDED THREE PLATFORM TABLES AND ONLY TWO JOIN THIS LIST.
+     *
+     * `tenant_provisionings` and `tenant_statistics` are here because they are ordinary
+     * mutable state: without them a provisioning record written by one test is still
+     * there for the next, and `select count(*) from tenant_statistics` stops meaning
+     * anything. Measured while writing TenantStatisticsTest -- a case asserting one
+     * aggregate row read TEN, because nine were left by the cases before it. That is the
+     * same class of cross-test shared state as the readiness key cleared below, and it
+     * fails as a confusing wrong number rather than as an error.
+     *
+     * `platform_audit_log` is deliberately ABSENT, for `audit_log`'s own reason: it is
+     * append-only and its BEFORE TRUNCATE trigger is ENABLE ALWAYS, so including it here
+     * would make every setUp() raise 42501. Tests scope their platform-audit assertions
+     * by `subject_id` or by `action` instead, exactly as they already do for `audit_log`.
      */
     private const RESETTABLE = [
-        'push_subscriptions', 'outbox', 'pager_sessions', 'tenant_users', 'tenants', 'users',
+        'push_subscriptions', 'outbox', 'pager_sessions', 'tenant_users',
+        'tenant_statistics', 'tenant_provisionings',
+        // Task 7's three. All three carry an FK to `tenants`, so `TRUNCATE ... CASCADE`
+        // below would reach them anyway -- they are named explicitly because this list is
+        // read as the statement of what a test may assume is empty, and a table cleared
+        // only as a side effect of another table's cascade is not something a reader
+        // should have to derive.
+        'landing_pages', 'media_assets', 'tenant_domains',
+        'tenants', 'users',
     ];
 
     protected function setUp(): void
@@ -98,10 +345,91 @@ abstract class TestCase extends BaseTestCase
         // leaves /v1 served and /readyz refusing, which is each one's own posture.
         try {
             $this->app->make(ReadinessStore::class)->forget();
+            self::clearRateLimitBuckets();
+            self::clearPagerProjection();
         } catch (Throwable) {
             // A Redis that cannot be reached has no key to clear, and the tests that
             // care about Redis being down say so themselves.
         }
+    }
+
+    /**
+     * Drop every rate-limit bucket, for the same reason the readiness key is dropped.
+     *
+     * THE FAILURE THIS EXISTS FOR, found at Task 4. The limiter keys on sha1($request->ip()),
+     * which is 127.0.0.1 for every feature test in the suite, and nothing cleared them --
+     * so the counts accumulated ACROSS TESTS and across files. The symptom is the worst
+     * kind: a test that passes alone and fails in the suite, with a 429 where its own
+     * subject should have answered, and the failure lands on whichever test happens to run
+     * after the twentieth request rather than on the one that made them. Measured:
+     * OutboxWorkerTest's eleventh case received 429 from the `pager-subscribe` bucket
+     * (20/minute) because the ten before it had each registered a device.
+     *
+     * It did not bite before this task because Task 2 and Task 3's buckets are 60-120 per
+     * minute and their suites are small; Task 4 adds three tighter customer buckets and a
+     * file that registers a device per case. The coupling was always there.
+     *
+     * RateLimitTest still clears its own keys at the top of each case, which is right: it
+     * is the suite that DRIVES the limiter, so it needs a known starting point within a
+     * test rather than merely between tests.
+     *
+     * ON THE `cache` CONNECTION AND WITH A DOUBLE PREFIX, which is where the first version
+     * of this method went wrong and found nothing. RequestLimiter deliberately runs on the
+     * CACHE STORE rather than the raw connection -- its own docblock says why -- so the
+     * keys carry two prefixes, not one: `database.redis.options.prefix` from the client
+     * ("laravel-database-") and `cache.prefix` from the store ("laravel-cache-"), on the
+     * connection `cache.stores.redis.connection` names. Measured:
+     *
+     *   default connection, keys("*ratelimit*")  -> nothing
+     *   cache connection,   keys("*ratelimit*")  -> laravel-database-laravel-cache-ratelimit:...
+     *
+     * So a sweep of `ratelimit:*` on the default connection matches nothing and passes
+     * quietly, which is exactly how a clean-up that does not clean up survives review.
+     */
+    private static function clearRateLimitBuckets(): void
+    {
+        $store = (string) config('cache.stores.redis.connection', 'cache');
+        $cachePrefix = (string) config('cache.prefix', '');
+
+        self::forgetKeysMatching($cachePrefix.'ratelimit:*', $store);
+    }
+
+    /**
+     * Drop Task 4's Redis status projection and its token pointers.
+     *
+     * Same argument as the readiness key and the six tables: a projection one test warmed
+     * is a live status the next test did not create. These keys carry a TTL of up to the
+     * session TTL (two hours), so without this a polling test could read a projection
+     * written by a test that ran before it -- and because the pointer is keyed by a token
+     * hash, the two would have to collide by token to interfere, which is a bug that
+     * appears once in a very long while and is unreproducible when it does.
+     */
+    private static function clearPagerProjection(): void
+    {
+        self::forgetKeysMatching('t:*:pager:*');
+        self::forgetKeysMatching('pager:tok:*');
+    }
+
+    private static function forgetKeysMatching(string $pattern, ?string $connection = null): void
+    {
+        $connection = app('redis')->connection($connection);
+        $prefix = (string) config('database.redis.options.prefix', '');
+
+        /** @var mixed $found */
+        $found = $connection->keys($pattern);
+
+        if (! is_array($found) || $found === []) {
+            return;
+        }
+
+        $bare = array_map(
+            fn (mixed $key): string => $prefix !== '' && str_starts_with((string) $key, $prefix)
+                ? substr((string) $key, strlen($prefix))
+                : (string) $key,
+            $found,
+        );
+
+        $connection->del(...$bare);
     }
 
     /**
@@ -156,7 +484,13 @@ abstract class TestCase extends BaseTestCase
         /** @var array<string, mixed> $config */
         $config = (array) config('database.connections.'.$name);
 
-        $pdo = (new PostgresConnector)->connect($config);
+        // ⚠ THE RETRYING CONNECTOR, AND THIS IS THE CONNECT THAT MOST NEEDS IT (R-191).
+        // It is the FIRST connect of the process and it holds the lock for the whole run, so a
+        // stall here does not fail one test -- it fails the run before a single case has
+        // executed, with the lock never taken. The framework's own connector is still what
+        // does the connecting; the subclass only decides what to do when `pdo_pgsql`'s
+        // 30-second default deadline expires against this host's 31-36 second SYN stall.
+        $pdo = (new RetryingPostgresConnector)->connect($config);
 
         // Queue, never refuse. An advisory lock IS subject to lock_timeout, and the root
         // role is the one role tenancy.timeouts does not set one for -- so today this
@@ -165,7 +499,7 @@ abstract class TestCase extends BaseTestCase
         // WAITS, and inheriting that from a role attribute nobody is looking at would
         // turn a queue into a 55P03 the first time someone gives root a lock_timeout.
         $pdo->exec('set lock_timeout = 0');
-        $pdo->exec('select pg_advisory_lock('.self::SUITE_LOCK_KEY.')');
+        $pdo->exec('select pg_advisory_lock('.self::suiteLockKey().')');
 
         // Assigned only after the lock is held: a handle in this property is the
         // claim that this process owns the lock, so it must not be set by a connect
@@ -259,9 +593,9 @@ abstract class TestCase extends BaseTestCase
         return DB::connection('pgsql_root');
     }
 
-    protected function makeTenant(?string $slug = null): string
+    protected function makeTenant(?string $slug = null, ?string $id = null): string
     {
-        $id = (string) Str::uuid7();
+        $id ??= (string) Str::uuid7();
 
         // The real tenant-creation path: context is set to the id about to be inserted,
         // so even this needs no bypass (PLAN.md §2.7).
@@ -307,23 +641,118 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Make requests as a tenant, through the pre-Task-5 resolver (B5).
+     * Make requests as a real staff member of a real tenant.
      *
-     * This is the ONLY way a request gets a tenant before Task 5, and that is the
-     * design: HarnessTenantResolver reads a container binding and never a header, a
-     * route parameter, a query string or a cookie, so no HTTP input can choose a
-     * tenant. A stub that read a header would be an unauthenticated tenant-switching
-     * parameter -- the most dangerous shape this application could ship, looking like
-     * perfectly ordinary code.
+     * REWRITTEN AT TASK 5, when the pre-Task-5 stub was deleted (R-035). It used to bind a
+     * bare uuid into the container; it now creates a user, gives that user ONE membership
+     * in the tenant, and authenticates as them. So a feature test exercises the same
+     * resolution path a real request does -- the guard, the §2.8 membership function, and
+     * the suspended-tenant check -- rather than a harness that short-circuited all three.
      *
-     * Every /v1 route is deny-by-default behind RequireTenantScope, so a feature test
-     * that does not call this gets a 401 with no detail. That is the clause working.
+     * The resolver still reads NO HTTP input: a tenant comes from the server-side session
+     * or from a token's own abilities, never from a header, a route parameter, a query
+     * string, a cookie or a body field. A resolver that read a header would be an
+     * unauthenticated tenant-switching parameter -- the most dangerous shape this
+     * application could ship, looking like perfectly ordinary code -- and `PagerIdorTest`
+     * drives five such shapes and requires 404 from each. This helper needs none of them,
+     * because one user with one membership resolves through `Memberships::sole()`.
+     *
+     * TWO CONSEQUENCES WORTH KNOWING BEFORE A TEST SURPRISES YOU:
+     *
+     *   - Calling it twice in one test makes TWO users, each in their own tenant. That is
+     *     deliberate and it is what `PagerIdorTest`'s tenant switch means: alpha's request
+     *     really is a different principal from beta's, which is the thing being tested.
+     *   - It writes rows. A `users` row always, a `tenant_users` row always, and a
+     *     `tenants` row when the id it is given has none. Counting rows in those tables
+     *     after calling it has to account for them.
+     *
+     * Every /v1 route is deny-by-default behind RequireTenantScope, so a feature test that
+     * does not call this gets a 401 with no detail. That is the clause working.
      */
-    protected function actingForTenant(?string $tenantId = null): string
+    protected function actingForTenant(?string $tenantId = null, TenantRole $role = TenantRole::Owner): string
     {
-        $tenantId ??= (string) Str::uuid7();
+        $tenantId ??= $this->makeTenant();
 
-        $this->app->instance(HarnessTenantResolver::BINDING, $tenantId);
+        // A tenants ROW is now required, where the pre-Task-5 harness needed none: that
+        // stub bound a bare uuid into the container, so every call before Task 5 returned
+        // a tenant id with no row behind it. tenant_users carries an FK to tenants, so the
+        // membership this method creates cannot exist without one. Inserted here when it
+        // is missing, so that a caller passing an arbitrary uuid keeps working.
+        $exists = withoutTenantScope(
+            'tests: does this tenant exist, for actingForTenant',
+            fn (): bool => DB::connection('pgsql_owner')->table('tenants')->where('id', $tenantId)->exists(),
+        );
+
+        if (! $exists) {
+            $this->makeTenant(slug: 'tenant-'.str_replace('-', '', $tenantId), id: $tenantId);
+        }
+
+        $userId = (string) Str::uuid7();
+
+        DB::connection('pgsql_owner')->table('users')->insert([
+            'id' => $userId,
+            'name' => 'Acting Staff',
+            // Lower-cased: users_email_is_lowercase is a CHECK constraint, and a 23514
+            // from a test helper is the least useful place to discover it (R-007).
+            //
+            // ⚠ THE WHOLE UUID, AND IT USED TO BE substr(…, 0, 12). THAT COLLIDED, AND IT
+            // REDDENED 15 TESTS WITH ONE IDENTITY.
+            //
+            // A v7 UUID's first 48 bits are a MILLISECOND TIMESTAMP, and 12 hex characters
+            // are exactly those 48 bits. ramsey/uuid's v7 is monotonic: inside one
+            // millisecond it keeps the timestamp and increments a counter in the tail, so
+            // two UUIDs generated in the same millisecond share their first twelve
+            // characters EXACTLY. Measured: over 200 consecutive `Str::uuid7()` calls this
+            // expression produced **2 distinct emails and 198 collisions**.
+            //
+            // It survived Tasks 5, 6 and 7 because each test takes ~0.2s, so consecutive
+            // acting users usually land in different milliseconds. Under a loaded machine
+            // the scheduling bunches them and `users_email_unique` raises 23505 — which is
+            // what happened on 2026-10-31: 15 failures, every one of them this constraint
+            // on one address, `acting-01a1932b11bf@example.test`, whose prefix decodes to
+            // 18:13:55.775.
+            //
+            // The fix takes the WHOLE uuid, so the email's uniqueness rests on the UUID's
+            // own uniqueness and on nothing about where its entropy sits. Taking the LAST
+            // twelve would have worked too and is rejected deliberately: it would rest on
+            // ramsey's counter living in the tail, which is an implementation detail this
+            // repository has no business depending on. 19 call sites across 11 files had
+            // the same expression; all 19 are changed, and `TestFixtureUniquenessTest`
+            // asserts the property rather than the spelling.
+            'email' => 'acting-'.str_replace('-', '', $userId).'@example.test',
+        ]);
+
+        withTenant($tenantId, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
+            'id' => (string) Str::uuid7(),
+            'tenant_id' => $tenantId,
+            'user_id' => $userId,
+            'role' => $role->value,
+        ]), 'pgsql_owner');
+
+        // ONE membership per user, which is what makes this work with no header and no
+        // session key: AuthenticatedTenantResolver falls back to Memberships::sole() when
+        // nothing is selected. A second call in the same test makes a SECOND user, in the
+        // second tenant, which is exactly the semantics PagerIdorTest's tenant switch
+        // wants -- alpha's request really is a different principal from beta's.
+        $user = User::query()->findOrFail($userId);
+
+        $this->actingAs($user);
+
+        // The membership was created after this request-scoped reader may already have
+        // answered for this user id, and it memoises per user (QRPAGER-12 §10.5). A test
+        // that authenticates twice would otherwise read the first answer back.
+        $this->app->forgetInstance(Memberships::class);
+
+        // SELECTED EXPLICITLY, in the session, which is what a real staff client does.
+        //
+        // One membership would resolve through Memberships::sole() with nothing selected,
+        // and most tests have exactly one -- but a test that gives its user a SECOND
+        // membership then resolves no tenant at all, because sole() refuses to pick. That
+        // is correct behaviour and it made DeviceTokenScopeTest's two-tenant case answer
+        // 401 from the helper rather than from the thing it was testing. Setting the
+        // selection makes the helper say which tenant it means, and leaves the sole()
+        // fallback to TenantResolutionTest, which tests it deliberately.
+        session()->put(ActiveTenant::SESSION_KEY, $tenantId);
 
         return $tenantId;
     }
@@ -397,7 +826,7 @@ abstract class TestCase extends BaseTestCase
         DB::connection('pgsql_owner')->table('users')->insert([
             'id' => $userId,
             'name' => 'Seeded Staff',
-            'email' => 'staff-'.substr(str_replace('-', '', $userId), 0, 12).'@example.test',
+            'email' => 'staff-'.str_replace('-', '', $userId).'@example.test',
         ]);
 
         withTenant($tenantId, function () use ($tenantId, $userId, $session): void {
@@ -425,6 +854,37 @@ abstract class TestCase extends BaseTestCase
                 'actor_user_id' => $userId,
                 'action' => $this->auditAction('seed.created'),
                 'context' => $this->auditContext(),
+            ]);
+
+            // ---- Task 7's three. They are seeded here for the reason the six above are:
+            // TenantIsolationTest asserts "0 rows with no tenant context" over EVERY tenant
+            // table, and that assertion is vacuous for a table that has no rows to hide. A
+            // table added to the registry without a row here would pass isolation by being
+            // empty, which is the dead-assertion shape §4a records four of.
+            $owner->table('landing_pages')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenantId,
+                'draft_document' => '{}',
+            ]);
+
+            // The key has to satisfy media_assets_key_is_unguessable: 32 hex characters and
+            // a 2-5 character extension, under this tenant's own prefix.
+            $owner->table('media_assets')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenantId,
+                'object_key' => 'media/'.$tenantId.'/'.bin2hex(random_bytes(16)).'.png',
+                'original_name' => 'seed.png',
+                'content_type' => 'image/png',
+                'byte_size' => 1024,
+                'checksum' => hash('sha256', 'seed'),
+            ]);
+
+            // Unique across every tenant (R-129), so the hostname carries the tenant id.
+            $owner->table('tenant_domains')->insert([
+                'id' => (string) Str::uuid7(),
+                'tenant_id' => $tenantId,
+                'hostname' => 'seed-'.str_replace('-', '', $tenantId).'.example.test',
+                'verification_token' => bin2hex(random_bytes(16)),
             ]);
         }, 'pgsql_owner');
     }

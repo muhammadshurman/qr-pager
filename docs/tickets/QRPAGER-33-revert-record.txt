@@ -1,0 +1,121 @@
+================================================================================
+QRPAGER-33 — THE REVERT RECORD. RED BY DESIGN, FOUR TIMES.
+================================================================================
+
+Muhammad's standing instruction of 2026-11-03: *EVERY NEW PROOF MUST BE SHOWN TO REDDEN
+ONCE BEFORE IT IS TRUSTED — a deliberate revert of the thing it proves, run once, the
+output recorded beside it.* His ruling on this ticket adds: *"Keep the five invariant
+proofs — do not cut those."*
+
+⚠ NOT NAMED `-gate-`, `-e2e-`, `-three-runs-` OR `-fresh-clone-`: that is the set
+`check-records` (c) iterates and holds to "no failure line and EXIT=0". A transcript of a
+DECLARED red is evidence; a transcript of a gate that failed is not.
+
+The named invariant these defend:
+
+    Every published page is arranged by the template its own stored document names; a
+    document that names none is arranged as `classic`; and no block the tenant placed is
+    absent from any arrangement.
+
+
+================================================================================
+REVERT 1 of 4 — `classic` emits a byte, which is the defect this feature nearly shipped
+================================================================================
+
+In `App\Domain\Landing\LandingTemplate::styleRules()`, as it then stood:
+
+    -   self::Classic => '',
+    +   self::Classic => ".band{margin:0}\n",
+
+⚠ THAT METHOD NO LONGER EXISTS, and the revert is recorded against the shape it was run on
+rather than rewritten to match the shape that shipped. `composer guard` refused it under
+rule 11 -- *"a theme overrides TOKENS ONLY -- no <style, no CSS rule"*, locked in
+`PROJECT_INSTRUCTIONS.md §3` -- so the rules moved into `page.blade.php`'s `<style>` behind
+one `@if`. The proof is unaffected and was re-run green after the move: the clause is about
+the rendered page, and the case that reads it now asserts the page rather than a method.
+
+⚠ THIS IS NOT A HYPOTHETICAL MUTANT. The first implementation put the arrangement's two
+rules in `page.blade.php`'s shared `<style>` block and the capture measured 4,941 bytes
+against 4,625 — every page published before this feature existed, changed, for a document
+nobody had edited. A second attempt left a Blade comment on a line of its own and measured
+4,626: one byte, same class of defect. Both were caught by this proof, before a commit.
+
+    ⨯ it reproduces the pre-feature page EXACTLY for a document that name…
+    ⨯ it ships each arrangement only the CSS it uses, so an existing page…
+      the classic arrangement no longer reproduces the page this feature inherited
+    Tests:  2 failed, 3 passed (32 assertions)
+
+The golden file is `apps/api/tests/Fixtures/landing/pre-template-page.html`, captured
+BEFORE the first change of this feature — which is the whole reason the clause is provable
+at all. `QRPAGER-33 §4` flagged that in advance and it was done first.
+
+
+================================================================================
+REVERT 2 of 4 — the `$rest` safety net dropped from the editorial arrangement
+================================================================================
+
+In `resources/views/landing/templates/editorial.blade.php`:
+
+    -   @foreach ($rest as $block)
+    -   @include('landing.block')
+    -   @endforeach
+
+This is the failure mode an arrangement has that a single-order renderer does not: it
+names the block types it places, and anything it did not think of silently vanishes.
+
+    ⨯ it renders every block type in every arrangement, derived from the…
+      the editorial arrangement rendered a different number of blocks than the document holds
+    Tests:  1 failed, 2 passed (39 assertions)
+
+⚠ AND THE SUBJECT LIST IS NOT IN THE TEST. The block types come from the committed
+`docs/contracts/landing-page.schema.json` and the arrangements from
+`LandingTemplate::cases()`, so a third arrangement is swept with no new assertion — which
+is what makes Muhammad's scope cut ("a third is then a template file and an enum value,
+not a run") true rather than hoped.
+
+
+================================================================================
+REVERT 3 of 4 — the unknown-value refusal replaced by a silent fallback
+================================================================================
+
+In `App\Domain\Landing\LandingDocument::template()`:
+
+    -   if ($template === null) {  … throw new LandingDocumentInvalid('template', …) }
+    +   if (false) {  … }
+    -   return $template;
+    +   return $template ?? LandingTemplate::DEFAULT;
+
+A fallback instead of a refusal is the reassuring-direction failure: a tampered column or a
+client sending `brutalist` would publish a `classic` page and report success.
+
+    ⨯ it refuses a value that is not an arrangement, at the schema bounda…
+      a non-arrangement was accepted: 'brutalist'
+    Tests:  1 failed, 4 passed (20 assertions)
+
+
+================================================================================
+REVERT 4 of 4 — `template` dropped from `toArray()`, so the round trip loses it
+================================================================================
+
+In `App\Domain\Landing\LandingDocument::toArray()`:
+
+    -   'template' => $this->template->value,
+
+The value would validate, render correctly once, and be gone from the stored column — so a
+restaurant's choice would survive exactly until the next save. Four cases across two files:
+
+    ⨯ it arranges a published page by the value its own document carries,…
+    ⨯ it keeps the arrangement through a save and a reload, which is what…
+    ⨯ it sets the page arrangement through the builder, and only on the s…
+    ⨯ it refuses an arrangement that is not one, from the panel, leaving…
+    Tests:  4 failed, 13 passed (79 assertions)
+
+
+================================================================================
+GREEN AGAIN, everything restored
+================================================================================
+
+    Tests:  190 passed (1428 assertions)     apps/api/tests/Feature/Landing/
+    Tests   144 passed (144)                 packages/ui
+
+EXIT=1 (by design, four times over)

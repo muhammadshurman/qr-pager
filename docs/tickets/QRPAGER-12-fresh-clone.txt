@@ -1,0 +1,47 @@
+# Task 5 — the gate from a FRESH CLONE, not just a fresh database
+#
+# PROJECT_INSTRUCTIONS.md section 6 / CLAUDE.md: "Gates run from a FRESH CLONE -- a pass that
+# depends on something only present on the builder's machine is not a pass." R-071 is the
+# section 5 row recording that the clause had no mechanism until bin/fresh-clone-proof existed.
+#
+# Commit:  7c76079 (task-5-auth-rbac)
+# Machine: /home/pixels/qr-pager, WSL2
+# Run at:  2026-10-28T23:01:39Z
+#
+# RESULT: PASSED. 722 passed / 6136 assertions, all six steps green -- IDENTICAL to the host's
+# figures at the same commit, which is exactly what this check exists to show.
+#
+# What makes it a clone and not a copy, and the script refuses to continue without all three:
+#   - cloned through file:// so no git object is shared with the working tree;
+#   - the clone arrived with NO vendor/, NO .env and NO node_modules/;
+#   - its tracked tree is byte-identical to this commit's.
+#
+# It then ran only the three commands CLAUDE.md says a fresh clone needs -- cp .env.example
+# .env, key:generate, and the gate -- so nothing on the builder's machine is in the path. The
+# two Task 5 migrations and the three SECURITY DEFINER functions are created by that run from
+# an empty database, which is the half of section 6's clause the rollback proof does not cover.
+
+fresh-clone-proof: test(api): the member surface had no happy-path test, and the coverage s at 7c76079
+
+=== clone through file:// so no object is shared
+
+=== the clone arrived with nothing the gate needs pre-installed
+no vendor/, no .env, no node_modules — the clone is bare
+
+=== the clone's tracked tree is byte-identical to this commit's
+tree f9c194c03a0bbc5dc39331a418ce4ccee8131f3c
+
+=== composer install, from the repository's own lock file
+host composer cache: present (a cache, not a source — it costs time, not correctness)
+packages installed: 170
+
+=== the three commands CLAUDE.md says a fresh clone needs, and nothing else
+cp .env.example .env · php artisan key:generate · docker compose is already up
+
+=== composer gate, in the clone
+gate: all six steps green. Full output: /tmp/qrpager-fresh-clone-FdAutD/clone/apps/api/storage/logs/gate-20261027T230139Z.log
+
+fresh-clone-proof: PASSED at 7c76079
+  Tests:    722 passed (6136 assertions)
+  gate log: /tmp/qrpager-fresh-clone-FdAutD/gate.log
+  (clone removed; pass --keep to inspect it)

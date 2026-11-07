@@ -1,0 +1,43 @@
+# Generated artefacts. Prettier must not touch them: the gate byte-diffs each one against
+# what its generator emits, so a formatter rewriting them would make the check fail with a
+# diff nobody authored -- and "the formatter did it" is indistinguishable from "the source
+# changed" in a byte diff.
+packages/tokens/generated/
+browser/fixtures/panel-palette.css
+packages/contracts/src/generated/
+apps/api/config/design-tokens.php
+
+# The same rule for the font artefacts, which `fetch-fonts.mjs` writes. ⚠ THESE WERE NOT
+# LISTED, and Prettier had reformatted `fonts.css` -- rewrapping every `unicode-range` --
+# so the committed file was NOT what the generator emits. Nothing caught it, because the
+# fetch script needs the network and is therefore not a gate step, so there is no byte diff
+# to go red. `fonts.test.ts` now asserts the equality in-process instead, which only means
+# something if the formatter is out of the way.
+packages/tokens/fonts/
+
+# Fixtures that are deliberately wrong. The no-hard-coded-values rule is proven on these,
+# so formatting them is formatting the evidence.
+tools/design-tokens/fixtures/
+
+pnpm-lock.yaml
+node_modules/
+coverage/
+.next/
+apps/api/
+
+# ⚠ ALL MARKDOWN, not just docs/. Prettier reformatted CLAUDE.md on its first run --
+# *emphasis* to _emphasis_ and a reflowed table -- which is a diff nobody authored in a
+# file that is this repository's agent entry point. The project's prose is written by hand
+# and reviewed by hand; a formatter's opinion about it is noise in every future diff and
+# would make a real edit hard to see.
+*.md
+docs/
+
+# Git-ignored: the gate log directory, and the browser container's HOME (Task 9).
+storage/
+
+# A scratch tree `packages/ui/test/staff-state.test.tsx` writes a deliberately-wrong fixture
+# into, so `tsc` can be run at it from inside the package. Created and removed per run.
+# Ignored here as well as in eslint.config.mjs and packages/ui/tsconfig.json, because this
+# repository has three tools that walk the tree and forgetting the third is the normal outcome.
+packages/ui/test/.generated/

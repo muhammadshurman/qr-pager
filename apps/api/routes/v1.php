@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Features\Devices\Http\DeviceController;
+use App\Features\Members\Http\MemberController;
 use App\Features\Pager\Http\PagerSessionController;
+use App\Features\Tenants\Http\TenantController;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RequireAbility;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,8 +19,8 @@ use Illuminate\Support\Facades\Route;
  * detail about why.
  *
  * STAFF ROUTES ONLY, which is the §4 › Tenancy split rather than an accident of ordering.
- * Staff authenticate as users -- the real resolver is Task 5's and until then these sit
- * behind Task 2's test-only stub. A customer has no account and authenticates ONLY by
+ * Staff authenticate as users -- the real resolver arrived at Task 5 and the test-only stub
+ * that stood in for it is deleted (R-035). A customer has no account and authenticates ONLY by
  * presenting the QR token, which resolves to exactly one session in exactly one tenant;
  * that resolver is built in this task (App\Features\Pager\PagerTokenLookup) and the
  * endpoints that consume it -- polling, subscriptions -- are Task 4's. So there is
@@ -36,30 +40,187 @@ use Illuminate\Support\Facades\Route;
  * changed in place.
  */
 
-Route::prefix('pager-sessions')->group(function (): void {
+/*
+ * AUTHORISATION, ADDED AT TASK 5. ON A GROUP IN THIS FILE, AND IN TWO LAYERS -- and the
+ * second layer exists because the first one alone does NOT cover what the first draft of
+ * this comment claimed it did.
+ *
+ * RequireTenantScope answers "is there a tenant for this request". RequireAbility answers
+ * "may this actor do THIS", and until Task 5 nothing did -- every route below had been
+ * behind the deny-by-default tenant guard since it was written, which is not the same
+ * question.
+ *
+ * It takes NO PARAMETER: the ability is looked up by route NAME in
+ * App\Platform\Auth\RouteAbilities, and a route inside this group that is not in that map
+ * is refused with 403 rather than served. A per-route `ability:...` parameter would make
+ * "every staff route is covered" unobservable, because a route missing the parameter is
+ * indistinguishable from one that was meant to be open.
+ *
+ * ⚠ LAYER ONE'S LIMIT, measured rather than reasoned about. A group wrapper only reaches
+ * routes somebody remembered to nest in it, so a staff route added to this file OUTSIDE the
+ * group gets no authorisation check at all. That is a real hole and it is closed by layer
+ * two rather than by this group:
+ *
+ *   LAYER 1, runtime: RequireAbility fails CLOSED inside this group -- an unmapped route
+ *            here is a 403, so forgetting the map entry is a loud refusal.
+ *   LAYER 2, build:   RoleMatrixTest iterates the WHOLE router and fails if any /v1 route
+ *            is in neither the staff map nor the named customer or auth sets. A route added
+ *            outside this group is in no set, so the suite goes red.
+ *
+ * The obvious fix -- move RequireAbility onto the `api` middleware group so it reaches every
+ * /v1 route -- WAS TRIED AND REVERTED, and the reason is worth recording: the group is the
+ * whole of routes/v1.php, but it is also what nine test files mount their own ad-hoc `/v1`
+ * probe routes on. Those probes are unnamed and unmappable by construction, so they all
+ * became 403 and twenty-odd tests went red on infrastructure rather than on behaviour. The
+ * alternative -- letting an UNNAMED route through -- is precisely the fail-open this is
+ * written to prevent. So the runtime check keeps the narrower scope, the build check carries
+ * the totality, and the limit is written down here instead of being claimed away.
+ */
+Route::middleware([RequireAbility::class])->group(function (): void {
+
+    Route::prefix('pager-sessions')->group(function (): void {
+        /*
+         * The board. A kitchen display's only read, and the one ability a KDS device token may
+         * carry -- which is why it exists here rather than at Task 10 with the screen that
+         * consumes it.
+         */
+        Route::get('/', [PagerSessionController::class, 'index'])
+            ->name('pager.sessions.index');
+
+        /*
+         * Creating a session is the expensive one -- a CSPRNG draw, an insert and an audit row
+         * -- and it is the only route here that takes a body, so it gets its own tighter
+         * bucket on top of the api group's. The four transition routes act on a session that
+         * already exists and stay on the api bucket.
+         */
+        Route::post('/', [PagerSessionController::class, 'store'])
+            ->middleware([RateLimit::class.':pager-create'])
+            ->name('pager.sessions.store');
+
+        Route::post('/{session}/ready', [PagerSessionController::class, 'ready'])
+            ->whereUuid('session')
+            ->name('pager.sessions.ready');
+
+        Route::post('/{session}/renotify', [PagerSessionController::class, 'renotify'])
+            ->whereUuid('session')
+            ->name('pager.sessions.renotify');
+
+        Route::post('/{session}/complete', [PagerSessionController::class, 'complete'])
+            ->whereUuid('session')
+            ->name('pager.sessions.complete');
+
+        Route::post('/{session}/cancel', [PagerSessionController::class, 'cancel'])
+            ->whereUuid('session')
+            ->name('pager.sessions.cancel');
+
+        /*
+         * THE HISTORY SCREEN, ADDED AT TASK 10d.
+         *
+         * ⚠ IT IS ON `pager:history` AND NOT ON `pager:read`, WHICH IS THE ONE THING A
+         * REVIEWER SHOULD CHECK ON THIS ROUTE. `pager:read` is the single ability a KDS device
+         * token may carry, and `RequestPrincipal::may()` requires both the matrix and the
+         * token's abilities to allow -- so mapping this to `pager:read` would make a
+         * restaurant's entire order record readable by every wall-mounted kitchen screen, on a
+         * thirty-day credential, with no session. `Ability::PagerHistory`'s docblock carries
+         * the argument; `issuableToDevice()` stays a closed list of one, so a device cannot be
+         * issued this at all.
+         *
+         * ⚠ `history` IS DECLARED AFTER THE `{session}` ROUTES AND THERE IS NO COLLISION, which
+         * is worth saying because this is exactly where one would hide. Every `{session}` route
+         * above is a POST at `/{session}/<verb>` -- a two-segment path -- and this is a GET at
+         * one segment. There is no `GET /pager-sessions/{session}` anywhere in this file, so
+         * `history` cannot be shadowed by a uuid pattern, and `whereUuid` would refuse the
+         * literal string in any case.
+         *
+         * Its filters are a GET QUERY rather than a POST body: this is a read, it is
+         * bookmarkable, and `§4 › Data` keeps secrets out of query strings -- a status list and
+         * a date range are not secrets. The order REFERENCE is in the query too, which is the
+         * one value worth a second thought; it is printed on a physical ticket and shown on a
+         * board, so it is not a credential, and the raw TOKEN never appears in any path or
+         * query anywhere in this application.
+         */
+        Route::get('history', [PagerSessionController::class, 'history'])
+            ->name('pager.sessions.history');
+
+        /*
+         * RE-ISSUING A SHEET, ADDED AT TASK 10d by Muhammad's ruling (`QRPAGER-28 §2`): *a
+         * sheet is RE-ISSUED, never reprinted.*
+         *
+         * On `pager:create`'s bucket and `pager:create`'s ability, because it is the same act:
+         * a CSPRNG draw that mints a credential. `PagerSessions::reissue()` has why it is a
+         * token rotation on the existing row rather than a new session, and why it notifies
+         * nobody.
+         */
+        Route::post('/{session}/reissue', [PagerSessionController::class, 'reissue'])
+            ->whereUuid('session')
+            ->middleware([RateLimit::class.':pager-create'])
+            ->name('pager.sessions.reissue');
+    });
+
     /*
-     * Creating a session is the expensive one -- a CSPRNG draw, an insert and an audit row
-     * -- and it is the only route here that takes a body, so it gets its own tighter
-     * bucket on top of the api group's. The four transition routes act on a session that
-     * already exists and stay on the api bucket.
+     * STAFF MANAGEMENT -- R-007's Task 5 half.
+     *
+     * `members:write` is held by owner and manager and by neither staff nor a device token, so
+     * this is the surface where the role matrix stops being a formality: it is the only place
+     * where staff and manager give different answers to the same request. The member id is a
+     * uuid in the path and the tenant is not -- the membership is looked up inside the resolved
+     * tenant's scope, where another tenant's row is invisible and the answer is 404.
      */
-    Route::post('/', [PagerSessionController::class, 'store'])
-        ->middleware([RateLimit::class.':pager-create'])
-        ->name('pager.sessions.store');
+    Route::prefix('members')->group(function (): void {
+        Route::get('/', [MemberController::class, 'index'])->name('members.index');
 
-    Route::post('/{session}/ready', [PagerSessionController::class, 'ready'])
-        ->whereUuid('session')
-        ->name('pager.sessions.ready');
+        Route::post('/', [MemberController::class, 'store'])->name('members.store');
 
-    Route::post('/{session}/renotify', [PagerSessionController::class, 'renotify'])
-        ->whereUuid('session')
-        ->name('pager.sessions.renotify');
+        Route::patch('/{member}', [MemberController::class, 'update'])
+            ->whereUuid('member')
+            ->name('members.update');
 
-    Route::post('/{session}/complete', [PagerSessionController::class, 'complete'])
-        ->whereUuid('session')
-        ->name('pager.sessions.complete');
+        Route::delete('/{member}', [MemberController::class, 'destroy'])
+            ->whereUuid('member')
+            ->name('members.destroy');
+    });
 
-    Route::post('/{session}/cancel', [PagerSessionController::class, 'cancel'])
-        ->whereUuid('session')
-        ->name('pager.sessions.cancel');
+    /*
+     * KDS DEVICE TOKENS. Issuing one is a credential-minting act, so it carries its own tighter
+     * bucket on top of the api group's and is audited inside the tenant's scope. Revoking is
+     * keyed and answers 404 for a token pinned to another tenant, which is §11.2's IDOR rule
+     * applied to a credential rather than to a row.
+     */
+    Route::prefix('devices')->group(function (): void {
+        /*
+         * The list a settings screen reads. Takes no input at all -- no body, no query, no
+         * path parameter -- which is why it is a GET and is the strongest validation answer
+         * available: there is nothing to validate.
+         */
+        Route::get('/', [DeviceController::class, 'index'])->name('devices.index');
+
+        Route::post('/', [DeviceController::class, 'store'])
+            ->middleware([RateLimit::class.':devices-issue'])
+            ->name('devices.store');
+
+        Route::delete('/{device}', [DeviceController::class, 'destroy'])
+            ->whereUuid('device')
+            ->name('devices.destroy');
+    });
+
+    /*
+     * THE RESTAURANT ITSELF, ADDED AT TASK 10a.
+     *
+     * One route, one row, no input. `tenants` is a tenant table whose scope column is its
+     * own `id` (`PLAN.md §2.5`), so inside the resolved tenant's scope row-level security
+     * leaves exactly one row visible and there is no predicate to tamper with.
+     *
+     * ⚠ WHY THIS EXISTS RATHER THAN A COLUMN ON `/v1/auth/me`. The shell has to name the
+     * restaurant, `/v1/auth/me` carries `slug`, and a slug is a DNS label rather than a
+     * name -- `§12`'s zero-technical-background bar forbids an unexplained identifier on a
+     * screen. The one-column alternative was to widen `public.user_memberships()`, which is
+     * `PROJECT_INSTRUCTIONS.md §4 › Tenancy`'s named CROSS-TENANT read path. Adding display
+     * text to a cross-tenant function, for data the caller can read inside their own scope,
+     * is the wrong trade: `§2.8`'s named list stays at four and no migration is needed.
+     *
+     * SINGULAR AND NOT `/tenants`, because there is no collection here to version into: a
+     * caller can only ever see the one their credential resolves to, and a plural path
+     * would publish a promise of a list that `§4` forbids ever existing.
+     */
+    Route::get('tenant', [TenantController::class, 'show'])->name('tenant.show');
 });

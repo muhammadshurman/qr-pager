@@ -1,5 +1,37 @@
 name: CI
 
+# =============================================================================
+# ⚠ EVERY ACTION AND THE RUNNER IMAGE ARE PINNED EXACT — Task 12, on his instruction:
+# *"`actions/cache@v4` is being forced off deprecated Node 20 onto Node 24, and
+# `ubuntu-latest` has already migrated. Pin and update the actions so a runner image
+# change cannot redden a release."*
+#
+# MEASURED 2026-11-07, not assumed — each action's `using:` read out of its own `action.yml`
+# at the ref this file pins:
+#
+#   actions/cache@v4        node20   <- the ONLY node20 action here, and the one being forced
+#   actions/cache@v5.1.0    node24   <- what it is now
+#   actions/checkout@v5     node24   <- already fine, pinned exact rather than bumped
+#   actions/setup-node@v5   node24   <- already fine, pinned exact rather than bumped
+#
+# ⚠ SO ONLY `cache` WAS UPDATED, AND THE OTHERS WERE ONLY PINNED. `checkout` and `setup-node`
+# have v7 available; bumping two majors serves neither the Node deprecation nor the runner
+# pin, and it could not be verified here (CI is blocked on an account billing condition, so a
+# red would be unreadable). A major bump nobody can run is the wrong-sha-gate shape.
+#
+# ⚠ AND THE RUNNER IS PINNED TO `ubuntu-26.04` BECAUSE THAT IS WHAT THE RUN ACTUALLY USED.
+# Read out of run `42372017224`: `Image: ubuntu-26.04`, release `ubuntu26/20261101.186`, on
+# BOTH jobs — and both got through their whole step lists on it (the two failures were
+# `records:check` and a Playwright case, neither an image problem). So this pins the image
+# this project is demonstrably green on, rather than pinning backwards to a 24.04 nothing has
+# measured.
+#
+# `shivammathur/setup-php@v2` was a FLOATING MAJOR, which is the same exposure in a third-party
+# action: it now names `2.40.0`.
+#
+# `CiWorkflowPinTest` holds all of this, so a floating ref cannot come back quietly.
+# =============================================================================
+
 on:
   push:
     # Task branches as well as main, added 2026-10-26. Until now CI triggered on pushes
@@ -16,7 +48,23 @@ on:
     #
     # The tag trigger stays: it is what gives the completion tag its own verdict in its
     # own concurrency group, which is how the task-1 cancellation was diagnosed.
-    branches: [main, 'task-*']
+    #
+    # ⚠ EVERY PUSHED BRANCH, as of 2026-10-28, and `task-*` was not enough. The pattern above
+    # was `[main, 'task-*']`, and `infra-local-mail-and-object-store` -- a branch carrying two
+    # commits, one of them a test that fails when its service is absent -- matched neither, so
+    # NOTHING RAN ON IT. Measured: `gh run list --branch infra-local-mail-and-object-store`
+    # returns no rows, while the same command for `task-6-provisioning` returns a run per
+    # commit. The first verdict on either commit would have arrived on the pull request into
+    # main: after the work, in public, which is the exact condition this trigger was widened
+    # on 2026-10-26 to remove. It was removed for `task-*` and left for every other name.
+    #
+    # A green local gate and a green CI are two different claims, and this is the second one
+    # being ABSENT rather than failing -- which looks identical to "no news" on a branch page.
+    # `PLAN.md R-126`, and `composer guard` rule 9 now fails if any branch pattern here can
+    # exclude a pushed branch, so the hole cannot be reintroduced quietly.
+    #
+    # The tag trigger below is unaffected, and so is `pull_request`.
+    branches: ['**']
     tags: ['task-*']
   pull_request:
     branches: [main]
@@ -39,14 +87,55 @@ concurrency:
   #
   # The CI-minute saving is kept where it was meant to apply: a pull_request run has
   # github.ref = refs/pull/N/merge, so it still cancels its own superseded runs.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+  #
+  # ================================================================================
+  # ⚠ NARROWED TO PULL REQUESTS ONLY, 2026-11-01 -- STANDING CHANGE (b) of three
+  # ================================================================================
+  #
+  # The expression below USED to read
+  # `github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')`, which is TRUE
+  # for every task branch. Task 9 pushed once per commit and the branch page filled with
+  # Cancelled runs: each push killed the run that was about to deliver the previous commit's
+  # verdict, so the wall of grey reads as failure and no individual commit has a verdict at
+  # all. That is the task-1 cancellation (see above) reproduced on a task branch, in the one
+  # window where acting on a red is still cheap.
+  #
+  # The alternative was a DISCIPLINE -- push only at round boundaries -- and it was rejected
+  # for the reason this file's own history keeps demonstrating: a rule nobody can forget beats
+  # a rule everybody must remember. `R-126`, `W-14` and the task-1 merge are all the same
+  # shape, and `§7` says a recurrence means the mechanism was missing rather than the habit.
+  #
+  # So: a task branch now gets a verdict per push, main and tags keep theirs, and only a
+  # pull_request -- whose superseded runs are genuinely redundant, because the next one tests
+  # the same merge commit -- still cancels. The cost is CI minutes on a private repo; the
+  # thing bought is that "the head is green in CI, with the run id and conclusion" is a
+  # question that always has an answer.
+  #
+  # MEASURED before the change, with `gh run list --branch task-9-customer-pwa --limit 15`:
+  # 12 of the 15 most recent runs were `cancelled` and the other 3 were `failure`, with #177
+  # to #186 an unbroken run of ten. Run #187's red -- the one this branch was actually
+  # blocked on -- sat unexamined behind that wall.
+  #
+  # ⚠ AND MEASURED AFTER, WHICH CORRECTS WHAT THIS CHANGE WAS FIRST CLAIMED TO BUY. It does
+  # NOT mean "every push gets a verdict". GitHub allows only ONE run to be PENDING in a
+  # concurrency group, and a newer pending run supersedes the older one whatever
+  # `cancel-in-progress` says. Measured on this branch: #190 was `in_progress` and SURVIVED
+  # #191's push (which the old expression would have killed), while #191 was still `pending`
+  # and was CANCELLED when #192 entered the group.
+  #
+  # So what this actually buys, stated honestly: A RUN THAT HAS STARTED IS NEVER KILLED, and
+  # THE NEWEST HEAD ALWAYS GETS A VERDICT. An intermediate commit pushed in quick succession
+  # can still lose its own -- which is why the step list's "push at round boundaries" is a
+  # recommendation and not merely a cost saving: batching is what makes each pushed commit
+  # the newest head long enough to be verified.
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
   gitleaks:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
         with:
           fetch-depth: 0
       - name: Install gitleaks
@@ -59,7 +148,7 @@ jobs:
 
   gates:
     name: Pint, PHPStan, Pest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: apps/api
@@ -107,10 +196,10 @@ jobs:
           --health-retries 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
 
       - name: Set up PHP 8.4
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@2.40.0
         with:
           php-version: '8.4'
           extensions: pdo_pgsql, redis, mbstring, intl, bcmath, gd, curl, zip, xml
@@ -118,7 +207,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer
-        uses: actions/cache@v4
+        uses: actions/cache@v5.1.0
         with:
           path: ~/.cache/composer/files
           key: composer-${{ hashFiles('apps/api/composer.lock') }}
@@ -151,6 +240,26 @@ jobs:
       # re-exports and diffs (§6.2's third shared contract). Proven to fail on a
       # modified spec by tests/Feature/Http/OpenApiSpecTest.php.
       - run: composer openapi:check
+
+      # Task 7's block schema, the SAME MECHANISM one contract over: docs/contracts/
+      # landing-page.schema.json is generated from App\Domain\Landing\BlockSchema and is
+      # what Task 11's renderer will consume, so there is no second definition of a block
+      # anywhere. Proven to fail on a modified artifact by
+      # tests/Feature/Landing/LandingSchemaContractTest.php.
+      - run: composer landing:check
+
+      # ⚠ THIS STEP WAS MISSING, and the comment in the `frontend` job below asserted it was
+      # here. Task 8a's generated TS status mirror is the PHP-SOURCED half of §6.2: the enum
+      # registry in `apps/api/app/Domain` is its one source, `php artisan contracts:export`
+      # emits `packages/contracts/src/generated/status.ts`, and this byte-diffs the committed
+      # file against what the enums produce right now. It is the only one of this task's five
+      # generated artefacts whose source is PHP, so it belongs in this job and nowhere else
+      # -- and it ran in `apps/api/bin/gate` and on no runner.
+      #
+      # `tools/gate/test/ci-parity.test.mjs` now covers THIS job against `apps/api/bin/gate`
+      # in both directions, so the hole cannot reopen quietly. Proven to fail with the step
+      # removed.
+      - run: composer contracts:check
 
       - name: Bootstrap roles and the database
         run: php artisan db:bootstrap
@@ -209,12 +318,101 @@ jobs:
       # ALTER SYSTEM rather than ALTER DATABASE: the in-suite cases set and RESET the
       # database-level value in their own finally, which would undo a database-level
       # setting partway through the run.
-      - name: Log every statement, so the scan below cannot pass vacuously
+      # 'ddl' AND NOT 'all' (security L-4). `log_statement = 'all'` put every statement in
+      # the runner's Postgres log WITH ITS BOUND PARAMETERS -- including
+      # `insert into pager_sessions (... token_hash ...) values (..., decode(?, 'hex'), ...)`
+      # and `resolve_pager_token(decode(?, 'hex'))`, so a run's worth of QR token hashes was
+      # written to a log on the default path. That is `§4 › Data`'s clause verbatim one step
+      # removed, and `R-059` is the row.
+      #
+      # The scan below needs the ALTER ROLE statements and nothing else: its subject is a
+      # role VERIFIER (`SCRAM-SHA-256$...`), which reaches a log only as the text of an
+      # `ALTER ROLE ... PASSWORD`. That is DDL. Measured on 2026-10-27 against the composed
+      # Postgres 16: with `log_statement = 'ddl'`, an `ALTER ROLE ... PASSWORD 'SCRAM-...'`
+      # appears in the log (1 line) while a prepared SELECT and its bound parameter appear
+      # **zero** times.
+      #
+      # So the positive control `R-036` asks for is kept in full and the token hashes are
+      # gone -- strictly narrower, not weaker. A step that genuinely needs 'all' sets it
+      # itself, in its own job, and resets it; it is never the default path.
+      - name: Log DDL, so the verifier scan below cannot pass vacuously
         run: |
           PGPASSWORD=local_dev_only psql -h 127.0.0.1 -U qrpager_root -d qrpager_test -q \
-            -c "alter system set log_statement = 'all'" -c "select pg_reload_conf()"
+            -c "alter system set log_statement = 'ddl'" -c "select pg_reload_conf()"
 
-      - name: Tests against real Postgres and Redis
+      # Mailpit (`R-125`) and the object store (`ADR-004`) come from the project's own
+      # compose file rather than from `services:` above, and the reason is mechanical: a
+      # GitHub Actions service container takes an image and `options:` and CANNOT take a
+      # command line, while `objectstore` needs `server -s3 -dir=/data`. The runtime job
+      # below already starts Postgres and Redis this way, so this is the established form
+      # here rather than a new one.
+      #
+      # It also means CI cannot drift from what a clone gets: the image, the pinned tag, the
+      # published ports, the credentials and the healthchecks have ONE source. `--wait`
+      # blocks on those healthchecks, so the suite cannot race a starting service.
+      #
+      # WITHOUT THIS STEP THE SUITE IS RED HERE AND GREEN LOCALLY. LocalMailCatcherTest and
+      # LocalObjectStoreTest both fail rather than skip when their service is absent, which
+      # is the property they exist for -- 3 of 5 cases each, `cURL error 7` and
+      # `Connection refused`. CI had never evaluated either: pushes to this branch trigger
+      # nothing (`on.push.branches` is `main` and `task-*`), so the first verdict would have
+      # arrived on the PR into main, which is the shape `R-001` and the 2026-10-26 trigger
+      # change exist to prevent.
+      #
+      # Postgres and Redis stay as service containers above: they are up before the job's
+      # first step, and their provenance difference from `compose.yaml` is already recorded
+      # (`R-059` -- CI reads no compose command line, which is why no test asserts one).
+      - name: The local mail catcher and object store, from the project's own compose file
+        working-directory: .
+        run: docker compose -f compose.yaml up -d --wait mailpit objectstore
+
+      # ================================================================================
+      # apps/api's OWN FRONT-END TOOLCHAIN, AND WHY THE PHP JOB SUDDENLY NEEDS NODE
+      # ================================================================================
+      #
+      # Task 8b registers `->viteTheme('resources/css/filament/<panel>/theme.css')` on both
+      # panel providers. `Panel::viteTheme()` resolves that path through `app(Vite::class)`,
+      # i.e. through `public/build/manifest.json` -- which is git-ignored. So from 8b onward
+      # EVERY TEST THAT RENDERS A PANEL PAGE needs the assets built first.
+      #
+      # MEASURED locally with `public/build` moved aside: `PlatformPanelAccessibilityTest`
+      # went from 13 passed to **7 failed, 6 passed**, and every failure was a generic 500
+      # problem+json body -- `{"title":"The request could not be completed.","status":500}` --
+      # in tests about tabindex, badges and empty-state copy. Not one of them named the
+      # cause. That is why this is a step and not a note in a README.
+      #
+      # This is apps/api's SECOND npm tree (ADR-003 keeps it out of the pnpm workspace), so
+      # it is `npm ci` from `apps/api/package-lock.json` and not pnpm. `--ignore-scripts`
+      # matches `composer setup`.
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version-file: .nvmrc
+          # The same hazard the `frontend` job documents at length, for the same reason:
+          # setup-node v5 caches automatically when a `packageManager` field is present, and
+          # the ROOT package.json carries `pnpm@12.16.1` -- so the action would resolve pnpm
+          # to compute a cache path, in a job where corepack never runs, and fail with
+          # `Unable to locate executable file: pnpm`. apps/api/package.json has no
+          # packageManager field of its own, which is exactly why the root one is reached.
+          package-manager-cache: false
+
+      - name: Install apps/api's npm tree, with its lockfile as the authority
+        run: npm ci --ignore-scripts
+
+      # Builds the two panel themes AND checks the manifest names every theme the panel
+      # providers register -- which a successful build does NOT do, because dropping a theme
+      # from `vite.config.js`'s input array still builds. Proven: with the studio theme
+      # removed from that array the build reported success and this step exited 1.
+      - run: composer assets
+
+      # The CVE half of §9.2a, over the tree `npm ci` just installed. `pnpm run audit` in
+      # the `frontend` job reads `pnpm-lock.yaml` and reaches none of this, which is the
+      # hole: 92 packages under apps/api were in neither control. The licence half is
+      # `ApiNpmLicenceTest` in the suite below, holding this tree to the SAME
+      # `docs/contracts/dependency-licences.json` the workspace check uses -- one policy,
+      # two trees, because a second allow-list diverges silently on the first new family.
+      - run: composer deps
+
+      - name: Tests against real Postgres and Redis, Mailpit and the object store
         run: php artisan test
 
       - name: No role verifier reached the Postgres log, across the whole run
@@ -232,9 +430,360 @@ jobs:
       - name: Unit coverage on the code this branch adds
         run: php artisan test --coverage --min=90
 
+      # ================================================================================
+      # TASK 9's JOURNEY SUITE -- IN THIS JOB, AND THAT IS THE ONE PARITY EXCEPTION
+      # ================================================================================
+      #
+      # `pnpm run gate:e2e` is Task 9's CROSS-HALF gate: the real Laravel API against the
+      # composed Postgres and Redis, a real pager session issued through the domain service,
+      # the production build of `apps/web`, and a TLS front so the origin is a secure context.
+      #
+      # It is deliberately NOT part of `pnpm gate` -- `ADR-003` splits the two halves and
+      # `tools/gate/bin/gate.mjs`'s header gives the argument -- so it runs HERE, in the job
+      # that already has PHP, Postgres and Redis migrated and bootstrapped above.
+      #
+      # ⚠ `tools/gate/test/ci-parity.test.mjs` ASSERTS THIS STEP IS IN THIS JOB. A third gate
+      # nobody is required to run is a gate in name only, which is the hole `R-126` is about.
+      #
+      # It needs the workspace and the browsers, which this job did not have before.
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version-file: .nvmrc
+          # Same hazard the frontend job documents: setup-node v5 caches automatically when a
+          # `packageManager` field is present, and resolving pnpm in a job where corepack has
+          # not run fails with `Unable to locate executable file: pnpm`.
+          package-manager-cache: false
+
+      - name: Provision pnpm from packageManager, never from a literal
+        run: |
+          corepack enable
+          corepack prepare --activate
+
+      - name: Install the workspace, with the lockfile as the authority
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Playwright's three engines, at the version `playwright` pins
+        working-directory: .
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - name: The customer journey, the service worker, one-handed at 390px, and R-100
+        working-directory: .
+        run: pnpm run gate:e2e
+
+      # ================================================================================
+      # TASK 11's INVARIANT -- IN THIS JOB, AND FOR THE SAME REASON AS THE STEP ABOVE
+      # ================================================================================
+      #
+      # `§3` row 11: *tenant A's page can never render tenant B's content, and can never be
+      # served from tenant B's cache entry.* `apps/site/test/serve.test.ts` drives the mapping
+      # exhaustively with an injected reader; this drives the WHOLE CHAIN -- two tenants
+      # publishing through the real publisher into the real object store, then real `Host`
+      # headers against the production build of apps/site. Two halves can each be perfect
+      # against their own fixture and disagree with each other, and this is the step that
+      # catches that.
+      #
+      # It lives here rather than in the frontend job because it needs PHP, Postgres AND the
+      # object store, which this job already has -- the same argument the e2e step above makes.
+      - name: One tenant's page is never served from another tenant's prefix
+        working-directory: .
+        run: pnpm run gate:site-isolation
+
+      # Task 11a's half of the same invariant: the DOMAIN LIFECYCLE. `site-isolation` covers the
+      # cache key, the Host -> prefix mapping and the per-host pointer switch; this covers what
+      # the old hostname serves after a page MOVES (`R-133`) and whether `manifest.json` can
+      # disagree with the `index.html` beside it (`R-170`). Same job, same reason: it needs PHP,
+      # Postgres, the object store and the production build of apps/site all at once.
+      - name: A page that moves hostname leaves no bytes behind it
+        working-directory: .
+        run: pnpm run gate:domain-move
+
+  frontend:
+    name: Frontend workspace — lint, types, Vitest, Playwright, build
+    runs-on: ubuntu-26.04
+
+    # ADR-003: "CI gains a second job for the frontend workspace." A SECOND JOB and not a
+    # step in `gates`, for two reasons. It needs neither Postgres nor Redis, so bolting it on
+    # would make every frontend failure wait for a database to come up; and a PHP failure and
+    # a TypeScript failure must be distinguishable at a glance on the branch page, which is
+    # the same argument apps/api/bin/gate's header makes about one log for both halves.
+    #
+    # The gate itself is `pnpm gate` (tools/gate/bin/gate.mjs), the sibling of
+    # apps/api/bin/gate. The steps below are listed individually rather than calling it,
+    # because GitHub's UI then names the failing step -- `pnpm gate` is the form for a human
+    # at a terminal, who gets one readable log file instead.
+
+    steps:
+      - uses: actions/checkout@v5.1.0
+
+        with:
+          # ⚠ TAGS, OR `check-records`' tag assertion READS AN EMPTY LIST AND PASSES.
+          # `§11` round two, QA M-5: a default checkout fetches none and the check
+          # returned early when `git tag --list task-*` was empty — proven in a
+          # `--depth 1 --no-tags` clone of the head, which reported "§0 agrees with the
+          # tags and the ledger" having read zero tags. The step existed and was vacuous
+          # exactly where it was deployed.
+          fetch-tags: true
+          fetch-depth: 0
+      # ⚠ THE NODE VERSION COMES FROM .nvmrc, NEVER FROM A LITERAL HERE.
+      #
+      # QRPAGER-15 §7.4: a version verified in a session and not written down is a version
+      # the next fresh clone does not get. Two sources for the Node version -- one in
+      # .nvmrc for a developer and one hard-coded in this file for CI -- is the duplicated
+      # -list shape this project has already paid for twice (QA H-1, and guard rule 11c,
+      # which parses ThemeTokens rather than copying it). `node-version-file` makes .nvmrc
+      # the only place the number appears.
+      #
+      # The floor is Vitest 5's, not Next's: vitest's engines field is
+      # `^22.12.0 || ^24.0.0 || >=26.0.0`, which excludes Node 23 and 25, while next@15.5.28
+      # asks only for >=20. package.json's `engines` states the same floor and .npmrc sets
+      # engine-strict, so a clone on Node 20 is refused at install rather than failing later
+      # somewhere that does not name the cause.
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version-file: .nvmrc
+          # ⚠ THE ONE LINE THE JOB FAILED FOR, AND IT IS A DEFAULT RATHER THAN SOMETHING
+          # ANYONE WROTE.
+          #
+          # setup-node **v5.0.0** made dependency caching AUTOMATIC when `package.json`
+          # carries a valid `packageManager` field -- read from the action's own action.yml:
+          # `package-manager-cache` has `default: true`, described as "disable automatic
+          # caching based on the package manager field in package.json". Ours is
+          # `"packageManager": "pnpm@12.16.1"`, so the action resolved pnpm to compute the
+          # cache directory and failed:
+          #
+          #     Resolved .nvmrc as 22
+          #     Found in cache @ /opt/hostedtoolcache/node/22.23.4/x64
+          #     Error: Unable to locate executable file: pnpm.
+          #
+          # pnpm does not exist yet at that point: corepack provisions it in the NEXT step.
+          # The `cache:` input is deliberately unset and always was -- this was never a line
+          # in the file, which is why grepping for `cache:` found nothing and why the first
+          # diagnosis of this failure was wrong.
+          #
+          # The store is cached explicitly below instead, AFTER corepack, which is the only
+          # order in which the path can be resolved. v6.0.0 narrowed the automatic caching
+          # to npm only, so a future bump to v6 would also remove this hazard -- but v6 runs
+          # on node24 and needs a runner >= 2.327.1, which is a separate decision.
+          package-manager-cache: false
+
+      - name: pnpm, at the version package.json pins
+        # corepack reads "packageManager": "pnpm@12.16.1" from package.json, so the version
+        # is not repeated here either.
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+
+      # THE PNPM STORE CACHE, AND WHY IT IS A SEPARATE STEP RATHER THAN setup-node's OWN
+      # `cache: pnpm` INPUT. That input makes the action shell out to `pnpm store path` to
+      # find the directory to cache -- and it runs as part of setup-node, which is BEFORE
+      # corepack has put pnpm on the runner. So the convenient form cannot work in a
+      # corepack-provisioned job at all; the store path has to be resolved after pnpm
+      # exists, which is here.
+      #
+      # It also keeps the pnpm version single-sourced: nothing in this job names a version,
+      # and `corepack prepare --activate` reads `packageManager` from package.json.
+      - name: Resolve the pnpm store path, now that pnpm exists
+        run: echo "STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v5.1.0
+        with:
+          path: ${{ env.STORE }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install, with the lockfile as the authority
+        # --frozen-lockfile so CI cannot silently resolve a different tree than the one that
+        # was verified. A lockfile that disagrees with package.json fails here, which is the
+        # point: this job's whole claim is that a FRESH CLONE gets what the builder had.
+        run: pnpm install --frozen-lockfile
+
+      # ================================================================================
+      # apps/api's ASSETS, FOR THE PANEL BROWSER CHECKS — R-118, 8b's share
+      # ================================================================================
+      #
+      # `browser/panel.spec.ts` measures R-118's four computed-style clauses against the
+      # COMPILED panel theme, read out of `apps/api/public/build` through the manifest. That
+      # directory is git-ignored, so this job has none until it is built -- and the spec
+      # THROWS rather than skipping when it is absent, naming `composer assets`.
+      #
+      # ⚠ A SECOND npm INSTALL IN A SECOND JOB, deliberately, and the alternative was worse.
+      # The build belongs to `apps/api`, which `ADR-003` keeps out of the pnpm workspace, so
+      # the `gates` job already does this. Moving the Playwright step there instead would put
+      # pnpm, corepack and a browser download into the PHP job to avoid ~20 seconds of npm
+      # here. The manifest CHECK stays in `gates`, where `composer assets` owns it; this is
+      # only the bytes the browser needs.
+      # ⚠ PHP AND COMPOSER FIRST, AND THAT ORDER IS THE WHOLE ROOT CAUSE. The first line of
+      # each panel theme is
+      # `@import '../../../../vendor/filament/filament/resources/css/theme.css'`, and
+      # `/vendor` is git-ignored -- so `npm run build` here CANNOT resolve its first import
+      # without apps/api's composer tree. This step shipped without it and the job could not
+      # pass: measured by moving `apps/api/vendor` aside, the build dies on module
+      # resolution. The same missing tree reds four `panel-theme.test.mjs` cases in the
+      # Vitest step below, which compiles that same entrypoint.
+      #
+      # `ci-parity.test.mjs` now asserts that any job building apps/api's assets also
+      # installs its composer tree, proven red against the version of this file that did not.
+      - name: PHP 8.4, for apps/api's composer tree
+        uses: shivammathur/setup-php@2.40.0
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, bcmath, curl, zip, xml
+          coverage: none
+          tools: composer:v2
+
+      - name: apps/api's composer tree, which the panel theme imports from
+        working-directory: apps/api
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: apps/api's compiled panel theme, which the panel browser checks measure
+        working-directory: apps/api
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Playwright's three engines, at the version `playwright` pins
+        # The package is pinned exact and each browser build is tied to it, so this installs
+        # the engines the suite was verified against. --with-deps brings the shared libraries
+        # a bare runner does not have.
+        #
+        # ⚠ ALL THREE AS OF TASK 9, not Chromium alone. `PLAN §3` row 9 requires
+        # *"Playwright E2E green on Chromium, Firefox AND WebKit"*, and `browser/engines.spec.ts`
+        # measures per-engine facts this project depends on -- `Sec-Fetch-Dest` for `R-194`,
+        # the absence of `navigator.vibrate` in two of the three, and `navigator.wakeLock`
+        # being present where the compat data says it does not work. Chromium alone tests the
+        # easy case, which is the argument `QRPAGER-16`'s own 2026-10-25 comment makes.
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - run: pnpm run lint:es
+
+      # The CSS half of the no-hard-coded-values rule. ESLint has no CSS parser here and
+      # Tailwind v4 keeps its theme in CSS, so a rule that only read TypeScript would leave
+      # the one format where colours actually live unchecked. Both readers share one pattern
+      # list (tools/design-tokens/patterns.mjs) and both are proven on committed fixtures.
+      - run: pnpm run lint:tokens
+
+      # The Filament panels' half, Task 8b. A THIRD reader of the SAME pattern list, over the
+      # panels' authored PHP and Blade -- ESLint parses neither, and `lint:tokens` exempts
+      # apps/api by name ("composer guard rule 11 covers it", which is about a TENANT theme).
+      #
+      # ⚠ IT IS LOAD-BEARING WHERE THE APPS' EQUIVALENT IS NOT. The apps' theme clears
+      # Tailwind's namespaces, so `p-5` and `bg-red-500` do not compile there and the lint
+      # rule is a second mechanism for something already impossible. The panels CANNOT clear:
+      # SR-1 measured that Filament consumes the default theme, so the bare `--spacing` key
+      # and `--color-white`/`--color-black` survive by necessity -- 328 vendor @apply sites
+      # for the colours and three `--spacing(…)` calls -- and for those this rule is the only
+      # instrument. It found 34 real findings on its first run and refuses an empty target
+      # list rather than reporting "0 file(s) scanned" and exiting 0.
+      - run: pnpm run lint:panel
+
+      # ⚠ THIS STEP WAS MISSING, and the gap is the reason the parity check below it now
+      # exists. `lint:shell` was added to `pnpm gate` and to the `lint` script and never to
+      # this job, so the $? hazard checker ran locally and not in CI -- which is the
+      # "a green local gate and a green CI are two different claims" shape `R-126` is about,
+      # one step over.
+      #
+      # tools/gate/bin/check-shell-evidence: every executable script must `set -o pipefail`
+      # and no `$?` may be read after a pipe or a command substitution. Proven to fail on
+      # tools/gate/fixtures/bad-evidence.sh.fixture.
+      - run: pnpm run lint:shell
+
+      - run: pnpm run format:check
+
+      - run: pnpm run typecheck
+
+      # §6.2's shared contracts, the TypeScript-sourced half. The token set lives in
+      # TypeScript, so Node emits the CSS custom properties, Tailwind's @theme block, the TS
+      # values, the contrast table in two formats, the ticket's evidence copy of it AND the
+      # PHP config Filament consumes in 8b (D5) -- and this byte-diffs all of them against
+      # what the source produces right now. The PHP-sourced half (the TS status mirror) is
+      # `composer contracts:check` in the `gates` job above, because its source is the PHP
+      # enum registry.
+      #
+      # ⚠ THAT LAST SENTENCE WAS FALSE WHEN IT WAS WRITTEN. `composer contracts:check` was in
+      # `apps/api/bin/gate` and in NO step of the `gates` job, so this comment described a
+      # control that did not exist -- found independently by both §11 reviewers. The step is
+      # there now and `ci-parity.test.mjs` asserts the PHP gate and that job carry the same
+      # steps, which is the mechanism that makes a comment like this one checkable.
+      #
+      # Each artefact is proven to fail on a deliberately stale file, with the exit code read
+      # directly rather than through a pipe.
+      - name: The generated token artefacts are not stale
+        run: pnpm run tokens:check
+
+      # §11.7's dependency clause, and it existed nowhere before this fix. The first run
+      # returned five advisories -- 2 high, 3 moderate -- against a diff that adds 3,184
+      # lockfile lines. `--audit-level low` so no severity is filtered out silently. The two
+      # `overrides` in pnpm-workspace.yaml that close today's five carry their advisory ids
+      # and the measurement that an override was the only instrument available (next@15.5.28
+      # hard-pins postcss 8.4.31 and §1 locks Next 15).
+      - name: Known CVEs in the dependency tree — §11.7
+        run: pnpm run audit
+
+      # ⚠ BEFORE VITEST, AND THAT ORDER IS THE FIX FOR §11 QA C-1. `build-surface.test.ts`
+      # reads the BUILT document and FAILS rather than skips when it is absent, so with the
+      # builds last this job was deterministically red on any runner with no `.next` -- which
+      # is every CI runner. `ci-parity.test.mjs` asserts this ordering in both halves, so it
+      # cannot drift back.
+      - name: Both Next.js apps build
+        run: |
+          pnpm --filter @qrpager/web run build
+          pnpm --filter @qrpager/site run build
+
+      # §6's "unit coverage >= 90% on code this task added", with Vitest as ADR-003 names.
+      # The thresholds are in vitest.config.ts, so a run below them exits non-zero here.
+      - name: Vitest, with the >= 90% coverage thresholds
+        run: pnpm exec vitest run --coverage
+
+      # R-118's four computed-style clauses: a visible focus ring, a measured 44px target,
+      # resolved contrast, and prefers-reduced-motion actually suppressing motion. All four
+      # are computed styles and jsdom computes none of them, which is why they need a real
+      # browser and why asserting them in Vitest would have been one of the weak assertions
+      # R-118 exists to refuse.
+      - name: The browser checks — R-118's four clauses
+        run: pnpm run test:browser
+
+      # §11 round one rulings (b) and (c): §0's stated state against the tags and the ledger,
+      # and every committed gate transcript against its own exit code. Both failures were real
+      # at a6f9a47 and both were found by a reviewer rather than by a gate.
+      #
+      # ⚠ AFTER THE TEST STEPS AS OF 2026-11-02, AND IT USED TO BE BEFORE THEM. The reason is
+      # written out in `tools/gate/bin/gate.mjs` beside the same step: check (b4) compares the
+      # totals §0 states against the transcript of this very run, so running it first
+      # deadlocks a task's FIRST measurement -- the gate dies before the totals exist, and the
+      # only ways past are a hand-made placeholder (§11 QA H-3's finding) or deleting the
+      # figures from §0. `ci-parity.test.mjs` asserts that both halves RUN this step rather
+      # than where, so the two stay in step by membership and this comment carries the order.
+      - name: §0 and the committed transcripts agree with reality
+        run: pnpm run records:check
+
+      # ⚠ ON EVERY PUSH, NOT AT THE END OF A TASK, AND THAT IS THE RULING THIS FAMILY EARNED.
+      # A fresh-clone pass was a thing a builder ran once, by hand, when they remembered --
+      # and three tasks running it late have each cost a review round: 8a's
+      # pnpm-before-corepack, 8b's vendor-before-build, Task 9's vitest-before-build (QA C-1,
+      # caught at review rather than at commit 1). `§7`: a recurrence means the regression
+      # test was missing. This is that test, as a step, so the clone is proven on the push
+      # that breaks it.
+      - name: A fresh clone builds, lints and tests — §6's clause, as a step
+        run: tools/gate/bin/fresh-clone-proof
+
+      # A generated artefact or a build output left modified means something in this job
+      # wrote to the tree, and a committed artefact that disagrees with its generator is the
+      # quietest kind of wrong -- the whole reason the staleness checks exist. A clean tree
+      # is the assertion that nothing slipped past them.
+      - name: The working tree is unchanged by this job
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      - name: The gate log, on failure
+        if: failure()
+        run: cat storage/logs/*.log 2>/dev/null || true
+
   runtime:
     name: FrankenPHP runtime — SIGTERM drain and a Redis outage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     # Q7: "the drain proof runs in CI, not only locally." It cannot run in the gates job:
     # `php artisan test` has no FrankenPHP, no worker loop and no process to signal, so a
@@ -245,7 +794,7 @@ jobs:
     # One job for both, so the image is built once: the second proof reuses the layers of
     # the first.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
 
       - name: Postgres and Redis, from the project's own compose file
         run: docker compose -f compose.yaml up -d --wait postgres redis

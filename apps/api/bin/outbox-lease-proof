@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# "Nothing duplicated" for MORE THAN ONE WORKER -- PLAN.md §3 row 4, and R-083's closing gate.
+#
+# THIS SCRIPT RUNS TWO REAL WORKERS AT ONCE. Two `php artisan outbox:work --once`
+# processes against one database, a short lease, and a push edge that takes measurable
+# time per send -- which is the configuration the design claims to support and the one
+# nothing had ever been run in. bin/outbox-kill-proof proves ONE worker is correct across
+# a crash; this proves TWO are correct against EACH OTHER.
+#
+# WHAT R-083 WAS. OutboxWorker::claim() leased every claimed row to `now() + lease_seconds`
+# inside one short transaction and committed; pass() then walked the batch one row at a
+# time. After that commit SKIP LOCKED protects nothing -- only `available_at` does -- so
+# any row the first worker had not reached by `claim_time + lease_seconds` was `pending AND
+# available_at <= now()` again, a second worker claimed it, and BOTH sent. QA and Security
+# found it independently, from the batch-wide lease and from the unbounded device count.
+#
+# WHY THE EDGE IS THE WITNESS AND THE TABLE IS NOT. The duplicate leaves no trace in
+# `outbox`: the losing worker's finish() is keyed and guarded by `status = 'pending'`, so
+# it reports 0 affected rows and writes nothing. Reading the table afterwards shows eight
+# rows sent exactly once while sixteen notifications went out. Only the edge can count.
+#
+# ⚠ THE PARAMETERS, AND ONE DELIBERATE DEPARTURE FROM R-083's CLOSING GATE. That row
+# specifies `lease_seconds=1`, `batch_size=8` and "an edge that sleeps ~1 s per send". The
+# first two are used verbatim. THE SEND IS 250 ms AND NOT ~1 s, because a ~1 s send against
+# a 1 s lease is a configuration in which NO per-row re-lease can hold: the fix bounds the
+# duplicate window by ONE ROW'S processing, so the lease must EXCEED one row's processing,
+# which is exactly the precondition config/webpush.php now states and sizes
+# `max_devices_per_session` against. At 1 s per send against a 1 s lease the worker loses
+# the row WHILE sending it, and no statement placed before the send can see that coming.
+# Written down rather than quietly adjusted: the gate's parameters describe a system that
+# cannot satisfy the gate, and that is worth more as a correction than as a passing run.
+#
+# THE SHAPE, and why it is red before the fix and green after:
+#
+#   t=0.00  worker A claims all 8 rows, leases them to t=1.00, starts sending at 250ms each
+#   t=1.25  worker B starts. Rows A has not re-leased are claimable again.
+#
+#   WITHOUT the re-lease: A has sent 4 by t=1.00 and keeps walking rows 5..8 on a lease it
+#   no longer holds. B claims those same rows and sends them too -> 12 requests, 4 of the
+#   8 endpoints buzzed twice.
+#
+#   WITH the re-lease: A re-takes the lease on each row immediately before its send. Rows
+#   5 and 6 are re-leased in time and extended; rows 7 and 8 are not reached before t=1.00,
+#   so B claims them, and when A gets there its re-lease matches no row (`attempts` moved)
+#   and A SKIPS them silently. 8 requests, each endpoint exactly once -- across a lease
+#   that genuinely lapsed mid-batch, which is the point.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# R-054/CLAUDE.md: without this, laravel/pao prints one JSON line inside an agent session
+# and a red run leaves no frames on disk for whoever reads it next.
+export PAO_DISABLE=1
+
+rows="${1:-8}"
+lease="${OUTBOX_LEASE_SECONDS:-1}"
+send_ms="${OUTBOX_SEND_MS:-250}"
+second_worker_delay="${OUTBOX_SECOND_WORKER_DELAY:-1.25}"
+
+state="$(mktemp -d)"
+trap 'rm -rf "$state"' EXIT
+
+echo "outbox-lease-proof — $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "  rows: $rows · lease_seconds: $lease · send: ${send_ms}ms · second worker at +${second_worker_delay}s"
+
+# Its own database, for bin/outbox-kill-proof's reason: a proof that inherits .env runs
+# against whatever the developer happens to have, and this one TRUNCATES before it seeds.
+export DB_DATABASE="${OUTBOX_PROOF_DATABASE:-qrpager_outbox_proof}"
+
+# The lease and the batch are passed to each worker process, which overrides them AFTER
+# bootstrap -- so the committed config/webpush.php is untouched and the proof cannot pass
+# by changing the thing it measures.
+
+php artisan db:bootstrap >/dev/null || { echo "outbox-lease-proof: db:bootstrap failed" >&2; exit 1; }
+php artisan migrate --database=pgsql_owner --force >/dev/null || {
+  echo "outbox-lease-proof: migrate failed" >&2
+  exit 1
+}
+
+echo "  database: $DB_DATABASE (bootstrapped and migrated)"
+echo
+
+php bin/support/outbox-proof-seed.php "$rows" > "$state/seed.json" || {
+  echo "outbox-lease-proof: seeding failed" >&2
+  cat "$state/seed.json" >&2
+  exit 1
+}
+
+echo "seeded:"
+cat "$state/seed.json"
+echo
+
+# ---------------------------------------------------------------------------------
+# Two workers. A starts now and takes the whole batch; B starts after the lease A took
+# has lapsed, which is the instant the defect becomes reachable.
+# ---------------------------------------------------------------------------------
+: > "$state/a.log"
+: > "$state/b.log"
+
+php bin/support/outbox-lease-worker.php "$state/a.log" "$send_ms" "$lease" "$rows" > "$state/a.out" 2>&1 &
+a=$!
+
+sleep "$second_worker_delay"
+
+php bin/support/outbox-lease-worker.php "$state/b.log" "$send_ms" "$lease" "$rows" > "$state/b.out" 2>&1 &
+b=$!
+
+wait "$a"; a_status=$?
+wait "$b"; b_status=$?
+
+echo "worker A (pid $a) exited $a_status:"
+sed 's/^/  /' "$state/a.out"
+echo "worker B (pid $b) exited $b_status:"
+sed 's/^/  /' "$state/b.out"
+echo
+
+if [ "$a_status" -ne 0 ] || [ "$b_status" -ne 0 ]; then
+  echo "outbox-lease-proof: a worker exited non-zero, so the counts below prove nothing" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------------
+# A row neither worker reached is not this proof's subject -- it is the recovery case
+# bin/outbox-kill-proof already covers -- so drain whatever is left before asserting, and
+# count ITS requests too. A duplicate here would still be a duplicate.
+# ---------------------------------------------------------------------------------
+php bin/support/outbox-proof-release.php || exit 1
+
+php bin/support/outbox-lease-worker.php "$state/c.log" 0 "$lease" "$rows" > "$state/c.out" 2>&1 || {
+  echo "outbox-lease-proof: the drain pass failed" >&2
+  cat "$state/c.out" >&2
+  exit 1
+}
+sed 's/^/  /' "$state/c.out"
+echo
+
+php bin/support/outbox-lease-assert.php "$rows" "$state/a.log" "$state/b.log" "$state/c.log"

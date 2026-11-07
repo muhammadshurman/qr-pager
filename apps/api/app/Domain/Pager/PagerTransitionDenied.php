@@ -62,6 +62,26 @@ final class PagerTransitionDenied extends DomainException
         );
     }
 
+    /**
+     * A re-issue refused because the order is already finished. Task 10d.
+     *
+     * Its own constructor for `cannotRenotify()`'s reason: a re-issue changes no status, so
+     * there is no `to` and `between()` would have to invent one to describe it. The message
+     * names the one thing a staff member needs to know — a new code for a finished order would
+     * buzz nobody — and the SCREEN's own sentence (`staff.issue.reissue.finished`) says it in
+     * a restaurant owner's words, because this text never reaches a response body.
+     */
+    public static function cannotReissue(PagerStatus $from): self
+    {
+        return new self(
+            "A pager session in [{$from->value}] cannot be re-issued. "
+            .'A new code for an order that is already finished, cancelled or expired would '
+            .'notify nobody; issue a new pager instead.',
+            $from,
+            null,
+        );
+    }
+
     /** A renotify refused because the per-session cap is reached. */
     public static function renotifyLimitReached(PagerStatus $from, int $limit): self
     {

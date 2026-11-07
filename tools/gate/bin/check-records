@@ -1,0 +1,1266 @@
+#!/usr/bin/env node
+/**
+ * =============================================================================
+ * THE RECORD IS CHECKED, NOT TRUSTED — `§11` round one's ruling (b) and (c)
+ * =============================================================================
+ *
+ * Two families produced a third of Task 9's 28 review findings, and both are about the
+ * REPOSITORY'S OWN ACCOUNT OF ITSELF rather than about code:
+ *
+ *   (b) RECORD STALENESS. `PLAN.md §0` is the one place that states where the project is, and
+ *       at `a6f9a47` it still said *"The last COMPLETED task is therefore Task 8b"*, *"⛔ TASK 9
+ *       DOES NOT START YET"* and *"`§5` holds 171 rows"* while the file held 205 and Task 9 was
+ *       built and green. `CLAUDE.md` tells every session to read `§0` FIRST and says nothing
+ *       else states current state, so a stale `§0` is not a documentation lapse — it is the
+ *       one input a cold session trusts, wrong.
+ *
+ *   (c) TRANSCRIPT PROVENANCE. Task 9 committed a PHP transcript reading `1167 passed` against
+ *       a head that measures 1169, a frontend transcript reading `802` against 804, and an
+ *       `e2e` transcript whose last lines are `run 1 did not complete` and `EXIT=1` — while
+ *       `§4a` claimed *"all three gates green"*. A FAILED run shipped as the evidence for a
+ *       green claim.
+ *
+ * `PLAN §4a`'s own most-frequent-defect line is about false claims in the record. A claim a
+ * script can check should not be a thing a reviewer finds.
+ *
+ * ⚠ EVERY CHECK HERE IS DERIVED FROM THE REPOSITORY, NEVER FROM A LITERAL IN THIS FILE. The
+ * row count is counted, the tag list comes from `git tag`, the test totals come from the
+ * transcripts themselves. A check that carried its own expected value would be the second
+ * source this project keeps paying for.
+ *
+ * USAGE:  tools/gate/bin/check-records          check
+ *         tools/gate/bin/check-records --self-test   prove each check fails on a bad input
+ */
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+
+const REPO = join(dirname(new URL(import.meta.url).pathname), '..', '..', '..')
+const PLAN = join(REPO, 'docs', 'PLAN.md')
+
+const failures = []
+
+function fail(check, message) {
+  failures.push(`${check}: ${message}`)
+}
+
+function git(...args) {
+  return execFileSync('git', args, { cwd: REPO, encoding: 'utf8' }).trim()
+}
+
+/**
+ * The same, with git's own stderr discarded.
+ *
+ * For the calls whose FAILURE is a finding -- a sha that does not resolve, a commit that is not
+ * an ancestor -- git writes `fatal: …` to stderr on its way to a non-zero exit, and that line
+ * lands in the gate log looking like the script itself broke. The exit code is the signal here;
+ * the message is noise.
+ */
+function gitQuiet(...args) {
+  return execFileSync('git', args, {
+    cwd: REPO,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim()
+}
+
+/**
+ * A committed transcript's text, with terminal colour removed.
+ *
+ * ⚠ THE ESCAPES ARE WHY A GREEN GATE'S TOTAL BECAME UNREADABLE, measured 2026-11-02. A
+ * `composer gate` run captured to a file wrote `Tests:` wrapped in SGR sequences, so (b4)'s
+ * `/^\s*Tests:\s+(\d+) passed/m` matched nothing and the check reported *"the committed
+ * transcript records no total this check can read"* against a transcript that plainly records
+ * one. `NO_COLOR=1` does not suppress it — `php artisan test` spawns Pest with its own colour
+ * decision — so the fix belongs HERE: a check must read what the gate actually writes, not a
+ * version of it somebody tidied by hand. The alternative was stripping the codes before
+ * committing, which makes the artefact a thing a person edited, and `§6`'s whole point about
+ * evidence is that nobody edits it.
+ *
+ * Only SGR colour sequences are removed. Nothing else about the bytes changes, so a figure,
+ * a failure line and the `EXIT=` trailer all read exactly as written.
+ */
+function plain(text) {
+  // eslint-disable-next-line no-control-regex -- the escape is the thing being matched
+  return text.replace(/\u001b\[[0-9;]*m/g, '')
+}
+
+/** `§0` is everything before the first `## 1.`-style heading. */
+function sectionZero(plan) {
+  const end = plan.search(/^## 1\./m)
+
+  return end === -1 ? plan : plan.slice(0, end)
+}
+
+/**
+ * (b1) THE STATED §5 ROW COUNT IS THE ACTUAL ONE.
+ *
+ * `§0`'s *Open debt* cell states a count and a range. Both are counted here from the table
+ * itself, with the same command that cell prescribes.
+ */
+export function checkRowCount(plan) {
+  const rows = [...plan.matchAll(/^\| \*\*(R-\d+)\*\*/gm)].map((m) => m[1])
+  const unique = [...new Set(rows)]
+  const highest = unique
+    .map((id) => Number.parseInt(id.slice(2), 10))
+    .reduce((a, b) => Math.max(a, b), 0)
+
+  /**
+   * ⚠ THE *FIRST* COUNT IN THE *Open debt* CELL, AND ONLY THAT ONE. The cell is written
+   * newest-first and deliberately KEEPS every superseded count behind a *"the superseded cell
+   * follows"* marker — 171 from Task 8a, 170 from Task 7. Those are history, not claims about
+   * now, and a check that read them all would demand the file lie about its own past. The
+   * current claim is the first one; that is the one a cold session reads and the one this
+   * check is for.
+   */
+  const cell = (/^\| \*\*Open debt[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  // Both spellings §0 has used: `**171** rows` and plain `171 rows`.
+  const claimed = /`§5` holds \*{0,2}(\d+)\*{0,2} rows/.exec(cell)
+
+  if (claimed === null) {
+    fail(
+      'records(b1)',
+      'the §0 *Open debt* cell states no `§5` row count, so the count cannot be checked',
+    )
+
+    return
+  }
+
+  const n = Number(claimed[1])
+
+  if (n !== unique.length) {
+    fail(
+      'records(b1)',
+      `§0's *Open debt* cell says \`§5\` holds ${n} rows; the table holds ${unique.length} (highest R-${String(highest).padStart(3, '0')})`,
+    )
+  }
+}
+
+/**
+ * (b2) `§0`'s *Last completed* NAMES A TAG THAT EXISTS, AND NAMES THE LATEST ONE.
+ *
+ * The failure this catches is `§0` describing a delivery record that the tags contradict --
+ * either naming a tag nobody created, or still naming the previous task after a new tag
+ * landed. `git tag` is the authority; `§0` is the claim.
+ */
+export function checkTagReality(plan) {
+  const tags = git('tag', '--list', 'task-*')
+    .split('\n')
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
+
+  /**
+   * ⚠ AN EMPTY TAG LIST IS A FAILURE, AND IT USED TO BE AN EARLY RETURN. `§11` round two, QA
+   * M-5: a default `actions/checkout` fetches no tags, so this check was vacuous precisely where
+   * the diff deployed it — proven in a `--depth 1 --no-tags` clone of the head, which reported
+   * agreement having read zero tags. CI passes `fetch-tags: true` now, and this says so rather
+   * than passing quietly if that is ever removed.
+   */
+  if (tags.length === 0) {
+    fail(
+      'records(b2)',
+      'no `task-*` tags are visible, so §0 cannot be checked against the delivery record — a shallow checkout needs `fetch-tags: true`',
+    )
+
+    return
+  }
+
+  /**
+   * ⚠ THE *Last completed* CELL ONLY, BECAUSE THAT CELL IS THE DELIVERY RECORD. The rest of
+   * `§0` legitimately names tags that do NOT exist — the whole point of the *Next up* cell
+   * today is that `task-9` is deliberately UNTAGGED and says why. Checking every mention
+   * would forbid `§0` from stating the one fact it most needs to state.
+   */
+  const cell = (/^\| \*\*Last completed\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const named = [...cell.matchAll(/`(task-[0-9][0-9a-z]*)`/g)].map((m) => m[1])
+  const unknown = [...new Set(named)].filter((t) => !tags.includes(t))
+
+  if (unknown.length > 0) {
+    fail(
+      'records(b2)',
+      `§0's *Last completed* cell names tags that do not exist: ${unknown.join(', ')}`,
+    )
+  }
+
+  const latest = tags[tags.length - 1]
+
+  /**
+   * ⚠ **A COMMIT CANNOT NAME THE TAG THAT POINTS AT IT, AND DEMANDING SO MADE THIS CHECK FAIL
+   * ON EVERY TAG-REF CI RUN.**
+   *
+   * The sequence is forced: the gates are measured, the commit is pushed, CI goes green, THEN
+   * the tag is applied to that commit. `§0` can only name the tag in a LATER commit — so at the
+   * tagged commit itself the cell cannot name it, and there is no ordering that fixes it.
+   * Naming it first would name a tag that does not exist, which is this function's other half.
+   *
+   * CI runs on tag pushes as well as branch pushes, so `refs/tags/task-11a` built `e2e209b` and
+   * `records(b2)` reported *"the latest tag is task-11a and §0's Last completed cell does not
+   * name it"* — the one job to fail in that run, on a condition no commit could have satisfied.
+   * Measured 2026-11-03; the same thing was true of `task-10` and `task-11` and went unnoticed
+   * because nobody read their tag-ref runs.
+   *
+   * So the demand is skipped when **HEAD IS the latest tag's own target**, and only then. One
+   * commit later it bites again, which is the case that matters: `§0` still naming the previous
+   * task after a new tag landed is the drift this check was written for, and it has caught it
+   * twice in two days.
+   */
+  const latestTarget = git('rev-list', '-n', '1', `refs/tags/${latest}`)
+  const head = git('rev-parse', 'HEAD')
+
+  if (latestTarget !== '' && latestTarget === head) {
+    return
+  }
+
+  if (!named.includes(latest)) {
+    fail(
+      'records(b2)',
+      `the latest tag is ${latest} and §0's *Last completed* cell does not name it`,
+    )
+  }
+}
+
+/**
+ * (c) A COMMITTED TRANSCRIPT MATCHES THE HEAD AND RECORDS A SUCCESS.
+ *
+ * Two independent failures, both of which shipped at `a6f9a47`:
+ *   - a figure measured against a parent that has since changed, and
+ *   - a transcript whose own last line is a non-zero exit, offered as evidence of green.
+ *
+ * The expected totals are not written here. The PHP total is read from the committed
+ * transcript and compared against the suite's own count of what it would run now, which is
+ * `--list-tests`; the Vitest total likewise. A transcript is allowed to be ABSENT -- not every
+ * task commits every artefact -- but one that exists must be current and must be green.
+ */
+/**
+ * The ticket `§0`'s *Next up* cell names first, or null when it names none.
+ *
+ * Used to scope the transcript-currency check to the delivery in flight — see the comment at
+ * its call site for why a previous ticket's transcript must not be held to the current suite.
+ */
+function inFlightTicket(plan) {
+  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+  const found = /`(QRPAGER-\d+)`/.exec(cell)
+
+  return found === null ? null : found[1]
+}
+
+export function checkTranscripts(inFlight, dir = join(REPO, 'docs', 'tickets')) {
+  if (!existsSync(dir)) return
+
+  const head = git('rev-parse', 'HEAD')
+  const current = new Set(
+    git('show', '--name-only', '--format=', 'HEAD').split('\n').filter(Boolean),
+  )
+
+  for (const name of readdirSync(dir)) {
+    /**
+     * ⚠ **A `-revert-record` TRANSCRIPT IS RED ON PURPOSE AND IS OUTSIDE THIS SET, NAMED HERE
+     * RATHER THAN LEFT TO THE REGEX.** Muhammad's standing instruction of 2026-11-03 requires
+     * every new proof to be SHOWN TO REDDEN once, with the output recorded beside it — so
+     * those transcripts contain `FAILED --` and `EXIT=1` by design, which is the opposite of
+     * what the checks below demand.
+     *
+     * The name does not match the pattern on the next line, so nothing changes mechanically.
+     * It is written down because the `-baseline-` note two comments down makes the rule
+     * explicit for exactly this reason: *"Named rather than inferred, so a transcript cannot
+     * dodge this check by accident."* Somebody widening that pattern to `[a-z-]*` over all
+     * names would otherwise make every revert record a gate failure, and the honest fix then
+     * looks like deleting the evidence.
+     *
+     * The distinction is the one the `-lighthouse` note already draws: a transcript of a
+     * DECLARED non-delivery is evidence, a transcript of a gate that failed is not.
+     */
+    if (name.includes('-revert-record')) continue
+
+    if (!/-(gate|e2e|three-runs|fresh-clone)[a-z-]*\.txt$/.test(name)) continue
+
+    /**
+     * ⚠ A `-baseline-` TRANSCRIPT IS FROM THE BASE COMMIT BY DESIGN and must not be held to the
+     * head's figures: `QRPAGER-16-baseline-composer-gate.txt` records 1163 at `58ca1ea` and that
+     * is the point of it. Named rather than inferred, so a transcript cannot dodge this check by
+     * accident.
+     */
+    if (name.includes('-baseline-')) continue
+
+    /**
+     * ⚠ AND ONLY THE TICKET `§0` SAYS IS IN FLIGHT IS HELD TO THE CURRENT SUITE. A previous
+     * ticket's transcript is evidence for ITS tag, taken when the suite was smaller:
+     * `QRPAGER-15-gate-php.txt` records 1101 and the suite now enumerates 1172, which is the
+     * suite having GROWN, not a stale claim. The first version of this check flagged it, and
+     * flagging honest history is how a checker gets switched off.
+     *
+     * `§0` is the authority this whole script exists to verify, so scoping by what `§0` names is
+     * consistent rather than a second source: the ticket in flight is the one its *Next up* cell
+     * names first.
+     */
+    if (inFlight !== null && !name.startsWith(`${inFlight}-`)) continue
+
+    /**
+     * ⚠ `-lighthouse.txt` IS DELIBERATELY NOT IN THAT LIST, AND THE REASON IS THE WHOLE POINT
+     * OF THIS CHECK RATHER THAN AN EXCEPTION TO IT. `lighthouse-proof` exits non-zero when the
+     * median is under the bar, and for Task 9 it IS under the bar: median under the bar. That
+     * non-zero exit is the MEASUREMENT `R-205` records, with an owner and a date — not a gate
+     * that failed and was committed anyway. Requiring it to be green would require either
+     * deleting the evidence or re-running until a 95 appeared, which are the two things the
+     * record exists to prevent. A transcript of a DECLARED non-delivery is evidence; a
+     * transcript of a gate that failed is not, and `§4a` must not cite the second as the first.
+     */
+
+    const path = join(dir, name)
+    const text = plain(readFileSync(path, 'utf8'))
+
+    // A non-zero exit recorded anywhere in the transcript's own trailer.
+    const exits = [...text.matchAll(/^EXIT=(\d+)$/gm)].map((m) => Number(m[1]))
+
+    /**
+     * ⚠ A TRAILER IS REQUIRED, NOT MERELY CHECKED WHEN PRESENT. `§11` round two, QA L-4 and
+     * SEC-R2 M-4: this only failed on a non-zero `EXIT=`, so a transcript with the line DELETED
+     * passed — and `QRPAGER-16-e2e.txt` shipped with no trailer at all, which is the one
+     * artefact round one's H-4 was about. Both reviewers measured it.
+     */
+    if (exits.length === 0) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} records no EXIT= trailer, so nothing says whether the run it transcribes succeeded`,
+      )
+    }
+
+    if (exits.some((code) => code !== 0)) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} records EXIT=${exits.filter((c) => c !== 0).join(',')} -- a failed run committed as evidence`,
+      )
+    }
+
+    if (/gate: FAILED|did not complete|FAILED --/.test(text)) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} contains a failure line, so it is not evidence of a green gate`,
+      )
+    }
+
+    /**
+     * ⚠ PROVENANCE, AND THIS WAS DEAD CODE BEHIND A SUCCESS MESSAGE THAT CLAIMED IT RAN.
+     * `§11` round two, QA M-4 and SEC-R2 M-4 — both reviewers found it independently, and both
+     * proved it by falsifying a committed total and watching the script report *"every
+     * committed transcript is current and green"*. The body computed two values and discarded
+     * them (`void head`). A new gate step whose success line overstates what it checked is the
+     * defect the step was commissioned to stop.
+     *
+     * ⚠ AND THE FIRST REPLACEMENT WAS ALSO WRONG, recorded because it is the same mistake one
+     * layer along: it only checked a transcript committed in the SAME commit as the head, so
+     * one further commit made it inert again — which is exactly how the original went unnoticed.
+     * Keyed on the commit, the check is dead the moment anything else lands. Every matched
+     * transcript is checked now, whatever commit it arrived in, because `§4a` cites all of them
+     * as the evidence for the CURRENT head.
+     */
+    if (!/-gate-php\.txt$/.test(name)) continue
+
+    const claimed = /^\s*Tests:\s+(\d+) passed/m.exec(text)
+
+    if (claimed === null) continue
+
+    const counted = countPhpTests()
+
+    if (counted !== null && counted !== Number(claimed[1])) {
+      fail(
+        'records(c)',
+        `docs/tickets/${name} claims ${claimed[1]} tests and the suite now enumerates ${String(counted)} — measured against a different tree`,
+      )
+    }
+  }
+}
+
+/**
+ * How many tests the PHP suite would run NOW, enumerated rather than executed.
+ *
+ * ⚠ THE PHP HALF ONLY, AND THE FRONTEND HALF IS DELIBERATELY NOT CHECKED THIS WAY. `php artisan
+ * test --list-tests` prints one line per case and its count is EXACT — measured 1172 against a
+ * transcript reading 1172. `vitest list` does NOT expand parameterised cases: it reports 616
+ * where the run reports 812, so comparing it to a run total would fail on every honest
+ * transcript. A check that fires falsely is worse than one that is absent, and an absent one
+ * that is CLAIMED is worse than both — which is this finding. So the frontend transcript is
+ * covered by the exit-code rule and by `ci-parity`'s step assertions, and not by a count.
+ *
+ * Null when the enumeration cannot be trusted — a missing `php`, a boot failure — which is
+ * treated as *cannot check* rather than as a stale transcript.
+ */
+function countPhpTests() {
+  try {
+    const out = execFileSync('php', ['artisan', 'test', '--list-tests'], {
+      cwd: join(REPO, 'apps', 'api'),
+      encoding: 'utf8',
+      env: { ...process.env, PAO_DISABLE: '1' },
+      maxBuffer: 64 * 1024 * 1024,
+    })
+    const n = (out.match(/^\s*-\s/gm) ?? []).length
+
+    return n > 0 ? n : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * (b3) `§0`'s OWN PROVENANCE SHA IS IN THIS HISTORY, AND NOTHING OUTSIDE `docs/` HAS MOVED SINCE.
+ *
+ * ⚠ THIS CHECK EXISTS BECAUSE THE SCRIPT WAS GREEN AT `c6f5fc0` WHILE `§0` SAID *"Head on
+ * `task-9-customer-pwa` is `8027ad9`"* -- one commit behind, in the cell `CLAUDE.md` sends every
+ * cold session to first, inside the very commit titled *"§0 names the head"*. `§11` round one's
+ * QA H-3 and H-4 were both this family and both were found by a reviewer; (b1), (b2) and (c)
+ * were built for them and none of the three reads the head claim at all.
+ *
+ * ⚠ AND EXACT EQUALITY WITH `HEAD` IS UNSATISFIABLE, WHICH IS WHY THE CLAIM WENT STALE RATHER
+ * THAN BEING KEPT: a file cannot state the sha of the commit that contains it -- writing the
+ * sha changes it. So *"the head is X"* is false the moment it is true, and the honest claim is
+ * about PROVENANCE instead: the commit the figures were measured at, plus the assertion that
+ * nothing since then invalidates them. That is checkable and it never goes falsely stale.
+ *
+ * TWO RULES, and the second is what catches the instance above verbatim:
+ *
+ *   1. `Gates measured at <sha>` must resolve, must be an ancestor of `HEAD` or `HEAD` itself,
+ *      and `git diff <sha>..HEAD` must touch NOTHING outside `docs/`. A code commit after the
+ *      measurement is exactly QA H-4's defect -- a figure measured against a different tree --
+ *      and it is named here rather than discovered by the next reviewer.
+ *   2. A bare `Head on <branch> is <sha>` claim, the phrasing that went stale, must equal
+ *      `HEAD` exactly. It cannot be kept true, so the rule refuses the phrasing rather than
+ *      pretending to police it; rule 1's form is the replacement.
+ */
+export function checkStatedHead(plan, headSha = null) {
+  const whole = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0]
+
+  /**
+   * ⚠ THE CURRENT CLAUSE ONLY, AND EVERYTHING AFTER THE FIRST `———` IS HISTORY. `§0`'s cells
+   * are written newest-first and deliberately KEEP every superseded clause behind that marker,
+   * exactly as the *Open debt* cell does for its row counts -- so a check that read the whole
+   * cell would hold Task 8a's or Task 7's old state to today's `HEAD` and demand the file lie
+   * about its own past. `checkRowCount` already scopes this way for the same reason.
+   */
+  const cell = whole.split('———')[0]
+  const head = headSha ?? git('rev-parse', 'HEAD')
+
+  /** Rule 2 first: the phrasing that cannot be kept true. */
+  const bare = /Head on `[^`]+` is \*{0,2}`([0-9a-f]{7,40})`\*{0,2}/.exec(cell)
+
+  if (bare !== null && !head.startsWith(bare[1])) {
+    fail(
+      'records(b3)',
+      `§0's *Next up* says the head is \`${bare[1]}\` and HEAD is \`${head.slice(0, 7)}\` — ` +
+        'a sha cannot name the commit that contains it, so state `Gates measured at <sha>` instead',
+    )
+  }
+
+  const stated = /Gates measured at \*{0,2}`([0-9a-f]{7,40})`\*{0,2}/.exec(cell)
+
+  if (stated === null) {
+    // Only demanded once the bare phrasing is gone, so this check cannot fail a §0 twice for
+    // the same sentence.
+    if (bare === null) {
+      fail(
+        'records(b3)',
+        "§0's *Next up* cell states no `Gates measured at <sha>`, so the figures beside it have no provenance",
+      )
+    }
+
+    return
+  }
+
+  let resolved
+
+  try {
+    resolved = gitQuiet('rev-parse', '--verify', `${stated[1]}^{commit}`)
+  } catch {
+    fail(
+      'records(b3)',
+      `§0 names \`${stated[1]}\` as the measured commit and it does not resolve in this repository`,
+    )
+
+    return
+  }
+
+  try {
+    gitQuiet('merge-base', '--is-ancestor', resolved, head)
+  } catch {
+    fail(
+      'records(b3)',
+      `§0 names \`${stated[1]}\` as the measured commit and it is not an ancestor of HEAD \`${head.slice(0, 7)}\``,
+    )
+
+    return
+  }
+
+  /**
+   * ⚠ `docs/` ONLY, AND THAT BOUNDARY IS THE WHOLE RULE. The record is allowed to be written
+   * in commits AFTER the measurement -- that is how a record gets written at all -- but a
+   * change to code, tests, workflows or lockfiles between the two means every figure in the
+   * cell was measured against a tree that no longer exists.
+   */
+  const drifted = git('diff', '--name-only', `${resolved}..${head}`)
+    .split('\n')
+    .filter((f) => f.length > 0 && !f.startsWith('docs/'))
+
+  if (drifted.length > 0) {
+    fail(
+      'records(b3)',
+      `§0's figures are measured at \`${stated[1]}\` and ${String(drifted.length)} file(s) outside \`docs/\` ` +
+        `have changed since (${drifted.slice(0, 3).join(', ')}${drifted.length > 3 ? ', …' : ''}) — re-measure or re-state`,
+    )
+  }
+}
+
+/**
+ * (b4) EVERY TEST TOTAL `§0` STATES IS THE ONE ITS OWN COMMITTED TRANSCRIPT RECORDS.
+ *
+ * ⚠ FOUND BY HAND AT `c6f5fc0`, WHICH IS THE POINT: `§0` said *"`pnpm gate` 13/13 with 812
+ * Vitest"* while `QRPAGER-16-gate-frontend.txt` -- the transcript `§4a` cites as the evidence
+ * for that very claim -- records `Tests  814 passed`, as does the fresh-clone transcript beside
+ * it. Check (c) already holds each transcript to the suite and to its own exit code, and read
+ * NEITHER of the numbers `§0` states about them, so the two could disagree indefinitely.
+ *
+ * ⚠ NO EXPECTED VALUE IS WRITTEN HERE. Each number is read from `§0` and compared against the
+ * committed transcript for the ticket `§0` itself names as in flight -- the same authority
+ * (c) scopes by. A check carrying its own copy of `1172` would be the second source this file's
+ * header refuses.
+ *
+ * ⚠ AND A STATED TOTAL WITH NO TRANSCRIPT IS A FAILURE, WHICH IT WAS NOT -- `§11` QA M-11.
+ * The loop read `if (claim.stated === null || claim.text === null) continue`, so a figure `§0`
+ * asserted with no committed evidence beside it was skipped in SILENCE, and only a run that
+ * compared *nothing at all* said so. Task 10a was in exactly that state while this check was
+ * green: `§0` stated four totals, one transcript existed, and three claims passed through
+ * unexamined. The point of (b4) is that a number in `§0` has a file behind it; "there is no
+ * file" is the most important answer it can give, not a reason to stop asking.
+ *
+ * The three outcomes are now distinct: nothing stated (fine -- there is no claim to check), a
+ * claim with no transcript (fails), and a transcript this check cannot read a total out of
+ * (fails, because an unfinished run and a drifted pattern look identical from here and both
+ * need a person).
+ */
+export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
+  const ticket = inFlightTicket(plan)
+
+  if (ticket === null || !existsSync(dir)) return
+
+  /**
+   * ⚠ THE CURRENT CLAUSE ONLY — everything after the first `———` is history, and this check
+   * read the WHOLE cell until 2026-11-02. `checkStatedHead` and `checkRowCount` already scope
+   * this way; (b4) did not, and the consequence is sharper here than a stale comparison:
+   *
+   * `§0`'s cells keep every superseded clause, and each one names `pnpm gate` with ITS OWN
+   * totals — Task 9's clause says *"`pnpm gate` 13/13 green at 46e3e52 with 817 Vitest"*. So
+   * when the live clause had no Vitest figure yet (the honest state of a task that has not
+   * measured one), the anchored pattern simply matched the next `pnpm gate` in the string and
+   * reported **817** as this task's claim, against this task's transcript. A figure nobody
+   * stated became a figure that failed, and the only way to make the check pass was to state
+   * a number before measuring it — which is the defect `§11` QA H-3 found, approached from the
+   * other side.
+   *
+   * Scoped to the live clause, an unstated figure is UNSTATED: (b4) skips it, history stays
+   * history, and a figure can be written in the same commit as the transcript that backs it.
+   */
+  const cell = (/^\| \*\*Next up\*\*[^\n]*$/m.exec(sectionZero(plan)) ?? [''])[0].split('———')[0]
+
+  /**
+   * The transcript for one gate, or `null` if there is none this check will accept.
+   *
+   * ⚠ IT MUST BE **TRACKED**, AND `existsSync` ALONE IS WHAT `§11` QA H-3 CAUGHT. This read
+   * the filesystem and nothing else, so an UNTRACKED file in `docs/tickets/` was evidence as
+   * far as (b4) and (c) were concerned -- and 10a's `§0` figures rested on exactly that for a
+   * while: the file was on disk, the checks were green, and `git show HEAD:<path>` failed
+   * because nothing had ever been committed. The word in this check's own name is *committed*.
+   *
+   * Tracked rather than `git show HEAD:` on purpose. The gate runs BEFORE the commit that
+   * carries both the transcript and the `§0` figures, so demanding `HEAD` would fail the very
+   * state the procedure asks for; a file that is `git add`ed is in the index and passes, and a
+   * stray placeholder nobody staged does not. The content compared is the working tree's,
+   * which is what the run that just finished wrote.
+   */
+  // Memoised, because `gate-frontend` backs TWO claims (Vitest's total and Playwright's) and
+  // an untracked file would otherwise be reported once per claim -- the same defect named
+  // twice reads as two defects.
+  const seen = new Map()
+  const transcript = (suffix) => {
+    if (seen.has(suffix)) return seen.get(suffix)
+
+    const value = readTranscript(suffix)
+
+    seen.set(suffix, value)
+
+    return value
+  }
+
+  /*
+   * ⚠ IT REPORTS NOTHING ITSELF, AND THE FIRST VERSION DID — which made it fire for figures
+   * `§0` never states. The `claims` array below is built EAGERLY, so every call to this
+   * function happens on every run whether or not the matching claim exists; a `fail()` in here
+   * therefore reported an untracked `gate-frontend` transcript while `§0` was silent about
+   * Vitest, and poisoned this check's own hermetic self-test along the way. The verdict is
+   * returned and the claim loop decides, because only the loop knows whether anything is being
+   * claimed.
+   */
+  const readTranscript = (suffix) => {
+    const relative = `docs/tickets/${ticket}-${suffix}.txt`
+    const path = join(dir, `${ticket}-${suffix}.txt`)
+
+    if (!existsSync(path)) return { kind: 'absent', relative }
+
+    if (gitQuiet('ls-files', '--', relative) === '') return { kind: 'untracked', relative }
+
+    return { kind: 'text', relative, text: plain(readFileSync(path, 'utf8')) }
+  }
+
+  /**
+   * Each claim: what `§0` says, where the truth lives, and how it is spelled in each.
+   *
+   * The `gate-frontend` transcript carries BOTH frontend numbers -- Vitest's `Tests  N passed`
+   * and Playwright's bare `N passed (`-- which is why the browser-case row reads the same file
+   * with a different pattern rather than a second file.
+   */
+  /**
+   * ⚠ EVERY PATTERN IS ANCHORED TO ITS OWN GATE AND TOLERATES BOLD, AND BOTH HALVES WERE
+   * LEARNED THE HARD WAY BY THIS CHECK FAILING ON ITSELF. `§0`'s cells are written
+   * newest-first and KEEP every superseded clause, so the cell holds *"all 370 Vitest green"*
+   * from Task 8a and *"1163 passed"* from the post-8b session. An unanchored `(\d+) Vitest`
+   * matched 370 -- a true statement about Task 8a -- and reported it as this task's figure.
+   * That is the same hazard `checkRowCount` names for the *Open debt* cell: the current claim
+   * is the FIRST one after its own gate's name, and history must not be held to today's tree.
+   *
+   * `\*{0,2}` because `§0` bolds a figure whenever it has been corrected, so the correction
+   * itself must not make the check stop seeing the number.
+   */
+  const claims = [
+    {
+      what: 'the PHP suite total',
+      stated: /`composer gate`[^·]*?\*{0,2}(\d+)\*{0,2} passed/.exec(cell),
+      text: transcript('gate-php'),
+      truth: /^\s*Tests:\s+(\d+) passed/m,
+    },
+    {
+      what: 'the Vitest total',
+      stated: /`pnpm gate`[^·]*?\*{0,2}(\d+)\*{0,2} Vitest/.exec(cell),
+      text: transcript('gate-frontend'),
+      truth: /^\s*Tests\s+(\d+) passed/m,
+    },
+    {
+      what: 'the browser-case total',
+      stated: /`pnpm gate`[^·]*?\*{0,2}(\d+)\*{0,2} browser cases/.exec(cell),
+      text: transcript('gate-frontend'),
+      truth: /^\s*(\d+) passed \(/m,
+    },
+    {
+      what: 'the e2e total',
+      stated: /`pnpm run gate:e2e`[^·]*?\*{0,2}(\d+)\*{0,2} passed/.exec(cell),
+      text: transcript('e2e'),
+      truth: /^\s*(\d+) passed \(/m,
+    },
+  ]
+
+  let compared = 0
+  let stated = 0
+
+  for (const claim of claims) {
+    // Nothing stated is not a failure: `§0` states the totals its own in-flight gate has
+    // produced, and a task mid-round has legitimately not produced all four yet.
+    if (claim.stated === null) continue
+
+    stated += 1
+
+    if (claim.text.kind === 'untracked') {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} and ${claim.text.relative} is present but UNTRACKED, so it is not evidence — stage it with the figures it backs`,
+      )
+
+      continue
+    }
+
+    if (claim.text.kind === 'absent') {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} for ${ticket} and no committed transcript records it — a figure with no evidence beside it`,
+      )
+
+      continue
+    }
+
+    const found = claim.truth.exec(claim.text.text)
+
+    if (found === null) {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} and ${ticket}'s committed transcript records no total this check can read — either that run did not finish or the pattern has drifted`,
+      )
+
+      continue
+    }
+
+    compared += 1
+
+    if (claim.stated[1] !== found[1]) {
+      fail(
+        'records(b4)',
+        `§0 states ${claim.what} as ${claim.stated[1]} and the committed transcript records ${found[1]}`,
+      )
+    }
+  }
+
+  /**
+   * THE VACUITY GUARD. A run that compared nothing has checked nothing, and saying so is the
+   * dead-code shape round two's QA M-4 found one check along.
+   *
+   * ⚠ **CORRECTED AT 10b, 2026-11-02, AND THE OLD VERSION'S OWN MESSAGE WAS A FALSE CLAIM —
+   * which is the exact defect family this whole script exists to catch, arriving inside it.**
+   *
+   * It read `if (compared === 0)` and nothing else, on the premise written above it that
+   * *"`§0` states four totals and the transcripts for the in-flight ticket are committed"*.
+   * That premise is false for a task that has just started: `§0.2` (b4)'s own documented
+   * ordering is **state the sha, run the gate, then commit the transcript and the figure in
+   * one commit** — so there is a legitimate window in which `§0` states NO total for the
+   * in-flight ticket and no transcript exists yet. In that window the guard fired with the
+   * words *"`§0` states gate totals for QRPAGER-26"* while `§0` stated none. Measured on
+   * 10b's first `records:check` after its provenance was restated.
+   *
+   * TWO CONDITIONS NOW, and the second is what the message always assumed:
+   *
+   *   1. **nothing was stated** — because when a claim IS stated, every path above either
+   *      compares it or fails it, so `compared === 0` with `stated > 0` means a failure is
+   *      already recorded and this would name the same defect twice;
+   *   2. **a transcript for the in-flight ticket is nevertheless TRACKED** — which is the
+   *      real drift case: the evidence is committed, so the run happened, so `§0` should be
+   *      able to state its figure and a pattern that reads none has moved.
+   *
+   * ⚠ **IT DOES REFUSE STRICTLY LESS THAN IT DID, AND THE FIRST VERSION OF THIS COMMENT SAID
+   * OTHERWISE — `§11` QA H-7, which is right.** The sentence here read *"Neither condition
+   * weakens it"*, and the code contradicts it: the state *`§0` states no gate figure and no
+   * transcript is committed* used to fail and now passes. That state was **this task's own at
+   * the time**, which is exactly the shape a reviewer should distrust — a gate narrowed by the
+   * task it was failing.
+   *
+   * So what the narrowing does and does not refuse, written out rather than asserted away:
+   *
+   *   STILL REFUSED  a stated figure with no transcript · with an untracked one · with one
+   *                  this check cannot read a total out of · with a total that disagrees.
+   *                  Each is a `fail()` above, and none of them was touched.
+   *   STILL REFUSED  a committed transcript with no figure stated beside it — the new
+   *                  condition, which is the real drift case, and which has its own
+   *                  self-test below (it did not, which was half of H-7).
+   *   NO LONGER      the honest window `§0.2` (b4) itself prescribes: state the sha, run the
+   *   REFUSED        gate, then commit the transcript and the figure together. In that window
+   *                  there is nothing to compare and the old guard fired with a message
+   *                  asserting the opposite of what `§0` said.
+   */
+  if (stated === 0) {
+    const evidence = ['gate-php', 'gate-frontend', 'e2e'].map((suffix) => transcript(suffix))
+
+    if (evidence.some((found) => found.kind === 'text')) {
+      fail(
+        'records(b4)',
+        `${ticket} has a committed gate transcript and §0 states no total this check can read — either the run's figures were never written into §0, or a pattern here has drifted`,
+      )
+    }
+
+    return
+  }
+
+  if (compared === 0) {
+    fail(
+      'records(b4)',
+      `§0 states gate totals for ${ticket} and none could be compared against a committed transcript — a pattern here has drifted`,
+    )
+  }
+}
+
+const SELF_TESTS = [
+  {
+    what: 'a §5 row count that disagrees with the table',
+    run: () => {
+      /*
+       * ⚠ ANCHORED TO THE *Open debt* CELL SINCE 10b, AND THE UNANCHORED VERSION WENT
+       * SILENTLY INERT. It replaced the FIRST `§5 holds N rows` anywhere in the file, on the
+       * assumption that the first one is the claim `checkRowCount` reads. That stopped being
+       * true the moment another `§0` cell quoted the figure — 10b's *Next up* cell did,
+       * explaining a correction to it — because the *Next up* cell comes FIRST in the file.
+       * So the plant landed in the quotation, the *Open debt* cell still agreed with the
+       * table, and this control reported MISSES: measured on 10b's own `--self-test`.
+       *
+       * Anchored, it plants where the check looks, whatever else in `§0` mentions the number.
+       * Same lesson as the three self-tests below, which is four instances in one file of a
+       * fixture that depended on the repository being in a particular shape.
+       */
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^(\| \*\*Open debt[^\n]*?)`§5` holds \*{0,2}\d+\*{0,2} rows/m,
+        '$1`§5` holds **1** rows',
+      )
+      const before = failures.length
+      checkRowCount(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * ⚠ THE EXACT INSTANCE, AS THE BAD INPUT. `§0` at `c6f5fc0` said *"Head on
+     * `task-9-customer-pwa` is `8027ad9`"* with `HEAD` one commit further on, and this script
+     * reported agreement. The fixture is that sentence, against a `HEAD` that is not it.
+     */
+    what: 'a §0 whose `Head on ... is <sha>` disagrees with HEAD (the c6f5fc0 / 8027ad9 instance)',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Next up\*\*/m,
+        '| **Next up** | Head on `task-9-customer-pwa` is **`8027ad9`**, pushed. |\n| **Next up**',
+      )
+      const before = failures.length
+      checkStatedHead(plan, '0'.repeat(40))
+
+      return failures.length > before
+    },
+  },
+  {
+    what: 'a §0 whose measured sha is not an ancestor of HEAD',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Next up\*\*/m,
+        '| **Next up** | Gates measured at **`0000000000000000000000000000000000000000`**. |\n| **Next up**',
+      )
+      const before = failures.length
+      checkStatedHead(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * The positive control for (b3): the repository's own `HEAD`, stated in the provenance
+     * form, must NOT be flagged -- or the rule above would simply fail everything.
+     */
+    what: 'a §0 measured at HEAD itself is NOT flagged (the positive control)',
+    run: () => {
+      const head = git('rev-parse', 'HEAD')
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Next up\*\*/m,
+        `| **Next up** | Gates measured at **\`${head}\`**. |\n| **Next up**`,
+      )
+      const before = failures.length
+      checkStatedHead(plan)
+
+      return failures.length === before
+    },
+  },
+  {
+    what: 'a §0 that does not name the latest tag, when HEAD is PAST it',
+    run: () => {
+      /*
+       * (b2)'s own subject, and it had no self-test until Task 11a — which is how its
+       * tag-at-HEAD blind spot survived three tags. The drift it exists for: `§0` still
+       * naming the previous task after a new tag landed.
+       *
+       * ⚠⚠ IT CREATES THE CONDITION NOW RATHER THAN BORROWING IT FROM THE REPOSITORY, AND
+       * UNTIL TASK 12 THIS CASE COULD NOT PASS AT A TAG-REF CI RUN — MEASURED.
+       *
+       * It used to read the repository's real tags, so "HEAD is PAST the latest tag" was true
+       * only by accident of when it ran. The moment `task-12` was created AT `HEAD` and CI ran
+       * at the tag, `checkTagReality`'s deliberate tag-at-HEAD exemption applied, nothing was
+       * flagged, and this case reported `MISSES` — failing `ci-parity.test.mjs:329` on a tree
+       * that was green on the branch minutes earlier. Run `42384449982` against
+       * `42382039275`, same commit `73b4b55`, different ref.
+       *
+       * ⚠ AND IT IS SELF-INCONSISTENT WITH ITS OWN SIBLING, which is what makes this a defect
+       * rather than bad luck: the next case REQUIRES a tag pointing at `HEAD` and creates one
+       * to get it; this one REQUIRES the opposite. Two cases reading the same real tags cannot
+       * both hold. The sibling already solved it the right way — tag inside the test, delete in
+       * a `finally` — so this one does the same in the other direction: a probe tag that sorts
+       * last, placed one commit BEHIND `HEAD`, which makes `HEAD` past the latest tag whatever
+       * the repository's own tags are doing.
+       *
+       * ⚠ NOT FIXED BY MOVING THE EXEMPTION, deliberately. The exemption is correct and its own
+       * comment says why: the sequence is forced (measure, push, CI green, THEN tag), so at a
+       * tagged commit `§0` cannot yet name its own tag, and naming it earlier would name a tag
+       * that does not exist. The defect was the TEST depending on state it did not control.
+       *
+       * It is also why `task-11`'s tag run failed and `task-11a`'s failed before it passed:
+       * this case was added at Task 11a and has been unable to pass at a tag ref ever since.
+       */
+      const probe = 'task-zzz-selftest-behind'
+
+      let parent
+
+      try {
+        parent = gitQuiet('rev-parse', 'HEAD~1')
+      } catch {
+        // A repository with a single commit cannot have HEAD past anything. Reported as a
+        // MISS rather than silently passing: a self-test that excuses itself is the shape
+        // this whole file exists to refuse. `gitQuiet` THROWS on a non-zero exit — it does
+        // not return null — which is the idiom `checkStatedHead` above uses for the same call.
+        return false
+      }
+
+      try {
+        git('tag', '-f', probe, parent)
+
+        const plan = readFileSync(PLAN, 'utf8').replace(
+          /^\| \*\*Last completed\*\*[^\n]*$/m,
+          '| **Last completed** | `task-0` and nothing since. |',
+        )
+        const before = failures.length
+        checkTagReality(plan)
+
+        return failures.length > before
+      } finally {
+        gitQuiet('tag', '-d', probe)
+      }
+    },
+  },
+  {
+    what: 'a §0 that cannot name a tag pointing AT HEAD is NOT flagged (the positive control)',
+    run: () => {
+      /*
+       * ⚠ THE CASE THAT FAILED EVERY TAG-REF CI RUN. The sequence is forced — measure, push,
+       * CI green, THEN tag — so at the tagged commit `§0` cannot yet name its own tag, and no
+       * ordering fixes it. Naming it earlier would name a tag that does not exist, which is
+       * this check's other half.
+       *
+       * The control is driven by TAGGING HEAD inside the test and deleting it afterwards, so
+       * it measures the real `git` path rather than a stub of it. The tag name sorts last
+       * under the numeric comparison `checkTagReality` uses, which is what makes it "latest".
+       */
+      const probe = 'task-zzz-selftest'
+
+      try {
+        git('tag', '-f', probe, 'HEAD')
+
+        const plan = readFileSync(PLAN, 'utf8').replace(
+          /^\| \*\*Last completed\*\*[^\n]*$/m,
+          '| **Last completed** | `task-0` and nothing since. |',
+        )
+        const before = failures.length
+        checkTagReality(plan)
+
+        return failures.length === before
+      } finally {
+        gitQuiet('tag', '-d', probe)
+      }
+    },
+  },
+  {
+    /**
+     * ⚠ THE SECOND EXACT INSTANCE, AS THE BAD INPUT. `§0` said *"812 Vitest"* while both
+     * committed frontend transcripts recorded `Tests  814 passed`; the figure was found BY
+     * HAND, and check (b4) exists because of it.
+     *
+     * ⚠ HERMETIC, AND THE FIRST TWO VERSIONS WERE NOT — which is the same mistake twice, in a
+     * file whose whole subject is claims that quietly stop being checked. Version one planted
+     * `812` with a blunt `.replace`, which rewrote Task 8a's superseded *"all 370 Vitest"*
+     * instead, so (b4) still read the correct figure and reported MISSES. Version two anchored
+     * the plant to the live clause's own Vitest claim — and then (b4) was scoped to the live
+     * clause (for its own good reason), the live clause legitimately had no Vitest figure for
+     * one round, and this self-test went MISSES again: measured in `pnpm gate`'s own output,
+     * `1 failed | 966 passed`.
+     *
+     * A control that only works while the repository is in one particular state is not a
+     * control. So the fixture is synthetic on the `§0` side and real on the evidence side: the
+     * tracked PHP transcript is read for the total it actually records, and a minimal `§0` is
+     * built claiming that number **plus one**. Same defect — a stated total disagreeing with
+     * its own committed transcript — and it depends on nothing but one tracked file.
+     */
+    what: 'a §0 test count that disagrees with its own transcript (the 812-against-814 instance)',
+    run: () => {
+      const php = join(REPO, 'docs', 'tickets', 'QRPAGER-25-gate-php.txt')
+
+      if (!existsSync(php)) return false
+
+      const recorded = /^\s*Tests:\s+(\d+) passed/m.exec(plain(readFileSync(php, 'utf8')))
+
+      if (recorded === null) return false
+
+      const wrong = Number(recorded[1]) + 1
+      const synthetic = [
+        '# PLAN',
+        '',
+        `| **Next up** | \`QRPAGER-25\` · \`composer gate\` all green, **${wrong}** passed |`,
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * ⚠ `§11` QA M-11, AS THE BAD INPUT IT WAS. `§0` states four gate totals; this runs the
+     * check against a directory that is real and holds none of the transcripts, which is
+     * byte-for-byte the situation Task 10a was in while (b4) reported nothing: three of the
+     * four claims had no evidence and were skipped rather than failed.
+     *
+     * `docs/` rather than a temporary directory on purpose -- it exists, so the function's own
+     * `existsSync(dir)` guard does not swallow the fixture, and it contains no
+     * `QRPAGER-NN-gate-*.txt`.
+     */
+    what: 'a §0 that states a gate total with no committed transcript behind it (QA M-11)',
+    run: () => {
+      /*
+       * ⚠ HERMETIC SINCE 10b, AND THE THIRD TIME THIS FILE HAS LEARNED THE SAME LESSON. It
+       * read the LIVE `§0` and depended on it stating a total — so the moment 10b restated
+       * its provenance and legitimately stated none (the ordering `§0.2` (b4) prescribes),
+       * this control stopped exercising its own clause. It still PASSED, because the old
+       * vacuity guard fired on the empty case, which is worse than failing: a control that
+       * passes for a different reason than the one it names is a control nobody can read.
+       *
+       * The two self-tests above carry the same correction in their own words — *"a control
+       * that only works while the repository is in one particular state is not a control"* —
+       * so this follows their shape: synthetic on the `§0` side, real nowhere it does not
+       * need to be. A minimal `§0` states a figure for a ticket, against `docs/`, which
+       * exists (so the function's own `existsSync` guard does not swallow the fixture) and
+       * holds no `QRPAGER-NN-gate-*.txt`.
+       */
+      const synthetic = [
+        '# PLAN',
+        '',
+        '| **Next up** | `QRPAGER-99` · `composer gate` all green, **1234** passed |',
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic, join(REPO, 'docs'))
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * ⚠ THE NEW `fail()`'s OWN CONTROL, ADDED AT 10b's FIX ROUND — `§11` QA H-7, which found
+     * the refusal shipped with no self-test beside it. *An unproven guard is not a guard*,
+     * and a guard added in the same hunk that narrowed its neighbour is the one most worth
+     * proving.
+     *
+     * THE STATE IT MUST REFUSE: a transcript for the in-flight ticket IS committed — so the
+     * run happened — and `§0` states no figure this check can read. That is the drift case
+     * the narrowing deliberately keeps, and it is the reason the narrowing is not simply a
+     * hole: the evidence exists and the record is silent about it.
+     *
+     * ⚠ **IT USED TO TAKE THE TICKET FROM THE LIVE `§0` AND THAT MADE IT THE FIFTH CONTROL IN
+     * THIS FILE TO DEPEND ON THE REPOSITORY BEING IN A PARTICULAR SHAPE.** It read
+     * `inFlightTicket(PLAN)` and bailed with `return false` when that ticket had no committed
+     * `-gate-php.txt` — which is a perfectly ordinary state (it is the honest mid-round window
+     * (b4) itself prescribes, and it is every state of a task that commits no transcripts at
+     * all). `false` means *the check did not catch it*, so the self-test reported **MISSES** for
+     * a case whose fixture had simply not been built, and `ci-parity.test.mjs` failed with it.
+     *
+     * Measured on 2026-11-03: `§0` was restated to name `QRPAGER-27` first, that ticket has no
+     * transcript, and this control went from `catches` to `MISSES` with nothing about the check
+     * having changed.
+     *
+     * The file's own sentence, written four times already: *a control that only works while the
+     * repository is in one particular state is not a control.* So the fixture is now built from
+     * **any** ticket that has a committed transcript, found by looking, and it fails loudly if
+     * there is none rather than reporting a miss. The `§0` side stays synthetic.
+     */
+    what: 'a §0 that states no total while a transcript IS committed (QA H-7)',
+    run: () => {
+      /*
+       * ANY ticket with a committed `-gate-php.txt`, not the in-flight one. The property under
+       * test is *evidence exists and `§0` is silent about it*, and which ticket supplies the
+       * evidence is irrelevant to it — so taking the live one coupled this control to the one
+       * thing it has no business depending on.
+       */
+      const dir = join(REPO, 'docs', 'tickets')
+      const ticket = readdirSync(dir)
+        .map((name) => /^(QRPAGER-\d+)-gate-php\.txt$/.exec(name)?.[1])
+        .find((found) => found !== undefined)
+
+      if (ticket === undefined) {
+        // ⚠ A THROW AND NOT A `return false`. There is no committed gate transcript anywhere in
+        // the repository, so this control cannot be built — and saying *MISSES* would blame the
+        // check for a fixture that does not exist, which is the defect this rewrite is about.
+        throw new Error(
+          'no committed QRPAGER-*-gate-php.txt was found, so the (b4) drift control cannot be ' +
+            'built — this is a broken fixture, not a missed catch',
+        )
+      }
+
+      const synthetic = [
+        '# PLAN',
+        '',
+        `| **Next up** | \`${ticket}\` is in flight and this cell states no figure at all. |`,
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * The OTHER side of the same guard: a `§0` that states NOTHING for its in-flight ticket,
+     * with no transcript committed yet, must NOT be flagged. That is the honest window
+     * between restating the provenance sha and running the gate, and the old guard failed it
+     * with a message asserting the opposite of what `§0` said.
+     */
+    what: 'a §0 mid-round that states no total and has no transcript yet is NOT flagged',
+    run: () => {
+      const synthetic = [
+        '# PLAN',
+        '',
+        '| **Next up** | `QRPAGER-99` is in flight and has measured nothing yet. |',
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic, join(REPO, 'docs'))
+
+      return failures.length === before
+    },
+  },
+  {
+    /**
+     * The positive control for the clause above: a `§0` whose stated total AGREES with its
+     * tracked transcript must not be flagged. Without it, "fail when the transcript is
+     * missing" could be implemented as "fail always" and every case above would still pass.
+     *
+     * ⚠ HERMETIC, AND THE FIRST VERSION WAS NOT — it ran `checkStatedCounts` over the LIVE
+     * `§0` and the live transcript directory, which made this unit case fail whenever the
+     * repository's in-flight bookkeeping was mid-update. That is not a control, it is a second
+     * copy of the check, and it re-created the very deadlock that moving `records:check` to the
+     * end of the gate was meant to end: `ci-parity.test.mjs` runs `--self-test` inside Vitest,
+     * which is step 11 of 13, so a task measuring its figures for the first time went red at
+     * step 11 instead of step 8 and still could not produce a transcript. Measured on 10a:
+     * `pnpm gate` pass one, `1 failed | 966 passed`, this case.
+     *
+     * So the fixture is SYNTHETIC on the `§0` side and real on the evidence side: the PHP
+     * transcript is read for the total it actually records, and a minimal `§0` cell is built
+     * stating that same number. It depends on one tracked file existing and nothing at all on
+     * tonight's figures.
+     */
+    what: 'a §0 whose stated total agrees with its tracked transcript is NOT flagged (the positive control)',
+    run: () => {
+      const php = join(REPO, 'docs', 'tickets', 'QRPAGER-25-gate-php.txt')
+
+      if (!existsSync(php)) return false
+
+      const recorded = /^\s*Tests:\s+(\d+) passed/m.exec(plain(readFileSync(php, 'utf8')))
+
+      if (recorded === null) return false
+
+      // A §0 with exactly one claim in it, stating the number the transcript records.
+      const synthetic = [
+        '# PLAN',
+        '',
+        `| **Next up** | \`QRPAGER-25\` · \`composer gate\` all green, **${recorded[1]}** passed |`,
+        '',
+        '## 1. Decisions',
+        '',
+      ].join('\n')
+
+      const before = failures.length
+      checkStatedCounts(synthetic)
+
+      return failures.length === before
+    },
+  },
+  {
+    what: 'a §0 naming a tag that does not exist',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*Last completed\*\*/m,
+        '| **Last completed** | `task-999` is tagged. |\n| **Last completed**',
+      )
+      const before = failures.length
+      checkTagReality(plan)
+
+      return failures.length > before
+    },
+  },
+]
+
+/**
+ * The transcript rules, driven on FIXTURES rather than on the repository's own files.
+ *
+ * `§11` round two asked for a self-test per family. Writing fixtures into a temp directory is
+ * what makes each rule falsifiable without editing committed evidence — the two reviewers both
+ * had to edit a real transcript and restore it to prove the inert check, which is a measurement
+ * nobody should have to repeat by hand.
+ */
+function transcriptSelfTests() {
+  const dir = mkdtempSync(join(tmpdir(), 'qrpager-records-'))
+  const results = []
+
+  const drive = (file, body) => {
+    writeFileSync(join(dir, file), body)
+    const before = failures.length
+    checkTranscripts('QRPAGER-99', dir)
+    const caught = failures.length > before
+    rmSync(join(dir, file))
+
+    return caught
+  }
+
+  results.push([
+    'a transcript with no EXIT= trailer',
+    drive('QRPAGER-99-gate-frontend.txt', 'Tests  1 passed (1)\n'),
+  ])
+  results.push([
+    'a transcript recording a non-zero exit',
+    drive('QRPAGER-99-gate-frontend.txt', 'Tests  1 passed (1)\nEXIT=1\n'),
+  ])
+  results.push([
+    'a transcript carrying a failure line',
+    drive('QRPAGER-99-e2e.txt', 'gate: FAILED at something\nEXIT=0\n'),
+  ])
+  results.push([
+    'a green transcript is NOT flagged (the positive control)',
+    !drive('QRPAGER-99-gate-frontend.txt', 'Tests  1 passed (1)\nEXIT=0\n'),
+  ])
+
+  rmSync(dir, { recursive: true, force: true })
+
+  return results
+}
+
+if (process.argv.includes('--self-test')) {
+  let bad = 0
+
+  for (const t of SELF_TESTS) {
+    const caught = t.run()
+
+    console.log(`  ${caught ? 'catches' : 'MISSES '}  ${t.what}`)
+    if (!caught) bad += 1
+  }
+
+  for (const [what, caught] of transcriptSelfTests()) {
+    console.log(`  ${caught ? 'catches' : 'MISSES '}  ${what}`)
+    if (!caught) bad += 1
+  }
+
+  failures.length = 0
+  process.exit(bad === 0 ? 0 : 1)
+}
+
+const plan = readFileSync(PLAN, 'utf8')
+
+checkRowCount(plan)
+checkTagReality(plan)
+checkStatedHead(plan)
+checkStatedCounts(plan)
+checkTranscripts(inFlightTicket(plan))
+
+if (failures.length > 0) {
+  console.error("check-records: the repository's account of itself is wrong:")
+  for (const f of failures) console.error(`  ${f}`)
+  process.exit(1)
+}
+
+console.log(
+  'check-records: §0 agrees with the tags, the ledger, its own measured sha and every total it states; ' +
+    'every committed transcript is current and green.',
+)

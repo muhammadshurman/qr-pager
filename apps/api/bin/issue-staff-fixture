@@ -1,0 +1,222 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * TWO RESTAURANTS, ONE STAFF ACCOUNT IN THE FIRST. Task 10a's E2E fixture.
+ * ================================================================================
+ *
+ * WHY IT EXISTS AND WHY `bin/issue-harness-user` IS NOT ENOUGH. That script makes a user with
+ * NO membership, which is correct for `browser/passkey.spec.ts` -- `R-100` is about the
+ * ceremony and needs no tenant. 10a's gate needs the opposite: a staff member who can
+ * actually reach a staff route, in a restaurant with a NAME, with a SECOND restaurant beside
+ * it whose rows exist and are real.
+ *
+ * The second restaurant is the whole point. `QRPAGER-25 §0`'s invariant is *"a staff member
+ * authenticated in tenant A can reach no route and no datum of tenant B"*, and the browser
+ * half of that proof has to aim at ids that EXIST -- a 404 for a row that was never there
+ * proves absence, not isolation. `RoleMatrixTest`'s own comment records that defect in the
+ * PHP suite; this script is what stops the browser half repeating it.
+ *
+ * ⚠ IT PRINTS A PASSWORD ON STDOUT, which is the same decision `bin/issue-harness-user`
+ * takes and for the same reason: it is a throwaway credential for one suite run, created by a
+ * tool the harness invoked, and `tools/browsers/bin/e2e` writes it to a git-ignored file at
+ * mode 600. It is not a secret of the system; it is a secret OF the fixture.
+ *
+ * ⚠ AND NO DEVICE TOKEN PLAINTEXT IS PRINTED. The second restaurant's device token is created
+ * so its ID exists to be aimed at; the token itself is discarded here rather than carried,
+ * because nothing in the suite needs to USE it and a credential nobody needs is a credential
+ * nobody should be handed.
+ *
+ * MARKED FOR WHAT IT IS, like `bin/issue-pager-session`: both tenants are named
+ * `Staff fixture` with an `e2e-staff-` slug, so a row left by an interrupted run is
+ * identifiable. Nothing deletes them -- this runs against a development database and a script
+ * that deletes tenant rows is a worse thing to have than a few marked ones.
+ *
+ * USAGE:  php bin/issue-staff-fixture
+ */
+
+use App\Domain\Auth\Ability;
+use App\Domain\Tenancy\TenantRole;
+use App\Features\Devices\DeviceTokens;
+use App\Features\Pager\PagerSessions;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Illuminate\Foundation\Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+/*
+ * ⛔ LOCAL AND TESTING ONLY. The same guard `bin/issue-pager-session` carries and for the
+ * same reason (`§11` round one, SEC M-6): this bootstraps the real kernel and writes as
+ * `pgsql_owner`, so without it the script works against whatever database `.env` names. It
+ * fails CLOSED -- an unset or unrecognised `APP_ENV` is neither `local` nor `testing`.
+ */
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this writes real rows as the database owner and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+/** One marked tenant, with a NAME that is not its slug -- §12's own distinction. */
+$makeTenant = static function (string $label): array {
+    $id = (string) Str::uuid7();
+    $slug = 'e2e-staff-'.str_replace('-', '', $id);
+
+    withTenant($id, fn () => DB::connection('pgsql_owner')->table('tenants')->insert([
+        'id' => $id,
+        'name' => 'Staff fixture '.$label,
+        'slug' => $slug,
+        'timezone' => 'Asia/Amman',
+    ]), 'pgsql_owner');
+
+    return ['id' => $id, 'name' => 'Staff fixture '.$label, 'slug' => $slug];
+};
+
+$makeUser = static function (string $name, string $tenantId, TenantRole $role): array {
+    $id = (string) Str::uuid7();
+    $email = 'staff-'.str_replace('-', '', $id).'@example.test';
+    $password = 'staff-fixture-not-a-secret';
+
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => $id,
+        'name' => $name,
+        'email' => $email,
+        'password' => Hash::make($password),
+        'is_platform_admin' => false,
+    ]);
+
+    withTenant($tenantId, fn () => DB::connection('pgsql_owner')->table('tenant_users')->insert([
+        'id' => (string) Str::uuid7(),
+        'tenant_id' => $tenantId,
+        'user_id' => $id,
+        'role' => $role->value,
+    ]), 'pgsql_owner');
+
+    return ['id' => $id, 'email' => $email, 'password' => $password, 'name' => $name];
+};
+
+$alpha = $makeTenant('alpha');
+$beta = $makeTenant('beta');
+
+// The account the browser signs in as: an OWNER of alpha, so every staff route is reachable
+// and a refusal in the suite is isolation rather than authorisation.
+$owner = $makeUser('Hiba Mansour', $alpha['id'], TenantRole::Owner);
+
+// A membership row in alpha, so the suite has one of ITS OWN tenant's ids to contrast with.
+$colleague = $makeUser('Omar Haddad', $alpha['id'], TenantRole::Staff);
+
+// BETA's real rows. Created through the real services, so the ids are the ones the
+// application's own comparisons are written against.
+$betaOwner = $makeUser('Lina Qasem', $beta['id'], TenantRole::Owner);
+
+$sessions = $app->make(PagerSessions::class);
+$betaSession = withTenant($beta['id'], fn () => $sessions->create($beta['id'], 'B-1'));
+
+/*
+ * ⚠ ALPHA'S OWN WAITING PAGER, ADDED AT 10b, AND THE SUITE CANNOT BE WRITTEN WITHOUT IT.
+ *
+ * 10a's fixture gave alpha a membership and no pager session, which was right: its screens
+ * were a shell and a device list. 10b's screen IS the board, so a fixture with no live pager
+ * in the tenant the browser signs into leaves every board case asserting an EMPTY board —
+ * the `§12` target-size and contrast clauses would measure nothing, and the mark-ready case
+ * would have nothing to mark. That is the vacuous-assertion shape this script's own header
+ * is about, pointed at the new screen.
+ *
+ * TWO of them, so "newest first" is a real ordering rather than a list of one, and the
+ * references are DISTINCT so a test can tell the two rows apart.
+ *
+ * The RAW TOKEN of the first is printed, because the *under 2 s* measurement needs it: that
+ * figure is staff click → the CUSTOMER's rendered ready state, so the harness has to be able
+ * to open the customer page for a session the staff board can act on. It is the same
+ * decision this script already takes about the owner's password — a throwaway credential for
+ * one suite run, written by the harness to a git-ignored file at mode 600 — and
+ * `bin/issue-pager-session` is the precedent for printing a pager token at all.
+ */
+$alphaFirst = withTenant($alpha['id'], fn () => $sessions->create($alpha['id'], 'A-101'));
+$alphaSecond = withTenant($alpha['id'], fn () => $sessions->create($alpha['id'], 'A-102'));
+
+$betaDevice = $app->make(DeviceTokens::class)->issue(
+    issuer: User::query()->findOrFail($betaOwner['id']),
+    tenantId: $beta['id'],
+    name: 'Beta kitchen',
+    ability: Ability::PagerRead,
+    ttlMinutes: 60,
+    actorIp: null,
+);
+
+$betaMembership = withTenant(
+    $beta['id'],
+    fn () => (string) DB::table('tenant_users')->where('user_id', $betaOwner['id'])->value('id'),
+);
+
+/*
+ * Read back before printing, so a fixture that silently failed to create something cannot
+ * make the suite's cross-tenant cases vacuous. The suite asserts refusals; a refusal for a
+ * row that does not exist is the one way every one of those assertions passes for free.
+ */
+foreach ([
+    'alpha tenant' => withTenant($alpha['id'], fn () => DB::table('tenants')->count()),
+    'beta session' => withTenant($beta['id'], fn () => DB::table('pager_sessions')->where('id', $betaSession->session->id)->count()),
+    'beta membership' => withTenant($beta['id'], fn () => DB::table('tenant_users')->where('id', $betaMembership)->count()),
+    'beta device' => DB::table('personal_access_tokens')->where('id', $betaDevice['id'])->count(),
+    'alpha board' => withTenant($alpha['id'], fn () => DB::table('pager_sessions')
+        ->whereIn('id', [$alphaFirst->session->id, $alphaSecond->session->id])->count()),
+] as $what => $count) {
+    if ($count < 1) {
+        fwrite(STDERR, "refusing to print a fixture whose {$what} was not created.\n");
+
+        exit(1);
+    }
+}
+
+echo json_encode([
+    'alpha' => [
+        'id' => $alpha['id'],
+        'name' => $alpha['name'],
+        'slug' => $alpha['slug'],
+        'membership_id' => withTenant(
+            $alpha['id'],
+            fn () => (string) DB::table('tenant_users')->where('user_id', $colleague['id'])->value('id'),
+        ),
+        // 10b's board. Two live pagers, newest last in this document and newest FIRST on the
+        // board -- the ordering is the server's and the suite asserts it rather than assuming
+        // it from the order here.
+        'session_id' => $alphaFirst->session->id,
+        'order_reference' => 'A-101',
+        'second_session_id' => $alphaSecond->session->id,
+        'second_order_reference' => 'A-102',
+        /*
+         * ⚠ NO RAW TOKEN. One was printed here and `§11` SECURITY L-2 found that NOTHING read
+         * it: `tools/gate/lib/ready-latency.mjs` issues its own pagers through
+         * `bin/issue-board-pager`, because a session goes to `ready` exactly once and five
+         * runs need five. So this was a live credential written to disk for no consumer. The
+         * justification it carried was falsified by the very script it named.
+         */
+    ],
+    'owner' => [
+        'email' => $owner['email'],
+        'password' => $owner['password'],
+        'name' => $owner['name'],
+    ],
+    // Beta's REAL ids, for the cross-tenant half. No credential of beta's is included: the
+    // suite aims at these from alpha's session, which is the whole point.
+    'beta' => [
+        'id' => $beta['id'],
+        'name' => $beta['name'],
+        'session_id' => $betaSession->session->id,
+        'membership_id' => $betaMembership,
+        'device_id' => $betaDevice['id'],
+    ],
+], JSON_THROW_ON_ERROR), "\n";

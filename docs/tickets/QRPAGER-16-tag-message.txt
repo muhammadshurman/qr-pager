@@ -1,0 +1,94 @@
+Task 9 — Customer PWA: the scan-to-ready journey, and the first CI clause read by API
+
+APPLIED 2026-11-02 on task-9-customer-pwa, cut from 58ca1ea -- the tip of the pushed
+origin/task-8b-panel-restyle and a strict descendant of task-8b (SR-2, because no tag carries
+bin/classify-reds, tests/known-flakes.json or QRPAGER-24's harness).
+
+THE TAGGED COMMIT IS THE DOCS-ONLY DESCENDANT THAT ADDS THIS FILE, and that is stated rather
+than fudged: a tag message cannot name the sha of the commit that contains it, which is the
+same self-reference §0's provenance line ran into and the reason §0 now says "Gates measured
+at <sha>" instead of "the head is <sha>". The verified commit is a760ff8 -- every figure and
+every run id below was measured there -- and the delta from it to the tagged commit is this
+message file and nothing else, which `git diff --name-only a760ff8..task-9` shows.
+
+=== WHY THIS TAG IS DIFFERENT FROM task-8a's AND task-8b's ===
+
+PLAN §5's "AND CI RUNS IT AS A SECOND JOB" is discharged BY READING THE RUN, not by relay.
+task-8b's own tag message states the opposite as a standing fact: "No session on this machine
+can read Actions -- gh absent, both token variables unset, private repository -> HTTP 404 --
+so that clause has always been discharged by report rather than by API." That stopped being
+true on 2026-11-02. gh 2.103.3 is installed (user-local, checksum-verified against the
+release's own checksums file) and authenticated, so this is the first task whose CI evidence
+is the run itself: run id, head sha, and a per-job and per-step conclusion.
+
+    run #193, id 41363816462, commit a760ff8, branch task-9-customer-pwa,
+    conclusion SUCCESS -- all four jobs green: Secret scan; Pint, PHPStan, Pest;
+    FrankenPHP runtime - SIGTERM drain and a Redis outage; Frontend workspace.
+
+That matters beyond this tag: every task after this one can discharge the clause itself, and
+R-199's class of blocker -- a tag waiting on a human to read a web page -- is closed.
+
+=== WHAT THE TASK SHIPPED ===
+
+PLAN §4.1's whole inventory -- six screens, 17 named states, English and Arabic -- as states
+of ONE statically prerendered route, /s, with the token in the URL fragment. Every decision in
+one pure reducer, exhaustive over the GENERATED status union with no default arm, so a status
+added in PHP is a type error in the client. The service worker is QRPAGER-24's, extended.
+
+GATES AT a760ff8:
+    composer gate        all 10 steps green, 1175 passed / 9954 assertions
+    pnpm gate            all 13 steps green, 817 Vitest, 103 browser cases
+    pnpm run gate:e2e    335 passed, 6 skipped, 0 failed, EXIT=0
+    final-evidence       all five artefacts green in one run (three consecutive green runs
+                         on each half, both fresh-clone proofs, lighthouse)
+
+=== THE TWO §3 ROW 9 CLAUSES THAT HELD THIS TAG, AND HOW EACH CLOSED ===
+
+R-073 -- CLOSED by the device run of 2026-11-02. iPhone 16 Pro Max, iOS 27.0.1, installed to
+the Home Screen, display mode standalone: TWO real pushes from Task 4's dispatcher, both
+RECEIVED -- foreground at 22:51:41Z and with the phone LOCKED and the app backgrounded at
+23:00:27Z. Both outbox rows sent on one attempt, delivered: 1, pruned: 0.
+
+  The finding outlives the push: the install path took THREE attempts, and Task 9's install
+  guidance has to survive all three (R-214). (1) An installed web app launches at the
+  manifest's start_url, never the bookmarked URL. (2) A Home-Screen app's storage is
+  PARTITIONED from Safari's. (3) Safari reads <link rel="manifest"> from the HTML as served
+  and caches a manifest per origin, so a client-side repoint does nothing. The answer was a
+  text field in the installed app: the install path's token transport is not what the harness
+  tests. Production's QR payload is untouched -- qrPayload() still emits {landing_url}#{token}.
+
+R-205 -- RULED 2026-11-01, rank 3 only. PROJECT_INSTRUCTIONS.md §12's "Lighthouse Performance
+>= 95" is UNTOUCHED and remains the product aspiration. §3 row 9 and §3.1 row 9 now carry the
+three load-invariant assertions (critical path 120,746 / 135,000 gzipped, render-blocking
+exactly 2, third-party origins 0 at build and at runtime on all three engines) plus the
+OBSERVED paints under a stated real-device profile -- FCP <= 200 ms, LCP <= 400 ms, both bars
+set from that day's medians of 88 and 244 and stated as such -- with the simulated median
+recorded beside them and no longer fatal.
+
+  Three measurements of the simulated score now exist for identical bytes: 78, 77 and 80.
+  That spread IS the argument: a gate figure that moves three points with the host cannot
+  distinguish a regression from a busy runner. The observed bars held every time.
+  R-205 keeps only the gap, re-owned to Task 11 (QRPAGER-18) -- a landing that paints without
+  client hydration is the one lever left -- review-by 2026-11-22.
+
+=== §11: TWO ROUNDS PLUS ONE SCOPED REVIEW ===
+
+Rounds one and two: 58 findings (QA 13 + SEC 15, then QA 18 + SEC 12), 52 fixed with a test,
+6 to §5 as R-206..R-211. Both of round two's Highs were caused by round one's own fixes.
+Relayed in full as QRPAGER-16 comment 10087.
+
+Then ONE SCOPED REVIEW of the post-round diff, ruled by Muhammad rather than a third full
+round, answering two questions only: does any of it reach a production build, and does the
+suite-lock change narrow an assertion. 8 findings, 0 Critical, 0 High, 3 Medium, 5 Low.
+Three of the four worst were written that same night. The per-finding dispositions are in
+§4a; A3 and A5 went to §5 as R-215 and R-216.
+
+=== WHAT IS NOT DELIVERED, AND IS DECLARED RATHER THAN QUIET ===
+
+  §3 row 9 fragment clause (c) -- a CSP making clause (b) impossible: NOT MET, it is R-171.
+  §12's Lighthouse >= 95 as an aspiration: NOT MET, median 78-80, R-205, Task 11, 2026-11-22.
+  Task 9's iOS install guidance predates the three measured behaviours: R-214, 2026-11-22.
+  R-215, R-216: the flag-unset build still serves the harness chunk; the harness writes the
+  production credential entry. Both Low, both bounded by a measured 404.
+
+§5 holds 216 rows, R-001..R-216, gate-checked by check-records rather than recounted.

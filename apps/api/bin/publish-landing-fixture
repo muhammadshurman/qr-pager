@@ -1,0 +1,177 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * ONE PUBLISHED LANDING PAGE, FOR AN EXISTING RESTAURANT. TASK 11's PROOF NEEDS IT.
+ * ================================================================================
+ *
+ * `§3` row 11's invariant is *tenant A's page can never render tenant B's content, and can
+ * never be served from tenant B's cache entry*. Proving that needs **two tenants with real
+ * published pages in the real object store**, because the thing being proven is which bytes a
+ * request gets — and a fixture that wrote the bytes itself would be proving its own layout
+ * rather than the publisher's.
+ *
+ * So this script goes through `LandingPages::saveDraft()` and `LandingPages::publish()`: the
+ * same two calls the Filament builder makes. The snapshot, the pointer and the manifest are
+ * written by the publisher, under the keys `PublishedSite` decides, with the HTML that
+ * `LandingRenderer` produces. Nothing here knows the key layout or the template.
+ *
+ * ⚠ **THE HEADING IS THE TENANT'S NAME AND THAT IS LOAD-BEARING.** The proof asserts that one
+ * host's page does NOT contain the other's text, so each page has to carry something
+ * unmistakably its own. A shared "Hello" on both pages would make the cross-tenant assertion
+ * pass whatever the mapping did.
+ *
+ * ⛔ LOCAL AND TESTING ONLY, failing CLOSED on an unset or unrecognised `APP_ENV` — the guard
+ * every sibling here carries (`§11` round one SEC M-6): this bootstraps the real kernel and
+ * writes to the real bucket as the database owner.
+ *
+ * USAGE:  php bin/publish-landing-fixture <tenant-uuid> [heading]
+ * PRINTS: one JSON line -- {"tenant_id":"…","hostname":"…","heading":"…","checksum":"…"}
+ */
+
+use App\Features\Landing\LandingPages;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this writes to the real object store as the database owner and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+$tenant = (string) ($argv[1] ?? '');
+
+if (! Str::isUuid($tenant)) {
+    fwrite(STDERR, "refusing to run: '{$tenant}' is not a tenant uuid.\n");
+
+    exit(1);
+}
+
+$name = withTenant($tenant, fn (): ?string => DB::table('tenants')->where('id', $tenant)->value('name'));
+
+if (! is_string($name) || $name === '') {
+    fwrite(STDERR, "refusing to run: tenant {$tenant} does not exist or has no name.\n");
+
+    exit(1);
+}
+
+$heading = (string) ($argv[2] ?? $name);
+
+/*
+ * ⚠ A REAL THEME, AND AN EMPTY ONE MADE A GATE CLAUSE UNMEASURABLE. The first version
+ * published `'theme' => []`, so `ThemeStylesheet::declarations()` emitted nothing and
+ * `site-isolation-proof`'s clause I -- *per-tenant theme applied FROM TOKENS*, which is
+ * `§3` row 11's own words -- had no custom properties to find. It failed, correctly, on the
+ * fixture rather than on the product.
+ *
+ * The accent is DERIVED FROM THE HEADING so two tenants get two different ones, which is what
+ * lets the proof assert the second way: this tenant's accent is present AND the other
+ * tenant's is absent. A shared theme would pass the first assertion whatever leaked.
+ */
+$accent = '#'.substr(hash('sha256', $heading), 0, 6);
+
+$pages = $app->make(LandingPages::class);
+
+/*
+ * ⚠ **A REFUSAL MUST BE A NON-ZERO EXIT, AND THE SIBLING SCRIPT HAD THE SAME DEFECT.** An
+ * uncaught `PublishFailed` is rendered by Laravel's handler and the process **exits 0**, so a
+ * proof reading this script's exit code would treat a refused publish as a published page --
+ * and then report the mismatch somewhere far from the cause. Measured while revert-proving
+ * `R-170`: the publish correctly refused a manifest that disagreed with the page, and
+ * `domain-move-proof` reported a Python `JSONDecodeError` on this script's empty stdout.
+ * Right detection, wrong shape.
+ */
+$refuse = static function (Throwable $e): never {
+    fwrite(STDERR, 'refused: '.$e::class.': '.$e->getMessage()."\n");
+
+    exit(1);
+};
+
+/*
+ * A minimal but REAL document: one hero and one hours block, so the published HTML has more
+ * than a single string in it and the "no other tenant's text" assertion has something to be
+ * wrong about. Every value goes through `LandingDocument`'s validation, so a fixture that
+ * drifted from the schema fails here rather than producing an unpublishable draft.
+ */
+try {
+    $pages->saveDraft($tenant, [
+        'blocks' => [
+            [
+                'type' => 'hero',
+                'fields' => [
+                    'heading' => $heading,
+                    'subheading' => $heading.' — published by the Task 11 fixture',
+                ],
+            ],
+            [
+                'type' => 'hours_location',
+                'fields' => [
+                    'heading' => 'When '.$heading.' is open',
+                    'address' => '1 '.$heading.' Street',
+                    // `hours` is REQUIRED and is a list of {day, hours} -- read off
+                    // `docs/contracts/landing-page.schema.json` rather than guessed, after the
+                    // first run refused the draft with `blocks.1.fields.hours: is required`.
+                    'hours' => [
+                        ['day' => 'Monday to Friday', 'hours' => '08:00 - 22:00'],
+                        ['day' => 'Saturday and Sunday', 'hours' => '09:00 - 23:00'],
+                    ],
+                ],
+            ],
+        ],
+        'theme' => [
+            'color.accent' => $accent,
+            'font.heading' => 'serif',
+            'radius.large' => '1.5rem',
+            'space.section' => '4rem',
+        ],
+        'seo' => [
+            'title' => $heading,
+            'description' => 'The landing page of '.$heading.'.',
+        ],
+    ]);
+
+    $published = $pages->publish($tenant);
+} catch (Throwable $e) {
+    $refuse($e);
+}
+
+// Read the recorded hostname back rather than re-deriving it: `hostnameInScope()` prefers an
+// active custom domain over the platform one, and a proof told the wrong hostname would look
+// for a key that exists under a different name and report a product failure.
+$row = withTenant($tenant, fn (): ?object => DB::table('landing_pages')
+    ->where('tenant_id', $tenant)
+    ->first(['published_hostname', 'published_checksum']));
+
+if ($row === null || ! is_string($row->published_hostname) || $row->published_hostname === '') {
+    fwrite(STDERR, "refusing to continue: nothing was recorded as published for {$tenant}.\n");
+
+    exit(1);
+}
+
+echo json_encode([
+    'tenant_id' => $tenant,
+    'hostname' => $row->published_hostname,
+    'heading' => $heading,
+    // The proof asserts this value is in THIS tenant's page and not in the other's.
+    'accent' => $accent,
+    'checksum' => $row->published_checksum,
+], JSON_THROW_ON_ERROR), "\n";
+
+unset($published);
+
+exit(0);

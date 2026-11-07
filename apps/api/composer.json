@@ -10,10 +10,16 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "bacon/bacon-qr-code": "^3.0",
         "dedoc/scramble": "0.13.50",
+        "filament/filament": "^5.11",
+        "laravel/fortify": "^1.41",
         "laravel/framework": "^13.17",
         "laravel/octane": "^2.22",
-        "laravel/tinker": "^3.0"
+        "laravel/sanctum": "^4.3",
+        "laravel/tinker": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.35",
+        "minishlink/web-push": "^11.0"
     },
     "require-dev": {
         "deptrac/deptrac": "^4.7",
@@ -60,7 +66,8 @@
         "test": "pest",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi"
+            "@php artisan package:discover --ansi",
+            "@php artisan filament:upgrade"
         ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
@@ -83,7 +90,16 @@
         "guard": "@php guard/bin/guard",
         "openapi": "@php artisan scramble:export",
         "openapi:check": "bin/openapi-check",
-        "gate": "bin/gate"
+        "landing:schema": "@php artisan landing:schema-export",
+        "landing:check": "bin/landing-schema-check",
+        "contracts": "@php artisan contracts:export",
+        "contracts:check": "bin/contracts-check",
+        "assets": "bin/assets",
+        "deps": "bin/deps",
+        "gate": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/gate"
+        ]
     },
     "extra": {
         "laravel": {

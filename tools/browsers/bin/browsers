@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# Runs a command against the repo inside the pinned browser image (tools/browsers/Dockerfile).
+#
+#   tools/browsers/bin/browsers pnpm exec playwright test
+#   tools/browsers/bin/browsers node storage/probe/engines.mjs
+#
+# WHY A SCRIPT AND NOT A DOCUMENTED `docker run`. Every figure in this task's report has to
+# name the toolchain that produced it (the rank-1 brief's trap 5), and a figure produced by a
+# command somebody typed from memory names nothing reproducible. This is that command, once.
+#
+# IT USES A LOCAL BROWSER WHEN THERE IS ONE. `playwright install-deps` on a host with sudo
+# makes the container unnecessary, and a wrapper that forced the container anyway would make
+# CI slower for no reason -- CI installs the browsers natively (ci.yml, the `frontend` job).
+# QRPAGER_BROWSERS=container forces it; QRPAGER_BROWSERS=host forbids it.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
+MODE="${QRPAGER_BROWSERS:-auto}"
+
+# The version the workspace pins, read from the lockfile rather than typed. One source.
+pw_version() {
+  node -e '
+const { readFileSync } = require("node:fs")
+const pkg = JSON.parse(readFileSync(process.argv[1] + "/package.json", "utf8"))
+const want = pkg.devDependencies["@playwright/test"]
+if (!/^\d+\.\d+\.\d+$/.test(want)) {
+  console.error("browsers: @playwright/test must be pinned exact, got " + want)
+  process.exit(1)
+}
+process.stdout.write(want)
+' "$REPO"
+}
+
+host_can_launch() {
+  node -e '
+(async () => {
+  const pw = require("playwright")
+  for (const name of ["chromium", "firefox", "webkit"]) {
+    const b = await pw[name].launch()
+    await b.close()
+  }
+})().catch(() => process.exit(1))
+' >/dev/null 2>&1
+}
+
+# ================================================================================
+# ⚠ ONE SOURCE FOR "WHERE DOES THE BROWSER REACH THIS HOST" -- CI run #187's RED
+# ================================================================================
+#
+# `--reachable-host` prints the hostname a browser launched by THIS script will use to reach
+# the host machine: `127.0.0.1` when it runs natively, `host.docker.internal` when it runs in
+# the container (which is what the env rewriting below does to every forwarded `127.0.0.1`).
+#
+# It exists because that fact was duplicated, and the second copy was a CONSTANT.
+# `tools/browsers/bin/e2e` hard-coded `APP_URL=https://host.docker.internal:<port>` for
+# `R-100`, which is right in the container and wrong natively -- and CI launches the engines
+# natively. `laravel/passkeys` derives the WebAuthn relying-party id from `APP_URL`'s host, a
+# relying-party id must be a registrable suffix of the page's own origin, and
+# `host.docker.internal` is not a suffix of `127.0.0.1`, so `navigator.credentials.create()`
+# was rejected with a SecurityError that the harness page does not catch.
+#
+# The symptom is the one `e2e`'s own comment already described from the other direction: *the
+# login step answered 200 and the register step produced NO output at all*. In CI run #187 that
+# is exactly what happened -- `#out` still held `login -> 200` after 20 s and the step failed
+# with *"the register step did not answer 201. page errors: []"*. Green in the container on two
+# machines, red in CI, for five commits.
+#
+# Printing it from here means the host and the browser's launch mode cannot disagree: the
+# decision is made once, by the code that also acts on it.
+if [ "${1:-}" = "--reachable-host" ]; then
+  # ⚠ `localhost` AND NOT `127.0.0.1`, WHICH IS THE WHOLE POINT OF THE NATIVE BRANCH. A WebAuthn
+  # relying-party id is a DOMAIN string -- an IP literal is not one and is refused -- so
+  # swapping `host.docker.internal` for `127.0.0.1` would have replaced one `credentials.create()`
+  # rejection with another. `localhost` is a valid relying-party id, is a trustworthy origin by
+  # definition, resolves to the loopback the servers already bind, and is in the self-signed
+  # certificate's SAN (`DNS:localhost`) that `e2e` generates. The container branch keeps
+  # `host.docker.internal`, which is also a domain and is why that path works today.
+  if [ "$MODE" = host ]; then
+    echo "localhost"
+    exit 0
+  fi
+
+  if [ "$MODE" = auto ] && (cd "$REPO" && host_can_launch); then
+    echo "localhost"
+    exit 0
+  fi
+
+  echo "host.docker.internal"
+  exit 0
+fi
+
+if [ "$#" -eq 0 ]; then
+  echo "usage: $(basename "$0") <command> [args...]" >&2
+  exit 64
+fi
+
+if [ "$MODE" = host ]; then
+  exec "$@"
+fi
+
+if [ "$MODE" = auto ] && (cd "$REPO" && host_can_launch); then
+  echo "browsers: all three engines launch on this host; running natively." >&2
+  exec "$@"
+fi
+
+if [ "$MODE" = auto ]; then
+  echo "browsers: this host cannot launch all three engines; using the container." >&2
+fi
+
+PW="$(cd "$REPO" && pw_version)"
+IMAGE="qrpager-browsers:pw${PW}"
+
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "browsers: building $IMAGE (once; this takes several minutes)" >&2
+  docker build --build-arg "PW_VERSION=${PW}" -t "$IMAGE" "$REPO/tools/browsers"
+fi
+
+# ⚠ THE BROWSER VERSIONS ARE PRINTED BEFORE THE COMMAND RUNS, into the command's own output.
+# A Playwright figure whose engine build is not beside it has no provenance -- which is the
+# argument `§3.1` row 9's method makes about the Lighthouse score, and it applies to every
+# assertion this image produces, not only to that one.
+mkdir -p "$REPO/storage/browsers-home"
+
+# ⚠ EVERY `QRPAGER_*` VARIABLE IS FORWARDED, BY PATTERN RATHER THAN BY NAME. The first
+# version listed `QRPAGER_API_BASE` explicitly and the journey suite failed 18 of 18 inside
+# the container with *"QRPAGER_E2E_SESSIONS is unset"* -- a variable the caller had set and
+# this script dropped. A named list here is the duplicated-list shape this project has paid
+# for three times: the names live in `tools/browsers/bin/e2e` and in the specs, and a
+# third copy goes stale the first time one is added.
+#
+# Scoped to the prefix on purpose: the container gets this project's own configuration and
+# not the caller's whole environment, so a credential in some unrelated variable does not
+# travel into a process that runs browsers against the network.
+#
+# ⚠ AND A `127.0.0.1` IN ONE OF THEM IS REWRITTEN TO `host.docker.internal`, BECAUSE
+# `--network host` DOES NOT REACH THE HOST's LOOPBACK ON THIS PLATFORM. Measured, both ways,
+# against a server bound on the host:
+#
+#   docker run --rm --network host                        curl 127.0.0.1:8097/healthz  ->  000
+#   docker run --rm --add-host=host.docker.internal:host-gateway
+#                                        curl host.docker.internal:8097/healthz        ->  200
+#
+# Docker on WSL2 gives `--network host` a namespace that is not the Windows host's, so the
+# first is a connection refused and the journey suite failed 18 of 18 with
+# `ERR_CONNECTION_REFUSED` -- against servers that were demonstrably up, because the
+# host-side readiness probe had already passed. The rewrite lives HERE, in the one place that
+# knows whether the container is being used, so `tools/browsers/bin/e2e` and the specs stay
+# ignorant of the transport.
+forwarded=()
+while IFS= read -r name; do
+  value="${!name}"
+  forwarded+=(-e "${name}=${value//127.0.0.1/host.docker.internal}")
+done < <(compgen -v | grep '^QRPAGER_' || true)
+
+# ⚠ NO IMPLICIT INSTALL INSIDE A MEASUREMENT RUN -- `npm_config_verify_deps_before_run`.
+# pnpm 12 verifies node_modules against the lockfile before running a script, and on the
+# first container invocation it ran an install that RELINKED node_modules while the suite was
+# starting -- so `pnpm exec playwright` failed with "Command not found" against a tree that
+# was perfectly installed a second later. A run that mutates its own toolchain cannot be
+# measured. The host's `pnpm install` is the one place dependencies are installed.
+#
+# ⚠ AND THESE ARE PLAIN COMMENTS, NOT `` `# …` `` PSEUDO-COMMENTS INSIDE THE ARGUMENT LIST.
+# The first version put them between the `docker run` flags that way; a backtick runs a
+# COMMAND SUBSTITUTION, the nested backticks inside the prose broke the nesting, and docker
+# received a mangled argv -- it read `QRPAGER_TOOLCHAIN=container` as the env value, the image
+# name as the IMAGE, and every remaining flag as the command. The container came up and did
+# nothing for three minutes. A comment that can change what a command runs is not a comment.
+exec docker run --rm -i \
+  --init \
+  --ipc=host \
+  --user "$(id -u):$(id -g)" \
+  -v "$REPO":/repo \
+  -v "$REPO/storage/browsers-home":/home/runner \
+  -e HOME=/home/runner \
+  -e CI="${CI:-}" \
+  -e npm_config_verify_deps_before_run=false \
+  "${forwarded[@]}" \
+  -e QRPAGER_TOOLCHAIN="container=${IMAGE}" \
+  --add-host=host.docker.internal:host-gateway \
+  --network host \
+  -w /repo \
+  "$IMAGE" "$@"

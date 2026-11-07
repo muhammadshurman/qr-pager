@@ -29,12 +29,57 @@ cd "$(dirname "$0")/.."
 
 export PAO_DISABLE=1
 
+# mktemp, NOT fixed /tmp paths (security L-5). They were
+# /tmp/qrpager-rollback-{before,after,second}.txt plus an `rm -f /tmp/qrpager-rollback-*.txt`
+# glob -- so on a shared or multi-user host a local user pre-creating one as a symlink has
+# this script truncate and overwrite an arbitrary file with the developer's privileges, and
+# the glob is the same class. The sibling bin/concurrent-suite-proof already does this
+# correctly, so the repository carried both patterns.
+before="$(mktemp -t qrpager-rollback-before-XXXXXX.txt)"
+after="$(mktemp -t qrpager-rollback-after-XXXXXX.txt)"
+second="$(mktemp -t qrpager-rollback-second-XXXXXX.txt)"
+# No trap here: cleanup() below is the one trap this script installs, and a second
+# `trap ... EXIT` would REPLACE it rather than add to it -- which is what the first version
+# of this change did, leaving the mktemp files behind on every run.
+
 probe="${ROLLBACK_PROOF_DATABASE:-qrpager_rollback_proof}"
 export DB_DATABASE="$probe"
 
 host="$(php -r 'echo getenv("DB_HOST") ?: "127.0.0.1";')"
 root="$(php -r 'echo getenv("DB_ROOT_USERNAME") ?: "qrpager_root";')"
 maintenance="$(php -r 'echo getenv("DB_MAINTENANCE_DATABASE") ?: "postgres";')"
+
+# READ .env WHEN THE SHELL DID NOT CARRY IT, and only then. Added 2026-10-27 after this
+# proof failed in an unattended run for no reason but a bare shell: "load .env first" is
+# exactly how a script stops being run, which is R-043's clause and the reason this file
+# exists. An EXPORTED value still wins, so CI can pass a different root password and a
+# developer can override one; the file is consulted for these four names and nothing else.
+#
+# No `eval` and no `source`: .env is read line by line and only the four names below are
+# taken, because sourcing an environment file executes whatever is in it.
+if [ -f .env ]; then
+  for name in DB_ROOT_PASSWORD DB_ROOT_USERNAME DB_HOST DB_MAINTENANCE_DATABASE; do
+    eval "current=\${$name:-}"
+    [ -n "$current" ] && continue
+
+    line="$(grep -m1 -E "^${name}=" .env || true)"
+    [ -n "$line" ] || continue
+
+    value="${line#*=}"
+    value="${value%\"}"; value="${value#\"}"
+    value="${value%\'}"; value="${value#\'}"
+
+    [ -n "$value" ] && export "$name=$value"
+  done
+fi
+
+# Required, not defaulted -- see psql_as_root() below. `.env` carries it and `.env.example`
+# ships the name, so an unset value after the read above means there is no environment to
+# load at all, which is worth failing on rather than guessing past.
+if [ -z "${DB_ROOT_PASSWORD:-}" ]; then
+  echo "migration-rollback-proof: DB_ROOT_PASSWORD is unset and .env does not carry it." >&2
+  exit 1
+fi
 
 # psql, wherever it is. CI's runner has a client on PATH; a developer machine often has
 # only the one inside the Postgres container, which is where `docker compose up` put it.
@@ -43,7 +88,12 @@ maintenance="$(php -r 'echo getenv("DB_MAINTENANCE_DATABASE") ?: "postgres";')"
 compose="../../compose.yaml"
 
 if command -v psql >/dev/null 2>&1; then
-  psql_as_root() { PGPASSWORD="${DB_ROOT_PASSWORD:-local_dev_only}" psql -h "$host" -U "$root" "$@"; }
+  # NO FALLBACK LITERAL (security L-5). It was `${DB_ROOT_PASSWORD:-local_dev_only}`, which
+  # is the same local-dev password compose.yaml already carries -- so no new secret was
+  # disclosed and gitleaks was right not to fire -- but a credential literal in a script is a
+  # thing that gets copied into one that is not local-only. Unset is now a loud failure
+  # rather than a silent fallback to a guess.
+  psql_as_root() { PGPASSWORD="$DB_ROOT_PASSWORD" psql -h "$host" -U "$root" "$@"; }
   echo "migration-rollback-proof: using the psql on PATH"
 elif docker compose -f "$compose" ps postgres >/dev/null 2>&1; then
   # -T, so stdin is not a TTY and `-f -` works. The password is already in the
@@ -63,9 +113,13 @@ fingerprint() { psql_as_root -d "$probe" -q -f - < database/schema-fingerprint.s
 cleanup() {
   psql_as_root -d "$maintenance" -q \
     -c "drop database if exists \"$probe\" with (force)" >/dev/null 2>&1 || true
-  rm -f /tmp/qrpager-rollback-*.txt
+
+  # The three mktemp files by name. It was `rm -f /tmp/qrpager-rollback-*.txt`, a glob over a
+  # world-writable directory, which is the other half of security L-5: on a shared host that
+  # deletes whatever anyone else put there under that prefix.
+  rm -f "$before" "$after" "$second"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 echo "migration-rollback-proof: database [$probe] on $host"
 cleanup
@@ -83,27 +137,228 @@ echo "distinct batches: $batches (expected 1)"
 echo
 
 echo "=== 2. a second apply is a no-op ==="
-php artisan migrate --database=pgsql_owner --force | tee /tmp/qrpager-rollback-second.txt
-grep -q "Nothing to migrate" /tmp/qrpager-rollback-second.txt \
+php artisan migrate --database=pgsql_owner --force | tee "$second"
+grep -q "Nothing to migrate" "$second" \
   || { echo "the second apply was not a no-op" >&2; exit 1; }
 echo
 
 echo "=== 3. this task's objects are present ==="
-fingerprint > /tmp/qrpager-rollback-before.txt
-echo "fingerprint lines: $(wc -l < /tmp/qrpager-rollback-before.txt)"
+fingerprint > "$before"
+echo "fingerprint lines: $(wc -l < "$before")"
+# EVERY TASK'S OBJECTS, NOT JUST TASK 3'S. This list named only resolve_pager_token and
+# the two worker policies, so "this task's objects are present" would have passed with a
+# straight face if Task 5's migrations had created nothing at all -- found by Task 5's QA
+# review (L-7). Step 5's byte-identical fingerprint is what really covers the new objects;
+# this step is the one that says WHICH are expected, so it has to name them.
+#
+# Each needle is an object a §5 row or a gate clause depends on, so a rollback proof that
+# silently stopped covering one would be the control going quiet rather than failing.
 for needle in \
   'function resolve_pager_token secdef=t' \
   "policy pager_sessions.worker_reads_expired_sessions" \
-  "policy pager_sessions.worker_expires_sessions"
+  "policy pager_sessions.worker_expires_sessions" \
+  'function authenticate_user secdef=t' \
+  'function user_memberships secdef=t' \
+  'function user_two_factor secdef=t' \
+  'table passkeys rls=f' \
+  'table personal_access_tokens rls=f' \
+  'function platform_audit_log_is_append_only secdef=f' \
+  'table tenant_provisionings rls=f' \
+  'table tenant_statistics rls=f' \
+  'table platform_audit_log rls=f' \
+  'table landing_pages rls=t force=t' \
+  'table media_assets rls=t force=t' \
+  'table tenant_domains rls=t force=t' \
+  'policy landing_pages.tenant_isolation_landing_pages' \
+  'policy landing_pages.owner_bypass_landing_pages' \
+  'policy media_assets.tenant_isolation_media_assets' \
+  'policy media_assets.owner_bypass_media_assets' \
+  'policy tenant_domains.tenant_isolation_tenant_domains' \
+  'policy tenant_domains.owner_bypass_tenant_domains'
 do
-  grep -q "$needle" /tmp/qrpager-rollback-before.txt \
+  grep -q "$needle" "$before" \
     || { echo "missing from the schema: $needle" >&2; exit 1; }
 done
+
+# ⚠ THE ABSENCE CHECKS BELOW WOULD PASS ON AN EMPTY FILE, so the file is proven non-empty
+# for the tables they are about FIRST. An absence asserted against nothing is the vacuous
+# assertion §4a records four of -- and this very pass added a fifth before catching it, in a
+# redaction test whose negated `toContain` could not fail. The printed lines are also the
+# evidence a reader of this transcript actually wants.
+grants=$(grep -cE '^grant qrpager_app (users|passkeys|personal_access_tokens)\.' "$before")
+echo "grant lines for this task's tables: $grants"
+[ "$grants" -ge 20 ] \
+  || { echo "only $grants grant lines for this task's tables -- the absence checks below would be vacuous" >&2; exit 1; }
+grep -E '^grant qrpager_app (passkeys|personal_access_tokens)\.' "$before"
+grep -E '^grant qrpager_app users\.(is_platform_admin|password|remember_token|two_factor)' "$before"
+
+# THE NARROWINGS, asserted as ABSENCES -- which a list of present objects cannot do.
+# 2026_10_28_140000 revoked these three, each because its presence was an escalation or an
+# un-backstopped write (SEC L-1, SEC L-2, QA M-6), so the proof has to fail if a later
+# migration hands any of them back.
+# ⚠ ONLY THE COLUMN-LEVEL NARROWING CAN BE CHECKED AGAINST THE FINGERPRINT. The second
+# needle used to be 'grant qrpager_app passkeys.*DELETE' and it COULD NEVER MATCH:
+# database/schema-fingerprint.sql builds its grant lines from
+# information_schema.column_privileges, which carries only SELECT/INSERT/UPDATE/REFERENCES
+# -- DELETE is a TABLE-level privilege and never appears there. Both §11 reviewers of the
+# fix diff measured it the same way: re-granting DELETE on passkeys left the fingerprint
+# BYTE-IDENTICAL, so step 5's identity check is blind to it too. A dead control with a
+# comment saying it was live, which is the defect class §4a exists to record -- and the
+# `grants -ge 20` floor above proves the file is non-empty, which cannot make a DELETE
+# line appear.
+grep -qE 'grant qrpager_app users.is_platform_admin INSERT' "$before" \
+  && { echo "a narrowed grant is back in the schema: users.is_platform_admin INSERT" >&2; exit 1; }
+
+# ================================================================================
+# TASK 7's TWO REVOKES, AND THE WORKER HOLDING NOTHING ON ITS THREE TABLES
+# ================================================================================
+#
+# qrpager_owner OWNS these tables, so Postgres grants it every privilege implicitly and
+# "no role gets DELETE on landing_pages" / "no UPDATE on media_assets" are false of the
+# owner until revoked. The migration revokes both; this is what fails if a later one
+# hands either back.
+#
+# ⚠ ASKED OF THE CATALOG AND NOT OF THE FINGERPRINT, and the comment above says why for
+# DELETE: information_schema.column_privileges carries SELECT/INSERT/UPDATE/REFERENCES
+# only, so a DELETE line can never appear there and step 5's byte-identical fingerprint
+# is blind to it. The owner's UPDATE is asked the same way for consistency -- one
+# instrument for one question beats two that disagree about coverage.
+#
+# And SR-3: qrpager_worker is granted NOTHING on any of the three. The ticket's §6.1
+# granted it SELECT on two of them to serve a polling sweep that §4 › Tenancy does not
+# allow and that was therefore never built.
+# qrpager_owner:media_assets:UPDATE is NOT in this list, and its absence is the record of
+# a revoke that was tried and taken back out: FOR KEY SHARE -- the lock referential
+# integrity takes when a referenced tenants row is deleted -- requires UPDATE, so revoking
+# it from the owner made `delete from tenants` answer 42501. The migration carries the
+# measurement.
+# ⚠ has_any_column_privilege AND NOT has_table_privilege FOR THE COLUMN PRIVILEGES, and
+# the positive control below is what caught it. `GRANT INSERT (id, tenant_id, …) ON
+# media_assets` is a COLUMN-level grant, and has_table_privilege() answers `f` for one --
+# it asks only about the table-level privilege. Measured on this database:
+#
+#   has_table_privilege     ('qrpager_app','media_assets','INSERT')  ->  f
+#   has_any_column_privilege('qrpager_app','media_assets','INSERT')  ->  t
+#
+# So with has_table_privilege the worker's absence checks would have answered `f` for a
+# worker that held a column-level grant on every column -- the control passing while the
+# thing it forbids was true. That is the same shape this script's own DELETE comment
+# records one block down, arriving from the other direction, and it is why a positive
+# control sits beside every absence here.
+#
+# DELETE keeps has_table_privilege, because DELETE has no column form at all.
+privilege_check() {
+  local role="$1" table="$2" priv="$3"
+
+  if [ "$priv" = "DELETE" ] || [ "$priv" = "TRUNCATE" ]; then
+    psql_as_root -d "$probe" -tAc "select has_table_privilege('$role', '$table', '$priv')"
+  else
+    psql_as_root -d "$probe" -tAc "select has_any_column_privilege('$role', '$table', '$priv')"
+  fi
+}
+
+for spec in 'qrpager_owner:landing_pages:DELETE' \
+            'qrpager_worker:landing_pages:SELECT' \
+            'qrpager_worker:media_assets:SELECT' \
+            'qrpager_worker:tenant_domains:SELECT' \
+            'qrpager_worker:landing_pages:INSERT' \
+            'qrpager_worker:media_assets:INSERT' \
+            'qrpager_worker:tenant_domains:INSERT' \
+            'qrpager_worker:landing_pages:UPDATE' \
+            'qrpager_worker:media_assets:UPDATE' \
+            'qrpager_worker:tenant_domains:UPDATE' \
+            'qrpager_app:media_assets:UPDATE'; do
+  role="${spec%%:*}"; rest="${spec#*:}"; table="${rest%%:*}"; priv="${rest##*:}"
+  held=$(privilege_check "$role" "$table" "$priv")
+  [ "$held" = "f" ] \
+    || { echo "Task 7: $role holds $priv on $table, which the migration revokes or never grants" >&2; exit 1; }
+  echo "$role $priv on $table: $held (expected f)"
+done
+
+# THE POSITIVE CONTROL. Without it the eleven absences above would all be satisfied by a
+# database in which these tables do not exist, or by asking the wrong question -- which
+# is exactly what happened the first time this block was written.
+for spec in 'qrpager_app:landing_pages:SELECT' \
+            'qrpager_app:landing_pages:UPDATE' \
+            'qrpager_app:media_assets:SELECT' \
+            'qrpager_app:media_assets:INSERT' \
+            'qrpager_app:media_assets:DELETE' \
+            'qrpager_app:tenant_domains:INSERT' \
+            'qrpager_app:tenant_domains:UPDATE' \
+            'qrpager_owner:media_assets:UPDATE'; do
+  role="${spec%%:*}"; rest="${spec#*:}"; table="${rest%%:*}"; priv="${rest##*:}"
+  held=$(privilege_check "$role" "$table" "$priv")
+  [ "$held" = "t" ] \
+    || { echo "Task 7: $role does NOT hold $priv on $table -- the absence checks above are vacuous" >&2; exit 1; }
+  echo "$role $priv on $table: $held (expected t)"
+done
+
+# The table-level ones are asked of the catalog directly, which is where they live.
+for spec in 'passkeys:DELETE'; do
+  table="${spec%%:*}"; priv="${spec##*:}"
+  held=$(psql_as_root -d "$probe" -tAc \
+    "select has_table_privilege('qrpager_app', '$table', '$priv')")
+  [ "$held" = "f" ] \
+    || { echo "a narrowed grant is back: qrpager_app holds $priv on $table" >&2; exit 1; }
+  echo "qrpager_app $priv on $table: $held (expected f)"
+done
+
+# authenticate_user must not return the 2FA secret. Checked against the function's own
+# argument names, because the fingerprint's function line carries no signature.
+psql_as_root -d "$probe" -tAc \
+  "select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'authenticate_user'
+      and 'two_factor_secret' = any(p.proargnames)" \
+  | grep -qx '0' \
+  || { echo "authenticate_user still returns two_factor_secret -- QA M-6 is not applied" >&2; exit 1; }
 # The narrowing itself, not just the policy's existence: R-003 is about the USING clause.
-grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' /tmp/qrpager-rollback-before.txt \
+grep -E 'policy pager_sessions.worker_(reads_expired|expires)_sessions' "$before" \
   | grep -q "ARRAY\['waiting'" \
   || { echo "the worker policies are not status-bounded -- R-003 is not applied" >&2; exit 1; }
-grep -E 'policy pager_sessions.worker_' /tmp/qrpager-rollback-before.txt
+grep -E 'policy pager_sessions.worker_' "$before"
+
+# TASK 6: the three platform tables carry NO RLS, and that is the ruling rather than an
+# oversight (QRPAGER-13 §0) -- so it is asserted here as the POSITIVE `rls=f` needles above
+# AND as the absence of any policy on them, which the needles cannot say. A later migration
+# that "fixed" one by enabling RLS would make the admin panel read nothing, and this is
+# where that shows up.
+policies=$(grep -cE '^policy (tenant_provisionings|tenant_statistics|platform_audit_log)\.' "$before" || true)
+echo "policies on the three platform tables: $policies (expected 0)"
+[ "$policies" = "0" ] \
+  || { echo "a platform table has an RLS policy -- the panel would read nothing" >&2; exit 1; }
+
+# And none of them grew a tenant_id column, which is the premise the whole platform/tenant
+# split rests on. Asked of the catalog, because the fingerprint carries no column list.
+scoped=$(psql_as_root -d "$probe" -tAc \
+  "select count(*) from information_schema.columns
+    where table_schema = 'public' and column_name = 'tenant_id'
+      and table_name in ('tenant_provisionings', 'tenant_statistics', 'platform_audit_log')")
+echo "tenant_id columns on the three platform tables: $scoped (expected 0)"
+[ "$scoped" = "0" ] \
+  || { echo "a platform table carries tenant_id -- it is a tenant table now, and C4 applies" >&2; exit 1; }
+
+# The append-only triggers are ENABLE ALWAYS, which is what makes them hold for a superuser
+# that sets session_replication_role = replica. `tgenabled` is 'A' for ALWAYS and 'O' for
+# the ordinary default, so this distinguishes the real control from its decoration.
+for trg in platform_audit_log_no_mutation platform_audit_log_no_truncate; do
+  grep -qE "^trigger platform_audit_log\.$trg enabled=A " "$before" \
+    || { echo "$trg is not ENABLE ALWAYS -- a superuser walks through it" >&2; exit 1; }
+done
+grep -E '^trigger platform_audit_log\.' "$before"
+
+# No role holds UPDATE or DELETE on platform_audit_log: the trigger makes it impossible and
+# the absent grant makes it unreachable. DELETE is table-level, so it is asked of the
+# catalog -- the fingerprint's grant lines come from column_privileges and can never carry
+# it, which is the dead-control trap recorded for passkeys:DELETE above.
+for role in qrpager_app qrpager_worker; do
+  for priv in UPDATE DELETE; do
+    held=$(psql_as_root -d "$probe" -tAc \
+      "select has_table_privilege('$role', 'platform_audit_log', '$priv')")
+    [ "$held" = "f" ] \
+      || { echo "$role holds $priv on platform_audit_log" >&2; exit 1; }
+  done
+done
+echo "no UPDATE or DELETE on platform_audit_log for either runtime role"
 echo
 
 echo "=== 4. rollback runs clean ==="
@@ -122,8 +377,8 @@ echo
 
 echo "=== 5. a re-apply returns the identical schema ==="
 php artisan migrate --database=pgsql_owner --force >/dev/null || exit 1
-fingerprint > /tmp/qrpager-rollback-after.txt
-if diff -u /tmp/qrpager-rollback-before.txt /tmp/qrpager-rollback-after.txt; then
+fingerprint > "$after"
+if diff -u "$before" "$after"; then
   echo "schema identical after rollback and re-apply"
 else
   echo "migration-rollback-proof: FAILED -- the re-applied schema differs" >&2

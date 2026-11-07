@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kit — browser checks</title>
+    <!--
+      THE STYLESHEETS ARE SUBSTITUTED HERE, at the placeholder below, from the REAL files on
+      disk at run time. No copy is committed beside this fixture: a resolved copy would be
+      another artefact that could go stale, and a stale one would make these checks measure
+      last week's CSS while reporting on today's.
+
+      ⚠ AND THEY ARE SUBSTITUTED RATHER THAN INJECTED, WHICH IS A CORRECTION. The harness
+      used `page.goto(file://…)` and then `page.addStyleTag()` per sheet. Under that, four
+      `<button>` elements resolved to Chromium's UA colours -- `rgb(239,239,239)` on
+      `rgb(0,0,0)` -- while the rules were present, parsed, matched (`el.matches()` true,
+      `parsedOk` true in CDP) and the custom properties resolved. The same CSS and the same
+      markup through `setContent` resolve correctly: `#FFFFFF` on `#0B6B4F`.
+
+      The product CSS was never wrong; the harness was. That matters more than the symptom:
+      a harness that reports a false FAILURE can equally report a false PASS, and these are
+      the only checks in the project that can see a computed style at all.
+    -->
+    <!--STYLES-->
+  </head>
+  <body>
+    <main id="main">
+      <button class="qr-button qr-button--primary" id="primary">
+        <span class="qr-button__label">Primary</span>
+      </button>
+      <button class="qr-button qr-button--secondary" id="secondary">
+        <span class="qr-button__label">Secondary</span>
+      </button>
+      <button class="qr-button qr-button--quiet" id="quiet">
+        <span class="qr-button__label">Quiet</span>
+      </button>
+      <button class="qr-button qr-button--danger" id="danger">
+        <span class="qr-button__label">Danger</span>
+      </button>
+
+      <div class="qr-field">
+        <label class="qr-field__label" for="name">Name</label>
+        <input class="qr-field__input" id="name" />
+      </div>
+
+      <div class="qr-progress" id="progress">
+        <span
+          class="qr-progress__fill"
+          id="fill"
+          style="transform: scaleX(0.4); transform-origin: left"
+        ></span>
+      </div>
+
+      <span class="qr-spinner" id="spinner" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="24" height="24">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" />
+        </svg>
+      </span>
+
+      <p class="qr-timer"><span class="qr-timer__value" dir="ltr" id="timer">04:12</span></p>
+
+      <!-- Assistive-technology-only content. The rendered-pair walk SKIPS this class on
+           purpose -- it is never read by eye, so a contrast bar does not apply to it -- but
+           it must be in the fixture so the completeness check can see the class exists and
+           the walk's exclusion is exercised rather than theoretical. -->
+      <span class="qr-visually-hidden" id="sr-only">Loading, please wait</span>
+
+      <span class="qr-badge" data-status="ready" data-tone="ready" id="badge">Ready</span>
+
+      <section class="qr-card" id="card">
+        <h2 class="qr-card__title">Card</h2>
+        <p>Body</p>
+      </section>
+
+
+      <!--
+        THE FIVE STATES. §12 requires every component to define empty / loading / error /
+        offline / permission-denied, so every one must be in this fixture: the rendered-pair
+        derivation can only see what is on the page, and a state that is absent here is a
+        state whose colour pair nobody measured.
+      -->
+      <div class="qr-state qr-state--loading" data-state="loading">
+        <p class="qr-state__title">Loading</p>
+        <p class="qr-state__description">Fetching the board.</p>
+      </div>
+      <div class="qr-state qr-state--empty" data-state="empty">
+        <p class="qr-state__title">No orders yet</p>
+        <p class="qr-state__description">They will appear here as they are taken.</p>
+      </div>
+      <div class="qr-state qr-state--error" data-state="error" role="alert">
+        <p class="qr-state__title">Something went wrong</p>
+        <p class="qr-state__description">We could not reach the kitchen.</p>
+      </div>
+      <div class="qr-state qr-state--offline" data-state="offline" role="alert">
+        <p class="qr-state__title">You are offline</p>
+        <p class="qr-state__description">We will retry on its own.</p>
+      </div>
+      <div class="qr-state qr-state--permission-denied" data-state="permission-denied">
+        <p class="qr-state__title">Alerts are blocked</p>
+        <p class="qr-state__description">Turn them on in your browser settings.</p>
+      </div>
+
+      <!-- The remaining badge tones, the recessed card, and a disabled button. -->
+      <span class="qr-badge" data-status="waiting" data-tone="waiting" id="badge-waiting">Waiting</span>
+      <span class="qr-badge" data-status="expired" data-tone="stopped" id="badge-stopped">Expired</span>
+      <span class="qr-badge" data-status="completed" data-tone="done" id="badge-done">Collected</span>
+      <section class="qr-card" data-recessed="true" id="card-recessed">
+        <h2 class="qr-card__title">Recessed</h2>
+        <p>A well, on surface-2.</p>
+      </section>
+      <button class="qr-button qr-button--primary" id="disabled" disabled>
+        <span class="qr-button__label">Disabled</span>
+      </button>
+      <div class="qr-field" data-invalid="true">
+        <label class="qr-field__label" for="bad">Email</label>
+        <p class="qr-field__hint" id="hint">We never share it.</p>
+        <input class="qr-field__input" id="bad" aria-invalid="true" aria-describedby="err" />
+        <p class="qr-field__error" id="err" role="alert">That is not an email.</p>
+      </div>
+      <p class="qr-timer"><span class="qr-timer__value" dir="ltr">1:04:12</span></p>
+      <div class="qr-progress"><span class="qr-progress__fill" style="transform: scaleX(1)"></span></div>
+      <section class="qr-ready" data-state="acknowledged" id="ready-ack-state">
+        <h1 class="qr-ready__heading">Acknowledged</h1>
+        <p class="qr-ready__reference" dir="ltr">A-115</p>
+        <p class="qr-ready__instruction">Thank you</p>
+        <button class="qr-ready__acknowledge" id="ready-ack2">On my way</button>
+      </section>
+
+      <!-- The logo slot: the ONE tenant-supplied element on the order-ready screen, and
+           the only thing on it that is not a fixed token. An inline SVG rather than an
+           <img>, so the fixture needs no network. -->
+      <section class="qr-ready" id="ready" data-state="fresh">
+        <div class="qr-ready__logo" id="ready-logo">
+          <svg viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="Cafe">
+            <circle cx="12" cy="12" r="10" fill="currentColor" />
+          </svg>
+        </div>
+        <h1 class="qr-ready__heading" id="ready-heading">Your order is ready</h1>
+        <p class="qr-ready__reference" id="ready-reference" dir="ltr">A-114</p>
+        <p class="qr-ready__instruction" id="ready-instruction">Come to the counter</p>
+        <button class="qr-ready__acknowledge" id="ready-ack">On my way</button>
+      </section>
+    </main>
+  </body>
+</html>

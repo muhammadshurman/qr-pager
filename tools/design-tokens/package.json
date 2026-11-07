@@ -1,0 +1,13 @@
+{
+  "name": "@qrpager/eslint-plugin-design-tokens",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs",
+    "./patterns": "./patterns.mjs"
+  },
+  "scripts": {
+    "typecheck": "echo 'no TypeScript in this package (ESLint plugins are .mjs)' && exit 0"
+  }
+}

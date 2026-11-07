@@ -8,6 +8,7 @@ use App\Domain\Http\ProblemType;
 use App\Domain\Pager\PagerSessionExpired;
 use App\Domain\Pager\PagerSessionNotFound;
 use App\Domain\Pager\PagerTransitionDenied;
+use App\Domain\Tenancy\MemberActionDenied;
 use App\Platform\Database\DatabaseErrorMapper;
 use App\Platform\Database\TenantContextException;
 use App\Platform\Database\UnsafeDatabaseRoleException;
@@ -100,6 +101,31 @@ final class ProblemRenderer
             return new Problem(ProblemType::Conflict, $instance);
         }
 
+        /*
+         * TASK 10e's TWO MEMBER-MANAGEMENT REFUSALS — `§4 › Security`'s *no actor may grant a
+         * role senior to its own, assume one, or change its own role at all*.
+         *
+         * **403 AND NOT 404, WHICH IS THE OPPOSITE OF THE RULE TWO CLAUSES UP, AND THE
+         * DIFFERENCE IS WHETHER THE ANSWER DISCLOSES ANYTHING.**
+         *
+         * `PagerSessionNotFound` is a 404 because a 403 there would confirm that a session id
+         * exists in somebody else's restaurant. These two refusals depend on NO fact the
+         * caller does not already hold: seniority compares the role they just requested with
+         * the role they have been acting under, and the self-role clause compares the target
+         * id with their own membership id. There is nothing for a 403 to leak.
+         *
+         * And a 404 here would be actively worse for `§12`: it would tell a manager who tried
+         * to appoint an owner that the person they were looking at does not exist, which is
+         * false, and the screen's sentence would be about the wrong thing.
+         *
+         * `MemberActionDenied`'s docblock carries the ordering that makes this safe on
+         * `store()` — the seniority check runs BEFORE the email lookup, so an unknown address
+         * and a known one answer identically.
+         */
+        if ($error instanceof MemberActionDenied) {
+            return new Problem(ProblemType::Forbidden, $instance);
+        }
+
         // A session past its TTL. 409 like the clause above -- the state is what makes
         // the request impossible -- but a DIFFERENT `type`, because the two are different
         // states and a client has to act on them differently: an illegal transition is a
@@ -123,7 +149,12 @@ final class ProblemRenderer
         $database = $this->databaseErrors->map($error);
 
         if ($database !== null) {
-            return new Problem($database, $instance);
+            // R-070: the retry hint, chosen per SQLSTATE rather than per status code. A
+            // lock timeout and a saturated connection pool are both 503 and deserve
+            // different numbers, so the mapper decides -- it is the only thing here that
+            // has read the driver code. Null for the mapped 4xx and 5xx, so a 409 or a
+            // 422 still carries no Retry-After.
+            return new Problem($database, $instance, [], $this->databaseErrors->retryAfter($error));
         }
 
         if ($error instanceof HttpExceptionInterface) {
@@ -158,6 +189,23 @@ final class ProblemRenderer
      *   402           -> the default  Payment Required is not an outcome this API has, so
      *                                 it is not modelled rather than mapped somewhere
      *                                 convenient
+     *   419           -> CsrfMismatch Laravel's own status for a missing or stale CSRF
+     *                                 token. ⚠ IT WAS ABSENT AND THEREFORE FELL TO THE
+     *                                 DEFAULT, so every CSRF rejection rendered as a 500
+     *                                 `server-error` -- measured end to end at Task 5's
+     *                                 security review: `POST /v1/auth/login` with no token
+     *                                 answered 500. Worse than the wrong number: Laravel
+     *                                 has `TokenMismatchException` on its internal
+     *                                 don't-report list, so the refusal was invisible in
+     *                                 the log AND misreported to the client, and a client
+     *                                 reading 5xx retries rather than refreshing its token.
+     *                                 The request was always correctly REFUSED; it is the
+     *                                 answer that was wrong. `QRPAGER-12 §10.4(c)` claimed
+     *                                 "a test drives a state-changing route without a token
+     *                                 and asserts 419" -- the test asserted the exception
+     *                                 class from an instantiated middleware, so nothing
+     *                                 ever saw the status. `SessionPolicyTest` drives it
+     *                                 through the kernel now.
      *
      * Asserted by throwing each status through this renderer and reading the rendered
      * `status`, which is how QA found the defect (ProblemEnvelopeTest).
@@ -171,6 +219,7 @@ final class ProblemRenderer
             404, 410 => ProblemType::NotFound,
             405 => ProblemType::MethodNotAllowed,
             409 => ProblemType::Conflict,
+            419 => ProblemType::CsrfMismatch,
             422 => ProblemType::Validation,
             429 => ProblemType::RateLimited,
             503 => ProblemType::Unavailable,

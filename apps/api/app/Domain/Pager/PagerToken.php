@@ -57,6 +57,25 @@ final class PagerToken implements JsonSerializable
     /** Unpadded base64url of 16 bytes is always exactly this long. */
     public const LENGTH = 22;
 
+    /**
+     * The character class a presented token is made of, as a regex fragment.
+     *
+     * ⚠ EXTRACTED FROM isWellFormed()'s OWN PATTERN AT TASK 9, AND IT IS A DE-DUPLICATION
+     * RATHER THAN A NEW FACT. The class was already written there, inline; it is a constant
+     * now because the CLIENT has to apply the same test -- Task 9 validates `location.hash`
+     * before it sends anything, so a malformed fragment costs no request at all -- and a
+     * literal `22` plus a typed character class in TypeScript would be the second source
+     * `§6.2` forbids: it agrees on the day it is written and drifts silently after.
+     *
+     * So `App\Domain\Contracts\StatusMirror` emits this constant and LENGTH into
+     * `packages/contracts`, `composer contracts:check` byte-diffs the result, and the two
+     * languages cannot disagree about what a pager token looks like. isWellFormed() below
+     * builds its pattern from both, so PHP still has exactly one source and it is this one.
+     *
+     * Unpadded base64url, per `encode()`: `-` and `_` rather than `+` and `/`, no `=`.
+     */
+    public const ALPHABET = 'A-Za-z0-9_-';
+
     /** @var Closure(): string */
     private readonly Closure $token;
 
@@ -88,7 +107,21 @@ final class PagerToken implements JsonSerializable
 
     public static function isWellFormed(#[SensitiveParameter] string $presented): bool
     {
-        return preg_match('/^[A-Za-z0-9_-]{'.self::LENGTH.'}$/', $presented) === 1;
+        return preg_match(self::pattern(), $presented) === 1;
+    }
+
+    /**
+     * The anchored shape test, built from the two constants above and from nothing else.
+     *
+     * A METHOD RATHER THAN A THIRD CONSTANT, because the delimiters and the anchors are
+     * PCRE's and are not part of the contract: the mirror emits LENGTH and ALPHABET, and
+     * the TypeScript side builds its own `RegExp` from them with its own anchors. A
+     * constant carrying `/^[...]{22}$/` would export PHP's regex dialect into a contract
+     * that has to hold in JavaScript too.
+     */
+    public static function pattern(): string
+    {
+        return '/^['.self::ALPHABET.']{'.self::LENGTH.'}$/';
     }
 
     /**

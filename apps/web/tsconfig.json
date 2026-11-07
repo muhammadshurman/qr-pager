@@ -1,0 +1,37 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "preserve",
+    "types": ["node", "react", "react-dom"],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "incremental": true,
+    "esModuleInterop": true
+  },
+  // ⚠ `src` AND `test` ADDED AT TASK 9, AND THEIR ABSENCE MADE THIS TYPECHECK VACUOUS.
+  // Task 9 puts every module of the customer journey under `src/`, and with only `app/**`
+  // here `pnpm typecheck` reported success over ~1,400 lines it had not read. That is the
+  // same defect shape 8a's QA review found one level up -- *"`pnpm run typecheck` skipped
+  // the root TS project, so a planted TS2345 in the 708-line browser suite passed typecheck
+  // AND lint"* -- so it is fixed the same way: the project includes the code it claims to
+  // check, and `tools/gate/test/typecheck-coverage.test.mjs` is what holds it there.
+  "include": [
+    "types/**/*.d.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

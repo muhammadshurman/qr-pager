@@ -69,4 +69,55 @@ final class DatabaseErrorMapper
             default => ProblemType::ServerError,
         };
     }
+
+    /**
+     * How long a caller should wait before retrying this particular failure. R-070.
+     *
+     * WHAT R-070 FOUND. Every mapped driver error was built as `new Problem($database,
+     * $instance)` with the retryAfter argument omitted, so 55P03, 57014, 08006 and 53300
+     * all rendered a 503 with no retry hint -- while ShedLoad passed
+     * config('shedding.readiness.cadence') on its 503 and RateLimit passed
+     * availableIn($key) on its 429. The mapper's own comment for the lock-timeout case
+     * said "transient contention the caller may retry" and the response said nothing
+     * about when. Three of the four SQLSTATEs were pre-existing; Task 3 routed the
+     * fourth into the same bucket.
+     *
+     * THE NUMBERS DIFFER PER CODE, which is the half of R-070's remedy that matters --
+     * "a lock timeout and a saturated pool deserve different numbers":
+     *
+     *   55P03 lock_timeout        1s   Another transaction held the row for the 2s the
+     *                                  app role waits (§2.1). Whoever held it is
+     *                                  finishing a single keyed UPDATE, so the contention
+     *                                  is over in well under a second and retrying fast
+     *                                  is right.
+     *   57014 query canceled      2s   statement_timeout, 5s (§2.1). Something was slow
+     *                                  rather than contended, so give it longer than a
+     *                                  lock but not long.
+     *   08006 connection failure 10s   Measured at Task 2: this is ALSO how a saturated
+     *                                  role CONNECTION LIMIT arrives (the 41st
+     *                                  qrpager_app connection). An immediate retry adds
+     *                                  to the saturation it is reporting.
+     *   53300 too many conns     10s   The same condition named explicitly.
+     *
+     * IT IS ADVISORY AND IT IS NOT THE CONTROL. §4 › Realtime requires the CLIENT to use
+     * a jittered interval with exponential backoff, which no server header replaces --
+     * every caller obeying the same number is a thundering herd with a schedule. The
+     * hint exists so that a client has somewhere sane to start, and because a 503 that
+     * says nothing about when is the one answer in this project's envelope that leaves
+     * the caller guessing.
+     *
+     * Null for everything that is not a "come back later": a 409, a 422 and a 500 have
+     * no retry interval to advertise, and inventing one would tell a caller that
+     * repeating an invalid request might work.
+     */
+    public function retryAfter(Throwable $error): ?int
+    {
+        return match (DriverError::sqlState($error)) {
+            DriverError::LOCK_NOT_AVAILABLE => 1,
+            DriverError::QUERY_CANCELED => 2,
+            DriverError::CONNECTION_FAILURE,
+            DriverError::TOO_MANY_CONNECTIONS => 10,
+            default => null,
+        };
+    }
 }

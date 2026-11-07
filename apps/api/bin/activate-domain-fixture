@@ -1,0 +1,145 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * ONE CUSTOM DOMAIN, WALKED TO `active`, FOR THE DOMAIN-MOVE PROOF. TASK 11a.
+ * ================================================================================
+ *
+ * `R-133` and `R-170` are `§3` row 11's two unproven mechanisms, and proving them needs a
+ * domain that has actually GONE LIVE — not a row set to `active` by hand. The difference is
+ * the whole point: activation is what calls `TenantDomains::republish()`, which re-renders the
+ * page onto the new hostname and leaves a redirect behind, and a row written directly would
+ * skip the code under test and prove nothing.
+ *
+ * So this walks the real lifecycle, exactly as `DomainRedirectTest::activate()` does: add,
+ * read the challenge, publish the challenge into the fixture DNS zone, then `advance()` three
+ * times (`pending_dns` -> `dns_verified` -> `certificate_pending` -> `active`).
+ *
+ * ⚠ **IT REQUIRES THE LOCAL DRIVERS AND SAYS SO RATHER THAN SILENTLY DOING LESS.**
+ * `landing.dns_driver` and `landing.certificate_driver` must be `local`: the fixture verifier
+ * reads a zone file this script writes, and the local issuer writes a ledger entry. Against
+ * the `system` driver the challenge would never verify and `advance()` would sit at
+ * `pending_dns` forever, which a proof would report as a product failure.
+ *
+ * ⛔ LOCAL AND TESTING ONLY, failing CLOSED on an unset or unrecognised `APP_ENV` — the guard
+ * every sibling here carries (`§11` round one SEC M-6).
+ *
+ * USAGE:  php bin/activate-domain-fixture <tenant-uuid> <hostname>
+ * PRINTS: one JSON line -- {"tenant_id":"…","domain_id":"…","hostname":"…","status":"active"}
+ */
+
+use App\Domain\Landing\CertificateIssuer;
+use App\Domain\Landing\DnsVerifier;
+use App\Domain\Landing\DomainStatus;
+use App\Features\Landing\FixtureDnsVerifier;
+use App\Features\Landing\TenantDomains;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this writes a DNS zone fixture and a certificate ledger and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+$tenant = (string) ($argv[1] ?? '');
+$hostname = strtolower(trim((string) ($argv[2] ?? '')));
+
+if (! Str::isUuid($tenant)) {
+    fwrite(STDERR, "refusing to run: '{$tenant}' is not a tenant uuid.\n");
+
+    exit(1);
+}
+
+if ($hostname === '') {
+    fwrite(STDERR, "refusing to run: no hostname given.\n");
+
+    exit(1);
+}
+
+foreach (['dns_driver', 'certificate_driver'] as $driver) {
+    if ((string) config('landing.'.$driver) !== 'local') {
+        fwrite(
+            STDERR,
+            "refusing to run: landing.{$driver} is '".(string) config('landing.'.$driver)."' and this "
+            ."script needs 'local'. Against the system driver the challenge never verifies and the "
+            ."domain would sit at pending_dns, which a proof would report as a product failure.\n"
+        );
+
+        exit(1);
+    }
+}
+
+$service = new TenantDomains($app->make(DnsVerifier::class), $app->make(CertificateIssuer::class));
+
+/*
+ * ⚠ **EVERY REFUSAL IS CAUGHT AND TURNED INTO A NON-ZERO EXIT, AND NOT DOING THAT MADE A
+ * PROOF READ A WORKING CONTROL AS A BROKEN ONE.**
+ *
+ * `domain-move-proof` drives this script a second time, with the OTHER tenant, to show that a
+ * hostname cannot change hands — so it depends on this script's exit code to tell a refusal
+ * from a success. Without this block a `DomainRefused` was an UNCAUGHT exception: Laravel's
+ * handler rendered it beautifully to stdout and the process **exited 0**, so the proof
+ * concluded *"beta claimed a hostname alpha holds -- a hostname CAN change hands"* about a
+ * guard that had worked perfectly.
+ *
+ * Measured: `DomainRefused: that hostname is not available` printed, `exit=0`. The refusal was
+ * right; the harness around it was not. A fixture whose exit code does not match what it did
+ * is a fixture that can make any proof say anything.
+ */
+try {
+    $id = $service->add($tenant, $hostname);
+
+    $challenge = $service->challenge($tenant, $id);
+    FixtureDnsVerifier::publish($challenge['name'], $challenge['value']);
+
+    // Three transitions, and the status is read back after each rather than assumed: a
+    // lifecycle that stalls silently would otherwise be reported as a serving defect.
+    foreach ([1, 2, 3] as $step) {
+        $reached = $service->advance($tenant, $id);
+
+        if ($step === 3 && $reached !== DomainStatus::Active) {
+            fwrite(STDERR, "refusing to continue: after three advances {$hostname} is '{$reached->value}', not 'active'.\n");
+
+            exit(1);
+        }
+    }
+} catch (Throwable $e) {
+    fwrite(STDERR, 'refused: '.$e::class.': '.$e->getMessage()."\n");
+
+    exit(1);
+}
+
+$row = withTenant($tenant, fn (): ?object => DB::table('tenant_domains')
+    ->where('id', $id)
+    ->first(['hostname', 'status']));
+
+if ($row === null || $row->status !== DomainStatus::Active->value) {
+    fwrite(STDERR, "refusing to continue: {$hostname} is not recorded active.\n");
+
+    exit(1);
+}
+
+echo json_encode([
+    'tenant_id' => $tenant,
+    'domain_id' => $id,
+    'hostname' => (string) $row->hostname,
+    'status' => (string) $row->status,
+], JSON_THROW_ON_ERROR), "\n";
+
+exit(0);

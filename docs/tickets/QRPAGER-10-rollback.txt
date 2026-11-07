@@ -1,0 +1,67 @@
+# bin/migration-rollback-proof — measured at 4f27a9d (plus this commit's .env read, which
+# is what let it run from an unattended shell at all).
+#
+# §6: "Migrations apply from empty; a second apply is a no-op; a rollback of this task's
+# migrations runs clean." All five checks passed on a throwaway database:
+#   1. migrations apply from EMPTY, in one batch
+#   2. a second apply is a no-op
+#   3. the task's objects are really there (the resolver function, the narrowed policies)
+#   4. migrate:rollback leaves ONE table (the migrations table) and ZERO functions
+#   5. a re-apply returns a byte-identical schema fingerprint
+#
+# The first unattended run of this proof FAILED, and for a reason worth keeping: security
+# L-5 had removed its fallback superuser password, correctly, so the script required
+# DB_ROOT_PASSWORD from the environment and a background shell carried none. It now reads
+# those four names from .env when they are not exported — an exported value still wins —
+# because "load .env first" is how a script stops being run, which is R-043's clause.
+#
+migration-rollback-proof: using the psql inside the compose postgres service
+migration-rollback-proof: database [qrpager_rollback_proof] on 127.0.0.1
+
+=== 1. apply from empty, one batch ===
+
+   INFO  Preparing database.  
+
+  Creating migration table ...................................... 17.39ms DONE
+
+   INFO  Running migrations.  
+
+  2026_10_25_150000_create_global_tables ........................ 31.83ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 92.15ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 12.13ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 8.51ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 5.13ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 3.83ms DONE
+  2026_10_27_120100_create_pager_token_resolver .................. 2.73ms DONE
+
+distinct batches: 1 (expected 1)
+
+=== 2. a second apply is a no-op ===
+
+   INFO  Nothing to migrate.  
+
+
+=== 3. this task's objects are present ===
+fingerprint lines: 415
+policy pager_sessions.worker_expires_sessions cmd=w roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status]))) check=(status = 'expired'::pager_status)
+policy pager_sessions.worker_reads_expired_sessions cmd=r roles=qrpager_worker using=((expires_at <= now()) AND (status = ANY (ARRAY['waiting'::pager_status, 'ready'::pager_status, 'expired'::pager_status]))) check=-
+
+=== 4. rollback runs clean ===
+
+   INFO  Rolling back migrations.  
+
+  2026_10_27_120100_create_pager_token_resolver .................. 5.53ms DONE
+  2026_10_27_120000_narrow_worker_session_policies ............... 4.46ms DONE
+  2026_10_25_150400_protect_audit_log ............................ 2.95ms DONE
+  2026_10_25_150300_grant_runtime_role_privileges ................ 6.32ms DONE
+  2026_10_25_150200_enable_row_level_security ................... 23.09ms DONE
+  2026_10_25_150100_create_tenant_tables ........................ 33.52ms DONE
+  2026_10_25_150000_create_global_tables ......................... 9.75ms DONE
+
+tables left: 1 (expected 1, the migrations table)
+functions left: 0 (expected 0 -- the resolver and the audit trigger are both dropped)
+
+=== 5. a re-apply returns the identical schema ===
+schema identical after rollback and re-apply
+
+migration-rollback-proof: all five checks passed on [qrpager_rollback_proof].

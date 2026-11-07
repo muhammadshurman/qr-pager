@@ -1,0 +1,61 @@
+/*
+  A CAPTURED google fonts css2 response, shortened: the @font-face blocks the endpoint
+  serves to a woff2-capable user agent.
+
+  COMMITTED SO `parseFaces` CAN BE TESTED WITHOUT THE NETWORK. `fetch-fonts.mjs` is not a
+  gate step -- a gate step that needs the network fails for reasons that have nothing to do
+  with the code -- but its parsing, deduplication and naming are ordinary logic and were
+  outside the coverage denominator entirely (QA #10).
+
+  The blocks carry the properties the script depends on and nothing else: a weight, a
+  unicode-range with the marker `WANTED` matches on, and a woff2 url. The Plus Jakarta Sans
+  entries deliberately share ONE url -- that is the real behaviour of a variable font and
+  the cause of defect 7, 27 KB shipped twice. The last block has NO unicode-range, so the
+  parser's own rejection of an incomplete face is exercised too.
+*/
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153;
+}
+@font-face {
+  font-family: 'Tajawal';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/tajawal/v12/Iura6YBj_oCad4k1nzSBC45I.woff2) format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F;
+}
+@font-face {
+  font-family: 'Tajawal';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(https://fonts.gstatic.com/s/tajawal/v12/Iurf6YBj_oCad4k1l4qkHrRpiYlJ.woff2) format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F;
+}
+@font-face {
+  font-family: 'Tajawal';
+  font-style: normal;
+  font-weight: 400;
+  src: url(https://fonts.gstatic.com/s/tajawal/v12/no-range.woff2) format('woff2');
+}

@@ -1,0 +1,591 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://qrpager.local/contracts/landing-page.schema.json",
+    "title": "QR Pager tenant landing page",
+    "description": "Generated from App\\Domain\\Landing\\BlockSchema by `php artisan landing:schema-export`. Do not edit by hand: `bin/landing-schema-check` fails when this file and the PHP source disagree.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "blocks",
+        "theme",
+        "seo"
+    ],
+    "properties": {
+        "blocks": {
+            "type": "array",
+            "maxItems": 24,
+            "items": {
+                "oneOf": [
+                    {
+                        "title": "Hero",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "hero"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "heading": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "subheading": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 160,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "image": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "description": "A media_assets id belonging to this tenant. A foreign id resolves to nothing and the publish is refused.",
+                                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                                    },
+                                    "cta_label": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 40,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "cta_url": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "uri",
+                                        "pattern": "^https://",
+                                        "maxLength": 2048
+                                    }
+                                },
+                                "required": [
+                                    "heading"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "title": "How the pager works",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "how_it_works"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "heading": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "steps": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "maxItems": 6,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "title": {
+                                                    "type": "string",
+                                                    "maxLength": 60,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "body": {
+                                                    "type": "string",
+                                                    "maxLength": 200,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                }
+                                            },
+                                            "required": [
+                                                "title",
+                                                "body"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "heading"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "title": "Menu highlights",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "menu_highlights"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "heading": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "items": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "maxItems": 12,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string",
+                                                    "maxLength": 80,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "description": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 200,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "price": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "maxLength": 20,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "image": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ],
+                                                    "description": "A media_assets id belonging to this tenant. A foreign id resolves to nothing and the publish is refused.",
+                                                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                                                }
+                                            },
+                                            "required": [
+                                                "name"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "heading"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "title": "Gallery",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "gallery"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "heading": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "maxLength": 80,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "images": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "maxItems": 12,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "image": {
+                                                    "type": "string",
+                                                    "description": "A media_assets id belonging to this tenant. A foreign id resolves to nothing and the publish is refused.",
+                                                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                                                },
+                                                "caption": {
+                                                    "type": "string",
+                                                    "maxLength": 120,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                }
+                                            },
+                                            "required": [
+                                                "image",
+                                                "caption"
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "title": "Hours, location and map",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "hours_location"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "heading": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "maxLength": 200,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "hours": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "maxItems": 7,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "day": {
+                                                    "type": "string",
+                                                    "maxLength": 20,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "hours": {
+                                                    "type": "string",
+                                                    "maxLength": 40,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                }
+                                            },
+                                            "required": [
+                                                "day",
+                                                "hours"
+                                            ]
+                                        }
+                                    },
+                                    "latitude": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ],
+                                        "minimum": -90,
+                                        "maximum": 90
+                                    },
+                                    "longitude": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ],
+                                        "minimum": -180,
+                                        "maximum": 180
+                                    },
+                                    "zoom": {
+                                        "type": [
+                                            "number",
+                                            "null"
+                                        ],
+                                        "minimum": 1,
+                                        "maximum": 20
+                                    }
+                                },
+                                "required": [
+                                    "heading",
+                                    "address",
+                                    "hours"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "title": "Contact and social",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "contact"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "heading": {
+                                        "type": "string",
+                                        "maxLength": 80,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "email": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "email",
+                                        "maxLength": 254
+                                    },
+                                    "phone": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^\\+?[0-9][0-9 \\-]{4,30}$"
+                                    },
+                                    "links": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "maxItems": 8,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "label": {
+                                                    "type": "string",
+                                                    "maxLength": 40,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "url": {
+                                                    "type": "string",
+                                                    "format": "uri",
+                                                    "pattern": "^https://",
+                                                    "maxLength": 2048
+                                                }
+                                            },
+                                            "required": [
+                                                "label",
+                                                "url"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "heading"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "title": "Footer",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "type",
+                            "fields"
+                        ],
+                        "properties": {
+                            "type": {
+                                "const": "footer"
+                            },
+                            "fields": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "text": {
+                                        "type": "string",
+                                        "maxLength": 200,
+                                        "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                    },
+                                    "links": {
+                                        "type": [
+                                            "array",
+                                            "null"
+                                        ],
+                                        "maxItems": 8,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "label": {
+                                                    "type": "string",
+                                                    "maxLength": 40,
+                                                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                                                },
+                                                "url": {
+                                                    "type": "string",
+                                                    "format": "uri",
+                                                    "pattern": "^https://",
+                                                    "maxLength": 2048
+                                                }
+                                            },
+                                            "required": [
+                                                "label",
+                                                "url"
+                                            ]
+                                        }
+                                    }
+                                },
+                                "required": [
+                                    "text"
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        "theme": {
+            "type": "object",
+            "description": "A theme overrides TOKENS ONLY, never components. additionalProperties is false, which is that rule in the contract.",
+            "additionalProperties": false,
+            "properties": {
+                "color.background": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-f]{3}|[0-9a-f]{6})$"
+                },
+                "color.surface": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-f]{3}|[0-9a-f]{6})$"
+                },
+                "color.text": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-f]{3}|[0-9a-f]{6})$"
+                },
+                "color.muted": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-f]{3}|[0-9a-f]{6})$"
+                },
+                "color.accent": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-f]{3}|[0-9a-f]{6})$"
+                },
+                "color.accent_text": {
+                    "type": "string",
+                    "pattern": "^#(?:[0-9a-f]{3}|[0-9a-f]{6})$"
+                },
+                "font.heading": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "sans",
+                        "serif",
+                        "mono"
+                    ]
+                },
+                "font.body": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "sans",
+                        "serif",
+                        "mono"
+                    ]
+                },
+                "radius.small": {
+                    "type": "string",
+                    "pattern": "^(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,2})?(?:px|rem|em|%)$"
+                },
+                "radius.large": {
+                    "type": "string",
+                    "pattern": "^(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,2})?(?:px|rem|em|%)$"
+                },
+                "space.section": {
+                    "type": "string",
+                    "pattern": "^(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,2})?(?:px|rem|em|%)$"
+                },
+                "size.heading": {
+                    "type": "string",
+                    "pattern": "^(?:0|[1-9][0-9]{0,3})(?:\\.[0-9]{1,2})?(?:px|rem|em|%)$"
+                }
+            }
+        },
+        "seo": {
+            "type": "object",
+            "description": "structured_data is DERIVED from these and is never authored, so it is absent here and an input carrying it is refused.",
+            "additionalProperties": false,
+            "required": [
+                "title",
+                "description",
+                "og_image"
+            ],
+            "properties": {
+                "title": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "maxLength": 60,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                },
+                "description": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "maxLength": 160,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+                },
+                "og_image": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+            }
+        },
+        "template": {
+            "type": "string",
+            "enum": [
+                "classic",
+                "editorial"
+            ],
+            "default": "classic",
+            "description": "How the blocks are arranged. Absent means classic, which is the arrangement every page published before this member existed already used."
+        }
+    },
+    "x-bounds": {
+        "maxMediaReferences": 24,
+        "maxDocumentBytes": 262144
+    }
+}

@@ -1,0 +1,338 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Platform\Auth\Http;
+
+use App\Domain\Auth\Principal;
+use App\Domain\Http\ProblemType;
+use App\Domain\Tenancy\TenantRole;
+use App\Models\User;
+use App\Platform\Auth\ActiveTenant;
+use App\Platform\Auth\Memberships;
+use App\Platform\Auth\UserCredentials;
+use App\Platform\Http\Problem;
+use App\Platform\Http\ProblemDocument;
+use App\Platform\Http\ValidationProblemDocument;
+use Dedoc\Scramble\Attributes\Response as DocResponse;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+ * Signing in, signing out, and choosing which restaurant a session acts in.
+ *
+ * DOCBLOCKS HERE ARE PUBLISHED as the endpoint descriptions in the OpenAPI spec, so they
+ * are written as public API text (`R-052`). The reasoning behind each decision is in
+ * `App\Platform\Auth\UserCredentials` and `App\Platform\Auth\ActiveTenant`.
+ */
+final class AuthController
+{
+    public function __construct(
+        private readonly UserCredentials $credentials,
+        private readonly Memberships $memberships,
+        private readonly ActiveTenant $activeTenant,
+    ) {}
+
+    /**
+     * Sign in with an email address and password.
+     *
+     * Answers the same way for an unknown address and a wrong password.
+     */
+    #[DocResponse(200, 'Signed in. The body names the restaurants this account may act in.')]
+    #[DocResponse(401, 'Those credentials were not accepted.', type: ProblemDocument::class)]
+    #[DocResponse(422, 'The request was malformed.', type: ValidationProblemDocument::class)]
+    #[DocResponse(429, 'Too many attempts.', type: ProblemDocument::class)]
+    public function login(LoginRequest $request): Response
+    {
+        $userId = $this->credentials->verify(
+            (string) $request->string('email'),
+            (string) $request->string('password'),
+        );
+
+        if ($userId === null) {
+            // ONE ANSWER FOR BOTH FAILURES. "No such account" and "wrong password" must be
+            // indistinguishable, or this endpoint enumerates the platform's accounts --
+            // and `users` is global, so that is every tenant's staff at once.
+            return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
+        }
+
+        $user = User::query()->find($userId);
+
+        if (! $user instanceof User) {
+            return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
+        }
+
+        // A CONFIRMED SECOND FACTOR STOPS HERE, and the credentials being correct is not
+        // enough to establish a session.
+        //
+        // `two_factor_confirmed_at` and not `two_factor_secret`: config/fortify.php sets
+        // `confirm: true`, so a secret exists from the moment enrolment begins and is NOT
+        // in force until the user has proven they can read a code from it. Gating on the
+        // secret would lock somebody out of their own account between those two steps,
+        // which is QRPAGER-12 §10.6(b)'s failure case.
+        if ($user->getAttribute('two_factor_confirmed_at') !== null) {
+            // The pending user id goes in the SERVER-SIDE session, so the challenge cannot
+            // be completed for somebody else: TwoFactorController reads the id from here
+            // and never from the request.
+            $request->session()->put(TwoFactorController::PENDING_KEY, $userId);
+
+            // Regenerated even though no session has been established yet: an attacker who
+            // fixed the id before the password step must not hold the id that is now
+            // one code away from being authenticated.
+            $request->session()->regenerate();
+
+            return response()->json(['two_factor_required' => true], 200);
+        }
+
+        // SESSION FIXATION. Auth::login() migrates the session, and the explicit
+        // regenerate() here is belt and braces on the one event that matters most: a
+        // pre-login id must not carry post-login authority. SessionPolicyTest asserts the
+        // id moves and that the old one no longer authenticates.
+        Auth::guard('web')->login($user);
+
+        $request->session()->regenerate();
+
+        // A STALE SELECTION IS FORGOTTEN AT LOGIN. Memberships change between sessions, and
+        // a selection pointing at a tenant this account has left would be re-verified and
+        // refused on every subsequent request -- which looks to the user like a broken
+        // account rather than a tenant they no longer belong to.
+        $this->activeTenant->forget($request);
+
+        $memberships = $this->memberships->for($userId);
+
+        // A single membership is selected for the caller, because there is no choice to
+        // offer. Several, and the client has to choose: the resolver refuses to pick one.
+        if (count($memberships) === 1) {
+            $this->activeTenant->select($request, $userId, $memberships[0]->tenantId);
+        }
+
+        /*
+         * ⚠ `private, no-store` ON BOTH IDENTITY RESPONSES, ADDED AT 10b's FIX ROUND — `§11`
+         * SECURITY M-2. This payload carries the person's name and, since `R-222`, **the name
+         * of every restaurant they are staff of**, and both answers had no cache headers at
+         * all: the framework default is `no-cache, private`, which forbids a shared cache but
+         * PERMITS the device's own to store the body. On a shared kitchen tablet that leaves
+         * one person's restaurant names on disk across the lock and the next person's
+         * sign-in. Every sibling on this surface sets the header by hand; these two were the
+         * ones relying on a default, and `R-222` is what made them worth more.
+         */
+        return $this->identityResponse($user, $userId);
+    }
+
+    /**
+     * Sign out.
+     *
+     * Answers the same way whether or not there was a session.
+     */
+    #[DocResponse(204, 'Signed out.')]
+    public function logout(Request $request): JsonResponse
+    {
+        Auth::guard('web')->logout();
+
+        if ($request->hasSession()) {
+            // invalidate() regenerates the id AND empties the store, so the selected
+            // tenant goes with it rather than waiting to be re-verified against a user who
+            // is no longer there.
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * Choose which restaurant this session acts in.
+     *
+     * Reported as not found when the account holds no membership there, or the restaurant
+     * is not active.
+     */
+    #[DocResponse(204, 'Selected.')]
+    #[DocResponse(404, 'No such restaurant for this account.', type: ProblemDocument::class)]
+    #[DocResponse(401, 'No session.', type: ProblemDocument::class)]
+    #[DocResponse(422, 'The request was malformed.', type: ValidationProblemDocument::class)]
+    public function selectTenant(SelectTenantRequest $request): Response
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
+        }
+
+        $selected = $this->activeTenant->select(
+            $request,
+            (string) $user->getKey(),
+            (string) $request->string('tenant_id'),
+        );
+
+        if (! $selected) {
+            // 404 for "not yours" AND for "suspended", which is the same reasoning as the
+            // resolver's single null: a distinguishable answer would tell a caller which
+            // tenant ids exist and which are suspended.
+            return (new Problem(ProblemType::NotFound, $request->getPathInfo()))->toResponse();
+        }
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * The signed-in account, and the restaurants it may act in.
+     */
+    #[DocResponse(200, 'The account and its restaurants.')]
+    #[DocResponse(401, 'No session.', type: ProblemDocument::class)]
+    public function me(Request $request): Response
+    {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
+            return (new Problem(ProblemType::Unauthenticated, $request->getPathInfo()))->toResponse();
+        }
+
+        return $this->identityResponse($user, (string) $user->getKey());
+    }
+
+    /**
+     * The identity payload, with the cache posture both call sites need.
+     *
+     * One helper rather than two header arrays, so a third caller cannot be added without it
+     * — which is the same reasoning `RouteAbilities` applies to authorisation one layer up.
+     */
+    private function identityResponse(User $user, string $userId): JsonResponse
+    {
+        return new JsonResponse(
+            $this->identity($user, $userId),
+            200,
+            ['Cache-Control' => 'private, no-store'],
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function identity(User $user, string $userId): array
+    {
+        /*
+         * INTERNAL NOTES ON `memberships[].grantable_roles`, ADDED AT 10e.
+         *
+         * WHY IT IS PUBLISHED HERE RATHER THAN DERIVED ON THE CLIENT. The staff-management
+         * screen has to offer a role picker, and `§12`'s bar is that a screen never offers an
+         * action the server refuses -- so a manager's picker must have no *Owner* option. The
+         * client already holds `role`, so it COULD compute the list itself: that would be a
+         * second implementation of `TenantRole::maySeniorityGrant()` in TypeScript, which is
+         * precisely the duplicated-source defect `§6.2` mechanises against for the status enum.
+         * One source, derived from the ladder, read by the screen.
+         *
+         * WHY IT WIDENS NO CROSS-TENANT PATH, which is the question any addition to THIS
+         * payload has to answer -- `§2.8` keeps a named list of four cross-tenant reads and
+         * `public.user_memberships()` is one of them. This field is computed from
+         * `$membership->role`, a column that function ALREADY returns and that this payload
+         * ALREADY publishes one line above. It is a pure function of a value the caller is
+         * already being handed, so it discloses nothing new and needs no migration, no grant
+         * change and no edit to `§2.8`'s list. That is the same test `R-222`'s `name` had to
+         * pass, and this one passes it more easily because nothing new is read at all.
+         *
+         * AND IT IS NOT THE ENFORCEMENT. `MemberDirectory::requireSeniority()` checks
+         * independently on every write, reading the actor's role from `tenant_users` inside the
+         * tenant's scope -- because a client is a client, and `R-106` was found by driving the
+         * route rather than the screen.
+         */
+
+        /*
+         * INTERNAL NOTES ON `memberships[].name`, ADDED AT 10b -- and they are HERE rather
+         * than above the array key they describe, because a comment above a key in this
+         * array IS PUBLISHED as that property's description in `docs/openapi.json`. That is
+         * `R-052`'s mechanism, and `OpenApiSpecTest` caught the first version of this
+         * paragraph sitting in the spec: *"a published description carries [§]"*. Same
+         * decision `StoreMemberRequest` records for a FormRequest's docblock, one layer over.
+         *
+         * THE RULING. Muhammad, `R-222`, 2026-11-02: publish the restaurant's NAME, and the
+         * chooser labels by it. `PLAN.md §1` carries it.
+         *
+         * `slug` STAYS and is not removed: `§6` says a published path is never changed in
+         * place, and removing a member of a response shape is exactly that change -- it
+         * would break any reader that already has one. The CLIENT stops using it as a label;
+         * the endpoint keeps answering it.
+         *
+         * ⚠ THE DISCLOSURE, analysed rather than waved through, because `R-222`'s own text
+         * called this a `§4 › Security` tension. This endpoint returns ONLY the caller's own
+         * memberships and already drops every tenant that is not active, so what is
+         * published is the names of restaurants this person is staff of. There is no input
+         * shape that returns a second user's set -- one exact-match uuid from the guard, via
+         * `§2.8`'s function -- so nothing is enumerable, and the slug beside it was already a
+         * disclosure of the same shape at a lower resolution. The reason it needed a ruling
+         * rather than a patch is that `/v1/auth/me` answers BEFORE a tenant is selected,
+         * which is the one place in this product where a payload is not bounded by a tenant
+         * scope.
+         */
+        $memberships = [];
+
+        foreach ($this->memberships->for($userId) as $membership) {
+            // Only active tenants are offered. A suspended one cannot be selected, so
+            // listing it would be offering a choice that is refused -- and naming it would
+            // disclose that it exists and is suspended.
+            if (! $membership->tenantIsActive()) {
+                continue;
+            }
+
+            /*
+             * ⚠ THE RATIONALE FOR `principal` BELOW IS **HERE AND NOT ABOVE THE KEY**, AND
+             * `R-052` IS WHY — measured on this very edit. A comment directly above a key in
+             * this array is PUBLISHED as that property's description in `docs/openapi.json`,
+             * and `OpenApiSpecTest` caught a three-line `QRPAGER-22:` note shipping into the
+             * public spec: *"a published description carries [QRPAGER-]"*. `R-222` hit the
+             * same trap at 10b with a 28-line note and recorded it; this is the second time,
+             * which is why it is written where a reader of this loop will see it.
+             *
+             * What the note said: a support membership reports `support`, NOT the role it
+             * stores. `Principal::forMembership()` lets the expiry win over the role, because
+             * a support membership stores the floor role `staff` and `staff` holds writes. A
+             * client that believed `staff` here would offer buttons the API refuses.
+             */
+            $memberships[] = [
+                'tenant_id' => $membership->tenantId,
+                'slug' => $membership->tenantSlug,
+                // The restaurant's name.
+                'name' => $membership->tenantName,
+                'role' => $membership->role->value,
+                // The principal this membership makes its holder.
+                'principal' => Principal::forMembership($membership->role, $membership->expiresAt)->value,
+                // The roles this membership may grant to somebody else. Added at 10e.
+                'grantable_roles' => array_map(
+                    static fn (TenantRole $r): string => $r->value,
+                    $membership->role->grantableRoles(),
+                ),
+            ];
+        }
+
+        /*
+         * `active_tenant` IS ONE OF THE OFFERED MEMBERSHIPS, OR IT IS NULL.
+         *
+         * It used to be whatever the session held, which could name a tenant that is NOT in
+         * the list above -- measured at Task 5's security review with a suspended tenant:
+         * `{"memberships":[],"active_tenant":"<suspended id>"}`. Not a cross-tenant leak,
+         * because the caller chose that tenant themselves and the resolver refuses it on
+         * every other route; but a client reading `active_tenant` would offer a tenant that
+         * answers 401 everywhere, with nothing in the payload explaining why.
+         *
+         * Filtering it against the SAME list makes the two fields consistent by
+         * construction rather than by a reader noticing they should be: whatever reason
+         * removes a membership from `memberships` -- suspension today, anything §2.4 adds
+         * later -- removes it from here too.
+         */
+        $selected = $this->activeTenant->selected(request());
+
+        $offered = array_column($memberships, 'tenant_id');
+
+        return [
+            'user' => [
+                'id' => $userId,
+                'name' => (string) $user->getAttribute('name'),
+                'email' => (string) $user->getAttribute('email'),
+                'is_platform_admin' => $user->isPlatformAdmin(),
+                'two_factor_enabled' => $user->getAttribute('two_factor_confirmed_at') !== null,
+                'passkeys_enabled' => $user->hasPasskeysEnabled(),
+            ],
+            'memberships' => $memberships,
+            'active_tenant' => in_array($selected, $offered, true) ? $selected : null,
+        ];
+    }
+}

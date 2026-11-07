@@ -1,0 +1,175 @@
+Task 6 revert proof — 9c4a113, 2026-10-28T09:38:56Z
+
+=== baseline — no revert, every case should pass
+   PASS  Tests\Feature\Platform\TenantProvisioningTest
+  ✓ it requests a tenant touching platform tables only, and nothing els… 0.62s  
+  ✓ it writes the request and its platform audit row in ONE transaction  0.29s  
+  ✓ it refuses a duplicate slug with a typed failure and writes no seco… 0.27s  
+  ✓ it never puts the driver message in the duplicate-slug failure       0.28s  
+  ✓ it lower-cases the owner email before it is stored, so the job can…  0.27s  
+  ✓ it provisions a tenant end to end: registry row, tenant, first owne… 0.31s  
+  ✓ it attaches an existing user rather than creating a second account   0.30s  
+  ✓ it refuses an owner who already holds a membership, which is R-106’… 0.29s  
+  ✓ it refuses a platform admin as a tenant owner, which the ruling doe… 0.28s  
+  ✓ it says the same thing for both refusals, so the form cannot be use… 0.31s  
+  ✓ it still attaches an existing account that holds no membership, whi… 0.33s  
+  ✓ it records WHOM it made owner in the platform trail                  0.31s  
+  ✓ it gives a provisioned owner NO password, because nothing may inven… 0.31s  
+  ✓ it leaves NO partial tenant when the membership insert fails halfwa… 0.32s  
+  ✓ it can be retried after a failure, and the retry succeeds and is bo… 0.33s  
+  ✓ it is idempotent: a redelivered provision leaves one tenant and one… 0.30s  
+  ✓ it throws a typed failure when the provisioning record is gone       0.27s  
+  ✓ it reaches exactly ONE tenant: the one it creates, and no other      0.32s  
+  ✓ it sets no session-scoped tenant context, so nothing leaks to the n… 0.30s  
+   PASS  Tests\Feature\Platform\PlatformPanelInvariantTest
+  ✓ it enumerates the panel routes, so the cases below have a subject    0.25s  
+  ✓ it reaches NO tenant table on any panel route, as a platform admin   0.51s  
+  ✓ it answers every panel route without a server error, as a platform…  0.42s  
+  ✓ it answers every panel route to an anonymous caller without reachin… 0.30s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.31s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.30s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.31s  
+  ✓ it lets a platform admin read no tenant row through the panel, with… 0.39s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.26s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.26s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.25s  
+  ✓ it points every platform model at a platform table, and never at a…  0.26s  
+  ✓ it points every platform model at a platform table, and never at a…  0.26s  
+  ✓ it points every platform model at a platform table, and never at a…  0.26s  
+  ✓ it registers exactly the resources and pages the invariant was meas… 0.26s  
+  ✓ it mounts no second login page, because that would be a third authe… 0.26s  
+  Tests:    35 passed (179 assertions)
+
+revert A applied: one transaction -> four
+=== revert A — the provisioning transaction split into four
+   FAIL  Tests\Feature\Platform\TenantProvisioningTest
+  ✓ it requests a tenant touching platform tables only, and nothing els… 0.64s  
+  ✓ it writes the request and its platform audit row in ONE transaction  0.28s  
+  ✓ it refuses a duplicate slug with a typed failure and writes no seco… 0.28s  
+  ✓ it never puts the driver message in the duplicate-slug failure       0.27s  
+  ✓ it lower-cases the owner email before it is stored, so the job can…  0.27s  
+  ✓ it provisions a tenant end to end: registry row, tenant, first owne… 0.23s  
+  ✓ it attaches an existing user rather than creating a second account   0.15s  
+  ✓ it refuses an owner who already holds a membership, which is R-106’… 0.14s  
+  ✓ it refuses a platform admin as a tenant owner, which the ruling doe… 0.12s  
+  ✓ it says the same thing for both refusals, so the form cannot be use… 0.14s  
+  ✓ it still attaches an existing account that holds no membership, whi… 0.16s  
+  ✓ it records WHOM it made owner in the platform trail                  0.16s  
+  ✓ it gives a provisioned owner NO password, because nothing may inven… 0.15s  
+  ⨯ it leaves NO partial tenant when the membership insert fails halfwa… 0.16s  
+  ⨯ it can be retried after a failure, and the retry succeeds and is bo… 0.16s  
+  ✓ it is idempotent: a redelivered provision leaves one tenant and one… 0.16s  
+  ✓ it throws a typed failure when the provisioning record is gone       0.12s  
+  ✓ it reaches exactly ONE tenant: the one it creates, and no other      0.17s  
+  ✓ it sets no session-scoped tenant context, so nothing leaks to the n… 0.15s  
+   PASS  Tests\Feature\Platform\PlatformPanelInvariantTest
+  ✓ it enumerates the panel routes, so the cases below have a subject    0.11s  
+  ✓ it reaches NO tenant table on any panel route, as a platform admin   0.34s  
+  ✓ it answers every panel route without a server error, as a platform…  0.22s  
+  ✓ it answers every panel route to an anonymous caller without reachin… 0.14s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.21s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.14s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.14s  
+  ✓ it lets a platform admin read no tenant row through the panel, with… 0.24s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.10s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.11s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.10s  
+  ✓ it points every platform model at a platform table, and never at a…  0.11s  
+  ✓ it points every platform model at a platform table, and never at a…  0.11s  
+  ✓ it points every platform model at a platform table, and never at a…  0.10s  
+  ✓ it registers exactly the resources and pages the invariant was meas… 0.11s  
+  ✓ it mounts no second login page, because that would be a third authe… 0.11s  
+   FAILED  Tests\Feature\Platform\TenantProvisioningTest > it leaves NO part…   
+   FAILED  Tests\Feature\Platform\TenantProvisioningTest > it can be retried…   
+  Tests:    2 failed, 33 passed (163 assertions)
+
+  required red PRESENT: [leaves NO partial tenant]
+revert applied: the dashboard reads `tenants` (unscoped)
+=== revert B — the dashboard reads the tenants table, unscoped
+   PASS  Tests\Feature\Platform\TenantProvisioningTest
+  ✓ it requests a tenant touching platform tables only, and nothing els… 0.59s  
+  ✓ it writes the request and its platform audit row in ONE transaction  0.27s  
+  ✓ it refuses a duplicate slug with a typed failure and writes no seco… 0.27s  
+  ✓ it never puts the driver message in the duplicate-slug failure       0.27s  
+  ✓ it lower-cases the owner email before it is stored, so the job can…  0.26s  
+  ✓ it provisions a tenant end to end: registry row, tenant, first owne… 0.32s  
+  ✓ it attaches an existing user rather than creating a second account   0.31s  
+  ✓ it refuses an owner who already holds a membership, which is R-106’… 0.29s  
+  ✓ it refuses a platform admin as a tenant owner, which the ruling doe… 0.28s  
+  ✓ it says the same thing for both refusals, so the form cannot be use… 0.30s  
+  ✓ it still attaches an existing account that holds no membership, whi… 0.32s  
+  ✓ it records WHOM it made owner in the platform trail                  0.32s  
+  ✓ it gives a provisioned owner NO password, because nothing may inven… 0.38s  
+  ✓ it leaves NO partial tenant when the membership insert fails halfwa… 0.30s  
+  ✓ it can be retried after a failure, and the retry succeeds and is bo… 0.32s  
+  ✓ it is idempotent: a redelivered provision leaves one tenant and one… 0.30s  
+  ✓ it throws a typed failure when the provisioning record is gone       0.26s  
+  ✓ it reaches exactly ONE tenant: the one it creates, and no other      0.33s  
+  ✓ it sets no session-scoped tenant context, so nothing leaks to the n… 0.30s  
+   FAIL  Tests\Feature\Platform\PlatformPanelInvariantTest
+  ✓ it enumerates the panel routes, so the cases below have a subject    0.26s  
+  ✓ it reaches NO tenant table on any panel route, as a platform admin   0.47s  
+  ⨯ it answers every panel route without a server error, as a platform…  0.41s  
+  ✓ it answers every panel route to an anonymous caller without reachin… 0.15s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.21s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.16s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.16s  
+  ✓ it lets a platform admin read no tenant row through the panel, with… 0.23s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.13s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.12s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.12s  
+  ✓ it points every platform model at a platform table, and never at a…  0.11s  
+  ✓ it points every platform model at a platform table, and never at a…  0.12s  
+  ✓ it points every platform model at a platform table, and never at a…  0.12s  
+  ✓ it registers exactly the resources and pages the invariant was meas… 0.12s  
+  ✓ it mounts no second login page, because that would be a third authe… 0.11s  
+   FAILED  Tests\Feature\Platform\PlatformPanelInvariantTest > it answers ev…   
+  Tests:    1 failed, 34 passed (175 assertions)
+
+  required red PRESENT: [answers every panel route]
+revert applied: the dashboard reads `tenants` (scoped)
+=== revert C — the dashboard reads the tenants table INSIDE a scope
+   PASS  Tests\Feature\Platform\TenantProvisioningTest
+  ✓ it requests a tenant touching platform tables only, and nothing els… 0.44s  
+  ✓ it writes the request and its platform audit row in ONE transaction  0.14s  
+  ✓ it refuses a duplicate slug with a typed failure and writes no seco… 0.14s  
+  ✓ it never puts the driver message in the duplicate-slug failure       0.14s  
+  ✓ it lower-cases the owner email before it is stored, so the job can…  0.13s  
+  ✓ it provisions a tenant end to end: registry row, tenant, first owne… 0.16s  
+  ✓ it attaches an existing user rather than creating a second account   0.16s  
+  ✓ it refuses an owner who already holds a membership, which is R-106’… 0.16s  
+  ✓ it refuses a platform admin as a tenant owner, which the ruling doe… 0.13s  
+  ✓ it says the same thing for both refusals, so the form cannot be use… 0.15s  
+  ✓ it still attaches an existing account that holds no membership, whi… 0.17s  
+  ✓ it records WHOM it made owner in the platform trail                  0.17s  
+  ✓ it gives a provisioned owner NO password, because nothing may inven… 0.16s  
+  ✓ it leaves NO partial tenant when the membership insert fails halfwa… 0.17s  
+  ✓ it can be retried after a failure, and the retry succeeds and is bo… 0.18s  
+  ✓ it is idempotent: a redelivered provision leaves one tenant and one… 0.17s  
+  ✓ it throws a typed failure when the provisioning record is gone       0.13s  
+  ✓ it reaches exactly ONE tenant: the one it creates, and no other      0.19s  
+  ✓ it sets no session-scoped tenant context, so nothing leaks to the n… 0.17s  
+   FAIL  Tests\Feature\Platform\PlatformPanelInvariantTest
+  ✓ it enumerates the panel routes, so the cases below have a subject    0.16s  
+  ⨯ it reaches NO tenant table on any panel route, as a platform admin   0.45s  
+  ✓ it answers every panel route without a server error, as a platform…  0.30s  
+  ✓ it answers every panel route to an anonymous caller without reachin… 0.13s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.19s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.19s  
+  ✓ it refuses the panel to every tenant principal, with no tenant abil… 0.20s  
+  ✓ it lets a platform admin read no tenant row through the panel, with… 0.31s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.26s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.29s  
+  ✓ it gives the platform models NO relation to any tenant table, which… 0.17s  
+  ✓ it points every platform model at a platform table, and never at a…  0.17s  
+  ✓ it points every platform model at a platform table, and never at a…  0.16s  
+  ✓ it points every platform model at a platform table, and never at a…  0.15s  
+  ✓ it registers exactly the resources and pages the invariant was meas… 0.16s  
+  ✓ it mounts no second login page, because that would be a third authe… 0.13s  
+   FAILED  Tests\Feature\Platform\PlatformPanelInvariantTest > it reaches NO…   
+  Tests:    1 failed, 34 passed (179 assertions)
+
+  required red PRESENT: [reaches NO tenant table]
+restored: both files are back to HEAD (git checkout, not a run-time copy)
+
+provisioning-revert-proof: every revert kept its controls green and every red was an assertion.

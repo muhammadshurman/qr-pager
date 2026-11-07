@@ -1,0 +1,64 @@
+site-isolation-proof: publishing two tenants' pages through the real publisher
+  alpha -> e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test
+  beta  -> e2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test
+site-isolation-proof: building apps/site
+site-isolation-proof: starting apps/site on port 3096
+site-isolation-proof: B -- each host gets its own page
+  ok  e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test answers 200
+  ok  e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test contains its own name
+  ok  e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test contains nothing of the other tenant
+  ok  e2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test answers 200
+  ok  e2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test contains its own name
+  ok  e2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test contains nothing of the other tenant
+  ok  e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test answers 200
+  ok  e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test contains its own name
+  ok  e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test contains nothing of the other tenant
+site-isolation-proof: C -- an unpublished host falls back to nothing
+  ok  an unpublished host answered 404 and leaked nothing, 8 times, interleaved
+site-isolation-proof: D -- hostile Host headers
+  ok  a Host carrying a port still serves its own page
+  ok  hostile Host refused: e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test/../e2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test (404)
+  ok  hostile Host refused: e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test. (404)
+  ok  hostile Host refused: E2E-STAFF-01A1A10F0AF9700E8DE516CDC7575DF1.PAGES.QRPAGER.TEST (404)
+  ok  hostile Host refused: nope (404)
+  ok  hostile Host refused: .. (404)
+  ok  hostile Host refused: e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test%00 (404)
+  ok  hostile Host refused: e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test%2f..%2fe2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test (404)
+site-isolation-proof: D -- paths that are not the page or one asset
+  ok  path refused: /index.html
+  ok  path refused: /manifest.json
+  ok  path refused: /assets/../index.html
+  ok  path refused: /sites/e2e-staff-01a1a10f0b08717784bd3f5b3f5445f4.pages.qrpager.test/index.html
+site-isolation-proof: E -- Vary: Host on every answer
+  ok  Vary: Host on e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test/
+  ok  Vary: Host on e2e-staff-01a1a10f0af9700e8de516cdc7575df1.pages.qrpager.test/nope
+  ok  Vary: Host on nope/
+  ok  Vary: Host on nobody-published-here.pages.qrpager.test/
+site-isolation-proof: F -- the store verifies signatures
+  ok  a correctly signed GET of alpha's pointer
+  ok  the same GET signed with the wrong secret
+site-isolation-proof: G -- a republish switches one host's pointer and no other's
+  ok  alpha answers 200 after a republish
+  ok  alpha serves the republished page
+  ok  beta answers 200 after alpha's republish
+  ok  beta is untouched by alpha republishing
+site-isolation-proof: H -- origin untouched
+  ok  nothing is listening on the API port (8099)
+  ok  a page is served with no application process running
+  ok  the bytes are the published ones, with no origin to produce them
+site-isolation-proof: I -- per-tenant theme from tokens
+  ok  the theme arrives as custom properties on one element
+  ok  no rule, no selector and no closed declaration in the theme attribute
+  ok  this tenant theme and not the other (#7a53c9, not #425eb2)
+site-isolation-proof: J -- SEO and Open Graph
+  ok  present: <title>
+  ok  present: <meta name="description"
+  ok  present: <meta property="og:title"
+  ok  present: <meta property="og:description"
+  ok  present: <meta property="og:url"
+  ok  present: <link rel="canonical"
+  ok  the canonical and og:url name this host and no other
+  ok  the JSON-LD parses, names this host, and carries no raw tag delimiter
+
+site-isolation-proof: green -- 46 checks, two tenants, real published bytes
+EXIT=0

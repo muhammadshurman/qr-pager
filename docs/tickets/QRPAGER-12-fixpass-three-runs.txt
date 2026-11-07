@@ -1,0 +1,14 @@
+# THREE CONSECUTIVE GREEN FULL-SUITE RUNS
+#
+# Commit:  6e5847d
+# Machine: /home/pixels/qr-pager/apps/api, Linux 6.18.54.1-microsoft-standard-WSL2
+# Needed:  3 consecutive, giving up after 12 attempts
+# Rule:    R-092's 08006 and its claim-shortfall family do not block, and do not
+#          count either -- a red of any kind RESETS the consecutive counter.
+#
+run 1  | 6e5847d | start 00:27:43Z | exit=0 | Tests:    758 passed (6644 assertions) | no failures | streak 1/3
+run 2  | 6e5847d | start 00:29:42Z | exit=0 | Tests:    758 passed (6644 assertions) | no failures | streak 2/3
+run 3  | 6e5847d | start 00:31:42Z | exit=0 | Tests:    758 passed (6644 assertions) | no failures | streak 3/3
+
+three-green-runs: PASSED -- 3 consecutive green runs at 6e5847d, in 3 attempt(s).
+  transcript: /home/pixels/qr-pager/apps/api/storage/logs/three-green-runs-20261028T002743Z.txt

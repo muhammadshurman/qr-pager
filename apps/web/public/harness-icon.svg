@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="QR Pager harness">
+  <title>QR Pager harness</title>
+  <rect width="64" height="64" fill="#0b6b4f" />
+  <rect x="12" y="12" width="16" height="16" fill="#f7faf8" />
+  <rect x="36" y="12" width="16" height="16" fill="#f7faf8" />
+  <rect x="12" y="36" width="16" height="16" fill="#f7faf8" />
+  <rect x="38" y="38" width="12" height="12" fill="#f7faf8" />
+</svg>

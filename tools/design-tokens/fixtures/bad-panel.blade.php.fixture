@@ -1,0 +1,15 @@
+{{--
+  DELIBERATELY WRONG. Every line below is a shape `scan-panel.mjs` must refuse, and the test
+  asserts the COUNT and the RULE for each -- so a pattern that stops matching is visible here
+  rather than silently reducing the rule's reach.
+
+  These compile in the panel build, which is the whole point: the panel theme REDEFINES
+  Tailwind's namespaces instead of clearing them (SR-1), because Filament consumes the
+  default theme. The lint rule is the only instrument for these.
+--}}
+<div class="p-5 mt-1 gap-3">off-ladder spacing: 5 is not a step at all, 1 and 3 are multiplier steps</div>
+<div class="bg-white text-white ring-white">white is not one of the eleven approved values</div>
+<div class="bg-black border-black">nor is black</div>
+<div class="p-[13px] text-[#0B6B4F]">the square-bracket escape hatch, D3</div>
+<div style="color: #10231B">a hex, even when it is an approved value: the literal is the finding</div>
+<div style="color: oklch(0.47 0.094 166.529)">a colour function is the same decision in different clothing</div>

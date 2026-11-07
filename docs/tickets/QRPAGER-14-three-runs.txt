@@ -1,0 +1,25 @@
+================================================================================
+THREE CONSECUTIVE GREEN RUNS (§6)
+================================================================================
+
+Commit:   0529b5d  (task-7-landing-builder)
+Run at:   2026-10-28, after the sixth review's fix pass
+Command:  bin/three-green-runs      (apps/api)
+Result:   PASSED -- 3 consecutive green runs in 3 attempts, 1085 passed and
+          8726 assertions on each, no red of any kind
+
+# THREE CONSECUTIVE GREEN FULL-SUITE RUNS
+#
+# Commit:  0529b5d
+# Machine: /home/lenovo/code/qr-pager/apps/api, Linux 6.18.54.1-microsoft-standard-WSL2
+# Needed:  3 consecutive, giving up after 12 attempts
+# Rule:    R-092's 08006 and its claim-shortfall family do not block, and do not
+#          count either -- a red of any kind RESETS the consecutive counter.
+#
+run 1  | 0529b5d | start 20:10:36Z | exit=0 | Tests:    1085 passed (8726 assertions) | no failures | streak 1/3
+run 2  | 0529b5d | start 20:16:20Z | exit=0 | Tests:    1085 passed (8726 assertions) | no failures | streak 2/3
+run 3  | 0529b5d | start 20:22:03Z | exit=0 | Tests:    1085 passed (8726 assertions) | no failures | streak 3/3
+
+three-green-runs: PASSED -- 3 consecutive green runs at 0529b5d, in 3 attempt(s).
+  transcript: /home/lenovo/code/qr-pager/apps/api/storage/logs/three-green-runs-20261028T201036Z.txt
+three-runs exit: 0

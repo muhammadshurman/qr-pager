@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# R-068: re-measure PagerTtlTest's revert proof, per case, both halves separately.
+#
+# WHAT R-068 FOUND. PagerTtlTest's header claimed "delete the refuseIfPastTtl() call in
+# apply() and the first four cases go green-to-red at 200 instead of 409; delete it in
+# renotify() and the fifth does". The second review ran both reverts and measured
+# something else: apply()-only turns SIX cases red and renotify()-only turns ONE, and it
+# is case 2 rather than case 5. The aggregate figure quoted in §0, §4a and R-058 -- "6 of
+# 9 revert-proved, the 3 that stay green are exactly the carve-outs" -- was right, so the
+# number anyone acted on was correct and only one file's header was wrong.
+#
+# WHY THIS IS A SCRIPT AND NOT TWO seds IN A HANDOVER. R-043: a proof that does not live
+# in the repository is a proof nobody can re-run. R-068's own "review by" cell says
+# "re-running both reverts is two seds and two test runs, recorded in §4a" -- this is
+# those two seds, with the per-case verdict printed, so the header's claim can be checked
+# against a run rather than against a memory of one.
+#
+# It edits a tracked file and restores it in a trap, including on Ctrl-C. Run it on a
+# clean tree: if it is interrupted hard enough to skip the trap, `git checkout` the file.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# THE SHARED MACHINERY. One pattern, one place -- bin/_revert-proof.sh checks that the
+# baseline is green, that the declared controls do not move, and that every red is an
+# ASSERTION rather than a driver or binding error. This script did none of those three,
+# and the proof that got it wrong was the lease one; a rule enforced in one script and
+# not the others is the duplicated-precondition shape bin/_runtime.sh exists because of.
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
+
+target="app/Features/Pager/PagerSessions.php"
+backup="$(mktemp)"
+
+cp "$target" "$backup"
+trap 'cp "$backup" "$target"; rm -f "$backup"; revert_proof_cleanup' EXIT INT TERM
+
+# THE CONTROLS. R-068's own measurement is that apply()-only turns six of the nine cases
+# red and renotify()-only turns one. The three that never move are the carve-outs the
+# TTL rule deliberately does not apply to -- a terminal status, a session inside its TTL,
+# and another tenant's session, none of which any revert here can touch. Declared so the
+# machinery can check them, which is the whole lesson of the lease proof.
+revert_proof_init \
+  "tests/Feature/Pager/PagerTtlTest.php" \
+  "leaves terminal statuses alone" \
+  "passes a session inside its TTL straight through" \
+  "still answers 404 and never 409 for another tenant"
+
+run() { revert_proof_run "$@"; }
+
+echo "R-068 revert proof — PagerTtlTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+run "baseline — no revert, every case should pass" baseline
+
+cp "$backup" "$target"
+# The apply() call site. Matched by the variable names, which differ between the two call
+# sites ($from/$session in apply, $status/$session in renotify), so each sed hits one.
+sed -i 's|^\( *\)\$this->refuseIfPastTtl(\$from, \$session);|\1// REVERTED BY bin/ttl-revert-proof|' "$target"
+grep -q 'REVERTED BY' "$target" || { echo "FATAL: the apply() call site was not found"; exit 1; }
+run "revert A — refuseIfPastTtl() removed from apply() ONLY"
+
+cp "$backup" "$target"
+sed -i 's|^\( *\)\$this->refuseIfPastTtl(\$status, \$session);|\1// REVERTED BY bin/ttl-revert-proof|' "$target"
+grep -q 'REVERTED BY' "$target" || { echo "FATAL: the renotify() call site was not found"; exit 1; }
+run "revert B — refuseIfPastTtl() removed from renotify() ONLY"
+
+# RESTORE HERE, EXPLICITLY, AND NOT ONLY IN THE TRAP. The first version of this script
+# checked the file against the backup while revert B was still applied, because the trap
+# had not fired yet -- so a clean run ended with "does NOT match the pre-run copy" and a
+# non-zero exit. The trap stays, because it is what covers a crash or a Ctrl-C; this
+# restores for the normal path so the check below has something true to check.
+cp "$backup" "$target"
+
+# Against the BACKUP, not against HEAD: the file legitimately differs from HEAD while
+# this task is in progress, so a git diff here would report the work as damage.
+if cmp -s "$backup" "$target"; then
+  echo "restored: $target is byte-identical to the copy taken before the first revert"
+else
+  echo "WARNING: $target does NOT match the pre-run copy. Restore it from git." >&2
+  exit 1
+fi
+
+echo
+
+revert_proof_verdict "ttl-revert-proof" || exit 1

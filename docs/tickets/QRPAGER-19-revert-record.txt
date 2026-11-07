@@ -1,0 +1,361 @@
+QRPAGER-19 — EVERY NEW PROOF SHOWN TO REDDEN ONCE
+Standing rule, PLAN.md §1 (2026-11-03). Each section reverts the thing the proof
+asserts, runs the proof once, records the output, and restores the tree.
+Measured 2026-11-07 on task-12-security-hardening.
+
+================================================================================
+1. R-191 — tests/Feature/Gate/ConnectRetryTest.php
+================================================================================
+
+================================================================================
+1. R-191 — tests/Feature/Gate/ConnectRetryTest.php
+================================================================================
+
+--- 1a. REVERT: the container binding removed (the guard-goes-quiet case) -------
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest >…  BindingResolutionException   
+  Target class [db.connector.pgsql] does not exist.
+
+  at vendor/laravel/framework/src/Illuminate/Container/Container.php:1151
+    1147▕             }
+    1148▕         }
+    1149▕ 
+    1150▕         try {
+  ➜ 1151▕             $reflector = new ReflectionClass($concrete);
+    1152▕         } catch (ReflectionException $e) {
+    1153▕             throw new BindingResolutionException("Target class [$concrete] does not exist.", 0, $e);
+    1154▕         }
+    1155▕
+
+      +6 vendor frames 
+  7   tests/Feature/Gate/ConnectRetryTest.php:248
+
+
+  Tests:    1 failed, 5 passed (26 assertions)
+  Duration: 6.98s
+
+--- 1b. REVERT: ATTEMPTS back to 1, so nothing is absorbed ----------------------
+  ⨯ it absorbs ONE real libpq connect stall and returns a working conne… 2.35s  
+  ⨯ it re-throws an exhausted stall carrying BOTH the driver message an… 2.12s  
+  ✓ it does NOT retry a refused connection, so the tests that point at…  0.12s  
+  ✓ it does NOT retry the other 08006s this project deliberately produc… 0.12s  
+  ✓ it is actually IN FORCE for the application, not merely present in…  0.15s  
+  ✓ it keeps the connect deadline EXPLICIT, and the suite’s above this…  0.14s  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it absorbs ON…  PDOException   
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it re-throws an exhausted s…   
+  Failed asserting that 1 is identical to 2.
+  at tests/Feature/Gate/ConnectRetryTest.php:163
+    161▕             // Two attempts, not one and not three: ATTEMPTS is 2, and at a 45 s deadline a
+    164▕             ->and(RetryingPostgresConnector::absorbed())->toBe(1);
+  Tests:    2 failed, 4 passed (25 assertions)
+  Duration: 5.07s
+
+--- 1c. REVERT: matcher widened to the SQLSTATE alone, dropping 'timeout expired' -
+  ✓ it absorbs ONE real libpq connect stall and returns a working conne… 2.38s  
+  ✓ it re-throws an exhausted stall carrying BOTH the driver message an… 4.13s  
+  ⨯ it does NOT retry a refused connection, so the tests that point at…  0.12s  
+  ⨯ it does NOT retry the other 08006s this project deliberately produc… 0.11s  
+  ✓ it is actually IN FORCE for the application, not merely present in…  0.11s  
+  ✓ it keeps the connect deadline EXPLICIT, and the suite’s above this…  0.11s  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it does NOT retry a refused…   
+  a refusal was retried
+Failed asserting that 1 is identical to 0.
+  at tests/Feature/Gate/ConnectRetryTest.php:197
+  ➜ 197▕         ->and(RetryingPostgresConnector::absorbed())->toBe(0, 'a refusal was retried')
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it does NOT retry the other…   
+  retried an 08006 that is a result: SQLSTATE[08006] [7] connection to server at "127.0.0.1", port 5432 failed: FATAL:  too many connections for role "qrpager_app"
+Failed asserting that 2 is identical to 1.
+  at tests/Feature/Gate/ConnectRetryTest.php:238
+  ➜ 238▕         expect($connector->seen)->toBe(1, "retried an 08006 that is a result: {$text}")
+    239▕             ->and(RetryingPostgresConnector::absorbed())->toBe(0);
+  Tests:    2 failed, 4 passed (27 assertions)
+  Duration: 7.01s
+
+--- 1d. REVERT: the explicit deadline removed, back to pdo_pgsql's implicit 30 ----
+  ✓ it absorbs ONE real libpq connect stall and returns a working conne… 2.44s  
+  ✓ it re-throws an exhausted stall carrying BOTH the driver message an… 4.13s  
+  ✓ it does NOT retry a refused connection, so the tests that point at…  0.11s  
+  ✓ it does NOT retry the other 08006s this project deliberately produc… 0.12s  
+  ✓ it is actually IN FORCE for the application, not merely present in…  0.12s  
+  ⨯ it keeps the connect deadline EXPLICIT, and the suite’s above this…  0.11s  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it keeps the connect deadli…   
+  the connect deadline is implicit again: pdo_pgsql will apply its own 30
+Failed asserting that null is of type int.
+  at tests/Feature/Gate/ConnectRetryTest.php:265
+    262▕     // behavioural one: the deadline was never absent, it was pdo_pgsql's undocumented 30.
+  ➜ 265▕     expect($configured)->toBeInt('the connect deadline is implicit again: pdo_pgsql will apply its own 30');
+    268▕     // 32,430 ms is AppPoolSaturator's. The suite's deadline must sit above both, or the retry
+  Tests:    1 failed, 5 passed (28 assertions)
+  Duration: 7.08s
+
+==========================================================================
+================================================================================
+2. THE NAMED INVARIANT — tests/Feature/Http/SurfaceDisclosureTest.php
+================================================================================
+
+⚠ THE FIRST ATTEMPT AT 2a WAS GREEN AND THE PROOF, NOT THE CODE, WAS AT FAULT.
+  The case looked for 'pager_sessions_gone' and 'select *'; the table is RENAMED, so
+  the failing statement still says 'pager_sessions', and the board selects named
+  columns. Neither needle could ever appear. The needles are now the body measured
+  WITH the renderer removed (32,425 bytes vs the problem document's 149), and the
+  revert below is the re-run.
+
+================================================================================
+2. THE NAMED INVARIANT — tests/Feature/Http/SurfaceDisclosureTest.php
+================================================================================
+
+⚠ THE FIRST ATTEMPT AT 2a WAS GREEN AND THE PROOF, NOT THE CODE, WAS AT FAULT.
+  It looked for 'pager_sessions_gone' and 'select *'; the table is RENAMED, so the
+  failing statement still says 'pager_sessions', and the board selects named columns.
+  Neither needle could ever appear. The needles are now the body measured WITH the
+  renderer removed (32,425 bytes against the problem document's 149).
+
+--- 2a. REVERT: ProblemRenderer unregistered, so Laravel's own renderer answers --
+  ✓ it FINDS every needle when a route really discloses one — the contr… 0.33s  
+  ✓ it discloses nothing across the WHOLE route surface, at APP_DEBUG f… 1.85s  
+  ✓ it keeps a REAL QR token out of every response but the one that min… 1.32s  
+  ⨯ it carries no SQL and no bound parameter out of a REAL database fai… 0.14s  
+  ✓ it leaks nothing through the panel surface either, which is HTML an… 0.29s  
+   FAILED  Tests\Feature\Http\SurfaceDisclosureTest > it carries no SQL and…    
+  To contain: /problems/server-error
+    456▕                 "{$setting}: the 500 body is ".strlen($body).' bytes; the problem document is ~149 '.
+  Tests:    1 failed, 4 passed (24 assertions)
+  Duration: 3.98s
+
+================================================================================
+3. R-234 / R-236 / R-237 AND THE RESPONSE-HARDENING WORK
+================================================================================
+
+================================================================================
+3. R-234 / R-236 / R-237
+================================================================================
+
+--- 3a. R-234 REVERT: the scale unconfined again, as it was before Task 12 ----------
+  ⨯ it ignores the scale under every environment name that is not local… 0.13s  
+  ⨯ it stays at 10 in a REAL production process carrying RATELIMIT_SCAL… 0.42s  
+   FAILED  Tests\Feature\Http\RateLimitScaleTest > it ignores the scale unde…   
+Failed asserting that 200 is identical to 10.
+   FAILED  Tests\Feature\Http\RateLimitScaleTest > it stays at 10 in a REAL…    
+Failed asserting that two strings are identical.
+  Tests:    2 failed, 5 passed (25 assertions)
+
+--- 3b. R-236 REVERT: the idempotent branch answers the REQUEST's role again -------
+  ⨯ it answers the STORED role on an idempotent add, not the one the ca… 0.17s  
+   FAILED  Tests\Feature\Auth\MembersTest > it answers the STORED role on an…   
+  Failed asserting that two strings are identical.
+  Tests:    1 failed, 9 passed (59 assertions)
+
+--- 3c. R-237 REVERT: all six transitions pass actorIp alone, as before Task 12 -----
+  ⨯ it records the calling staff user on every one of the six staff tra… 0.44s  
+  ⨯ it records the caller on a CANCEL too, which the drive above cannot… 0.16s  
+   FAILED  Tests\Feature\Pager\PagerAuditActorTest > it records the calling…    
+  [pager.session.created] is audited with actor_user_id NULL instead of the caller's id
+Failed asserting that null is identical to '01a1b5c7-1928-70b4-b713-b3003a917f34'.
+    110▕             "[{$action}] is audited with actor_user_id ".
+   FAILED  Tests\Feature\Pager\PagerAuditActorTest > it records the caller o…   
+  Failed asserting that null is identical to '01a1b5c7-1a03-7259-9079-238938928e6e'.
+  Tests:    2 failed, 2 passed (21 assertions)
+
+================================================================================
+4. THE RESPONSE-HARDENING WORK — headers, CSP, CORS, the avatar
+================================================================================
+
+--- 4a. REVERT: HardenResponse unregistered -- R-038's state before Task 12 --------
+  ⨯ it sets every hardening header on EVERY route in the table, driven…  0.47s  
+  ⨯ it denies every sensor capability in Permissions-Policy, from the m… 0.10s  
+  ⨯ it gives EVERY tenant-data route private, no-store — R-235, with no… 0.18s  
+  ⨯ it carries private, no-store on GET /v1/members itself, with a real… 0.14s  
+  ⨯ it gives the JSON surface default-src ’none’ with no unsafe-inline…  0.11s  
+  ⨯ it gives the panel HTML its own policy, with no third-party origin…  0.16s  
+  ⨯ it hardens a 404, a 429 and a rendered exception — the responses no… 0.16s  
+  ⨯ it never REPLACES a policy a response built for itself — the regres… 0.15s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it sets every hardening h…   
+  unhardened responses:
+Failed asserting that two arrays are identical.
+  ➜ 165▕     expect($missing)->toBe([], "unhardened responses:\n  ".implode("\n  ", $missing));
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it denies every sensor ca…   
+Failed asserting that false is true.
+
+--- 4b. REVERT: R-235's own state -- the framework default 'no-cache, private' -----
+  ⨯ it gives EVERY tenant-data route private, no-store — R-235, with no… 0.18s  
+  ⨯ it carries private, no-store on GET /v1/members itself, with a real… 0.14s  
+  ⨯ it hardens a 404, a 429 and a rendered exception — the responses no… 0.16s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it gives EVERY tenant-dat…   
+  responses that may be stored:
+Failed asserting that two arrays are identical.
+  ➜ 240▕     expect($wrong)->toBe([], "responses that may be stored:\n  ".implode("\n  ", $wrong));
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it carries `private, no-s…   
+  Failed asserting that two arrays are identical.
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it hardens a 404, a 429 a…   
+  [404] may be stored
+Failed asserting that two arrays are identical.
+  ➜ 428▕             ->toBe(['no-store', 'private'], "[{$label}] may be stored")
+  Tests:    3 failed, 6 passed (98 assertions)
+
+--- 4c. REVERT: the CSP overwritten again -- tenant content gets the panel policy --
+  ⨯ it never REPLACES a policy a response built for itself — the regres… 0.17s  
+  ⨯ it keeps no-store and the four security headers on the page — S-3,…  0.14s  
+  ⨯ it serves a content security policy on the preview document, not on… 0.20s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it never REPLACES a polic…   
+  To contain: default-src 'none'
+   FAILED  Tests\Feature\Design\PanelProblemPageTest > it keeps no-store and…   
+  To contain: default-src 'none'
+   FAILED  Tests\Feature\Landing\ReviewFixesTest > it serves a content secur…   
+  To contain: default-src 'none'
+  Tests:    3 failed, 37 passed (261 assertions)
+
+--- 4d. REVERT: Laravel's shipped CORS default over /v1 with credentials ----------
+  ⨯ it answers no CORS header to a cross-origin preflight, on any surfa… 0.38s  
+   FAILED  Tests\Feature\Http\CorsPolicyTest > it answers no CORS header to…    
+Failed asserting that 'https://evil.example.com' is null.
+  Tests:    1 failed (1 assertions)
+
+--- 4e. REVERT: Filament's UiAvatarsProvider back -- the name leak, as measured ----
+  ⨯ it serves the panel markup with no third-party request in it — the…  0.17s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the panel marku…   
+Failed asserting that true is false.
+  Tests:    1 failed, 8 passed (109 assertions)
+
+================================================================================
+5. THE FUZZ SUITE AND THE ASVS MAPPING
+================================================================================
+
+================================================================================
+5. THE FUZZ SUITE AND THE ASVS MAPPING
+================================================================================
+
+⚠ AND 5a HAD TO BE RE-RUN FOR THE SAME REASON. The first attempt removed ONE payload
+  from the corpus rather than the corpus, left 29 in place, and stayed green. Gutted to
+  one payload, the non-vacuity floors fire.
+
+--- 5a. REVERT: the fuzz corpus gutted to ONE payload -- the vacuity direction ---
+  ⨯ it finds no 5xx anywhere on the surface, with a hostile BODY on eve… 0.33s  
+  ⨯ it finds no 5xx with a hostile value in every PATH PARAMETER         0.17s  
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it finds no 5xx anywhere on…    
+  the corpus is nearly empty
+Failed asserting that 1 is greater than 20.
+  ➜ 182▕         ->and(count($corpus))->toBeGreaterThan(20, 'the corpus is nearly empty');
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it finds no 5xx with a hosti…   
+  only 16 parameterised requests were sent
+Failed asserting that 16 is greater than 50.
+  ➜ 298▕         ->and($driven)->toBeGreaterThan(50, "only {$driven} parameterised requests were sent");
+
+--- 5b. REVERT: the readyz exception widened to excuse every 5xx -- the silencer ----
+  ⨯ it WOULD catch a 5xx — the control, because every case above assert… 0.12s  
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it WOULD catch a 5xx — the c…   
+Failed asserting that false is true.
+  Tests:    1 failed, 3 passed (15 assertions)
+
+--- 5c. REVERT: one ASVS citation renamed to a file that does not exist (R-136) -----
+  ⨯ it cites no evidence path that does not exist — the R-136 shape, cl… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it cites no evidence…   
+  evidence paths that do not exist:
+Failed asserting that two arrays are identical.
+  ➜ 132▕     expect($missing)->toBe([], "evidence paths that do not exist:\n  ".implode("\n  ", $missing));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+--- 5d. REVERT: a MET row stripped of its evidence ---------------------------------
+  ⨯ it backs every MET row with at least one cited path, because MET is… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it backs every MET r…   
+  MET with no evidence:
+Failed asserting that two arrays are identical.
+  ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+⚠ WHAT 6g SHOWS ABOUT THE SHAPE OF ITS OWN PROOF, AND IT IS WORTH MORE THAN THE REVERT.
+  Reverting the refusal to the MEMOISED reader reddened `MemberConsentTest`'s warm-versus-fresh
+  case and left `MembersTest`'s two HTTP-status cases GREEN -- both still answered 404. So the
+  status assertions are NOT a reliable detector of this divergence: whether the memo is stale
+  at the moment of the second request depends on what else ran in between, which is exactly the
+  property that made the bug survive three days of green suites.
+  That is why the dedicated control asks the question directly -- the same address, the warm
+  reader and a fresh one, in one assertion -- instead of inferring it from a status. A proof
+  that only sometimes fails for the defect it names is the shape `R-185` is about.
+
+================================================================================
+6. HIS THREE RULINGS, AND THE TWO CI FAILURES (2026-11-07, second round)
+================================================================================
+
+--- 6a. REVERT: pint.json's notPath widened to an app/ file -- the silencer direction
+  ⨯ it excludes exactly one path, and it is the untracked scratch file   0.36s  
+   FAILED  Tests\Feature\Architecture\PintScopeTest > it excludes exactly on…   
+Failed asserting that two arrays are identical.
+  Tests:    1 failed, 3 passed (7 assertions)
+
+--- 6b. REVERT: one job back on the floating ubuntu-latest label
+  ✓ it pins every uses: to an exact version, with no floating major any… 0.35s  
+  ⨯ it pins the runner image, because ubuntu-latest has already moved o… 0.11s  
+   FAILED  Tests\Feature\Architecture\CiWorkflowPinTest > it pins the runner…   
+  a job is back on the floating `ubuntu-latest` label
+Failed asserting that true is false.
+  ➜  71▕         ->toBeFalse('a job is back on the floating `ubuntu-latest` label');
+  Tests:    1 failed, 3 passed (16 assertions)
+
+--- 6c. REVERT: actions/cache back to a v4 -- the deprecated node20 runtime
+  ✓ it pins every uses: to an exact version, with no floating major any… 0.39s  
+  ⨯ it runs no action on the deprecated Node 20, which is the thing bei… 0.11s  
+   FAILED  Tests\Feature\Architecture\CiWorkflowPinTest > it runs no action…    
+  actions/cache@v4 runs on node20, which GitHub is forcing off. v5.1.0 is node24.
+Failed asserting that 4 is equal to 5 or is greater than 5.
+    118▕             'actions/cache@v'.$major.' runs on node20, which GitHub is forcing off. v5.1.0 is node24.',
+  Tests:    1 failed, 3 passed (17 assertions)
+
+--- 6d. REVERT: bin/gate's 'what it does NOT run' notice deleted
+  ⨯ it prints what it does NOT run, right after the green line           0.32s  
+  ⨯ it names only commands that actually exist, so the notice cannot ci… 0.11s  
+  ⨯ it names the browser-only enforcement that is invisible to every st… 0.10s  
+   FAILED  Tests\Feature\Architecture\GateScopeTest > it prints what it does…   
+   FAILED  Tests\Feature\Architecture\GateScopeTest > it names only commands…   
+  To contain: bin/fresh-clone-proof
+   FAILED  Tests\Feature\Architecture\GateScopeTest > it names the browser-o…   
+  To contain: CSP
+  Tests:    3 failed, 1 passed (23 assertions)
+
+--- 6e. REVERT: the CSP keyed on Content-Type again -- the global weakening he forbade
+  ⨯ it gives the strict policy to EVERY route that is not on the named…  0.12s  
+  ⨯ it serves the passkey harness a policy of its OWN, and gives back t… 0.16s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it gives the strict polic…   
+Failed asserting that two strings are identical.
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the passkey har…   
+  Failed asserting that two strings are identical.
+  Tests:    2 failed, 9 passed (119 assertions)
+
+--- 6f. REVERT: publickey-credentials-get denied on the harness too -- CI's own red
+  ⨯ it serves the passkey harness a policy of its OWN, and gives back t… 0.13s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the passkey har…   
+  the harness cannot call navigator.credentials.get(): accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()
+Failed asserting that false is true.
+  ➜ 605▕         ->toBeTrue("the harness cannot call navigator.credentials.get(): {$policy}")
+  Tests:    1 failed, 10 passed (136 assertions)
+
+--- 6g. REVERT: the refusal back on the MEMOISED reader -- R-244's own divergence
+  ⨯ it answers the SAME refusal with a warm reader and a fresh one — R-… 0.19s  
+   FAILED  Tests\Feature\Staff\MemberConsentTest > it answers the SAME refus…   
+Failed asserting that null is identical to an object of class "App\Domain\Auth\AttachmentRefusal".
+  Tests:    1 failed, 14 passed (83 assertions)
+
+⚠ WHAT 6g SHOWS ABOUT THE SHAPE OF ITS OWN PROOF, AND IT IS WORTH MORE THAN THE REVERT.
+  Reverting the refusal to the MEMOISED reader reddened `MemberConsentTest`'s warm-versus-fresh
+  case and left `MembersTest`'s two HTTP-status cases GREEN -- both still answered 404. So the
+  status assertions are NOT a reliable detector of this divergence: whether the memo is stale at
+  the moment of the second request depends on what else ran in between, which is exactly the
+  property that let the bug survive three days of green suites.
+  That is why the dedicated control asks the question directly -- the same address, the warm
+  reader and a fresh one, in one assertion -- instead of inferring it from a status. A proof that
+  only sometimes fails for the defect it names is the shape `R-185` is about.
+
+================================================================================
+TOTAL: 24 reverts, each run once, each output above.
+================================================================================
+  Sections 1-5 are the build (17). Section 6 is his three rulings and the two CI failures (7).
+⚠ THE COUNT WAS STATED AS 13 IN THREE PLACES BEFORE THIS FILE WAS FIRST COUNTED (two commit
+  messages and the QRPAGER-19 comment); it was 17 then and is 24 now. The first error was in the
+  conservative direction and is kept here rather than quietly corrected, because `bin/gate`'s own
+  closing line counts the array instead of naming a number for exactly this reason: it said "all
+  six steps green" for the whole of Task 7 while running seven.
+⚠ AND THREE OF THE 24 HAD TO BE RE-RUN BECAUSE THE *PROOF* WAS WRONG RATHER THAN THE CODE: 2a's
+  needles could never have matched, 5a removed one payload instead of the corpus, and 6g revealed
+  that its own sibling assertions do not detect the defect. A fourth re-run was this file's own
+  fault: section 6 was appended AFTER the TOTAL block, and trimming the stale total cut section 6
+  out with it, so 6a-6g were re-run rather than transcribed from a screen.
+

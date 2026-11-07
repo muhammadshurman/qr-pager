@@ -1,0 +1,84 @@
+/*
+ * THE 44px MINIMUM TOUCH TARGET, ON FILAMENT'S OWN CONTROLS — R-118 clause 2, 8b's share.
+ *
+ * ⚠ WRITTEN BECAUSE THE BROWSER MEASURED THE PANEL AND IT FAILED. Playwright over the
+ * compiled theme and Filament's own markup, at `87a0bab`:
+ *
+ *     fi-btn fi-size-sm   29x32        fi-btn fi-size-lg   37x40
+ *     fi-btn fi-size-md   33x36        fi-btn fi-size-xl   17x44
+ *     fi-icon-btn md      36x36        fi-icon-btn lg      40x40
+ *     fi-input            1280x36
+ *
+ * Only `fi-size-xl` reaches 44, and sizing an admin panel entirely in XL is a visual
+ * decision rather than a fix. So the minimum is applied as a FLOOR: nothing shrinks, nothing
+ * is restyled, and a control that was already large enough is untouched.
+ *
+ * THE VALUE IS A TOKEN. `--target-min` is declared in `packages/tokens/generated/tokens.css`
+ * with the comment 8a wrote beside it -- "The minimum touch target. Measured in a real
+ * browser by Playwright." -- which is this file's own reason, written before this file
+ * existed. 44 appears nowhere here.
+ *
+ * ⚠ THE SELECTOR LIST IS DERIVED, NOT IMAGINED. Every class below was taken from the
+ * interactive elements the SIX chrome routes actually render, enumerated from
+ * `<button>`, `<a>`, `<input>`, `<select>` and `<textarea>` class attributes across
+ * /platform, /platform/restaurants, /platform/audit-log, /studio, /studio/media and
+ * /studio/domains. `PanelTargetTest` re-derives that set and fails when a control appears
+ * that this file does not cover -- so a new Filament component cannot arrive under the bar
+ * without reddening.
+ *
+ * ⚠ AND THE EXCEPTION IS STATED RATHER THAN SILENT. `fi-link`,
+ * `fi-breadcrumbs-item-label` and `fi-skip-link` are INLINE TEXT targets, and a 44px
+ * min-height on a link inside a sentence would break the line box it sits in. WCAG 2.5.8
+ * carries exactly that exception, for exactly that reason. §12's own clause does NOT write
+ * one, so this is a difference between the bar as worded and the bar as implemented: it is
+ * recorded in PLAN.md §5 with an owner rather than quietly taken.
+ */
+
+/*
+ * ⚠ `.fi-btn` GETS BOTH AXES, and the §11 QA round's L-2 is why: this file gave six
+ * selectors `min-height` only while `browser/panel.spec.ts` is titled "at least 44px in
+ * BOTH directions". Nothing measured was under the bar — `#primary-button` is 112px wide —
+ * but a short-label button would be — **43x44**, measured, with a two-character button added
+ * to the browser fixture for exactly that, because `PanelTargetTest` only asks whether a
+ * covered selector matches and never which axis.
+ *
+ * The other five keep height only, deliberately: `.fi-input` and `.fi-select-input` are
+ * full-width by layout, and a 44px floor on `.fi-ta-header-cell-sort-btn`,
+ * `.fi-sidebar-item-btn` or `.fi-dropdown-list-item` would distort a narrow table column or
+ * a text row.
+ *
+ * ⚠ `R-174` NOW ACTUALLY RECORDS THAT SPLIT, and it did not when this comment first claimed
+ * it — the §11 round-two QA review's M-5, which is the R-136 shape: a comment citing a ledger
+ * row for a statement the row does not make. Corrected 2026-11-01 in both directions.
+ */
+.fi-btn {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+}
+
+/* Standalone controls: a floor on the height only — see the note above. */
+.fi-input,
+.fi-select-input,
+.fi-sidebar-item-btn,
+.fi-dropdown-list-item,
+.fi-ta-header-cell-sort-btn {
+  min-height: var(--target-min);
+}
+
+/* Square controls: a floor on both axes, because the target is the icon's box.
+ *
+ * ⚠ `.fi-radio-input` JOINED AT QRPAGER-33, and it was `PanelTargetTest` that asked for it
+ * rather than a reading of this file: the studio builder's new *Page arrangement* control is
+ * a Filament `Radio`, and the suite reported `fi-radio-input fi-valid` as a rendered
+ * interactive class covered by nothing here. A radio's hit area IS its own box -- the label
+ * beside it is not part of the control -- so it takes both axes like the other square ones,
+ * and not the height-only treatment `.fi-input` gets for being full-width by layout. */
+.fi-radio-input,
+.fi-icon-btn,
+.fi-theme-switcher-btn,
+.fi-pagination-item-btn,
+.fi-section-collapse-btn,
+.fi-user-menu-trigger {
+  min-height: var(--target-min);
+  min-width: var(--target-min);
+}

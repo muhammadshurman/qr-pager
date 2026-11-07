@@ -1,6 +1,6 @@
 # ADR 002 — Object storage and transactional mail
 
-- Status: accepted
+- Status: accepted · **the LOCAL object-storage row is superseded by `docs/adr/004-local-object-store.md` (2026-10-28)**
 - Date: 2026-10-25
 - Extends: `PROJECT_INSTRUCTIONS.md §1` (two new rows)
 
@@ -24,8 +24,18 @@ from the start. They were lost when §1 was written.
 
 | Need | Production | Local |
 |---|---|---|
-| Object storage | **S3**, via `league/flysystem-aws-s3-v3` (Laravel's first-party S3 driver) | **MinIO** in `compose.yaml`, S3-compatible |
+| Object storage | **S3**, via `league/flysystem-aws-s3-v3` (Laravel's first-party S3 driver) | ⚠ **SUPERSEDED — see `docs/adr/004-local-object-store.md`.** This cell read "**MinIO** in `compose.yaml`, S3-compatible" |
 | Transactional mail | **Amazon SES** | **Mailpit** in `compose.yaml` |
+
+> **The local object-storage cell only.** `ADR-004` (2026-10-28) replaces it with
+> `chrislusf/seaweedfs:4.51`, because MinIO publishes no image a fresh clone holding no
+> credentials can pull — `minio/minio` answers `pull access denied` and the Docker Hub API
+> answers `404`, while `minio/warp` in the same namespace answers `200`. **The production
+> column is untouched**, and so is everything else here. The rest of this ADR is left exactly
+> as it was written, including the Consequences below: where they say *MinIO*, read the service
+> `ADR-004` names. `PROJECT_INSTRUCTIONS.md §1`'s Object-storage row now points **straight at
+> `ADR-004`** (rank 2, mirrored 2026-10-28) and no longer through this document; the
+> Transactional-mail row still points here, and that half of this ADR is untouched.
 
 Both are chosen because the infrastructure is already AWS (`§1 › IaC`), so they
 need no new vendor, no new secret store and no new egress path. The same IAM and

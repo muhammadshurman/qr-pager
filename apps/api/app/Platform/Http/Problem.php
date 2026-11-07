@@ -27,6 +27,23 @@ use Illuminate\Http\JsonResponse;
 final class Problem
 {
     /**
+     * The media type EVERY error response carries, and the media type the spec publishes
+     * them under (R-033's "one producer, two readers" applied to the envelope rather than
+     * the body). The committed spec published all four error codes under
+     * `application/json` while this header has always said `application/problem+json`, so
+     * a client generated from the document would have been told the wrong media type for
+     * every error it will actually receive. Both halves now read this constant.
+     */
+    public const string CONTENT_TYPE = 'application/problem+json';
+
+    /**
+     * `retryAfter` is a HEADER and `pollAfter` is a BODY MEMBER, and the difference is not
+     * cosmetic: `Retry-After` is what a 503 or a 429 owes any HTTP client, while
+     * `poll_after_seconds` is what this API owes a polling client at EVERY status -- the
+     * two halves of `§3` row 4's backoff clause. A 503 from the polling endpoint carries
+     * both, which is not redundant: a generic client obeys the header and the pager client
+     * reads one key whatever answer it got.
+     *
      * @param  array<string, list<string>>  $errors
      */
     public function __construct(
@@ -34,6 +51,7 @@ final class Problem
         public readonly ?string $instance = null,
         public readonly array $errors = [],
         public readonly ?int $retryAfter = null,
+        public readonly ?int $pollAfter = null,
     ) {}
 
     /**
@@ -73,6 +91,27 @@ final class Problem
             );
         }
 
+        // THREE SCHEMAS, AND THE ORDER IS THE CONTRACT. `errors` wins because a 422 is the
+        // only status that carries per-field messages and it is never a polling answer:
+        // validation runs before the polling handler, and a request whose shape is wrong
+        // is not a request to pace -- the client must fix it, not come back in seven
+        // seconds. So no body carries both members.
+        //
+        // PagerPollingTest drives ALL FIVE of the polling endpoint's response shapes --
+        // 200, 404 Stale, 503 from the handler, 503 from ShedLoad and 429 from RateLimit
+        // all carry the pacing; 422 deliberately does not. This comment claimed the whole
+        // enumeration while the tests covered two of the five (QA L-6, 2026-10-27), which
+        // is why the count is now written down instead of the word "whole".
+        if ($this->pollAfter !== null) {
+            return new PacedProblemDocument(
+                $this->type,
+                $this->type->title(),
+                $this->type->status(),
+                $this->instance,
+                $this->pollAfter,
+            );
+        }
+
         return new ProblemDocument(
             $this->type,
             $this->type->title(),
@@ -82,7 +121,7 @@ final class Problem
     }
 
     /**
-     * @return array{type: string, title: string, status: int, instance: string|null, errors?: array<string, list<string>>}
+     * @return array{type: string, title: string, status: int, instance: string|null, errors?: array<string, list<string>>, poll_after_seconds?: int}
      */
     public function toArray(): array
     {
@@ -101,13 +140,19 @@ final class Problem
             $body['errors'] = $document->errors;
         }
 
+        // Same rule, same reason: present only on the responses whose published schema
+        // says it is there, so the body and the document cannot disagree.
+        if ($document instanceof PacedProblemDocument) {
+            $body['poll_after_seconds'] = $document->poll_after_seconds;
+        }
+
         return $body;
     }
 
     public function toResponse(): JsonResponse
     {
         $headers = [
-            'Content-Type' => 'application/problem+json',
+            'Content-Type' => self::CONTENT_TYPE,
             'Cache-Control' => 'no-store',
         ];
 

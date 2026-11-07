@@ -30,3 +30,108 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('readiness:refresh')
     ->everyFiveSeconds()
     ->withoutOverlapping();
+
+/*
+ * The expiry job (PLAN.md §3 row 3's TTL clause, and security M-2).
+ *
+ * IT WAS REGISTERED AND SCHEDULED NOWHERE until 2026-10-27. `PROJECT_INSTRUCTIONS.md §4 ›
+ * Data` states a 2-hour TTL as a locked invariant, and the only thing enforcing it was
+ * `PagerSessions::refuseIfPastTtl()` on the staff path -- a READ-path check. Nothing moved a
+ * row to `expired` in any deployment, so:
+ *
+ *   - `pager_sessions.status` never left `waiting`/`ready`;
+ *   - the partial index on `(expires_at) WHERE status IN ('waiting','ready')` grew with total
+ *     order volume rather than with the live population, which is the opposite of what
+ *     §2.11 claims it is for;
+ *   - and §2.11's "rows reach a terminal status within 2 h of creation" was false as shipped.
+ *
+ * The ruling (Muhammad, 2026-10-27) is that this is "the invariant unbuilt, not a gap to
+ * carry": a command registered and scheduled nowhere does not enforce anything. `R-058` now
+ * covers only the cadence and the operational question -- where the scheduler runs -- not
+ * whether the job runs at all.
+ *
+ * everyMinute(), not everyFiveSeconds(). The claim it has to keep is "within 2 hours", so a
+ * minute of lag between `expires_at` passing and `status` following is three orders of
+ * magnitude inside the budget. One pass is a single indexed read against the partial index
+ * plus one keyed UPDATE per due row, capped at `pager.expiry_batch`; a shorter cadence would
+ * buy nothing and spend a worker connection more often.
+ *
+ * withoutOverlapping(), for the same reason the readiness carrier has it: a pass that stalls
+ * -- a lock wait, a slow cluster -- must not stack a second pass behind it, each holding one
+ * of the worker role's 20 connections. The pass is already re-runnable (a keyed,
+ * status-guarded UPDATE reports 0 on a row another pass took), so overlapping would be safe
+ * and wasteful rather than wrong; this keeps it from being either.
+ */
+Schedule::command('pager:expire')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/*
+ * QRPAGER-22 — the support-access sweep, scheduled in the same commit that created it,
+ * because `R-058`'s ruling is that a command registered and scheduled nowhere does not
+ * enforce anything.
+ *
+ * ⚠ **EVERY FIVE MINUTES AND NOT EVERY MINUTE, AND THE REASON IS THAT IT ENFORCES NOTHING.**
+ * A lapsed support membership grants no ability the moment it lapses —
+ * `public.user_memberships()` filters it out in SQL, for every reader at once — so this pass
+ * is not standing between an expired membership and a tenant's data. All it frees is the
+ * admin's one-at-a-time slot, which the partial unique index holds because an index predicate
+ * cannot reference `now()`. Five minutes of lag costs a platform admin a short wait before
+ * taking the next one; one minute of lag would cost five times the connections for nothing.
+ *
+ * `withoutOverlapping()` for the reason `pager:expire` carries: a slow cluster must not stack
+ * a second pass behind the first, each holding one of the worker role's 20 connections. The
+ * statement is a bounded, re-runnable DELETE, so overlapping would be wasteful rather than
+ * wrong — this keeps it from being either.
+ */
+Schedule::command('support:sweep')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+/*
+ * TASK 6 — THE TWO PLATFORM COMMANDS, scheduled in the same commit that created them.
+ *
+ * R-058's ruling is why that is not left for later: "a command registered and scheduled
+ * nowhere does not enforce anything" was the finding on `pager:expire`, which shipped
+ * registered and unscheduled and made §2.11 false as deployed. The same mistake here would
+ * make the provisioning wizard silently never finish — the panel would write a `pending`
+ * row and nothing would ever drain it, which is a worse failure than an error because the
+ * screen reports success.
+ *
+ * What is still Task 13's, with R-047 and R-058, is a PROCESS that runs `schedule:run`. The
+ * schedule is a declaration; nothing in any deployed environment reads it yet. The gain from
+ * declaring it now is the same one that applied to the expiry job: `php artisan
+ * schedule:list` shows the gap instead of it being invisible.
+ */
+
+/*
+ * everyMinute(), because this is the latency a platform admin WATCHES. They fill in a form
+ * and wait for the restaurant to appear; a five-minute cadence would be a five-minute stare
+ * at a `pending` row. One pass is a single indexed read against
+ * tenant_provisionings_status_created_at_index plus three inserts per pending row, and the
+ * usual row count is zero — the cost of an idle tick is one indexed read returning nothing.
+ *
+ * withoutOverlapping(), for the reason the expiry job has it and one more: `provision()`
+ * moves a row to `running` before it starts, and this command's drain query deliberately
+ * takes `pending` only, so two overlapping passes could not pick up the same row anyway.
+ * The mutex is here so a stalled pass does not stack a second one behind it, each holding
+ * one of the app role's connections.
+ */
+Schedule::command('platform:provision-tenants')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/*
+ * everyFiveMinutes(), and the asymmetry with the command above is deliberate. Nobody is
+ * watching a counter the way they watch a restaurant being created, and the cost is the
+ * other way round: a pass is O(tenants) transactions with two aggregate reads each, so the
+ * cadence is what bounds the standing load this adds to the cluster. Five minutes of
+ * staleness on a dashboard figure is not a defect; a dashboard that re-aggregates every
+ * tenant every minute is.
+ *
+ * The dashboard renders `computed_at` for exactly this reason — a figure whose age is not
+ * shown is a figure a reader will assume is live.
+ */
+Schedule::command('platform:aggregate-stats')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

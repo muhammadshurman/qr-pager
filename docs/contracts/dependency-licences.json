@@ -1,0 +1,95 @@
+{
+  "$what": "Every licence family the installed dependency tree may carry, and a disposition for each that is not a plain permissive licence. §11.7's dependency clause, and §10's Transfer Ownership: this inventory is what the client inherits.",
+  "$checkedBy": "tools/gate/test/licences.test.mjs, which enumerates the installed pnpm store and fails on a licence family that is in neither map. A new dependency with an unlisted licence reddens the gate rather than arriving unexamined.",
+  "$whyNotAList": "A per-PACKAGE list would go stale at every `pnpm install` and would differ by platform -- `lightningcss-linux-x64-gnu` and `@img/sharp-libvips-linux-x64` are optional platform binaries and a macOS clone resolves different ones. A per-LICENCE-FAMILY list is platform-robust: a new platform binary carries the same licence as its siblings, and a genuinely new licence is what wants a human.",
+  "$measured": "2026-11-01 on linux-x64, Node 22.23.4, pnpm 12.16.1: 328 installed packages, counted by name@version so duplicated copies collapse. ⚠ THESE NUMBERS ARE NOW GATE-CHECKED AND THEY DID NOT USED TO BE. The previous line said \"2026-10-31 … 229 installed packages\" and every per-family count was wrong with it — MIT 173 against 237, Apache-2.0 23 against 44, ISC 8 against 14, BSD-3-Clause 3 against 9, BSD-2-Clause 8 against 9, MPL-2.0 4 against 5, BlueOak-1.0.0 4 against 3. The enforced assertions still passed, because what is asserted is that every family SEEN appears here plus a >200 bound, so the control was sound and the PROVENANCE was false (§11 round one, SEC L-5) — and §10's Transfer Ownership hands this file to the client as the licence record, which is what makes a false provenance the part that matters. `licences.test.mjs` now compares every count above against the same store walk it already does, so the next `pnpm install` that moves one fails the gate instead of quietly dating this file.",
+  "permissive": {
+    "(MIT OR CC0-1.0)": {
+      "count": 1,
+      "packages": [
+        "type-fest"
+      ],
+      "note": "A DUAL licence, and both halves are permissive, so the OR costs nothing: MIT needs attribution in the distributed copy and CC0-1.0 needs nothing at all. Arrived at Task 9 with the pinned Lighthouse CLI (`lighthouse@13.5.0`), which is a DEVELOPMENT dependency and a measurement tool: nothing it brings reaches the product, and `type-fest` ships type declarations only -- no runtime code in any bundle. Recorded as its own family rather than folded into MIT, because the string a scanner reads is the string this inventory must carry."
+    },
+    "0BSD": {
+      "count": 1,
+      "note": "public-domain-equivalent; no attribution required"
+    },
+    "Apache-2.0": {
+      "count": 44,
+      "note": "attribution plus a patent grant; no copyleft"
+    },
+    "BSD-2-Clause": {
+      "count": 9,
+      "note": "functionally MIT"
+    },
+    "BSD-3-Clause": {
+      "count": 9,
+      "note": "MIT plus a no-endorsement clause"
+    },
+    "BlueOak-1.0.0": {
+      "count": 3,
+      "note": "OSI-approved permissive, plain-language. ⚠ ARRIVED WITH THIS TASK'S OWN minimatch OVERRIDE: minimatch 11 relicensed from ISC to Blue Oak, so closing GHSA-g3hv-75wg-m249 introduced a licence family the tree did not previously carry. Dispositioned rather than discovered later: it imposes no obligation this project does not already meet."
+    },
+    "ISC": {
+      "count": 14,
+      "note": "functionally MIT"
+    },
+    "MIT": {
+      "count": 237,
+      "note": "no obligation beyond attribution in the distributed copy"
+    },
+    "MIT-0": {
+      "count": 2,
+      "note": "MIT with the attribution requirement removed"
+    }
+  },
+  "dispositioned": {
+    "MPL-2.0": {
+      "count": 5,
+      "packages": [
+        "lightningcss",
+        "lightningcss-linux-x64-gnu"
+      ],
+      "reach": "a BUILD-TIME dependency of Tailwind v4. It parses and minifies CSS during `next build` and ships no code to a browser.",
+      "obligation": "file-level copyleft: MPL-2.0 requires the SOURCE of any modified MPL file to be made available. It does not reach a work that merely uses it, and §2 of the licence is explicit that linking does not create a derivative work.",
+      "disposition": "ACCEPTED. No MPL file is modified, forked or vendored -- it is consumed as a published npm package at a pinned version, so the obligation is discharged by the upstream project's own published source. Nothing MPL-licensed reaches the product's runtime at all."
+    },
+    "LGPL-3.0-or-later": {
+      "count": 1,
+      "packages": [
+        "@img/sharp-libvips-linux-x64"
+      ],
+      "reach": "a transitive optional dependency of `sharp`, itself reached through Next.js's image optimiser. A BUILD-TIME and server-side native binary; no part of it is served to a browser.",
+      "obligation": "LGPL permits use by a work under any licence provided the LGPL component stays replaceable -- which a dynamically-loaded prebuilt binary in `node_modules` is by construction. Distributing a MODIFIED libvips would require publishing that modification.",
+      "disposition": "ACCEPTED, with the condition written down rather than remembered: the binary is consumed unmodified and unbundled. ⚠ IF A FUTURE TASK PRODUCES A SINGLE-FILE OR STATICALLY-LINKED ARTEFACT containing it, this disposition no longer holds and the LGPL's relinking requirement has to be answered. Next.js 15's output is a Node server plus static assets, so that does not arise today."
+    },
+    "CC-BY-4.0": {
+      "count": 1,
+      "packages": [
+        "caniuse-lite"
+      ],
+      "reach": "a BUILD-TIME data set, reached through `next` and `browserslist`. It is a database of browser-support facts, not code, and is read to decide which CSS and JS transforms to apply.",
+      "obligation": "attribution for the DATA. Creative Commons' own FAQ is explicit that CC licences are not intended for software; here the subject genuinely is data.",
+      "disposition": "ACCEPTED. The data is not redistributed: it is read at build time and nothing derived from it is published as a data set. Attribution is carried by this file, which §10 hands to the client with the repository."
+    },
+    "CC0-1.0": {
+      "count": 1,
+      "packages": [
+        "mdn-data"
+      ],
+      "reach": "a BUILD-TIME data set reached through the CSS tooling.",
+      "obligation": "none. CC0 is a dedication to the public domain.",
+      "disposition": "ACCEPTED, and listed rather than folded into `permissive` because CC0 is a dedication and not a licence, so a reader looking for the obligation should find the answer stated."
+    }
+  },
+  "refused": {
+    "$note": "Licence families that must NEVER appear. Listed so the refusal is a decision taken in advance rather than an argument had under pressure when a dependency arrives.",
+    "GPL-2.0": "strong copyleft reaching the whole work; incompatible with a proprietary delivery to a client",
+    "GPL-3.0": "as above",
+    "AGPL-3.0": "as above, and extends to network use -- which is exactly what this product is",
+    "SSPL-1.0": "not OSI-approved; its service clause reaches an entire deployment",
+    "BUSL-1.1": "source-available with a commercial-use restriction",
+    "UNLICENSED": "no grant at all; using it is simply infringement"
+  }
+}

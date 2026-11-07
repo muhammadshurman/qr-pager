@@ -1,0 +1,490 @@
+/*
+ * The component kit's stylesheet.
+ *
+ * EVERY value here is a token reference. There is no hex, no raw spacing and no raw font
+ * size anywhere in this file, and that is not a convention -- `pnpm lint:tokens` scans it
+ * and fails the gate on a literal, proven on a committed bad fixture.
+ *
+ * Logical properties throughout (`padding-inline`, `margin-inline-start`, `inset-inline`),
+ * never `left`/`right`. That is what makes RTL a direction attribute rather than a second
+ * stylesheet -- and it is why `ProgressTrack` and `Icon` only need to handle the cases
+ * logical properties CANNOT express: a transform origin and a glyph flip.
+ *
+ * No library default look (§12): every selector here is ours, and a reviewer reading a
+ * screenshot has no framework signature to recognise.
+ */
+
+@import '@qrpager/tokens/tokens.css';
+/* The @font-face rules for the two self-hosted families. Every url() in that file is
+   relative, so this is the last link in a chain that reaches no third party -- asserted by
+   packages/tokens/test/fonts.test.ts rather than left to this comment. */
+@import '@qrpager/tokens/fonts.css';
+
+/* ------------------------------------------------------------------ foundations */
+
+/*
+ * ⚠ THE THEMED SURFACE ESTABLISHES THE GROUND, AND IT DID NOT UNTIL 2026-10-31.
+ *
+ * This stylesheet styled components and never set the document's own ink-on-paper, so
+ * anything rendered inside `ThemeProvider` without a landing template inherited the user
+ * agent's black-on-white: `#000000` on `#FFFFFF`. The browser check caught it by comparing
+ * the engine's resolved pair against the generated table and getting the UA default back.
+ *
+ * It mattered more than it looks. The whole contrast table is computed for `ink` on
+ * `paper`/`surface`/`surface-2`; if the page's real ground is the UA default, every figure
+ * in that table describes a pair the product never renders. A card's own background was
+ * token-driven, which is exactly why this was invisible — the card looked right and the
+ * text inside it was not the colour anybody measured.
+ *
+ * `[data-theme]` is the hook because that is what `ThemeProvider` sets, so the element
+ * carrying the theme is the element carrying the ground. The font follows `lang`, which the
+ * same component sets on the same element.
+ */
+[data-theme] {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-latin);
+}
+
+[data-theme]:lang(ar) {
+  font-family: var(--font-arabic);
+}
+
+.qr-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * The focus ring, once, for everything. §12: "visible focus ring", and the approved
+ * direction fixes it at 2px brand at 2px offset.
+ *
+ * `:focus-visible` rather than `:focus`, so a mouse click does not draw a ring -- and
+ * `outline` rather than a box-shadow, so it survives a high-contrast mode that discards
+ * shadows. There is no `outline: none` anywhere in this file; removing the ring is a defect,
+ * not a style.
+ */
+.qr-button:focus-visible,
+.qr-ready__acknowledge:focus-visible,
+.qr-progress:focus-visible,
+[data-active='true']:focus-visible {
+  outline: var(--focus-width) solid var(--color-brand);
+  outline-offset: var(--focus-offset);
+}
+
+/*
+ * ⚠ **AND A FIELD'S RING HANGS ON `:focus`, NOT `:focus-visible`, BECAUSE ONE ENGINE DOES NOT
+ * MATCH `:focus-visible` ON A DATE INPUT AT ALL. MEASURED, NOT READ.**
+ *
+ * WebKit does not match `:focus-visible` on `<input type="date">` AT ALL -- not even when the
+ * control was reached by a real `Tab` press. Probed at `playwright` 1.64.1's pinned WebKit on
+ * a page carrying nothing but this rule: a `<button>` resolved `:focus true, :focus-visible
+ * true, outline solid 2px`; an `<input type="text">` the same; and `<input type="date">`
+ * resolved **`:focus true, :focus-visible FALSE, outline-style none`** on each of the three
+ * presses that walk its segments. Chromium matched both on every control.
+ *
+ * So a ring hung on `:focus-visible` alone is INVISIBLE on a date field in Safari, which is
+ * `§12`'s *visible focus ring* clause failing on a real browser rather than a test artefact --
+ * and 10d's history screen is the first screen in this product to have one. Found by
+ * `browser/staff.spec.ts`'s sweep: `staff-webkit-ltr` and `staff-webkit-rtl`, *2 of 17 controls
+ * have no visible focus ring -- sweep-11: reached as <input type=date> with outline-style none*.
+ *
+ * `:focus` is the answer, and `.qr-field__input` is lifted OUT of the rule above rather than
+ * listed in both -- one element, one rule. It covers **every** `.qr-field__input` rather than `[type='date']`
+ * alone -- deliberately, because a type list is a list that the next screen's `type="time"` or
+ * `type="month"` is not on, and the defect returns silently with no test to catch it until
+ * somebody runs a WebKit sweep over a screen nobody has built yet. `Field` renders a text-entry
+ * control and nothing else (its own docblock: *"a labelled text input"*), and a ring on a
+ * focused text field is what every browser's default stylesheet does anyway.
+ *
+ * The cost is that CLICKING a field now draws the ring, in every engine. `:focus-visible` is
+ * kept for `.qr-button` and the rest, where the heuristic earns its place: a ring that appears
+ * under the pointer on a button is noise. On a field it is the native convention.
+ */
+.qr-field__input:focus {
+  outline: var(--focus-width) solid var(--color-brand);
+  outline-offset: var(--focus-offset);
+}
+
+/* ---------------------------------------------------------------------- button */
+
+.qr-button {
+  /*
+   * `appearance: none`, so a native widget's own painting cannot participate in the
+   * button's colour. It stays because normalising that is correct regardless of the
+   * question below.
+   *
+   * ⚠ THIS COMMENT CLAIMED "WITHOUT IT EVERY BUTTON RENDERED THE WRONG COLOUR", WITH THREE
+   * MEASURED BLEND VALUES, AND THE CLAIM DOES NOT REPRODUCE. The QA reviewer measured
+   * identical pairs with and without the declaration; re-measured here over four cells --
+   * {appearance:none, appearance:auto} x {goto(file://)+addStyleTag, setContent}, over both
+   * fills and a non-widget control -- Chromium 156.0.8078.4 resolves
+   * rgb(11, 107, 79) on rgb(255, 255, 255) in every one of them. Transcript:
+   * `docs/tickets/QRPAGER-15-appearance-probe.txt`.
+   *
+   * The likeliest reading, and it is a reading rather than a measurement: the blend was the
+   * LOAD-THEN-INJECT harness defect, found in the same sitting, and one cause was written
+   * against both. `PLAN §4a` records that defect's measured pair as
+   * rgb(174, 201, 193) / rgb(73, 73, 73) "varying in its last bit between runs" -- within
+   * one unit of the rgb(174, 202, 194) this comment named.
+   *
+   * WHAT IS NOT IN DOUBT is the consequence, and it is why the control exists: the contrast
+   * table is computed for the TOKEN values, so an engine that renders something else makes
+   * every figure in it describe a pair the product never shows. `browser/a11y.spec.ts`
+   * asserts the engine resolves every button to the EXACT pair the table was computed from,
+   * with three proofs that the assertion fails. Any blend, whatever its cause, reddens that.
+   */
+  appearance: none;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+
+  /* §12's 44x44 minimum, as a floor rather than a fixed size, so a long label still grows.
+     Playwright measures the RENDERED box; this declaration is not the proof. */
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-24);
+  padding-block: var(--space-12);
+
+  font-family: var(--font-latin);
+  font-size: var(--size-16);
+  border-radius: var(--radius-8);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-state) var(--motion-easing),
+    color var(--motion-state) var(--motion-easing),
+    border-color var(--motion-state) var(--motion-easing);
+}
+
+.qr-button--primary {
+  background-color: var(--color-brand);
+  color: var(--color-surface);
+}
+
+.qr-button--secondary {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  /* border-strong, not hairline: this border is the control's only visual boundary, and
+     WCAG 1.4.11 wants 3:1 against the adjacent colour. hairline is 1.29:1 in light and
+     2.08:1 in dark, so it qualifies in neither. */
+  border-color: var(--color-border-strong);
+}
+
+.qr-button--quiet {
+  background-color: transparent;
+  color: var(--color-brand);
+}
+
+/*
+ * ⚠ THE FILL IS alert-INK, NOT alert-FILL, and the generated contrast table is why.
+ *
+ * The approval allows `alert-fill` for "fills and >= 24px text only". This label is
+ * `--size-16`, which is not large text, so its bar is AA's 4.5 and not 3.0 -- and
+ * `surface` on `alert-fill` is 3.68: a pass for a 24px label and a FAILURE for this one.
+ * It escaped the first report because a role-against-background table has no row for text
+ * ON a fill.
+ *
+ * `surface` on `alert-ink` is 7.44 light and 5.82 dark. So the PAIRING changed and no value
+ * did: both tokens are approved and nothing new was invented. generated/contrast.md keeps
+ * `alert-fill`'s own bound stated, so a future use cannot rediscover this.
+ */
+.qr-button--danger {
+  background-color: var(--color-alert-ink);
+  color: var(--color-surface);
+}
+
+.qr-button[disabled] {
+  cursor: not-allowed;
+  /* Not opacity alone: a disabled control at reduced opacity can fall below AA and then
+     nobody can read what they are not allowed to do. The pair is stated instead. */
+  background-color: var(--color-surface-2);
+  color: var(--color-ink-mid);
+  border-color: var(--color-hairline);
+}
+
+.qr-button__label {
+  display: inline-block;
+}
+
+/* ---------------------------------------------------------------------- spinner */
+
+.qr-spinner {
+  display: inline-flex;
+  color: currentcolor;
+}
+
+.qr-spinner > svg {
+  animation: qr-spin var(--motion-entrance) linear infinite;
+}
+
+@keyframes qr-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ------------------------------------------------------------------------ field */
+
+.qr-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.qr-field__label {
+  font-family: var(--font-latin);
+  font-size: var(--size-13);
+  color: var(--color-ink);
+}
+
+.qr-field__hint {
+  font-size: var(--size-13);
+  /* ink-mid is secondary text only, and it clears AA on every background in both themes
+     (light 5.17/5.72/4.74, dark 6.94/5.63/4.66). */
+  color: var(--color-ink-mid);
+  margin: 0;
+}
+
+.qr-field__input {
+  /* The same reason as .qr-button above: a native text field blends the author background
+     with the engine's own widget rendering. */
+  appearance: none;
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-12);
+  padding-block: var(--space-8);
+  font-family: var(--font-latin);
+  font-size: var(--size-16);
+  color: var(--color-ink);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-8);
+}
+
+.qr-field__error {
+  font-size: var(--size-13);
+  /* alert-INK, not alert-fill: the fill is 3.32:1 on paper and fails 4.5:1 as body text,
+     which the token source states rather than leaving to be discovered in a review. */
+  color: var(--color-alert-ink);
+  margin: 0;
+}
+
+.qr-field[data-invalid='true'] .qr-field__input {
+  border-color: var(--color-alert-ink);
+}
+
+/* ------------------------------------------------------------------------- card */
+
+.qr-card {
+  background-color: var(--color-surface);
+  /* Decorative edge: a card is not an interactive control, so 1.4.11 does not apply and
+     hairline is the correct token rather than merely the weaker one. */
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-16);
+  padding: var(--space-24);
+  box-shadow: var(--elevation-card);
+}
+
+.qr-card[data-recessed='true'] {
+  background-color: var(--color-surface-2);
+  box-shadow: none;
+}
+
+.qr-card__title {
+  font-size: var(--size-20);
+  color: var(--color-ink);
+  margin-block: 0 var(--space-16);
+}
+
+/* ------------------------------------------------------------------------ badge */
+
+.qr-badge {
+  display: inline-block;
+  padding-inline: var(--space-8);
+  padding-block: var(--space-4);
+  font-size: var(--size-13);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-ink);
+  background-color: var(--color-surface-2);
+}
+
+.qr-badge[data-tone='ready'] {
+  background-color: var(--color-brand);
+  color: var(--color-surface);
+  border-color: var(--color-brand);
+}
+
+.qr-badge[data-tone='stopped'] {
+  color: var(--color-alert-ink);
+  border-color: var(--color-alert-ink);
+}
+
+/* ------------------------------------------------------------------- progress */
+
+.qr-progress {
+  block-size: var(--space-8);
+  inline-size: 100%;
+  background-color: var(--color-surface-2);
+  border-radius: var(--radius-8);
+  overflow: hidden;
+}
+
+.qr-progress__fill {
+  display: block;
+  block-size: 100%;
+  inline-size: 100%;
+  background-color: var(--color-brand);
+  transition: transform var(--motion-state) var(--motion-easing);
+}
+
+/* ---------------------------------------------------------------------- timer */
+
+.qr-timer {
+  margin: 0;
+  font-size: var(--size-28);
+  color: var(--color-ink);
+}
+
+/* The readout is tabular so the width does not jump as the digits change -- a clock that
+   reflows every second is a clock nobody can read. */
+.qr-timer__value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------- states */
+
+.qr-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-32);
+  text-align: center;
+  color: var(--color-ink);
+}
+
+.qr-state__title {
+  font-size: var(--size-20);
+  margin: 0;
+}
+
+.qr-state__description {
+  font-size: var(--size-16);
+  color: var(--color-ink-mid);
+  margin: 0;
+  max-inline-size: 44ch;
+}
+
+.qr-state--error .qr-state__title,
+.qr-state--offline .qr-state__title {
+  color: var(--color-alert-ink);
+}
+
+/* ------------------------------------------------------------------ order ready */
+
+/*
+ * OUTSIDE THEMING (D4). Every colour below is a --ready-* property, declared exactly once
+ * in the generated stylesheet and outside both theme blocks. No tenant theme token can
+ * produce a --ready-* name, so there is nothing here to clamp and no clamp here.
+ */
+.qr-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-24);
+  min-block-size: 100%;
+  padding: var(--space-32);
+  text-align: center;
+
+  background-color: var(--ready-field);
+  color: var(--ready-ink);
+}
+
+.qr-ready__logo {
+  /* The one tenant-supplied element on this screen, at a bounded size so an oversized
+     asset cannot push the reference off the viewport. It influences no colour. */
+  max-inline-size: var(--space-96);
+  max-block-size: var(--space-64);
+}
+
+.qr-ready__heading {
+  font-size: var(--size-28);
+  color: var(--ready-ink);
+  margin: 0;
+}
+
+.qr-ready__reference {
+  /* The largest step in the scale: this is the thing read across a room. */
+  font-size: var(--size-96);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ready-signal);
+  margin: 0;
+}
+
+.qr-ready__instruction {
+  font-size: var(--size-20);
+  color: var(--ready-ink);
+  margin: 0;
+}
+
+.qr-ready__acknowledge {
+  appearance: none;
+  min-inline-size: var(--target-min);
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-32);
+  padding-block: var(--space-16);
+  font-size: var(--size-20);
+  border: 0;
+  border-radius: var(--radius-16);
+  cursor: pointer;
+
+  /* ready-field on ready-signal: 9.73:1, AAA. */
+  background-color: var(--ready-signal);
+  color: var(--ready-field);
+}
+
+.qr-ready__acknowledge:focus-visible {
+  /* The brand outline would be 2.64:1 against this ground. On a screen that is outside
+     theming the ring uses the screen's own ink, which is 15.55:1. */
+  outline: var(--focus-width) solid var(--ready-ink);
+  outline-offset: var(--focus-offset);
+}
+
+.qr-ready[data-state='acknowledged'] .qr-ready__acknowledge {
+  background-color: transparent;
+  color: var(--ready-ink);
+  border: 1px solid var(--ready-ink);
+}
+
+/* -------------------------------------------------------------------- motion */
+
+/*
+ * prefers-reduced-motion means NO motion, not less (QRPAGER-15 §6, trap 3).
+ *
+ * The token file already resolves --motion-state and --motion-entrance to 0ms under the
+ * same query, so transitions stop. This block covers what a duration token cannot: an
+ * `animation` with an infinite iteration count still runs at 0ms duration in some engines,
+ * so the spinner's animation is removed outright rather than shortened.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .qr-spinner > svg {
+    animation: none;
+  }
+
+  .qr-progress__fill,
+  .qr-button {
+    transition: none;
+  }
+}

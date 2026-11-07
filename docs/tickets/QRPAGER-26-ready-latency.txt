@@ -1,0 +1,43 @@
+$ QRPAGER_E2E_SUITE=0 QRPAGER_E2E_READY_LATENCY=1 tools/browsers/bin/e2e
+e2e: starting the real API on http://127.0.0.1:8099
+e2e: the browser reaches this host as host.docker.internal (QRPAGER_BROWSERS=container)
+e2e: bootstrapping and migrating the development database this suite serves
+e2e:   database ready -> /home/pixels/code/qr-pager/storage/logs/e2e-db-migrate.log
+e2e: the API is up at http://127.0.0.1:8099/healthz
+e2e: the customer routes are mounted (POST /v1/pager/status -> 404 for an unknown token)
+e2e: issuing real sessions
+e2e: issued 5 sessions -> /home/pixels/code/qr-pager/storage/logs/e2e-sessions.json (git-ignored, mode 600)
+e2e: building apps/web for production with the one-origin rewrite
+e2e: starting next start on http://127.0.0.1:3099
+e2e: the PWA is up at http://127.0.0.1:3099/s
+e2e: the one-origin rewrite serves /v1 through the PWA origin
+e2e: generated a one-day self-signed certificate in storage/e2e-tls (git-ignored, mode 600)
+e2e: starting the TLS front on https://127.0.0.1:3098
+e2e: the TLS front is up at https://127.0.0.1:3098 (secure context, so service workers exist)
+e2e: starting the API TLS front on https://127.0.0.1:3097 (for R-100s passkey harness)
+e2e: the API TLS front is up at https://127.0.0.1:3097
+e2e: created the passkey harness user -> /home/pixels/code/qr-pager/storage/logs/e2e-harness-user.json (git-ignored, mode 600)
+e2e: created the staff fixture -> /home/pixels/code/qr-pager/storage/logs/e2e-staff-fixture.json (git-ignored, mode 600)
+e2e: running the under-2s measurement by the method in §3.1 row 10
+ready-latency-proof — §3 row 10, by §3.1 row 10's method
+  commit              135ef46
+  at                  2026-11-02T18:01:42Z
+  origin              https://host.docker.internal:3098
+  customer interval   7 s (config/pager.php)
+  node                v22.23.4
+
+  run 1: 7907 ms
+  run 2: 9612 ms
+  run 3: 5879 ms
+  run 4: 8386 ms
+  run 5: 5876 ms
+
+  all 5 of 5      7907, 9612, 5879, 8386, 5876 ms
+  MEDIAN              7907 ms
+  §3 row 10's bar     2000 ms
+  verdict             NOT MET — reported, not fatal; see the script's header for why
+  load-invariant      5/5 runs reached the customer's ready state over POLLING, with no push
+
+EXIT=0
+e2e: green
+HARNESS_EXIT=0

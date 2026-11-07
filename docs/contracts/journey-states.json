@@ -1,0 +1,29 @@
+{
+  "_README": [
+    "GENERATED from apps/web/src/pager/journey.ts by apps/web/test/journey.test.ts.",
+    "Do not edit: that test byte-compares this file and fails when it differs.",
+    "",
+    "browser/one-handed.spec.ts reads it so that its subject list cannot drift from the",
+    "reducer's own union -- it cannot import the module directly, because Playwright's",
+    "loader cannot resolve @qrpager/contracts' explicit .ts re-export."
+  ],
+  "states": [
+    "landing.valid",
+    "landing.invalid",
+    "alerts.notAsked",
+    "alerts.granted",
+    "alerts.denied",
+    "alerts.unsupported",
+    "waiting.healthy",
+    "waiting.degraded",
+    "waiting.offline",
+    "ready.fresh",
+    "ready.acknowledged",
+    "ended.completed",
+    "ended.cancelled",
+    "ended.expired",
+    "error.offline",
+    "error.server",
+    "error.unknown"
+  ]
+}

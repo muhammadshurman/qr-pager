@@ -12,6 +12,7 @@ use App\Domain\Pager\PagerSessionNotFound;
 use App\Domain\Pager\PagerStatus;
 use App\Domain\Pager\PagerToken;
 use App\Domain\Pager\PagerTransitionDenied;
+use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -55,6 +56,23 @@ use Illuminate\Support\Str;
  */
 final class PagerSessions
 {
+    /**
+     * Task 4's Redis status projection, refreshed after every committed transition.
+     *
+     * WHY THE SERVICE AND NOT ONLY THE OUTBOX WORKER. The worker refreshes the projection
+     * too, but it only runs for transitions that WRITE AN OUTBOX ROW -- and `complete`
+     * deliberately writes none (the customer is at the counter), so a projection that
+     * waited for the worker would never learn that an order was collected. Refreshing
+     * here covers every transition and the worker's refresh then covers the one thing
+     * this cannot know: that the push actually went out.
+     *
+     * WHY IT CANNOT CREATE A KEY. PagerProjection::refresh() is XX -- update-only -- and
+     * this class has no token to build a pointer key with, which Task 3 arranged by never
+     * letting a token near the service. So the projection's lifetime belongs to the SCAN:
+     * a session nobody scanned gets no Redis key from any number of staff transitions.
+     */
+    public function __construct(private readonly PagerProjection $projection) {}
+
     /**
      * Two hours, per PROJECT_INSTRUCTIONS.md §4 › Data.
      *
@@ -132,8 +150,9 @@ final class PagerSessions
     public function renotify(string $tenantId, string $sessionId, ?string $actorUserId = null, ?string $actorIp = null): PagerSessionState
     {
         $limit = (int) config('pager.renotify_limit');
+        $projected = null;
 
-        return withTenant($tenantId, function () use ($tenantId, $sessionId, $actorUserId, $actorIp, $limit): PagerSessionState {
+        $state = withTenant($tenantId, function () use ($tenantId, $sessionId, $actorUserId, $actorIp, $limit, &$projected): PagerSessionState {
             $session = $this->lock($sessionId);
             $status = PagerStatus::from($session->status);
 
@@ -177,6 +196,8 @@ final class PagerSessions
                 'renotify_count' => $attempt,
             ]);
 
+            $projected = [PagerStatus::Ready, (string) $session->order_reference, (string) $session->expires_at];
+
             return new PagerSessionState(
                 $sessionId,
                 PagerStatus::Ready,
@@ -185,6 +206,10 @@ final class PagerSessions
                 true,
             );
         });
+
+        $this->project($tenantId, $sessionId, $projected);
+
+        return $state;
     }
 
     /** Collected. No outbox row: the customer is at the counter. */
@@ -236,8 +261,15 @@ final class PagerSessions
         PagerStatus $idempotentWhen,
         string $columns,
     ): PagerSessionState {
-        return withTenant($tenantId, function () use (
-            $tenantId, $sessionId, $to, $action, $event, $actorUserId, $actorIp, $idempotentWhen, $columns
+        // Captured by reference from inside the scope and read AFTER it returns, which is
+        // the whole point: withTenant() opens one transaction and rethrows on failure, so
+        // a rolled-back transition never reaches the refresh below. A projection written
+        // inside the transaction would survive a rollback -- Redis has no part in
+        // Postgres's commit -- and would then publish a state that never happened.
+        $projected = null;
+
+        $state = withTenant($tenantId, function () use (
+            $tenantId, $sessionId, $to, $action, $event, $actorUserId, $actorIp, $idempotentWhen, $columns, &$projected
         ): PagerSessionState {
             $session = $this->lock($sessionId);
             $from = PagerStatus::from($session->status);
@@ -285,8 +317,58 @@ final class PagerSessions
                 'to' => $to->value,
             ]);
 
+            $projected = [$to, $reference, (string) $session->expires_at];
+
             return new PagerSessionState($sessionId, $to, $reference, $renotifies, true);
         });
+
+        $this->project($tenantId, $sessionId, $projected);
+
+        return $state;
+    }
+
+    /**
+     * Refresh the Redis projection for a transition that has already committed.
+     *
+     * BEST EFFORT, AND IT HAS TO BE. The status change, the outbox row and the audit row
+     * are committed by the time this runs -- that is the gate's first invariant and it is
+     * satisfied -- so a Redis failure here must not fail the staff request or, worse,
+     * make a caller retry a transition that already happened. The cost of a miss is
+     * bounded and defined: the customer's next poll reports no live status, their client
+     * re-opens the session against Postgres, and the projection is rewritten from truth.
+     * That is the same path a cold Redis takes, which is why it needs no second mechanism.
+     *
+     * $projected is null when the transition wrote nothing -- the idempotent case, where
+     * the session was already in the state the caller asked for. Nothing changed, so
+     * there is nothing to publish, and republishing would move the projection's `as_of`
+     * forward for an event that did not occur.
+     *
+     * NOTHING IS DONE FOR `expired`, and that is not an omission: a projection's TTL is
+     * never longer than the session's own remaining life (PagerProjection::ttlFor), so by
+     * the moment a session is past its TTL both of its Redis keys are already gone. A
+     * poll then answers Stale, the client re-opens, and Postgres says `409 Expired` --
+     * which is the one path that can tell expired from invalid. That is why
+     * ExpirePagerSessionsCommand needs no projection write and its statement shape, which
+     * §4 › Postgres traps prescribes clause by clause, is left exactly as Task 3 proved it.
+     *
+     * @param  array{PagerStatus, string, string}|null  $projected  status, reference, expires_at
+     */
+    private function project(string $tenantId, string $sessionId, ?array $projected): void
+    {
+        if ($projected === null) {
+            return;
+        }
+
+        [$status, $reference, $expiresAt] = $projected;
+
+        $this->projection->refresh(
+            $tenantId,
+            $sessionId,
+            $status,
+            $reference,
+            new DateTimeImmutable($expiresAt),
+            new DateTimeImmutable,
+        );
     }
 
     /**
@@ -390,13 +472,288 @@ final class PagerSessions
     }
 
     /**
+     * The sessions a staff member or a kitchen screen needs to see: everything not yet
+     * finished, newest first.
+     *
+     * ADDED AT TASK 5, and the reason is the device token rather than the board. A KDS
+     * device token's one ability is `pager:read`, and until this existed there was nothing
+     * for it to read -- which would have made "device token scope cannot escalate" a claim
+     * about a credential that can reach nothing, and a credential that can reach nothing
+     * cannot be shown not to escalate. Task 10 builds the screen; this is the data behind it.
+     *
+     * Bounded by `expiry_batch`'s sibling rather than unbounded: a board with no limit is a
+     * transaction whose size is set by how busy a restaurant is. The partial index
+     * `(tenant_id, status, created_at DESC)` from §2.5 is what serves it.
+     *
+     * @return list<array{id: string, order_reference: string, status: string, created_at: string, ready_at: string|null}>
+     */
+    public function board(string $tenantId, int $limit = 100): array
+    {
+        $rows = withTenant($tenantId, fn () => DB::select(
+            'select id, order_reference, status, created_at, ready_at
+               from pager_sessions
+              where status in (?::pager_status, ?::pager_status)
+              order by created_at desc
+              limit ?',
+            [PagerStatus::Waiting->value, PagerStatus::Ready->value, $limit],
+        ));
+
+        $board = [];
+
+        foreach ($rows as $row) {
+            // isset-guarded rather than mapped blind: DB::select() answers a list of plain
+            // objects, so a column renamed underneath this method would otherwise be a
+            // property error at runtime in a loop. Same shape as Memberships::for().
+            if (! is_object($row) || ! isset($row->id, $row->order_reference, $row->status, $row->created_at)) {
+                continue;
+            }
+
+            $board[] = [
+                'id' => (string) $row->id,
+                'order_reference' => (string) $row->order_reference,
+                'status' => (string) $row->status,
+                'created_at' => (string) $row->created_at,
+                'ready_at' => isset($row->ready_at) ? (string) $row->ready_at : null,
+            ];
+        }
+
+        return $board;
+    }
+
+    /**
+     * The restaurant's PAST orders, filtered. Task 10d (`QRPAGER-28`).
+     *
+     * ================================================================================
+     * HOW THIS DIFFERS FROM `board()`, WHICH IS NOT ONLY THE STATUS PREDICATE
+     * ================================================================================
+     *
+     * `board()` is the live queue: two statuses, no input, every row. This is the record: any
+     * status, four filter dimensions, and a bound on how much of it one question may ask for.
+     * They are two reads with two audiences, which is also why they require two different
+     * abilities — `Ability::PagerHistory`'s docblock has the measurement, and the short version
+     * is that `pager:read` is the one ability a KITCHEN SCREEN may hold.
+     *
+     * ================================================================================
+     * EVERY FILTER NARROWS INSIDE A SCOPE THAT IS ALREADY OPEN
+     * ================================================================================
+     *
+     * `withTenant()` wraps the whole statement, so row-level security has made another
+     * restaurant's rows invisible before a single filter is applied. That is why 10d's
+     * invariant expects *the empty set* rather than a refusal: there is nothing to refuse.
+     *
+     * ⚠ AND IT IS ASSERTED BY ENUMERATION RATHER THAN BY THAT ARGUMENT, because
+     * `QRPAGER-28 §0` says *"not by reading the query builder"* — an argument of exactly this
+     * shape is how a dropped scope survives review. `PagerHistoryIsolationTest` derives the
+     * cartesian product of `PagerHistoryFilters::DIMENSIONS` and drives every combination
+     * across the boundary in both directions.
+     *
+     * ⚠ **NO RAW FRAGMENT AND NO SECOND CONNECTION, which is the one way a filter COULD
+     * escape the scope.** Every predicate below is a bound parameter on the `pgsql` connection
+     * inside the scope. The `reference` filter is the one to look at twice: it is a `LIKE`,
+     * and the needle is wrapped in `%` **here** rather than coming from the caller, so a value
+     * containing `%` or `_` cannot widen the pattern. `PagerHistoryRequest`'s regex also keeps
+     * both characters out, so that is two independent bounds rather than one.
+     *
+     * @return list<array{id: string, order_reference: string, status: string, created_at: string, ready_at: string|null, completed_at: string|null}>
+     */
+    public function history(string $tenantId, PagerHistoryFilters $filters): array
+    {
+        $where = [];
+        $bindings = [];
+
+        if ($filters->hasStatuses()) {
+            // One placeholder per status, each cast — an `IN` over a bound array is not
+            // something Postgres accepts, and `ANY(?)` would need an array literal built as a
+            // string, which is a fragment this method deliberately does not build.
+            $placeholders = implode(', ', array_fill(0, count($filters->statuses), '?::pager_status'));
+            $where[] = "status in ({$placeholders})";
+            $bindings = [...$bindings, ...$filters->statusValues()];
+        }
+
+        if ($filters->from !== null) {
+            $where[] = 'created_at >= ?';
+            $bindings[] = $filters->from->toDateTimeString();
+        }
+
+        if ($filters->to !== null) {
+            /*
+             * ⚠ `< to + 1 day`, NOT `<= to`, AND THIS IS THE OFF-BY-ONE THAT MATTERS.
+             *
+             * A person filtering *"the 3rd to the 5th"* means the whole of the 5th.
+             * `created_at <= '2026-11-05'` compares against MIDNIGHT at the start of that day,
+             * so it silently drops every order the restaurant took on the 5th — the busiest
+             * end of the range, and a loss nothing on the screen would reveal.
+             * `PagerHistoryFilters::day()` normalises both ends to a day's start, and this
+             * makes the upper end inclusive.
+             */
+            $where[] = 'created_at < ?';
+            $bindings[] = $filters->to->addDay()->toDateTimeString();
+        }
+
+        if ($filters->hasReference()) {
+            // ILIKE: a person typing `a-101` is looking for `A-101`. The wildcards are added
+            // HERE and the needle is bound, so the caller cannot supply a pattern.
+            $where[] = 'order_reference ilike ?';
+            $bindings[] = '%'.$filters->reference.'%';
+        }
+
+        $predicate = $where === [] ? '' : ' and '.implode(' and ', $where);
+        $bindings[] = PagerHistoryFilters::PAGE_SIZE;
+
+        $rows = withTenant($tenantId, fn () => DB::select(
+            'select id, order_reference, status, created_at, ready_at, completed_at
+               from pager_sessions
+              where true'.$predicate.'
+              order by created_at desc
+              limit ?',
+            $bindings,
+        ));
+
+        $history = [];
+
+        foreach ($rows as $row) {
+            // isset-guarded rather than mapped blind, which is `board()`'s own rule:
+            // `DB::select()` answers plain objects, so a renamed column would otherwise be a
+            // property error at run time inside a loop.
+            if (! is_object($row) || ! isset($row->id, $row->order_reference, $row->status, $row->created_at)) {
+                continue;
+            }
+
+            $history[] = [
+                'id' => (string) $row->id,
+                'order_reference' => (string) $row->order_reference,
+                'status' => (string) $row->status,
+                'created_at' => (string) $row->created_at,
+                'ready_at' => isset($row->ready_at) ? (string) $row->ready_at : null,
+                'completed_at' => isset($row->completed_at) ? (string) $row->completed_at : null,
+            ];
+        }
+
+        return $history;
+    }
+
+    /**
+     * Re-issue a sheet: the SAME order, a NEW code, and the old code stops working.
+     *
+     * ================================================================================
+     * MUHAMMAD's RULING, `QRPAGER-28 §2`: *A SHEET IS RE-ISSUED, NEVER REPRINTED*
+     * ================================================================================
+     *
+     * *"The QR token is 128-bit CSPRNG stored as a hash only (`§4 › Data`), so the raw value
+     * exists once, at generation, and can never be re-rendered from the database. Reprint is
+     * not a feature being declined — it is physically unavailable, and `§4` forbids making it
+     * available."*
+     *
+     * So the only thing that can be done for a staff member holding a lost or ruined sheet is
+     * to give that order a new code. This method is that, and it is deliberately NOT any of
+     * the three shapes it could have been:
+     *
+     *   **NOT cancel-then-create.** Cancelling NOTIFIES — that is the whole point of cancel,
+     *   and `cancel()`'s own docblock says why (*"a pager that will never buzz is worse than
+     *   news"*). A customer whose sheet was reprinted at the counter has not been cancelled on
+     *   and must not be told they have. It would also break the order's identity in the
+     *   history: two rows for one order, one of them a lie.
+     *
+     *   **NOT a new session for the same reference.** Same objection, without the false
+     *   notification: the history screen would show two orders where the restaurant had one,
+     *   and 10d's own `§3` bar is that no screen shows an unexplained thing.
+     *
+     *   **NOT a status change.** `PagerTokenLookup` resolves a presented token and REPORTS the
+     *   status; a terminal status does not make a token stop resolving, it makes it resolve to
+     *   *cancelled*. The old sheet has to become un-resolvable, which only a new hash achieves.
+     *
+     * **It is a TOKEN ROTATION on the existing row.** One session, one order, one history
+     * entry, a new 128-bit secret, and the old one is gone because the column it was compared
+     * against no longer holds its hash. Nothing is notified, because nothing has happened to
+     * the customer's order — only to the piece of paper.
+     *
+     * ================================================================================
+     * WHAT IT REFUSES, AND WHY A TERMINAL SESSION IS ONE OF THEM
+     * ================================================================================
+     *
+     * A session past its TTL or in a terminal status is refused with the same two answers the
+     * transitions give (`expired`, `conflict`), for the same reason: re-issuing a code for an
+     * order that is finished, cancelled or expired would print a sheet that buzzes nobody. The
+     * remedy there is a NEW pager, which is the create screen, and the copy says so.
+     *
+     * ⚠ **AND IT TAKES THE ROW LOCK.** Two staff members re-issuing the same sheet at the same
+     * instant must produce ONE surviving code rather than two sheets whose holder cannot know
+     * which works — the same `FOR UPDATE` serialisation `apply()` uses, and
+     * `PagerReissueTest` drives two concurrent callers over HTTP against it.
+     */
+    public function reissue(
+        string $tenantId,
+        string $sessionId,
+        ?string $actorUserId = null,
+        ?string $actorIp = null,
+    ): IssuedPagerSession {
+        $token = PagerToken::issue();
+
+        return withTenant($tenantId, function () use ($tenantId, $sessionId, $token, $actorUserId, $actorIp): IssuedPagerSession {
+            return DB::transaction(function () use ($tenantId, $sessionId, $token, $actorUserId, $actorIp): IssuedPagerSession {
+                // Locked first, so the status read below and the rotation are one serialised
+                // act. `lock()` answers 404 for a row this tenant cannot see, which is where
+                // the cross-tenant refusal comes from.
+                $session = $this->lock($sessionId);
+
+                $from = PagerStatus::from((string) $session->status);
+
+                // The TTL check is `refuseIfPastTtl`'s, shared with every transition so the
+                // two cannot disagree about what expired means -- computed from `expires_at`
+                // against the clock rather than from `status`, which lags (`R-058`).
+                $this->refuseIfPastTtl($from, $session);
+
+                if ($from->isTerminal()) {
+                    throw PagerTransitionDenied::cannotReissue($from);
+                }
+
+                DB::update(
+                    'update pager_sessions
+                        set token_hash = decode(?, \'hex\'), updated_at = now()
+                      where id = ?',
+                    [$token->hashHex(), $sessionId],
+                );
+
+                $this->audit($tenantId, $sessionId, PagerAuditAction::Reissued, $actorUserId, $actorIp, [
+                    // The status is recorded because it is the thing that made the re-issue
+                    // legal. NEVER the token and never its hash -- `audit()`'s own rule.
+                    'status' => $from->value,
+                ]);
+
+                return new IssuedPagerSession(
+                    new PagerSessionState(
+                        $sessionId,
+                        $from,
+                        (string) $session->order_reference,
+                        isset($session->renotify_count) ? (int) $session->renotify_count : 0,
+                        true,
+                    ),
+                    $token,
+                );
+            });
+        });
+    }
+
+    /**
      * One audit row, inside the caller's transaction.
      *
-     * actor_type is `user` with a NULL actor_user_id until Task 5 exists, and that is the
-     * honest pair rather than a convenient one: a staff member really did this, and we
-     * really cannot say who yet. `system` would be a lie and would make these rows
-     * indistinguishable from the expiry job's, which are the only genuinely actorless
-     * ones. Task 5 fills the id and changes nothing else here.
+     * ⚠ `actor_user_id` IS FILLED NOW, AT TASK 12, AND THIS DOCBLOCK IS WHY IT TOOK SO LONG.
+     * It used to read: *"actor_type is `user` with a NULL actor_user_id until Task 5 exists,
+     * and that is the honest pair rather than a convenient one: a staff member really did
+     * this, and we really cannot say who yet. `system` would be a lie and would make these
+     * rows indistinguishable from the expiry job's, which are the only genuinely actorless
+     * ones. **Task 5 fills the id and changes nothing else here.**"*
+     *
+     * The reasoning was right and the last sentence was a promise nobody kept. Task 5 built
+     * the principals and never returned to these call sites, so `?string $actorUserId = null`
+     * sat here with NO caller passing it from Task 3 until `R-237` found one row of it in a
+     * scoped review of Task 10 -- a `pager.session.reissued` with an IP and nothing else, for
+     * an act that voids a live customer's code. The sweep found all six writes on
+     * `PagerSessionController` doing the same.
+     *
+     * `PagerSessionController::actor()` now supplies it on every one, and the NULL that
+     * remains is honest: the expiry job and the outbox worker have no user, which is what
+     * `actor_type` already distinguishes.
      *
      * `context` carries status values and counts -- our own enum cases and integers. Never
      * the token, never its hash, never anything the caller sent beyond what the column

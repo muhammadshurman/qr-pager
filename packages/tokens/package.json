@@ -1,0 +1,19 @@
+{
+  "name": "@qrpager/tokens",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./generated/tokens.css",
+    "./generated": "./generated/tokens.ts",
+    "./fonts.css": "./fonts/fonts.css",
+    "./theme.css": "./generated/theme.css"
+  },
+  "scripts": {
+    "generate": "node --experimental-strip-types scripts/generate.mjs",
+    "check": "node --experimental-strip-types scripts/generate.mjs --check",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "fonts": "node scripts/fetch-fonts.mjs"
+  }
+}

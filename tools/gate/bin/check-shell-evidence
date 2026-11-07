@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# ================================================================================
+# THE $? HAZARD, MECHANISED. Three times in one session is a mechanism gap.
+# ================================================================================
+#
+# In one session three evidence readings reported a command as having SUCCEEDED when it had
+# exited 1, and twice the wrong figure was published before being caught:
+#
+#   node … --check | tail -5 ; echo "exit=$?"        -> $? is tail's, always 0
+#   cmd >/dev/null 2>&1 ; echo "$(basename "$F") exit=$?"
+#                                                    -> the substitution runs FIRST and
+#                                                       resets $? to basename's 0
+#
+# Both read a status that belonged to something else, and both looked exactly like a pass.
+# In a project whose §8 is "do not claim a test passed without showing the output", a
+# harness that misreads an exit code is the most expensive defect shape available: it
+# produces evidence that is wrong in the reassuring direction.
+#
+# So the rule stops depending on anyone remembering it. This script is a gate step:
+#
+#   1. every EXECUTABLE bash script must `set -o pipefail`, so a pipeline's status is the
+#      failing stage's rather than the last stage's. A SOURCED helper is exempt -- it has no
+#      status of its own and inherits its caller's options. `_revert-proof.sh` is the one
+#      such file and it is non-executable, which is how this script can tell.
+#   2. no `$?` may appear on a line that also contains a pipe or a command substitution.
+#      `${PIPESTATUS[0]}` is the correct read after a pipeline; capturing into a variable
+#      immediately after a plain command is the correct read otherwise.
+#   3. no `$?` may appear on the line after one ending in `|` or `&&`/`||`, which is the
+#      same mistake spread over two lines.
+#
+# PROVEN TO FAIL on tools/gate/fixtures/bad-evidence.sh.fixture, which carries one instance
+# of each. An unproven guard is not a guard -- the same clause the §12 lint rule and
+# `composer guard` rules 7-11 are held to.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+
+fixture_mode=0
+targets=()
+for arg in "$@"; do
+    case "$arg" in
+        --fixture) fixture_mode=1 ;;
+        *) targets+=("$arg") ;;
+    esac
+done
+
+if [ "$fixture_mode" = "1" ]; then
+    # ⚠ BOTH FIXTURES, AND THERE ARE TWO FOR A REASON. `§11` round two, QA H-1 added a rule that
+    # only applies to a file which HAS enabled `pipefail`, and `bad-evidence.sh.fixture`'s own
+    # finding (1) is that it never does. Exercising the new rule there cancelled that finding --
+    # measured -- so the pipefail-assignment hazard lives in its own file. A `--fixture` run that
+    # scanned only the first would have reported the new rule as covered while covering nothing.
+    targets=(
+        "tools/gate/fixtures/bad-evidence.sh.fixture"
+        "tools/gate/fixtures/bad-pipefail-assignment.sh.fixture"
+    )
+elif [ "${#targets[@]}" = "0" ]; then
+    # Everything tracked under the two script directories. `git ls-files` rather than a
+    # glob, so an untracked scratch script cannot fail the gate and a tracked one cannot
+    # escape it.
+    #
+    # FIXTURES EXCLUDED, and the ordinary pass found that out the hard way: the moment
+    # bad-evidence.sh.fixture was committed, `git ls-files` picked it up and the gate went
+    # red on a file that exists to be red. Same exemption the design-token scanner makes
+    # for tools/design-tokens/fixtures, for the same reason -- a deliberately-wrong file
+    # swept into the normal pass makes the gate permanently red and the rule gets disabled.
+    while IFS= read -r f; do
+        case "$f" in
+            */fixtures/*) continue ;;
+        esac
+        targets+=("$f")
+    done < <(git ls-files tools/ apps/api/bin/)
+fi
+
+findings=0
+scanned=0
+strict=""
+scan=()
+
+for f in "${targets[@]}"; do
+    [ -f "$f" ] || continue
+    # bash scripts only: a .mjs gate script reads a spawn result rather than $?.
+    if [ "$fixture_mode" != "1" ]; then
+        head -1 "$f" | grep -qE '^#!.*\b(bash|sh)\b' || continue
+    fi
+    scanned=$((scanned + 1))
+    scan+=("$f")
+    # An EXECUTABLE script must enable pipefail. A sourced helper has no status of its own
+    # and inherits its caller's options -- `_revert-proof.sh` is the one such file and it is
+    # non-executable, which is how this tells.
+    if [ -x "$f" ] || [ "$fixture_mode" = "1" ]; then
+        strict="${strict}${f}"$'\n'
+    fi
+done
+
+if [ "$scanned" = "0" ]; then
+    echo "shell evidence: nothing to scan -- the target list is empty, which is not a pass" >&2
+    exit 1
+fi
+
+# ⚠ ONE awk PASS, NOT ONE SUBPROCESS PER LINE. The previous form ran `printf | sed` for
+# every line of every script: 3100 lines, 6200 processes, 4.35 s locally and 6.67 s on a
+# GitHub runner -- which is past Vitest's 5 s default, so the test driving this checker
+# FAILED IN CI while passing locally. A gate step slow enough to time out reports red for
+# the wrong reason. The analysis itself is unchanged and lives in lib/shell-evidence.awk.
+awk_out="$(awk -v strictlist="$strict" -f "$(dirname "$0")/../lib/shell-evidence.awk" "${scan[@]}")"
+awk_status=$?
+if [ "$awk_status" != "0" ]; then
+    echo "shell evidence: the awk pass itself failed (exit $awk_status)" >&2
+    exit 1
+fi
+
+while IFS=$'\t' read -r a b c d; do
+    if [ "$a" = "FINDINGS" ]; then
+        findings="$b"
+        continue
+    fi
+    printf '  %s:%s  %s\n     %s\n' "$a" "$b" "$c" "$d" >&2
+done <<<"$awk_out"
+
+if [ "$findings" = "0" ]; then
+    echo "shell evidence: $scanned script(s) scanned, no exit-code hazard."
+    exit 0
+fi
+
+echo >&2
+echo "shell evidence: $findings hazard(s). An exit code read from the wrong command is" >&2
+echo "evidence that is wrong in the reassuring direction." >&2
+exit 1

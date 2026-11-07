@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# =============================================================================
+# `Lighthouse Performance >= 95` -- `§3` ROW 9, BY THE METHOD `§3.1` ROW 9 WRITES
+# =============================================================================
+#
+# The method was written on 2026-11-01, BEFORE this task started, into `§3.1` row 9 and
+# `QRPAGER-16 §4.1`. This script implements exactly it and nothing else. Each part of it is
+# marked below with the clause it comes from, so a reviewer can read the two side by side.
+#
+# ⚠ AND THE WEIGHT IS NOT ON THE SCORE. The method says so in terms: *"Three LOAD-INVARIANT
+# assertions carry it, each derivable from the build rather than from a run."* Those three are
+# `apps/web/test/build-surface.test.ts` -- critical-path transferred bytes under a stated
+# budget, the count of render-blocking requests, and zero third-party origins in the built
+# output. This script produces the score, reports all five runs, and fails only on the
+# MEDIAN, because under `§11`'s round limit a misleading red costs a round and a Lighthouse
+# score moves with the runner.
+#
+# =============================================================================
+# ⚠ AMENDED 2026-11-01, AND THE SCORE IS NO LONGER WHAT THIS SCRIPT FAILS ON
+# =============================================================================
+#
+# Muhammad ruled on 2026-11-01, on this script's own five runs: the bar and the method were
+# INCOHERENT WITH EACH OTHER, not with the page. Median 78 over [78, 77, 78, 77, 80] under
+# `RTT 300 ms / 700 Kbps / CPU x4`, while the same five reports carry OBSERVED paints of
+# 84-118 ms FCP and 224-287 ms LCP and `benchmarkIndex` 1,916-2,328 rules out host
+# starvation. A >= 95 under that simulation is unreachable with any hydration and `§1` locks
+# Next 15, so the number measured the instrument rather than the product.
+#
+# `PROJECT_INSTRUCTIONS.md §12`'s *"Lighthouse Performance >= 95"* is UNTOUCHED -- rank 2, the
+# product aspiration. What moved is the rank-3 clause in `§3` row 9 and `§3.1` row 9, which is
+# what the task ships on, and this script now implements THAT:
+#
+#   (i)   the three LOAD-INVARIANT assertions stay where they already are and are already a
+#         gate step -- `apps/web/test/build-surface.test.ts`, in `pnpm gate`'s Vitest step and
+#         in CI. This script does not duplicate them; a second copy would be a second source.
+#   (ii)  THE OBSERVED PAINTS ARE WHAT THIS SCRIPT NOW FAILS ON: median observed FCP and LCP
+#         against bars set from the 2026-11-01 measurement and stated as such.
+#   (iii) THE SIMULATED MEDIAN IS STILL MEASURED, STILL PRINTED, AND NO LONGER FATAL, so the
+#         gap to >= 95 stays visible and auditable. `R-205` carries that gap, owned by
+#         Task 11 (`QRPAGER-18`) -- a landing that paints without client hydration is the one
+#         remaining lever. Deleting the simulation would hide the residual, which is the
+#         opposite of the ruling.
+#
+# ⚠ WHY THE OBSERVED NUMBERS ARE A REAL-DEVICE FIGURE EVEN THOUGH THE RUN IS THROTTLED, which
+# is the one thing a reader could reasonably doubt: `--throttling-method=simulate` does NOT
+# constrain the engine. Lighthouse loads the page at full speed and then applies a MODEL to
+# the trace, which is why a report can carry an 88 ms observed FCP and a 2,409 ms simulated
+# one at the same time. So `observedFirstContentfulPaint` and `observedLargestContentfulPaint`
+# are what Chrome actually did on this hardware, and no separate unthrottled run is needed to
+# obtain them -- which also means (ii) and (iii) come from the SAME five reports and cannot
+# drift apart. Field names verified in the pinned tree:
+# `lighthouse/core/computed/metrics/timing-summary.js` lines 116 and 120, surfaced through
+# `core/audits/metrics.js` at `audits.metrics.details.items[0]`, rounded to integers there.
+set -euo pipefail
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+RUNS=5
+
+# The simulated score bar. REPORTED, never fatal, since the 2026-11-01 ruling -- see (iii).
+BAR=95
+
+# ⚠ THE TWO BARS THIS SCRIPT FAILS ON, AND BOTH ARE SET FROM THE 2026-11-01 MEASUREMENT AND
+# SAY SO. Observed medians that day were FCP 88 ms and LCP 244 ms, so each bar sits at roughly
+# 1.6x what the page does now: loose enough to survive a slower runner, tight enough that
+# doubling either fails. They are NOT industry figures -- a threshold copied from a table
+# would be the "number with no provenance" `§3.1` row 9 already refuses for the score.
+FCP_BAR_MS=200
+LCP_BAR_MS=400
+
+# TOOL AND VERSION. *"The Lighthouse CLI, pinned exact in the workspace (`save-exact`),
+# driven over the same Chrome for Testing build Playwright already pins. Both versions
+# printed into the report -- a score is a function of its engine and a bare number has no
+# provenance."*
+LH_VERSION="$(node -e 'process.stdout.write(require("./package.json").devDependencies.lighthouse)')"
+
+if ! printf '%s' "$LH_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "lighthouse-proof: lighthouse must be pinned EXACT in package.json, got '${LH_VERSION}'" >&2
+  exit 1
+fi
+
+PW_VERSION="$(node -e 'process.stdout.write(require("./package.json").devDependencies["@playwright/test"])')"
+
+# PAGE. *"The scan landing route `/s/{token}` at a real issued token, served from a production
+# build (`next build` + `next start`), never the dev server."*
+#
+# ⚠ `/s#<token>` AND NOT `/s/<token>`, WHICH IS `SR-1`. The fragment is the shape
+# `PagerToken::qrPayload()` emits and the only one compatible with `§4 › Edge`'s cache clause;
+# the conflict with `§4.1`'s spelling is reported in `docs/tickets/QRPAGER-16.md SR-1`. It
+# makes no difference to the measurement -- a fragment is not sent to the server and
+# Lighthouse loads the same bytes either way -- which is itself worth saying, because it means
+# this figure is not hostage to that ruling.
+BASE="${QRPAGER_E2E_BASE:-}"
+TOKEN="${QRPAGER_LH_TOKEN:-}"
+
+if [ -z "$BASE" ] || [ -z "$TOKEN" ]; then
+  echo "lighthouse-proof: QRPAGER_E2E_BASE and QRPAGER_LH_TOKEN are required." >&2
+  echo "  Run it through 'pnpm run gate:lighthouse', which starts the stack, issues a" >&2
+  echo "  real session and passes both. This script does not invent a token: a fabricated" >&2
+  echo "  one renders the INVALID screen, which is a different and much smaller page." >&2
+  exit 1
+fi
+
+URL="${BASE}/s#${TOKEN}"
+
+OUT="${REPO}/storage/lighthouse"
+mkdir -p "$OUT"
+
+# The Chrome Playwright pins. Resolved from the installed browser rather than from a path
+# anybody typed, so the two tools cannot disagree about which engine produced the number.
+#
+# ⚠ `export`, AND IT WAS MISSING -- A ONE-WORD DEFECT THAT PRINTED CORRECTLY AND MEASURED
+# NOTHING. `chrome-launcher` (Lighthouse's launcher) reads `process.env.CHROME_PATH` and
+# nothing else: Lighthouse has no `--chrome-path` flag. Without `export` this script resolved
+# the right binary, printed the right version and path into the report header -- *Google
+# Chrome for Testing 156.0.8078.4* at `/ms-playwright/chromium-1248/...` -- and then the
+# lighthouse child process searched the container for Chrome, found none, and died with
+# *"The CHROME_PATH environment variable must be set"* on run 1 of 5. A header that names the
+# toolchain is not the same as a measurement that USED it, which is the whole argument trap 5
+# of the rank-1 brief makes, turned on this script.
+export CHROME_PATH
+CHROME_PATH="$(node -e '
+const { chromium } = require("playwright")
+process.stdout.write(chromium.executablePath())
+')"
+
+if [ ! -x "$CHROME_PATH" ]; then
+  echo "lighthouse-proof: no executable Chrome at ${CHROME_PATH}" >&2
+  exit 1
+fi
+
+# `|| true`: the executable check above already proved the binary exists; a `--version` that
+# prints nothing must not abort a measurement run (QA H-1's family).
+CHROME_VERSION="$("$CHROME_PATH" --version 2>/dev/null | head -1 || true)"
+
+echo "lighthouse-proof"
+echo "  lighthouse          ${LH_VERSION}  (pinned exact in package.json)"
+echo "  @playwright/test    ${PW_VERSION}"
+echo "  chrome              ${CHROME_VERSION}"
+echo "  chrome path         ${CHROME_PATH}"
+echo "  toolchain           ${QRPAGER_TOOLCHAIN:-host}"
+echo "  url                 ${BASE}/s#<token redacted>"
+echo "  runs                ${RUNS}, median is the figure, all five reported"
+echo
+
+scores=()
+fcps=()
+lcps=()
+
+for run in $(seq 1 "$RUNS"); do
+  # COLD, AND COLD MEANS FOUR THINGS. *"A fresh browser profile per run; empty HTTP cache; NO
+  # SERVICE WORKER INSTALLED -- the install is what this task ships, so measuring after it is
+  # measuring the second visit; no prior localStorage."*
+  #
+  # A fresh `--user-data-dir` per run gives all four at once: an empty profile has no cache,
+  # no registered worker and no storage. `--disable-features=...` is NOT used to fake it --
+  # the profile really is new.
+  #
+  # ⚠ `--ignore-certificate-errors` IS ABOUT THE HARNESS AND NOT ABOUT THE MEASUREMENT, which
+  # is worth saying because every other flag here is a FIGURE the `§3.1` method dictates. The
+  # page is served through `tools/browsers/bin/tls-proxy.mjs` on a one-day self-signed
+  # certificate, because a service worker needs a secure context; Chrome refuses such an
+  # origin without this. `playwright.config.ts` passes Chromium the same flag for the same
+  # reason. It changes no byte of the document and no throttling value -- the alternative was
+  # to measure the plain-HTTP port instead, which would have been a DIFFERENT origin from the
+  # one every other assertion in this task was taken against.
+  profile="$(mktemp -d)"
+  report="${OUT}/run-${run}.json"
+
+  # THROTTLING, AS FIGURES AND NEVER AS A PRESET NAME. *"Simulated throttling at RTT 300 ms,
+  # 700 Kbps down, 700 Kbps up, CPU slowdown x4, mobile form factor, screen emulation 390x844
+  # at DPR 3. Preset names move between Lighthouse majors."*
+  # The pinned binary directly, for the reason `tools/browsers/bin/e2e` states: pnpm must not
+  # re-link node_modules in the middle of a measurement.
+  if ! ./node_modules/.bin/lighthouse "$URL" \
+    --only-categories=performance \
+    --output=json \
+    --output-path="$report" \
+    --quiet \
+    --chrome-flags="--headless=new --no-sandbox --ignore-certificate-errors --user-data-dir=${profile}" \
+    --throttling-method=simulate \
+    --throttling.rttMs=300 \
+    --throttling.throughputKbps=700 \
+    --throttling.requestLatencyMs=300 \
+    --throttling.downloadThroughputKbps=700 \
+    --throttling.uploadThroughputKbps=700 \
+    --throttling.cpuSlowdownMultiplier=4 \
+    --form-factor=mobile \
+    --screenEmulation.mobile \
+    --screenEmulation.width=390 \
+    --screenEmulation.height=844 \
+    --screenEmulation.deviceScaleFactor=3 \
+    --max-wait-for-load=90000 >"${OUT}/run-${run}.log" 2>&1; then
+    echo "lighthouse-proof: run ${run} did not complete. Log: ${OUT}/run-${run}.log" >&2
+    rm -rf "$profile"
+    exit 1
+  fi
+
+  rm -rf "$profile"
+
+  # THREE NUMBERS FROM ONE REPORT, in one pass: the simulated score and the two OBSERVED
+  # paints. Reading them together is what makes (ii) and (iii) the same measurement rather
+  # than two that can disagree.
+  #
+  # ⚠ THE OBSERVED FIELDS ARE REQUIRED, NOT OPTIONAL. A report that carries no
+  # `observedFirstContentfulPaint` is a report this script cannot hold to its bar, and
+  # treating that as a pass is the vacuous-assertion shape this repository has paid for
+  # repeatedly (`§11` round two, QA M-4). It exits non-zero and names the field instead.
+  metrics="$(node -e '
+const report = require(process.argv[1])
+const score = report.categories.performance.score
+if (typeof score !== "number") {
+  console.error("no performance score in the report")
+  process.exit(1)
+}
+const items = report.audits?.metrics?.details?.items
+const m = Array.isArray(items) ? items[0] : undefined
+if (m === undefined) {
+  console.error("the report carries no `metrics` audit, so the observed paints cannot be read")
+  process.exit(1)
+}
+for (const field of ["observedFirstContentfulPaint", "observedLargestContentfulPaint"]) {
+  if (typeof m[field] !== "number") {
+    console.error(`the report carries no numeric ${field}`)
+    process.exit(1)
+  }
+}
+// Lighthouse reports 0..1. x100 and FLOORED, never rounded up: the convention this project
+// settled for contrast figures ("a raw 4.4996 presented as 4.50 against a 4.5 bar reads as a
+// pass and is not one") applies to every minimum bar, on every instrument.
+//
+// The paints are already integer milliseconds (core/audits/metrics.js rounds them), and they
+// are compared against a MAXIMUM rather than a minimum, so Math.ceil is the conservative
+// direction here for the same reason Math.floor is above: never present a figure as better
+// than it measured.
+process.stdout.write([
+  Math.floor(score * 100),
+  Math.ceil(m.observedFirstContentfulPaint),
+  Math.ceil(m.observedLargestContentfulPaint),
+].join(" "))
+' "$report")"
+
+  read -r score fcp lcp <<<"$metrics"
+
+  scores+=("$score")
+  fcps+=("$fcp")
+  lcps+=("$lcp")
+
+  # A SINGLE RUN UNDER 95 REPORTS AND DOES NOT FAIL -- the method says so.
+  if [ "$score" -lt "$BAR" ]; then
+    printf '  run %d  score %3d (simulated, under the %d bar -- reported, not fatal)  observed FCP %4d ms  LCP %4d ms\n' \
+      "$run" "$score" "$BAR" "$fcp" "$lcp"
+  else
+    printf '  run %d  score %3d (simulated)  observed FCP %4d ms  LCP %4d ms\n' "$run" "$score" "$fcp" "$lcp"
+  fi
+done
+
+echo
+
+# RUNS AND STATISTIC. *"Five runs; the MEDIAN is the figure; all five are reported. ... A
+# Lighthouse Performance score is bounded at 100 and its noise is two-sided, so best of five
+# would systematically overstate it. Median of five, floored, never the best."*
+# `|| true`: with five scores `sed -n 3p` always prints one, so this cannot fail today --
+# but the assignment is the same shape QA H-1 cost a round for, and a future RUNS change
+# would make it silent. The emptiness check below is what actually decides.
+# ⚠ ONE MEDIAN HELPER FOR ALL THREE SERIES, so the statistic cannot differ between the figure
+# that reports and the figures that decide. `|| true` for the reason the old comment here gave
+# and it still applies: with five values `sed -n 3p` always prints one, but the assignment is
+# the shape QA H-1 cost a round for, and a future RUNS change would make it silent. The
+# emptiness checks below are what actually decide.
+median_of() {
+  printf '%s\n' "$@" | sort -n | sed -n "$(( ($# + 1) / 2 ))p" || true
+}
+
+median="$(median_of "${scores[@]}" || true)"
+fcp_median="$(median_of "${fcps[@]}" || true)"
+lcp_median="$(median_of "${lcps[@]}" || true)"
+
+if [ -z "$median" ] || [ -z "$fcp_median" ] || [ -z "$lcp_median" ]; then
+  echo "lighthouse-proof: FAILED -- a median came out empty, so nothing was measured." >&2
+  exit 1
+fi
+
+echo "lighthouse-proof"
+echo "  lighthouse ${LH_VERSION} · ${CHROME_VERSION} · ${QRPAGER_TOOLCHAIN:-host}"
+echo "  reports: ${OUT}/run-{1..${RUNS}}.json"
+echo
+
+# (iii) THE SIMULATED MEDIAN, RECORDED AND NOT FATAL. This line is the residual `R-205`
+# carries; it is printed every run so the gap to >= 95 is never a thing someone has to go and
+# re-derive.
+printf '  SIMULATED  runs [%s]  median %s  against §12 aspiration %s  — REPORTED, not fatal (R-205, Task 11)\n' \
+  "$(IFS=,; echo "${scores[*]}")" "$median" "$BAR"
+
+# (ii) THE TWO BARS THIS SCRIPT FAILS ON.
+printf '  OBSERVED   FCP runs [%s] ms  median %s  bar %s\n' \
+  "$(IFS=,; echo "${fcps[*]}")" "$fcp_median" "$FCP_BAR_MS"
+printf '  OBSERVED   LCP runs [%s] ms  median %s  bar %s\n' \
+  "$(IFS=,; echo "${lcps[*]}")" "$lcp_median" "$LCP_BAR_MS"
+echo
+echo "  the three LOAD-INVARIANT assertions are apps/web/test/build-surface.test.ts, a Vitest"
+echo "  step of 'pnpm gate' and of CI -- not duplicated here, by design"
+echo
+
+failed=0
+
+if [ "$fcp_median" -gt "$FCP_BAR_MS" ]; then
+  printf 'lighthouse-proof: FAILED -- median observed FCP %s ms is over the %s ms bar.\n' \
+    "$fcp_median" "$FCP_BAR_MS" >&2
+  failed=1
+fi
+
+if [ "$lcp_median" -gt "$LCP_BAR_MS" ]; then
+  printf 'lighthouse-proof: FAILED -- median observed LCP %s ms is over the %s ms bar.\n' \
+    "$lcp_median" "$LCP_BAR_MS" >&2
+  failed=1
+fi
+
+# ⚠ BOTH BARS ARE REPORTED BEFORE EITHER EXITS. Failing on the first would hide the second,
+# and a reader of the log would fix one and re-run to discover the other -- which is the
+# round-costing shape `§11`'s round limit exists to bound.
+if [ "$failed" -ne 0 ]; then
+  exit 1
+fi
+
+echo "lighthouse-proof: green -- both observed paints are inside their bars"

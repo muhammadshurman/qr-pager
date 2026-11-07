@@ -1,0 +1,76 @@
+# ADR-003. The frontend half of the repo, created at Task 8 -- the first task that needs it.
+# `apps/api` is the Laravel half and is deliberately NOT a workspace member: it is a Composer
+# project, and listing it here would invite a package.json that competes with composer.json
+# for ownership of that directory.
+packages:
+  - 'apps/web'
+  - 'apps/site'
+  - 'packages/*'
+  - 'tools/*'
+
+# pnpm 10+ refuses to run a dependency's install scripts unless it is named here. Stated as
+# an empty list rather than omitted, so "no dependency in this workspace runs an install
+# script" is a recorded fact that a reviewer can check, instead of a default nobody chose.
+#
+# playwright is NOT in this list and does not need to be: its browsers are installed by an
+# explicit `playwright install`, never by a postinstall hook, which is why the version is
+# pinned exactly and the cache is verifiable.
+onlyBuiltDependencies: []
+
+# NO minimumReleaseAgeExclude, DELIBERATELY, and pnpm wrote one here once.
+#
+# pnpm 12 applies a default minimum-release-age window: it refuses a package published too
+# recently unless that exact version is excluded here. `pnpm install` added
+# `eslint@10.14.0` to this file BY ITSELF, because 10.14.0 had been published the previous
+# day -- measured: 2026-10-30T14:12:27Z, 0 days before this task.
+#
+# That exclusion was removed and the dependency moved to eslint 10.13.0 (published
+# 2026-10-16, 14 days, which clears the window). A linter published yesterday is precisely
+# what a supply-chain delay exists for, nothing in this task needs 10.14.0, and bypassing
+# a control to get a newer lint rule is a bad trade -- §11.7 is about dependency risk, not
+# dependency recency.
+#
+# If this list ever regains an entry, the question to ask is why the version is needed,
+# not how to silence the warning.
+
+# =====================================================================================
+# THE CVE OVERRIDES. §11.7, and `pnpm audit` is now a gate step and a CI step.
+# =====================================================================================
+#
+# ⚠ THERE WAS NO CVE CONTROL AT ALL, and this diff introduces 3,184 lockfile lines. The
+# ticket's §4.3 claimed `pnpm audit` "is run as part of the gate and its output is
+# committed"; it was in `tools/gate/bin/gate.mjs`, root `package.json`, `ci.yml`,
+# `apps/api/bin/gate` and no evidence file. Run for the first time on 2026-10-31 it
+# returned FIVE advisories -- 2 high, 3 moderate.
+#
+# Both overrides are RANGES, not pins, so a later patch is taken automatically rather than
+# needing this file edited again.
+#
+#   postcss: >=8.5.23   closes four advisories, all of them postcss reached through `next`
+#                       in BOTH apps: GHSA-6g55-p6wh-862q (high), GHSA-r28c-9q8g-f849
+#                       (high), GHSA-qx2v-qp2m-jg93, GHSA-fxqj-rqcc-2cmp. The patched floor
+#                       is >= 8.5.23.
+#
+#                       AN OVERRIDE IS THE ONLY INSTRUMENT HERE, and that is measured rather
+#                       than assumed: next@15.5.28 HARD-PINS `"postcss": "8.4.31"` -- an
+#                       exact version, not a range -- and 15.5.28 is the latest 15.x, which
+#                       is what `§1` locks. So no bump inside the lock closes it and
+#                       `@tailwindcss/postcss` already resolves 8.5.32 on its own, meaning
+#                       the tree carried TWO postcss majors-in-practice side by side.
+#                       Resolved: 8.5.32 everywhere, next included.
+#
+#   minimatch: >=11.0.1 closes GHSA-g3hv-75wg-m249 (moderate), minimatch reached through
+#                       `eslint` on 33 paths. Resolved: 11.0.3.
+#
+# VERIFIED, not assumed: `pnpm audit` → "No known vulnerabilities found", exit 0 read
+# directly; both Next apps build, statically prerendered, 102 kB First Load JS -- the same
+# figure as before the override; and the full `pnpm gate` is green. Evidence:
+# `docs/tickets/QRPAGER-15-audit.txt`.
+#
+# The exposure these four were is worth stating so a future reader can weigh a revert:
+# postcss is BUILD-TIME here and every stylesheet it parses is repo-authored, so the
+# attacker-controlled input the advisories need does not exist in this repo today. That is
+# why the finding was High and not Critical. The durable half was the absent control.
+overrides:
+  postcss: '>=8.5.23'
+  minimatch: '>=11.0.1'

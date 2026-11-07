@@ -33,9 +33,20 @@ final class TenantTables
      */
     public const TENANT = [
         'audit_log',
+        // ---- Task 7's three. All three hold TENANT CONTENT -- the page a restaurant
+        // publishes, the images it uploads, and the hostnames it owns -- which is the
+        // whole of QRPAGER-14 §0 SR-1: the 2026-10-28 ruling puts them out of the
+        // platform panel's reach and into a tenant-scoped one.
+        //
+        // media_assets carries a second, structural isolation on top of its policies:
+        // two CHECK constraints pin object_key to 'media/{tenant_id}/{32 hex}.{ext}', so
+        // a row cannot name another tenant's prefix even with RLS disabled.
+        'landing_pages',
+        'media_assets',
         'outbox',
         'pager_sessions',
         'push_subscriptions',
+        'tenant_domains',
         'tenant_users',
         'tenants',
     ];
@@ -53,7 +64,46 @@ final class TenantTables
     public const GLOBAL = [
         'failed_jobs',
         'migrations',
+        // A passkey belongs to a USER, not to a tenant, and the WebAuthn ceremony
+        // identifies the user before any tenant is selected. `credential` holds a public
+        // key, so a disclosure yields nothing to authenticate with (PLAN.md §2.4).
+        'passkeys',
         'password_reset_tokens',
+        // Sanctum's. Resolvable from a bearer token ALONE, which is the one property a
+        // tenant-scoped table cannot have: giving it a tenant_id makes it a tenant table,
+        // C4 then forces RLS on it, and the row becomes invisible to the lookup that has
+        // to happen before any tenant is known. The tenant a device token is good for
+        // travels in `abilities` and is verified against the holder's own memberships on
+        // every request (PLAN.md §2.4, QRPAGER-12 §10.1(e)).
+        'personal_access_tokens',
+        // ---- Task 6's three PLATFORM tables. The largest widening of the RLS-free
+        // surface since Task 5, stated here because the diff is where it should be
+        // noticed, and argued for one table at a time in PLAN.md §2.4.
+        //
+        // These hold the platform's own records ABOUT a restaurant -- what was asked
+        // for, how it went, aggregates, and who did what -- and no tenant content, so
+        // there is no scope for RLS to narrow. That is the ruling of 2026-10-28
+        // (QRPAGER-13 §0): a panel query that reaches a tenant table is a rejected
+        // design, so the panel needs tables belonging to no tenant to work on.
+        //
+        // ⚠ NONE OF THEM HAS A COLUMN NAMED tenant_id, AND A REVIEWER SHOULD PUSH ON
+        // THAT. Each is ONE ROW PER TENANT, so the tenant's id is the row's identity
+        // rather than a scope over many rows -- the exact mirror of the property
+        // documented for `tenants` eight lines up, with the sides reversed: `tenants.id`
+        // SCOPES tenant data, and these ids REFERENCE a tenant from a record holding
+        // none. It is not a rename to escape C4's column-name classifier, and the
+        // replacement for what that classifier cannot see is PlatformTableContractTest,
+        // which pins all three column sets exactly against information_schema so neither
+        // a tenant_id nor a row-level-detail column can join one without the diff
+        // showing it.
+        //
+        // platform_audit_log is here for a second, measured reason: a platform-scope
+        // audit_log row (tenant_id NULL) is refused 42501 on insert and reads back as
+        // 0 rows for qrpager_app in and out of context, so audit_log could never have
+        // served this (QRPAGER-13 §0 SR-3).
+        'platform_audit_log',
+        'tenant_provisionings',
+        'tenant_statistics',
         'users',
     ];
 

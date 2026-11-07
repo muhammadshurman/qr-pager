@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# R-083: prove every case in OutboxLeaseTest goes RED without the fix it guards.
+#
+# WHY THIS IS A SCRIPT AND NOT A SENTENCE IN A HANDOVER. R-043: a proof that does not live
+# in the repository is a proof nobody can re-run, and "each proven red without the fix" is
+# §6's clause rather than a courtesy. The two halves of R-083's fix are independent --
+# OutboxWorker::reLease() and PushSubscriptions::forSession()'s LIMIT -- so they are
+# reverted SEPARATELY here, because a single combined revert cannot show which case guards
+# which half, and a case that is red for the other half's reason is not revert-proved.
+#
+# WHAT EACH REVERT SHOULD DO, as the claim this script exists to check:
+#
+# ⚠ IT RUNS THE IDENTITY SUITE TOO, AND THAT IS QA M-5 (2026-10-27). It used to run
+# OutboxLeaseTest alone while three documents claimed "fifteen regression cases, each
+# proven red" -- so the eight OutboxLeaseIdentityTest cases were never reverted at all and
+# the claim could not be checked. Running them here does not make them regression tests:
+# they are PROPERTY PROOFS of the attempt counter (one-per-claim, no reset, one writer,
+# no wraparound) and most of them stay GREEN under both reverts, which is correct and is
+# now visible instead of assumed.
+#
+#   revert A -- the per-row re-lease removed
+#       RED : the two-process proof (12 requests for 8 rows), the stolen-row case, the
+#             lapsed-lease case, the ownership-on-finish case, the ownership-on-backOff
+#             case, the attempt-rollback case, and the identity suite's skip case
+#       GREEN: the device-cap cases, the arithmetic case, and the identity suite's
+#              counter/grant/overflow/source properties -- they are the other half
+#
+#   revert B -- the device cap's LIMIT removed
+#       RED : "sends to at most the configured number", "says so in the log when the cap
+#             bites"
+#       GREEN: everything else, including "does not cap a session that is under the limit",
+#              which is the case that must NOT move -- it is the control proving the cap is
+#              not simply refusing everything
+#
+# It edits two tracked files and restores them in a trap, including on Ctrl-C. Run it on a
+# clean tree: if it is interrupted hard enough to skip the trap, `git checkout` both files.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# THE SHARED MACHINERY, which checks the three things this script used to assert in prose
+# and verify in none: the baseline is green, the declared controls do not move, and every
+# red is an ASSERTION rather than a driver or binding error. Its header records why it
+# exists -- this script is the one that got it wrong.
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
+
+worker="app/Features/Notifications/OutboxWorker.php"
+subs="app/Features/Pager/PushSubscriptions.php"
+# THE CONTROLS, DECLARED AND NOW CHECKED. These cases are unrelated to anything any
+# revert below removes -- one is the proof that the cap is not simply refusing
+# everything, and two are properties of config values and of a value object, with no code
+# path to revert. The header has named them since the script was written; under the
+# broken revert C all three moved and nothing said so.
+revert_proof_init \
+  "tests/Feature/Notifications/OutboxLeaseTest.php tests/Feature/Notifications/OutboxLeaseIdentityTest.php" \
+  "does not cap a session that is under the limit" \
+  "keeps one row" \
+  "derives the lease identity from the pre-claim value"
+
+worker_backup="$(mktemp)"
+subs_backup="$(mktemp)"
+
+cp "$worker" "$worker_backup"
+cp "$subs" "$subs_backup"
+trap 'cp "$worker_backup" "$worker"; cp "$subs_backup" "$subs"; rm -f "$worker_backup" "$subs_backup"; revert_proof_cleanup' EXIT INT TERM
+
+restore() {
+  cp "$worker_backup" "$worker"
+  cp "$subs_backup" "$subs"
+}
+
+run() { revert_proof_run "$@"; }
+
+echo "R-083 revert proof — OutboxLeaseTest, $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+run "baseline — no revert, every case should pass" baseline
+
+# ---------------------------------------------------------------------------------
+# Revert A. The re-lease is made unreachable rather than deleted, so the method and its
+# docblock stay in the file and the diff this script makes is one line -- which keeps the
+# revert honest: nothing else about the worker changes.
+# ---------------------------------------------------------------------------------
+restore
+sed -i 's|^\( *\)if (! \$this->reLease(\$row)) {|\1if (false \&\& ! $this->reLease($row)) { // REVERTED BY bin/lease-revert-proof|' "$worker"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$worker" || { echo "FATAL: the reLease() call site was not found"; exit 1; }
+run "revert A — the per-row re-lease removed (R-083's first half)"
+
+# ---------------------------------------------------------------------------------
+# Revert B. The LIMIT is widened past any plausible device count rather than removed from
+# the SQL, because deleting the clause would leave `{$probe}` unused and PHPStan would
+# fail the file before the suite ever ran -- which would prove the linter works, not the
+# cap.
+# ---------------------------------------------------------------------------------
+restore
+sed -i 's|^\( *\)\$probe = \$cap + 1;|\1$probe = 1000; // REVERTED BY bin/lease-revert-proof|' "$subs"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$subs" || { echo "FATAL: the cap probe was not found"; exit 1; }
+sed -i 's|^\( *\)if (count(\$devices) <= \$cap) {|\1if (true) { // REVERTED BY bin/lease-revert-proof|' "$subs"
+run "revert B — the device cap removed (R-083's second half)"
+
+# ---------------------------------------------------------------------------------
+# Revert C. The ownership guard removed from the three WRITES -- finish(), backOff() and
+# abandon(), which share the predicate. This is the second round's High (QA H-1 /
+# security M-2): the first round put the token on the statement before the SEND and left
+# it off the ones that write.
+# ---------------------------------------------------------------------------------
+# ⚠ THE BINDING GOES WITH THE PLACEHOLDER, and the first version of this revert forgot.
+# It stripped `and attempts = ?` from the SQL and left `$row->leaseIdentity()` in the
+# binding array, so every statement raised `SQLSTATE[HY093] Invalid parameter number`
+# instead of running the pre-fix query -- and since nothing in pass(), process() or the
+# command catches, EVERY case that reaches a worker write went red with an exception.
+# That is not evidence that the guard works; it is evidence that a broken query fails.
+# The scoped review of this fix caught it, and the tell was in the arithmetic: the
+# control case "does not cap a session that is under the limit", which this script's own
+# header calls one that MUST NOT MOVE, moved.
+restore
+sed -i "s|^\( *\)where id = ? and status = 'pending' and attempts = ?|\1where id = ? and status = 'pending' -- REVERTED BY bin/lease-revert-proof|" "$worker"
+sed -i 's|\[\$status->value, \$error, \$row->id, \$row->leaseIdentity()\],|[$status->value, $error, $row->id],|' "$worker"
+sed -i 's|\[\$this->backoffSeconds(\$row->attempts + 1), \$reason, \$row->id, \$row->leaseIdentity()\],|[$this->backoffSeconds($row->attempts + 1), $reason, $row->id],|' "$worker"
+sed -i 's|^\( *\)\[\$row->id, \$row->leaseIdentity()\],|\1[$row->id],|' "$worker"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$worker" || { echo "FATAL: the write predicates were not found"; exit 1; }
+# THE ARITY IS CHECKED, because php -l cannot see it and HY093 looks exactly like a
+# regression when it reaches the suite. Each of the three binding arrays must have lost
+# its leaseIdentity() argument; reLease()'s keeps its own, which this revert does not
+# touch.
+for leftover in \
+  '\[\$status->value, \$error, \$row->id, \$row->leaseIdentity()\]' \
+  '\[\$this->backoffSeconds(\$row->attempts + 1), \$reason, \$row->id, \$row->leaseIdentity()\]' \
+  '^ *\[\$row->id, \$row->leaseIdentity()\]'
+do
+  if grep -q "$leftover" "$worker"; then
+    echo "FATAL: revert C left a binding without its placeholder — the run would be HY093, not evidence" >&2
+    exit 1
+  fi
+done
+php -l "$worker" >/dev/null || { echo "FATAL: revert C produced invalid PHP"; exit 1; }
+run "revert C — the ownership guard removed from finish(), backOff() and abandon()"
+
+# ---------------------------------------------------------------------------------
+# Revert D. The newest-wins eviction removed from register() (security M-1). The cap's
+# read-time LIMIT is untouched, so what this isolates is WHICH devices survive.
+# ---------------------------------------------------------------------------------
+restore
+sed -i 's|^\( *\)\$this->evictOldestBeyondCap(\$session, \$endpoint);|\1// REVERTED BY bin/lease-revert-proof|' "$subs"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$subs" || { echo "FATAL: the eviction call was not found"; exit 1; }
+run "revert D — the newest-wins eviction removed (security M-1)"
+
+# ---------------------------------------------------------------------------------
+# Revert E. The attempt rollback made a no-op (QA M-7 / security M-3), so a claim that
+# ends in a skip burns an attempt again and repeated lease contention dead-letters a row
+# that was never sent to.
+# ---------------------------------------------------------------------------------
+restore
+sed -i 's|^\( *\)set attempts = attempts - 1, updated_at = now()|\1set updated_at = now() -- REVERTED BY bin/lease-revert-proof|' "$worker"
+grep -q 'REVERTED BY bin/lease-revert-proof' "$worker" || { echo "FATAL: the rollback statement was not found"; exit 1; }
+run "revert E — the attempt rollback made a no-op (QA M-7)"
+
+# ---------------------------------------------------------------------------------
+# THE RESTORE IS CHECKED, and it is checked for the SENTINEL rather than with
+# `git status`: both files are legitimately modified relative to HEAD while R-083's fix
+# is uncommitted, so a porcelain line here means nothing. What must be true is that no
+# revert this script made is still in the tree.
+# ---------------------------------------------------------------------------------
+restore
+
+if grep -l 'REVERTED BY bin/lease-revert-proof' "$worker" "$subs" 2>/dev/null; then
+  echo "FATAL: a revert survived the restore — git checkout the files named above" >&2
+  exit 1
+fi
+
+echo "both files restored: no revert sentinel remains in either."
+echo
+
+revert_proof_verdict "lease-revert-proof" || exit 1

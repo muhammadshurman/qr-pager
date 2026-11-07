@@ -1,0 +1,376 @@
+/*
+ * THE STAFF LAYER'S STYLESHEET. Imported by the staff surface only, never by `/s`.
+ *
+ * EVERY value here is a token reference, like `kit.css` -- `pnpm lint:tokens` walks this
+ * file too and fails the gate on a literal. Logical properties throughout, so RTL is a
+ * direction attribute rather than a second stylesheet.
+ *
+ * ================================================================================
+ * WHY THIS IS A SEPARATE FILE AND NOT MORE OF `kit.css`
+ * ================================================================================
+ *
+ * `kit.css` is loaded by the customer PWA, whose `§3` row 9 gate is a BYTE BUDGET -- critical
+ * -path transferred bytes under 135,000 gzipped. Staff chrome a customer never renders has
+ * no business inside that budget, and `apps/web/src/styles/pager.css` is already the
+ * precedent for a per-surface sheet. The staff surface imports `@qrpager/ui/kit.css` for the
+ * primitives it shares and this file for the layer that is its own.
+ *
+ * ================================================================================
+ * THE SCALE IS A FUNCTIONAL REQUIREMENT, NOT A PREFERENCE
+ * ================================================================================
+ *
+ * `QRPAGER-25 §12`: *a kitchen screen is greasy, bright and viewed from two metres*, so
+ * contrast and target size are functional here. Nothing in this file is smaller than
+ * `--size-16`, and every interactive box is at least `--target-min` on both axes -- measured
+ * on the RENDERED box by `browser/staff.spec.ts` rather than trusted from these
+ * declarations, which is `R-118`'s own lesson.
+ */
+
+@import '@qrpager/tokens/tokens.css';
+
+/* ----------------------------------------------------------------- the shell's chrome */
+
+.qr-staff {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100dvh;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.qr-staff__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  align-items: center;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-24);
+  border-block-end: var(--focus-width) solid var(--color-hairline);
+  background-color: var(--color-surface);
+}
+
+.qr-staff__identity {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  /* `min-inline-size: 0`, so a long restaurant name wraps instead of pushing sign-out off
+     the bar. A flex item's default minimum is its content, which is how a header loses its
+     own controls to one long word. */
+  min-inline-size: 0;
+}
+
+.qr-staff__restaurant {
+  margin: 0;
+  font-size: var(--size-28);
+  line-height: 1.2;
+  /* No truncation. A clipped restaurant name is an unexplained identifier by another route:
+     the person cannot tell "Al Baik" from "Al Baik Downtown…" at a glance. It wraps. */
+  overflow-wrap: anywhere;
+}
+
+.qr-staff__person {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: baseline;
+  margin: 0;
+  font-size: var(--size-16);
+  color: var(--color-ink-mid);
+}
+
+.qr-staff__role {
+  padding-block: var(--space-4);
+  padding-inline: var(--space-8);
+  font-size: var(--size-13);
+  color: var(--color-ink);
+  background-color: var(--color-surface-2);
+  border-radius: var(--radius-8);
+}
+
+.qr-staff__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.qr-staff__main {
+  flex: 1 1 auto;
+  padding-block: var(--space-24);
+  padding-inline: var(--space-24);
+}
+
+/* ------------------------------------------------------------------- the five states */
+
+.qr-staff-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  align-items: flex-start;
+  padding-block: var(--space-32);
+  padding-inline: var(--space-24);
+  background-color: var(--color-surface);
+  border-radius: var(--radius-16);
+}
+
+.qr-staff-state--loading {
+  align-items: center;
+}
+
+.qr-staff-state__title {
+  margin: 0;
+  font-size: var(--size-20);
+  line-height: 1.3;
+}
+
+.qr-staff-state__description {
+  max-inline-size: 60ch;
+  margin: 0;
+  font-size: var(--size-16);
+  line-height: 1.5;
+  color: var(--color-ink-mid);
+}
+
+/* `error` and `offline` carry the signal colour on the TITLE only, not on the body text:
+   the body is the part that has to be readable, and `--color-signal` is tuned for emphasis
+   rather than for a paragraph. Same split `kit.css` makes for `.qr-state`. */
+.qr-staff-state--error .qr-staff-state__title,
+.qr-staff-state--offline .qr-staff-state__title {
+  color: var(--color-signal);
+}
+
+/* ------------------------------------------------------------------------- the lock */
+
+.qr-staff-lock {
+  position: fixed;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* `inset: 0` rather than four offsets: it is already direction-agnostic. */
+  inset: 0;
+  padding-inline: var(--space-24);
+  /* OPAQUE, NOT TRANSLUCENT. A scrim at any alpha leaves the chrome legible underneath,
+     and what is underneath is the restaurant's name and the person's. The shell has already
+     dropped its data by the time this renders, but the overlay must not depend on that
+     having worked -- two independent reasons nothing shows through. */
+  background-color: var(--color-paper);
+}
+
+.qr-staff-lock__surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  align-items: flex-start;
+  max-inline-size: 60ch;
+}
+
+.qr-staff-lock__title {
+  margin: 0;
+  font-size: var(--size-28);
+  line-height: 1.2;
+}
+
+.qr-staff-lock__description {
+  margin: 0;
+  font-size: var(--size-20);
+  line-height: 1.5;
+  color: var(--color-ink-mid);
+}
+
+/* ---------------------------------------------------------------- the devices screen */
+
+.qr-staff-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.qr-staff-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  align-items: center;
+  justify-content: space-between;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-16);
+  background-color: var(--color-surface);
+  border-radius: var(--radius-8);
+  box-shadow: var(--elevation-card);
+}
+
+.qr-staff-list__name {
+  margin: 0;
+  font-size: var(--size-20);
+}
+
+.qr-staff-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  margin: 0;
+  font-size: var(--size-16);
+  color: var(--color-ink-mid);
+}
+
+/* The one-time credential. A monospace family is deliberately NOT introduced for it: the
+   token source carries two families and a third would be a hard-coded value by another
+   name. `word-break: break-all` is what a long opaque string actually needs. */
+.qr-staff-secret {
+  display: block;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-16);
+  font-size: var(--size-20);
+  word-break: break-all;
+  background-color: var(--color-surface-2);
+  border: var(--focus-width) solid var(--color-border-strong);
+  border-radius: var(--radius-8);
+}
+
+.qr-staff-warning {
+  max-inline-size: 60ch;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-16);
+  font-size: var(--size-16);
+  line-height: 1.5;
+  color: var(--color-alert-ink);
+  background-color: var(--color-alert-fill);
+  border-radius: var(--radius-8);
+}
+
+.qr-staff-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  align-items: flex-start;
+  max-inline-size: 60ch;
+}
+
+.qr-staff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+}
+
+/* -------------------------------------------------------------------- the sign-in page */
+
+.qr-staff-signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 100dvh;
+  padding-inline: var(--space-24);
+  padding-block: var(--space-48);
+  background-color: var(--color-paper);
+}
+
+.qr-staff-signin__surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  align-items: flex-start;
+  inline-size: 100%;
+  max-inline-size: 48ch;
+}
+
+.qr-staff-signin__title {
+  margin: 0;
+  font-size: var(--size-28);
+  line-height: 1.2;
+}
+
+/*
+ * ⚠ NO TRANSITION, NO ANIMATION AND NO TRANSFORM ANYWHERE IN THIS FILE, which is why there
+ * is no `prefers-reduced-motion` block in it. `§12` requires the preference to be respected;
+ * the strongest way to respect it is to have no motion to suppress, and a staff surface that
+ * animates while somebody is working a service is worse than one that does not. `browser/
+ * staff.spec.ts` asserts the computed `animation-name` and `transition-duration` are `none`
+ * and `0s` under BOTH media settings, so this is a measured property rather than an absence
+ * a later commit can fill in unnoticed.
+ */
+
+/* ------------------------------------------------- the board's quiet notices, added at 10b
+ *
+ * One class for the staleness marker and for `R-224`'s throttle notice, because they are the
+ * same thing on screen: a quiet line above the rows saying something about the data's age
+ * rather than about the data. Neither is an alert and neither takes a button -- the throttle
+ * because the ruling says nothing is required of the person, the staleness because the rows
+ * below it are still correct. */
+.qr-staff-board__stale {
+  margin-block: 0 var(--space-12);
+  font-size: var(--size-16);
+  color: var(--color-ink-mid);
+}
+
+/* The board row's "Waiting" label, beside the elapsed readout — `§11` QA M-13. It is a word
+   rather than an icon because `§12`'s bar is a person who reads no documentation, and a bare
+   mm:ss on a wall screen two metres away reads as a time of day. */
+.qr-staff-list__waiting {
+  color: var(--color-ink-mid);
+}
+
+/* ================================================================================ */
+/* 10d's FILTER GROUPS AND 10e's ROLE PICKER                                         */
+/* ================================================================================ */
+
+/*
+ * `fieldset`/`legend` rather than a div with a heading, which `StaffHistory` and `StaffTeam`
+ * both explain: a group of related toggles needs a group NAME a screen reader announces when
+ * focus enters it, and that is the only construct that does it without ARIA.
+ *
+ * The browser's default fieldset border and padding are removed, because the kit draws groups
+ * with spacing rather than with chrome -- `§12`'s *no library default look*, which here is the
+ * BROWSER's default look.
+ */
+.qr-staff-filter__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+/*
+ * ⚠ THE WHOLE LABEL IS THE TARGET, NOT THE CHECKBOX. A native checkbox renders at ~13px in
+ * every engine and `§12`'s floor is 44px on both axes — which cannot be met by styling the
+ * input, because its box is drawn by the platform. Wrapping it in a label that is itself
+ * `--target-min` tall makes the TAPPABLE area compliant (a click anywhere on a label toggles
+ * its control), and `browser/staff.spec.ts` measures the rendered box of this element rather
+ * than of the input.
+ */
+.qr-staff-filter__toggle {
+  display: inline-flex;
+  gap: var(--space-8);
+  align-items: center;
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-12);
+  font-size: var(--size-16);
+  background-color: var(--color-surface);
+  border: var(--focus-width) solid var(--color-hairline);
+  border-radius: var(--radius-8);
+  cursor: pointer;
+}
+
+/*
+ * ⚠ `:focus-within` AND NOT `:focus`. The focusable element is the INPUT inside this label, so
+ * a ring on the label itself would never render — `§11`'s own lesson about `:focus-visible`
+ * being a heuristic about how focus arrived, one element over. The ring is drawn on the
+ * wrapper so the whole 44px target is visibly focused, which is what a person tabbing sees.
+ */
+.qr-staff-filter__toggle:focus-within {
+  outline: var(--focus-width) solid var(--color-signal);
+  outline-offset: var(--focus-offset);
+}
+
+/* The printable sheet. Centred and bounded, because it is read at arm's length and then
+   printed — the one staff surface whose output is paper. */
+.qr-staff-sheet__code {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--space-24);
+}

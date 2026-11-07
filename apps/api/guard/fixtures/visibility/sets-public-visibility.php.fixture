@@ -1,0 +1,30 @@
+<?php
+
+// Rule 10's positive control. Every form that reaches an S3 object ACL from application code,
+// which ADR-004 measured as the one place the local stand-in is MORE PERMISSIVE than
+// production: SeaweedFS honours ACLs, MinIO answers NotImplemented, and a current S3 bucket
+// with ownership enforced answers AccessControlListNotSupported.
+
+declare(strict_types=1);
+
+namespace App\Fixture;
+
+use Illuminate\Support\Facades\Storage;
+use League\Flysystem\Visibility;
+
+final class PublishesMedia
+{
+    public function publish(string $path, string $bytes): void
+    {
+        Storage::disk('s3')->put($path, $bytes, ['visibility' => 'public']);
+        Storage::disk('s3')->setVisibility($path, Visibility::PUBLIC);
+        Storage::disk('s3')->put($path, $bytes, ['ACL' => 'public-read']);
+    }
+
+    public function legitimate(string $path, string $bytes): void
+    {
+        // NOT a violation: the local `public` disk has no ACLs, and a rule that flagged the
+        // disk's own name would flag every legitimate use of it.
+        Storage::disk('public')->put($path, $bytes);
+    }
+}

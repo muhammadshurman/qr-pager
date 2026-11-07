@@ -9,7 +9,1032 @@
             "url": "http://localhost:8000"
         }
     ],
+    "security": [
+        {
+            "staffBearer": []
+        }
+    ],
     "paths": {
+        "/v1/auth/login": {
+            "post": {
+                "operationId": "auth.login",
+                "description": "Answers the same way for an unknown address and a wrong password.",
+                "summary": "Sign in with an email address and password",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Signed in. The body names the restaurants this account may act in.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": [
+                                                                "string",
+                                                                "null"
+                                                            ]
+                                                        },
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "email": {
+                                                            "type": "string"
+                                                        },
+                                                        "is_platform_admin": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "two_factor_enabled": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "passkeys_enabled": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "email",
+                                                        "is_platform_admin",
+                                                        "two_factor_enabled",
+                                                        "passkeys_enabled"
+                                                    ]
+                                                },
+                                                "memberships": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "tenant_id": {
+                                                                "type": "string"
+                                                            },
+                                                            "slug": {
+                                                                "type": "string"
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "description": "The restaurant's name."
+                                                            },
+                                                            "role": {
+                                                                "type": "string"
+                                                            },
+                                                            "principal": {
+                                                                "type": "string",
+                                                                "description": "The principal this membership makes its holder."
+                                                            },
+                                                            "grantable_roles": {
+                                                                "type": "array",
+                                                                "description": "The roles this membership may grant to somebody else. Added at 10e.",
+                                                                "items": {}
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "tenant_id",
+                                                            "slug",
+                                                            "name",
+                                                            "role",
+                                                            "principal",
+                                                            "grantable_roles"
+                                                        ]
+                                                    }
+                                                },
+                                                "active_tenant": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user",
+                                                "memberships",
+                                                "active_tenant"
+                                            ]
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "two_factor_required": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "two_factor_required"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request was malformed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Those credentials were not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too many attempts.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/logout": {
+            "post": {
+                "operationId": "auth.logout",
+                "description": "Answers the same way whether or not there was a session.",
+                "summary": "Sign out",
+                "tags": [
+                    "Auth"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Signed out.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/tenant": {
+            "post": {
+                "operationId": "auth.tenant",
+                "description": "Reported as not found when the account holds no membership there, or the restaurant\nis not active.",
+                "summary": "Choose which restaurant this session acts in",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SelectTenantRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Selected.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request was malformed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such restaurant for this account.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/me": {
+            "get": {
+                "operationId": "auth.me",
+                "summary": "The signed-in account, and the restaurants it may act in",
+                "tags": [
+                    "Auth"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The account and its restaurants.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "email": {
+                                                            "type": "string"
+                                                        },
+                                                        "is_platform_admin": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "two_factor_enabled": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "passkeys_enabled": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "name",
+                                                        "email",
+                                                        "is_platform_admin",
+                                                        "two_factor_enabled",
+                                                        "passkeys_enabled"
+                                                    ]
+                                                },
+                                                "memberships": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "tenant_id": {
+                                                                "type": "string"
+                                                            },
+                                                            "slug": {
+                                                                "type": "string"
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "description": "The restaurant's name."
+                                                            },
+                                                            "role": {
+                                                                "type": "string"
+                                                            },
+                                                            "principal": {
+                                                                "type": "string",
+                                                                "description": "The principal this membership makes its holder."
+                                                            },
+                                                            "grantable_roles": {
+                                                                "type": "array",
+                                                                "description": "The roles this membership may grant to somebody else. Added at 10e.",
+                                                                "items": {}
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "tenant_id",
+                                                            "slug",
+                                                            "name",
+                                                            "role",
+                                                            "principal",
+                                                            "grantable_roles"
+                                                        ]
+                                                    }
+                                                },
+                                                "active_tenant": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user",
+                                                "memberships",
+                                                "active_tenant"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/pager/session": {
+            "post": {
+                "operationId": "pager.customer.session",
+                "description": "Exchanges the code for the order's current state. Call this once after a scan, and\nagain whenever the live status endpoint reports that it no longer holds a status.",
+                "summary": "Open a pager session from a scanned code",
+                "tags": [
+                    "CustomerPager"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ResolvePagerSessionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The session state, and how long to wait between live-status calls.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                },
+                                                "ready_at": {
+                                                    "type": [
+                                                        "string",
+                                                        "null"
+                                                    ]
+                                                },
+                                                "as_of": {
+                                                    "type": "string"
+                                                },
+                                                "poll_after_seconds": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "status",
+                                                "order_reference",
+                                                "expires_at",
+                                                "ready_at",
+                                                "as_of",
+                                                "poll_after_seconds"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such pager session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session has passed its expiry. Ask the restaurant for a new code.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/pager/status": {
+            "post": {
+                "operationId": "pager.customer.status",
+                "description": "Designed to be called repeatedly while an order is being prepared. Wait\n`poll_after_seconds` between calls, apply your own random jitter to it, and back\noff when this endpoint reports it is temporarily unavailable. A `404` means this\nserver no longer holds a live status for the code: open the session again, which\nwill say whether it is still valid.",
+                "summary": "Read the live status of a pager session",
+                "tags": [
+                    "CustomerPager"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PollPagerStatusRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The live state of the session.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                },
+                                                "as_of": {
+                                                    "type": "string"
+                                                },
+                                                "poll_after_seconds": {
+                                                    "type": "integer"
+                                                }
+                                            },
+                                            "required": [
+                                                "status",
+                                                "order_reference",
+                                                "expires_at",
+                                                "as_of",
+                                                "poll_after_seconds"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No live status is held for that code. Open the session again after poll_after_seconds.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PacedProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "The live status is temporarily unavailable. Retry after the interval in the Retry-After header; notifications are unaffected.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PacedProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/pager/subscription": {
+            "post": {
+                "operationId": "pager.customer.subscribe",
+                "description": "Send the endpoint and keys from the browser's push subscription. Calling this again\nwith the same endpoint updates the stored keys rather than adding a second device,\nso it is safe to repeat on every page load.",
+                "summary": "Register a device to be notified when the order is ready",
+                "tags": [
+                    "CustomerPager"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StorePushSubscriptionRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The device was already registered; its keys were updated.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The endpoint or keys did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "The device was registered.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such pager session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session has passed its expiry.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            },
+            "delete": {
+                "operationId": "pager.customer.unsubscribe",
+                "description": "Safe to repeat: removing a device that is not registered succeeds.",
+                "summary": "Stop notifying a device",
+                "tags": [
+                    "CustomerPager"
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "minLength": 22,
+                            "maxLength": 22
+                        }
+                    },
+                    {
+                        "name": "endpoint",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uri",
+                            "maxLength": 2048
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The device is no longer registered.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such pager session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The session has passed its expiry.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/devices": {
+            "get": {
+                "operationId": "devices.index",
+                "description": "The name each screen was given, when its credential stops working, and when it was\nlast used. Never the credential itself: that is returned once, when it is issued, and\ncannot be read back.",
+                "summary": "List this restaurant's kitchen screens",
+                "tags": [
+                    "Device"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The kitchen screens set up for this restaurant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "devices": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "expires_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "last_used_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "name",
+                                                    "expires_at",
+                                                    "last_used_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "devices"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a tenant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "devices.store",
+                "description": "Returns the token once. Store it on the device; it cannot be read back.",
+                "summary": "Issue a device token",
+                "tags": [
+                    "Device"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/IssueDeviceTokenRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The token, its id and when it expires.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "device": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "token": {
+                                                    "type": "string"
+                                                },
+                                                "expires_at": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "token",
+                                                "expires_at"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "device"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request was malformed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a tenant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/devices/{device}": {
+            "delete": {
+                "operationId": "devices.destroy",
+                "description": "A token that does not belong to the current restaurant is reported as not found.",
+                "summary": "Revoke a device token",
+                "tags": [
+                    "Device"
+                ],
+                "parameters": [
+                    {
+                        "name": "device",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Revoked.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such device token here.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a tenant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
         "/healthz": {
             "get": {
                 "operationId": "probe.health",
@@ -46,14 +1071,499 @@
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/members": {
+            "get": {
+                "operationId": "members.index",
+                "summary": "List this restaurant's staff",
+                "tags": [
+                    "Member"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The staff of this restaurant, oldest membership first.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "members": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "user_id": {
+                                                        "type": "string"
+                                                    },
+                                                    "name": {
+                                                        "type": "string"
+                                                    },
+                                                    "email": {
+                                                        "type": "string"
+                                                    },
+                                                    "role": {
+                                                        "type": "string"
+                                                    },
+                                                    "platform_support": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "support_expires_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "user_id",
+                                                    "name",
+                                                    "email",
+                                                    "role",
+                                                    "platform_support",
+                                                    "support_expires_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "members"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a restaurant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            },
+            "post": {
+                "operationId": "members.store",
+                "description": "The user must already have an account. Creating one by invitation is not part of this\nendpoint.",
+                "summary": "Add an existing user to this restaurant's staff",
+                "tags": [
+                    "Member"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/StoreMemberRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The membership that now exists.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "member": {
+                                            "type": [
+                                                "object",
+                                                "null"
+                                            ],
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "user_id": {
+                                                    "type": "string"
+                                                },
+                                                "role": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "user_id",
+                                                "role"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "member"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request was malformed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No user with that address.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a restaurant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/members/{member}": {
+            "patch": {
+                "operationId": "members.update",
+                "description": "The last owner of a restaurant cannot be demoted.",
+                "summary": "Change a member's role",
+                "tags": [
+                    "Member"
+                ],
+                "parameters": [
+                    {
+                        "name": "member",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateMemberRoleRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The role now in force.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "member": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "role": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "role"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "member"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "The request was malformed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such member here, or the change is not allowed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a restaurant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            },
+            "delete": {
+                "operationId": "members.destroy",
+                "description": "The last owner of a restaurant cannot be removed.",
+                "summary": "Remove a member from this restaurant",
+                "tags": [
+                    "Member"
+                ],
+                "parameters": [
+                    {
+                        "name": "member",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Removed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such member here, or the removal is not allowed.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No credential, or none that resolves a restaurant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions": {
+            "get": {
+                "operationId": "pager.sessions.index",
+                "description": "Everything still waiting or ready, newest first. This is what a kitchen display reads.",
+                "summary": "List the restaurant's active pagers",
+                "tags": [
+                    "PagerSession"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The active pagers for this restaurant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "sessions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "order_reference": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "ready_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "order_reference",
+                                                    "status",
+                                                    "created_at",
+                                                    "ready_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "sessions"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            },
             "post": {
                 "operationId": "pager.sessions.store",
-                "description": "Issues a single-use token for one order and returns the payload to encode in a QR\ncode. The token is returned by this call only and cannot be retrieved afterwards.",
-                "summary": "Create a pager session",
                 "tags": [
                     "PagerSession"
                 ],
@@ -105,11 +1615,15 @@
                                         },
                                         "qr_payload": {
                                             "type": "string"
+                                        },
+                                        "qr_svg": {
+                                            "type": "string"
                                         }
                                     },
                                     "required": [
                                         "session",
-                                        "qr_payload"
+                                        "qr_payload",
+                                        "qr_svg"
                                     ]
                                 }
                             }
@@ -126,14 +1640,29 @@
                     "422": {
                         "description": "The order reference did not pass validation.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ValidationProblemDocument"
                                 }
                             }
                         }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/ready": {
@@ -205,10 +1734,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -218,14 +1757,19 @@
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/renotify": {
@@ -297,10 +1841,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -310,14 +1864,19 @@
                     "409": {
                         "description": "The session is not ready, has reached its repeat limit, or has passed its expiry. The `type` member distinguishes them.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/complete": {
@@ -389,10 +1948,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -402,14 +1971,19 @@
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
             }
         },
         "/v1/pager-sessions/{session}/cancel": {
@@ -481,10 +2055,20 @@
                             }
                         }
                     },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
                     "404": {
                         "description": "No such session in this tenant.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
@@ -494,20 +2078,547 @@
                     "409": {
                         "description": "The session cannot move to that state, or has passed its expiry. The `type` member distinguishes the two.",
                         "content": {
-                            "application/json": {
+                            "application/problem+json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/ProblemDocument"
                                 }
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/pager-sessions/history": {
+            "get": {
+                "operationId": "pager.sessions.history",
+                "description": "Filter by any combination of order state, a date range of up to 92 days, and part of an\norder reference. Newest first. Returns at most 100 orders.",
+                "summary": "List the restaurant's past orders",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "status[]",
+                        "in": "query",
+                        "schema": {
+                            "type": "array",
+                            "enum": [
+                                "waiting",
+                                "ready",
+                                "completed",
+                                "cancelled",
+                                "expired"
+                            ],
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "waiting",
+                                    "ready",
+                                    "completed",
+                                    "cancelled",
+                                    "expired"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "reference",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "pattern": "^[A-Za-z0-9 \\-_#.\\/]+$",
+                            "maxLength": 32
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The matching orders for this restaurant.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "sessions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string"
+                                                    },
+                                                    "order_reference": {
+                                                        "type": "string"
+                                                    },
+                                                    "status": {
+                                                        "type": "string"
+                                                    },
+                                                    "created_at": {
+                                                        "type": "string"
+                                                    },
+                                                    "ready_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    },
+                                                    "completed_at": {
+                                                        "type": [
+                                                            "string",
+                                                            "null"
+                                                        ]
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "order_reference",
+                                                    "status",
+                                                    "created_at",
+                                                    "ready_at",
+                                                    "completed_at"
+                                                ]
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "sessions"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A filter did not pass validation.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/pager-sessions/{session}/reissue": {
+            "post": {
+                "operationId": "pager.sessions.reissue",
+                "description": "The previous code stops working immediately and cannot be recovered. Use this when a\nprinted sheet is lost or unreadable; the order itself is unchanged and the customer is\nnot notified. Returns the new payload and a ready-made SVG of the new code. An order\nthat is already finished, cancelled or expired is refused.",
+                "summary": "Issue a new code for an existing order",
+                "tags": [
+                    "PagerSession"
+                ],
+                "parameters": [
+                    {
+                        "name": "session",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session, and the new QR payload to encode.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "session": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string"
+                                                },
+                                                "order_reference": {
+                                                    "type": "string"
+                                                },
+                                                "renotify_count": {
+                                                    "type": "integer"
+                                                },
+                                                "changed": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status",
+                                                "order_reference",
+                                                "renotify_count",
+                                                "changed"
+                                            ]
+                                        },
+                                        "qr_payload": {
+                                            "type": "string"
+                                        },
+                                        "qr_svg": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "session",
+                                        "qr_payload",
+                                        "qr_svg"
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. Every endpoint here requires one; the body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such session in this tenant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "The order is already finished, or has passed its expiry. The `type` member distinguishes the two.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/auth/passkeys/options": {
+            "get": {
+                "operationId": "auth.passkeys.options",
+                "description": "Pass the returned options to the browser's credential API.",
+                "summary": "Begin registering a passkey for the signed-in account",
+                "tags": [
+                    "Passkey"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "WebAuthn creation options for the browser.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "options": {
+                                                    "type": "object",
+                                                    "additionalProperties": {}
+                                                }
+                                            },
+                                            "required": [
+                                                "options"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/passkeys": {
+            "post": {
+                "operationId": "auth.passkeys.register",
+                "description": "Send the credential the browser produced, with a name for the device.",
+                "summary": "Finish registering a passkey",
+                "tags": [
+                    "Passkey"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PasskeyRegistrationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The passkey that now exists.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "passkey": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "name"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "passkey"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That credential was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/passkeys/login/options": {
+            "get": {
+                "operationId": "auth.passkeys.login-options",
+                "description": "Pass the returned options to the browser's credential API. No account is named, so\nthe response is the same whether or not any passkey exists.",
+                "summary": "Begin signing in with a passkey",
+                "tags": [
+                    "Passkey"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "WebAuthn request options for the browser.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "options": {
+                                            "type": "object",
+                                            "additionalProperties": {}
+                                        }
+                                    },
+                                    "required": [
+                                        "options"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/passkeys/login": {
+            "post": {
+                "operationId": "auth.passkeys.login",
+                "summary": "Finish signing in with a passkey",
+                "tags": [
+                    "Passkey"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PasskeyVerificationRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Signed in.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That credential was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
             }
         },
         "/readyz": {
             "get": {
                 "operationId": "probe.readiness",
-                "description": "200 when the last probe is fresh and both dependencies were up; 503 otherwise,\nwith `reason` naming which. Opens no database connection.\n\nONE RETURN, with the body as a literal array, and that shape is for the generated\nspec rather than for taste. Scramble infers a response schema from what a\ncontroller actually returns: with the body built in a private helper the exported\ndocument described this endpoint as `{\"type\":\"string\"}` -- a generated spec that is\nwrong in the quietest possible way, since nothing fails and the file looks\nplausible. \u00a77's own caveat said as much (\"a controller must return a declared\n     * shape rather than one branch's literals\"), and this is that caveat met.\n\nTHREE FIELDS, AND THE CAPACITY FIGURES ARE GONE (R-031, QA M-2 / security #3).\nThis used to publish the whole snapshot -- `app_backends`, `app_limit`,\n`saturation`, `postgres_up`, `redis_up`, `measured_at` -- to any anonymous caller,\non the one middleware group that carries no rate limiter, while ShedLoad withheld\nthe SAME saturation figure from its 503 on the stated grounds that it tells a\ncaller how close this task is to the edge. `ShedLoadTest` asserts that absence;\ntwo reviews found the contradiction independently. The shed threshold is\n`0.9 x app_limit`, so publishing both numbers let a caller calibrate to the exact\nonset of shedding and watch it work.\n\nNothing operational is lost: ShedLoad logs its reason at warning, the carrier\nprints the snapshot it wrote, and `reason` still names WHICH dependency failed,\nwhich is what makes a 503 diagnosable. What is gone is diagnosing readiness from\noutside the VPC, which belongs on an operator path rather than a world-readable\none. `probe_age_seconds` stays because it discloses only carrier liveness, and it\nis the field that separates \"this task has no snapshot\" from \"its carrier died\".",
+                "description": "200 when the last probe is fresh and both dependencies were up; 503 otherwise,\nwith `reason` naming which. Opens no database connection.",
                 "summary": "Readiness probe",
                 "tags": [
                     "Readiness"
@@ -607,15 +2718,406 @@
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/tenant": {
+            "get": {
+                "operationId": "tenant.show",
+                "description": "Its name, as staff should see it, with the timezone its day is measured in. Takes no\nparameters: the restaurant is the one the caller's own credential resolves to.",
+                "summary": "The current restaurant",
+                "tags": [
+                    "Tenant"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The restaurant this session is acting in.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "tenant": {
+                                                    "type": [
+                                                        "object",
+                                                        "null"
+                                                    ],
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "slug": {
+                                                            "type": "string"
+                                                        },
+                                                        "timezone": {
+                                                            "type": "string"
+                                                        },
+                                                        "status": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "name",
+                                                        "slug",
+                                                        "timezone",
+                                                        "status"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "tenant"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "schema": {
+                                    "type": "string",
+                                    "const": "private, no-store"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No authenticated staff user. The body carries no detail about why.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "That is not permitted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such restaurant.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "staffBearer": []
+                    }
+                ]
+            }
+        },
+        "/v1/auth/two-factor/enable": {
+            "post": {
+                "operationId": "auth.two-factor.enable",
+                "description": "Returns the shared secret and a QR code to scan. Two-factor is not in force until it\nis confirmed with a code from the authenticator.",
+                "summary": "Begin enrolment",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The secret, an otpauth URL to render as a QR code, and the recovery codes.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "two_factor": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "secret": {
+                                                            "type": "string"
+                                                        },
+                                                        "qr_code_url": {
+                                                            "type": "string",
+                                                            "description": "The otpauth: URL rather than Fortify's SVG, for the same reason: the SVG\nhelper reads the column off the model. A client renders the QR from this,\nand the harness page does not need one at all."
+                                                        },
+                                                        "recovery_codes": {
+                                                            "type": "string"
+                                                        },
+                                                        "confirmed": {
+                                                            "type": "boolean"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "secret",
+                                                        "qr_code_url",
+                                                        "recovery_codes",
+                                                        "confirmed"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "two_factor"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Two-factor is already in force. Disable it before enrolling again.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "The secret could not be read back.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor/confirm": {
+            "post": {
+                "operationId": "auth.two-factor.confirm",
+                "description": "Two-factor is in force only after this succeeds.",
+                "summary": "Confirm enrolment with a code from the authenticator",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TwoFactorCodeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": {
+                        "description": "Confirmed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That code was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor": {
+            "delete": {
+                "operationId": "auth.two-factor.disable",
+                "description": "The secret and the recovery codes are discarded.",
+                "summary": "Turn two-factor off",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Disabled.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "200": {
+                        "description": "",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "No session.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
+            }
+        },
+        "/v1/auth/two-factor/challenge": {
+            "post": {
+                "operationId": "auth.two-factor.challenge",
+                "description": "Accepts either a code from the authenticator or one unused recovery code. A recovery\ncode works once.",
+                "summary": "Complete a sign-in that is waiting for a second factor",
+                "tags": [
+                    "TwoFactor"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TwoFactorChallengeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Signed in.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "user": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "user"
+                                            ]
+                                        },
+                                        {
+                                            "type": "string"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "That code was not accepted.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationProblemDocument"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "There is no sign-in waiting for a second factor.",
+                        "content": {
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProblemDocument"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {}
+                ]
             }
         }
     },
     "components": {
+        "securitySchemes": {
+            "staffBearer": {
+                "type": "http",
+                "description": "Staff and admin endpoints require an authenticated user. The credential is issued by Task 5's auth surface (Fortify + Sanctum), which is not built yet: before then the only resolver is a test harness that reads a container binding and refuses to run outside local and testing, so no credential of any kind is accepted in a deployed environment. These endpoints are therefore NOT public, and a client that omits authentication receives 401.",
+                "scheme": "bearer"
+            }
+        },
         "schemas": {
             "CreatePagerSessionRequest": {
                 "type": "object",
-                "description": "The only body any route in this task accepts.\n\nVALIDATED AGAINST \u00a72.5'S OWN COLUMN, not against a guess: `order_reference` is\nvarchar(32) NOT NULL, so a longer or empty value would reach Postgres and come back as\na 23514 or a 22001 -- a driver error rendered through the envelope, which tells the\ncaller nothing about what to fix. 32 and `required` here mean it is a 422 with the\nfield named, which is what the `errors` member of the problem document exists for.\n\n`regex` rather than `string` alone because this value is printed on a physical ticket\nand shown on a staff board: a control character or a newline in it is either a broken\nlabel or a line break in a dashboard. Printable ASCII plus the separators a kitchen\nactually uses, and nothing else.\n\nauthorize() returns true and that is NOT the authorization decision. Every /v1 route is\nbehind RequireTenantScope, which is deny-by-default and answers 401 with no detail when\nno tenant resolves; the tenant then scopes every query, so there is no per-request\nauthorization left for this class to make. Stated because an `authorize(): true` that\nmeans \"something else decided\" and one that means \"anyone may\" look identical.",
+                "description": "The body for creating a pager session: the order reference to print on the ticket.",
                 "properties": {
                     "order_reference": {
                         "type": "string",
@@ -627,6 +3129,192 @@
                     "order_reference"
                 ],
                 "title": "CreatePagerSessionRequest"
+            },
+            "IssueDeviceTokenRequest": {
+                "type": "object",
+                "description": "Issue a token for one kitchen screen.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "A label for the screen this token belongs to -- \"pass\", \"grill\", \"counter 2\".",
+                        "minLength": 1,
+                        "maxLength": 120
+                    },
+                    "ability": {
+                        "type": "string",
+                        "description": "The one capability a device token may carry.",
+                        "enum": [
+                            "pager:read"
+                        ]
+                    },
+                    "ttl_minutes": {
+                        "type": "integer",
+                        "description": "How long the token is valid for, in minutes. Required: a device token has no\ndefault lifetime and cannot be issued without one.",
+                        "minimum": 1,
+                        "maximum": 43200
+                    }
+                },
+                "required": [
+                    "name",
+                    "ability",
+                    "ttl_minutes"
+                ],
+                "title": "IssueDeviceTokenRequest"
+            },
+            "LoginRequest": {
+                "type": "object",
+                "description": "Credentials for signing in.",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "The account's email address.",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "The account's password.",
+                        "maxLength": 1024
+                    }
+                },
+                "required": [
+                    "email",
+                    "password"
+                ],
+                "title": "LoginRequest"
+            },
+            "PacedProblemDocument": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/ProblemType"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "instance": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "poll_after_seconds": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "instance",
+                    "poll_after_seconds"
+                ],
+                "title": "PacedProblemDocument"
+            },
+            "PasskeyRegistrationRequest": {
+                "type": "object",
+                "description": "A passkey to register.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "maxLength": 120
+                    },
+                    "credential": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "rawId": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "public-key"
+                                ]
+                            },
+                            "response": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "minItems": 1
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "rawId",
+                            "type",
+                            "response"
+                        ]
+                    }
+                },
+                "required": [
+                    "name",
+                    "credential"
+                ],
+                "title": "PasskeyRegistrationRequest"
+            },
+            "PasskeyVerificationRequest": {
+                "type": "object",
+                "properties": {
+                    "credential": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "rawId": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "public-key"
+                                ]
+                            },
+                            "response": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "minItems": 1
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "rawId",
+                            "type",
+                            "response"
+                        ]
+                    },
+                    "remember": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "credential"
+                ],
+                "title": "PasskeyVerificationRequest"
+            },
+            "PollPagerStatusRequest": {
+                "type": "object",
+                "description": "The body for reading a session's live status: the code from the QR scan, and nothing else.",
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "minLength": 22,
+                        "maxLength": 22
+                    }
+                },
+                "required": [
+                    "token"
+                ],
+                "title": "PollPagerStatusRequest"
             },
             "ProblemDocument": {
                 "type": "object",
@@ -666,12 +3354,161 @@
                     "https://qrpager.dev/problems/unauthenticated",
                     "https://qrpager.dev/problems/forbidden",
                     "https://qrpager.dev/problems/conflict",
+                    "https://qrpager.dev/problems/csrf-mismatch",
                     "https://qrpager.dev/problems/expired",
+                    "https://qrpager.dev/problems/stale",
                     "https://qrpager.dev/problems/rate-limited",
                     "https://qrpager.dev/problems/unavailable",
                     "https://qrpager.dev/problems/server-error"
                 ],
                 "title": "ProblemType"
+            },
+            "ResolvePagerSessionRequest": {
+                "type": "object",
+                "description": "The body for opening a pager session: the code from the QR scan, and nothing else.",
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "minLength": 22,
+                        "maxLength": 22
+                    }
+                },
+                "required": [
+                    "token"
+                ],
+                "title": "ResolvePagerSessionRequest"
+            },
+            "SelectTenantRequest": {
+                "type": "object",
+                "description": "The restaurant to act in.",
+                "properties": {
+                    "tenant_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "The restaurant's id, as returned by the sign-in response."
+                    }
+                },
+                "required": [
+                    "tenant_id"
+                ],
+                "title": "SelectTenantRequest"
+            },
+            "StoreMemberRequest": {
+                "type": "object",
+                "description": "Add an existing account to this restaurant's staff.",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "description": "The address of an existing account, lower-cased.",
+                        "maxLength": 255
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": "The role this member holds in the restaurant.",
+                        "enum": [
+                            "owner",
+                            "manager",
+                            "staff"
+                        ]
+                    }
+                },
+                "required": [
+                    "email",
+                    "role"
+                ],
+                "title": "StoreMemberRequest"
+            },
+            "StorePushSubscriptionRequest": {
+                "type": "object",
+                "description": "The body for registering a device: the code from the QR scan, plus the endpoint and keys\nfrom the browser's own push subscription.",
+                "properties": {
+                    "token": {
+                        "type": "string",
+                        "minLength": 22,
+                        "maxLength": 22
+                    },
+                    "endpoint": {
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 2048
+                    },
+                    "p256dh": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]+={0,2}$",
+                        "maxLength": 255
+                    },
+                    "auth": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]+={0,2}$",
+                        "maxLength": 255
+                    }
+                },
+                "required": [
+                    "token",
+                    "endpoint",
+                    "p256dh",
+                    "auth"
+                ],
+                "title": "StorePushSubscriptionRequest"
+            },
+            "TwoFactorChallengeRequest": {
+                "type": "object",
+                "description": "A second factor: an authenticator code, or one recovery code.",
+                "properties": {
+                    "code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The six digits shown by the authenticator app.",
+                        "minLength": 6,
+                        "maxLength": 8
+                    },
+                    "recovery_code": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "One of the recovery codes issued when two-factor was enabled. Each works once.",
+                        "maxLength": 64
+                    }
+                },
+                "title": "TwoFactorChallengeRequest"
+            },
+            "TwoFactorCodeRequest": {
+                "type": "object",
+                "description": "A code from the authenticator.",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "The six digits shown by the authenticator app.",
+                        "minLength": 6,
+                        "maxLength": 8
+                    }
+                },
+                "required": [
+                    "code"
+                ],
+                "title": "TwoFactorCodeRequest"
+            },
+            "UpdateMemberRoleRequest": {
+                "type": "object",
+                "description": "Change one member's role.",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "owner",
+                            "manager",
+                            "staff"
+                        ]
+                    }
+                },
+                "required": [
+                    "role"
+                ],
+                "title": "UpdateMemberRoleRequest"
             },
             "ValidationProblemDocument": {
                 "type": "object",

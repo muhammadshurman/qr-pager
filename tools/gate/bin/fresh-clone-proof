@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# `PROJECT_INSTRUCTIONS.md §6` / `CLAUDE.md`: "Gates run from a FRESH CLONE, not just a fresh
+# database -- a pass that depends on something only present on the builder's machine is not a
+# pass." `QRPAGER-15 §7`: "Fresh CLONE: the workspace builds, lints and tests with nothing
+# that only exists on the builder's machine."
+#
+# The sibling of apps/api/bin/fresh-clone-proof, and written for the same reason that one
+# gives: `R-043` is a §5 row because a gate clause named a demonstration whose steps lived in
+# a session scratchpad, so nobody could re-run it. A fresh-clone pass is cheap to assert and
+# expensive to verify later, so the verification is committed.
+#
+# WHAT MAKES IT A CLONE AND NOT A COPY. `git clone file://…` goes through the transport rather
+# than hardlinking the object store, so the result shares nothing with this working tree. The
+# script then REFUSES to continue unless the clone arrived without `node_modules/`, without
+# `.next/` and without the generated artefacts missing -- a copy would bring the first two,
+# and their presence would make the pass meaningless.
+#
+# WHAT IT DOES NOT PROVE. The pnpm store (`~/.local/share/pnpm/store`) and Playwright's
+# browser cache (`~/.cache/ms-playwright`) are the host's. Both are CACHES and not sources: a
+# cold one costs time rather than correctness, and the script reports which it got. What is
+# proven is that the REPOSITORY is sufficient -- every file the gate needs is tracked, and the
+# pinned versions in package.json, .nvmrc and pnpm-lock.yaml are enough to reconstruct the
+# toolchain -- not that the machine is bare.
+#
+# Usage:
+#   tools/gate/bin/fresh-clone-proof              prove HEAD
+#   tools/gate/bin/fresh-clone-proof <sha>        prove a named commit
+#   tools/gate/bin/fresh-clone-proof --keep       leave the clone in place and print its path
+set -uo pipefail
+
+cd "$(dirname "$0")/../../.."
+repo="$(pwd)"
+keep=0
+sha=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --keep) keep=1 ;;
+        *) sha="$arg" ;;
+    esac
+done
+
+[ -n "$sha" ] || sha="$(git rev-parse HEAD)"
+clone="$(mktemp -d "${TMPDIR:-/tmp}/qrpager-frontend-fresh-clone.XXXXXX")"
+
+cleanup() {
+    if [ "$keep" = "1" ]; then
+        echo
+        echo "fresh clone kept at: $clone"
+    else
+        rm -rf "$clone"
+    fi
+}
+trap cleanup EXIT
+
+echo "fresh-clone-proof: cloning $sha into $clone"
+echo
+
+# Through the transport, so no object is shared with this tree.
+git clone --quiet "file://$repo" "$clone/qr-pager" || { echo "clone failed" >&2; exit 1; }
+cd "$clone/qr-pager"
+git -c advice.detachedHead=false checkout --quiet "$sha" || { echo "checkout failed" >&2; exit 1; }
+
+echo "== the clone is a clone, not a copy =="
+fail=0
+for forbidden in node_modules apps/web/node_modules packages/ui/node_modules apps/web/.next apps/site/.next storage/logs; do
+    if [ -e "$forbidden" ]; then
+        echo "  REFUSED: $forbidden came with the clone -- this is a copy, not a clone" >&2
+        fail=1
+    else
+        echo "  absent, as it must be: $forbidden"
+    fi
+done
+[ "$fail" = "0" ] || exit 1
+
+# And the things that MUST be tracked, because the gate reads them and a fresh clone has
+# nothing else. A missing one here is the whole failure mode this script exists for: it would
+# pass on the builder's machine, where the file is merely untracked rather than absent.
+echo
+echo "== every file the gate needs is TRACKED =="
+for required in \
+    package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc .npmrc \
+    tsconfig.base.json tsconfig.json eslint.config.mjs prettier.config.mjs \
+    vitest.config.ts playwright.config.ts \
+    packages/tokens/generated/tokens.css packages/tokens/generated/tokens.ts \
+    apps/api/config/design-tokens.php \
+    packages/tokens/generated/contrast.json packages/tokens/generated/contrast.md \
+    packages/contracts/src/generated/status.ts \
+    packages/tokens/fonts/fonts.css \
+    packages/tokens/fonts/plus-jakarta-sans-latin.woff2 \
+    packages/tokens/fonts/tajawal-arabic-400.woff2 \
+    packages/tokens/fonts/tajawal-arabic-700.woff2 \
+    tools/design-tokens/patterns.mjs \
+    tools/design-tokens/fixtures/bad-component.tsx.fixture \
+    tools/design-tokens/fixtures/good-component.tsx.fixture \
+    tools/design-tokens/fixtures/bad-styles.css.fixture \
+    tools/design-tokens/fixtures/good-styles.css.fixture \
+    browser/fixtures/kit.html \
+    docs/contracts/landing-page.schema.json \
+    packages/tokens/generated/panel-theme.css \
+    packages/tokens/scripts/panel-theme.mjs \
+    browser/fixtures/panel.html \
+    browser/fixtures/panel-palette.css \
+    tools/design-tokens/fixtures/bad-panel.blade.php.fixture \
+    tools/design-tokens/fixtures/good-panel.blade.php.fixture \
+    apps/api/package.json apps/api/package-lock.json apps/api/vite.config.js \
+    apps/api/composer.json apps/api/composer.lock \
+    apps/api/resources/css/filament/targets.css \
+    apps/api/resources/css/filament/platform/theme.css \
+    apps/api/resources/css/filament/studio/theme.css \
+    tools/browsers/Dockerfile \
+    tools/browsers/bin/browsers \
+    tools/browsers/bin/e2e \
+    tools/browsers/bin/tls-proxy.mjs \
+    tools/browsers/probe/engines.mjs \
+    tools/gate/bin/lighthouse-proof \
+    docs/contracts/journey-states.json \
+    docs/contracts/web-csp-surface.json \
+    apps/web/public/sw.js \
+    apps/web/public/pager.webmanifest \
+    apps/web/public/pager-icon.svg \
+    apps/api/bin/issue-pager-session \
+    apps/api/bin/issue-harness-user
+do
+    if [ -f "$required" ]; then
+        echo "  tracked: $required"
+    else
+        echo "  MISSING: $required -- the gate needs it and the clone does not have it" >&2
+        fail=1
+    fi
+done
+[ "$fail" = "0" ] || exit 1
+
+echo
+echo "== the toolchain the repo pins, not the one the shell happens to have =="
+echo "  .nvmrc                 $(cat .nvmrc)"
+echo "  packageManager         $(node -p "require('./package.json').packageManager")"
+echo "  engines.node           $(node -p "require('./package.json').engines.node")"
+echo "  node in PATH           $(node -v)"
+echo "  playwright pinned at   $(node -p "require('./package.json').devDependencies.playwright")"
+
+echo
+if [ -d "${PNPM_HOME:-$HOME/.local/share/pnpm}/store" ] || [ -d "$HOME/.local/share/pnpm/store" ]; then
+    echo "  pnpm store: WARM (a cache, not a source -- a cold one costs time, not correctness)"
+else
+    echo "  pnpm store: COLD"
+fi
+if [ -d "$HOME/.cache/ms-playwright" ]; then
+    echo "  playwright browsers: present in the host cache (a cache, not a source)"
+else
+    echo "  playwright browsers: absent -- 'pnpm exec playwright install chromium' would fetch them"
+fi
+
+echo
+echo "== pnpm install --frozen-lockfile =="
+pnpm install --frozen-lockfile || { echo "install failed in the clone" >&2; exit 1; }
+
+# ================================================================================
+# ⚠ apps/api's TWO TREES AND ITS ASSET BUILD, WHICH THIS SCRIPT DID NOT INSTALL
+# ================================================================================
+#
+# Task 8b made the WORKSPACE gate depend on apps/api, in two places, and this script proved
+# neither:
+#
+#   tools/design-tokens/test/panel-theme.test.mjs compiles the REAL panel entrypoint, whose
+#   first line is `@import '../../../../vendor/filament/filament/resources/css/theme.css'`
+#   -- so it needs apps/api's COMPOSER tree, and `/vendor` is git-ignored;
+#
+#   browser/panel.spec.ts reads the COMPILED panel theme out of apps/api/public/build through
+#   the manifest -- so it needs apps/api's npm tree and a build, and `/public/build` is
+#   git-ignored too.
+#
+# Measured in a real clone at 5f7ffdc: four panel-theme cases failed with
+# `ENOENT ... apps/api/vendor/filament/filament/resources/css/theme.css` and
+# `no vendor stylesheet was found, so the count is vacuous`. The second message is the
+# honest one -- that case's own floor caught it.
+#
+# THE ORDER IS THE ROOT CAUSE AND IS NOT NEGOTIABLE: composer install, then npm ci, then the
+# build. The build reads the composer tree; the browser checks read the build. Three separate
+# environments got this wrong the same way (this script, apps/api's own proof, and CI's
+# frontend job), which is why it is fixed as one thing in all three.
+echo
+echo "== apps/api's composer tree, npm tree and asset build, which the workspace gate reads =="
+# ⚠ mktemp, NEVER A FIXED PATH, and the sibling script already carries this ruling verbatim:
+# "security L-5 on the sibling proof was exactly this, and a predictable directory under
+# /tmp is a symlink target on a shared host." The first version of this block wrote
+# `>/tmp/fcp-composer.log` and friends, and the §11 security round DROVE it: pre-create the
+# path as a symlink and `>` follows it and truncates the target -- measured against a victim
+# file holding known contents. Two further consequences it named: the three logs survived the
+# run (the trap only removes $clone), leaving the dependency tree readable at a guessable
+# path, and `tail -20` printed attacker-controlled bytes as this script's own diagnostic.
+logs="$(mktemp -d "${TMPDIR:-/tmp}/qrpager-frontend-fresh-clone-logs.XXXXXX")"
+trap 'rm -rf "$clone" "$logs"' EXIT
+for tool in php composer npm; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "  $tool is not on PATH; the panel checks need it" >&2; exit 1; }
+done
+(
+    cd apps/api || exit 1
+    composer install --no-interaction --no-progress --prefer-dist >"$logs/composer.log" 2>&1 \
+        || { tail -20 "$logs/composer.log" >&2; echo "  composer install failed in the clone" >&2; exit 1; }
+    echo "  composer install: ok"
+    npm ci --ignore-scripts >"$logs/npm.log" 2>&1 \
+        || { tail -20 "$logs/npm.log" >&2; echo "  npm ci failed in the clone" >&2; exit 1; }
+    echo "  npm ci: ok"
+    npm run build >"$logs/build.log" 2>&1 \
+        || { tail -20 "$logs/build.log" >&2; echo "  the panel asset build failed in the clone" >&2; exit 1; }
+    echo "  npm run build: ok"
+    # Named rather than assumed: the browser checks resolve the theme THROUGH the manifest,
+    # so a build that wrote no manifest entry would fail them later and further away.
+    node -e "const m=require('./public/build/manifest.json');for(const p of ['platform','studio']){const k='resources/css/filament/'+p+'/theme.css';if(!m[k])throw new Error(k+' is not in the manifest');console.log('  manifest: '+k+' -> '+m[k].file)}"
+) || exit 1
+
+echo
+echo "== the gate, in the clone =="
+pnpm gate
+status=$?
+
+echo
+if [ "$status" = "0" ]; then
+    echo "fresh-clone-proof: GREEN at $sha, in a clone that shares nothing with the working tree."
+else
+    echo "fresh-clone-proof: FAILED at $sha (exit $status)." >&2
+fi
+exit "$status"

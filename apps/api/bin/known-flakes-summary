@@ -1,0 +1,26 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * PRINT THE NAMED KNOWN-FLAKE LIST. bin/gate runs this at the top of every run so the
+ * log says, before any step, which reds already have an owner -- and so the list's own
+ * staleness is visible to whoever reads the log. A closed row still listed here is a
+ * defect in this file, and nobody notices a file they never see.
+ */
+$list = json_decode((string) file_get_contents(__DIR__.'/../tests/known-flakes.json'), true, 512, JSON_THROW_ON_ERROR);
+
+printf("=== known flakes (tests/known-flakes.json): %d family(ies)\n", count($list['flakes']));
+
+foreach ($list['flakes'] as $flake) {
+    printf("  %-7s %s\n", $flake['row'], $flake['title']);
+    printf("          owner %s · rate %s\n", $flake['owner'], $flake['rate']);
+}
+
+foreach ($list['removed'] as $removed) {
+    printf("  %-7s REMOVED %s -- fixed, not deferred: %s\n", $removed['row'], $removed['removed_on'], $removed['title']);
+}
+
+echo "  A red matching one of the families above is an ATTRIBUTED red (exit 2).\n";
+echo "  A red outside the list is a REAL red (exit 1). bin/classify-reds does the split.\n";

@@ -1,0 +1,39 @@
+# Task 5 — THREE CONSECUTIVE GREEN FULL-SUITE RUNS, met on the first attempt
+#
+# The bar Muhammad set on 2026-10-27, replacing R-092's withdrawn ten-green-runs condition.
+# Produced by apps/api/bin/three-green-runs, which is COMMITTED rather than run by hand:
+# R-043 is the section 5 row about a gate clause whose demonstration lives in a session, and
+# Task 4 met this same bar with three manual invocations.
+#
+# THE RULE THE SCRIPT ENCODES: any red is named with its SQLSTATE; R-092's 08006 and its
+# claim-shortfall family do not block; any other red stops the run. And a red of ANY kind
+# RESETS the consecutive counter -- because "three greens somewhere in a sequence" is what a
+# flaky suite reaches by chance, which is not the property being asserted.
+#
+# RESULT: three for three, no reds of any class, 722 passed / 6136 assertions each time.
+#
+# ⚠ WORTH COMPARING WITH TASK 4, which met this bar on its FOURTH attempt and whose own
+# transcript keeps the five reds that came first. R-092 says the suite is intermittently red
+# on this machine (7 of 10 at 056d7a1), so three-for-three is a good run rather than evidence
+# that the fault is gone. Nothing here claims it is. The 08006's mechanism is in the Docker/
+# WSL2 loopback hop below Postgres and is not fixable in a session; R-092 is re-dated to Task
+# 13, which owns the deployed database and can change the connection path.
+#
+# One red DID appear earlier on this branch, at the 2b tree, and its identity is kept in
+# QRPAGER-12-gate-2b.txt's header: TenantContextCompositionTest, SQLSTATE[08006] on a TRUNCATE
+# in TestCase::setUp -- R-092 fault one exactly.
+
+# THREE CONSECUTIVE GREEN FULL-SUITE RUNS
+#
+# Commit:  7c76079
+# Machine: /home/pixels/qr-pager/apps/api, Linux 6.18.54.1-microsoft-standard-WSL2
+# Needed:  3 consecutive, giving up after 12 attempts
+# Rule:    R-092's 08006 and its claim-shortfall family do not block, and do not
+#          count either -- a red of any kind RESETS the consecutive counter.
+#
+run 1  | 7c76079 | start 22:55:06Z | exit=0 | Tests:    722 passed (6136 assertions) | no failures | streak 1/3
+run 2  | 7c76079 | start 22:57:11Z | exit=0 | Tests:    722 passed (6136 assertions) | no failures | streak 2/3
+run 3  | 7c76079 | start 22:59:17Z | exit=0 | Tests:    722 passed (6136 assertions) | no failures | streak 3/3
+
+three-green-runs: PASSED -- 3 consecutive green runs at 7c76079, in 3 attempt(s).
+  transcript: /home/pixels/qr-pager/apps/api/storage/logs/three-green-runs-20261027T225506Z.txt

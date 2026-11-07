@@ -1,0 +1,143 @@
+/*
+ * THE KITCHEN DISPLAY's STYLESHEET. 10c. Imported by `/kds` only.
+ *
+ * EVERY value here is a token reference — `pnpm lint:tokens` walks this file too and fails
+ * the gate on a literal. Logical properties throughout, so RTL is a direction attribute
+ * rather than a second stylesheet.
+ *
+ * ================================================================================
+ * THIS IS A SEPARATE SHEET FROM `staff.css`, AND THE REASON IS THE SCALE
+ * ================================================================================
+ *
+ * `staff.css` already says *"nothing in this file is smaller than `--size-16`"* for a tablet
+ * in somebody's hand. This surface is a different reading distance and therefore a different
+ * type scale: the order reference is `--size-64`, which is the largest step the token source
+ * carries below the customer's full-bleed ready screen.
+ *
+ * Folding these rules into `staff.css` would put a wall screen's type scale into the sheet
+ * the hand-held staff surface loads, where `--size-64` headings are wrong — and `pager.css`
+ * is already the precedent for a per-surface sheet in this app.
+ *
+ * ================================================================================
+ * `QRPAGER-27 §6` IS A FUNCTIONAL REQUIREMENT, NOT A PREFERENCE
+ * ================================================================================
+ *
+ * *"A kitchen screen is greasy, bright and viewed from two metres — contrast and target size
+ * are **functional** requirements here."* So:
+ *
+ *   - the order reference is `--size-64` and `--color-ink` on `--color-surface`, which is the
+ *     highest-contrast pair the palette offers;
+ *   - *greasy* means the two controls on this screen are `--target-min` on both axes, which
+ *     is `§12`'s 44px bar and is measured on the RENDERED box by `browser/kds.spec.ts`
+ *     rather than trusted from these declarations — `R-118`'s own lesson;
+ *   - there is no hover-only affordance anywhere, because a wall screen is touched with the
+ *     back of a wrist and has no pointer.
+ */
+
+@import '@qrpager/tokens/tokens.css';
+
+.qr-kds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  min-block-size: 100dvh;
+  padding-block: var(--space-24);
+  padding-inline: var(--space-24);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* The setup screen is the one state that is read from arm's length rather than across a
+   room, because somebody is standing at the tablet typing into it. It therefore keeps the
+   staff surface's measure rather than this file's scale. */
+.qr-kds--setup {
+  max-inline-size: 60ch;
+  margin-inline: auto;
+  justify-content: center;
+}
+
+.qr-kds__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: baseline;
+}
+
+.qr-kds__title {
+  margin: 0;
+  font-size: var(--size-28);
+}
+
+/* The staleness / throttle / offline notices. `--color-ink-mid` rather than the alert pair:
+   kept rows are not an error, and `R-224`'s reasoning about not shouting applies to a quiet
+   degradation too. */
+.qr-kds__stale {
+  margin: 0;
+  font-size: var(--size-20);
+  color: var(--color-ink-mid);
+}
+
+.qr-kds__list {
+  display: grid;
+  /* `auto-fill` rather than a fixed column count: one kitchen has a 15-inch tablet and the
+     next has a 42-inch display, and both are this one route. The minimum track is wide
+     enough for a `--size-64` reference plus its badge. */
+  grid-template-columns: repeat(auto-fill, minmax(24ch, 1fr));
+  gap: var(--space-16);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.qr-kds__order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding-block: var(--space-24);
+  padding-inline: var(--space-24);
+  background-color: var(--color-surface);
+  border-radius: var(--radius-16);
+  box-shadow: var(--elevation-card);
+}
+
+/* The one thing a cook reads from two metres. */
+.qr-kds__ref {
+  margin: 0;
+  font-size: var(--size-64);
+  /* `tabular-nums`, so a column of references does not shuffle sideways as digits change —
+     the same reason `ElapsedTimer` zero-pads its readout. */
+  font-variant-numeric: tabular-nums;
+  /* An order reference is a CODE and is read left to right inside right-to-left text —
+     `QRPAGER-15 §6` trap 2, *"logos and numbers do not mirror"*. The kit does this for the
+     elapsed clock; the reference needs it here because this screen renders it at a size
+     where the direction is unmistakable. */
+  direction: ltr;
+  /* ⚠ `unicode-bidi: isolate` AND NOT `embed`. `direction: ltr` alone sets the base direction
+     INSIDE this box and does not isolate it from the surrounding Arabic run, so the box's
+     position in the line is still resolved against the paragraph — which is correct — while a
+     reference ending in a digit could still reorder against adjacent neutral characters.
+     Isolation is what makes the rendered string identical in both directions. */
+  unicode-bidi: isolate;
+  word-break: break-all;
+}
+
+.qr-kds__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: center;
+  margin: 0;
+  font-size: var(--size-20);
+  color: var(--color-ink-mid);
+}
+
+.qr-kds__waiting {
+  color: var(--color-ink-mid);
+}
+
+/* The one control, at the bottom, away from everything a cook touches by accident. */
+.qr-kds__foot {
+  margin-block-start: auto;
+  padding-block-start: var(--space-24);
+  border-block-start: var(--focus-width) solid var(--color-hairline);
+}

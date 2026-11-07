@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Builds apps/api's OWN front-end assets, and then checks the manifest actually names the
+# two panel themes.
+#
+# ================================================================================
+# WHY THIS IS A GATE STEP AND NOT A DEVELOPER CONVENIENCE
+# ================================================================================
+#
+# Task 8b registers `->viteTheme('resources/css/filament/<panel>/theme.css')` on both panel
+# providers. `Panel::viteTheme()` resolves that path through `app(Vite::class)` -- the
+# MANIFEST -- so from the moment it is registered, EVERY TEST THAT RENDERS A PANEL PAGE
+# needs `public/build/manifest.json` to exist. `public/build` is git-ignored (.gitignore:18),
+# so a fresh clone has none until something builds it.
+#
+# MEASURED, with public/build moved aside: `php artisan test --filter=PlatformPanelAccessibility`
+# went from 13 passed to **7 failed, 6 passed**, and the failure is a generic 500
+# problem+json body -- `{"title":"The request could not be completed.","status":500}` -- in
+# seven tests about tabindex, badges and empty-state copy. Not one of them says "the assets
+# are not built". That is the most expensive failure shape this branch records: a red suite
+# whose output does not name its cause.
+#
+# So the build belongs in the gate, ahead of `php artisan test`, and this script exists so
+# the step can fail with a sentence instead of a stack trace.
+#
+# ================================================================================
+# AND IT CHECKS THE MANIFEST, WHICH IS THE PART THAT IS NOT JUST A BUILD
+# ================================================================================
+#
+# `viteTheme()` and `vite.config.js`'s `input` array are TWO registrations of one fact, in
+# two languages, with nothing holding them together. Drop a theme from the input array and
+# the build still succeeds -- it just silently stops emitting that entry, and the panel
+# 500s at render. So after building, this asserts the manifest names every theme the
+# providers ask for, derived from the providers themselves rather than typed here.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# Fails CLOSED and says what to run. An `npm install` fired automatically from a gate step
+# would be a network fetch nobody asked for, inside a script whose job is to measure.
+if [ ! -d node_modules ]; then
+  echo "assets: apps/api/node_modules is absent, so there is no vite to run." >&2
+  echo "assets: run 'npm install --ignore-scripts' in apps/api (or 'composer setup')." >&2
+  exit 1
+fi
+
+npm run build || exit 1
+
+echo
+echo "assets: checking the manifest names every theme the panel providers register"
+
+# The expected set is READ FROM THE PROVIDERS, so this cannot drift from them. A provider
+# that gains a panel gains a checked theme with no edit here.
+php -r '
+$providers = glob("app/Features/*/Panel/*PanelProvider.php");
+sort($providers);
+$want = [];
+foreach ($providers as $provider) {
+    $src = file_get_contents($provider);
+    if (preg_match_all("/->viteTheme\(\s*\x27([^\x27]+)\x27/", $src, $m)) {
+        foreach ($m[1] as $path) {
+            $want[$path] = basename(dirname($provider, 2));
+        }
+    }
+}
+
+if ($want === []) {
+    fwrite(STDERR, "assets: no provider registers a viteTheme, so this check would pass vacuously.\n");
+    exit(1);
+}
+
+$manifestPath = "public/build/manifest.json";
+if (! is_file($manifestPath)) {
+    fwrite(STDERR, "assets: {$manifestPath} is absent after a build that reported success.\n");
+    exit(1);
+}
+
+$manifest = json_decode((string) file_get_contents($manifestPath), true);
+if (! is_array($manifest)) {
+    fwrite(STDERR, "assets: {$manifestPath} is not readable JSON.\n");
+    exit(1);
+}
+
+$failed = false;
+foreach ($want as $path => $feature) {
+    $entry = $manifest[$path]["file"] ?? null;
+    if ($entry === null) {
+        fwrite(STDERR, "assets: {$path} is registered by the {$feature} panel provider but is NOT in the manifest.\n");
+        fwrite(STDERR, "assets:   add it to vite.config.js input, or the panel 500s at render.\n");
+        $failed = true;
+        continue;
+    }
+    $bytes = @filesize("public/build/".$entry);
+    printf("assets:   %-54s -> %s (%s bytes)\n", $path, $entry, $bytes === false ? "MISSING" : $bytes);
+    if ($bytes === false) {
+        fwrite(STDERR, "assets: the manifest names {$entry}, which is not on disk.\n");
+        $failed = true;
+    }
+}
+
+exit($failed ? 1 : 0);
+' || exit 1
+
+echo "assets: ok"

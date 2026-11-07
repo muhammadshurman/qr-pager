@@ -1,0 +1,78 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * ONE WAITING PAGER, IN AN EXISTING RESTAURANT. 10b's *under 2 s* measurement needs it.
+ * ================================================================================
+ *
+ * `bin/issue-pager-session` creates its OWN tenant each time, which is right for the customer
+ * suite — that surface authenticates by token and needs no membership. It is useless for this
+ * measurement: the figure is **staff click → the customer's rendered ready state**, so the
+ * staff member doing the clicking has to hold a membership in the tenant the pager is in, and
+ * a fresh tenant per pager leaves the board empty.
+ *
+ * So this takes the tenant id, which in practice is the staff fixture's `alpha`.
+ *
+ * ⚠ ONE PAGER PER RUN, AND THAT IS NOT WASTE. A session goes to `ready` exactly once; a
+ * second `markReady` is the idempotent no-op, writes no outbox row and sends no
+ * notification, so measuring five runs against one session would measure one transition and
+ * four no-ops. `§3.1` row 10's method says five runs and the median is the figure, so the
+ * harness issues five.
+ *
+ * ⛔ LOCAL AND TESTING ONLY, failing CLOSED on an unset or unrecognised `APP_ENV` — the same
+ * guard `bin/issue-pager-session` and `bin/issue-staff-fixture` carry, for the reason `§11`
+ * round one SEC M-6 gave: this bootstraps the real kernel and writes as `pgsql_owner`.
+ *
+ * USAGE:  php bin/issue-board-pager <tenant-uuid> [order-reference]
+ * PRINTS: one JSON line -- {"session_id":"…","token":"…","order_reference":"…"}
+ */
+
+use App\Features\Pager\PagerSessions;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Str;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this writes real rows as the database owner and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+$tenant = (string) ($argv[1] ?? '');
+$reference = (string) ($argv[2] ?? 'L-001');
+
+// Shape-checked before anything is written: this value becomes a tenant scope, and §4 ›
+// Realtime makes that a thing to validate rather than trust. A non-uuid here is a harness
+// mistake and the honest answer is a refusal rather than a scope opened on nonsense.
+if (! Str::isUuid($tenant)) {
+    fwrite(STDERR, "refusing to run: '{$tenant}' is not a tenant uuid.\n");
+
+    exit(1);
+}
+
+$issued = withTenant($tenant, fn () => $app->make(PagerSessions::class)->create($tenant, $reference));
+
+/*
+ * reveal() is called here and the value is printed, which is the same decision
+ * `bin/issue-pager-session` takes: the raw token exists exactly once, at generation, and a
+ * harness that needs to open the customer page has to be handed it at that moment or never.
+ * `tools/browsers/bin/e2e` writes this output under `umask 077`.
+ */
+echo json_encode([
+    'session_id' => $issued->session->id,
+    'order_reference' => $reference,
+    'token' => $issued->token->reveal(),
+], JSON_THROW_ON_ERROR), "\n";

@@ -1,0 +1,14 @@
+   FAILED  Tests\Feature\Notifications\WorkOutboxComma…  AssertionFailedError   
+  Output does not contain "claimed 2".
+
+  at tests/Feature/Notifications/WorkOutboxCommandTest.php:107
+    103▕     $edge = pushEdge(201);
+    104▕ 
+    105▕     $this->artisan('outbox:work', ['--once' => true, '--limit' => 2])
+    106▕         ->expectsOutputToContain('claimed 2')
+  ➜ 107▕         ->assertExitCode(0);
+    108▕ 
+    109▕     expect($edge->sentCount())->toBe(2);
+    110▕ 
+    111▕     // The third is still waiting, and a second pass takes it. Nothing was lost by the cap.
+

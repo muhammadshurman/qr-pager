@@ -204,11 +204,20 @@ contract, and was written into `PLAN.md §2` **before** the migrations:
   `public.resolve_pager_token(bytea)`: `SECURITY DEFINER`, owned by `qrpager_owner`,
   `SET search_path = pg_catalog, pg_temp`, a narrow `RETURNS TABLE` naming seven columns and
   **not** `token_hash`, `EXECUTE` revoked from `PUBLIC` and granted to `qrpager_app` alone.
+  **⚠ THIS EDIT WAS NOT MADE UNTIL 2026-10-27 (QA M-3).** `§2.8` described the recipe and
+  named no function; the sentence above asserted it did. Corrected in place rather than
+  carried as a risk: `§2.8` now names the function, its argument, its seven returned
+  columns and its owner.
 - **`§2.2`** — `app.bypass_tenant` has a **second setter**. It was `withoutTenantScope()`
   alone; the resolver function's body now also sets it, for the duration of its own body,
   restoring the previous value before returning. That is what `§2.8` prescribes, and the
   "Set by" cell said otherwise, so it is corrected rather than left to a reviewer to notice.
 - **`§2.7`** — gains the one `EXECUTE` grant above. No column grant changes.
+  **⚠ THIS EDIT WAS NOT MADE UNTIL 2026-10-27 (QA M-3) EITHER.** `§2.7`'s grant table and
+  its four bullets carried no `EXECUTE` row at all. Two of this section's five claimed
+  data-contract edits did not exist, against a `§2` preamble that requires the record
+  **first** — "Any task that needs a new table, column, enum value, role, GUC **or grant**
+  updates this section first". Both are in `PLAN.md` now.
 - **`§2.3`** — "Transitions of `pager_status` are defined in the PHP enum by Task 3" is
   now true and points at the enum.
 - **`§2.12`** — its closing paragraph carried `R-003` as live. Corrected in place.
@@ -221,7 +230,13 @@ Neither gains an attribute. **No new `app.*` GUC name**, so C1 is unchanged and
 
 - `App\Domain\Pager\PagerStatus` — **gains the transition table**, which `§2.3` already
   assigned here. One source for "which transition is legal", read by the service, the
-  expiry job and the tests. The Postgres `pager_status` type is unchanged, so
+  expiry job and the tests. **⚠ "THE EXPIRY JOB" WAS FALSE UNTIL 2026-10-27 (QA M-2):** the
+  job carried `where status in ('waiting','ready')` as a SQL literal, so the live-status set
+  lived in the enum, in that string and in the two worker policies — a duplicated enum that
+  static analysis cannot see, against `§6.2`'s "One source only. Never a duplicated enum."
+  Corrected in place rather than carried: the enum gained `live()` and `liveSqlList()`,
+  both derived from `allows()`, and `PagerExpiryTest` now asserts the enum, the interpolated
+  list, the statement actually issued and the policy whitelist are the same set. The Postgres `pager_status` type is unchanged, so
   `EnumContractTest` keeps passing without an edit.
 - `App\Domain\Http\ProblemType` — **gains `BadRequest`** (`R-042`). Still the only producer
   of a `type` value, and now **mechanically published**: `docs/openapi.json` carries
@@ -378,3 +393,215 @@ including that the bypass GUC does not leak, Scramble's component emission, and
 `laravel/pao`'s detector and its `PAO_DISABLE` switch read from the vendor source. Nothing
 in this ticket is quoted from memory. Where a measurement contradicted a document, the
 document is corrected in place and the correction is named in `§4`.
+
+---
+
+## 9. Three clarifications on the QA disposition (added 2026-10-27, Muhammad's review)
+
+Ticket content, so the Security reviewer rules on these rather than discovering them.
+
+### 9.1 `M-2` — the policies, by name and by `polcmd`
+
+`§4 › Postgres traps`' mechanism is about the **SELECT** policies, applied **twice**: once to
+the rows the statement may find, and once to the **NEW** row — `42501` if the update would
+hide it. So the question is which policy carries the status the UPDATE writes.
+
+Measured from `pg_policy` on the live cluster, not from the policy names:
+
+| policy | `polcmd` | `USING` | `WITH CHECK` |
+| --- | --- | --- | --- |
+| `worker_reads_expired_sessions` | **`r` (SELECT)** | `expires_at <= now() AND status = ANY (ARRAY['waiting','ready','expired'])` | — |
+| `worker_expires_sessions` | **`w` (UPDATE)** | `expires_at <= now() AND status = ANY (ARRAY['waiting','ready'])` | `status = 'expired'` |
+
+- **The SELECT policy's whitelist DOES contain `expired`**, the status the update writes. It
+  must: the prescribed statement references columns, so the new row is re-checked against
+  the SELECT policies, and measured with `expired` removed every expiry raises `42501`
+  (`§2.12`).
+- **The UPDATE policy's `USING` is the live set WITHOUT it**, which is correct there: an
+  already-expired row must not be rewritable cross-tenant (`R-003`).
+
+**There was no gap.** The assertion covered `worker_reads_expired_sessions`, the SELECT
+policy, for the whitelist-contains-written-status half, and `worker_expires_sessions`, the
+UPDATE policy, for the live-set-without-it half. What was imprecise was the *summary* of the
+work, not the test.
+
+**Two strengthenings came out of the question anyway:**
+
+1. **`polcmd` is now asserted**, not just the name. A policy name is a convention — somebody
+   could rename or recreate `worker_reads_expired_sessions` as an UPDATE policy and every
+   string assertion would still pass while the clause it stands for was inverted. `polcmd`
+   is the fact.
+2. The test is renamed to say which policy does what:
+   *"derives its live-status list from the enum; the SELECT policy whitelist carries the
+   written status and the UPDATE policy USING does not — QA M-2"*, and the UPDATE policy's
+   `WITH CHECK` is now asserted too, which is the limb that keeps the SELECT whitelist from
+   being a widening.
+
+**And the question surfaced a real defect of its own, in the new assertions.** Two of them
+used `toContain($needle, $message)`, which is Pest's **variadic** matcher — the message is
+read as a second needle. The positive form **failed loudly** while the case was being
+written, which is how it was found; the negated one (`->not->toContain(...)`) would have
+**passed vacuously**. Both are now `in_array(...)` with a real message. That is the defect
+`SourceGuard` rule 7 exists for on `task-4-notifications`; **this branch does not carry rule
+7**, so these were caught by the positive form's own failure rather than by a guard.
+
+### 9.2 The interpolated SQL list — the premise is proven, not documented
+
+`PagerStatus::liveSqlList()` builds `'waiting', 'ready'` by interpolation, because
+`§4 › Postgres traps` prescribes the expiry statement's shape clause by clause and a bound
+parameter per case would make that shape vary with the enum's size.
+
+That is safe **only while every case value is a bare identifier**, and a quoted case value
+would be injection from inside our own code — which no input validation anywhere would
+catch. So:
+
+- **`liveSqlList()` THROWS rather than interpolating** a value that fails
+  `PagerStatus::SQL_SAFE_VALUE` (`/^[a-z_]+$/`). A `LogicException`, not a refusal that
+  returns something: an empty list issues `status in ()`, a syntax error, and a partial list
+  silently stops expiring some sessions — worse than a loud failure.
+- **`EnumContractTest` asserts the property across every database-backed enum**, not only
+  the one interpolated today, so the next one to be interpolated finds the rule already
+  standing: *"keeps every database-backed enum value a bare identifier, so one can be
+  interpolated"*.
+- A second case drives the guard's logic against `ready'); drop table pager_sessions; --`
+  and asserts the live enum still passes, so the pattern is not simply rejecting everything.
+
+### 9.3 `M-1` — the racer is the superuser, and that is a limit of the proof
+
+In production the actor that wins this race is a **staff member on `qrpager_app`**, inside a
+`withTenant()` scope, going through `PagerSessions::complete()`. The test's racer is
+**`qrpager_root`**.
+
+**Why, and it is a control working rather than a shortcut.** The racing write happens
+*inside* the worker's own scope — `beforeExecuting` fires within it — and `TenantContext`
+refuses to open a scope on a second connection while one is live. That is `R-015`'s guard,
+which exists precisely so a callback cannot quietly run unscoped on a different connection.
+Attempting it raises *"Tenant context is already open on connection [pgsql_worker]; it cannot
+be reused on [pgsql_owner]"*.
+
+**What is therefore NOT proven by this case:** that `qrpager_app`'s own policies and column
+grants permit the racing write. They do — `PagerTransitionTest` and `PagerIdorTest` drive
+`complete()` as the app role through HTTP — but not in this case and not in this interleaving.
+
+**What is proven, and why the role does not weaken it:** the mechanism under test belongs
+entirely to the **worker's** statement. `update … where id = ? and status = ?` matches zero
+rows because the row's status changed, and the affected-row count is the idempotency signal.
+Which role committed that change, and under which policy, is invisible to the worker — it
+sees a row whose status is no longer the one it read. The superuser is the only role that
+*can* make the change from inside the worker's scope, so it is the only instrument available,
+and it produces exactly the state a staff member would.
+
+Stated here and in the test's own header so a reviewer rules on it.
+
+---
+
+## 10. The `§11` Security disposition (added 2026-10-27)
+
+Nine findings — **0 Critical, 0 High, 3 Medium, 6 Low**. Seven fixed, one corrected in place
+with the row ruled against, one already covered by an existing `§5` row. Applied at
+`123c9b3`. Three new `§5` rows: **R-080**, **R-081**, **R-082** — the numbering skips
+`R-073`…`R-079`, which are Task 4's on `task-4-notifications`, because the two branches share
+one ledger.
+
+### 10.1 The dispositions
+
+| # | Finding | Ruling |
+| --- | --- | --- |
+| **M-1** | No `securitySchemes`, no `security` member — five state-changing staff endpoints published as needing no authentication | **FIXED.** A `bearer` scheme plus an **explicit** `security` member on every operation; the probes carry `[{}]` from the same `PUBLIC_PATHS` constant the generator reads. Explicit everywhere, so the test can *require* the member rather than accept inheritance |
+| **M-2** | `pager:expire` scheduled nowhere | **FIXED.** `->everyMinute()->withoutOverlapping()`, asserted against the scheduler's own collection. `R-058` is **narrowed, not closed**: nothing runs `schedule:run` in a deployed environment (Task 13, with `R-047`) |
+| **M-3** | Token resolution unmetered, uncounted, unaudited | **ALREADY COVERED** by `R-063` — owner Task 4, closing gate names the bucket, the counter and the threshold. Confirmed, not re-raised |
+| **L-1** | The resolver bypass writes no audit row, so `§2.10`'s claim is false | **CLAIM CORRECTED, ROW RULED AGAINST.** Auditing every resolution would make an unauthenticated caller an unbounded writer into an append-only table with no `DELETE` grant; `§2.8` rule 2 already names the function's narrowness as the control |
+| **L-2** | `§2.6`'s claim about terminal rows is false | **CORRECTED IN PLACE; residual is `R-080`.** Measured: in a tenant scope, `qrpager_worker` moves a `completed` row to `expired` with **`UPDATE 1`** — the same statement the cross-tenant tests pin at `UPDATE 0`, because permissive policies are OR-ed and `tenant_isolation` satisfies both halves alone |
+| **L-3** | The routes answer 500, not 401, when the resolver throws | **FIXED.** `try/catch (Throwable)` + `report()` → 401, with two tests: the body leaks nothing, and all five routes behave the same |
+| **L-4** | CI's `log_statement = 'all'` writes every token hash to the runner's log | **FIXED, and it CLOSES `R-059`** ahead of Task 12. `'ddl'`: an `ALTER ROLE … PASSWORD 'SCRAM-…'` still appears (1 line — the whole of `R-036`'s verifier scan's subject) and a prepared `SELECT` with its bound parameter appears **0** times |
+| **L-5** | `bin/migration-rollback-proof`: fixed `/tmp` paths, fallback superuser password | **FIXED.** `mktemp` for all three, one merged `trap cleanup EXIT INT TERM` (a second `trap` had silently overridden the first), `DB_ROOT_PASSWORD` now required |
+| **L-6** | `tenants.status = 'suspended'` enforced nowhere | **ACCEPTED as `R-081`**, owner Task 5. A third measurement was added while dispositioning it: `§2.7` grants `qrpager_app` `UPDATE` on `tenants.status` and an in-scope write reports `UPDATE 1`, so the enforcement point cannot be the data — it is the resolver, at Task 5 |
+
+**QA `L-5` from the previous round is completed by M-1's change:** every authenticated
+operation publishes a `401` carrying this project's problem document, and the probes publish
+none — they have no tenant middleware and cannot answer one.
+
+### 10.2 Three defects the new assertions found while being written
+
+Each surfaced because a new assertion **failed loudly on its first run**.
+
+1. **`toHaveKey($key, $message)` asserts the value EQUALS the message.** The signature is
+   `($key, $value, $message)` — the message is **third**. Reflection over Pest's expectation
+   classes then gave the whole picture, measured inside Pest: **five** matchers absorb a
+   second-argument message — `toContain`/`toContainEqual` (variadic, rule 7's subject) plus
+   `toHaveKey`, `toHaveProperty`, `toThrow` — and **every negated form cannot fail**:
+   `expect(['a' => 1])->not->toHaveKey('a', 'a message')` **PASSES** while the key is present.
+   All 59 test files were tokenised, comment-blind: **0** negated instances of the three new
+   ones, so nothing in the suite is inert because of them. `R-082` owns extending rule 7,
+   which today names two of the five.
+2. **The spec published every error under `application/json`** while `Problem::toResponse()`
+   has always sent `application/problem+json` and six test files assert that against real
+   responses. `§6`'s clause was satisfied — the endpoints were in the spec, described wrongly.
+   `Problem::CONTENT_TYPE` is now the single source and one post-processing step moves every
+   problem-document response onto it, keyed off the **schema** rather than the status code,
+   because `/readyz` answers 503 with a readiness body that must stay `application/json`.
+   Measured limit: Scramble's `#[Response(mediaType: …)]` **cannot** do this — it looks the
+   schema up under its own media-type key in the response built from `type:`, which the
+   transformer stores under `application/json`, so a non-default value publishes
+   `{"type": "string"}` and loses the document. A first attempt did exactly that.
+3. **The R-052 sweep had never worked on this branch either, and it hid two leaks.** Fixing it
+   turned the suite red: `/readyz`'s published description carried `R-0`, a test name and
+   `Scramble`; `CreatePagerSessionRequest`'s carried `§2.5`, `varchar(32)` and two SQLSTATEs.
+   Both docblocks moved to `//` comments with every word kept, and the spec regenerated.
+
+### 10.3 What makes these assertions evidence
+
+**Six artefact mutations and two source mutations, eight intended failures.** Every case added
+this round was run against a deliberately broken input before being trusted: an operation with
+its `security` deleted, with its `401` deleted, with the `401` moved back to
+`application/json`, with two media types, with `/readyz`'s 503 moved onto
+`application/problem+json`, with a staff route marked public — and, against the source, the
+media-type step disabled and the per-operation `security` call removed. Each failed in the case
+written for it.
+
+**And one case reads the GENERATOR, not the committed file.** The two post-processing steps
+live in `AppServiceProvider`, and every other case here reads `docs/openapi.json` — their
+output. A test that only reads the output passes whether the steps ran today or shipped once
+and broke afterwards; coverage measured `AppServiceProvider` at **17.6 %** of lines while the
+document itself was fully asserted. One case now generates the document in process, the way
+`scramble:export` does, and asserts the decisions as decisions. It also met a shape the
+committed file cannot show: in process an empty security requirement is a `stdClass`, while
+the file's `{}` decodes to an empty array.
+
+**Gate and coverage, at `9b2cad9`'s tree** — the round is `123c9b3` (the dispositions),
+`c8fffe7` (the generator case), `9b2cad9` (the record) and `6f8810d`, which adds commit names
+and no code, so `9b2cad9` is the last commit that could move the figure. `composer gate`:
+all six steps green, exit 0, **513 passed / 2383 assertions** (504 / 2257 after the QA round). `bin/coverage --task=task-2 --min=90`:
+**97.47 % (733/752) over 27 files**, passing, from 98.46 % (641/651) over 23.
+`AppServiceProvider` itself went **17.6 % → 96.1 %**, the two remaining lines being the
+defensive `continue`s for shapes this document does not contain.
+
+### 10.4 The three vacuous assertions, fixed on this branch too
+
+**Ruled: a new commit is neither a re-tag nor a rewrite.** `GrantMatrixTest:29`,
+`PagerTokenTest:131` and `OpenApiSpecTest`'s R-052 sweep are corrected here at `123c9b3`.
+**This branch's control is the rebase, not a guard** — `SourceGuard` rule 7 and
+`ExpectationApiTest` land with Task 4, so the two comments that would otherwise name them say
+so instead of claiming a control that is not present. `task-1` and `task-2` still carry the
+original shape; `122d203` introduced one instance and `224dde9` the other two, both are in
+tagged history, and neither tag moves.
+
+
+---
+
+## 11. Delivery — the evidence `task-3` is tagged on (2026-10-27)
+
+Measured at **`4f27a9d`**, the tagged commit. Transcripts are committed beside this file.
+
+| `§6` clause | Transcript | Result |
+| --- | --- | --- |
+| the six gate steps | `QRPAGER-10-gate.txt` | all six green, exit 0 — **513 passed / 2383 assertions** |
+| coverage ≥ 90 % on this task's code | `QRPAGER-10-coverage.txt` | **97.47 % (733/752)** over 27 files |
+| a fresh **clone**, not just a fresh database | `QRPAGER-10-fresh-clone.txt` | green in the clone — **513 / 2383, identical to the host** |
+| apply from empty · second apply a no-op · clean rollback | `QRPAGER-10-rollback.txt` | **all five checks passed** |
+
+**No PR and no merge.** Tagging is the delivery record (`§10`) and is the whole of what was
+authorised for this branch tonight. The branch stays pushed; `main` is untouched.
+
+**`R-071` closes its mechanism half here**: the fresh-clone clause now has a script in the
+repository (`bin/fresh-clone-proof`) and a transcript, where before it had a sentence.

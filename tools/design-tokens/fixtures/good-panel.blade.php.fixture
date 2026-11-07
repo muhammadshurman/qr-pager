@@ -1,0 +1,18 @@
+{{--
+  DELIBERATELY RIGHT, and it must stay that way: if this fixture ever produced a finding the
+  rule would be refusing the thing it is supposed to allow, and the bad fixture's proof would
+  be worthless because EVERYTHING would be a finding.
+
+  Every spacing number here is an approved step (4 8 12 16 24 32 48 64 96), every colour is a
+  token utility, and the one hex is inside a copy method, where it is an example of the input
+  format a tenant types rather than a value this code renders with.
+--}}
+<div class="p-16 mt-4 gap-12 space-y-24">approved steps, which under the panel theme resolve to --space-*</div>
+<div class="bg-paper text-ink border-hairline">token colour utilities</div>
+<div class="text-16 rounded-8">the approved type and radius ladders</div>
+<div class="rounded-full rounded-none">structural radii, the two declared literals</div>
+@php
+    $field = TextInput::make('color.surface')
+        ->placeholder('#1a1a1a')
+        ->helperText('A hex colour, for example #1a1a1a.');
+@endphp

@@ -1,0 +1,1588 @@
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Unit\EnvironmentTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit runs on the locked PHP major and minor[39m
+  [32;1m✓[39;22m[90m [39m[90mit has every database and cache extension the stack requires[39m
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\ApiNpmLicenceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit walks a real tree, so nothing below can pass over nothing[39m[90m        [39m [90m0.32s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no licence family that is in neither the allow-list nor[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a copyleft family outright, which is what makes the swee[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds this tree to the SAME disposition the workspace tree was g[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes the one composite expression in this tree under its permis[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\ArchitectureGuardTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit passes on the real tree, so a failure below means the fixture an[39m[90m…[39m [90m0.72s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit guard 1 fails when domain logic imports framework or DB code[39m[90m     [39m [90m0.65s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit guard 2 fails when the platform layer imports a feature module[39m[90m   [39m [90m0.67s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit guard 3 fails when production code imports a test helper[39m[90m         [39m [90m0.67s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails when a feature module reaches into the auth layer — B5, re[39m[90m…[39m [90m0.72s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no fixture behind in app/[39m[90m                                 [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\AuditLogAssertionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has no audit_log assertion in the suite that reads rows without[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not flag the documentation of its own rule[39m[90m                  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails on a deliberately bad fixture, so the scan above is worth[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives every row the suite writes a run marker to filter on[39m[90m       [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes the marker into audit_log.context where the suite seeds a[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\ExpectationApiTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit finds exactly the variadic matchers rule 7 names, and no others[39m[90m  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit confirms that 77 other matchers really do take a message, so the[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit proves the broken shape really is inert, so rule 7 is not cargo[39m[90m… [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\GuardWorktreeScopeTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit prunes the reviewer worktrees from the canonical-doc walk[39m[90m        [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still walks the TRACKED files under .claude, which the first pru[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\RepoGuardTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit passes on the real tree, so a failure below is the fixture and n[39m[90m…[39m [90m0.29s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is wired as a composer script and exits 0 on the real tree[39m[90m       [39m [90m0.43s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts the files it read, not the paths it was given[39m[90m             [39m [90m0.43s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a configured path that does not resolve, rather than sca[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a path that resolves but produces no file to read[39m[90m        [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exits non-zero through the real binary when a path cannot be sca[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a session-scoped tenant setting[39m[90m                          [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a bound third argument, which the source cannot prove is[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects an absent third argument, which Postgres defaults to ses[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a raw SET of an app GUC, in both of its spellings[39m[90m        [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects every app GUC name that is not one of C1 two[39m[90m             [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a third configured GUC, which no SQL would reveal[39m[90m        [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit passes rule 8 on the real tree, so a failure below is the fixtur[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a second document carrying a task-table heading — rule 8[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a byte-identical copy of the Blueprint — rule 8, clause[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not flag prose that merely mentions a task table, only a he[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not flag its own fixtures, which deliberately contain both[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exits non-zero through the real binary when a canonical document[39m[90m…[39m [90m0.33s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a negated variadic matcher given a message, which assert[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the correct forms alone, so rule 7 is not something anyon[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit scopes rule 7 exception to one function, so the guard cannot be[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not read comments, so the prose explaining C2 is not a viol[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit scopes its one exception to a method, not to a file and not to t[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads at least one real workflow, so rule 9 cannot be passing on[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit passes rule 9 on the real tree, so a failure below is the fixtur[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a push trigger whose branch patterns can exclude a pushe[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects branches-ignore on a push trigger — rule 9, the same hol[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts every-branch written as a block sequence, not only as a[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not flag a workflow with no push trigger — rule 9[39m[90m           [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails CLOSED on a trigger it cannot read — rule 9[39m[90m                [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports a directory it found no workflow in, rather than passing[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a workflow directory where nothing runs on every pushed[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit passes rule 10 on the real tree, so a failure below is the fixtu[39m[90m…[39m [90m0.30s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects every form that reaches an S3 object ACL from applicatio[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not flag the local public disk, whose filesystem has no ACL[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit applies to application code only, so config can declare the loca[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every form that makes a theme more than a token map (rul[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the four legitimate shapes in that fixture alone (rule 11[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit applies rule 11 to app/ and routes/ and to nothing else[39m[90m          [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads the token list out of ThemeTokens rather than holding a co[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not flag ThemeTokens for owning the list, or ThemeStyleshee[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries a raw Blade echo in exactly one view, and that one is do[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names no test class that does not exist, outside two historical[39m[90m… [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Architecture\SuiteSerializationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit holds a process-lifetime advisory lock, so a second runner queue[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps holding it after a connection purge, which is the half tha[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not collide with the key RoleTimeoutTest draws, because thi[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives the key from the test DATABASE, so two reviewer slots do[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors phpunit.xml's own DB_DATABASE, so the shared-database na[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot collide with the bootstrap lock, which would DEADLOCK db:[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps its behavioural proof in the repository, not in a session[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the gate log readable for every runner, which is one expor[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\AuthGrantNarrowingTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses the app role every withheld users column, as the stateme[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the app role the platform-admin flag at INSERT as well a[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds no DELETE on passkeys, because no route deletes one yet[39m[90m    [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the app role persist the WebAuthn signature counter, which[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants the app role UPDATE on exactly four passkeys columns, and[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns no secret from authenticate_user, and exactly the column[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\AuthOctaneIsolationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit binds every piece of per-request auth state as scoped, so the bo[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no membership set resolvable after the boundary, not mere[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds no authenticated user in a static property anywhere in the[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads a membership once per request rather than once per authori[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\AuthUnitGapsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses a route inside the staff group that has no ability mappe[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exposes the route-ability map and the matrix as data, which the[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads a tenant pin out of an ability string, and answers an impo[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats a session request as unpinned and holding no token abilit[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers no principal when there is no user, no tenant, or an imp[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads no membership for an impossible user id, and refuses to pi[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit verifies a password through the function, and spends a compariso[39m[90m…[39m [90m0.65s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports no second factor for an impossible id, an unknown user,[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lists a tenant device tokens without anything secret, and refuse[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit re-reads a user with the readable column list, through refresh a[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit constructs the platform-admin principal for a tenant it has no m[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\DeviceTokenOnAuthSurfaceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is refused on every route of the auth surface, and the refusal i[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot re-key or remove a second factor that is already in force[39m[90m [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the surface working for the staff session it exists for[39m[90m   [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit covers every route on the auth surface, so a route added later c[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not mistake a session user for a device, even when the sanc[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a malformed bearer token with 401 and no reported except[39m[90m…[39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\DeviceTokenScopeTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit reads the board with its one capability, and is refused on every[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot act in another tenant even when its own issuer is a membe[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot be issued without an explicit expiry, and stops working a[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a capability that is not issuable to a device at all[39m[90m     [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot exceed the matrix even with its stored abilities tampered[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stores a verifier and never the token, and never logs the plaint[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit revokes a token, and reports one belonging to another tenant as[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes a device token and its audit row in one transaction, or n[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\FixtureScriptGuardTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses to run as production, on both scripts, and writes no row[39m[90m…[39m [90m1.26s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails CLOSED on every environment it does not recognise, case in[39m[90m…[39m [90m0.75s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still runs under testing, so the guard is a guard and not a lock[39m[90m…[39m [90m0.31s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\MemberConcurrencyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit never leaves a tenant with zero owners when two owners are demot[39m[90m…[39m [90m0.72s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still refuses the last owner when nothing is racing it[39m[90m           [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\MembersTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit lists the tenant staff, with the role and the account behind eac[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit adds an existing account, audits it, and is idempotent on a seco[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports an unknown address as not found, the same way it reports[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit changes a role, audits the transition with both ends of it, and[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit removes a member and audits it, and reports a second removal as[39m[90m… [39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to demote or remove the last owner, which is the bound w[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows the demotion once a second owner exists, so the rule is a[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports another tenant member id as not found, because RLS makes[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a malformed role or address before anything is written[39m[90m   [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\MembershipCallSiteTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit exposes exactly the three public reads its docblock describes[39m[90m    [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is called from exactly the nine lines, in five files, that pass[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit finds a planted call site, so the grep cannot pass by matching n[39m[90m…[39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\MembershipEnumerationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit cannot read tenant_users directly, which is the control that DOE[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit CAN enumerate every tenant's memberships by joining over user_me[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit CAN read every account's two-factor ciphertext through user_two_[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit CAN read every account's bcrypt password hash through authentica[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\MembershipFunctionGrantTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is executable by the app role and by nothing else[39m[90m                [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is SECURITY DEFINER, owned by the owner role, with search_path p[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns exactly the five named columns, and never a table row[39m[90m    [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\PasskeyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit issues registration options and keeps the challenge server-side[39m[90m  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses registration options without a session[39m[90m                   [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a credential when no challenge was issued[39m[90m                [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit replaces the pending challenge on every options call, so an old[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a malformed credential before any ceremony is attempted[39m[90m  [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit issues login options to anyone, naming no account, and refuses a[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stores a passkey with a uuid key, which the vendor migration wou[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the passkey table out of every tenant-scoped reckoning, be[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds the passkey name at the column's own length, not at the v[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\PlatformAdminIsNotABypassTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit holds no tenant ability at all, which is the flag granting nothi[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit resolves no tenant and reaches no staff route in a tenant it has[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot select a tenant it has no membership in[39m[90m                   [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit acts as its MEMBERSHIP where it has one, rather than being demot[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot give itself the flag, because the app role holds no UPDAT[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\RoleMatrixTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit covers every /v1 route in exactly one named set, so "full" is en[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants each principal exactly the abilities the matrix names, an[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers every principal × every staff route the way the matrix s[39m[90m…[39m [90m1.09s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers device × every staff route the way the matrix says, in i[39m[90m…[39m [90m0.59s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every principal on every staff route in a tenant they do[39m[90m…[39m [90m0.43s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses device and platform_admin on every staff route of a tena[39m[90m…[39m [90m0.24s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every staff route for a suspended tenant — R-081, and ev[39m[90m…[39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\SessionPolicyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit moves the session id on login, and the pre-login id no longer au[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit moves the session id again when the acting tenant changes, becau[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit empties the session on logout rather than only forgetting the us[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a state-changing staff request with no CSRF token, with[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit applies CSRF to the staff surface and not to a bearer-token requ[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders a CSRF refusal as 419 with a problem document, through t[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit offers no suspended tenant and never names one as the active ten[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\StubRemovedTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has no file for the deleted stub, wherever it might have been pu[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mentions the deleted stub nowhere in production code, not even i[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit resolves the TenantResolver binding to the real implementation[39m[90m   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit references the stub binding constant in no test either[39m[90m           [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\SuspendedTenantCustomerSurfaceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit keeps serving a live customer session after its tenant is suspen[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets no NEW session be opened once the tenant is suspended, whic[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to mark an existing session ready while suspended, so th[39m[90m…[39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Auth\TwoFactorTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit needs confirmation before two-factor is in force, so enrolment c[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit completes a sign-in with a code from the authenticator, and move[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts a recovery code exactly once, and does not disable two-f[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads the pending user from the session and never from the reque[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the secret and the recovery codes out of every response bu[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a code that has already been used, so an observed code c[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to re-key a second factor that is already in force, beca[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets an abandoned enrolment start again, because a pending secre[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a wrong confirmation code and leaves two-factor not in f[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit disables two-factor, clearing all three columns and restoring a[39m[90m… [39m [90m0.19s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Boot\BootChecksTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit passes on a correctly configured process, so the refusals below[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an unsafe runtime role, which is H-C’s boot-time clause[39m[90m  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names an unverifiable role as unsafe rather than passing it[39m[90m      [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a process that can resolve owner or root credentials — D[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sees credentials baked into cached config, not only in the envir[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an sslmode that can silently downgrade to plaintext — D8[39m[90m [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a landing URL that would deliver the token unsafely — S-[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts the shape a deployment is supposed to carry[39m[90m              [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit proves the fragment case is real and not a guess about parse_url[39m[90m [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exempts local and testing, where the landing URL is whatever the[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exempts local and testing, where the landing URL is whatever the[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to serve without a VAPID keypair the push library can us[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to serve without a VAPID keypair the push library can us[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to serve without a VAPID keypair the push library can us[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a VAPID pair that is present and not usable, which a pre[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names no key material in the refusal, at any debug setting[39m[90m       [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts a real generated pair, which is the positive control[39m[90m     [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exempts local and testing, so the suite boots with no push keys[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exempts local and testing, so the suite boots with no push keys[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to serve with no trusted proxy configured, outside local[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that hands the caller the address the limite[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses entries that trust every peer between them with dataset[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses entries that trust every peer between them with dataset[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses entries that trust every peer between them with dataset[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses entries that trust every peer between them with dataset[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses entries that trust every peer between them with dataset[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a single range wider than any balancer, which the old fl[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a single range wider than any balancer, which the old fl[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a single range wider than any balancer, which the old fl[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a single range wider than any balancer, which the old fl[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a single range wider than any balancer, which the old fl[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sees a catch-all set through trustProxies(at:), which is not in[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an entry that does not parse, because Symfony would leav[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts a CIDR and a bare address, in both families[39m[90m              [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exempts local and testing, where the peer is the client with ('l[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exempts local and testing, where the peer is the client with ('t[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to serve on a connection carrying a session-scoped tenan[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not mistake a live transaction-local scope for a session-sc[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses APP_DEBUG outside local[39m[90m                                  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit logs every reason at critical and then stops, which is the gate’[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not stop a healthy boot[39m[90m                                     [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exits 1 as a real process, because an exit code cannot be assert[39m[90m…[39m [90m0.49s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is wired to WorkerStarting first, and to no service provider[39m[90m     [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Contracts\StatusMirrorContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every enum in the registry, so a new one cannot be forgo[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits PagerStatus's transition table exactly as the PHP declares[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits a terminal status as an empty list rather than omitting it[39m[90m [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is byte-identical between two calls, so the gate can compare byt[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit matches the committed artifact, so the repository is not already[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exits 0 on a current file and 1 on a stale one, driven rather th[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bites on every planted form of a second status list, and on no l[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes no second DECLARATION of a status list outside the genera[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\AuditLogImmutabilityTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit accepts an append from the app role[39m[90m                              [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses update, delete and truncate for every role, superuser in[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses update, delete and truncate for every role, superuser in[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses update, delete and truncate for every role, superuser in[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses update, delete and truncate for every role, superuser in[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a statement that would match zero rows[39m[90m                   [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a superuser that disables triggers with session_replicat[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps both triggers marked ENABLE ALWAYS, which is the whole mec[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants no role the privilege to mutate the log in the first plac[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit survives a tenant being deleted, because it carries no foreign k[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\BootstrapDatabaseCommandTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is idempotent, so a second run converges instead of failing[39m[90m      [39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports what it did[39m[90m                                              [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit restores the role attributes if someone changes them by hand[39m[90m     [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit creates the database when it does not exist yet[39m[90m                  [39m [90m7.01s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to apply a role setting that is not a timeout[39m[90m            [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to create a role with no password configured[39m[90m             [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to run with no target database configured[39m[90m                [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit releases the advisory lock it serialises on, even when it fails[39m[90m  [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never sends a role password to the server, in a statement or in[39m[90m… [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a password SASLprep would rewrite, without echoing it[39m[90m    [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives every role a connection limit, and leaves the cluster head[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to create a role with no connection limit configured[39m[90m     [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit withholds the statement text when a role statement fails[39m[90m         [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stores the verifier it built, byte for byte[39m[90m                      [39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\BootstrapLoggingTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit runs the bootstrap session with log_statement off, over an inher[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit suppresses the log for its own session only, not for the databas[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets it before anything else runs on that session[39m[90m                [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no verifier in the container log for a bootstrap that log[39m[90m…[39m [90m3.98s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes log_statement from no command-line flag, which is what R-0[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\ConnectionHygieneTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit closes every database connection between tests[39m[90m                   [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds only a handful of backends open at any point in the suite[39m[90m  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails closed on transport encryption rather than silently downgr[39m[90m…[39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\ConnectionReuseTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit does not carry tenant context from one transaction to the next o[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets the guc transaction-locally, never for the session[39m[90m          [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit drops tenant context when the transaction rolls back[39m[90m             [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\CrossTenantForeignKeyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses a subscription pointing at another tenant session[39m[90m        [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts a subscription pointing at its own tenant session[39m[90m        [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an outbox row pointing at another tenant session[39m[90m         [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cascades subscriptions when their session goes, without crossing[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit enforces one outbox row per logical event, which is Task 3 idemp[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit scopes the dedupe key per tenant, so two tenants never collide[39m[90m   [39m [90m0.18s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\DataMigrationPatternTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit characterises the data-migration trap and its corrected pattern,[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit survives at transaction level 1, which is where every migration[39m[90m… [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\DatabaseRolesTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses an unknown role, connection or guc rather than returning[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a role name that was blanked out in config[39m[90m               [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit falls back to a usable bypass value if config is malformed[39m[90m       [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns an empty set of timeouts rather than failing when config[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit passes when all three roles exist[39m[90m                                [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells the operator which command creates a missing role[39m[90m          [39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\DriverErrorTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit agrees with getCode() for ordinary statement errors with dataset[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit agrees with getCode() for ordinary statement errors with dataset[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit agrees with getCode() for ordinary statement errors with dataset[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit disagrees with getCode() for a connection failure, which is the[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports nothing rather than a wrong code when there is no driver[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit finds the SQLSTATE through a wrapping exception[39m[90m                  [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\EnumContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('pager_status', '[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('outbox_status',[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('tenant_status',[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('tenant_role', 'A[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('audit_actor_type[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('provisioning_sta[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('landing_page_sta[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('domain_status',[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors every PHP enum exactly, in order with ('tenant_language'[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit registers every enum type that exists in the database[39m[90m            [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a value outside the enum at the database level[39m[90m           [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps every database-backed enum value a bare identifier, so one[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit throws rather than interpolating a case value it cannot prove sa[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\FailedBypassTraceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit writes one line naming the reason when a bypass throws — R-005[39m[90m   [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still leaves zero audit rows, which is the half that was already[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no SQL, no bound parameter and no GUC name[39m[90m               [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports a refusal from the bypass itself, not only a failure ins[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports a commit that fails, not just a callback that throws[39m[90m     [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the channel on the redaction tap, like every other channel[39m[90m [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\GrantMatrixTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit keeps token_hash write-only for the app role and unreadable for[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants UPDATE on no tenant_id column anywhere[39m[90m                    [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants the app exactly the pager_sessions updates the state mach[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants the worker only the expiry columns on pager_sessions[39m[90m      [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the app insert an outbox row only as pending[39m[90m                [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the worker no insert or delete on the outbox[39m[90m               [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the app no delete on sessions or the outbox[39m[90m                [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the worker prune dead push subscriptions[39m[90m                    [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps failed_jobs away from the app role[39m[90m                         [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the migrations table away from both runtime roles[39m[90m          [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reaches exactly the tables in the matrix and no others[39m[90m           [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states Task 7 grants as exact column sets, with the three absenc[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the panel out of the aggregate table as a writer, and the[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states the app grants on users as exact column sets[39m[90m              [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps user credentials away from the worker role entirely[39m[90m        [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states the password_reset_tokens grants as exact column sets[39m[90m     [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\OwnerAndBypassTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit binds the owner to force rls like any other role[39m[90m                 [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is not a superuser and holds no bypassrls, which is what makes f[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the owner read one tenant at a time with context set[39m[90m        [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the owner cross tenants only through the audited bypass[39m[90m     [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes an audit row for every bypass, in the same transaction[39m[90m    [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rolls the audit row back with the work when a bypass fails[39m[90m       [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass without a reason[39m[90m                                [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass on any connection that is not the owner[39m[90m         [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gains the app role nothing when it sets the bypass guc itself[39m[90m    [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not leave the bypass set after the transaction[39m[90m              [39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\RefusalDiagnosticsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit names 08006 for a connectivity failure, where getCode() prints 7[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports nothing rather than a wrong code when there is no SQLSTA[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells "the statement was never built" from "the statement failed[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not claim a rollback it cannot know about on the commit-the[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reaches the one catch that swallows, and says so rather than cla[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states what the depth unwind attempted even when it succeeds — R[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit escapes an invalid-UTF-8 value through a real refusal path — R-0[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts the messages carrying unvalidated text, or does not count[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\RlsCoverageTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has every tenant-scoped table under ENABLE and FORCE row level s[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails on a deliberately bad table, so the check above is worth s[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accounts for every table: either tenant-scoped or named in the g[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the global allowlist honest: nothing on it carries a tenan[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the tenant registry against pg_catalog, in both directions[39m[90m  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the global allowlist as an exact set, not just a consistent[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives every tenant table both an isolation policy and an owner b[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit guards every isolation policy with NULLIF, which is what makes a[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads no app.* setting other than the two locked by C1[39m[90m           [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit targets every bypass policy at the owner alone[39m[90m                   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has exactly the four named cross-tenant policies and no others[39m[90m   [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the app role no cross-tenant policy anywhere[39m[90m               [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps every table owned by the owner role, so FORCE RLS has some[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\RoleNamingTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit names in config exactly the roles the database was built for[39m[90m     [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit connects the application as the role config calls the app role[39m[90m   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit grants privileges to exactly the two roles config calls runtime[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has no login role in the cluster beyond the four in the contract[39m[90m [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names in config the two GUCs the policies actually read[39m[90m          [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\RoleTimeoutTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has the configured timeouts in effect on a fresh connection of e[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has the configured timeouts in effect on a fresh connection of e[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has the configured timeouts in effect on a fresh connection of e[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fires lock_timeout for each role, which proves ALTER ROLE took e[39m[90m…[39m [90m2.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fires lock_timeout for each role, which proves ALTER ROLE took e[39m[90m…[39m [90m3.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fires lock_timeout for each role, which proves ALTER ROLE took e[39m[90m…[39m [90m3.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fires statement_timeout for the app role, which is what load she[39m[90m…[39m [90m5.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the owner without a statement timeout, deliberately[39m[90m       [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit records the timeouts against the role itself, not one database[39m[90m   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a timeout configured far too high, before it can hang th[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats a disabled timeout as past the ceiling, which an interval[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows the owner its deliberate absence of a statement timeout,[39m[90m… [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\RuntimeRoleGuardTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit accepts the app role, which is what the application connects as[39m[90m  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts the worker role[39m[90m                                          [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects the owner role[39m[90m                                           [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says why it rejected the owner[39m[90m                                   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects a superuser, and names the reason that actually matters[39m[90m  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit would reject a role that could become the owner[39m[90m                  [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit would reject the runtime role if it were given BYPASSRLS[39m[90m         [39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\TenantContextCompositionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit allows re-entry with the same tenant on the same connection, and[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a different tenant on the same connection[39m[90m                [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to reuse an open scope on another connection[39m[90m             [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass opened inside a tenant scope on the same connec[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass opened inside a tenant scope on another connect[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a tenant scope opened inside a bypass on the same connec[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows a tenant scope inside a bypass on another connection, and[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows a bypass inside a bypass and restores the outer value[39m[90m     [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the H-A shape: scope, then bypass, then scope on one con[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit checks the bypass before the re-entry short-circuit, not after[39m[90m   [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never yields an unscoped block from any nesting of the two helpe[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds every refusal inside an outer transaction too, and leaves[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit scopes correctly inside an outer transaction, and clears on the[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit withholds the statement when it cannot even read the context[39m[90m     [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit withholds the statement when a bypass cannot read the session st[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the configured bypass value to the literal every policy com[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass when a tenant setting is in force that it did n[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to reuse a scope on the worker connection, the other run[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit scopes a block on the worker connection just as tightly as on th[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit withholds the statement when it cannot set the tenant setting[39m[90m    [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass after a nested scope exits inside a live one wi[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass after a nested scope exits inside a live one wi[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass after a nested scope exits inside a live one wi[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reports success when a bypass callback commits and reopens[39m[90m [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\TenantContextTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit rejects anything that is not a uuid before it reaches the databa[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects anything that is not a uuid before it reaches the databa[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects anything that is not a uuid before it reaches the databa[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rejects anything that is not a uuid before it reaches the databa[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns whatever the callback returns[39m[90m                            [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports the active tenant inside the callback and nothing outsid[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows re-entry with the same tenant, for a service that calls a[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to switch tenant inside an open context[39m[90m                  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to reuse an open context on another connection[39m[90m           [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs the callback inside one transaction[39m[90m                         [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rolls the work back when the callback throws[39m[90m                     [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit passes the tenant id as a bound parameter, never as SQL[39m[90m          [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit works inside a transaction it did not start, and leaves no resid[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never leaves app.tenant_id set behind inside a transaction it do[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never leaves app.bypass_tenant set behind inside a transaction i[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to open a tenant context while a bypass is active[39m[90m        [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never runs an unscoped query inside a bypass block[39m[90m               [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reports success when the work was rolled back[39m[90m              [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to open a tenant scope on a connection row level securit[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a bypass on a connection row level security cannot narro[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to scope on a runtime connection whose role holds BYPASS[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still lets the owner connection scope, which §2.10 depends on[39m[90m    [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still refuses a bypass on a non-owner connection, ahead of which[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a tenant setting that no scope in this process opened[39m[90m    [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs every callback inside a transaction it opened itself[39m[90m        [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reports success when the connection under an open scope wa[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports the active tenant for a scope on any connection, not jus[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports no tenant when the setting holds something that is not a[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports no tenant for a setting no scope in this process opened[39m[90m  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports no tenant for a connection it holds no scope on[39m[90m          [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reports success when the callback leaves a transaction ope[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot have a refusal message forge a log line[39m[90m                   [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds a refusal message built from a value it did not write[39m[90m     [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reports success when something in the block wrote over the[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never unwinds past the depth the caller was already at[39m[90m           [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reports success when a bypass callback leaves a transactio[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps a driver code from forging a log line on its way into a me[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells the two depth failures apart, because the remedies differ[39m[90m  [39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\TenantIsolationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit returns zero rows and raises no error on every tenant table with[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still returns zero rows and no error once the connection has car[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows a tenant only its own rows[39m[90m                                 [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit blocks a cross-tenant read even when the other tenant id is name[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit blocks a cross-tenant update[39m[90m                                     [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit blocks a cross-tenant delete[39m[90m                                     [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit blocks an insert made for another tenant[39m[90m                         [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot move one of its own rows to another tenant[39m[90m                [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot read the token hash it is allowed to write[39m[90m                [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot create objects, so it cannot turn a policy off[39m[90m            [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\TenantScopeGuardTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses before Postgres executes the statement, where DB::listen[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit covers every way a statement can be issued, not just the query b[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reattaches to a connection created after a purge[39m[90m                 [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets a statement that touches no tenant table through, armed or[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows the same statement inside a tenant scope[39m[90m                  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit guards the runtime connections only, so the audited owner bypass[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is armed by the GLOBAL middleware stack, which no route can be a[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an unscoped tenant query made by a real request, and the[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit arms a path that matches no route, because routing happens after[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is not armed outside a request, so the RLS backstop stays provab[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\UserModelTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit gives a new user a uuid key rather than an integer[39m[90m               [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stores the email lower-cased, which the column constraint requir[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a mixed-case email at the database level[39m[90m                 [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit hides the password and remember token from serialisation[39m[90m         [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Database\WorkerScopeTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit lets the worker drain the outbox across tenants with no context[39m[90m  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let the app see another tenant outbox row[39m[90m               [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the worker claim outbox rows with for update skip locked[39m[90m    [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let the worker insert or delete an outbox row[39m[90m           [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs the prescribed expiry pattern: select id, then update with[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is why the worker select policy is bounded by time and not by st[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let the worker make any other cross-tenant transition[39m[90m   [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let the worker read a live session of another tenant[39m[90m    [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let the worker read the token hash[39m[90m                      [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has no cross-tenant reach outside the outbox and the expiry job[39m[90m  [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelAccessibilityFixtureTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit finds five marked elements in the fixture, so the sweep below ha[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries only class lists the panel really renders[39m[90m                [39m [90m0.45s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the document and body attributes the panel sets[39m[90m            [39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelCopyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit gives the audit log an empty state that tells the reader to stop[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit labels the audit subject in human words and keeps the whole valu[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says the DNS record is unavailable instead of rendering a blank[39m[90m… [39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders the real record on the rendered page, with no blank row[39m[90m… [39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers a CRAFTED challenge call with null, which is where the b[39m[90m…[39m [90m0.30s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelPaletteTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit registers exactly the six families Filament would otherwise defa[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts the approved value on the shade a primary button actually r[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit clears WCAG AA on the resolved button pair, in BOTH modes, for e[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the bare-hex ladder, which is what makes the case above[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit resolves a map for every family through every colourable compone[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits the approved value into the rendered panel, where a browse[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails CLOSED and loudly when the generated palette is absent — L[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit registers the palette as a CLOSURE, so a boot does not evaluate[39m[90m… [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelProblemPageTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit carries the problem’s own Retry-After onto the page — S-1[39m[90m        [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps no-store and the four security headers on the page — S-3,[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves the DOCUMENT to everything that did not say it was naviga[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves the PAGE to a real navigation, so the case above is not "[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers every panel 4xx with the SAME page, whatever the reason[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails CLOSED when the panel registry cannot be read — S-6[39m[90m        [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit chooses its guidance by status CLASS and by nothing else[39m[90m         [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit falls back to the document when the page itself cannot render —[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves the page on Sec-Fetch-Mode ALONE, with no Sec-Fetch-Dest[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves the page on Sec-Fetch-Dest ALONE, with no Sec-Fetch-Mode[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the page to a client that does NOT accept html — R-195[39m[90m   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts NO Retry-After on a 4xx page, because there is nothing to c[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelTargetTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit derives a real control set from six rendered pages[39m[90m               [39m [90m0.39s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit covers every rendered control, or names it as an inline exceptio[39m[90m…[39m [90m0.35s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states the token rather than the number, so 44 lives in one plac[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelThemeTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit enumerates the panel routes, so every case below has a subject[39m[90m   [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit links its OWN compiled theme on every chrome route[39m[90m               [39m [90m0.37s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit declares the approved Latin family on every chrome route[39m[90m         [39m [90m0.36s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fetches no font from a third party on any panel route[39m[90m            [39m [90m0.39s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to pass against the Bunny provider, which is what makes[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit resolves the local provider from the registration rather than fr[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\PanelWalkTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit derives all seven panel routes, so no sweep below runs over noth[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows the product in the browser tab, and never the framework[39m[90m    [39m [90m0.37s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names the product on every panel page that has a title[39m[90m           [39m [90m0.35s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers every panel screen 503 when its database is unreachable[39m[90m  [39m [90m0.28s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaks nothing from any panel screen with its database unreachabl[39m[90m…[39m [90m0.26s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers a panel screen with an HTML page and the API with the do[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit builds the error page from tokens, with the seven literals it de[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives a JSON client on a panel path the document, not the page[39m[90m   [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pairs every colour on the error page against the generated contr[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Design\TokenConfigTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit agrees with the generated stylesheet on every colour, in both th[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit agrees with the generated stylesheet on every length and size[39m[90m    [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit agrees with the generated stylesheet on the three protected prop[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names a font family the generated @font-face block actually decl[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Gate\KnownFlakeListTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit names a real PLAN §5 row in every entry, live and removed[39m[90m        [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries an owner, a measured rate and a measurement provenance i[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not carry a removed row as a live entry as well[39m[90m             [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit attributes an R-191-shaped red by its SQLSTATE and frame, in a f[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit attributes an R-191 red whose frame MOVED, which is the defect t[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit attributes the same fault on ANOTHER connection, which is what p[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit calls an app-code 08006 REAL even when its trace lists TestCase[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit calls the SAME SQLSTATE at a different frame a REAL red -- the c[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit attributes R-172 in the FOURTH file it struck, which a name list[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit attributes a red whose CLASS NAME Pest cut short, which it calle[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still calls a truncation too short to place a REAL red, which is[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps every named identity on the matcher, so the two lists cann[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never masks a real red with an attributed one beside it[39m[90m          [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports the list before any step, so a stale entry is visible in[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is wired into bin/gate, on the suite step and on no other[39m[90m        [39m [90m0.14s[39m  
+openapi: 77 problem response(s) published as application/problem+json
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\OpenApiSpecTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is committed, is OpenAPI 3.1 and names this API[39m[90m                  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit describes exactly the routes that exist, and not the fallback[39m[90m    [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit describes both readiness outcomes with the real body shape[39m[90m       [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails loudly when the committed spec is stale[39m[90m                    [39m [90m1.45s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has no test that writes to a committed artefact — R-018 generali[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit exports the same bytes every time, so the diff means something[39m[90m   [39m [90m1.74s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes the error envelope’s type vocabulary, with every case[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit describes the problem body with the keys a real body actually ha[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps internal rationale out of every published description — R-[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes a security requirement on EVERY operation, and the sta[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes the 401 that every unauthenticated request actually re[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes every problem document under the media type the API re[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves a body that is not a problem document as application/json[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit produces the security and media-type decisions in the GENERATOR,[39m[90m…[39m [90m0.52s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\ProblemEnvelopeTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit renders a problem document, not Laravel debug output, for an une[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaks no SQL and no bound parameter from a real driver failure[39m[90m   [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps 23514 without returning the constraint name or the SQL — R-[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps 42501 to a forbidden problem that reveals nothing about the[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders a generic 500 for UnsafeDatabaseRoleException and names[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders validation failures with our own messages and nothing el[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders 404 and 405 as problem documents[39m[90m                         [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders the same document for a browser request, not an HTML deb[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps every status it is given to a type that renders that same s[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never answers Forbidden for a status that is not about authoriza[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders the two pager domain refusals as 404 and 409, never as a[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps the three framework exceptions it matches by class, not by[39m[90m… [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\ProblemRetryAfterTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit gives every mapped 503 a Retry-After, chosen per SQLSTATE[39m[90m        [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit advises no retry on an answer that repeating cannot fix[39m[90m          [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit maps a throwable with no driver error to nothing, so the mapper[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still carries no SQLSTATE, SQL, role or table name in the body[39m[90m   [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\RateLimitScaleTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit defaults to 1, so every bound in the file is the effective bound[39m[90m [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is what the APPLICATION resolved, not just what the file would r[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit multiplies every bound when the browser stack sets it[39m[90m            [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to weaken a bound, whatever the environment says[39m[90m         [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\RateLimitTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit lets a request through and refuses the one past the per-IP limit[39m[90m [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit limits per tenant as well as per IP, keyed by the resolver and n[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes the tenant from the resolver, so no request input can buy[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps serving with Redis down, and says so in the log — B7 fail-[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails closed instead when the posture is configured closed[39m[90m       [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps both probes answering while the limiter is refusing everyt[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts unknown paths on their own bucket, and not against /v1’s[39m[90m  [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts an unknown path on every verb the router dispatches, not[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit no longer answers an unauthenticated 200 to OPTIONS on any path[39m[90m  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers a wrong verb on a real route as 404 rather than 405[39m[90m      [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keys the per-IP bucket on the forwarded client when the peer is[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keys it on the peer when nothing is trusted, which is the defaul[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit hashes the address in the key the middleware actually writes[39m[90m     [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit configures every rate-limit bucket that a route actually referen[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past the pager-create bucket, which is the route-level o[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past each bucket on the auth surface with dataset "auth-[39m[90m…[39m [90m0.55s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past each bucket on the auth surface with dataset "auth-[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past each bucket on the auth surface with dataset "auth-[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past each bucket on the auth surface with dataset "auth-[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past each bucket on the auth surface with dataset "auth-[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses past devices-issue, the fourth bucket the ticket named,[39m[90m… [39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters every auth-surface refusal, whichever group middleware pr[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters every auth-surface refusal, whichever group middleware pr[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters a valid device token refused on the auth surface[39m[90m          [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the per-route buckets as the policy, with the coarse one[39m[90m… [39m [90m0.54s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no route on the auth surface without a bucket, and says w[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\RouteSurfaceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit serves exactly the two unversioned probes and nothing else outsi[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the Livewire prefix pattern matching the real routes, so t[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the three vendor routes it mounts and does not serve[39m[90m     [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves the passkey harness page in local and testing and NOWHERE[39m[90m…[39m [90m1.59s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the harness page in this process route table, as the allow[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has removed Laravel /up, the welcome page and both storage route[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers liveness without reading any dependency[39m[90m                  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers readiness 503 with no snapshot, and opens no database co[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers readiness 503 when redis is unreachable, while liveness[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers an unknown path with a problem document and counts it[39m[90m    [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rate limits unknown paths on their own tighter bucket — the gate[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not carry the drain proof’s slow route in the repository[39m[90m    [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit loads the drain route only outside production, when it is mounte[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\ShedLoadTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit returns a fast 503 when the pool is saturated, and touches no da[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps both probes answering while /v1 is being shed[39m[90m              [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves normally below the threshold[39m[90m                              [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sheds exactly at the configured threshold and not before it[39m[90m      [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not shed on a missing or stale snapshot — it fails OPEN whe[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns 503 under memory pressure, read from cgroup v2[39m[90m           [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit measures this process against the ceiling when the cgroup has no[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports 503 when the task is being throttled, and not merely whe[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not report throttling for a task that is merely busy[39m[90m        [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit measures nothing rather than guessing when cgroup v2 is not ther[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit logs the reason it shed, where the body carries none[39m[90m             [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs before the rate limiter, so the cheapest refusal is the fir[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sheds a real saturated pool end to end[39m[90m                           [39m [90m0.53s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Http\TenantResolutionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses a /v1 request with no resolvable tenant, and says nothin[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes the resolved tenant for the request and forgets it aft[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit opens no tenant scope, because a scope belongs to a unit of work[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes the tenant from no HTTP input whatsoever, even now that it[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a session selection that is not a uuid, and one the user[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a suspended tenant at the resolver, before any route run[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 401 and not 500 when the resolver itself refuses — secur[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 401 for every staff route when the resolver refuses, not[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads a membership through the §2.8 function and nothing else[39m[90m    [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit builds a membership that knows a suspended tenant cannot authent[39m[90m…[39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Infrastructure\LocalMailCatcherTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit reaches the local mail catcher, and FAILS rather than skipping w[39m[90m…[39m [90m0.61s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit uses the REAL transport, not array and not log[39m[90m                   [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit delivers a real message and reads it back OUT of the catcher[39m[90m     [39m [90m1.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the catcher empty of its own probe afterwards[39m[90m             [39m [90m1.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is declared in compose.yaml, bound to 127.0.0.1 only[39m[90m             [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Infrastructure\LocalObjectStoreTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit reaches the local object store, and FAILS rather than skipping w[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit uses the REAL driver against the composed service, not the local[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit round-trips an object through flysystem, with the bytes compared[39m[90m [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit REFUSES a wrong secret, so the round trip above is not vacuous[39m[90m   [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is declared in compose.yaml with a PINNED tag, bound to 127.0.0.[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\DnsChallengeTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit names the record under the hostname, never on it[39m[90m                 [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit matches only the exact challenge value[39m[90m                           [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails closed in the production driver when the name does not res[39m[90m…[39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states every transition of the landing page state machine[39m[90m        [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states every transition of the domain state machine, and the one[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes the contract to a path, which is the exporter half nothin[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\DomainLifecycleTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit adds a domain at pending_dns with nothing earned, and shows the[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a hostname that is not one, and one that belongs to the[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stays at pending_dns while the challenge is absent or wrong, wit[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit walks the whole lifecycle one step at a time and never skips one[39m[90m [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds at certificate_pending while the certificate has not issue[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot be made active by any route that skips a step[39m[90m             [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to advance another tenants domain, in the same words as[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a hostname another tenant already holds, without saying[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names Task 13 rather than resolving to something that does nothi[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit advances a tenants domains from the command line, by id or by sl[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails the command on an unknown tenant rather than doing nothing[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says so when a tenant has no custom domains[39m[90m                      [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\DomainRedirectTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit moves the live page to the new hostname and leaves a redirect on[39m[90m…[39m [90m0.30s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps exactly one active domain per tenant, enforced by the data[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redirects a domain only within its own tenant, enforced by a com[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit activates a domain even when the tenant has never published, and[39m[90m…[39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\LandingDocumentTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit accepts the smallest valid document, so every refusal below is d[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a top-level key the schema does not have[39m[90m                 [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an unknown block type and an unknown field inside a know[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a missing required field and accepts an absent optional[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds text by CHARACTERS and not by bytes, because Arabic is a[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every control character, newline included[39m[90m                [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps markup characters as DATA rather than stripping them, whic[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every url that is not an absolute https address[39m[90m          [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit re-assembles an accepted url from its parsed parts rather than p[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a map that is anything other than three numbers in range[39m[90m [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds a list block and validates every item in it[39m[90m               [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a media id that is not this tenants, with the same words[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds the number of media references over the whole document, n[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds the number of blocks[39m[90m                                      [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a telephone that could carry a tel: parameter, and an ad[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit round-trips through toArray and back, which is what a stored dra[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit re-validates a STORED document, because an asset it referenced c[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an empty required list, which the panel refuses too[39m[90m      [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\LandingDraftUnreachableTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit writes nothing to the store for a page that has never been publi[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes nothing to the store when a PREVIEW is rendered[39m[90m           [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the preview to an anonymous caller[39m[90m                       [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the preview to a staff member and to a platform admin[39m[90m    [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows one tenant nothing of another tenants draft, with no param[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves no-store and noindex on the preview and on its assets[39m[90m     [39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 404 when one tenant asks the preview for another tenants[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to preview a draft that no longer validates, rather than[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves NOTHING fetchable under the hostname after an unpublish[39m[90m   [39m [90m0.28s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\LandingPublishTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit writes a static page whose bytes are the document, with the cach[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit copies every referenced asset into the site prefix and never ser[39m[90m…[39m [90m0.28s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is idempotent: the same document publishes to the same checksum[39m[90m  [39m [90m0.27s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit records the publish on the row, and reports unpublished changes[39m[90m… [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to publish an empty page, and writes nothing[39m[90m             [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to publish when a referenced image has been deleted, and[39m[90m…[39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the live page serving when the object store goes away mid[39m[90m…[39m [90m0.35s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes a manifest naming what is live[39m[90m                            [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes the whole site down on unpublish, not just the pointer[39m[90m     [39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds no database transaction open while it writes to the object[39m[90m…[39m [90m0.29s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes to the active custom domain once there is one[39m[90m          [39m [90m0.22s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\LandingSchemaContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has the generated contract committed, byte for byte[39m[90m              [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit generates the same bytes three times running, so the check canno[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit describes every block type and every field of each, so the expor[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the theme to exactly the token list, which is the tokens-on[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries the document-level bounds a JSON Schema keyword cannot e[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fails the staleness check on a modified artifact, and passes on[39m[90m… [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\LandingTableContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses a media key that names another tenants prefix, even as o[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a media key whose leaf is guessable[39m[90m                      [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts the one key shape the application produces, so the CHECK[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a key whose extension disagrees with the detected conten[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an unknown content type and an out-of-range size[39m[90m         [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a half-published page in either direction[39m[90m                [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows one landing page per tenant and refuses the second[39m[90m        [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a draft document over the columns backstop, which is loo[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every path to active that has not earned it[39m[90m              [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the redirect graph inside the tenant, by foreign key rathe[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows one active domain per tenant and refuses a second[39m[90m         [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a hostname that is not a hostname, and one another tenan[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\LandingXssFuzzTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has a detector that actually fires, which every assertion below[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit fuzzes every text field the schema has, so the sweep cannot go s[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders 46 payloads into every text field of every block with no[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every payload in every url, address and number field rat[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every payload as a theme token name and as a theme token[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no raw echo in the template, which is the second half of[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes a hostile document end to end with nothing executable[39m[90m… [39m [90m0.23s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\MediaIsolationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit shows a tenant only its own assets, and the other tenant none of[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers false when the other tenant asks whether an asset exists[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a cross-tenant delete in the same words as a delete of n[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads back nothing when one tenant asks for another tenants asse[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the object store no method that takes a key from a caller[39m[90m  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit makes a key unguessable from everything a second tenant can see[39m[90m  [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the private prefix private: a published page never serves[39m[90m… [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\MediaUploadTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses an HTML file called logo.png, by content and not by name[39m[90m [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts each of the five types and refuses a real image that is[39m[90m… [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives the stored extension from the detected type, never from[39m[90m… [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes a key under this tenants prefix with a 128-bit random lea[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an empty file and one over 5 MB, by size and before anyt[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every hostile SVG, each for a reason naming the construc[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts the SVG constructs a logo actually needs, so the allow-l[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a raster file whose container does not decode as the typ[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stops at 200 assets, which is §12.2s full state[39m[90m                  [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no row behind when the object write fails, which is the f[39m[90m…[39m [90m0.36s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\PublishedSiteKeyMirrorTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit reads a fixture with enough cases to be worth calling a measurem[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit agrees with every recorded verdict[39m[90m                               [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit agrees on both sides of the length boundary[39m[90m                      [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a trailing newline, which is the case the two engines di[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the pattern in the dialect both engines read[39m[90m               [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts every object for one host under that host’s own prefix[39m[90m      [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never builds one host’s key from another host’s name[39m[90m             [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits a mirror that is the committed one, byte for byte[39m[90m          [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits a mirror that carries the rule rather than a description o[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\ReviewFixesTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses a document over 256 KB through the validator, not throug[39m[90m…[39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit caps the number of domains a tenant may claim[39m[90m                    [39m [90m0.24s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not advance a failed or redirecting domain, and never makes[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the challenge for another tenants domain, in the same wo[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers a malformed id the same way it answers an unknown one[39m[90m    [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts Filaments Authenticate on every studio route, including the[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves a content security policy on the preview document, not on[39m[90m…[39m [90m0.24s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a fixture lifecycle driver outside local and testing[39m[90m     [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives a published page exactly one h1 whatever blocks it has[39m[90m     [39m [90m0.35s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts an upload of exactly 5 MB and refuses one byte more[39m[90m      [39m [90m0.27s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the page published when the take-down fails, instead of r[39m[90m…[39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds no transaction open while ACTIVATING a domain, not just wh[39m[90m…[39m [90m0.28s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit clears every hostname this tenant published to, not just the cur[39m[90m…[39m [90m0.35s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives the transition it checks from the row, so the check can[39m[90m… [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to finish a publish whose row changed underneath it, and[39m[90m…[39m [90m0.30s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sweeps the prefix when a take-down lands after the row has commi[39m[90m…[39m [90m0.37s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells the tenant which side of the commit a publish failed on[39m[90m    [39m [90m0.28s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes a page down even when the row has lost track of it[39m[90m         [39m [90m0.24s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serialises publish against unpublish for one tenant, so neither[39m[90m… [39m [90m0.24s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\StructuredDataTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit cannot close its own element, whatever a tenant calls their rest[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reaches the published page as JSON that parses, with the element[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits only terms it declares, in both directions[39m[90m                 [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit omits the element rather than asserting a business exists on no[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not reformat authored opening hours into a grammar it would[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names a tenant’s own host and never a template default[39m[90m           [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\StudioAccessibilityTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit gives every studio page exactly one h1 and headings that do not[39m[90m… [39m [90m0.29s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit labels every form control on every studio page[39m[90m                   [39m [90m0.29s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit announces its own state in text, in a live region, and never by[39m[90m… [39m [90m0.48s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit disables Publish rather than hiding it when there is nothing to[39m[90m… [39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit uses no positive tabindex anywhere, which would reorder the whol[39m[90m…[39m [90m0.28s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the published page a text alternative for every image and[39m[90m… [39m [90m0.24s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the published page RTL-safe, so the language setting is th[39m[90m…[39m [90m0.26s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\StudioActionsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit saves a draft through the builder, and reports the fields it ref[39m[90m…[39m [90m0.98s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes and unpublishes through the builder[39m[90m                    [39m [90m0.60s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets the page language through the builder, and refuses anything[39m[90m…[39m [90m0.33s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets the language of the signed-in restaurant and no other, over[39m[90m…[39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets the page arrangement through the builder, and only on the s[39m[90m…[39m [90m0.54s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an arrangement that is not one, from the panel, leaving[39m[90m… [39m [90m0.36s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names the side of the commit a publish failed on, and never 500s[39m[90m…[39m [90m0.53s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to publish from the builder when the document does not v[39m[90m…[39m [90m0.49s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit uploads and deletes through the media page, refusing what the li[39m[90m…[39m [90m0.35s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports the full library state at the cap[39m[90m                        [39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit adds and advances a domain through the domains page[39m[90m              [39m [90m0.40s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows the pending minutes, which is §12.3s slow state[39m[90m            [39m [90m0.20s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\StudioMediaUploadTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit carries an image through the real browser path: signed POST over[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an unsigned POST to the upload endpoint, so serving it o[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds the upload at the library, not at the endpoint, and that[39m[90m… [39m [90m0.23s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\StudioPanelInvariantTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit enumerates the studio routes, so every case below has a subject[39m[90m  [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers an anonymous caller the exact status every studio route[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a platform admin on every studio route and on every page[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a staff member, who may not edit the page, on both layer[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves an owner and a manager, so the refusals above are discrim[39m[90m…[39m [90m0.41s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves a REAL Livewire update to an owner, and that snapshot to[39m[90m… [39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows a tenant only its own page, media and domains[39m[90m              [39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the tenant out of the Livewire snapshot, so it cannot be t[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\TemplateArrangementTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit reproduces the pre-feature page EXACTLY for a document that name[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit arranges a published page by the value its own document carries,[39m[90m…[39m [90m0.24s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit ships each arrangement only the CSS it uses, so an existing page[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a value that is not an arrangement, at the schema bounda[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the arrangement through a save and a reload, which is what[39m[90m…[39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\TemplateTotalityTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit names, in the committed contract, exactly the block types the PH[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders every block type in every arrangement, derived from the[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit places the footer last in an arrangement that takes the order in[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\TenantLanguageContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit has no stored direction anywhere on tenants, and exactly one lan[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names no direction and no language in the landing document contr[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the column default against the enum constant, so the two ca[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives a direction for every case, and only the two the kit kno[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\TenantLanguageTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit publishes each language with the direction derived from it, and[39m[90m… [39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives a tenant who has never touched the setting ar, from the co[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a third language at the DATABASE, as the app role, and n[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot be set on another restaurant, because the write is inside[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports a refusal rather than success when no row was updated[39m[90m    [39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Landing\ThemeTokenTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses a token name the schema does not have, rather than ignor[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts exactly the twelve tokens and no more[39m[90m                    [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses every value that could end a declaration or start a rule[39m[90m [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit emits declarations and never a rule, and only for tokens that we[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts the theme in one attribute of the published page and nowher[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names every token in the generated contract, so Task 11 reads th[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit can emit none of the order-ready screen's three properties, for[39m[90m… [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Logging\LogRedactionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit taps every configured channel, so a new channel cannot log unred[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit strips the statement and the bound parameter from a real query f[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit strips the DETAIL line, which carries every column of the failin[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit drops the stack trace rather than rendering the statement inside[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit logs the role and the reasons for R-021, which the response body[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts on the emergency logger too, which no tap can reach[39m[90m      [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts a secret passed in context, by key name[39m[90m                  [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts a SCRAM verifier wherever it appears — R-009 backstop[39m[90m    [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps redacting when the request goes through HTTP[39m[90m               [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "two_f[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "plain[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "two_f[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "recov[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "recov[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "chall[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "qr_co[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "qr_co[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "otpau[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit redacts each of this task’s secret key names with dataset "beare[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps a refused device token's row id readable, because that is[39m[90m… [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Notifications\OutboxCrashTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit loses nothing and duplicates nothing when the worker is killed -[39m[90m…[39m [90m1.96s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never lets two workers hold the same outbox row, which is SKIP L[39m[90m…[39m [90m0.40s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leases a claimed row into the future, so a dead worker’s rows co[39m[90m…[39m [90m0.19s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Notifications\OutboxLeaseIdentityTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit reads affected rows = 0 when another worker has re-claimed the r[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit skips silently: no send, no write, no exception, and the tally s[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit increments attempts by exactly one per claim, and never by any o[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never decrements or resets attempts on any path that keeps the r[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has exactly two statements in the application that write attempt[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets no role but the worker move attempts, so there is no second[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit raises rather than wrapping when attempts overflows, so no value[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives the lease identity from the pre-claim value, which is wh[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the three predicates in the worker’s own source, so no copy[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rolls an attempt back only when the row still carries this worke[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns from every abandon(), because the identity proof rests o[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Notifications\OutboxLeaseTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit sends each notification exactly once across two concurrent worke[39m[90m…[39m [90m4.00s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit skips a row whose lease was stolen mid-batch instead of sending[39m[90m… [39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit skips a row whose lease merely lapsed, because a lapsed lease is[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit evicts the OLDEST device past the cap, so a squatter cannot lock[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sends to at most the configured number of devices for one sessio[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says so in the log when the read-time cap bites, because a devic[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not cap a session that is under the limit, so the ordinary[39m[90m… [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps one row’s worst case inside the lease, which is the bound[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not finish a row another worker has claimed away mid-send[39m[90m   [39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not back a row off after losing it, which would truncate th[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit hands the attempt back when it skips, so lease contention cannot[39m[90m…[39m [90m0.55s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit retries rather than losing a row whose session cannot be read[39m[90m    [39m [90m0.45s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit dead-letters a row whose session no longer exists, rather than r[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let a re-subscribing device evict itself, which a brows[39m[90m…[39m [90m0.21s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Notifications\OutboxWorkerTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit claims a pending row, sends it, and marks it sent exactly once[39m[90m   [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sends across tenants in one pass, which is the named cross-tenan[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sends to every device a session has, not just the first[39m[90m          [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit prunes a subscription on 404 and on 410, on the first occurrence[39m[90m [39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps a subscription on a 500, because a transient edge is not a[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit backs off with a future available_at rather than spinning on a f[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit dead-letters after max_attempts, with a category and never a dri[39m[90m…[39m [90m0.26s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit dead-letters a 400 immediately, because no retry fixes a request[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still records a row as sent when one device took it and another[39m[90m… [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit finishes a row whose session has no subscription, rather than re[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit dead-letters an outbox type this build cannot route, instead of[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refreshes the projection after a send, so a poll agrees with the[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not revive a projection that has gone, because refresh is u[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reads a subscription without a tenant scope, which is meas[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Notifications\WebPushDispatcherTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit treats exactly 404 and 410 as a dead subscription, and nothing e[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sends aes128gcm and never the library default, which is the lega[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries a Topic, a TTL and high urgency, which is what bounds th[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives two different topics to a renotify and the ready it repeat[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit encrypts the payload, so the order reference never crosses the w[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats an edge that cannot be reached as retryable rather than t[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats a key the encrypter cannot use as retryable, and leaks no[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit posts to exactly the endpoint the subscription named and follows[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Notifications\WorkOutboxCommandTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is registered, so [39m[37mphp artisan[39m[90m is the record of what exists[39m[90m       [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs one pass and exits with --once[39m[90m                              [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says nothing when there is nothing to do, so an idle worker is q[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit honours --limit, so one pass cannot take the whole queue[39m[90m         [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit floors a nonsensical --limit at one rather than claiming nothing[39m[90m [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit ignores a non-numeric --limit and falls back to the configured b[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports pruning in the tally, so an operator sees subscriptions[39m[90m… [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports a retry without failing the pass, because one bad edge i[39m[90m…[39m [90m0.20s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit knows which dispositions are worth another attempt[39m[90m               [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports skipped rows on the tally line, which is the only signal[39m[90m…[39m [90m0.25s[39m  
+{"type":"throwable","class":"Tests\\Support\\DeliberateWorkerFailure","code":0,"file":"\/home\/pixels\/code\/qr-pager\/apps\/api\/tests\/Support\/OctaneWorker.php","line":140,"message":"deliberate, after responding","trace":[{"file":"\/home\/pixels\/code\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":209,"function":"{closure:Tests\\Support\\OctaneWorker::throwAfterResponding():139}","class":"Tests\\Support\\OctaneWorker","type":"->"},{"file":"\/home\/pixels\/code\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":102,"function":"invokeRequestHandledCallbacks","class":"Laravel\\Octane\\Worker","type":"->"}]}
+{"type":"throwable","class":"Tests\\Support\\DeliberateWorkerFailure","code":0,"file":"\/home\/pixels\/code\/qr-pager\/apps\/api\/tests\/Support\/OctaneWorker.php","line":140,"message":"deliberate, after responding","trace":[{"file":"\/home\/pixels\/code\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":209,"function":"{closure:Tests\\Support\\OctaneWorker::throwAfterResponding():139}","class":"Tests\\Support\\OctaneWorker","type":"->"},{"file":"\/home\/pixels\/code\/qr-pager\/apps\/api\/vendor\/laravel\/octane\/src\/Worker.php","line":102,"function":"invokeRequestHandledCallbacks","class":"Laravel\\Octane\\Worker","type":"->"}]}
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Octane\RequestBoundaryTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit rolls back a transaction a completed request abandoned, and does[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cleans up after a request that throws, where RequestTerminated n[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves a clean connection alone, so the cleanup is not a reconne[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit registers the cleanup on both keys, and first on each[39m[90m            [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit forgets tenant context at the request boundary even when the roo[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit disarms the tenant scope guard at the boundary, including after[39m[90m… [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerCustomerRateLimitTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses the token endpoint once its own bucket is spent, proven[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is tighter than the api bucket, which is the clause’s own compar[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has no per-tenant half on any customer bucket, because a token c[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the poll bucket too, so the cheapest route is still boun[39m[90m…[39m [90m0.50s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the subscription bucket, which is the one customer route[39m[90m…[39m [90m0.27s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts a refused request against the bucket and not against the[39m[90m… [39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerCustomerSurfaceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit needs no tenant context at all, which is the whole point of the[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts no tenant from the request, on any route or any field[39m[90m    [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells an expired session apart from an unknown one, which is gat[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit decides expiry from the clock and not from status, because statu[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes no projection for an expired session, so a poll cannot re[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit registers a device once and updates it thereafter, so repeating[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit removes a device, and removing one that is not there still succe[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to register a device against an expired session[39m[90m          [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates the subscription body against the database’s own bound[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says nothing about the shape of the secret when a token fails va[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts a failed resolution so an enumeration is observable — R-0[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes no audit_log row for a failed resolution, which is the de[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sheds the live timer and never the alert path, which is the stat[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts no token in any response body, on any answer[39m[90m                [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit logs a failed-resolution run once per window, not once per attem[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps counting when Redis is gone, by not counting and not faili[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts into an hourly window, so the key is bounded and comparab[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a token in the query string on every customer route — se[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerExpiryTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit expires both live statuses and leaves everything else alone[39m[90m      [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes an audit row per expiry and no outbox row at all[39m[90m          [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is re-runnable: a second pass expires nothing and audits nothing[39m[90m [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit issues the prescribed statement shape, with no RETURNING anywher[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds one pass, so a pass cannot hold a transaction over an unb[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit narrows the worker’s cross-tenant SELECT to live and expired ses[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stops the worker expiring another tenant’s completed or cancelle[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit binds the worker INSIDE a tenant scope by isolation alone, not b[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still refuses any transition other than expiring, which WITH CHE[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries the status whitelist in the policies themselves, read fr[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit commits the expiry and its audit row together or not at all — QA[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit expires nothing and audits nothing when a staff member wins the[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives its live-status list from the enum; the SELECT policy wh[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is scheduled, so the TTL is enforced without anyone typing a com[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerGrantNarrowingTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit lets the app role REPLACE a pager token but never READ one — 10d[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins the app role's whole grant set on pager_sessions, so a wide[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not give the worker the rotation grant, because expiring a[39m[90m… [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerIdempotencyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is idempotent on a repeat call: one outbox row, one audit row, a[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes one outbox row when two processes mark the same session r[39m[90m…[39m [90m0.31s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets renotify through repeatedly, with a distinct outbox row eac[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a renotify past the configured cap, as a conflict rather[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a renotify on a session that was never marked ready[39m[90m      [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has the unique index as the backstop, independent of the row loc[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets two concurrent renotifies both through, with distinct dedup[39m[90m…[39m [90m0.31s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerIdorTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit answers 404 on every id-taking route when the session belongs to[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers the same 404 for an id that exists nowhere, so the two a[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the other tenant’s session completely untouched[39m[90m           [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets the owning tenant act on the very same session, so the 404[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not let a tenant id be chosen by anything the caller sends[39m[90m  [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerPollLatencyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit smoke-checks the latency harness: it runs, and still measures ze[39m[90m…[39m [90m0.51s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs the harness in a keyspace this suite cannot reach, which is[39m[90m…[39m [90m0.55s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerPollingTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit issues ZERO Postgres statements on a poll, proven by a query lis[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit issues exactly two Redis commands in the handler, and seven acro[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 404 Stale when Redis holds no pointer, and never falls b[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells Stale apart from NotFound, so a client knows whether to re[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit spends nothing on a malformed token beyond the middleware that g[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 503 with a Retry-After when Redis is unreachable, not 40[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves the live status with the pacing a client needs, and no-st[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells the customer nothing about the tenant or the session[39m[90m       [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit follows a transition within a poll, without the worker having ru[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit follows a completion too, which writes no outbox row and so no w[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit creates no projection for a session nobody scanned[39m[90m               [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats a corrupt projection as a miss rather than a 500[39m[90m          [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries poll_after_seconds on every polling response, 404 and 50[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries both the body pacing and the Retry-After header on a 503[39m[90m [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries the pacing on a shed 503 and a throttled 429 too, which[39m[90m… [39m [90m0.51s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit paces nothing on a 422, because a malformed request is not a req[39m[90m…[39m [90m0.14s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerProjectionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit namespaces the projection by tenant id, in the exact shape the g[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot be read through another tenant’s context, even with the r[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes the tenant from the pointer the server wrote, never from t[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keys the pointer by the token’s own hash, which is the one deriv[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never writes a projection that outlives the session it describes[39m[90m [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refreshes only what already exists, so an unscanned session gets[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit round-trips a view and refuses one it cannot read, rather than g[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stores the status enum’s own value and keeps no vocabulary of it[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers false rather than null when Redis cannot be reached, so[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit forgets both keys together, so a pointer never outlives its proj[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit swallows every Redis failure rather than taking a request down w[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a pointer it cannot read, rather than building a key fro[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keys the pointer on the SAME hash Postgres stores, not on the ra[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stops resolving from Redis once the clock passes the session exp[39m[90m…[39m [90m3.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a projection whose expiry has passed even while its key[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes no key at all for a session that has already expired[39m[90m      [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts neither the key nor the token in any log line, at APP_DEBUG[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit puts neither the key nor the token in any response body, at APP_[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerReissueTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit gives the same order a new code, and the OLD code stops working[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the OLD code able to POLL until its Redis pointer expires[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the SAME session, the same order reference and the same st[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit notifies NOBODY, because nothing happened to the customer's orde[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit audits the re-issue as its own action, so the history can say wh[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a re-issue on a FINISHED order with a 409, because a new[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a re-issue on a session past its two-hour expiry, distin[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports another restaurant's session as not found, never as forb[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serialises two concurrent re-issues on one session, so one survi[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is reachable only by a caller holding pager:create, so a staff m[39m[90m…[39m [90m0.19s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerRouteSurfaceTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit serves every pager route under /v1, with the reads as GET and ev[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit denies every pager route when no tenant resolves, with no detail[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit creates a session and returns a QR payload carrying the token in[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates the order reference against the column it is stored in[39m[90m [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers a malformed JSON body as a 422 naming the field, not an[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit runs the four transitions end to end through HTTP[39m[90m                [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the refusal body free of status values, driver text and SQ[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 404 for a session id that is not a uuid, through the unk[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to run a pager action with no tenant bound, so a route o[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers 503 and not 500 when the row lock times out — QA L-7[39m[90m     [39m [90m2.33s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mounts the customer surface off RequireTenantScope, and the staf[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sheds the live timer and nothing else on the customer surface[39m[90m    [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives each customer route its own rate-limit bucket, and never t[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit takes no route parameter anywhere on the customer surface, which[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerTokenLookupTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit resolves a presented token to exactly one session in exactly one[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers null for an unknown token, and for a malformed one[39m[90m       [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit does not leak the bypass GUC back to the caller[39m[90m                  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves the caller’s own queries tenant-bound, so the bypass is t[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot be used to read the token hash, because the function does[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is executable by the app role and by nothing else[39m[90m                [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is a SECURITY DEFINER function owned by the owner, with a pinned[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit resolves an expired session rather than hiding it, so the PWA ca[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is permitted by the scope guard, while a bare pager_sessions sta[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerTokenTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is 128 bits of CSPRNG, 22 base64url characters, and stored only[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit draws a different token every time[39m[90m                               [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cannot be leaked by any of the six ways a value escapes a PHP ob[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has no __toString, so interpolating it is an error rather than a[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the raw token out of captured log output, even when the ob[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reaches the database: only the hash is stored[39m[90m              [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never reaches a log when a session is created through the servic[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit satisfies each limb of the amended token-location clause, by nam[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a malformed presented token without touching the databas[39m[90m…[39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerTransactionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit commits the status change, the outbox row and the audit row toge[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rolls back the status change when the OUTBOX insert fails — all[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rolls back the status change AND the outbox row when the AUDIT i[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit holds for cancel as well, which is the other operation writing a[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit rolls back the session row itself when create fails after the in[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes exactly the outbox type and audit action the domain names[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerTransitionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit agrees with the enum about every from/to pair — 5 statuses x 3 o[39m[90m…[39m [90m0.26s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets nothing out of a terminal status, which is what isTerminal[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows waiting straight to completed, which is the one judgement[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets both live statuses expire, which the partial index and the[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a renotify from every status except ready[39m[90m                [39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Pager\PagerTtlTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit refuses every staff transition on a session past its TTL, as an[39m[90m… [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses ready and renotify on a past-TTL session that is already[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes nothing at all when it refuses[39m[90m                            [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is distinguishable from an illegal transition, which is the whol[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves terminal statuses alone, so idempotency survives the fix[39m[90m  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still answers 404 and never 409 for another tenant’s expired ses[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit passes a session inside its TTL straight through, which is the p[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses at the service too, so the rule is not a property of the[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit compares against the database clock, not PHP’s[39m[90m                   [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\PanelRateLimitTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit meters every panel route on the panel bucket with ('/platform')[39m[90m  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters every panel route on the panel bucket with ('/platform/re[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters every panel route on the panel bucket with ('/platform/au[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters POST /platform/logout too, so the one state-changing pane[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit meters Livewire’s update endpoint, which carries most of the pan[39m[90m…[39m [90m0.41s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the web group to Livewire’s routes alone, which is why app[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an anonymous flood on a panel route, rather than serving[39m[90m…[39m [90m0.49s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers the 429 with a problem document and a Retry-After header[39m[90m [39m [90m0.43s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stops the unmetered Redis key growth the finding was actually ab[39m[90m…[39m [90m0.46s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit issues no Postgres statement on an anonymous panel refusal[39m[90m       [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\PlatformPanelAccessibilityTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit renders every panel page with lang and dir on the document eleme[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders every panel page with lang and dir on the document eleme[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit renders every panel page with lang and dir on the document eleme[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets dir from the locale, so RTL is a configuration rather than[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no positive tabindex anywhere, so the tab order is the d[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no positive tabindex anywhere, so the tab order is the d[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no positive tabindex anywhere, so the tab order is the d[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit removes no focus ring in this task’s own markup[39m[90m                  [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit labels every dashboard figure programmatically, not by position[39m[90m  [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit states the aggregates’ staleness as text, because an unshown sta[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries the restaurant state as text, never as colour alone[39m[90m      [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit declares the exact empty-state copy for both lists[39m[90m               [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit offers no destructive action on either list, which the audit vie[39m[90m…[39m [90m0.18s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\PlatformPanelInvariantTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit enumerates the panel routes, so the cases below have a subject[39m[90m   [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reaches NO tenant table on any panel route, as a platform admin[39m[90m  [39m [90m0.25s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers every panel route the exact status it should, as a platf[39m[90m…[39m [90m0.22s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers every panel route to an anonymous caller without reachin[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit serves a REAL Livewire update to a platform admin, and that snap[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the panel to every tenant principal, with no tenant abil[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the panel to every tenant principal, with no tenant abil[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the panel to every tenant principal, with no tenant abil[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets a platform admin read no tenant row through the panel, with[39m[90m…[39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the platform models NO relation to any tenant table, which[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the platform models NO relation to any tenant table, which[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives the platform models NO relation to any tenant table, which[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit points every platform model at a platform table, and never at a[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit points every platform model at a platform table, and never at a[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit points every platform model at a platform table, and never at a[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit registers exactly the resources and pages the invariant was meas[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mounts no second login page, because that would be a third authe[39m[90m…[39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\PlatformTableContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit pins every platform table column set exactly, so a tenant_id can[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins every platform table column set exactly, so a tenant_id can[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins every platform table column set exactly, so a tenant_id can[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries no column named tenant_id on any platform table, which i[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps row-level detail out of the aggregate table, which is the[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has one counter column per pager status, so a sixth status canno[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves all three platform tables without row level security, whi[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reaches every platform table with NO tenant context at all, whic[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is not matched by the scope guard, so an unscoped platform state[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is not matched by the scope guard, so an unscoped platform state[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is not matched by the scope guard, so an unscoped platform state[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still matches the tenant tables whose names these embed, so the[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit pins TestCase::RESETTABLE as an exact set, so a mutable table ca[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit mirrors provisioning_status between PHP and Postgres, in order[39m[90m   [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit proves a platform-scope audit_log row is unreachable, which is S[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps platform_audit_log append-only, for the owner and for the[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a DELETE that would match zero rows, which is why the tr[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a terminal provisioning row with no reason, at the datab[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a non-DNS-label slug and a non-lower-cased email, at the[39m[90m…[39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\ProvisionTenantsCommandTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit drains a pending request end to end, so the panel’s write really[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit touches no tenant table while deciding WHAT to drain[39m[90m             [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves a [39m[37mrunning[39m[90m row alone, so a stalled attempt is not a hot lo[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps draining after one request fails, and records the failure[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds the drain size, and clamps a caller’s nonsense rather tha[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports what it did, so an operator reading the log can tell a q[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is registered and SCHEDULED, which is R-058 applied rather than[39m[90m… [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\ProvisioningStateMachineTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit pins the transition table against the enum, edge by edge[39m[90m         [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers allowsMoveTo for every ordered pair, so no edge is untes[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats completed as terminal and nothing else[39m[90m                    [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses to provision a row that is already running, which is the[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit stops retrying at the attempts cap rather than looping for ever[39m[90m  [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reclaims a stalled row, which is the operator path that did not[39m[90m… [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reclaims an exhausted row too, and refuses an id that does not e[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes exactly ONE provisioned audit row even when two runners r[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\RestaurantCreateActionTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit provisions a restaurant from the panel action, writing only plat[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says “requested” and not “created”, because the tenant does not[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a duplicate address as a field error, not a 500[39m[90m          [39m [90m0.23s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit validates every field, and the slug rule is the database’s own e[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an owner who already holds a membership, as a FIELD erro[39m[90m…[39m [90m0.21s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a platform admin as owner on the form, with the same mes[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts a fresh address through the form, so the rule is narrow[39m[90m  [39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit tells the user what to type rather than naming the pattern[39m[90m       [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the action to a caller who is not a platform admin[39m[90m       [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the dashboard page to a non-admin and to an anonymous ca[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit completes the round trip: the action’s row becomes a tenant when[39m[90m…[39m [90m0.22s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\TenantProvisioningTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit requests a tenant touching platform tables only, and nothing els[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes the request and its platform audit row in ONE transaction[39m[90m [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a duplicate slug with a typed failure and writes no seco[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit never puts the driver message in the duplicate-slug failure[39m[90m      [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lower-cases the owner email before it is stored, so the job can[39m[90m… [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit provisions a tenant end to end: registry row, tenant, first owne[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit attaches an existing user rather than creating a second account[39m[90m  [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an owner who already holds a membership, which is R-106’[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a platform admin as a tenant owner, which the ruling doe[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says the same thing for both refusals, so the form cannot be use[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit still attaches an existing account that holds no membership, whi[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit records WHOM it made owner in the platform trail[39m[90m                 [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit gives a provisioned owner NO password, because nothing may inven[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves NO partial tenant when the membership insert fails halfwa[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit can be retried after a failure, and the retry succeeds and is bo[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is idempotent: a redelivered provision leaves one tenant and one[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit throws a typed failure when the provisioning record is gone[39m[90m      [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reaches exactly ONE tenant: the one it creates, and no other[39m[90m     [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit sets no session-scoped tenant context, so nothing leaks to the n[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Platform\TenantStatisticsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit aggregates a tenant’s sessions into the platform row, with no ro[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the window bounds free of other tenants’ sessions, once th[39m[90m…[39m [90m0.27s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts the tenant’s own staff and nobody else’s[39m[90m                  [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads each tenant inside its own scope, so no statement can see[39m[90m… [39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit counts NO other tenant’s sessions, even past-TTL ones the worker[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads the tenant’s sessions as the APP role, which holds no cros[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is idempotent: a second pass leaves one row with the same counte[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit computes the wait percentiles in whole seconds, once there are e[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit suppresses the wait figures and the window below the threshold,[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit aggregates a tenant with no sessions to zeroes rather than skipp[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit aggregates only COMPLETED registry rows, so a pending restaurant[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit aggregates one tenant only when given --tenant, and refuses an i[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no tenant context behind on the worker connection[39m[90m         [39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit writes the aggregate row with the worker role, which the panel c[39m[90m…[39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit has one counter column per pager status, driven from the enum[39m[90m    [39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Readiness\ReadinessCarrierTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit answers /readyz and /healthz with the app pool full — R-012[39m[90m      [39m [90m0.51s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit measures saturation on the worker connection, which the app pool[39m[90m…[39m [90m0.47s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit opens no database connection on either probe’s request path — B6[39m[90m [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports Postgres down when the worker role cannot reach it eithe[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reports Redis down, and readiness refuses rather than guessing[39m[90m   [39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit treats a stale snapshot as not ready, because the carrier shares[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is scheduled sub-minute, without overlapping, and needs no tick[39m[90m  [39m [90m0.11s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\RealDatabaseTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit runs the suite against the real composed postgres, never sqlite[39m[90m  [39m [90m0.12s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\KdsEndpointsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit serves the kitchen screen its own restaurant's board, with the f[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows a kitchen screen NOTHING of another restaurant, which no p[39m[90m…[39m [90m0.19s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit dispatches NOTHING when a kitchen screen attempts every transiti[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit forbids a shared kitchen device from caching the board on disk[39m[90m   [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a kitchen screen the restaurant's own name, which is why[39m[90m…[39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\MemberSeniorityTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit puts the three roles on a ladder and lets an actor grant its own[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a manager appointing an OWNER through members.store, ove[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets a manager appoint a MANAGER and a STAFF member, so the refu[39m[90m…[39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a manager promoting somebody else to OWNER through membe[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers the SAME 403 for an unknown address as for a known one,[39m[90m… [39m [90m0.18s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a MANAGER changing its own role, which is the exact requ[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a manager DEMOTING itself too, because the clause is abs[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses an OWNER changing its own role, so the clause is about e[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets an owner change SOMEBODY ELSE to owner, so the self-role re[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses demoting the LAST owner through members.update — re-driv[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses removing the LAST owner through members.destroy — re-dri[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit allows demoting an owner when there are two, so the last-owner r[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads the actor's role from the database, so a demoted manager c[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes the grantable roles on /v1/auth/me, so the picker cann[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\PagerHistoryIsolationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit knows every filter dimension the screen offers, so a new one can[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns only the caller's own restaurant's orders for EVERY filt[39m[90m…[39m [90m1.49s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses the history route to a kitchen screen, which is why it i[39m[90m…[39m [90m0.17s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffBoardConcurrencyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit produces one notification and one terminal state when two staff[39m[90m… [39m [90m0.88s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffBoardEndpointsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit lists the restaurant's waiting and ready pagers, newest first, w[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit marks one order ready for a single client[39m[90m                        [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a transition on another tenant[39m[90m                           [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit cancels and completes, and answers 409 rather than 404 for an il[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit publishes the restaurant NAME on /v1/auth/me, which is what the[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit carries Retry-After on a 429 for the board, which is the hint th[39m[90m…[39m [90m0.62s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lets a kitchen device token read the board and refuses it every[39m[90m… [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffContractTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit nests the person under [39m[37muser[39m[90m, which is where fetchIdentity() read[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit answers a second-factor login with 200 and a flag, which is why[39m[90m… [39m [90m0.13s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns the restaurant under [39m[37mtenant[39m[90m, with the four keys fetchTen[39m[90m…[39m [90m0.16s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit returns kitchen screens under [39m[37mdevices[39m[90m, with the four keys fetchD[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts the ability and TTL the client sends, so its fixed value[39m[90m…[39m [90m0.15s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffPasskeyOriginTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is what THIS application computed, not what the package register[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit derives the relying party id from APP_URL's host, which is a SUF[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts an origin and nothing that merely looks like one[39m[90m         [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reads its extra origins from CONFIG, so [39m[37mconfig:cache[39m[90m cannot sile[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is a closed list with no wildcard in it, whatever the environmen[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit reduces APP_URL to its origin, so one trailing slash cannot sile[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit says so in the log when APP_URL has no usable origin, and omits[39m[90m… [39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit names every extra origin it drops, instead of filtering in silen[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit survives a non-string entry instead of throwing at boot[39m[90m          [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accepts a trailing slash on an EXTRA origin and stores the norma[39m[90m…[39m [90m0.10s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffSessionPolicyTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit is served from Redis, and the config default would not work at a[39m[90m…[39m [90m0.12s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds a staff session at two hours, and the residual is named r[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit keeps the XSRF-TOKEN cookie readable by a first-party script, wh[39m[90m…[39m [90m0.13s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffShellEndpointsTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit names the restaurant rather than identifying it — the §12 clause[39m[90m…[39m [90m0.14s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit is a scoped read and not a cross-tenant one, so another restaura[39m[90m…[39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit lists this restaurant's kitchen screens and never a credential[39m[90m   [39m [90m0.15s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit shows one restaurant none of another's screens, through the pin[39m[90m… [39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit bounds the list in SQL, at the ceiling the class states and not[39m[90m… [39m [90m0.16s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\Staff\StaffSurfaceIsolationTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit derives the staff surface from the router, and every route is co[39m[90m…[39m [90m0.11s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit accounts for every /v1 route the sweep does NOT cover, with the[39m[90m… [39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses POST /v1/auth/tenant aimed at a tenant the caller is not[39m[90m…[39m [90m0.17s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a staff member of tenant A on every mounted staff route[39m[90m… [39m [90m0.45s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit refuses a user who belongs to BOTH tenants, with A selected, on[39m[90m… [39m [90m0.26s[39m  
+
+  [30;42;1m PASS [39;49;22m[39m Tests\Feature\TestFixtureUniquenessTest[39m
+  [32;1m✓[39;22m[90m [39m[90mit derives a DISTINCT fixture email for every uuid, inside one mill[39m[90m…[39m [90m0.10s[39m  
+  [32;1m✓[39;22m[90m [39m[90mit leaves no truncated uuid prefix in any fixture address, across t[39m[90m…[39m [90m0.10s[39m  
+
+  [90mTests:[39m    [32;1m1300 passed[39;22m[90m (12911 assertions)[39m
+  [90mDuration:[39m [39m249.16s[39m
+
+EXIT=0

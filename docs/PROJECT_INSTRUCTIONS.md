@@ -27,12 +27,14 @@ Everything in the archive that is still binding has already been absorbed into t
 | Auth | Fortify + Sanctum + WebAuthn passkeys + 2FA |
 | Runtime | Octane (FrankenPHP) |
 | Push | `minishlink/web-push` (VAPID) |
-| Object storage | S3 (`league/flysystem-aws-s3-v3`); MinIO locally — see `docs/adr/002-storage-and-mail.md` |
+| Object storage | S3 (`league/flysystem-aws-s3-v3`); SeaweedFS locally — see `docs/adr/004-local-object-store.md` |
 | Transactional mail | Amazon SES; Mailpit locally — see `docs/adr/002-storage-and-mail.md` |
 | Monorepo | pnpm workspaces — `apps/api` (Laravel), `apps/web` (PWA + staff), `apps/site` (public renderer), `packages/{tokens,ui,contracts}` — see `docs/adr/003-monorepo-and-frontend-tooling.md` |
 | Tests | PHP: Pest 5 + PHPUnit 13 (real Postgres + Redis) — see `docs/adr/001-pest-5.md`. TypeScript: **Vitest**. E2E: Playwright. Load: k6 |
 | IaC | Terraform — VPC (3 AZ), ECS Fargate, Aurora PG (PITR), ElastiCache, S3, SES, ALB, CloudFront, WAF, Shield, Secrets Manager, CloudWatch + X-Ray |
 | CI/CD | GitHub Actions + OIDC to AWS (no stored keys) |
+
+**Local stand-ins for production services are locked to an interface, not a vendor.** Production is what the table above names and never changes without an ADR. The local stand-in for a production service must speak that service's API, be pullable anonymously from a public registry by a fresh clone holding no credentials, and run from a pinned tag — never `latest`. When a named stand-in stops meeting those conditions, that is an ADR superseding the row, written with the measurement that forced it, not a substitution made in passing. A stand-in is development and test infrastructure only: nothing under `apps/` may depend on which one is running, and a test that proves a stand-in works must round-trip through the production client library, never check that a port is open.
 
 Verify every library API by running code in-session. Never from memory. If a version has moved, read the primary changelog before choosing.
 
@@ -73,11 +75,48 @@ Break any of these and the task is not done.
 - Cross-tenant reads exist **only** on these named paths: QR token lookup, a user's own memberships, the outbox queue, the expiry job. Adding one requires editing this file first.
 - **Two authentication surfaces, never confused.** Staff and admins authenticate as **users** (Task 5). A customer has no account and authenticates **only** by presenting the QR token, which resolves to exactly one session in exactly one tenant — built in Task 3, consumed by Task 4. A customer-facing route that accepts anything other than that token is a rejected design.
 - **Before Task 5 exists**, every route built in Tasks 2-4 is either on the customer token path above, or guarded by Task 2's deny-by-default guard with a **test-only** authentication stub that is deleted in Task 5. A stub that survives Task 5 is a Critical finding.
+- **Platform tables are not tenant tables.** The platform admin panel operates only on tables
+  belonging to no tenant — the tenant registry, provisioning and subscription records — which
+  carry no RLS because they carry no tenant data. A platform admin holds no tenant ability and no
+  cross-tenant read: they can see that a restaurant exists and administer it from outside, and
+  cannot see inside it. Support access to a tenant's own data, if ever needed, is a temporary
+  audited membership. Added 2026-10-28.
+- **Support access is a temporary, audited membership, never a cross-tenant read.** A
+  platform admin may enter exactly one explicitly chosen tenant's context as a membership
+  that expires, and inside it holds only the abilities that membership grants — RLS stays
+  in force and every query stays tenant-scoped. Taking it, acting under it and leaving it
+  are each written to the audit trail with the tenant, the actor and the reason. A
+  platform admin never holds more than one at a time, and an expired or released
+  membership leaves no residual ability. **Its lifetime is fixed at 60 minutes and is not
+  chosen by the taker.** **It is read-only: it carries no write ability on any tenant
+  table; a support action that must write is a separate decision and is not built here.**
+  **It is visible to the tenant's own owner in their members list while it is active,
+  marked as platform support with its expiry** — support a tenant cannot see is
+  indistinguishable from an undisclosed cross-tenant read. Added 2026-11-04, resolving
+  QRPAGER-22.
+- **Per-tenant statistics are aggregates written to a platform table, never a read of a tenant
+  table.** A counter or a timestamp is maintained by a job or the outbox worker — which already
+  holds a named cross-tenant path — and the panel reads only that platform row. An aggregate
+  carries no row-level detail: no order reference, no token, no session identifier. A panel query
+  that reaches a tenant table is a rejected design. Added 2026-10-28.
 
 ### Data
 - QR token: 128-bit CSPRNG, **stored only as a hash**, TTL 2 hours. Never logged, never in a URL query string, never in an error body.
 - No customer accounts. No phone numbers stored.
 - `audit_log` is append-only, enforced by trigger on UPDATE / DELETE / TRUNCATE — superuser included.
+
+### Security
+- **Role seniority, and consent.** `owner` is senior to `manager`, which is senior to `staff`. No
+  actor may grant a role senior to its own, assume one, or change its own role at all — a manager
+  promoting itself to owner is refused, not audited after the fact. Attaching an **existing** user
+  to a tenant requires that user's acceptance of an invite; a membership is never created for a
+  user by someone else's request alone. **Until that invite flow exists, the implementation is
+  deliberately stricter than this clause: an address that already belongs to an account holding
+  any membership, or to a platform admin, is refused outright rather than invited** — so the
+  weaker rule is never the one in force. Both refusals answer with one message, because
+  distinguishing them would let a form probe whether an address has an account. The residual —
+  what a restaurant group's owner does when they legitimately want a second restaurant — is
+  `PLAN.md R-119`. Added 2026-10-28 (R-106).
 
 ### Postgres traps — already paid for, do not rediscover
 - **The worker expiry UPDATE must leave the new row visible to the worker's own SELECT policy.** Measured on 16.14: what pulls the SELECT policies in is **any column of the table referenced by the statement** — in `WHERE`, in a `SET` expression, or in the `RETURNING` list — because that is what makes the statement require `SELECT` privilege. Postgres then applies them twice: to the rows the statement may find (a row invisible to `SELECT` is **silently skipped** — `UPDATE 0`, never an error) and to the **new** row (`42501` if the update would hide it). `RETURNING` is neither necessary nor sufficient: a bare `WHERE id = ?` triggers both passes with no `RETURNING` at all, `RETURNING 1` triggers no new-row check, `RETURNING id` does. So the worker's cross-tenant SELECT policy is bounded by **time plus a status whitelist that contains the status the update writes** — never by a predicate the update falsifies, which would fail every expiry. Pattern: a **policy-limited `SELECT` that reads the keys** → `UPDATE ... WHERE id = ? AND status = ?` → check affected rows. Keep **no `RETURNING`**: it is a convention, not the mechanism — it preserves the affected-row count as the idempotency signal and keeps the worker's read surface narrow. (Reworded from "`SELECT id` (policy-limited)" on 2026-10-27 with the user's approval — rank 2, `§0` — from Task 3's `§11` QA review, finding L-2 / `PLAN.md R-065`. **The trap's point was never the column count; it is `SELECT`-then-keyed-`UPDATE` instead of a bulk statement**, which is the very next bullet. Read literally, "`SELECT id`" forbade the two columns the pattern itself needs: the keyed `UPDATE` needs **the status it expects to find**, because that guard IS the idempotency signal this bullet ends on, and a worker that must write an audit row needs **the tenant id**, because `audit_log` carries the same isolation policy and the insert is refused with `42501` outside a scope. So the real expiry job reads `id, tenant_id, status`; both extra columns are already in the worker's `SELECT` grant and inside its policy whitelist, so the wider select list costs no reach — and guessing either instead would mean a `WHERE` that cannot be written.)
@@ -91,6 +130,7 @@ Break any of these and the task is not done.
 - `markReady` is **idempotent**. A retry never double-notifies.
 - Polling endpoint: **Redis-only read, zero Postgres queries**, p99 under 5 ms, client-side jittered interval + exponential backoff, short-TTL cache headers. A polling endpoint that touches Postgres is a rejected design.
 - **Redis carries no RLS.** Every key that holds tenant data is namespaced by tenant id, and every read derives that id from the caller's own context — never from client input. A projection key that is not tenant-namespaced is a cross-tenant read with none of Postgres's protection behind it.
+- Exactly one Redis key may be keyed by a secret the caller must present rather than by tenant id: the QR token pointer, whose key name is the stored token hash and whose value carries the tenant. Added 2026-10-27 after R-074 and the Task 4 Security review. No second such key may be introduced without editing this line.
 - Web Push dispatcher prunes subscriptions on 404 / 410.
 - Outbox worker: `FOR UPDATE SKIP LOCKED`, backoff, dead-letter. Killing it mid-batch loses nothing and duplicates nothing.
 - iOS: Web Push only works from a Home Screen install. The install guidance is a required product path, not a nice-to-have.

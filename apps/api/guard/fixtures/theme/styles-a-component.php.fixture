@@ -1,0 +1,52 @@
+<?php
+
+// Rule 11's positive control. Every form that makes a theme more than a token map, which
+// is what PLAN.md §3.1 row 7 says the clause "theme overrides tokens only, never
+// components" needs a mechanism for.
+
+declare(strict_types=1);
+
+namespace App\Fixture;
+
+use App\Domain\Landing\ThemeTokens;
+
+final class StylesAComponent
+{
+    public function render(): string
+    {
+        // 11a: a component carrying its own stylesheet.
+        $head = '<style>body{color:red}</style>';
+
+        // 11b: an at-rule, which fetches.
+        $imported = '@import url(https://evil.test/theme.css)';
+
+        // 11b: a rule-set, which is a COMPONENT rule rather than a token value.
+        $rule = '.card { border-radius: 2px; }';
+
+        // 11c: the token list, copied.
+        $token = 'color.accent';
+
+        // 11d: building a custom-property name outside the one emitter.
+        $declaration = ThemeTokens::property('color.accent').':#ff0000';
+
+        return $head.$imported.$rule.$token.$declaration;
+    }
+
+    public function legitimate(): string
+    {
+        // NOT violations, and each is here because a looser rule would flag it:
+        //
+        //   a JSON fragment with a brace          -- no selector before it
+        //   an element name followed by a brace   -- rule 11b matches a CLASS or an ID
+        //                                            only, because `p {` appears in
+        //                                            sprintf formats and in prose
+        //   the word style on its own             -- `<style` is the subject, not `style`
+        //   a method called property on something else
+        return '{"ok":true}'.'p { not a selector in anger }'.'style'.$this->property();
+    }
+
+    private function property(): string
+    {
+        return 'not ThemeTokens::property';
+    }
+}

@@ -1,0 +1,56 @@
+QRPAGER-15 — pnpm audit, the CVE control that did not exist (Security H-2)
+==========================================================================
+
+Run 2026-10-31T18:01:56Z · node v22.23.4 · pnpm 12.16.1 · Linux 6.18.54.1-microsoft-standard-WSL2
+
+THE TICKET'S §4.3 SAID: "pnpm audit is run as part of the gate and its output is
+committed with the gate evidence; a non-empty result is a finding, not a note."
+IT WAS IN NO SCRIPT, NO WORKFLOW AND NO EVIDENCE FILE. The sentence is corrected in
+the ticket in the same change that builds the control.
+
+=== BEFORE: the first run, at a1f1263, with no overrides ===
+    5 vulnerabilities found — Severity: 3 moderate | 2 high
+      GHSA-6g55-p6wh-862q  high      postcss  <=8.5.22  via next, BOTH apps
+      GHSA-r28c-9q8g-f849  high      postcss  <=8.5.22  via next, BOTH apps
+      GHSA-qx2v-qp2m-jg93  moderate  postcss  <=8.5.22  via next, BOTH apps
+      GHSA-fxqj-rqcc-2cmp  moderate  postcss  <=8.5.22  via next, BOTH apps
+      GHSA-g3hv-75wg-m249  moderate  minimatch <11.0.1  via eslint, 33 paths
+
+    next@15.5.28 HARD-PINS "postcss": "8.4.31" — an exact version, not a range —
+    and 15.5.28 is the latest 15.x, which is what §1 locks. So no bump inside the
+    lock closes it and an override was the only instrument. Measured, not assumed:
+      next 15.5.28 dependencies.postcss = "8.4.31"
+
+=== THE OVERRIDES (pnpm-workspace.yaml), each a range not a pin ===
+overrides:
+  postcss: '>=8.5.23'
+  minimatch: '>=11.0.1'
+
+    resolved:
+      postcss -> 8.5.32
+      minimatch -> 11.0.3
+
+=== AFTER: pnpm audit --audit-level low, exit code read DIRECTLY ===
+No known vulnerabilities found
+exit=0
+
+=== AND BOTH APPS STILL BUILD, with the SAME bundle figure ===
+ ✓ Compiled successfully in 1152ms
+ ✓ Generating static pages (4/4)
++ First Load JS shared by all             102 kB
+ ✓ Compiled successfully in 1037ms
+ ✓ Generating static pages (4/4)
++ First Load JS shared by all             102 kB
+
+=== THE CONTROL, so this cannot be a one-off measurement ===
+    gate step  : tools/gate/bin/gate.mjs -> ["pnpm", ["run", "audit"]]
+77:  ['pnpm', ['run', 'audit']],
+    CI step    : .github/workflows/ci.yml, frontend job
+461:        run: pnpm run audit
+    parity     : tools/gate/test/ci-parity.test.mjs asserts every gate step is a CI
+                 step and every CI step is a gate step, both directions.
+
+=== ONE CONSEQUENCE, recorded rather than discovered later ===
+    minimatch 11 relicensed from ISC to Blue Oak 1.0.0, so closing GHSA-g3hv-75wg-m249
+    introduced a licence family the tree did not previously carry. Dispositioned in
+    docs/contracts/dependency-licences.json; the control is tools/gate/test/licences.test.mjs.

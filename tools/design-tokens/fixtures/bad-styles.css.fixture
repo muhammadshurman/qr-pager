@@ -1,0 +1,19 @@
+/* DELIBERATELY WRONG. Every declaration below must produce at least one finding. */
+
+.card {
+  color: #10231b;                  /* BAD: hex */
+  background: #FFF;                /* BAD: hex */
+  border-color: rgb(211 218 210);  /* BAD: color-function */
+  outline-color: hsl(160 72% 23%); /* BAD: color-function */
+  background-color: white;         /* BAD: named-color */
+  padding: 13px;                   /* BAD: spacing */
+  margin-top: 1.5rem;              /* BAD: spacing */
+  gap: 7px;                        /* BAD: spacing */
+  inset: 5px 6px;                  /* BAD: spacing, both parts */
+  font-size: 13px;                 /* BAD: font-size */
+  font: 700 15px/1.2 sans-serif;   /* BAD: font-size inside the shorthand */
+}
+
+.mixed {
+  padding: var(--space-16) 9px;    /* BAD: a shorthand is only as good as its worst part */
+}

@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# "Kill the worker mid-batch -> nothing lost, nothing duplicated" -- PLAN.md §3, row 4.
+#
+# THIS SCRIPT ACTUALLY KILLS A WORKER. `kill -9` on a real `php artisan outbox:work`
+# process, part-way through a batch it has already claimed, with no signal handler, no
+# finally, no chance to tidy up. A test that simulated the interruption -- throwing from a
+# mocked dispatcher, say -- would prove that PHP unwinds a stack, which nobody doubts. The
+# clause is about a process that STOPS EXISTING, and the only way to get one is to make
+# one and kill it.
+#
+# IT LIVES IN THE REPOSITORY, which is R-043's whole point: that row exists because a gate
+# clause named a demonstration whose script was in a session scratchpad, so nobody could
+# ever re-run it. OutboxCrashTest drives this file, so the proof is in the suite as well
+# as in the tree.
+#
+# WHAT IT SETS UP
+#   N pending outbox rows across two tenants, each with a subscribed device, and a push
+#   edge that BLOCKS. The worker claims the whole batch in one short transaction, commits
+#   the lease, and then hangs on the first send -- which is precisely mid-batch: the rows
+#   are leased and unprocessed, the state a crash is most dangerous in.
+#
+# WHAT IT ASSERTS, in the words of the gate
+#   NOTHING LOST        every row is eventually `sent`; none is left pending forever and
+#                       none is silently dropped.
+#   NOTHING DUPLICATED  every row is `sent` exactly once, `attempts` never exceeds the
+#                       configured maximum, and no row is claimed by two workers at once.
+#
+# THE ONE WINDOW IT DOES NOT CLOSE, stated here rather than discovered by a reviewer: a
+# crash AFTER the edge accepted a message and BEFORE the row is marked sent re-sends that
+# one message. No outbox design closes it -- Web Push has no idempotency key -- and it is
+# bounded by the `Topic` header (a push service replaces an undelivered message with the
+# same topic) and closed on the client by the service worker's notification tag, which is
+# Task 9's and is PLAN.md R-075. This script makes the edge block BEFORE answering, so the
+# kill lands inside that window on purpose: the row must still end up sent exactly once.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# R-054/CLAUDE.md: without this, laravel/pao prints one JSON line inside an agent session
+# and a red run leaves no frames on disk for whoever reads it next.
+export PAO_DISABLE=1
+
+rows="${1:-8}"
+state="$(mktemp -d)"
+trap 'rm -rf "$state"' EXIT
+
+echo "outbox-kill-proof — $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "  rows: $rows"
+
+# ---------------------------------------------------------------------------------
+# ITS OWN DATABASE, which is bin/migration-rollback-proof's pattern and for the reason
+# that file records: "`migrate` picked up DB_DATABASE from .env (qrpager) while the
+# fingerprint was read from..." -- a proof that inherits .env runs against whatever the
+# developer happens to have, which here would mean TRUNCATING THEIR DEVELOPMENT DATA and
+# then failing because the dev database has never been migrated.
+#
+# Measured on the first run of this script: `resolve_pager_token(bytea) does not exist`,
+# because .env points at `qrpager` and the suite migrates `qrpager_test`.
+#
+# db:bootstrap creates the roles, the database and the per-role timeouts; migrate runs as
+# the owner, never as the app role. Both are idempotent, so a second run of this proof
+# costs a no-op rather than a reset.
+export DB_DATABASE="${OUTBOX_PROOF_DATABASE:-qrpager_outbox_proof}"
+
+php artisan db:bootstrap >/dev/null || { echo "outbox-kill-proof: db:bootstrap failed" >&2; exit 1; }
+php artisan migrate --database=pgsql_owner --force >/dev/null || {
+  echo "outbox-kill-proof: migrate failed" >&2
+  exit 1
+}
+
+echo "  database: $DB_DATABASE (bootstrapped and migrated)"
+echo
+
+# ---------------------------------------------------------------------------------
+# 1. Seed. Through the application's own paths, so the rows are the rows production
+#    writes: markReady's outbox row, in markReady's transaction, with its dedupe key.
+# ---------------------------------------------------------------------------------
+php bin/support/outbox-proof-seed.php "$rows" > "$state/seed.json" || {
+  echo "outbox-kill-proof: seeding failed" >&2
+  cat "$state/seed.json" >&2
+  exit 1
+}
+
+echo "seeded:"
+cat "$state/seed.json"
+echo
+
+# ---------------------------------------------------------------------------------
+# 2. Start a worker whose edge blocks, and kill it mid-batch.
+#
+#    THE BLOCKING EDGE IS IN THE PROOF'S OWN ENTRY SCRIPT, not behind a flag in the
+#    application: a production code path that an environment variable can make hang is
+#    exactly what bootstrap/app.php rejects for the SIGTERM drain route, in those words.
+#    `php artisan outbox:work` is still what runs -- the script boots the app, swaps one
+#    container binding, and calls the real command.
+# ---------------------------------------------------------------------------------
+php bin/support/outbox-proof-worker.php block "$state/block" > "$state/worker.log" 2>&1 &
+worker=$!
+
+echo "worker pid $worker started; waiting for it to claim the batch and block"
+
+# Wait for the worker to signal that it is INSIDE the first send. The file is written by
+# the blocking edge, so this is not a sleep hoping the timing works out: it is a
+# handshake, and the proof fails loudly if it never arrives.
+for _ in $(seq 1 100); do
+  [ -f "$state/block" ] && break
+  sleep 0.1
+done
+
+if [ ! -f "$state/block" ]; then
+  echo "outbox-kill-proof: the worker never reached a send. Log:" >&2
+  cat "$state/worker.log" >&2
+  kill -9 "$worker" 2>/dev/null || true
+  exit 1
+fi
+
+# -9, not -TERM. The command HAS a SIGTERM handler that stops cleanly between passes, and
+# a clean stop is not what this clause is about.
+kill -9 "$worker" 2>/dev/null || true
+wait "$worker" 2>/dev/null || true
+
+echo "worker killed -9 while blocked inside a send"
+echo
+
+php bin/support/outbox-proof-report.php "after the kill" || exit 1
+echo
+
+# ---------------------------------------------------------------------------------
+# 3. Recover. The lease is what makes the rows claimable again, so the clock has to move
+#    past it -- done by expiring the lease in the database rather than by sleeping for a
+#    minute, because the property under test is "the next pass finds them", not "bash can
+#    wait".
+# ---------------------------------------------------------------------------------
+php bin/support/outbox-proof-release.php || exit 1
+
+echo "lease released; running a second worker to completion"
+
+# Through the proof's own entry script again, so the recovery pass has the same generated
+# VAPID keypair the first one had -- this is the half the first version of this proof got
+# wrong, and it reported eight rows LOST when the worker had done nothing wrong.
+php bin/support/outbox-proof-worker.php deliver > "$state/recovery.log" 2>&1 || {
+  echo "outbox-kill-proof: the recovery pass failed" >&2
+  cat "$state/recovery.log" >&2
+  exit 1
+}
+cat "$state/recovery.log"
+echo
+
+# ---------------------------------------------------------------------------------
+# 4. The assertions.
+# ---------------------------------------------------------------------------------
+php bin/support/outbox-proof-assert.php "$rows" || exit 1

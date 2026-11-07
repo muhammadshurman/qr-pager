@@ -1,0 +1,40 @@
+================================================================================
+THE GATE, IN A FRESH CLONE (§6)
+================================================================================
+
+Commit:   0529b5d  (task-7-landing-builder)
+Run at:   2026-10-28, after the sixth review's fix pass
+Command:  bin/fresh-clone-proof      (apps/api)
+Result:   PASSED -- all 7 gate steps green IN THE CLONE, 1085 passed,
+          8726 assertions
+
+The clone is taken through `file://` so no object is shared with this working
+copy, arrives with nothing the gate needs pre-installed, and is checked
+byte-identical to the commit before anything runs. It then runs exactly the
+three commands CLAUDE.md says a fresh clone needs, and nothing else.
+
+fresh-clone-proof: test(landing): drive both of the panel's failure branches at 0529b5d
+
+=== clone through file:// so no object is shared
+
+=== the clone arrived with nothing the gate needs pre-installed
+no vendor/, no .env, no node_modules — the clone is bare
+
+=== the clone's tracked tree is byte-identical to this commit's
+tree e30fc8b99e0ac18862b52a83a6c223f2d4e36a2e
+
+=== composer install, from the repository's own lock file
+host composer cache: present (a cache, not a source — it costs time, not correctness)
+packages installed: 205
+
+=== the three commands CLAUDE.md says a fresh clone needs, and nothing else
+cp .env.example .env · php artisan key:generate · docker compose is already up
+
+=== composer gate, in the clone
+gate: all 7 steps green. Full output: /tmp/qrpager-fresh-clone-YxgBVT/clone/apps/api/storage/logs/gate-20261028T200519Z.log
+
+fresh-clone-proof: PASSED at 0529b5d
+  Tests:    1085 passed (8726 assertions)
+  gate log: /tmp/qrpager-fresh-clone-YxgBVT/gate.log
+  (clone removed; pass --keep to inspect it)
+fresh-clone exit: 0

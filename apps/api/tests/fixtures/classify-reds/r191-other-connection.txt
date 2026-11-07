@@ -1,0 +1,20 @@
+   FAILED  Tests\Feature\Design\PanelProblemPageTest > it se…  QueryException   
+  SQLSTATE[08006] [7] connection to server at "127.0.0.1", port 5432 failed: timeout expired (Connection: pgsql, Host: 127.0.0.1, Port: 5432, Database: qrpager_test, SQL: select "users"."id", "users"."name", "users"."email", "users"."email_verified_at", "users"."is_platform_admin", "users"."two_factor_confirmed_at", "users"."created_at", "users"."updated_at" from "users" where "users"."id" = 01a19a49-37ec-73d5-bbc9-a1bd0b18cc71 limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:67
+     63▕     protected function createPdoConnection($dsn, $username, #[\SensitiveParameter] $password, $options)
+     64▕     {
+     65▕         return version_compare(PHP_VERSION, '8.4.0', '<')
+     66▕             ? new PDO($dsn, $username, $password, $options)
+  ➜  67▕             : PDO::connect($dsn, $username, $password, $options); /** @phpstan-ignore staticMethod.notFound (PHP 8.4) */
+     68▕     }
+     69▕ 
+     70▕     /**
+     71▕      * Handle an exception that occurred during connect execution.
+
+      +18 vendor frames 
+  19  tests/Feature/Design/PanelProblemPageTest.php:55
+  20  tests/Feature/Design/PanelProblemPageTest.php:137
+
+
+  Tests:    1 failed, 1197 passed (10600 assertions)

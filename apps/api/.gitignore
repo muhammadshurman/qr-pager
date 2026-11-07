@@ -16,8 +16,11 @@
 /auth.json
 /node_modules
 /public/build
+/public/css/filament
 /public/fonts-manifest.dev.json
+/public/fonts/filament
 /public/hot
+/public/js/filament
 /public/storage
 /storage/*.key
 /storage/pail
@@ -27,3 +30,25 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 report.md
+
+# ⚠ MUHAMMAD'S OWN DEMO SEEDER, IGNORED SO IT CANNOT BE SWEPT IN AGAIN — Task 12.
+#
+# `git add -A apps/api` committed this file at `c0aa76f`. It is his untracked scratch script
+# (a hand-written restaurant seeder with Arabic commentary, paired with
+# `docs/PROJECT_DOCUMENTATION_AR.md`), it was never part of any ticket, and it has been
+# rewritten out of this branch's history. His ruling: *"add its path to `.gitignore` so it
+# cannot recur, and revert pint's reformatting of it. And never `git add -A` in this repo
+# again — stage paths you name."*
+#
+# ⚠ AND IGNORING IT HERE IS NOT ENOUGH TO KEEP `composer pint` OFF IT — MEASURED, after the
+# first version of this comment claimed the opposite. `vendor/bin/pint` does NOT honour
+# `.gitignore`: with this entry in place it still reported
+# `{"path":"seed_restaurant.php","fixers":[...]}` and exited 1. That matters because it is the
+# second half of the problem this file caused — an unformatted untracked file at `apps/api`
+# root made `composer pint` RED before any of Task 12's work, and formatting it was the only
+# way to obtain a gate run at all.
+#
+# So the pint half lives in `pint.json`'s `notPath`, and `PintScopeTest` holds that exclusion
+# to exactly this one path with the preset pinned, so it cannot quietly grow into excluding
+# `app/`.
+/seed_restaurant.php

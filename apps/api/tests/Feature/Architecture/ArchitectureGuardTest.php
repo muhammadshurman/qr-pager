@@ -197,18 +197,23 @@ it('guard 3 fails when production code imports a test helper', function (): void
         ->toContain('Tests\Support\Composition');
 });
 
-it('fails when a feature module is built on the pre-Task-5 auth stub — B5', function (): void {
+it('fails when a feature module reaches into the auth layer — B5, repurposed at Task 5', function (): void {
+    // The fixture used to import the pre-Task-5 stub. That class is deleted, so the rule
+    // was either dead or had to be aimed at something real: QRPAGER-12 §6 required the
+    // choice to be deliberate. It now proves that a Feature may not import
+    // App\Platform\Auth at all -- the auth layer has one entry point, the TenantResolver
+    // interface in Platform, and this is what keeps it that way.
     [$exit, $report] = deptracAgainst([
-        'feature-imports-auth-stub.php.fixture' => 'app/Features/Deliberately/FeatureBuiltOnTheAuthStub.php',
+        'feature-imports-auth-layer.php.fixture' => 'app/Features/Deliberately/FeatureBuiltOnTheAuthStub.php',
     ]);
 
     $file = deptracViolationsFor($report, 'app/Features/Deliberately/FeatureBuiltOnTheAuthStub.php');
 
-    expect($exit)->not->toBe(0, 'deptrac accepted a Feature built on the auth stub')
+    expect($exit)->not->toBe(0, 'deptrac accepted a Feature reaching into the auth layer')
         ->and($report['Report']['Violations'])->toBeGreaterThan(0)
         ->and($file['violations'])->toBeGreaterThan(0)
         ->and(implode(' ', array_column($file['messages'], 'message')))
-        ->toContain('App\Platform\Auth\HarnessTenantResolver');
+        ->toContain('App\Platform\Auth\AuthenticatedTenantResolver');
 });
 
 it('leaves no fixture behind in app/', function (): void {

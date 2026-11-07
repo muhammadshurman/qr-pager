@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Auth\Ability;
+use App\Domain\Tenancy\TenantRole;
 use App\Platform\Database\UnsafeDatabaseRoleException;
 use App\Platform\Logging\RedactLogs;
 use App\Platform\Logging\Redactor;
@@ -277,4 +279,118 @@ it('keeps redacting when the request goes through HTTP', function (): void {
     expect(capturedLog($this->logFile))
         ->not->toContain($bound)
         ->not->toContain('select * from');
+});
+
+/*
+ * ================================================================================
+ * TASK 5'S OWN KEY NAMES, ONE CASE PER NAME
+ * ================================================================================
+ *
+ * `QRPAGER-12 §10.4(e)` claimed "Task 5 adds its key names and a test per key". It added
+ * neither: `Redactor.php` was not in the task's diff, and the `§11` security review measured
+ * four names coming back VERBATIM by calling `Redactor::context()` directly.
+ *
+ * Two of this task's secrets were already covered by the substring rule and are asserted
+ * here anyway, because "covered incidentally by a rule written for something else" is a
+ * property worth a test rather than an argument: `two_factor_secret` matches `secret`,
+ * `plainTextToken` matches `token`.
+ *
+ * The four that were NOT covered are the reason the list grew: a recovery code is a second
+ * password that bypasses the authenticator, and a WebAuthn challenge is the one value whose
+ * whole security is that the client could not choose it.
+ */
+dataset('task 5 secret keys', [
+    // [context key, the value that must not appear]
+    'two_factor_secret (by `secret`)' => ['two_factor_secret', 'JBSWY3DPEHPK3PXP'],
+    'plainTextToken (by `token`)' => ['plainTextToken', '7|aaaabbbbccccddddeeeeffff'],
+    'two_factor_recovery_codes' => ['two_factor_recovery_codes', 'abcde-fghij'],
+    'recovery_codes' => ['recovery_codes', 'klmno-pqrst'],
+    'recovery_code' => ['recovery_code', 'uvwxy-z1234'],
+    'challenge' => ['challenge', 'Y2hhbGxlbmdlLXZhbHVl'],
+    // ⚠ THE KEY THAT CARRIES THE SECRET WITHOUT THE WORD IN ITS NAME, and the one the
+    // first version of this list missed: `qr_code_url` is what the enable response actually
+    // emits, and its value is an otpauth URI with the secret in a query parameter. The §11
+    // review of the fix diff measured it coming back verbatim while `secret` beside it was
+    // redacted. The value below is the real shape, secret included, so a rule that only
+    // matched the word `secret` inside the value would not satisfy this.
+    'qr_code_url (the otpauth URI)' => ['qr_code_url',
+        'otpauth://totp/QR%20Pager:a@b.test?secret=JBSWY3DPEHPK3PXP&issuer=QR%20Pager'],
+    'qr_code_svg (Fortify\'s own key name)' => ['qr_code_svg', '<svg>JBSWY3DPEHPK3PXP</svg>'],
+    'otpauth_url' => ['otpauth_url', 'otpauth://totp/x?secret=JBSWY3DPEHPK3PXP'],
+    'bearer' => ['bearer', 'Bearer 7|aaaabbbbccccddddeeeeffff'],
+]);
+
+it('redacts each of this task’s secret key names', function (string $key, string $value): void {
+    Log::info('probe', [$key => $value, 'nested' => [$key => $value], 'safe' => 'keep-me']);
+
+    $log = capturedLog($this->logFile);
+
+    // ⚠ `str_contains` AND NOT `expect($log)->not->toContain($value, $message)`, which is
+    // how this case was first written and why it is worth a comment. Pest's `toContain`
+    // takes VARIADIC NEEDLES, not a needle and a message -- so the negated form asserted
+    // "the log does not contain BOTH the value AND that sentence", which the absent
+    // sentence satisfied on its own. It passed with the key rule removed. The assertion
+    // could not fail, which is `§4a`'s vacuous-assertion defect, caught here the only way
+    // it ever is: by running the test against the unfixed code and watching it pass.
+    //
+    // Both depths, because the context walker recurses and a top-level-only rule would
+    // leave every structured payload uncovered.
+    expect(str_contains($log, $value))->toBeFalse(
+        "the key [{$key}] logged its value verbatim",
+    );
+
+    // The positive control: this case can only pass by redacting, not by failing to log.
+    expect(str_contains($log, 'keep-me'))->toBeTrue('nothing was logged at all');
+})->with('task 5 secret keys');
+
+it('keeps a refused device token\'s row id readable, because that is the one thing the line is for', function (): void {
+    /*
+     * BOTH `§11` REVIEWERS OF THE FIX DIFF FOUND THIS, and it is the opposite of a leak.
+     *
+     * `RefuseDeviceToken` logs the refused token's row id so an operator knows which kitchen
+     * screen to revoke. `token_id` CONTAINS the `token` needle, so the redactor replaced the
+     * one datum the line exists for -- measured against captured output:
+     * `{"route":"auth.me","token_id":"[redacted]"}`. The previous form carried the id in an
+     * exception MESSAGE, which `message()` does not scrub, so moving to a structured warning
+     * silently lost it while the comment claimed it was kept.
+     *
+     * And nothing tested the line at all, at any level, at either commit.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $issued = $this->postJson('/v1/devices', [
+        'name' => 'kds-logline',
+        'ability' => Ability::PagerRead->value,
+        'ttl_minutes' => 60,
+    ]);
+
+    $issued->assertStatus(201);
+
+    $tokenId = (string) $issued->json('device.id');
+    $plaintext = (string) $issued->json('device.token');
+
+    auth()->forgetGuards();
+    app('auth')->guard('web')->logout();
+
+    $this->getJson('/v1/auth/me', ['Authorization' => 'Bearer '.$plaintext])->assertStatus(403);
+
+    $log = capturedLog($this->logFile);
+
+    // THE DATUM IS THERE, which is the assertion the fix is about.
+    expect(str_contains($log, $tokenId))->toBeTrue(
+        'the refusal line does not name the token to revoke, which is the only reason it exists',
+    );
+
+    // AT WARNING AND NOT ERROR: an unbounded ERROR line per refusal is alerting volume, and
+    // this is a refusal rather than an application fault.
+    expect(str_contains($log, 'WARNING'))->toBeTrue('the refusal is still logged at ERROR');
+    expect(str_contains($log, 'RefuseDeviceToken refused'))->toBeTrue();
+
+    // AND STILL NO CREDENTIAL. The id is not the credential; the plaintext and its sha256
+    // are, and neither may appear.
+    expect(str_contains($log, $plaintext))->toBeFalse('the refusal line carried the token plaintext');
+    expect(str_contains($log, hash('sha256', explode('|', $plaintext, 2)[1] ?? '')))->toBeFalse(
+        'the refusal line carried the token hash',
+    );
 });

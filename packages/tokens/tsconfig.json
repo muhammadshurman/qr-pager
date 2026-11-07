@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    // `scripts/*.mjs` is plain JavaScript and `test/artefacts.test.ts` imports `ARTEFACTS`
+    // from the generator rather than holding a second copy of the artefact list. Without
+    // `allowJs` that import is TS7016 ("implicitly has an 'any' type"); with it, TypeScript
+    // infers the generator's own types and checks the scripts as well -- which is strictly
+    // more coverage than a hand-written `.d.mts` beside them, and one fewer thing that can
+    // go stale.
+    "allowJs": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "generated/**/*.ts", "scripts/**/*.mjs"]
+}

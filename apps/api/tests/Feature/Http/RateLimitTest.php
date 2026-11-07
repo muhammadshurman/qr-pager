@@ -2,9 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Auth\Ability;
 use App\Domain\Http\ProblemType;
+use App\Domain\Tenancy\TenantRole;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\Middleware\RefuseDeviceToken;
+use App\Platform\Http\Middleware\ResolvePrincipal;
 use App\Platform\Http\RequestLimiter;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
@@ -458,4 +464,394 @@ it('refuses past the pager-create bucket, which is the route-level one Task 3 ad
 
     expect((string) $refused->getContent())->not->toContain('pager-create')
         ->not->toContain('ratelimit');
+});
+
+/*
+ * ================================================================================
+ * EVERY BUCKET ON THE AUTH SURFACE, DRIVEN TO AN ACTUAL 429
+ * ================================================================================
+ *
+ * `R-063`'s clause, which `QRPAGER-12 §10.4(d)` restates for this task: a limit is proven by
+ * being DRIVEN, not by being read off a config. Task 5 shipped its buckets with neither --
+ * `grep -rn 429 tests/Feature/Auth/` found nothing, so the only thing holding the four new
+ * buckets was `R-045`'s case above, which checks that a referenced name EXISTS. A bucket
+ * that exists and never refuses is the silent no-op that case was written to catch, one
+ * layer up.
+ *
+ * Both `§11` reviews found the same two holes by dumping the live route table: `auth.me` and
+ * `auth.logout` named no bucket at all, and `auth-passkey` -- named in the ticket -- did not
+ * exist, so the passkey routes shared the bucket sized for bcrypt. Both are fixed; this is
+ * what holds them fixed.
+ */
+dataset('auth surface buckets', [
+    // [bucket, method, path, body, the status a permitted request gets]
+    'auth-login on the login route' => ['auth-login', 'postJson', '/v1/auth/login',
+        ['email' => 'nobody@example.test', 'password' => 'correct-horse-battery-staple'], 401],
+    'auth-2fa on the challenge route' => ['auth-2fa', 'postJson', '/v1/auth/two-factor/challenge',
+        ['code' => '123456'], 401],
+    'auth-passkey on the login ceremony' => ['auth-passkey', 'getJson', '/v1/auth/passkeys/login/options',
+        [], 200],
+    // 200 and not 401: this file's beforeEach authenticates, so `me` answers. That is the
+    // point of carrying the permitted status in the dataset rather than assuming a refusal.
+    'auth-session on me' => ['auth-session', 'getJson', '/v1/auth/me', [], 200],
+    'auth-session on logout' => ['auth-session', 'postJson', '/v1/auth/logout', [], 204],
+]);
+
+it('refuses past each bucket on the auth surface', function (
+    string $bucket, string $method, string $path, array $body, int $permitted
+): void {
+    // Two, so the third request is the refusal. The configured allowances are deliberately
+    // generous enough that driving them literally would be 30 or 60 requests per case for
+    // no extra information -- what is under test is that the bucket BITES, and `R-045`'s
+    // case above is what pins the numbers themselves to the config.
+    config(["ratelimit.buckets.{$bucket}.per_ip.attempts" => 2]);
+
+    $send = fn () => $method === 'getJson'
+        ? $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->getJson($path)
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->ip])->{$method}($path, $body);
+
+    // THE POSITIVE CONTROL: the first two are answered by the ROUTE, whatever that answer
+    // is. Without this a 429 on the third would be indistinguishable from a surface that
+    // refuses everything -- and two of these paths answer 401 when permitted, which is
+    // exactly the confusion worth ruling out.
+    expect($send()->status())->toBe($permitted, "{$bucket}: first request")
+        ->and($send()->status())->toBe($permitted, "{$bucket}: second request");
+
+    $refused = $send();
+
+    $refused->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+
+    // And the refusal names neither the bucket nor the mechanism, so a caller probing the
+    // surface learns nothing about how it is apportioned.
+    expect((string) $refused->getContent())->not->toContain($bucket)
+        ->not->toContain('ratelimit');
+})->with('auth surface buckets');
+
+it('refuses past devices-issue, the fourth bucket the ticket named, on both of its dimensions', function (): void {
+    // The one new bucket with a PER-TENANT half as well, which is why it is driven apart
+    // from the dataset above: minting a device token happens inside a resolved tenant, so
+    // `R-063`'s "no tenant before the credential resolves" does not apply and both keys
+    // exist. Each dimension is driven on its own, because a single run cannot show which
+    // of the two refused.
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $issue = fn () => $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->postJson('/v1/devices', [
+            'name' => 'kds-'.random_int(1000, 9999),
+            'ability' => Ability::PagerRead->value,
+            'ttl_minutes' => 60,
+        ]);
+
+    config(['ratelimit.buckets.devices-issue.per_ip.attempts' => 2]);
+
+    expect($issue()->status())->toBe(201)->and($issue()->status())->toBe(201);
+
+    $issue()->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+
+    // NOW THE PER-TENANT HALF, from a different address so the per-IP counter above cannot
+    // be the thing that refuses. This is the dimension `R-085` exists about on the customer
+    // surface, and the one place at this task where it is actually present.
+    app(RequestLimiter::class)->clear('ratelimit:devices-issue:tenant:'.$tenant);
+
+    config([
+        'ratelimit.buckets.devices-issue.per_ip.attempts' => 100,
+        'ratelimit.buckets.devices-issue.per_tenant.attempts' => 2,
+    ]);
+
+    $fromElsewhere = fn () => $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.7'])
+        ->postJson('/v1/devices', [
+            'name' => 'kds-'.random_int(1000, 9999),
+            'ability' => Ability::PagerRead->value,
+            'ttl_minutes' => 60,
+        ]);
+
+    expect($fromElsewhere()->status())->toBe(201)->and($fromElsewhere()->status())->toBe(201);
+
+    $fromElsewhere()->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+});
+
+/*
+ * ================================================================================
+ * THE PATHS THE PER-ROUTE BUCKETS CANNOT SEE
+ * ================================================================================
+ *
+ * `SEC H-1` at the `§11` review of Task 5's fix diff. The five auth buckets are named PER
+ * ROUTE, and Laravel runs GROUP middleware first — so every refusal the session stack,
+ * `ValidateCsrfToken`, `ResolvePrincipal` or `RefuseDeviceToken` produced happened before
+ * any bucket was consulted. Measured at 100 requests per form: a valid device token got
+ * 100 × 403 with zero 429s; `Bearer zzz|q` got 100 × 422 with zero 429s, each costing a
+ * FAILED Postgres statement and needing no credential; a CSRF-less login got 100 × 419 with
+ * zero 429s, each creating a Redis session key with a 120-minute TTL.
+ *
+ * That last one is the attack, because Redis is the session store AND the limiter's own
+ * backend, and `RateLimit` fails OPEN when it cannot reach Redis (`R-027`).
+ *
+ * The `auth-surface` bucket now runs FIRST in the group. These cases drive each of the THREE
+ * refusal forms past it — and the point of driving all three rather than one is that each is
+ * refused by a DIFFERENT entry of the group, so a fix that only moved past one would pass a
+ * single case: `ValidateCsrfToken` answers 419, `ResolvePrincipal`'s token lookup answers 422,
+ * and `RefuseDeviceToken` answers 403.
+ *
+ * ⚠ THREE AND NOT FOUR. This said "four forms", counting the per-route policy as a fourth —
+ * and the `§11` review of this diff was right that the count is the stated reason the cases
+ * are trustworthy, so getting it wrong undercuts them. Of the six group entries below the
+ * limiter only those three can refuse: `EncryptCookies` swallows a `DecryptException`, and
+ * `StartSession` and `AddQueuedCookiesToResponse` refuse nothing. The per-route buckets are a
+ * separate property and have their own case below.
+ */
+dataset('unmetered auth-surface forms', [
+    // [label => [how to arm the form, method, path, body, headers]]
+    // Each is refused by a DIFFERENT entry of the group, which is the point of driving all
+    // of them: a fix that moved past only one would pass a single case.
+    'a malformed bearer, refused inside ResolvePrincipal\'s token lookup' => ['bearer'],
+    'a state-changing POST with no CSRF token, refused by ValidateCsrfToken' => ['csrf'],
+]);
+
+it('meters every auth-surface refusal, whichever group middleware produced it', function (string $form): void {
+    // NO SESSION. This file's beforeEach authenticates, and ResolvePrincipal tries `web`
+    // first -- so with a live session a stray Authorization header is simply ignored and
+    // `me` answers 200. Measured exactly that way while writing this case.
+    auth()->forgetGuards();
+    app('auth')->guard('web')->logout();
+    session()->flush();
+
+    if ($form === 'csrf') {
+        // CSRF is skipped under the harness (`runningUnitTests()`), so the only honest way
+        // to drive its refusal is to bind the middleware with that escape removed -- the
+        // same device SessionPolicyTest uses, and for the same reason.
+        ValidateCsrfToken::except([]);
+
+        $this->app->bind(ValidateCsrfToken::class, fn ($app) => new class($app, $app['encrypter']) extends ValidateCsrfToken
+        {
+            protected function runningUnitTests(): bool
+            {
+                return false;
+            }
+        });
+    }
+
+    $send = fn () => $form === 'bearer'
+        ? $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+            ->getJson('/v1/auth/me', ['Authorization' => 'Bearer zzz|q'])
+        : $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+            ->postJson('/v1/auth/login', ['email' => 'nobody@example.test', 'password' => 'x']);
+
+    // Two on the COARSE bucket, so the third is refused by it. The per-route buckets keep
+    // their configured values: if this fix were reverted these forms would never reach one.
+    config(['ratelimit.buckets.auth-surface.per_ip.attempts' => 2]);
+
+    $first = $send();
+    $second = $send();
+
+    // THE POSITIVE CONTROL, and it is what makes this a statement about ORDERING: the first
+    // two are refused by the group middleware under test -- 422 for the token lookup, 419
+    // for CSRF -- and NOT by the limiter.
+    // ⚠ 401 AND NOT 422 FOR THE BEARER FORM, since `R-110` is now closed: a malformed token
+    // id is shape-checked in `App\Models\PersonalAccessToken::findToken()` before the query,
+    // so an authentication failure answers the ordinary 401 and sends no statement. The first
+    // version of this line pinned 422, which coupled the limiter-ordering case to an accepted
+    // risk -- it would have gone red when that risk was closed, which is exactly what then
+    // happened.
+    $expected = $form === 'bearer' ? 401 : 419;
+
+    expect($first->status())->toBe($expected, 'the form was not refused by the middleware it is about')
+        ->and($second->status())->toBe($expected);
+
+    $refused = $send();
+
+    $refused->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+
+    expect((string) $refused->getContent())->not->toContain('auth-surface')
+        ->not->toContain('ratelimit');
+})->with('unmetered auth-surface forms');
+
+it('meters a valid device token refused on the auth surface', function (): void {
+    // The fourth form, apart because it needs a real token minted through the real
+    // endpoint. RefuseDeviceToken 403s it on the group, which is correct and was unmetered.
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $issued = $this->postJson('/v1/devices', [
+        'name' => 'kds-metering',
+        'ability' => Ability::PagerRead->value,
+        'ttl_minutes' => 60,
+    ]);
+
+    $issued->assertStatus(201);
+
+    auth()->forgetGuards();
+    app('auth')->guard('web')->logout();
+
+    $headers = ['Authorization' => 'Bearer '.$issued->json('device.token')];
+
+    config(['ratelimit.buckets.auth-surface.per_ip.attempts' => 2]);
+
+    $send = fn () => $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->getJson('/v1/auth/me', $headers);
+
+    // The positive control is the 403 itself: the token authenticates and is refused by
+    // RefuseDeviceToken, not by the limiter.
+    expect($send()->status())->toBe(403)->and($send()->status())->toBe(403);
+
+    $send()->assertStatus(429)->assertJsonPath('type', ProblemType::RateLimited->value);
+});
+
+it('leaves the per-route buckets as the policy, with the coarse one only a backstop', function (): void {
+    // The coarse bucket must not have REPLACED the tight ones. `auth-login` is 10/min in
+    // front of a bcrypt; if the group's 120 were the only thing counting, a password
+    // guessing loop would get twelve times the allowance it is supposed to have.
+    config(['ratelimit.buckets.auth-login.per_ip.attempts' => 2]);
+
+    $login = fn () => $this->withServerVariables(['REMOTE_ADDR' => $this->ip])
+        ->postJson('/v1/auth/login', ['email' => 'nobody@example.test', 'password' => 'x']);
+
+    // CSRF is skipped under the test harness, so these reach the route and its bucket.
+    expect($login()->status())->toBe(401)->and($login()->status())->toBe(401);
+
+    $login()->assertStatus(429);
+
+    // And the coarse bucket is nowhere near exhausted, so the refusal above is the tight
+    // one -- which is what makes this a statement about BOTH layers.
+    expect((int) config('ratelimit.buckets.auth-surface.per_ip.attempts'))->toBe(120);
+});
+
+it('leaves no route on the auth surface without a bucket, and says which one is the exception', function (): void {
+    /*
+     * Both `§11` reviewers of the fix diff asked for this, and it is the same fail-closed
+     * argument `RefuseDeviceToken` makes for itself — "a route added to routes/auth.php
+     * INHERITS the refusal instead of having to remember it" — applied to the limiter,
+     * which is the thing that was forgotten in the first place.
+     *
+     * `routes/auth.php` asserts "EVERY ROUTE HERE NAMES A BUCKET" and nothing made that
+     * true. The two existing closed-world checks cannot: `RoleMatrixTest`'s `$auth` set is
+     * a name allowlist, and `DeviceTokenOnAuthSurfaceTest`'s last case pins the route SET
+     * on the group and asks nothing about middleware.
+     *
+     * The coarse `auth-surface` bucket on the group means no route is unmetered any more
+     * even if it names nothing — so what this case protects is the POLICY: a login must not
+     * silently fall back to 120/min because somebody forgot its own bucket.
+     */
+    $missing = [];
+    $buckets = [];
+
+    foreach (Route::getRoutes() as $route) {
+        $gathered = $route->gatherMiddleware();
+
+        if (! in_array('auth-surface', $gathered, true)) {
+            continue;
+        }
+
+        $name = (string) ($route->getName() ?? $route->uri());
+
+        $named = array_values(array_filter(
+            $gathered,
+            fn ($entry): bool => is_string($entry)
+                && str_starts_with($entry, RateLimit::class.':')
+                && $entry !== RateLimit::class.':auth-surface',
+        ));
+
+        if ($named === []) {
+            $missing[] = $name;
+
+            continue;
+        }
+
+        expect($named)->toHaveCount(1, "{$name} names more than one bucket: ".implode(', ', $named));
+
+        $buckets[$name] = substr((string) $named[0], strlen(RateLimit::class.':'));
+    }
+
+    sort($missing);
+
+    // THE ONE DECLARED EXCEPTION, and it is declared here rather than inferred: the harness
+    // page is not production surface (absent from the route table under `production`) and
+    // `PLAN.md §4a` records why it carries no bucket of its own.
+    expect($missing)->toBe(['harness.passkeys'],
+        'a route on the auth surface names no rate-limit bucket: '.implode(', ', $missing),
+    );
+
+    // AND THE COARSE BUCKET IS ON THE GROUP, FIRST — so "no bucket of its own" never means
+    // "unmetered", and the ORDERING that was the defect is pinned rather than described.
+    //
+    // Read from the group definition and not from `gatherMiddleware()`: that returns the
+    // group NAME for a grouped route and expands it only at dispatch, so a per-route
+    // assertion here would look for something that is not in the list. Measured while
+    // writing this case.
+    $group = (array) app('router')->getMiddlewareGroups()['auth-surface'];
+
+    expect($group[0] ?? null)->toBe(RateLimit::class.':auth-surface',
+        'the limiter is not the FIRST entry of the auth-surface group, so every refusal the '
+        .'entries before it produce is unmetered -- which is exactly the defect this pins',
+    );
+
+    // And it runs before each of the four that were refusing unmetered.
+    foreach ([StartSession::class, ValidateCsrfToken::class, ResolvePrincipal::class, RefuseDeviceToken::class] as $later) {
+        $at = array_search($later, $group, true);
+
+        expect($at)->not->toBeFalse($later.' is no longer on the auth-surface group');
+        expect((int) $at)->toBeGreaterThan(0, $later.' runs before the limiter');
+    }
+
+    // Every bucket a route names exists in config, so a typo is a failure here rather than
+    // a silent no-op. `R-045` makes the same check project-wide; this one is scoped to the
+    // surface and runs even if that case is ever narrowed.
+    foreach ($buckets as $name => $bucket) {
+        expect((array) config("ratelimit.buckets.{$bucket}"))->not->toBe([],
+            "{$name} names bucket [{$bucket}], which config/ratelimit.php does not define");
+    }
+
+    // ⚠ AND THE VALUES, not just the names. The `§11` review of this diff pointed out that
+    // `R-045` checks a bucket EXISTS and has at least one dimension, and nothing asserted any
+    // bucket's allowance except `auth-surface`'s 120 -- so `auth-login` could be raised to
+    // 120 and the whole suite would stay green. That is the failure direction that matters:
+    // twelve times the password-guessing allowance in front of a bcrypt, with no red test.
+    expect([
+        'auth-login' => (int) config('ratelimit.buckets.auth-login.per_ip.attempts'),
+        'auth-2fa' => (int) config('ratelimit.buckets.auth-2fa.per_ip.attempts'),
+        'auth-passkey' => (int) config('ratelimit.buckets.auth-passkey.per_ip.attempts'),
+        'auth-session' => (int) config('ratelimit.buckets.auth-session.per_ip.attempts'),
+        'auth-surface' => (int) config('ratelimit.buckets.auth-surface.per_ip.attempts'),
+    ])->toBe([
+        // A bcrypt at 12 rounds. The tightest thing on the surface after the 2FA code.
+        'auth-login' => 10,
+        // Six digits in a thirty-second window: a million guesses is a real attack.
+        'auth-2fa' => 5,
+        // An EC signature check and a session write, three requests per sign-in attempt.
+        'auth-passkey' => 30,
+        // A dashboard asks `me` on every page load.
+        'auth-session' => 60,
+        // The coarse backstop, deliberately the loosest.
+        'auth-surface' => 120,
+    ]);
+
+    // And every per-route bucket is strictly tighter than the coarse one, which is what makes
+    // the group-level limiter a backstop rather than the policy. 10+5+30+60 = 105 <= 120, so
+    // no mix of legitimate traffic can hit the coarse ceiling before a per-route bucket.
+    foreach (['auth-login', 'auth-2fa', 'auth-passkey', 'auth-session'] as $tight) {
+        expect((int) config("ratelimit.buckets.{$tight}.per_ip.attempts"))
+            ->toBeLessThan((int) config('ratelimit.buckets.auth-surface.per_ip.attempts'),
+                "{$tight} is not tighter than the coarse backstop, so the backstop would bind first");
+    }
+
+    // The twelve /v1/auth routes, each with the bucket it should have — so a route that is
+    // silently MOVED to a looser bucket fails here too, which a presence check cannot catch.
+    // Sorted, because `toBe` on an associative array compares key ORDER as well, and the
+    // router's order is the registration order rather than anything meaningful.
+    ksort($buckets);
+
+    expect($buckets)->toBe([
+        'auth.login' => 'auth-login',
+        'auth.logout' => 'auth-session',
+        'auth.me' => 'auth-session',
+        'auth.passkeys.login' => 'auth-passkey',
+        'auth.passkeys.login-options' => 'auth-passkey',
+        'auth.passkeys.options' => 'auth-passkey',
+        'auth.passkeys.register' => 'auth-passkey',
+        'auth.tenant' => 'auth-login',
+        'auth.two-factor.challenge' => 'auth-2fa',
+        'auth.two-factor.confirm' => 'auth-2fa',
+        'auth.two-factor.disable' => 'auth-login',
+        'auth.two-factor.enable' => 'auth-login',
+    ]);
 });

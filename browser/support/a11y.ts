@@ -1,0 +1,350 @@
+import type { Page } from '@playwright/test'
+
+/**
+ * ================================================================================
+ * THE `§12` MEASUREMENTS THAT NEED A REAL ENGINE, AS ONE IMPLEMENTATION
+ * ================================================================================
+ *
+ * `§12` names four clauses jsdom cannot answer — a visible focus ring, a 44px minimum touch
+ * target, WCAG AA contrast, and `prefers-reduced-motion` — because all four are COMPUTED
+ * values: a focused element's outline, a rendered box size, a resolved colour pair, a media
+ * query. `apps/web/test/setup.ts`'s own header says so and says asserting any of them in
+ * jsdom *"would pass and mean nothing"*.
+ *
+ * ⚠ **EXTRACTED AT 10e's ACCESSIBILITY PASS, AND THE REASON IS THE SECOND CONSUMER.** These
+ * functions lived inside `browser/staff.spec.ts` and were exactly right there while there was
+ * one staff surface. Task 10 added four more screens and a whole second surface (`/kds`,
+ * `Principal::Device`), and a second copy of a contrast evaluator is a second place for the
+ * luminance formula to be subtly wrong — which is the class of defect that reads as a pass.
+ *
+ * Nothing here is new behaviour: the bodies are the ones `staff.spec.ts` debugged over four
+ * e2e rounds, and the comments that record WHY each is shaped as it is travelled with them.
+ */
+
+/** One measured interactive box. */
+export interface Target {
+  readonly name: string
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * Every interactive box on the page, with its rendered size and its accessible name.
+ *
+ * ⚠ ZERO-SIZED ELEMENTS ARE SKIPPED, which is not leniency: a collapsed disclosure's contents
+ * are not rendered, and measuring them would fail the clause for boxes nobody can tap.
+ */
+export async function targets(page: Page): Promise<Target[]> {
+  return page.evaluate(() => {
+    const found: { name: string; width: number; height: number }[] = []
+
+    for (const element of document.querySelectorAll('button, a[href], input, [role="button"]')) {
+      const box = element.getBoundingClientRect()
+
+      if (box.width === 0 && box.height === 0) continue
+
+      /*
+       * Composed rather than chained with `??` or `||`: `textContent` is non-null on an
+       * element, so a `??` on it is provably dead and `||` is refused for being the looser
+       * operator. The fallback is for a control whose name is an attribute — an icon-only
+       * button, which these surfaces have none of and a later one might.
+       *
+       * ⚠ AND A CHECKBOX INSIDE A LABEL TAKES THE LABEL'S BOX, which 10d's filter toggles
+       * need: a native checkbox renders at ~13px in every engine and cannot be styled to 44,
+       * so `staff.css` makes the WRAPPING LABEL the target. Measuring the input alone would
+       * fail a screen that is correct, so the nearest `label` ancestor's box is used when the
+       * element is inside one.
+       */
+      const text = element.textContent.trim()
+      const label = element.getAttribute('aria-label') ?? ''
+      const wrapper = element.closest('label')
+      const measured =
+        wrapper === null || wrapper === element ? box : wrapper.getBoundingClientRect()
+
+      found.push({
+        name: (text === '' ? label : text).slice(0, 40),
+        width: Math.round(measured.width),
+        height: Math.round(measured.height),
+      })
+    }
+
+    return found
+  })
+}
+
+/** One measured text/background pair. */
+export interface ContrastPair {
+  readonly selector: string
+  readonly ratio: number
+  readonly size: number
+  /**
+   * The resolved pair, as the engine reported it.
+   *
+   * ⚠ CARRIED SO A FAILURE IS DIAGNOSABLE WITHOUT GUESSING, which cost a round to learn:
+   * `staff-webkit-rtl` reported `.qr-staff-state__title is 1.77:1 at 20px` and the message
+   * said nothing about WHICH colours produced 1.77 — so the cause (the case had measured a
+   * transient failure state, because its wait marker also matched one) had to be reasoned out
+   * rather than read. A ratio with no pair behind it is a number you cannot act on.
+   */
+  readonly ink: string
+  readonly paper: string
+}
+
+/**
+ * The contrast ratio of each selector's text against its nearest opaque background, measured
+ * from the ENGINE's own resolved colours rather than from the token source.
+ *
+ * `R-118`'s own lesson: a pair that is correct in the token file can still resolve wrong on a
+ * page, and the only honest reading is `getComputedStyle`'s.
+ */
+export async function contrastPairs(
+  page: Page,
+  selectors: readonly string[],
+): Promise<ContrastPair[]> {
+  return page.evaluate((list: readonly string[]) => {
+    const parse = (value: string): [number, number, number] => {
+      const parts = value.match(/[\d.]+/g) ?? []
+
+      return [Number(parts[0] ?? 0), Number(parts[1] ?? 0), Number(parts[2] ?? 0)]
+    }
+
+    const channel = (byte: number): number => {
+      const v = byte / 255
+
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    }
+
+    const luminance = ([r, g, b]: [number, number, number]): number =>
+      0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+    /** The nearest ancestor with a non-transparent background. */
+    const ground = (element: Element): [number, number, number] => {
+      let current: Element | null = element
+
+      while (current !== null) {
+        const background = getComputedStyle(current).backgroundColor
+
+        if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') {
+          return parse(background)
+        }
+
+        current = current.parentElement
+      }
+
+      return [255, 255, 255]
+    }
+
+    const out: {
+      selector: string
+      ratio: number
+      size: number
+      ink: string
+      paper: string
+    }[] = []
+
+    for (const selector of list) {
+      const element = document.querySelector(selector)
+
+      if (element === null) continue
+
+      const resolved = getComputedStyle(element)
+      const inkRgb = parse(resolved.color)
+      const paperRgb = ground(element)
+      const ink = luminance(inkRgb)
+      const paper = luminance(paperRgb)
+      const ratio = (Math.max(ink, paper) + 0.05) / (Math.min(ink, paper) + 0.05)
+
+      out.push({
+        selector,
+        ratio,
+        size: Number.parseFloat(resolved.fontSize),
+        ink: `rgb(${inkRgb.join(', ')})`,
+        paper: `rgb(${paperRgb.join(', ')})`,
+      })
+    }
+
+    return out
+  }, selectors)
+}
+
+/**
+ * WCAG AA's bar for one rendered size: 4.5:1 for body text, 3:1 for large text.
+ *
+ * Large is 18.66px bold or 24px regular. The kit's headings are 28px, so they take the large
+ * bar and nothing else does — stated as a function so the two call sites cannot disagree about
+ * where the boundary is.
+ */
+export function aaBar(fontSizePx: number): number {
+  return fontSizePx >= 24 ? 3 : 4.5
+}
+
+/**
+ * Tag every visible control with a `data-sweep` id and return the ids.
+ *
+ * ⚠ **THE SWEEP ASSERTS THE SET IT REACHED, NOT A COUNT OF PRESSES, AND THE COUNT-BASED
+ * VERSION COST TWO e2e ROUNDS.** Chromium and WebKit make a SCROLLABLE CONTAINER
+ * keyboard-focusable, so a press can land on something that is not a control and a budget of
+ * exactly `controls` presses reported *"Tab reached 6 of 7"* on a screen where all seven are
+ * reachable. Identifying each control makes the assertion set equality — strictly stronger,
+ * since a count could be satisfied by reaching one control seven times — and immune to
+ * whatever focusable non-control an engine invents next.
+ */
+export async function tagControls(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = []
+
+    document.querySelectorAll('button, a[href], input').forEach((element, index) => {
+      const box = element.getBoundingClientRect()
+
+      if (box.width === 0 && box.height === 0) return
+
+      /*
+       * ⚠ **A DISABLED CONTROL IS SKIPPED, AND LEAVING IT IN COST AN e2e ROUND.** Measured:
+       * `§12 on 10d's and 10e's screens › draws a visible focus ring on every control of the
+       * ISSUE screen` failed in every project while history and team passed — because *Make
+       * the sheet* is `disabled` until an order number is typed, and `§12`'s floor keeps it
+       * 44px and rendered, so it was tagged and could never receive focus.
+       *
+       * A disabled control is excluded from the tab order BY THE BROWSER, deliberately, and
+       * demanding a focus ring on one is demanding a thing the platform forbids. `§12`'s clause
+       * is *keyboard reachable, visible focus ring* — about controls a person can use.
+       *
+       * ⚠ AND IT IS SKIPPED HERE RATHER THAN IN THE 44px SWEEP, which still measures it: a
+       * disabled button becomes enabled, and a 20px box does not grow when it does.
+       *
+       * `aria-disabled` is honoured too. It does NOT remove an element from the tab order, so
+       * such a control is still expected to take focus and draw a ring — but a kit that used it
+       * instead of the attribute would otherwise make this sweep demand a ring on something it
+       * has told assistive technology is unavailable. Nothing in this kit uses it today; the
+       * branch is here so the answer is the same either way.
+       */
+      if (element.matches(':disabled, [aria-disabled="true"]')) return
+
+      // A control explicitly taken out of the tab order is likewise not a keyboard subject.
+      if (element.getAttribute('tabindex') === '-1') return
+
+      const id = `sweep-${String(index)}`
+
+      element.setAttribute('data-sweep', id)
+      found.push(id)
+    })
+
+    return found
+  })
+}
+
+/**
+ * Return the engine's sequential-navigation starting point to the top of the document.
+ *
+ * ⚠ **CLICKING A NON-INTERACTIVE ELEMENT, AND `blur()` ALONE IS NOT ENOUGH — MEASURED.**
+ * Firefox keeps its starting point where a click left it, so with focus merely cleared it
+ * tabbed on from mid-document, ran out into the browser chrome rather than cycling, and
+ * reported the controls BEFORE that point as unreachable. A click on plain text moves the
+ * point without focusing anything; a programmatic `focus()` would move it too and would also
+ * make the first control's ring a programmatic focus, which does not match `:focus-visible` in
+ * any engine.
+ *
+ * @param anchor a selector for a NON-interactive element at the top of the page.
+ */
+export async function resetTabOrder(page: Page, anchor: string): Promise<void> {
+  await page.locator(anchor).first().click()
+
+  await page.evaluate(() => {
+    const active = document.activeElement
+
+    if (active instanceof HTMLElement) active.blur()
+  })
+}
+
+/**
+ * Tab through the page and return the `data-sweep` ids that received a VISIBLE focus ring.
+ *
+ * ⚠ **REAL `Tab` PRESSES, AND `element.focus()` DOES NOT WORK — MEASURED, NOT REASONED.**
+ * `:focus-visible` is a HEURISTIC about how focus arrived, and on a page with no prior
+ * keyboard interaction a programmatic focus on a `<button>` does not match it: the gate
+ * reported *"outline-style none"* from all six projects against a kit whose ring is correct.
+ * The keyboard is also what the clause is about — *keyboard reachable, visible focus ring* —
+ * and tabbing proves both at once.
+ */
+export async function focusRings(page: Page, budget: number): Promise<FocusSweep> {
+  const seen = new Set<string>()
+  /**
+   * What the engine resolved for each control Tab actually REACHED, ring or no ring.
+   *
+   * ⚠ **COLLECTED SO A MISS IS DIAGNOSABLE IN ONE RUN, which cost a CI cycle to learn.** The
+   * first version returned only the set that got a ring, so a failure said *"Tab never reached,
+   * or drew no ring on, 2 of 17 controls: sweep-11, sweep-12"* — which does not say WHICH of
+   * the two things happened, and the two have opposite causes: never reached is a tab-order
+   * problem, reached-without-a-ring is a CSS one. On `staff-webkit-*` those two ids were the
+   * native `<input type="date">` controls and there was no way to tell from the message.
+   *
+   * The shell's own focus case in `staff.spec.ts` keeps a richer inline loop for exactly this
+   * reason; this brings the shared helper up to it.
+   */
+  const reached = new Map<string, { tag: string; type: string; outline: string; width: number }>()
+
+  for (let press = 0; press < budget; press++) {
+    await page.keyboard.press('Tab')
+
+    const ring = await page.evaluate(() => {
+      const active = document.activeElement
+
+      if (!(active instanceof HTMLElement)) return null
+
+      const id = active.getAttribute('data-sweep')
+
+      if (id === null) return null
+
+      const style = getComputedStyle(active)
+
+      return {
+        id,
+        tag: active.tagName.toLowerCase(),
+        type: active.getAttribute('type') ?? '',
+        outline: style.outlineStyle,
+        width: Number.parseFloat(style.outlineWidth),
+      }
+    })
+
+    if (ring === null) continue
+
+    reached.set(ring.id, {
+      tag: ring.tag,
+      type: ring.type,
+      outline: ring.outline,
+      width: ring.width,
+    })
+
+    if (ring.outline !== 'none' && ring.width > 0) seen.add(ring.id)
+  }
+
+  return { seen, reached }
+}
+
+/** What one Tab sweep found: which controls drew a ring, and what each reached one resolved. */
+export interface FocusSweep {
+  readonly seen: Set<string>
+  readonly reached: Map<string, { tag: string; type: string; outline: string; width: number }>
+}
+
+/**
+ * A failure message that says WHICH of the two things went wrong, per control.
+ *
+ * *never reached* is a tab-order defect; *reached, outline none* is a CSS one. A message that
+ * conflates them is a message that needs another run to act on.
+ */
+export function describeMissed(sweep: FocusSweep, ids: readonly string[]): string {
+  return ids
+    .filter((id) => !sweep.seen.has(id))
+    .map((id) => {
+      const found = sweep.reached.get(id)
+
+      if (found === undefined) return `${id}: NEVER REACHED by Tab`
+
+      return (
+        `${id}: reached as <${found.tag}${found.type === '' ? '' : ` type=${found.type}`}> ` +
+        `with outline-style ${found.outline} width ${String(found.width)}`
+      )
+    })
+    .join(' · ')
+}

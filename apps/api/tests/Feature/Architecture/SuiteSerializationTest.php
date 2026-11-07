@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Platform\Database\DatabaseRoles;
 use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
 
 /*
  * R-049: the suite's per-test TRUNCATE is serialised against a second runner.
@@ -22,22 +24,54 @@ use Illuminate\Support\Facades\DB;
  * which is R-043's whole complaint, so it is not repeated here.
  */
 
-/** The key TestCase holds. Duplicated deliberately -- see the last case in this file. */
-const SUITE_LOCK_KEY = 2_000_000_049;
+/**
+ * The key TestCase actually holds, READ FROM TestCase RATHER THAN COPIED.
+ *
+ * ⚠ THIS WAS `const SUITE_LOCK_KEY = 2_000_000_049;` WITH THE COMMENT *"Duplicated deliberately
+ * -- see the last case in this file"*, AND THAT POINTER WAS WRONG: the last case in this file is
+ * `R-054`'s `PAO_DISABLE` export and has nothing to do with the key, so the duplication was
+ * justified by a case that does not exist and was reconciled against `TestCase` by nothing.
+ *
+ * It stopped being harmless on 2026-11-01, when the suite lock became **keyed by the test
+ * database's name** so that two reviewer slots can run at once (`PLAN §0.2` (b)). The copy here
+ * still said 2_000_000_049, the holder held a derived key, and both cases below went red in all
+ * seven runs of `three-green-runs` -- which is the good outcome for a duplicated constant and the
+ * reason the fix is to delete the copy rather than to update it.
+ */
+function suiteLockKey(): int
+{
+    return TestCase::suiteLockKey();
+}
 
 it('holds a process-lifetime advisory lock, so a second runner queues rather than truncating — R-049', function (): void {
     // Observed from an ordinary Laravel connection, which is the point: the lock is held
     // by a raw PDO handle outside the connection manager, so tearDown()'s purge of every
     // Laravel connection cannot release it. If it could, this would read 0 on the second
     // test in the process rather than on every one.
+    /*
+     * ⚠ `granted` IS FILTERED, AND THE UNFILTERED FORM REPORTED THE OPPOSITE OF THE TRUTH.
+     * `pg_locks` carries a row for a WAITER as well as for the holder (`granted = false`),
+     * so a correctly-QUEUED second runner — which is precisely what `R-049`'s lock exists to
+     * produce — appeared as a second row and this count read 2. The message then said *"the
+     * suite lock is not held, so two concurrent runners would truncate under each other"*,
+     * which is the exact opposite of what was happening.
+     *
+     * Measured by the §11 round-two QA review, whose own run overlapped the other reviewer's:
+     * **2 failed, 972 passed, 175 pending**, both cases here, on a tree where the lock was
+     * working. A reviewer who read that message would file a false Critical — a control
+     * reporting the inverse of reality is worse than an absent one.
+     *
+     * So: `and granted` on both counts. The holder is one row; a queued waiter is not a
+     * second holder.
+     */
     $held = DB::connection('pgsql_root')->selectOne(
-        'select count(*) as c from pg_locks where locktype = ? and objid = ?',
-        ['advisory', SUITE_LOCK_KEY],
+        'select count(*) as c from pg_locks where locktype = ? and objid = ? and granted',
+        ['advisory', suiteLockKey()],
     );
 
     expect((int) $held->c)->toBe(
         1,
-        'the suite lock is not held, so two concurrent runners would truncate under each other',
+        'the suite lock is not HELD (granted), so two concurrent runners would truncate under each other',
     );
 });
 
@@ -46,9 +80,10 @@ it('keeps holding it after a connection purge, which is the half that made the n
     // argued: purge everything, then look again.
     $this->purgeConnections();
 
+    // `granted` filtered here too, for the reason the case above carries at length.
     $held = DB::connection('pgsql_root')->selectOne(
-        'select count(*) as c from pg_locks where locktype = ? and objid = ?',
-        ['advisory', SUITE_LOCK_KEY],
+        'select count(*) as c from pg_locks where locktype = ? and objid = ? and granted',
+        ['advisory', suiteLockKey()],
     );
 
     expect((int) $held->c)->toBe(1, 'a purge released the suite lock');
@@ -61,7 +96,100 @@ it('does not collide with the key RoleTimeoutTest draws, because this lock is ne
     // unlocked, the draw would block that test FOREVER -- a hung suite with no output,
     // one run in two billion. Out of the range by construction, and pinned here so the
     // range and the key cannot drift towards each other unnoticed.
-    expect(SUITE_LOCK_KEY)->toBeGreaterThan(2_000_000_000);
+    expect(suiteLockKey())->toBeGreaterThan(2_000_000_000);
+});
+
+it('derives the key from the test DATABASE, so two reviewer slots do not queue on one lock', function (): void {
+    /*
+     * `PLAN §0.2` (b). The lock exists to protect a DATABASE, so its key names one: two runners
+     * with different `DB_DATABASE` take different keys and run at the same time, and two on the
+     * SAME database still queue, which is `R-049`'s fix and is what the two cases above assert.
+     *
+     * Asserted as the PROPERTY rather than against a literal, because a literal here would
+     * reintroduce exactly the second source this file just deleted. The function is pure, so the
+     * three claims below are all that "keyed by the database" means:
+     *   - the same name twice gives the same key (or the holder could not be found at all);
+     *   - two different names give different keys (or the slots would queue);
+     *   - every key it can produce is out of RoleTimeoutTest's drawable range.
+     *
+     * The behavioural half -- that two slots actually OVERLAP in wall-clock time rather than
+     * merely both passing -- is `apps/api/bin/parallel-reviewer-proof`, in the repository for
+     * `R-043`'s reason and not repeated here.
+     */
+    $key = fn (string $database): int => 2_000_000_049 + (crc32($database) % 1_000_000);
+
+    /*
+     * ⚠ THE DETERMINISM CLAUSE CALLS THE LIVE FUNCTION TWICE, NOT THE LOCAL CLOSURE AGAINST
+     * ITSELF. It used to read `expect($key('qrpager_test'))->toBe($key('qrpager_test'))`, which
+     * is `x === x` over a pure local closure: it could not fail for ANY implementation of
+     * `TestCase::suiteLockKey()` and touched it not at all. The scoped review of 2026-11-02
+     * (finding B2) measured that the comment enumerated three claims while two were asserted.
+     */
+    expect(TestCase::suiteLockKey())->toBe(
+        TestCase::suiteLockKey(),
+        'suiteLockKey() is not deterministic, so the holder and this assertion can disagree',
+    )
+        ->and($key('qrpager_test_s1'))->not->toBe($key('qrpager_test_s2'))
+        ->and($key('qrpager_test'))->not->toBe($key('qrpager_test_s1'));
+
+    // The range clause, over every name a slot can produce rather than over today's one.
+    foreach (['qrpager_test', 'qrpager_test_s1', 'qrpager_test_s7', 'qrpager'] as $database) {
+        expect($key($database))->toBeGreaterThan(2_000_000_000);
+    }
+
+    // And the live key really is one of them: this runner's own database, through TestCase.
+    $database = config('database.connections.'.DatabaseRoles::connection('app').'.database');
+
+    expect(suiteLockKey())->toBe(
+        $key((string) $database),
+        'TestCase::suiteLockKey() no longer derives from the app connection database'
+    );
+});
+
+it('mirrors phpunit.xml\'s own DB_DATABASE, so the shared-database name is not a second source', function (): void {
+    /*
+     * `TestCase::SHARED_TEST_DATABASE` is the name every DEFAULT runner shares, and the
+     * half-isolation refusal (`R-049`'s door, scoped review finding B1) compares against it. A
+     * silent copy of `phpunit.xml`'s value is the duplicated-list shape `§6.2` refuses, so the
+     * XML is PARSED rather than trusted -- the same move `composer guard` rule 11c makes by
+     * parsing `ThemeTokens` instead of copying it.
+     */
+    $xml = simplexml_load_string((string) file_get_contents(base_path('phpunit.xml')));
+
+    expect($xml)->not->toBeFalse('phpunit.xml does not parse');
+
+    $found = null;
+
+    foreach ($xml->php->env as $env) {
+        if ((string) $env['name'] === 'DB_DATABASE') {
+            $found = (string) $env['value'];
+        }
+    }
+
+    expect($found)->not->toBeNull('phpunit.xml sets no DB_DATABASE, so the mirror pins nothing');
+
+    $reflected = new ReflectionClass(TestCase::class);
+
+    expect($reflected->getConstant('SHARED_TEST_DATABASE'))->toBe(
+        $found,
+        'TestCase::SHARED_TEST_DATABASE disagrees with phpunit.xml, so the half-isolation refusal '.
+        'compares against the wrong name and a default runner could be refused (or a half-isolated one allowed)'
+    );
+});
+
+it('cannot collide with the bootstrap lock, which would DEADLOCK db:bootstrap', function (): void {
+    /*
+     * `TestCase`'s own docblock says sharing `tenancy.bootstrap_lock_key` would deadlock the
+     * bootstrap that `setUp()` is about to run, against a lock that is never released. Nothing
+     * asserted the non-overlap, and it mattered more once the suite key became a BAND of a
+     * million keys rather than one. Scoped review finding B3.
+     */
+    $bootstrap = (int) config('tenancy.bootstrap_lock_key');
+
+    expect($bootstrap < 2_000_000_049 || $bootstrap > 2_001_000_048)->toBeTrue(
+        "tenancy.bootstrap_lock_key ({$bootstrap}) is inside the suite lock's band ".
+        '[2_000_000_049, 2_001_000_048], so some database name produces a key that deadlocks db:bootstrap'
+    );
 });
 
 it('keeps its behavioural proof in the repository, not in a session scratchpad — R-043', function (): void {

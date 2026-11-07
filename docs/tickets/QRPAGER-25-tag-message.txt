@@ -1,0 +1,117 @@
+task-10a — the staff shell: passkey-first login, an authenticated shell, the
+idle lock, and kitchen-screen settings
+
+WHAT THIS DELIVERS
+
+  * S1 passkey-first sign-in, with a password disclosure behind it, a second
+    factor, and a restaurant chooser for a person who works at two. One failure
+    message for every cause, because distinguishing them answers "does this
+    address have an account here".
+  * S2 the authenticated shell: the restaurant's name, the person's name, their
+    role, a two-entry nav with aria-current, and no chrome at all until the
+    restaurant is known.
+  * S3 the idle lock for an unattended kitchen screen: the server session is
+    destroyed, the data is dropped from the document, and the overlay names
+    neither the person nor the restaurant. Recovery needs the credential again.
+  * S4 kitchen screens (device settings): issue a credential shown exactly once,
+    list what exists, remove with a confirmation that says what happens.
+  * `@qrpager/ui` staff primitives: loading, empty, error, offline,
+    permission-denied -- none of which can be constructed without a next action.
+
+THE INVARIANT, AND HOW IT WAS PROVEN
+
+  A staff member authenticated in tenant A can reach no route and no datum of
+  tenant B. The subject list is DERIVED from the router -- every `/v1` route
+  behind `RequireAbility`, 14 of them -- and driven cross-tenant over HTTP
+  against another tenant's REAL rows, by all three roles, and by the actor this
+  task makes real: a person holding BOTH memberships with A selected, who
+  resolves a tenant legitimately and must still get a 404. §11's QA reviewer
+  falsified it four ways in a scratch copy before accepting it.
+
+  The 16 `/v1` routes that are NOT behind `RequireAbility` are enumerated with a
+  reason and a named covering test each, and the one real cross-tenant lever
+  among them -- `POST /v1/auth/tenant`, whose tenant id is in the BODY where no
+  path-parameter sweep can reach it -- is driven with beta's real id, twice,
+  with a positive control.
+
+  The browser half drives the same sweep from inside a real session with the
+  real cookie, and the rule for what counts as a leak is a tested module rather
+  than a condition in a spec: `browser/support/isolation.ts`, with seven leak
+  shapes driven past it.
+
+WHAT THIS DOES NOT DELIVER, DECLARED
+
+  * THE SHIFT HALF OF "shift and device settings" IS NOT BUILT, NOT STUBBED AND
+    NOT GUESSED. Nothing in this repository says what a shift IS: two mentions
+    in `docs/`, zero in BLUEPRINT.md, no table, column, enum, endpoint or gate
+    clause. `§5` `R-217` and a stop-and-report on QRPAGER-25 carry it; the
+    device half is complete.
+  * `R-115`'s staff-management screens are in no ticket's scope -- 10a's, 10b's,
+    10c's or 10d's -- which is an inventory omission rather than a gap the Task
+    10 split introduced. `§5` `R-218`.
+
+  Both are Muhammad's to rule and both were raised BEFORE the first
+  implementation commit.
+
+§11, IN FULL
+
+  Two reviewers, in their own pinned worktrees, neither seeing the builder's
+  reasoning nor each other's output. 28 findings across the two reports (23
+  distinct defects; five were reported by both): Security 9 (1H 1M 7L), QA 19
+  (3H 11M 5L). 27 fixed with a test that bites, 1 fixed in half with its
+  remainder as a §5 row, 0 dismissed. Both reviewers' verdicts on the invariant:
+  HOLDS.
+
+  Three of the fixes were wrong first, and the record says so: the
+  double-submit guard was state where it had to be a ref (three submits in one
+  tick all passed, and `act()` hid it); not awaiting the logout raced the browser
+  suite's own 401 assertion; and the first `check-records` self-test controls
+  were coupled to live repository state in two successive versions.
+
+GATES, measured at e7bba08
+
+  composer gate        10/10, 1214 passed / 10693 assertions
+  pnpm gate            13/13, 967 Vitest, 103 browser cases
+                       coverage: statements 94.37, branches 90.91,
+                       functions 98.43, lines 96.27
+  pnpm run gate:e2e    391 passed / 0 failed / 6 skipped, EXIT=0
+
+  Transcripts are committed beside the figures they back, and `check-records`
+  holds every one of those numbers to its own transcript.
+
+  final-evidence: ALL FIVE ARTEFACTS GREEN at 34c0947 -- php-three-green-runs,
+  frontend-three-green-runs (both gates, three consecutive runs each),
+  php-fresh-clone, frontend-fresh-clone, lighthouse.
+
+  CI: run 41437709994, conclusion success, 17m56s, all four jobs green, read
+  with `gh run view`.
+
+  R-191 struck 6 of the last 9 full `composer gate` runs on this host, each on a
+  different random test, every one attributed by bin/classify-reds. A lead for
+  its owner is in §0: nothing in this repository sets a Postgres connect_timeout,
+  so libpq's "timeout expired" originates outside the application.
+
+TWO MECHANISMS THIS TASK FIXED IN THE GATE ITSELF
+
+  * `records:check` was step 8 of 13, which DEADLOCKED every new task's first
+    measurement: check (b4) compares the totals §0 states against the transcript
+    of the run that produces them, so run early the gate died before the test
+    steps and the transcript never acquired the totals. A hand-made placeholder
+    was the only way out, and §11 QA H-3 found exactly that placeholder. Moved
+    to last, in the gate and in CI.
+  * (b4) read superseded §0 clauses as live claims, so a figure the live clause
+    had not yet stated matched Task 9's 817 and failed against this task's
+    transcript -- making "state a number before measuring it" the only way
+    through. Scoped to the live clause.
+
+AND THE e2e RED THAT WAS NOT A TIMEOUT
+
+  Three red CI runs and two red local ones all said "/staff settled on neither
+  the shell nor sign-in within 60s". The helper raced two markers and the app has
+  five phases; `loading`, `offline` and `error` render neither. Racing all four
+  turned it into a 915ms named failure, and a probe named the cause:
+  `/v1/auth/me -> 429`. The suite was measuring the rate limiter. Production
+  bounds are unchanged, `RateLimitTest` still drives them at scale 1, and
+  `RateLimitScaleTest` proves a hostile `RATELIMIT_SCALE` cannot weaken one.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

@@ -1,0 +1,49 @@
+{
+  "name": "qr-pager",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "lint": "pnpm run lint:es && pnpm run lint:tokens && pnpm run lint:panel && pnpm run lint:shell && pnpm run format:check",
+    "lint:es": "eslint .",
+    "lint:tokens": "node tools/design-tokens/bin/scan-css.mjs",
+    "lint:panel": "node tools/design-tokens/bin/scan-panel.mjs",
+    "lint:shell": "tools/gate/bin/check-shell-evidence",
+    "records:check": "node tools/gate/bin/check-records",
+    "format:check": "prettier --check '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'",
+    "format": "prettier --write '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'",
+    "typecheck": "pnpm run typecheck:root && pnpm -r --no-bail run typecheck",
+    "typecheck:root": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "tools/browsers/bin/browsers node_modules/.bin/playwright test --project=chromium --project=chromium-reduced-motion --project=engines-chromium --project=engines-firefox --project=engines-webkit",
+    "tokens:generate": "pnpm --filter @qrpager/tokens run generate",
+    "tokens:check": "pnpm --filter @qrpager/tokens run check",
+    "audit": "pnpm audit --audit-level low",
+    "gate": "node tools/gate/bin/gate.mjs",
+    "gate:e2e": "tools/browsers/bin/e2e",
+    "gate:site-isolation": "tools/gate/bin/site-isolation-proof",
+    "gate:domain-move": "tools/gate/bin/domain-move-proof",
+    "gate:lighthouse": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_LIGHTHOUSE=1 tools/browsers/bin/e2e",
+    "gate:ready-latency": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_READY_LATENCY=1 tools/browsers/bin/e2e",
+    "gate:kds-resync": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_KDS_RESYNC=1 tools/browsers/bin/e2e"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@qrpager/eslint-plugin-design-tokens": "workspace:*",
+    "@types/node": "22.20.5",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
+    "lighthouse": "13.5.0",
+    "playwright": "1.64.1",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

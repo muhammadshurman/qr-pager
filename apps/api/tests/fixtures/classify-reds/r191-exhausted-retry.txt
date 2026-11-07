@@ -1,0 +1,20 @@
+ FAIL  Tests\Feature\Gate\ZzTempExhaustedTest
+  ⨯ it lets an exhausted stall escape so the real Pest block can be cap… 4.35s  
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Gate\ZzTempExhaustedTest > it lets an…  PDOException   
+  SQLSTATE[08006] [7] connection to server at "127.0.0.1", port 35375 failed: timeout expired [R-191: 2 connect attempt(s), the last taking 2.00s against a DB_CONNECT_TIMEOUT of 45s. This is the connect path, not a statement. See config/database.php and tests/Support/RetryingPostgresConnector.php.]
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connectors/Connector.php:67
+     63▕     protected function createPdoConnection($dsn, $username, #[\SensitiveParameter] $password, $options)
+     64▕     {
+     65▕         return version_compare(PHP_VERSION, '8.4.0', '<')
+     66▕             ? new PDO($dsn, $username, $password, $options)
+  ➜  67▕             : PDO::connect($dsn, $username, $password, $options); /** @phpstan-ignore staticMethod.notFound (PHP 8.4) */
+     68▕     }
+     69▕ 
+     70▕     /**
+     71▕      * Handle an exception that occurred during connect execution.
+
+      +3 vendor frames 
+  4   tests/Support/RetryingPostgresConnector.php:169
+  5   tests/Support/RetryingPostgresConnector.php:141

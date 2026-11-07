@@ -1,0 +1,983 @@
+===== run 1 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+··············stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+·····································································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+··············································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:08:11
+   Duration  13.41s (tests 55%, environment 31%, setup 5%, import 4%, transform 3%, worker 2%)
+
+    Isolate  33 workers spawned · ~931ms startup each (spawn + environment, per file)
+             at least ~3.46s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.75 |    91.51 |   97.86 |   95.34 |                   
+ apps/web/src      |   88.77 |    83.43 |   93.33 |   93.75 |                   
+  PagerJourney.tsx |   88.77 |    83.43 |   93.33 |   93.75 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.75% ( 1352/1442 )
+Branches     : 91.51% ( 906/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.34% ( 1209/1268 )
+================================================================================
+run 1 exit=0
+===== run 2 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+···stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+···········stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+··························································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+·························································································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:08:25
+   Duration  14.06s (tests 55%, environment 32%, setup 5%, import 5%, worker 2%, transform 2%)
+
+    Isolate  33 workers spawned · ~980ms startup each (spawn + environment, per file)
+             at least ~3.64s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.89 |    91.61 |   97.86 |    95.5 |                   
+ apps/web/src      |   89.47 |    84.02 |   93.33 |   94.58 |                   
+  PagerJourney.tsx |   89.47 |    84.02 |   93.33 |   94.58 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.89% ( 1354/1442 )
+Branches     : 91.61% ( 907/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.5% ( 1211/1268 )
+================================================================================
+run 2 exit=0
+===== run 3 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+··················stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+···············································································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:08:43
+   Duration  14.07s (tests 56%, environment 30%, setup 5%, import 5%, worker 2%, transform 1%)
+
+    Isolate  33 workers spawned · ~985ms startup each (spawn + environment, per file)
+             at least ~3.66s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.75 |    91.51 |   97.86 |   95.34 |                   
+ apps/web/src      |   88.77 |    83.43 |   93.33 |   93.75 |                   
+  PagerJourney.tsx |   88.77 |    83.43 |   93.33 |   93.75 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.75% ( 1352/1442 )
+Branches     : 91.51% ( 906/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.34% ( 1209/1268 )
+================================================================================
+run 3 exit=0
+===== run 4 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+···stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+·······································································································································································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+·······················································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:08:57
+   Duration  14.36s (tests 55%, environment 32%, setup 5%, import 4%, worker 2%, transform 1%)
+
+    Isolate  33 workers spawned · ~958ms startup each (spawn + environment, per file)
+             at least ~3.56s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.89 |    91.61 |   97.86 |    95.5 |                   
+ apps/web/src      |   89.47 |    84.02 |   93.33 |   94.58 |                   
+  PagerJourney.tsx |   89.47 |    84.02 |   93.33 |   94.58 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.89% ( 1354/1442 )
+Branches     : 91.61% ( 907/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.5% ( 1211/1268 )
+================================================================================
+run 4 exit=0
+===== run 5 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+·············································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+····stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+·····························································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+·························································································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:09:15
+   Duration  13.82s (tests 55%, environment 31%, setup 5%, import 5%, worker 2%, transform 2%)
+
+    Isolate  33 workers spawned · ~985ms startup each (spawn + environment, per file)
+             at least ~3.66s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.75 |    91.51 |   97.86 |   95.34 |                   
+ apps/web/src      |   88.77 |    83.43 |   93.33 |   93.75 |                   
+  PagerJourney.tsx |   88.77 |    83.43 |   93.33 |   93.75 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.75% ( 1352/1442 )
+Branches     : 91.51% ( 906/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.34% ( 1209/1268 )
+================================================================================
+run 5 exit=0
+===== run 6 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+·······································································································································································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+··························································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:09:29
+   Duration  13.81s (tests 54%, environment 32%, setup 5%, import 4%, worker 2%, transform 1%)
+
+    Isolate  33 workers spawned · ~979ms startup each (spawn + environment, per file)
+             at least ~3.64s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.89 |    91.61 |   97.86 |    95.5 |                   
+ apps/web/src      |   89.47 |    84.02 |   93.33 |   94.58 |                   
+  PagerJourney.tsx |   89.47 |    84.02 |   93.33 |   94.58 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.89% ( 1354/1442 )
+Branches     : 91.61% ( 907/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.5% ( 1211/1268 )
+================================================================================
+run 6 exit=0
+===== run 7 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+········································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+·························································································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:09:47
+   Duration  14.47s (tests 54%, environment 32%, setup 6%, import 5%, worker 2%, transform 2%)
+
+Environment  |web| jsdom was created 10 times · 16.98s total, 60% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.89 |    91.61 |   97.86 |    95.5 |                   
+ apps/web/src      |   89.47 |    84.02 |   93.33 |   94.58 |                   
+  PagerJourney.tsx |   89.47 |    84.02 |   93.33 |   94.58 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.89% ( 1354/1442 )
+Branches     : 91.61% ( 907/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.5% ( 1211/1268 )
+================================================================================
+run 7 exit=0
+===== run 8 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+························································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+····································································································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+···········································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:10:02
+   Duration  13.50s (tests 55%, environment 31%, setup 6%, import 5%, worker 2%, transform 1%)
+
+    Isolate  33 workers spawned · ~953ms startup each (spawn + environment, per file)
+             at least ~3.54s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.75 |    91.51 |   97.86 |   95.34 |                   
+ apps/web/src      |   88.77 |    83.43 |   93.33 |   93.75 |                   
+  PagerJourney.tsx |   88.77 |    83.43 |   93.33 |   93.75 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.75% ( 1352/1442 )
+Branches     : 91.51% ( 906/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.34% ( 1209/1268 )
+================================================================================
+run 8 exit=0
+===== run 9 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+························································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+···················stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+······················································································································································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+······································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:10:18
+   Duration  13.80s (tests 55%, environment 32%, setup 5%, import 4%, worker 2%, transform 2%)
+
+    Isolate  33 workers spawned · ~997ms startup each (spawn + environment, per file)
+             at least ~3.70s faster with isolate: false — reuses workers across files instead of one per file
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.75 |    91.51 |   97.86 |   95.34 |                   
+ apps/web/src      |   88.77 |    83.43 |   93.33 |   93.75 |                   
+  PagerJourney.tsx |   88.77 |    83.43 |   93.33 |   93.75 | ...94-596,631-635 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.75% ( 1352/1442 )
+Branches     : 91.51% ( 906/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.34% ( 1209/1268 )
+================================================================================
+run 9 exit=0
+===== run 10 =====
+
+ RUN  v5.0.5 /home/lenovo/code/qr-pager
+      Coverage enabled with v8
+
+······································································································································································stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses every shape in the bad fixture, by rule
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:28  no-raw-color  hard-coded hex colour #0B6B4F. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:14:20  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:15:20  no-raw-color  hard-coded colour function oklch(. Use a token: var(--color-…). A colour computed at the use site is a second source for that colour.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-color  Tailwind arbitrary colour text-[#0B6B4F] (D3). The square-bracket escape hatch puts the literal back inside a string. Use a token-backed utility.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:13  no-raw-spacing  Tailwind arbitrary spacing or size p-[13px] (D3). Use a scale step: the approved spacing scale is 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:13  no-raw-spacing  off-ladder spacing utility p-5. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:17  no-raw-spacing  off-ladder spacing utility mt-1. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:10:22  no-raw-spacing  off-ladder spacing utility gap-3. The panel build CANNOT refuse this one -- the bare --spacing key has to exist for Filament, so p-<n> compiles for any n (SR-1). The approved steps are 4 8 12 16 24 32 48 64 96.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:13  no-raw-color  structural colour utility bg-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:22  no-raw-color  structural colour utility text-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:11:33  no-raw-color  structural colour utility ring-white in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:13  no-raw-color  structural colour utility bg-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:12:22  no-raw-color  structural colour utility border-black in authored panel code. White and black are not among the eleven approved values. Filament's own CSS needs them -- 328 @apply sites -- so the theme still defines them; this code must use a token utility instead.
+tools/design-tokens/fixtures/bad-panel.blade.php.fixture:13:22  no-raw-font-size  Tailwind arbitrary type value text-[#0B6B4F] (D3). The approved type scale is 13 16 20 28 44 64 96 and carries no in-between sizes.
+
+design tokens (panel): 14 finding(s) in 1 file(s).
+
+stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > finds NOTHING in the good fixture, so the proof above is not "everything is a finding"
+design tokens (panel): 1 panel file(s) scanned, no hard-coded values.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > exempts only the copy method’s own argument, not the line it sits on
+tools/design-tokens/fixtures/bad-panel-copy-boundary.blade.php.fixture:1:82  no-raw-color  hard-coded hex colour #10231B. Use a token: var(--color-…) in CSS, or a token class.
+
+design tokens (panel): 1 finding(s) in 1 file(s).
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > refuses an empty target list rather than reporting a clean tree
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+stderr | design-tokens/test/scan-panel.test.mjs > the panel reader > treats a MISSING theme directory as nothing to scan, and still refuses
+design tokens (panel): the @source globs resolved to 0 file(s), fewer than the 8 the two panels are known to carry. A scanner with nothing to scan cannot report a finding, so this is a FAILURE and not a clean tree.
+
+···········stdout | design-tokens/test/scan-panel.test.mjs > the panel reader > still scans the real tree, so the refusals above did not break the ordinary run
+design tokens (panel): 20 panel file(s) scanned, no hard-coded values.
+
+··············································································································································································································································································································································································································stderr | test/build-surface.test.ts > the critical path > is under the stated gzipped budget, with every component reported
+critical path (gzip): 120476 / 135000 bytes
+  s.html                                          2270
+  4217b6f61a1cb039.css                            3804
+  963174b3bbd17ba2.css                             799
+  c56b66c8-44f0d71e692c6b89.js                   54238
+  470-e0920f3c37ec5f0c.js                        45722
+  main-app-8f379f3dd7e1155c.js                     228
+  page-605aa3c364acb943.js                       11734
+  webpack-7bcdd3474665fbeb.js                     1681
+
+········································································································································································································································
+
+ Test Files  33 passed (33)
+      Tests  807 passed (807)
+   Start at  17:10:33
+   Duration  15.25s (tests 53%, environment 32%, setup 6%, import 5%, transform 2%, worker 2%)
+
+Environment  |web| jsdom was created 10 times · 17.91s total, 56% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.76 |    91.51 |   97.86 |   95.35 |                   
+ apps/web/src      |   88.81 |    83.43 |   93.33 |   93.77 |                   
+  PagerJourney.tsx |   88.81 |    83.43 |   93.33 |   93.77 | ...99-601,636-640 
+ .../web/src/pager |   98.76 |    96.49 |     100 |   98.96 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.27 |     98.5 |     100 |   98.03 | 254               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |   98.43 |    97.82 |     100 |     100 | 83                
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ ...tokens/scripts |   86.78 |    80.68 |   97.59 |   86.38 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 186-263,275       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.33 | 967               
+ packages/ui/src   |     100 |    99.21 |     100 |     100 |                   
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+ .../src/templates |   96.15 |    98.57 |     100 |   95.83 |                   
+  sections.tsx     |   94.44 |    98.41 |     100 |   94.11 | 321-322           
+ .../design-tokens |      96 |    84.94 |   96.29 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 394-402,444       
+ ...ign-tokens/bin |    93.1 |    85.86 |     100 |   96.74 |                   
+  scan-css.mjs     |   90.76 |    85.71 |     100 |   94.23 | 150-155,173       
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.76% ( 1353/1443 )
+Branches     : 91.51% ( 906/990 )
+Functions    : 97.86% ( 321/328 )
+Lines        : 95.35% ( 1210/1269 )
+================================================================================
+run 10 exit=0
+EXIT=0

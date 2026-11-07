@@ -30,6 +30,17 @@ enum PagerAuditAction: string
     case Cancelled = 'pager.session.cancelled';
     case Expired = 'pager.session.expired';
 
+    /**
+     * A sheet was RE-ISSUED: the session kept its identity and got a new token.
+     *
+     * ADDED AT TASK 10d (`QRPAGER-28 §2`), by Muhammad's ruling: *a sheet is RE-ISSUED, never
+     * reprinted.* Its own action rather than a second `Created`, because the two are different
+     * facts about the same order and an audit log that could not tell them apart would be
+     * unable to answer the only question anybody asks of it here — *why did the customer's
+     * code stop working?*
+     */
+    case Reissued = 'pager.session.reissued';
+
     /** What `subject_type` carries for every row this feature writes. */
     public const SUBJECT = 'pager_session';
 }

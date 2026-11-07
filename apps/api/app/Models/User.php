@@ -1,22 +1,178 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Domain\Auth\Principal;
+use App\Platform\Http\TenantPanelAccess;
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Passkeys\Contracts\PasskeyUser;
+use Laravel\Passkeys\PasskeyAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * ================================================================================
+ * THIS MODEL MAY NEVER EMIT `select *`, AND THAT IS NOT A STYLE RULE
+ * ================================================================================
+ *
+ * `R-006` is closed by revoking `qrpager_app`'s `SELECT` on `users.password` and
+ * `users.remember_token`, and by never granting it on the two 2FA secret columns this task
+ * adds. Measured against the real cluster after that migration, as `qrpager_app`:
+ *
+ *     select password from users            -> 42501  permission denied for table users
+ *     select * from users                   -> 42501  permission denied for table users
+ *     where password = 'x'                  -> 42501  (a predicate needs the grant too)
+ *     select id, name, email, …             -> OK
+ *
+ * `select *` expands to every column, so an ungranted column anywhere in the table makes
+ * the whole statement fail — and Eloquent's default select IS `select *`. So the global
+ * scope below pins an explicit column list on every query this model builds. Without it,
+ * every single read of a user is a 42501, which is a *loud* failure rather than a leak;
+ * but it is also every authentication in the application, so it is pinned here and
+ * `GrantMatrixTest` asserts both halves — that the model's reads succeed and that a
+ * raw `select *` still does not.
+ *
+ * ================================================================================
+ * REMEMBER-ME IS OFF, by construction rather than by configuration
+ * ================================================================================
+ *
+ * Validating a "remember me" cookie requires READING `remember_token`, which this role can
+ * no longer do. So the feature cannot work, and the honest thing is to make that explicit
+ * rather than leave a login form with a checkbox that silently fails open or closed:
+ * `getRememberToken()` answers `null` and `setRememberToken()` is a no-op, so Laravel's
+ * `SessionGuard` never issues a recaller cookie and never tries to resolve one.
+ * `SessionPolicyTest` asserts no recaller cookie is set on login.
+ *
+ * The trade is deliberate: a staff member re-authenticates when their session expires.
+ * `R-006` called `UPDATE users SET password = …` "a direct authentication bypass", and the
+ * same reasoning applies to a long-lived credential sitting in a column the application
+ * cannot even read to audit.
+ */
 #[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable
+#[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
+class User extends Authenticatable implements FilamentUser, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasUuids, Notifiable;
+    use HasApiTokens, HasFactory, HasUuids, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+    /**
+     * Every column `qrpager_app` holds `SELECT` on, and therefore every column this model
+     * may ask for.
+     *
+     * Kept as an explicit list rather than derived from the schema: the list IS the
+     * assertion. A column added to `users` without a grant must break a test, not silently
+     * join a `select *` that then fails at runtime in production.
+     *
+     * The four absent names are the point: `password`, `remember_token`,
+     * `two_factor_secret`, `two_factor_recovery_codes`.
+     *
+     * @var list<string>
+     */
+    public const READABLE = [
+        'id',
+        'name',
+        'email',
+        'email_verified_at',
+        'is_platform_admin',
+        'two_factor_confirmed_at',
+        'created_at',
+        'updated_at',
+    ];
+
+    protected static function booted(): void
+    {
+        // Only when the caller has not chosen its own columns, so an explicit
+        // `select('id')` and the aggregate queries Eloquent rewrites (`count()` clears the
+        // select list and sets its own) are left alone.
+        static::addGlobalScope('readableColumns', function (Builder $query): void {
+            if ($query->getQuery()->columns === null) {
+                $query->select(array_map(
+                    static fn (string $column): string => 'users.'.$column,
+                    self::READABLE,
+                ));
+            }
+        });
+    }
+
+    /**
+     * Re-read this user from the database.
+     *
+     * ================================================================================
+     * OVERRIDDEN BECAUSE `refresh()` BYPASSES GLOBAL SCOPES, AND THAT WAS A MEASURED HOLE
+     * ================================================================================
+     *
+     * `Model::refresh()` and `Model::fresh()` build their query with
+     * `newQueryWithoutScopes()`, which is correct for their purpose and fatal for this
+     * model: the global scope above is the only thing keeping `select *` out of a table
+     * where four columns are ungranted, so both methods went straight to
+     *
+     *     SQLSTATE[42501] permission denied for table users
+     *
+     * Found by `TwoFactorTest`, not by reading: `TwoFactorController::enable()` called
+     * `$user->refresh()` after enrolling, and the whole suite answered 403 on a request
+     * that had nothing to do with authorisation. The caller was changed too, but a caller
+     * fix alone would have left the next `refresh()` anywhere in the application to find
+     * this again — so the model is where it is closed.
+     *
+     * The column list is applied explicitly rather than by re-adding the scope, because the
+     * point of `withoutScopes` is that scopes do not apply; what this needs is not a scope
+     * but a fact about which columns exist for this role.
+     */
+    public function refresh(): static
+    {
+        if (! $this->exists) {
+            return $this;
+        }
+
+        // where()->firstOrFail() and not findOrFail(): find() accepts an array of keys and
+        // is therefore typed as model-or-collection, which is not what a refresh returns.
+        $fresh = static::query()
+            ->select(array_map(static fn (string $c): string => 'users.'.$c, self::READABLE))
+            ->where($this->getKeyName(), $this->getKey())
+            ->firstOrFail();
+
+        $this->setRawAttributes($fresh->getAttributes(), true);
+
+        $this->load(collect($this->relations)->reject(
+            fn ($relation) => $relation instanceof Pivot,
+        )->keys()->all());
+
+        $this->syncOriginal();
+
+        return $this;
+    }
+
+    /**
+     * A fresh instance of this user, read with the readable column list.
+     *
+     * Same reason as `refresh()` above: the inherited one uses `newQueryWithoutScopes()`.
+     *
+     * @param  array<int, string>|string  $with
+     */
+    public function fresh($with = []): ?static
+    {
+        if (! $this->exists) {
+            return null;
+        }
+
+        return static::query()
+            ->with(is_string($with) ? func_get_args() : $with)
+            ->select(array_map(static fn (string $c): string => 'users.'.$c, self::READABLE))
+            ->where($this->getKeyName(), $this->getKey())
+            ->first();
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -27,7 +183,152 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'two_factor_confirmed_at' => 'datetime',
+            'is_platform_admin' => 'boolean',
             'password' => 'hashed',
+            // NO CAST ON EITHER 2FA COLUMN, and that is the correction rather than an
+            // omission. Fortify encrypts and decrypts both ITSELF --
+            // EnableTwoFactorAuthentication writes Fortify::currentEncrypter()->encrypt(...)
+            // and TwoFactorAuthenticatable reads it back with ->decrypt(...) -- so an
+            // `encrypted` cast here encrypts a second time on write and hands Fortify
+            // ciphertext to decrypt on read.
+            //
+            // Measured: the first draft declared both casts and 2FA enrolment answered 500
+            // with `DecryptException: The payload is invalid.` from inside
+            // twoFactorQrCodeSvg(). Found by TwoFactorTest rather than by reading, which is
+            // the useful direction for a defect whose symptom is three layers from its
+            // cause.
+            //
+            // The columns are still kept out of serialisation by the #[Hidden] attribute on
+            // this class, and out of the app role's SELECT grant entirely (§2.7, R-006), so
+            // dropping the cast costs nothing in exposure.
         ];
+    }
+
+    /**
+     * A platform admin, and NOT a tenant bypass.
+     *
+     * `QRPAGER-12 §5` and the rank-1 prompt both say so. This flag gates platform-scoped
+     * things — provisioning a tenant, and reading the platform audit log — and `RoleMatrix`
+     * grants the `PlatformAdmin` principal **no tenant ability at all**.
+     *
+     * ⚠ THIS COMMENT SAID "reading `audit_log` rows whose `tenant_id` is NULL" UNTIL
+     * 2026-10-28, AND THAT WAS NEVER POSSIBLE. `audit_log` is a tenant table under FORCE
+     * RLS whose isolation policy compares `tenant_id = NULLIF(current_setting('app.tenant_id',
+     * true), '')::uuid`, and `NULL = anything` is `NULL` rather than true — so a
+     * platform-scope row satisfies no policy. Measured at Task 6's Phase 0: the insert is
+     * refused `42501` for `qrpager_app` with and without a context AND for `qrpager_owner`
+     * without the bypass, and a committed row reads back as 0 rows for the app role in
+     * either state; only `qrpager_owner` with `app.bypass_tenant = 'on'` can write or read
+     * one, which is a migration-time posture and not a request-time one. Task 6 adds
+     * `platform_audit_log`, a platform table, which is what this sentence now points at
+     * (`QRPAGER-13 §0` SR-3, `PLAN.md §2.4`).
+     * A platform admin holding no membership in a tenant resolves no tenant for it and is
+     * refused by the ordinary 401, which `PlatformAdminIsNotABypassTest` drives through
+     * HTTP rather than reading off this comment.
+     *
+     * The column carries no `UPDATE` grant for `qrpager_app` (§2.7, this task's
+     * migration), so no request can set it — privilege escalation here is not a policy
+     * check that could be wrong, it is a grant that does not exist.
+     */
+    public function isPlatformAdmin(): bool
+    {
+        return (bool) $this->getAttribute('is_platform_admin');
+    }
+
+    /** The authorisation subject this user is, before any tenant is resolved. */
+    public function platformPrincipal(): ?Principal
+    {
+        return $this->isPlatformAdmin() ? Principal::PlatformAdmin : null;
+    }
+
+    /*
+     * passkeys(), hasPasskeysEnabled(), getPasskeyUserHandle(), getPasskeyDisplayName()
+     * and getPasskeyUsername() come from PasskeyAuthenticatable and are NOT overridden
+     * here. That is a decision rather than an omission.
+     *
+     * The first draft of this class implemented all five, and its getPasskeyUserHandle()
+     * returned the raw user uuid. The trait's own implementation returns
+     * hash_hmac('sha256', table|key, passkeys.user_handle_secret, binary: true) -- a
+     * stable handle that reveals no PII. A WebAuthn user handle is stored BY THE
+     * AUTHENTICATOR, which for a synced credential store means a third party, so handing
+     * it a database identifier is a disclosure nothing in this application would have
+     * flagged. The trait is better than the override was, so the override is gone and this
+     * comment exists to stop it coming back.
+     */
+
+    /**
+     * Remember-me is unavailable. See the class docblock.
+     *
+     * Returning null rather than throwing: `SessionGuard` calls this on every login and a
+     * throw would turn an unavailable convenience into a failed authentication.
+     */
+    public function getRememberToken(): ?string
+    {
+        return null;
+    }
+
+    public function setRememberToken($value): void
+    {
+        // Deliberately nothing. The column exists and the role can write it; what it
+        // cannot do is READ it back, so a value written here could never be validated and
+        // would be a credential nobody can audit.
+    }
+
+    public function getRememberTokenName(): string
+    {
+        return '';
+    }
+
+    /**
+     * Whether this account may open the Filament platform panel.
+     *
+     * THE PANEL'S OUTERMOST GATE, and it is one line because the decision is one bit:
+     * `is_platform_admin`. A tenant owner, manager or staff member is refused here, before
+     * any resource's own `canViewAny()` runs and before any query is issued -- which is why
+     * the panel's refusal costs nothing and reaches no table.
+     *
+     * `=== true` and not a truthy test: the column is `boolean NOT NULL DEFAULT false`, and
+     * a strict comparison means a future nullable or string-typed value fails closed rather
+     * than letting `"0"` through.
+     *
+     * ⚠ THIS GRANTS NO TENANT ABILITY. `RoleMatrix`'s `PlatformAdmin` row is empty and stays
+     * empty: a platform admin who opens this panel still resolves no tenant and is still
+     * refused by the ordinary bodiless 401 on every `/v1` route, which Task 5's
+     * `PlatformAdminIsNotABypassTest` drives through HTTP. The panel is useful because it
+     * reads PLATFORM tables, not because this flag widened anything.
+     *
+     * $panel is unused on purpose: there is exactly one panel, so a per-panel decision would
+     * be a branch with one arm pretending to be a policy.
+     */
+    /**
+     * Which panels this user may open. TWO EXIST SINCE TASK 7, and they are disjoint.
+     *
+     * `platform` is the platform admin's (Task 6): it operates only on tables belonging
+     * to no tenant. `studio` is a TENANT's (Task 7, decision D1): the landing page
+     * builder, its media and its domains, all of which are tenant content.
+     *
+     * ⚠ A PLATFORM ADMIN IS REFUSED BY `studio`, AND THAT IS SR-1 RATHER THAN AN
+     * OVERSIGHT. `§4 › Tenancy` (2026-10-28): "A platform admin holds no tenant ability
+     * and no cross-tenant read: they can see that a restaurant exists and administer it
+     * from outside, and cannot see inside it." A platform admin holds no `tenant_users`
+     * row, so `StudioAccess` resolves them to no membership -- and this method does not
+     * leave that to chance, because `is_platform_admin` is not a tenant role and the two
+     * panels must not become one surface by accident.
+     *
+     * The strict `=== true` on the platform half matches what it replaced: it fails
+     * closed if the column ever becomes nullable or string-typed.
+     *
+     * THIS IS NOT THE ONLY GATE ON `studio`. Every page in that panel overrides
+     * `canAccess()` as well, because `POST /livewire-<hash>/update` runs neither
+     * `SetUpPanel` nor Filament's `Authenticate` -- Task 6's security M-1, measured.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        if ($panel->getId() === 'studio') {
+            return TenantPanelAccess::allows();
+        }
+
+        return $this->getAttribute('is_platform_admin') === true;
     }
 }

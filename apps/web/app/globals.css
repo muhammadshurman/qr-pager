@@ -1,0 +1,23 @@
+/*
+ * The app's one stylesheet entry. Tailwind v4 (D3) plus the kit, which itself imports the
+ * generated tokens and the self-hosted @font-face rules.
+ *
+ * Nothing is declared here. A value typed into this file would be a value outside the single
+ * source, and `pnpm lint:tokens` scans it.
+ *
+ * ⚠ THE SECOND IMPORT IS NOT OPTIONAL AND IS NOT A CONVENIENCE. `@import 'tailwindcss'`
+ * alone leaves Tailwind's DEFAULT palette and scales fully reachable: `bg-red-500 p-4
+ * text-sm` compiled, and passed both halves of the no-hard-coded-values rule, because that
+ * rule knows about the square-bracket escape hatch (`text-[#fff]`) and cannot see a
+ * default-theme-backed utility at all -- including `--text-sm` at 14px, which is not on the
+ * approved type scale.
+ *
+ * `@qrpager/tokens/theme.css` is a generated `@theme reference` block that CLEARS each
+ * namespace and repopulates it from the token source, so those utilities cease to exist
+ * rather than being discouraged. `tools/design-tokens/test/theme.test.mjs` compiles this
+ * exact pair of imports and asserts they emit nothing for `bg-red-500`, `p-5` or `text-sm`.
+ * Order matters: the clears must come after the import they are clearing.
+ */
+@import 'tailwindcss';
+@import '@qrpager/tokens/theme.css';
+@import '@qrpager/ui/kit.css';

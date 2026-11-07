@@ -1,0 +1,33 @@
+# bin/outbox-kill-proof — RE-RUN at 7c4a425, after EVERY write path in the worker
+# changed. The scoped review's finding 2: this transcript was still the 056d7a1 run
+# while PLAN.md cited it as evidence that the kill proof was "unchanged" after
+# finish(), backOff() and abandon() had all been rewritten. It is the named evidence
+# for §3 row 4's first clause, so a stale one is the wrong artifact to cite.
+#
+# UNCHANGED, and that is the finding: 8 sent, 0 pending, 0 dead, max attempts 2 of 6.
+# A single worker holds its own lease throughout, so every new guard passes and the
+# crash path behaves exactly as before. The guards only bite when a SECOND worker
+# exists, which is bin/outbox-lease-proof's job.
+#
+outbox-kill-proof — 5d55ba5, 2026-10-27T19:42:58Z
+  rows: 8
+  database: qrpager_outbox_proof (bootstrapped and migrated)
+
+seeded:
+{
+    "tenants": 2,
+    "sessions": 8,
+    "pending_outbox_rows": 8
+}
+
+worker pid 752436 started; waiting for it to claim the batch and block
+worker killed -9 while blocked inside a send
+
+after the kill:
+  pending    8 row(s), max attempts 1
+
+released 8 leased row(s)
+lease released; running a second worker to completion
+
+assertions: 8 sent, 0 pending, 0 dead; max attempts 2 of 6 allowed
+outbox-kill-proof: nothing lost, nothing duplicated.

@@ -35,8 +35,8 @@ deptrac:
     # application code, and the rule that matters for them is the same one.
     - name: Platform
       collectors:
-        # Everything under app/Platform EXCEPT the auth stub, which is its own layer
-        # below. A bool collector rather than a list of subdirectories, so a new
+        # Everything under app/Platform EXCEPT app/Platform/Auth, which is its own
+        # layer below. A bool collector rather than a list of subdirectories, so a new
         # directory under app/Platform joins this layer automatically and only the one
         # named exception has to be maintained.
         - type: bool
@@ -71,20 +71,41 @@ deptrac:
         - type: directory
           value: routes/.*
 
+    # Third-party code. Named "Framework" for the rule it exists to express -- that our
+    # own layers may depend on vendor code and vendor code depends on nothing of ours --
+    # rather than for Laravel specifically. A vendor namespace missing from this list is
+    # reported as an UNCOVERED dependency rather than as a violation, which is a quieter
+    # failure: `Uncovered: 0` is the figure §4a records, so a new library has to be added
+    # here or that figure moves. Minishlink (web-push) and GuzzleHttp (the PSR-18 client
+    # behind it) joined at Task 4.
+    #
+    # BaconQrCode joined at Task 10d, which draws the scannable half of a pager sheet
+    # (`App\Features\Pager\PagerSheet`). It was ALREADY installed as a transitive dependency
+    # of Fortify -- `twoFactorQrCodeSvg()` -- and 10d promoted it to a direct requirement of
+    # `composer.json` rather than leaning on that: a transitive dependency is one another
+    # package may drop at its next minor, and a printed sheet is not a thing to lose that way.
+    # Adding it here rather than letting `Uncovered` move is what this comment asks of it.
     - name: Framework
       collectors:
         - type: classLike
-          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery)\\.*
+          value: ^(Illuminate|Laravel|Symfony|Monolog|Psr|Carbon|Dedoc|Laminas|Pest|PHPUnit|Faker|Mockery|Minishlink|GuzzleHttp|Filament|Livewire|BaconQrCode)\\.*
 
-    # The pre-Task-5 auth stub (B5), a layer so that "a feature cannot be built on the
-    # stub" is a dependency rule rather than a reviewer's job. Only Platform may reach
-    # it, and only to bind it: Features may not, so a feature module built on the stub
-    # fails CI rather than breaking when Task 5 replaces it.
+    # DELIBERATELY REPURPOSED AT TASK 5, not deleted. QRPAGER-12 §6 required any rule
+    # that existed only to contain the pre-Task-5 stub to be "either removed or
+    # repurposed deliberately -- not left pointing at a class that no longer exists".
     #
-    # The stub ALSO refuses to run outside local/testing, which is the half deptrac
-    # cannot express -- a dependency rule says who may import it, not what it does when
-    # deployed.
-    - name: AuthStub
+    # The stub is gone. The layer stays, renamed, because the rule it expressed turns out
+    # to be the right rule for the REAL auth layer too: Features may not import
+    # app/Platform/Auth. A feature module must not reach into the resolver, the membership
+    # reader or the device-token helper; it speaks to the TenantResolver interface in
+    # Platform, to the enums in Domain, and to Gate/auth() in Framework. That keeps "which
+    # tenant is this request" answerable in exactly one place, which is the property
+    # RequireTenantScope's docblock depends on.
+    #
+    # So this is not the old rule surviving by inertia: the old rule said "nothing may be
+    # built on a stub that is about to vanish", and this one says "the auth layer has one
+    # entry point". The second is worth more than the first and is why the layer was kept.
+    - name: Auth
       collectors:
         - type: directory
           value: app/Platform/Auth/.*
@@ -102,8 +123,8 @@ deptrac:
     Platform:
       - Domain
       - Framework
-      - AuthStub
-    AuthStub:
+      - Auth
+    Auth:
       - Domain
       - Platform
       - Framework

@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# THE TAG'S BAR: three CONSECUTIVE green full-suite runs at one commit.
+#
+# ======================================================================================
+# WHY THIS SCRIPT EXISTS AND WHY IT IS IN THE REPOSITORY
+# ======================================================================================
+#
+# Set by Muhammad on 2026-10-27, replacing `R-092`'s original ten-green-runs condition,
+# which he withdrew on the measurement: the `08006` survived isolation, the SYN drops are
+# in the Docker/WSL2 loopback hop below Postgres, and that is not fixable in a session.
+# The rule he set with it, and that this script encodes:
+#
+#   - any red is NAMED, with its SQLSTATE;
+#   - if it is the `08006` or the claimed-count shortfall it is `R-092` and does NOT block;
+#   - any other red stops the run.
+#
+# Task 4 met that bar by running the gate by hand three times and writing the results into
+# `QRPAGER-11-three-runs.txt`. `R-043` is the `§5` row about exactly that shape -- a gate
+# clause whose demonstration lives in a session rather than in the repository, so nobody
+# can re-run it. So the loop is committed, and the transcript it writes is the artifact.
+#
+# ======================================================================================
+# WHAT "CONSECUTIVE" MEANS HERE, because it is the whole point
+# ======================================================================================
+#
+# Three green runs IN A ROW. A red resets the counter rather than being retried past: the
+# bar is not "three greens somewhere in a sequence", which a flaky suite reaches eventually
+# by chance. A non-blocking `R-092` red therefore still RESETS -- it does not fail the
+# script, but it does not count as one of the three either, and the transcript shows where
+# it happened.
+#
+# `composer gate` and not `php artisan test`: it is the full suite plus the other five
+# steps, it tees its own log, and it is the configuration every red of this class has
+# appeared in.
+#
+# Usage:
+#   bin/three-green-runs                 three greens at HEAD
+#   bin/three-green-runs 5               five
+#   bin/three-green-runs 3 --max 8       give up after 8 attempts rather than 12
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+export PAO_DISABLE=1
+
+needed="${1:-3}"
+max_attempts=$((needed * 4))
+
+shift || true
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --max) max_attempts="$2"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+commit="$(git rev-parse --short HEAD)"
+out="storage/logs/three-green-runs-$(date -u +%Y%m%dT%H%M%SZ).txt"
+
+# The two signatures the rule names as non-blocking. Matched on the gate's own output.
+#
+# `08006` is R-092 fault one: a connect timeout on a TRUNCATE in TestCase::setUp, whose
+# mechanism is measured and is below Postgres. The claim shortfall is fault two, whose
+# mechanism is NOT established -- the row says so, and nothing here pretends otherwise.
+r092_connect='SQLSTATE\[08006\]'
+r092_claim='claimed|claim shortfall|it sends across tenants in one pass'
+
+{
+  echo "# THREE CONSECUTIVE GREEN FULL-SUITE RUNS"
+  echo "#"
+  echo "# Commit:  $commit"
+  echo "# Machine: $(pwd), $(uname -sr)"
+  echo "# Needed:  $needed consecutive, giving up after $max_attempts attempts"
+  echo "# Rule:    R-092's 08006 and its claim-shortfall family do not block, and do not"
+  echo "#          count either -- a red of any kind RESETS the consecutive counter."
+  echo "#"
+} | tee "$out"
+
+green_streak=0
+attempt=0
+
+while [ "$green_streak" -lt "$needed" ] && [ "$attempt" -lt "$max_attempts" ]; do
+  attempt=$((attempt + 1))
+  started="$(date -u +%H:%M:%SZ)"
+
+  log="$(mktemp)"
+  composer gate >"$log" 2>&1
+  status=$?
+
+  # ANSI stripped before anything is read from it: the gate colours its output and a
+  # colourised "Tests:" line does not match a plain grep. Found the hard way by three
+  # earlier readers of these logs in this project.
+  plain="$(sed -e 's/\x1b\[[0-9;]*m//g' "$log")"
+
+  # `|| true`: a run that died before the suite prints no `Tests:` line, and the status is
+  # what decides green -- not this string. Without it, `pipefail` + `set -e` would abort the
+  # loop that exists to report the failure (QA H-1's family).
+  counts="$(printf '%s\n' "$plain" | grep -E '^ *Tests:' | tail -1 | sed 's/^ *//' || true)"
+  [ -z "$counts" ] && counts='(no Tests: line -- the run did not reach the suite)'
+
+  if [ "$status" -eq 0 ]; then
+    green_streak=$((green_streak + 1))
+    printf 'run %-2d | %s | start %s | exit=0 | %s | no failures | streak %d/%d\n' \
+      "$attempt" "$commit" "$started" "$counts" "$green_streak" "$needed" | tee -a "$out"
+  else
+    # EVERY FAILING TEST IS NAMED, which is R-049's whole lesson: "13 of 14 green, one
+    # unexplained" was the honest state of this suite for a week because a summary was
+    # kept instead of the output.
+    # `|| true`: NO failure lines is the ordinary case on a green run, and aborting here
+    # would turn a green run into a crash (QA H-1's family).
+    failures="$(printf '%s\n' "$plain" | grep -E '^ +(FAILED|⨯)' | sed 's/^ *//' | tr '\n' ';' || true)"
+    [ -z "$failures" ] && failures='(no FAILED line -- a non-suite step failed)'
+
+    if printf '%s\n' "$plain" | grep -qE "$r092_connect"; then
+      verdict='R-092 fault one (08006) -- does not block'
+    elif printf '%s\n' "$plain" | grep -qE "$r092_claim"; then
+      verdict='R-092 fault two (claim shortfall) -- does not block'
+    else
+      verdict='NOT R-092 -- this stops the run'
+    fi
+
+    green_streak=0
+
+    printf 'run %-2d | %s | start %s | exit=%d | %s | %s | %s | streak reset\n' \
+      "$attempt" "$commit" "$started" "$status" "$counts" "$failures" "$verdict" | tee -a "$out"
+
+    # The full output of a red run is kept beside the summary, not discarded.
+    {
+      echo
+      echo "--- full output of run $attempt (exit $status) ---"
+      printf '%s\n' "$plain"
+      echo "--- end of run $attempt ---"
+      echo
+    } >>"$out"
+
+    if [ "$verdict" = 'NOT R-092 -- this stops the run' ]; then
+      rm -f "$log"
+      echo | tee -a "$out"
+      echo "three-green-runs: STOPPED at run $attempt -- a red that is not R-092." | tee -a "$out"
+      echo "  transcript: $(pwd)/$out" | tee -a "$out"
+      exit 1
+    fi
+  fi
+
+  rm -f "$log"
+done
+
+echo | tee -a "$out"
+
+if [ "$green_streak" -ge "$needed" ]; then
+  echo "three-green-runs: PASSED -- $needed consecutive green runs at $commit, in $attempt attempt(s)." | tee -a "$out"
+  echo "  transcript: $(pwd)/$out" | tee -a "$out"
+  exit 0
+fi
+
+echo "three-green-runs: GAVE UP after $attempt attempts without $needed in a row at $commit." | tee -a "$out"
+echo "  Every red above is R-092's, or the script would have stopped at it." | tee -a "$out"
+echo "  transcript: $(pwd)/$out" | tee -a "$out"
+exit 1

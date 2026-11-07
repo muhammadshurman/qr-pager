@@ -1,0 +1,32 @@
+domain-move-proof: A -- a hostname cannot change hands
+  ok  tenant_domains.hostname carries a GLOBAL unique constraint
+  ok  tenants.slug carries a unique constraint
+  ok  the app role CANNOT update tenants.slug
+  ok  nothing in app/ deletes a tenant_domains row (R-138's premise)
+domain-move-proof: B -- publishing two tenants and moving one
+  ok  alpha's custom domain alpha-11913562.example.test walked the real lifecycle to active
+  ok  beta is refused when it claims alpha's hostname
+domain-move-proof: building apps/site
+domain-move-proof: C -- R-133, the host a page moved OFF
+  ok  the new host serves alpha's page
+  ok  alpha's platform host still answers
+  ok  alpha's platform host serves a REDIRECT, not the old page
+  ok  the old host carries no page content at all
+  ok  the redirect names alpha's new host
+domain-move-proof: D -- the redirect cannot cross a tenant boundary
+  ok  alpha's redirect mentions nothing of beta's
+  ok  beta's platform host still serves beta's page
+  ok  beta's host carries no trace of alpha's page, host or redirect
+domain-move-proof: E -- no other path serves the moved-off bytes
+  ok  the old host refuses /manifest.json
+  ok  the old host refuses /index.html
+  ok  the old host refuses /assets/../index.html
+  ok  the old host refuses its own immutable snapshot by name
+domain-move-proof: F -- R-170, manifest and index agree
+  ok  alpha-11913562.example.test: the snapshot its manifest names IS the bytes its index serves
+  ok  e2e-staff-01a1a1679a4073e2a0cb65bf9a408334.pages.qrpager.test: the snapshot its manifest names IS the bytes its index serves
+  ok  the moved-off host's manifest records where it redirects
+  ok  the moved-off host's manifest names NO checksum
+
+domain-move-proof: green -- 22 checks, two tenants, one real domain move
+EXIT=0

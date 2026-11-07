@@ -1,0 +1,153 @@
+================================================================================
+QRPAGER-30 — THE REVERT RECORD. RED BY DESIGN, FIVE TIMES.
+================================================================================
+
+Muhammad's standing instruction of 2026-11-03: *EVERY NEW PROOF MUST BE SHOWN TO REDDEN
+ONCE BEFORE IT IS TRUSTED — a deliberate revert of the thing it proves, run once, the
+output recorded beside it.*
+
+This file is that record for the five proofs QRPAGER-30 adds. Every run below is MEANT to
+be red. ⚠ IT IS DELIBERATELY NOT NAMED `-gate-`, `-e2e-`, `-three-runs-` OR
+`-fresh-clone-`: that is the set `check-records` (c) iterates and holds to "no failure
+line and EXIT=0". A transcript of a DECLARED red is evidence; a transcript of a gate that
+failed is not. `QRPAGER-18-domain-move-revert-record.txt` set this precedent and states
+the reasoning in full.
+
+The named invariant these five defend:
+
+    A tenant's published page declares that tenant's own language and the direction
+    derived from it, on the document element, and no other value can reach either
+    attribute.
+
+Each revert below breaks ONE clause of it, so a single assertion failing is attributable
+to a single mechanism rather than to "something about languages".
+
+
+================================================================================
+REVERT 1 of 5 — the renderer's hard-coded pair, which IS R-132
+================================================================================
+
+In `App\Features\Landing\LandingRenderer::render()`:
+
+    -   'lang' => $language->value,
+    -   'dir' => $language->direction(),
+    +   'lang' => 'en',
+    +   'dir' => 'ltr',
+
+This is R-132 restored exactly as it stood, which is the point: the clause has to fail
+against the real historical defect and not against a mutant invented to fail.
+
+    ⨯ it publishes each language with the direction derived from it, and …
+    ⨯ it gives a tenant who has never touched the setting ar, from the co…
+      FAILED  Tests\Feature\Landing\TenantLanguageTest > it publishes each lang…
+      Failed asserting that two strings are identical.
+      FAILED  Tests\Feature\Landing\TenantLanguageTest > it gives a tenant who…
+      Failed asserting that an array has a key 'lang' with the value 'en'.
+    Tests:  2 failed, 3 passed (9 assertions)
+
+Two clauses, not one, and that is correct: the second case's tenant is Arabic BY DEFAULT,
+so a renderer that hard-codes English fails it for the same reason as the first.
+
+
+================================================================================
+REVERT 2 of 5 — the row-count check on the one write this feature makes
+================================================================================
+
+In `App\Features\Landing\TenantPageLanguage::set()`:
+
+    -   if ($affected !== 1) {
+    -       throw new LanguageNotChanged();
+    -   }
+    +   unset($affected);
+
+Why this one matters more than it looks: `tenants` carries FORCE RLS, so an out-of-scope
+UPDATE affects ZERO rows and raises NOTHING. Without this check the restaurant is told
+"Language saved" and the next publish carries the old language.
+
+    ⨯ it reports a refusal rather than success when no row was updated
+      FAILED  Tests\Feature\Landing\TenantLanguageTest > it reports a refusal r…
+    Tests:  1 failed, 4 passed (16 assertions)
+
+
+================================================================================
+REVERT 3 of 5 — the document-element sync, which IS R-221
+================================================================================
+
+In `packages/ui/src/theme.tsx`, `ThemeProvider`:
+
+    -   useEffect(() => {
+    -     if (typeof document === 'undefined') return
+    -     document.documentElement.lang = value.locale
+    -     document.documentElement.dir = value.direction
+    -   }, [value.locale, value.direction])
+    +   // reverted for the redden record
+
+    × publishes ar and its derived direction onto <html>
+    × publishes en and its derived direction onto <html>
+    × sets the two together, so neither can be right while the other is wrong
+    × updates the document when the locale changes, rather than only on first paint
+      AssertionError: expected '' to be 'ar' // Object.is equality
+      AssertionError: expected '' to be 'en' // Object.is equality
+      AssertionError: expected [ '', '' ] to deeply equal [ 'ar', 'rtl' ]
+    Tests  4 failed | 2 passed (6)
+
+⚠ The two that stayed GREEN are the `LOCALES`-is-the-contract cases, which have nothing to
+do with the sync. That is the attribution working.
+
+
+================================================================================
+REVERT 4 of 5 — LOCALES re-typed as an EQUAL literal
+================================================================================
+
+In `packages/ui/src/theme.tsx`:
+
+    -   export const LOCALES = TENANT_LANGUAGE
+    +   export const LOCALES = ['ar', 'en'] as const
+
+⚠ THIS IS THE REVERT THAT JUSTIFIES AN ASSERTION'S SHAPE RATHER THAN ITS SUBJECT. The two
+values are IDENTICAL, so `toEqual` would pass and the second source would be reintroduced
+under a green suite. `toBe` compares the object:
+
+    × is the generated contract and not a copy of it
+      AssertionError: expected [ 'ar', 'en' ] to be [ 'ar', 'en' ] // Object.is equality
+    Tests  1 failed | 5 passed (6)
+
+"expected [ 'ar', 'en' ] to be [ 'ar', 'en' ]" is what a reintroduced copy looks like from
+inside a test runner, and it is worth knowing that it is readable.
+
+
+================================================================================
+REVERT 5 of 5 — the column's DEFAULT, dropped at the server
+================================================================================
+
+Against both `qrpager` and `qrpager_test`, as `qrpager_owner`:
+
+    ALTER TABLE tenants ALTER COLUMN language DROP DEFAULT;
+
+    ⨯ it pins the column default against the enum constant, so the two ca…
+    ⨯ it publishes each language with the direction derived from it, and …
+    ⨯ it gives a tenant who has never touched the setting ar, from the co…
+    ⨯ it refuses a third language at the DATABASE, as the app role, and n…
+    ⨯ it cannot be set on another restaurant, because the write is inside…
+      FAILED  …TenantLanguageContractTest > it pins the co…
+      the language column has no DEFAULT, so a row can arrive without one
+      ➜  63▕     expect($default)->toHaveCount(1, 'the language column has no DEFAULT, …
+      FAILED  …TenantLanguageTest > it pub…  QueryException
+      FAILED  …TenantLanguageTest > it giv…  QueryException
+
+⚠ FIVE FAILURES, AND FOUR OF THEM ARE `QueryException` FROM `makeTenant` — WHICH PROVES
+THE TRAP RATHER THAN THE ASSERTION. `QRPAGER-30 §5` says *"the default belongs in the
+DATABASE; a code default would make a row inserted by anything other than the app's own
+path carry nothing, and NOT NULL would then fail at a distance from the cause."* With the
+default gone, `NOT NULL` fires on every tenant insert that does not name the column —
+which is every one of them, including the test harness's own. That is the failure "at a
+distance from the cause" happening, measured, in the four cases that never mention a
+default.
+
+The default was restored with `ALTER COLUMN language SET DEFAULT 'ar'` on both databases
+and the suite is green again:
+
+    Tests:  178 passed (1322 assertions)      tests/Feature/Landing/
+    Tests   6 passed (6)                      packages/ui/test/theme-document.test.tsx
+
+EXIT=1 (by design, five times over)

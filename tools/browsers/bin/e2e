@@ -1,0 +1,764 @@
+#!/usr/bin/env bash
+# =============================================================================
+# THE CUSTOMER JOURNEY'S END-TO-END STACK. Task 9 (QRPAGER-16).
+# =============================================================================
+#
+# `§3` row 9: *"Playwright E2E green on Chromium, Firefox and WebKit: scan -> wait -> ready
+# -> alert."* That sentence needs four things running at once, and this script is the one
+# place that knows how they fit together:
+#
+#   1. the REAL Laravel API              `php artisan serve`, against the composed Postgres
+#                                        and Redis. Not a mock: the four answers the polling
+#                                        endpoint gives are what the client's whole branching
+#                                        is about, and a stub would assert our assumptions
+#                                        about them rather than its behaviour against a wire.
+#   2. a REAL issued token               `apps/api/bin/issue-pager-session`. A fabricated
+#                                        22-character string resolves to nothing, so every
+#                                        case would exercise the INVALID path and the suite
+#                                        would be green while testing the opposite of its
+#                                        subject.
+#   3. the PRODUCTION build of apps/web  `next build` + `next start`, never the dev server --
+#                                        the same requirement `§3.1` row 9 puts on the
+#                                        Lighthouse page, and for the same reason: the dev
+#                                        server ships different bytes.
+#   4. the three engines                 through `tools/browsers/bin/browsers`, because this
+#                                        host cannot launch them (no passwordless sudo for
+#                                        `playwright install-deps`).
+#
+# ⚠ ONE ORIGIN, AND IT REUSES QRPAGER-24's OPT-IN REWRITE RATHER THAN ADDING CORS.
+# `apps/api` has no CORS configuration and `QRPAGER-16 §2` puts a change to Task 4's surface
+# out of scope. `next.config.mjs` already carries an OPT-IN `/v1/*` rewrite behind
+# `QRPAGER_HARNESS_API_ORIGIN`, built for QRPAGER-24's tunnel for exactly this reason -- its
+# own comment says *"Task 9 and Task 13 own how the real deployment joins these two
+# origins"*. So the suite is served one origin, the default build still has no rewrite, and
+# nothing in `apps/api` changes.
+#
+# ⚠ AND IT FAILS RATHER THAN SKIPPING when a prerequisite is absent. *A reasoned skip is not
+# a measurement*: a green gate whose E2E silently did not run is worse than a red one.
+set -euo pipefail
+
+# ⚠ `umask` BEFORE ANYTHING IS WRITTEN, AND IT WAS `chmod 600` AFTERWARDS. `§11` round one,
+# SEC L-7. This script writes five raw pager tokens, a harness account's password and a TLS
+# private key, and each was created with the default umask and tightened on the NEXT line --
+# so a local user could read any of them in the window between the two. The file's own comments
+# present mode 600 as the control, which it was not until the file already existed. The
+# `chmod`s stay: they are correct for a file that somehow pre-exists with looser bits.
+umask 077
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+# ⚠ WHERE THE BROWSER REACHES THIS HOST, RESOLVED BEFORE ANY ORIGIN BELOW IS COMPOSED, AND IT
+# IS WHAT REDDENED CI RUN #187. One source: `tools/browsers/bin/browsers --reachable-host`,
+# which answers from the same mode decision it then launches under -- `localhost` natively (CI),
+# `host.docker.internal` in the container (both developer machines so far).
+#
+# `APP_URL`'s host becomes the WebAuthn relying-party id, and a relying-party id must be a
+# registrable suffix of the page's own origin. A constant could not be right for both modes, and
+# the mode that was wrong is the one no local run exercises: in run #187 the register step
+# produced NO output for 20 s and the step failed with "the register step did not answer 201.
+# page errors: []", which is the SecurityError the harness page does not catch.
+BROWSER_HOST="$("${REPO}/tools/browsers/bin/browsers" --reachable-host)"
+
+if [ -z "$BROWSER_HOST" ]; then
+  echo "e2e: FAILED: could not resolve the host the browser reaches this machine by" >&2
+  exit 1
+fi
+
+# Pinned for the rest of the run, so the answer above cannot differ from the launch that
+# follows -- and because `host_can_launch()` really launches all three engines to decide, this
+# also stops that probe running twice.
+if [ -z "${QRPAGER_BROWSERS:-}" ]; then
+  if [ "$BROWSER_HOST" = "localhost" ]; then
+    export QRPAGER_BROWSERS=host
+  else
+    export QRPAGER_BROWSERS=container
+  fi
+fi
+
+# ⚠ AND THE TWO HOSTS ARE NOT THE SAME ONE IN CONTAINER MODE, which is the thing to keep
+# straight here. `LOCAL_HOST` is what THIS SCRIPT curls to wait for its own servers;
+# `BROWSER_HOST` is what the browser resolves. They coincide natively and diverge in the
+# container:
+#
+#   container:  LOCAL_HOST=127.0.0.1          BROWSER_HOST=host.docker.internal
+#   native:     LOCAL_HOST=localhost          BROWSER_HOST=localhost
+#
+# The container case MUST keep the `127.0.0.1` spelling in the origins this script composes,
+# because `browsers` rewrites exactly that literal to `host.docker.internal` when it forwards
+# the environment -- and because `host.docker.internal` does not resolve on the host, so a
+# health check against it would hang on a server that is already up. The first version of this
+# fix set both from `BROWSER_HOST` and would have broken the container path's `wait_for`.
+if [ "$BROWSER_HOST" = "localhost" ]; then
+  LOCAL_HOST="localhost"
+else
+  LOCAL_HOST="127.0.0.1"
+fi
+
+API_PORT="${QRPAGER_E2E_API_PORT:-8099}"
+WEB_PORT="${QRPAGER_E2E_WEB_PORT:-3099}"
+TLS_PORT="${QRPAGER_E2E_TLS_PORT:-3098}"
+# A SECOND TLS front, in front of the API itself. `R-100`'s passkey harness is served at
+# `/passkey-harness`, which is NOT under `/v1` and so is not covered by QRPAGER-24's
+# one-origin rewrite -- and `navigator.credentials` needs a secure context exactly as
+# `navigator.serviceWorker` does. One more proxy is cheaper than widening a rewrite that
+# exists for a different purpose.
+TLS_API_PORT="${QRPAGER_E2E_TLS_API_PORT:-3097}"
+API_ORIGIN="http://127.0.0.1:${API_PORT}"
+WEB_ORIGIN="http://127.0.0.1:${WEB_PORT}"
+# ⚠ THE SUITE IS SERVED OVER https, AND THAT IS NOT POLISH. `navigator.serviceWorker` is
+# undefined outside a secure context, and the browsers reach the host as
+# `host.docker.internal`, which is on no engine's secure-origin allow-list. Measured both
+# ways; the full argument is in `tools/browsers/bin/tls-proxy.mjs`.
+# ⚠ THESE TWO ARE BROWSER-FACING AND SO FOLLOW `BROWSER_HOST`; `API_ORIGIN` and `WEB_ORIGIN`
+# above stay on the loopback literal because only this script curls them. In the container these
+# keep the `127.0.0.1` form that `browsers` rewrites to `host.docker.internal` when it forwards
+# the environment; natively they become `localhost`, which is a valid relying-party id where
+# `127.0.0.1` is not.
+TLS_ORIGIN="https://${LOCAL_HOST}:${TLS_PORT}"
+TLS_API_ORIGIN="https://${LOCAL_HOST}:${TLS_API_PORT}"
+LOG_DIR="${REPO}/storage/logs"
+mkdir -p "$LOG_DIR"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+API_LOG="${LOG_DIR}/e2e-api-${STAMP}.log"
+WEB_LOG="${LOG_DIR}/e2e-web-${STAMP}.log"
+
+api_pid=""
+web_pid=""
+tls_pid=""
+tls_api_pid=""
+
+# ⚠ THE WHOLE PROCESS GROUP, AND THEN THE PORTS. BOTH HALVES WERE LEARNED THE HARD WAY.
+#
+# Each server is started in a subshell, so `$!` is the SUBSHELL's pid and `kill` on it leaves
+# the real server running as an orphan. Measured consequence: a later run found port 3099
+# already bound, its own `next start` never took it, the readiness probe passed against the
+# STALE server -- which was serving the previous build's asset manifest against a `.next` that
+# had been rebuilt underneath it -- and 33 of 45 journey cases failed with `400 Bad Request` on
+# every JS chunk. The suite was red for a reason that had nothing to do with the code.
+#
+# `setsid` plus `kill -- -PGID` fixes that for three of the four. It does NOT fix `next start`,
+# which spawns `next-server` in a NEW process group of its own -- so the port stayed held and
+# the NEXT run's port guard refused to start, which is the guard doing its job against a leak
+# the teardown still had.
+#
+# So teardown finishes by freeing the four ports this script actually used, found BY PORT
+# rather than by name: `pkill -f next-server` would reach another project's server on the same
+# machine, and this must only ever take down what it started.
+stop_group() {
+  local pid="$1"
+
+  [ -n "$pid" ] || return 0
+  kill -- "-${pid}" 2>/dev/null || kill "$pid" 2>/dev/null || true
+}
+
+free_port() {
+  local port="$1" pid
+
+  # ⚠ `|| true`, AND WITHOUT IT THIS FUNCTION ABORTED THE EXIT TRAP AND THE SCRIPT EXITED 1 ON
+  # A FULLY GREEN RUN. `§11` round two, QA H-1.
+  #
+  # `grep` exits 1 when a port has no listener, `set -o pipefail` (:39) propagates that to the
+  # pipeline, the command substitution therefore fails, and `set -e` aborts -- inside
+  # `cleanup`, which is the EXIT trap. Two consequences, both measured: the remaining ports
+  # (3099, 3098, 3097) were NEVER FREED, defeating the orphan-`next-server` teardown that
+  # `§4a` records as having cost 33 of 45 journey cases; and `pnpm run gate:e2e` exited 1 after
+  # printing `e2e: green`.
+  #
+  # ⚠ AND IT MADE MY OWN GREEN CLAIM UNSUPPORTED. `gate:e2e` exits non-zero when the Lighthouse
+  # median is under the bar too, so the builder saw `EXIT=1` on a 314-passed/0-failed run and
+  # attributed it to `R-205`. Both produce the same code; nothing distinguished them. The suite
+  # tally was real, the GATE's exit status was never once observed to be 0.
+  #
+  # `|| true` on the substitution rather than `set +e` around it: the pipeline's own failure is
+  # the expected case (no listener = nothing to free), and the `[ -n "$pid" ]` guard below is
+  # what already handles it. `check-shell-evidence` mandates `pipefail`, so the hazard is a
+  # pipeline ASSIGNMENT under it -- which that script now has a rule for.
+  pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)"
+
+  [ -n "$pid" ] || return 0
+  kill "$pid" 2>/dev/null || true
+  sleep 0.3
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+cleanup() {
+  stop_group "$api_pid"
+  stop_group "$web_pid"
+  stop_group "$tls_pid"
+  stop_group "$tls_api_pid"
+
+  for port in "$API_PORT" "$WEB_PORT" "$TLS_PORT" "$TLS_API_PORT"; do
+    free_port "$port"
+  done
+
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+say() { printf 'e2e: %s\n' "$1"; }
+
+# ⚠ REFUSE A PORT SOMEBODY ELSE HOLDS, rather than quietly measuring their server. This is the
+# other half of the orphan defect `stop_group` above exists for: without it, a stale server
+# makes the suite red against bytes nobody built in this run.
+require_free_port() {
+  local port="$1" what="$2"
+
+  if curl -fsS -o /dev/null --max-time 2 "http://127.0.0.1:${port}/" 2>/dev/null \
+    || curl -fsSk -o /dev/null --max-time 2 "https://127.0.0.1:${port}/" 2>/dev/null; then
+    say "FAILED: something is already listening on ${port} (${what})."
+    say "  A leftover server would be measured instead of this run's. Stop it first:"
+    say "    pkill -f 'next start'; pkill -f tls-proxy; pkill -f 'artisan serve'"
+    exit 1
+  fi
+}
+
+wait_for() {
+  local url="$1" what="$2" tries=0
+  until curl -fsS -o /dev/null "$url" 2>/dev/null; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 120 ]; then
+      say "FAILED: ${what} did not answer at ${url} within 60s"
+      say "  api log: ${API_LOG}"
+      say "  web log: ${WEB_LOG}"
+      exit 1
+    fi
+    sleep 0.5
+  done
+  say "${what} is up at ${url}"
+}
+
+# --------------------------------------------------------------- the API, on the host
+#
+# ⚠ ON THE HOST AND NOT IN THE CONTAINER, measured: the browser image's PHP is 8.2 with no
+# `pdo_pgsql`, and `§1` locks PHP 8.4. So the application cannot run there, and the container
+# reaches these ports through `--network host`.
+require_free_port "${API_PORT}" "the API"
+say "starting the real API on ${API_ORIGIN}"
+say "the browser reaches this host as ${BROWSER_HOST} (QRPAGER_BROWSERS=${QRPAGER_BROWSERS})"
+
+# ------------------------------------------------- the database this suite runs against
+#
+# ⚠ THIS STEP DID NOT EXIST, AND ITS ABSENCE IS A FALSE RED THAT NAMES NOTHING. Found
+# 2026-11-01 on a cold machine: `pnpm run gate:e2e` went red on ONE case --
+# `passkey.spec.ts` *"registers against a virtual authenticator and then signs in with it"* --
+# with `passkey login -> 403` and a problem body reading *"That is not permitted."* Nothing in
+# that output mentions a migration.
+#
+# The cause: this script starts `php artisan serve` against the DEVELOPMENT database
+# (`DB_DATABASE` from `.env`, `qrpager`), and NOTHING here ever migrated it. `php artisan test`
+# bootstraps and migrates its OWN database -- `CLAUDE.md` says so and it is true -- but that is
+# `qrpager_test`, a different database, which is exactly why the two gates can run against one
+# cluster at all. So the E2E gate's correctness silently depended on somebody having run
+# `php artisan migrate --database=pgsql_owner` by hand at some point after checking out the
+# branch.
+#
+# Measured on the machine that found it: `select count(*) from migrations` -> 12, newest
+# `2026_10_28_160000_create_landing_tables`, and `information_schema.column_privileges` showed
+# `UPDATE` on `passkeys` for `name, last_used_at, updated_at` and NOT on `credential`. The
+# missing migration is `2026_11_01_120000_grant_passkey_credential_update`, whose own docblock
+# predicts this exact symptom: *"`403` on `POST /v1/auth/passkeys/login` for a credential the
+# browser's own authenticator produced"*. `VerifyPasskey::updatePasskey()` writes the signature
+# counter into `credential`, Postgres answers `42501`, and `DatabaseErrorMapper` maps `42501` to
+# `ProblemType::Forbidden` -- a 403 that looks like an authorisation defect and is a grant.
+#
+# `§6`'s fresh-clone clause is the rule this breaks: *"nothing that only exists on the
+# builder's machine"*. A gate whose result depends on unrecorded local database state is the
+# "works on my machine" shape, and `§7` says a recurrence means the mechanism was missing. This
+# is the mechanism: the same two commands `php artisan test` runs, run here, every time, before
+# anything is served. Both are idempotent -- `db:bootstrap` checks `pg_database` before
+# creating and `migrate` is a no-op when there is nothing to apply -- so this costs a second on
+# an up-to-date machine and removes a whole class of false red on a cold one.
+say "bootstrapping and migrating the development database this suite serves"
+
+if ! (cd "${REPO}/apps/api" && php artisan db:bootstrap) >"${LOG_DIR}/e2e-db-bootstrap.log" 2>&1; then
+  say 'FAILED: db:bootstrap did not complete'
+  cat "${LOG_DIR}/e2e-db-bootstrap.log" >&2
+  exit 1
+fi
+
+# `--force`: `migrate` prompts for confirmation outside `local`, and a prompt in a gate is a
+# hang rather than a failure. `--database=pgsql_owner` because migrations run as the OWNER and
+# never as the app role (`CLAUDE.md`, `PLAN §2.1`).
+if ! (cd "${REPO}/apps/api" && php artisan migrate --database=pgsql_owner --force) >"${LOG_DIR}/e2e-db-migrate.log" 2>&1; then
+  say 'FAILED: migrations did not apply'
+  cat "${LOG_DIR}/e2e-db-migrate.log" >&2
+  exit 1
+fi
+
+say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
+
+# ⚠ `0.0.0.0`, NOT `127.0.0.1`. The browsers run in a container (this host cannot launch them)
+# and reach these ports through `host.docker.internal`, which arrives on the host's
+# non-loopback interface. A loopback-only listener is unreachable from there -- measured. It
+# is a development server on a development machine for the length of one suite run, and it is
+# torn down by this script's own trap.
+#
+# `setsid`, so the whole process group can be taken down -- see `stop_group`.
+#
+# ⚠ `APP_URL` IS OVERRIDDEN FOR THIS RUN, AND `R-100` IS WHY. `laravel/passkeys` derives the
+# WebAuthn RELYING PARTY ID from `APP_URL`'s host, and `.env` has `http://localhost:8000` --
+# while the browser reaches the harness page at `host.docker.internal`. The two must match or
+# `navigator.credentials.create()` rejects with a SecurityError, because a relying party ID has
+# to be a registrable suffix of the page's own origin. Measured: the login step answered 200
+# and the register step produced NO output at all, because the rejection is not caught by the
+# page -- so the failure named nothing.
+#
+# It is scoped to this one process for the length of the suite and is not written to `.env`.
+# `pager.landing_url` is a separate setting and is untouched, so nothing about the QR payload
+# changes.
+#
+# ⚠ AND `PASSKEY_EXTRA_ORIGINS` IS SET TOO, ADDED AT TASK 10a. `laravel/passkeys` allows
+# exactly ONE page origin -- `APP_URL`'s -- and compares it EXACTLY, where the relying party id
+# is compared by domain suffix. Task 10a's login screen is a Next route served from the WEB TLS
+# front (`${TLS_PORT}`) while `APP_URL` above is the API's (`${TLS_API_PORT}`): same host,
+# different port, so the relying party id matches and the origin does not.
+#
+# Measured on 10a's first full run: `browser/staff-passkey.spec.ts` failed at *"the passkey
+# sign-in did not reach the shell"* with page errors `401`, `500`, `401`, and nothing in that
+# output mentions an origin. The two TLS fronts exist for separate reasons (one for the PWA's
+# service worker, one for `R-100`'s harness page) and unifying them would change Task 9's
+# topology, so the server is told about both origins instead -- which is also what a
+# CloudFront deployment will need, per `App\Platform\Auth\PasskeyOrigins`.
+# ⚠ AND `RATELIMIT_SCALE`, BECAUSE THE LIMITER WAS WHAT THIS SUITE WAS MEASURING. Three red CI
+# runs and two red local ones were all reported as a sixty-second timeout in
+# `browser/support/e2e.ts`; the probe added there on 2026-11-02 named the real answer:
+# `/v1/auth/me -> 429 Too many requests`. This suite drives ~390 cases from ONE address, of
+# which roughly 66 are staff page loads, and each load calls `/v1/auth/me` -- bucket
+# `auth-session`, 60 per 60 s per IP -- so it crosses that window partway through and the API
+# refuses, correctly. The client maps 429 to its `server` kind, so the shell says "Something
+# went wrong on our side", which is false and names nothing (`§5` `R-224`).
+#
+# The bound is NOT weakened where it matters: `config/ratelimit.php` keeps every production
+# number, `RateLimitTest` drives the buckets at scale 1, and `RateLimitScaleTest` pins the
+# default AT 1. 20x is this stack only, so the suite measures the application rather than a
+# bound written for real traffic and exceeded by a synthetic burst.
+setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" exec php artisan serve --host=0.0.0.0 --port="$2"' \
+  e2e-api "${REPO}/apps/api" "${API_PORT}" "https://${BROWSER_HOST}:${TLS_API_PORT}" \
+  "https://${BROWSER_HOST}:${TLS_PORT}" "20" \
+  >"${API_LOG}" 2>&1 &
+api_pid=$!
+
+# ⚠ `healthz`, NOT `up` AND NOT `readyz`, and both alternatives were measured rather than
+# assumed. This project serves no `/up`: the router has `healthz` and `readyz`, and
+# `RefuseUnservedVendorRoutes` answers 404 for anything else -- so `curl -f /up` never
+# succeeds and the wait times out on a server that is perfectly healthy. And `readyz`
+# answers **503** on a developer machine, which is correct behaviour rather than a fault:
+# it is the READINESS probe and it refuses rather than guessing when its own criteria are
+# not met. `healthz` is liveness, which is what "the process is up" means here.
+wait_for "${API_ORIGIN}/healthz" "the API"
+
+# ⚠ AND THE ROUTE SURFACE IS CHECKED, not just the process. A live server with the customer
+# routes absent answers 404 to every case, and the suite would read as a client defect. The
+# polling endpoint answers 404 for an unknown token BY DESIGN (`ProblemType::Stale`), so a
+# 404 here means the route is mounted and a connection failure means it is not.
+probe_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H 'Content-Type: application/json' --data '{"token":"0000000000000000000000"}' \
+  "${API_ORIGIN}/v1/pager/status" || true)"
+
+if [ "$probe_code" != "404" ]; then
+  say "FAILED: the customer route surface is not mounted (POST /v1/pager/status gave ${probe_code:-none}, expected 404)"
+  exit 1
+fi
+say "the customer routes are mounted (POST /v1/pager/status -> 404 for an unknown token)"
+
+# ------------------------------------------------------------------- the real tokens
+#
+# One session per status the suite needs. Issued through the REAL domain service, so the
+# outbox row, the audit row and the Redis projection are written exactly as in production.
+say "issuing real sessions"
+
+# One invocation per status. A bash loop rather than a PHP heredoc: `php - <<EOF` is not a
+# valid invocation (PHP has no `-` stdin flag; it is `php -f -`), and the first version of
+# this failed with `Could not open input file: -` -- a shell mistake that read like a
+# missing script.
+#
+# ⚠ EACH LINE IS CAPTURED AND NEVER ECHOED. The output carries a raw QR token, and
+# `§4 › Data` forbids one in a log. The only place it goes is the mode-600 fixture below.
+issued_dir="$(mktemp -d)"
+trap 'rm -rf "$issued_dir"; cleanup' EXIT
+
+for status in waiting ready completed cancelled expired; do
+  if ! (cd "${REPO}/apps/api" && php bin/issue-pager-session "E2E-${status}" "--status=${status}") \
+    >"${issued_dir}/${status}.json" 2>"${issued_dir}/${status}.err"; then
+    say "FAILED: could not issue the ${status} session"
+    cat "${issued_dir}/${status}.err" >&2
+    exit 1
+  fi
+done
+
+tokens_json="$(
+  python3 - "$issued_dir" <<'PY'
+import json
+import pathlib
+import sys
+
+directory = pathlib.Path(sys.argv[1])
+out = {}
+for status in ('waiting', 'ready', 'completed', 'cancelled', 'expired'):
+    text = (directory / f'{status}.json').read_text(encoding='utf-8').strip()
+    if not text:
+        raise SystemExit(f'issue-pager-session printed nothing for {status}')
+    out[status] = json.loads(text)
+print(json.dumps(out))
+PY
+)"
+
+if [ -z "$tokens_json" ]; then
+  say 'FAILED: could not issue the E2E sessions'
+  exit 1
+fi
+
+# ⚠ WRITTEN UNDER storage/, WHICH IS GIT-IGNORED, AND NOWHERE ELSE. The file carries five raw
+# QR tokens: `§4 › Data` forbids them in a log, a URL query string and an error body, and a
+# git-ignored fixture a test reads is none of those -- but it must never become a committed
+# artefact, which `.gitignore:68` (`/storage/`) is what guarantees.
+fixture="${LOG_DIR}/e2e-sessions.json"
+printf '%s\n' "$tokens_json" >"$fixture"
+chmod 600 "$fixture"
+say "issued 5 sessions -> ${fixture} (git-ignored, mode 600)"
+
+# ------------------------------------------- the production build, one origin, on the host
+say "building apps/web for production with the one-origin rewrite"
+(
+  cd "$REPO"
+  QRPAGER_HARNESS_API_ORIGIN="${API_ORIGIN}" \
+  NEXT_PUBLIC_QRPAGER_API_BASE="" \
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY="${QRPAGER_E2E_VAPID_PUBLIC_KEY:-BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM}" \
+    pnpm --filter @qrpager/web run build
+) >>"${WEB_LOG}" 2>&1 || {
+  say "FAILED: the production build did not succeed. Log: ${WEB_LOG}"
+  exit 1
+}
+
+require_free_port "${WEB_PORT}" "the PWA"
+say "starting next start on ${WEB_ORIGIN}"
+setsid bash -c 'cd "$1" && QRPAGER_HARNESS_API_ORIGIN="$2" exec pnpm exec next start --port "$3" --hostname 0.0.0.0' \
+  e2e-web "${REPO}/apps/web" "${API_ORIGIN}" "${WEB_PORT}" >>"${WEB_LOG}" 2>&1 &
+web_pid=$!
+
+wait_for "${WEB_ORIGIN}/s" "the PWA"
+
+# The rewrite is load-bearing, so it is CHECKED rather than assumed: a build without it
+# serves the page and fails every API case with a 404 that names nothing.
+if ! curl -fsS -o /dev/null -X POST -H 'Content-Type: application/json' \
+  --data '{"token":"0000000000000000000000"}' "${WEB_ORIGIN}/v1/pager/status" 2>/dev/null; then
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+    --data '{"token":"0000000000000000000000"}' "${WEB_ORIGIN}/v1/pager/status" || true)"
+  if [ "$code" != "404" ] && [ "$code" != "503" ]; then
+    say "FAILED: the one-origin rewrite is not serving /v1 (got HTTP ${code:-none})"
+    exit 1
+  fi
+fi
+say "the one-origin rewrite serves /v1 through the PWA origin"
+
+# ------------------------------------------------------------------- TLS, for the workers
+#
+# A self-signed certificate, generated per run into `storage/` (git-ignored). `openssl` is on
+# the host and the proxy runs on the host, so this adds no dependency to the workspace.
+#
+# ⚠ SANs FOR BOTH NAMES THE SUITE CAN ARRIVE UNDER. The host-side readiness probe uses
+# `127.0.0.1`; the container uses `host.docker.internal`. A certificate naming only one makes
+# the other's handshake fail for a reason that reads as a dead server.
+CERT_DIR="${REPO}/storage/e2e-tls"
+mkdir -p "$CERT_DIR"
+chmod 700 "$CERT_DIR"
+
+if ! openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+  -keyout "${CERT_DIR}/key.pem" -out "${CERT_DIR}/cert.pem" \
+  -subj '/CN=qrpager-e2e' \
+  -addext 'subjectAltName=DNS:host.docker.internal,DNS:localhost,IP:127.0.0.1' \
+  >"${LOG_DIR}/e2e-tls-${STAMP}.log" 2>&1; then
+  say "FAILED: could not generate the self-signed certificate. Log: ${LOG_DIR}/e2e-tls-${STAMP}.log"
+  exit 1
+fi
+
+chmod 600 "${CERT_DIR}/key.pem"
+say "generated a one-day self-signed certificate in storage/e2e-tls (git-ignored, mode 600)"
+
+require_free_port "${TLS_PORT}" "the TLS front"
+say "starting the TLS front on ${TLS_ORIGIN}"
+setsid bash -c 'cd "$1" && exec node tools/browsers/bin/tls-proxy.mjs --port "$2" --target "$3" --cert "$4" --key "$5"' \
+  e2e-tls "$REPO" "${TLS_PORT}" "${WEB_ORIGIN}" "${CERT_DIR}/cert.pem" "${CERT_DIR}/key.pem" \
+  >>"${WEB_LOG}" 2>&1 &
+tls_pid=$!
+
+# `-k` because the certificate is self-signed on purpose; what is being checked is that the
+# proxy is up and forwarding, which a 200 on the page proves.
+tries=0
+until curl -fsSk -o /dev/null "${TLS_ORIGIN}/s" 2>/dev/null; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 60 ]; then
+    say "FAILED: the TLS front did not answer at ${TLS_ORIGIN}/s within 30s"
+    exit 1
+  fi
+  sleep 0.5
+done
+say "the TLS front is up at ${TLS_ORIGIN} (secure context, so service workers exist)"
+
+require_free_port "${TLS_API_PORT}" "the API TLS front"
+say "starting the API TLS front on ${TLS_API_ORIGIN} (for R-100s passkey harness)"
+setsid bash -c 'cd "$1" && exec node tools/browsers/bin/tls-proxy.mjs --port "$2" --target "$3" --cert "$4" --key "$5"' \
+  e2e-tls-api "$REPO" "${TLS_API_PORT}" "${API_ORIGIN}" "${CERT_DIR}/cert.pem" "${CERT_DIR}/key.pem" \
+  >>"${API_LOG}" 2>&1 &
+tls_api_pid=$!
+
+tries=0
+until curl -fsSk -o /dev/null "${TLS_API_ORIGIN}/healthz" 2>/dev/null; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 60 ]; then
+    say "FAILED: the API TLS front did not answer at ${TLS_API_ORIGIN}/healthz within 30s"
+    exit 1
+  fi
+  sleep 0.5
+done
+say "the API TLS front is up at ${TLS_API_ORIGIN}"
+
+# ---------------------------------------------------- the passkey harness user (R-100)
+if ! (cd "${REPO}/apps/api" && php bin/issue-harness-user) >"${issued_dir}/harness-user.json" 2>&1; then
+  say 'FAILED: could not create the passkey harness user'
+  cat "${issued_dir}/harness-user.json" >&2
+  exit 1
+fi
+
+harness_user="${LOG_DIR}/e2e-harness-user.json"
+cp "${issued_dir}/harness-user.json" "$harness_user"
+chmod 600 "$harness_user"
+say "created the passkey harness user -> ${harness_user} (git-ignored, mode 600)"
+
+# ------------------------------------------------- Task 10a's staff fixture (QRPAGER-25)
+#
+# TWO restaurants and a staff account in the first. `bin/issue-harness-user` above makes a
+# user with NO membership, which is right for `R-100` and useless for a staff shell -- and
+# the SECOND restaurant is what makes 10a's invariant provable in a browser at all: its rows
+# have to EXIST for a cross-tenant refusal to mean isolation rather than absence.
+if ! (cd "${REPO}/apps/api" && php bin/issue-staff-fixture) >"${issued_dir}/staff-fixture.json" 2>&1; then
+  say 'FAILED: could not create the staff fixture'
+  cat "${issued_dir}/staff-fixture.json" >&2
+  exit 1
+fi
+
+staff_fixture="${LOG_DIR}/e2e-staff-fixture.json"
+cp "${issued_dir}/staff-fixture.json" "$staff_fixture"
+chmod 600 "$staff_fixture"
+say "created the staff fixture -> ${staff_fixture} (git-ignored, mode 600)"
+
+# ------------------------------------------- Task 10c's kitchen-screen code (QRPAGER-27)
+#
+# `/kds` authenticates with a DEVICE TOKEN, and a token's plaintext half exists exactly once at
+# generation -- `DeviceTokens::issue()` returns it and nothing can recover it. So a browser that
+# is to reach that screen as a kitchen screen does has to be handed one here or never.
+#
+# ⚠ MINTED FOR EVERY RUN RATHER THAN ONLY FOR THE RESYNC PROOF, because `browser/kds.spec.ts`
+# needs it too -- that spec is the `§12` sweep of this surface across three engines and both
+# directions, and the proof is one chromium scenario. One fixture, two consumers.
+#
+# ⚠ AND IT IS **ALPHA's**, NOT BETA's. `bin/issue-staff-fixture` deliberately discards beta's
+# device token plaintext: that one exists to be AIMED AT by the cross-tenant cases, and handing
+# it out would be handing over a credential for the restaurant those cases are about. This is a
+# separate token for the restaurant the suite drives.
+kds_alpha_id="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['alpha']['id'])
+" "$staff_fixture")"
+
+kds_token="${LOG_DIR}/e2e-kds-token.json"
+
+if ! (cd "${REPO}/apps/api" && php bin/issue-kds-token "$kds_alpha_id" 'E2E kitchen') >"$kds_token"; then
+  say 'FAILED: could not mint a KDS device token'
+  cat "$kds_token" >&2
+  exit 1
+fi
+
+chmod 600 "$kds_token"
+say "minted a kitchen-screen code -> ${kds_token} (git-ignored, mode 600)"
+
+# ------------------------------------------------------------------- the three engines
+#
+# ⚠ ONE STACK FOR BOTH MEASUREMENTS. `QRPAGER_E2E_LIGHTHOUSE=1` adds the Lighthouse proof
+# after the suite rather than standing the whole stack up a second time -- and it runs against
+# the SAME production build and the SAME real token, which is what makes the two sets of
+# figures comparable. The method requires a fresh browser profile and no service worker PER
+# RUN, and `lighthouse-proof` gives it that with a new `--user-data-dir` each time, so sharing
+# the server does not warm anything the score could read.
+export QRPAGER_E2E_BASE="${TLS_ORIGIN}"
+export QRPAGER_E2E_SESSIONS="storage/logs/e2e-sessions.json"
+export QRPAGER_E2E_API_BASE="${TLS_API_ORIGIN}"
+export QRPAGER_E2E_HARNESS_USER="storage/logs/e2e-harness-user.json"
+export QRPAGER_E2E_STAFF_FIXTURE="storage/logs/e2e-staff-fixture.json"
+export QRPAGER_E2E_KDS_TOKEN="storage/logs/e2e-kds-token.json"
+
+if [ "${QRPAGER_E2E_SUITE:-1}" = "1" ]; then
+  say "running the journey suite"
+  # ⚠ THE PINNED BINARY DIRECTLY, NOT `pnpm exec`. pnpm 12 verifies `node_modules` against the
+  # lockfile before running a script and re-links when they differ -- and because the host and
+  # the container share one `node_modules`, the container's first invocation did exactly that
+  # MID-RUN: `+ vite 8.3.5 / + vitest 5.0.5 / Done in 1.1s`, after which `pnpm exec playwright`
+  # failed with "Command not found" against a tree that was correct a second later.
+  # `npm_config_verify_deps_before_run=false` did not stop it. The binary is pinned exact, so
+  # calling it directly runs the same version and gives pnpm no opportunity to mutate the
+  # toolchain it is being measured with.
+  "${REPO}/tools/browsers/bin/browsers" ./node_modules/.bin/playwright test "$@"
+fi
+
+if [ "${QRPAGER_E2E_LIGHTHOUSE:-0}" = "1" ]; then
+  say "running the Lighthouse proof by the method in §3.1 row 9"
+
+  # The token the proof loads. A real issued one: a fabricated token renders the INVALID
+  # screen, which is a different and much smaller page, so the score would be a score for
+  # the wrong document.
+  lh_token="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['waiting']['token'])
+" "$fixture")"
+
+  QRPAGER_LH_TOKEN="$lh_token" \
+    "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/lighthouse-proof
+fi
+
+# ------------------------------------------------- 10b's *under 2 s* measurement
+#
+# ⚠ THE SAME STACK AGAIN, AND FOR THE SAME REASON THE LIGHTHOUSE BRANCH ABOVE GIVES: the
+# figure is staff click -> the CUSTOMER's rendered ready state, which needs the real API, the
+# production build, both surfaces and one origin. Standing a second stack up would make the
+# number describe a different stack from the one the suite just ran against.
+#
+# It issues its OWN pagers rather than using the fixture's two, because a session goes to
+# `ready` exactly once -- the proof's own header has that -- so it needs `php
+# bin/issue-board-pager`, which is why the API's directory and `APP_ENV` are passed through.
+if [ "${QRPAGER_E2E_READY_LATENCY:-0}" = "1" ]; then
+  say "running the under-2s measurement by the method in §3.1 row 10"
+
+  # ⚠ THE PAGERS ARE ISSUED HERE, ON THE HOST, AND NOT INSIDE THE PROOF — because the proof
+  # runs in the BROWSERS CONTAINER and that image carries PHP 8.2 while `apps/api` requires
+  # >= 8.4.1. The first version shelled out to `php bin/issue-board-pager` from the node
+  # script and died on `platform_check.php`: *"Your Composer dependencies require a PHP
+  # version >= 8.4.1. You are running 8.2.35."*
+  #
+  # This is `lighthouse-proof`'s own shape, which extracts its token on the host and passes it
+  # in: anything needing PHP happens out here, and the container only drives browsers. It also
+  # removes the child process `§11` SECURITY M-5 was about — there is no `APP_ENV` to get
+  # wrong from a caller, because there is no caller.
+  #
+  # FIVE, because `§3.1` row 10's method says five runs and a session goes to `ready` exactly
+  # once: measuring one session five times would measure one transition and four no-ops.
+  # The tenant the staff fixture's owner is a member of, read from the fixture this run just
+  # wrote rather than from a second source.
+  alpha_id="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['alpha']['id'])
+" "$staff_fixture")"
+
+  # ⚠ `LOG_DIR`, WHICH IS THE REPO ROOT'S `storage/logs`, AND NOT `apps/api`'s — the env
+  # var below is resolved against `REPO` inside the container, exactly as
+  # `QRPAGER_E2E_STAFF_FIXTURE` is. The first version wrote to `apps/api/storage/logs`
+  # and passed a repo-root-relative path, so the proof died on `ENOENT` for a file that
+  # existed one directory over.
+  latency_pagers="${LOG_DIR}/e2e-latency-pagers.json"
+  : >"$latency_pagers"
+  chmod 600 "$latency_pagers"
+
+  for run in 1 2 3 4 5; do
+    if ! (cd "${REPO}/apps/api" && php bin/issue-board-pager "$alpha_id" "L-${run}") >>"$latency_pagers"; then
+      echo "FATAL: could not issue pager ${run} for the latency measurement" >&2
+      exit 1
+    fi
+  done
+
+  # Not vacuous: five lines or the proof has nothing to measure and would report a median over
+  # whatever it got.
+  issued="$(wc -l <"$latency_pagers")"
+
+  if [ "$issued" -ne 5 ]; then
+    echo "FATAL: expected 5 issued pagers for the latency measurement, got ${issued}" >&2
+    exit 1
+  fi
+
+  QRPAGER_E2E_LATENCY_PAGERS="storage/logs/e2e-latency-pagers.json" \
+    "${REPO}/tools/browsers/bin/browsers" tools/gate/bin/ready-latency-proof
+fi
+
+# --------------------------------------------- 10c's resync proof (QRPAGER-27 §0), opt-in
+#
+# ⚠ THE ONE PROOF IN THIS FILE THAT IS **NOT** RUN THROUGH `tools/browsers/bin/browsers`, and
+# the reason is a hard constraint rather than an oversight. Its oracle is a SERVER-SIDE
+# dispatch count taken on both sides of the reconnect (`QRPAGER-27 §5`: *"a client-side tally
+# is the thing under test, not the oracle"*), the only server-side reader here is `apps/api`,
+# and `apps/api` requires PHP >= 8.4.1 while the browsers image carries 8.2 -- the wall the
+# latency proof already hit and recorded. Counting and driving therefore have to happen in one
+# process on the HOST, so the proof launches chromium itself.
+#
+# `tools/gate/bin/kds-resync-proof`'s header carries the full argument, the two rejected
+# alternatives, and the cost stated plainly: that proof is chromium-only. The KDS screen's
+# rendering across three engines and both directions is `browser/kds.spec.ts`'s, which runs in
+# the full matrix above.
+#
+# It needs two fixtures the suite does not: a device token's PLAINTEXT (minted here, because a
+# token's raw half exists exactly once at generation) and its own waiting pager. Both are
+# created on the host for the same PHP reason, and both land in `LOG_DIR` under this script's
+# `umask 077`.
+if [ "${QRPAGER_E2E_KDS_RESYNC:-0}" = "1" ]; then
+  say "running 10c's resync proof by the method in QRPAGER-27 §0"
+
+  alpha_id="$(python3 -c "
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+sys.stdout.write(data['alpha']['id'])
+" "$staff_fixture")"
+
+  # The code is minted once, above, for the suite AND for this proof -- see the note there.
+
+  # ⚠ ITS OWN PAGER, NOT THE FIXTURE's. The proof marks an order READY inside the outage, and a
+  # session goes to `ready` exactly once -- so sharing `alpha.session_id` with the staff suite
+  # would make whichever ran second drive an idempotent no-op that writes no outbox row, and
+  # the proof's `before >= 1` vacuity guard would fail for a reason that is not a defect. Same
+  # reasoning `bin/issue-board-pager`'s header gives for issuing five.
+  kds_pager="${LOG_DIR}/e2e-kds-pager.json"
+
+  if ! (cd "${REPO}/apps/api" && php bin/issue-board-pager "$alpha_id" 'KDS-RESYNC') >"$kds_pager"; then
+    say 'FAILED: could not issue the pager for the resync proof'
+    cat "$kds_pager" >&2
+    exit 1
+  fi
+
+  chmod 600 "$kds_pager"
+
+  # Not vacuous: both files carry what the proof reads, checked HERE rather than inside the
+  # proof -- a missing fixture should fail as a harness problem and not as a clause failure.
+  if ! python3 -c "
+import json
+import pathlib
+import sys
+
+pager = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
+
+for key in ('session_id', 'order_reference'):
+    value = pager.get(key)
+    if not isinstance(value, str) or value == '':
+        sys.stderr.write('the resync fixture carries no %s\\n' % key)
+        raise SystemExit(1)
+" "$kds_pager"; then
+    say 'FAILED: the resync proof fixtures are incomplete'
+    exit 1
+  fi
+
+  QRPAGER_E2E_KDS_PAGER="storage/logs/e2e-kds-pager.json" \
+    "${REPO}/tools/gate/bin/kds-resync-proof"
+fi
+
+say "green"

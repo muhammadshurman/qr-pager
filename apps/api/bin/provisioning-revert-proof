@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Task 6: revert-prove the clauses this task ships on.
+#
+# WHAT IT PROVES, and why each needs a revert rather than a reading:
+#
+#   REVERT A — the TRANSACTIONAL clause. `§3` row 6: "the wizard is transactional -- a
+#   failure halfway leaves no partial tenant." withTenant() opens one transaction around
+#   the tenants insert, the membership insert and the tenant's audit row, so a failure at
+#   step 4 of 5 leaves none of them. Splitting that one boundary into three is the smallest
+#   edit that makes the clause false.
+#
+#   REVERT B — the NAMED INVARIANT, from outside any scope. A panel query against `tenants`
+#   with no tenant context. The runtime scope guard refuses it before it is sent, so the
+#   invariant case reds on its STATUS assertion -- which is still the invariant failing, a
+#   panel that queries a tenant table answering 500.
+#
+#   REVERT C — the NAMED INVARIANT's LISTENER half, which is QA M-1. A panel query issued
+#   INSIDE a tenant scope is the case the guard ALLOWS, so the statement really is issued
+#   and only DB::listen can catch it. Until this revert existed the listener assertion had
+#   never been seen red, while `§3.1` row 6 attributed the whole proof to it.
+#
+# A red counts as evidence only when it is the ASSERTION failing. bin/_revert-proof.sh
+# enforces that, plus a green baseline, unmoved controls, and -- since 2026-10-28 -- a
+# REQUIRED red per revert and a refusal to start on a dirty tree.
+#
+# ⚠ THREE THINGS THIS SCRIPT ITSELF GOT WRONG, found by Task 6's own §11 reviews:
+#
+#   1. REVERT A WAS NOT A FAITHFUL REVERT. It split the transaction with a regex and left
+#      `$ownerUserId` undefined, so SIX of its eight reds were ErrorExceptions -- the
+#      harness breaking, not the guard being removed -- and "8 cases red" was published as
+#      coverage when the number of genuine assertion reds was TWO. `ErrorException` and its
+#      family are now in the shared not-evidence list, and revert A is written out by hand
+#      below instead of being assembled by a pattern.
+#   2. IT TOOK ITS RESTORE COPY FROM THE WORKING TREE with `cp`. With a concurrent session
+#      in the same checkout, that restored the OTHER session's revert and reported it
+#      byte-identical -- truthfully, to the wrong baseline. One reviewer measured a run
+#      that reported the invariant case GREEN for that reason, which is the opposite of
+#      what was published. It now refuses a dirty tree and restores with `git checkout --`.
+#   3. IT NEVER REQUIRED A REVERT TO PRODUCE ANY RED, so an edit that matched nothing would
+#      have passed with a reassuring verdict.
+#
+# It edits tracked files and restores them from git, including on Ctrl-C.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+
+# shellcheck source=bin/_revert-proof.sh
+. "$(dirname "$0")/_revert-proof.sh"
+
+service="app/Features/Provisioning/TenantProvisioning.php"
+dashboard="app/Features/Provisioning/Panel/PlatformDashboard.php"
+
+# REFUSE A DIRTY TREE, before anything is touched. Header point 2.
+revert_proof_require_clean_tree "$service" "$dashboard" || exit 1
+
+restore() { revert_proof_restore "$service" "$dashboard"; }
+
+trap 'restore; revert_proof_cleanup' EXIT INT TERM
+
+# THE CONTROLS. Cases that must stay GREEN under every revert, because none of the three
+# can touch what they are about:
+#
+#   - the duplicate-slug refusal is decided by a unique index on a PLATFORM table, before
+#     any tenant-side work and before the panel reads anything;
+#   - the redacted failure message is a property of reasonFor()'s SQLSTATE mapping, not of
+#     where a transaction boundary is;
+#   - the registry row's own shape is written by request(), which no revert here edits.
+revert_proof_init \
+  "tests/Feature/Platform/TenantProvisioningTest.php tests/Feature/Platform/PlatformPanelInvariantTest.php" \
+  "refuses a duplicate slug with a typed failure" \
+  "never puts the driver message in the duplicate-slug failure" \
+  "lower-cases the owner email before it is stored"
+
+run() { revert_proof_run "$@"; }
+
+echo "Task 6 revert proof — $(git rev-parse --short HEAD), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo
+
+run "baseline — no revert, every case should pass" baseline
+
+# ---------------------------------------------------------------------------------------
+# REVERT A: one transaction becomes four.
+#
+# Written out by hand, not assembled by a pattern (header point 1). resolveOwner() is
+# hoisted into its own scope so every variable is defined, and each insert gets its own
+# withTenant() -- same context per statement, no shared boundary, which is exactly the
+# "partial tenant" shape the clause forbids.
+# ---------------------------------------------------------------------------------------
+restore || exit 1
+
+python3 bin/support/revert-split-transaction.py "$service" || exit 1
+
+grep -q 'REVERTED BY bin/provisioning-revert-proof' "$service" \
+  || { echo "FATAL: revert A did not apply"; exit 1; }
+php -l "$service" >/dev/null || { echo "FATAL: revert A does not parse"; exit 1; }
+
+run "revert A — the provisioning transaction split into four"
+revert_proof_require_red "revert A" "leaves NO partial tenant"
+
+# ---------------------------------------------------------------------------------------
+# REVERT B: the panel reads a tenant table from OUTSIDE any scope.
+# ---------------------------------------------------------------------------------------
+restore || exit 1
+
+python3 bin/support/revert-panel-reads-tenants.py "$dashboard" unscoped || exit 1
+
+grep -q 'REVERTED BY bin/provisioning-revert-proof' "$dashboard" \
+  || { echo "FATAL: revert B did not apply"; exit 1; }
+php -l "$dashboard" >/dev/null || { echo "FATAL: revert B does not parse"; exit 1; }
+
+run "revert B — the dashboard reads the tenants table, unscoped"
+# ⚠ THE STATUS CASE, NOT THE INVARIANT CASE, and that is the point of having revert C.
+# The runtime scope guard refuses an unscoped statement before it is sent, so the panel
+# answers 500 and `it answers every panel route without a server error` is what reds. The
+# listener never fires, which is exactly what QA M-1 found -- and is why revert C exists.
+revert_proof_require_red "revert B" "answers every panel route"
+
+# ---------------------------------------------------------------------------------------
+# REVERT C: the panel reads a tenant table from INSIDE a tenant scope — QA M-1.
+#
+# The case the runtime guard allows, so the statement is really issued and only the
+# listener can catch it.
+# ---------------------------------------------------------------------------------------
+restore || exit 1
+
+python3 bin/support/revert-panel-reads-tenants.py "$dashboard" scoped || exit 1
+
+grep -q 'REVERTED BY bin/provisioning-revert-proof' "$dashboard" \
+  || { echo "FATAL: revert C did not apply"; exit 1; }
+php -l "$dashboard" >/dev/null || { echo "FATAL: revert C does not parse"; exit 1; }
+
+run "revert C — the dashboard reads the tenants table INSIDE a scope"
+revert_proof_require_red "revert C" "reaches NO tenant table"
+
+# RESTORE EXPLICITLY on the normal path, so the check below has something true to check.
+restore || exit 1
+
+echo "restored: both files are back to HEAD (git checkout, not a run-time copy)"
+echo
+
+revert_proof_verdict "provisioning-revert-proof" || exit 1
