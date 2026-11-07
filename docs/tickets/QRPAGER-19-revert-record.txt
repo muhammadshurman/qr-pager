@@ -262,11 +262,100 @@ Failed asserting that two arrays are identical.
   ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
   Tests:    1 failed, 5 passed (88 assertions)
 
+⚠ WHAT 6g SHOWS ABOUT THE SHAPE OF ITS OWN PROOF, AND IT IS WORTH MORE THAN THE REVERT.
+  Reverting the refusal to the MEMOISED reader reddened `MemberConsentTest`'s warm-versus-fresh
+  case and left `MembersTest`'s two HTTP-status cases GREEN -- both still answered 404. So the
+  status assertions are NOT a reliable detector of this divergence: whether the memo is stale
+  at the moment of the second request depends on what else ran in between, which is exactly the
+  property that made the bug survive three days of green suites.
+  That is why the dedicated control asks the question directly -- the same address, the warm
+  reader and a fresh one, in one assertion -- instead of inferring it from a status. A proof
+  that only sometimes fails for the defect it names is the shape `R-185` is about.
+
 ================================================================================
-TOTAL: 17 reverts, each run once, each output above.
+6. HIS THREE RULINGS, AND THE TWO CI FAILURES (2026-11-07, second round)
 ================================================================================
-⚠ THE COUNT WAS STATED AS 13 IN THREE PLACES BEFORE THIS FILE WAS COUNTED
-  (two commit messages and the QRPAGER-19 comment). It is 17. The error was in the
-  conservative direction and is corrected here rather than left to be re-counted,
-  because `bin/gate`'s own closing line exists for this: it said "all six steps green"
-  for the whole of Task 7 while running seven.
+
+--- 6a. REVERT: pint.json's notPath widened to an app/ file -- the silencer direction
+  ⨯ it excludes exactly one path, and it is the untracked scratch file   0.36s  
+   FAILED  Tests\Feature\Architecture\PintScopeTest > it excludes exactly on…   
+Failed asserting that two arrays are identical.
+  Tests:    1 failed, 3 passed (7 assertions)
+
+--- 6b. REVERT: one job back on the floating ubuntu-latest label
+  ✓ it pins every uses: to an exact version, with no floating major any… 0.35s  
+  ⨯ it pins the runner image, because ubuntu-latest has already moved o… 0.11s  
+   FAILED  Tests\Feature\Architecture\CiWorkflowPinTest > it pins the runner…   
+  a job is back on the floating `ubuntu-latest` label
+Failed asserting that true is false.
+  ➜  71▕         ->toBeFalse('a job is back on the floating `ubuntu-latest` label');
+  Tests:    1 failed, 3 passed (16 assertions)
+
+--- 6c. REVERT: actions/cache back to a v4 -- the deprecated node20 runtime
+  ✓ it pins every uses: to an exact version, with no floating major any… 0.39s  
+  ⨯ it runs no action on the deprecated Node 20, which is the thing bei… 0.11s  
+   FAILED  Tests\Feature\Architecture\CiWorkflowPinTest > it runs no action…    
+  actions/cache@v4 runs on node20, which GitHub is forcing off. v5.1.0 is node24.
+Failed asserting that 4 is equal to 5 or is greater than 5.
+    118▕             'actions/cache@v'.$major.' runs on node20, which GitHub is forcing off. v5.1.0 is node24.',
+  Tests:    1 failed, 3 passed (17 assertions)
+
+--- 6d. REVERT: bin/gate's 'what it does NOT run' notice deleted
+  ⨯ it prints what it does NOT run, right after the green line           0.32s  
+  ⨯ it names only commands that actually exist, so the notice cannot ci… 0.11s  
+  ⨯ it names the browser-only enforcement that is invisible to every st… 0.10s  
+   FAILED  Tests\Feature\Architecture\GateScopeTest > it prints what it does…   
+   FAILED  Tests\Feature\Architecture\GateScopeTest > it names only commands…   
+  To contain: bin/fresh-clone-proof
+   FAILED  Tests\Feature\Architecture\GateScopeTest > it names the browser-o…   
+  To contain: CSP
+  Tests:    3 failed, 1 passed (23 assertions)
+
+--- 6e. REVERT: the CSP keyed on Content-Type again -- the global weakening he forbade
+  ⨯ it gives the strict policy to EVERY route that is not on the named…  0.12s  
+  ⨯ it serves the passkey harness a policy of its OWN, and gives back t… 0.16s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it gives the strict polic…   
+Failed asserting that two strings are identical.
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the passkey har…   
+  Failed asserting that two strings are identical.
+  Tests:    2 failed, 9 passed (119 assertions)
+
+--- 6f. REVERT: publickey-credentials-get denied on the harness too -- CI's own red
+  ⨯ it serves the passkey harness a policy of its OWN, and gives back t… 0.13s  
+   FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the passkey har…   
+  the harness cannot call navigator.credentials.get(): accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()
+Failed asserting that false is true.
+  ➜ 605▕         ->toBeTrue("the harness cannot call navigator.credentials.get(): {$policy}")
+  Tests:    1 failed, 10 passed (136 assertions)
+
+--- 6g. REVERT: the refusal back on the MEMOISED reader -- R-244's own divergence
+  ⨯ it answers the SAME refusal with a warm reader and a fresh one — R-… 0.19s  
+   FAILED  Tests\Feature\Staff\MemberConsentTest > it answers the SAME refus…   
+Failed asserting that null is identical to an object of class "App\Domain\Auth\AttachmentRefusal".
+  Tests:    1 failed, 14 passed (83 assertions)
+
+⚠ WHAT 6g SHOWS ABOUT THE SHAPE OF ITS OWN PROOF, AND IT IS WORTH MORE THAN THE REVERT.
+  Reverting the refusal to the MEMOISED reader reddened `MemberConsentTest`'s warm-versus-fresh
+  case and left `MembersTest`'s two HTTP-status cases GREEN -- both still answered 404. So the
+  status assertions are NOT a reliable detector of this divergence: whether the memo is stale at
+  the moment of the second request depends on what else ran in between, which is exactly the
+  property that let the bug survive three days of green suites.
+  That is why the dedicated control asks the question directly -- the same address, the warm
+  reader and a fresh one, in one assertion -- instead of inferring it from a status. A proof that
+  only sometimes fails for the defect it names is the shape `R-185` is about.
+
+================================================================================
+TOTAL: 24 reverts, each run once, each output above.
+================================================================================
+  Sections 1-5 are the build (17). Section 6 is his three rulings and the two CI failures (7).
+⚠ THE COUNT WAS STATED AS 13 IN THREE PLACES BEFORE THIS FILE WAS FIRST COUNTED (two commit
+  messages and the QRPAGER-19 comment); it was 17 then and is 24 now. The first error was in the
+  conservative direction and is kept here rather than quietly corrected, because `bin/gate`'s own
+  closing line counts the array instead of naming a number for exactly this reason: it said "all
+  six steps green" for the whole of Task 7 while running seven.
+⚠ AND THREE OF THE 24 HAD TO BE RE-RUN BECAUSE THE *PROOF* WAS WRONG RATHER THAN THE CODE: 2a's
+  needles could never have matched, 5a removed one payload instead of the corpus, and 6g revealed
+  that its own sibling assertions do not detect the defect. A fourth re-run was this file's own
+  fault: section 6 was appended AFTER the TOTAL block, and trimming the stale total cut section 6
+  out with it, so 6a-6g were re-run rather than transcribed from a screen.
+
