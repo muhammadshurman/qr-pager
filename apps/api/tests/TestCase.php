@@ -13,14 +13,15 @@ use App\Platform\Auth\Memberships;
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Readiness\ReadinessStore;
 use Illuminate\Database\Connection;
-use Illuminate\Database\Connectors\PostgresConnector;
 use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PDO;
 use RuntimeException;
+use Tests\Support\RetryingPostgresConnector;
 use Throwable;
 
 abstract class TestCase extends BaseTestCase
@@ -150,6 +151,32 @@ abstract class TestCase extends BaseTestCase
             'old constant lock key held shut. Isolation is all-or-nothing: run through '.
             'tools/gate/bin/reviewer-slot, which sets DB_DATABASE, REDIS_DB and REDIS_CACHE_DB together.'
         );
+    }
+
+    /**
+     * Every pgsql connection this suite opens goes through R-191's retrying connector.
+     *
+     * ⚠ BOUND HERE AND NOT IN `bootstrap/app.php`, WHICH IS THE WHOLE POINT. The stall is a
+     * property of THIS host's WSL2 + Docker loopback forward, measured and recorded in
+     * `tests/Support/RetryingPostgresConnector.php`; a retry in the application would change
+     * production failure semantics on the path `DatabaseErrorMapper`'s 08006 mapping and the
+     * limiter's fail-open posture are both written against. `ConnectionFactory::createConnector()`
+     * resolves `db.connector.{driver}` from the container when it is bound, which is the
+     * framework's own extension point, so no production file changes at all.
+     *
+     * ⚠ AND IT IS BOUND IN `createApplication()` RATHER THAN IN `setUp()`: connections resolve
+     * lazily, but `setUp()` already connects (the bootstrap, the migrate and the TRUNCATE), so a
+     * binding made there would be made after the connects it exists to protect.
+     *
+     * @return Application
+     */
+    public function createApplication()
+    {
+        $app = parent::createApplication();
+
+        $app->bind('db.connector.pgsql', fn (): RetryingPostgresConnector => new RetryingPostgresConnector);
+
+        return $app;
     }
 
     private static bool $databaseReady = false;
@@ -373,7 +400,13 @@ abstract class TestCase extends BaseTestCase
         /** @var array<string, mixed> $config */
         $config = (array) config('database.connections.'.$name);
 
-        $pdo = (new PostgresConnector)->connect($config);
+        // ⚠ THE RETRYING CONNECTOR, AND THIS IS THE CONNECT THAT MOST NEEDS IT (R-191).
+        // It is the FIRST connect of the process and it holds the lock for the whole run, so a
+        // stall here does not fail one test -- it fails the run before a single case has
+        // executed, with the lock never taken. The framework's own connector is still what
+        // does the connecting; the subclass only decides what to do when `pdo_pgsql`'s
+        // 30-second default deadline expires against this host's 31-36 second SYN stall.
+        $pdo = (new RetryingPostgresConnector)->connect($config);
 
         // Queue, never refuse. An advisory lock IS subject to lock_timeout, and the root
         // role is the one role tenancy.timeouts does not set one for -- so today this

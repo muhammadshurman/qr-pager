@@ -1,0 +1,86 @@
+QRPAGER-19 — EVERY NEW PROOF SHOWN TO REDDEN ONCE
+Standing rule, PLAN.md §1 (2026-11-03). Each section reverts the thing the proof
+asserts, runs the proof once, records the output, and restores the tree.
+Measured 2026-11-07 on task-12-security-hardening.
+
+================================================================================
+1. R-191 — tests/Feature/Gate/ConnectRetryTest.php
+================================================================================
+
+--- 1a. REVERT: the container binding removed (the guard-goes-quiet case) -------
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest >…  BindingResolutionException   
+  Target class [db.connector.pgsql] does not exist.
+
+  at vendor/laravel/framework/src/Illuminate/Container/Container.php:1151
+    1147▕             }
+    1148▕         }
+    1149▕ 
+    1150▕         try {
+  ➜ 1151▕             $reflector = new ReflectionClass($concrete);
+    1152▕         } catch (ReflectionException $e) {
+    1153▕             throw new BindingResolutionException("Target class [$concrete] does not exist.", 0, $e);
+    1154▕         }
+    1155▕
+
+      +6 vendor frames 
+  7   tests/Feature/Gate/ConnectRetryTest.php:248
+
+
+  Tests:    1 failed, 5 passed (26 assertions)
+  Duration: 6.98s
+
+
+--- 1b. REVERT: ATTEMPTS back to 1, so nothing is absorbed ----------------------
+  ⨯ it absorbs ONE real libpq connect stall and returns a working conne… 2.35s  
+  ⨯ it re-throws an exhausted stall carrying BOTH the driver message an… 2.12s  
+  ✓ it does NOT retry a refused connection, so the tests that point at…  0.12s  
+  ✓ it does NOT retry the other 08006s this project deliberately produc… 0.12s  
+  ✓ it is actually IN FORCE for the application, not merely present in…  0.15s  
+  ✓ it keeps the connect deadline EXPLICIT, and the suite’s above this…  0.14s  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it absorbs ON…  PDOException   
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it re-throws an exhausted s…   
+  Failed asserting that 1 is identical to 2.
+  at tests/Feature/Gate/ConnectRetryTest.php:163
+    161▕             // Two attempts, not one and not three: ATTEMPTS is 2, and at a 45 s deadline a
+    164▕             ->and(RetryingPostgresConnector::absorbed())->toBe(1);
+  Tests:    2 failed, 4 passed (25 assertions)
+  Duration: 5.07s
+
+--- 1c. REVERT: matcher widened to the SQLSTATE alone, dropping 'timeout expired' -
+  ✓ it absorbs ONE real libpq connect stall and returns a working conne… 2.38s  
+  ✓ it re-throws an exhausted stall carrying BOTH the driver message an… 4.13s  
+  ⨯ it does NOT retry a refused connection, so the tests that point at…  0.12s  
+  ⨯ it does NOT retry the other 08006s this project deliberately produc… 0.11s  
+  ✓ it is actually IN FORCE for the application, not merely present in…  0.11s  
+  ✓ it keeps the connect deadline EXPLICIT, and the suite’s above this…  0.11s  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it does NOT retry a refused…   
+  a refusal was retried
+Failed asserting that 1 is identical to 0.
+  at tests/Feature/Gate/ConnectRetryTest.php:197
+  ➜ 197▕         ->and(RetryingPostgresConnector::absorbed())->toBe(0, 'a refusal was retried')
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it does NOT retry the other…   
+  retried an 08006 that is a result: SQLSTATE[08006] [7] connection to server at "127.0.0.1", port 5432 failed: FATAL:  too many connections for role "qrpager_app"
+Failed asserting that 2 is identical to 1.
+  at tests/Feature/Gate/ConnectRetryTest.php:238
+  ➜ 238▕         expect($connector->seen)->toBe(1, "retried an 08006 that is a result: {$text}")
+    239▕             ->and(RetryingPostgresConnector::absorbed())->toBe(0);
+  Tests:    2 failed, 4 passed (27 assertions)
+  Duration: 7.01s
+
+--- 1d. REVERT: the explicit deadline removed, back to pdo_pgsql's implicit 30 ----
+  ✓ it absorbs ONE real libpq connect stall and returns a working conne… 2.44s  
+  ✓ it re-throws an exhausted stall carrying BOTH the driver message an… 4.13s  
+  ✓ it does NOT retry a refused connection, so the tests that point at…  0.11s  
+  ✓ it does NOT retry the other 08006s this project deliberately produc… 0.12s  
+  ✓ it is actually IN FORCE for the application, not merely present in…  0.12s  
+  ⨯ it keeps the connect deadline EXPLICIT, and the suite’s above this…  0.11s  
+   FAILED  Tests\Feature\Gate\ConnectRetryTest > it keeps the connect deadli…   
+  the connect deadline is implicit again: pdo_pgsql will apply its own 30
+Failed asserting that null is of type int.
+  at tests/Feature/Gate/ConnectRetryTest.php:265
+    262▕     // behavioural one: the deadline was never absent, it was pdo_pgsql's undocumented 30.
+  ➜ 265▕     expect($configured)->toBeInt('the connect deadline is implicit again: pdo_pgsql will apply its own 30');
+    268▕     // 32,430 ms is AppPoolSaturator's. The suite's deadline must sit above both, or the retry
+  Tests:    1 failed, 5 passed (28 assertions)
+  Duration: 7.08s

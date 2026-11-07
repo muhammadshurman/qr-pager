@@ -245,6 +245,41 @@ it('calls an app-code 08006 REAL even when its trace lists TestCase -- §11 QA M
     expect(str_contains($fixture, 'Connector.php'))->toBeFalse('the fixture carries a connect frame, so it is not app-code');
 });
 
+it('still attributes R-191 when the retry is EXHAUSTED and the message carries an annotation', function (): void {
+    /*
+     * TASK 12. The one shape of this family that can still redden a run, and the one most
+     * likely to lose its attribution silently.
+     *
+     * `tests/Support/RetryingPostgresConnector` absorbs the first 08006/timeout expired and
+     * re-throws the second from a frame this matcher does not name
+     * (`tests/Support/RetryingPostgresConnector.php`), with `[R-191: 2 connect attempt(s) ...]`
+     * appended to the driver's message. The obvious prediction is that this breaks the
+     * attribution. It does not -- Pest renders the root of the `$previous` chain, so
+     * `Connector.php:67` is still the `at` frame -- and `r191-exhausted-retry.txt` is the
+     * VERBATIM capture that settled it rather than an argument that it would be fine.
+     *
+     * This matcher has gone stale twice on exactly this kind of assumption
+     * (`known-flakes.json` › `matcher_history`), both times producing an UNEXPLAINED red,
+     * which `§4a` calls this project's most expensive defect shape. So the new shape gets a
+     * case of its own.
+     */
+    [$code, $output] = classify('r191-exhausted-retry.txt');
+
+    expect($output)->toContain('ATTRIBUTED')
+        ->and($output)->toContain('R-191')
+        ->and($output)->toMatch('/REAL REDS[^\n]*: 0/')
+        ->and($code)->toBe(2, $output);
+
+    // Not vacuous: the fixture must really carry the annotation AND the retrying connector's
+    // own frame, or it is just another copy of r191-moved-frame.txt and proves nothing new.
+    $fixture = (string) file_get_contents(base_path('tests/fixtures/classify-reds/r191-exhausted-retry.txt'));
+
+    expect(str_contains($fixture, 'R-191: 2 connect attempt(s)'))->toBeTrue('the fixture carries no annotation')
+        ->and(str_contains($fixture, 'tests/Support/RetryingPostgresConnector.php'))->toBeTrue()
+        ->and(str_contains($fixture, 'timeout expired'))->toBeTrue()
+        ->and(str_contains($fixture, 'Connector.php'))->toBeTrue('the frame the attribution depends on is gone');
+});
+
 it('calls the SAME SQLSTATE at a different frame a REAL red -- the control that matters', function (): void {
     [$code, $output] = classify('r191-wrong-frame.txt');
 

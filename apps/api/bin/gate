@@ -64,6 +64,20 @@ export PAO_DISABLE=1
 log="storage/logs/gate-$(date -u +%Y%m%dT%H%M%SZ).log"
 : >"$log"
 
+# R-191's ABSORBED CONNECT STALLS, REPORTED AFTER THE SUITE WHETHER IT IS RED OR GREEN.
+#
+# tests/Support/RetryingPostgresConnector absorbs one 08006/timeout expired per connect so a
+# host stall costs a retry instead of a re-run of this gate. That is only acceptable while it
+# is VISIBLE: an absorbed failure nobody can see is the same defect as an unexplained red, from
+# the other side. A host that is degrading shows up here as a rising count.
+#
+# A TIMESTAMP WINDOW RATHER THAN A TRUNCATE, because tools/gate/bin/reviewer-slot runs
+# concurrent runners against their own databases and a truncate would discard the other
+# runner's lines. The connector writes ISO-8601 UTC, which compares lexicographically, and
+# each line names the role and database that stalled.
+absorbed_log="storage/logs/r191-absorbed.log"
+gate_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 echo "gate: full output -> $(pwd)/$log"
 echo
 
@@ -83,6 +97,31 @@ echo
 # that is only noticeable if somebody sees it.
 php bin/known-flakes-summary 2>&1 | tee -a "$log"
 echo | tee -a "$log"
+
+# Print this run's absorbed stalls, or say plainly that there were none.
+#
+# "none" is printed rather than nothing, for the reason the known-flake list is printed on a
+# green run too: a report that is silent when there is nothing to say is indistinguishable
+# from a report that has stopped running.
+report_absorbed_stalls () {
+  echo "=== R-191: connect stalls absorbed during this run" | tee -a "$log"
+
+  if [ ! -f "$absorbed_log" ]; then
+    echo "  none (no $absorbed_log)" | tee -a "$log"
+    return
+  fi
+
+  # Lines at or after this run's start. awk and not grep: the comparison is on the leading
+  # timestamp, and a lexicographic >= on ISO-8601 UTC is a chronological one.
+  if ! awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" | grep -q .; then
+    echo "  none" | tee -a "$log"
+    return
+  fi
+
+  awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" | sed 's/^/  /' | tee -a "$log"
+  count=$(awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" | grep -c .)
+  echo "  ⚠ $count stall(s) absorbed. Each one would have reddened this run before Task 12." | tee -a "$log"
+}
 
 # composer's own scripts, so this cannot drift from what CI runs.
 steps=(
@@ -128,11 +167,17 @@ for step in "${steps[@]}"; do
 
       if [ "$verdict" -eq 2 ]; then
         echo "gate: ATTRIBUTED RED -- every failure matches a named row. Exit 2." | tee -a "$log" >&2
+        report_absorbed_stalls
         exit 2
       fi
     fi
 
+    report_absorbed_stalls
     exit 1
+  fi
+
+  if [ "$step" = "php artisan test" ]; then
+    report_absorbed_stalls
   fi
 
   echo | tee -a "$log"
