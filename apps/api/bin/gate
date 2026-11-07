@@ -195,3 +195,38 @@ for step in "${steps[@]}"; do
 done
 
 echo "gate: all ${#steps[@]} steps green. Full output: $(pwd)/$log" | tee -a "$log"
+
+# ⚠⚠ WHAT A GREEN RUN HERE DOES **NOT** TELL YOU — Task 12, on his instruction:
+# *"THE PHP JOB IS RED IN CI AND WAS GREEN LOCALLY ON FOUR CONSECUTIVE RUNS. That gap is the
+# same class as the wrong-sha gates and the stale build. Say exactly what CI runs that your
+# local gate does not, and close it at the mechanism."*
+#
+# THE INSTANCE, measured: CI run 42372017224's *"Pint, PHPStan, Pest"* job went red while
+# pint, stan and the 1,388-test suite all passed inside it — because that job ALSO runs
+# `pnpm run gate:e2e`, which this script does not. The failure was a Permissions-Policy
+# denying `navigator.credentials.get()` on `/passkey-harness`, and `routes/harness.php` exists
+# precisely because *"the credential ceremony lives in navigator.credentials and cannot be
+# driven from HTTP"*. So no number of PHP tests could have seen it, and five green runs of this
+# script did not. The same run's frontend job failed at `records:check`, which is a step of
+# `pnpm gate` — and three of its four complaints were against `§0` in this very repository.
+#
+# CLOSED AT THE MECHANISM BY SAYING SO, which is the only closure that does not make every
+# local run 20 minutes longer. A green line above is now followed by the list of what was not
+# run, so nobody reads it as *CI will be green*. `GateScopeTest` asserts this notice is here
+# and that every command it names is a real script, so it cannot rot into a comfortable lie.
+{
+  echo
+  echo "gate: ⚠ THIS IS apps/api's GATE ONLY. CI runs all of the following and this script runs NONE of them:"
+  echo "gate:     pnpm gate          — lint, typecheck, tokens:check, audit, both Next builds,"
+  echo "gate:                          Vitest + coverage, the browser matrix, and records:check"
+  echo "gate:                          (which audits §0 against this repository and has caught"
+  echo "gate:                          a stale row count, a missing provenance sha and an"
+  echo "gate:                          unbacked total)"
+  echo "gate:     pnpm run gate:e2e  — the real API + PWA + TLS fronts in five browser projects."
+  echo "gate:                          The ONLY instrument that executes the panels' and the"
+  echo "gate:                          harness's JavaScript, so anything a browser enforces"
+  echo "gate:                          (CSP, Permissions-Policy, service workers, WebAuthn) is"
+  echo "gate:                          invisible to every step above."
+  echo "gate:     bin/fresh-clone-proof — §6's clause that the gates pass from a clean checkout."
+  echo "gate: A green line above means apps/api's own gate passed. It is not a prediction of CI."
+} | tee -a "$log"
