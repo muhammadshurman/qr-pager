@@ -131,6 +131,18 @@ final class HardenResponse
         'serial', 'usb', 'xr-spatial-tracking',
     ];
 
+    /**
+     * The one path on this origin that runs a WebAuthn ceremony, and the features it needs.
+     *
+     * `routes/harness.php` mounts it in `local` and `testing` only. `credentials.create()` was
+     * never denied (that feature is not on `PERMISSIONS`); `credentials.get()` was, and that is
+     * what `R-100`'s e2e proof failed on in CI. Both are named here so the pair cannot drift.
+     */
+    private const WEBAUTHN_PATH = 'passkey-harness';
+
+    /** @var list<string> */
+    private const WEBAUTHN_FEATURES = ['publickey-credentials-get'];
+
     public function __construct(private readonly ContentSecurityPolicy $csp) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -149,10 +161,7 @@ final class HardenResponse
         $response->headers->set('X-Frame-Options', 'DENY');
         $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin');
         $response->headers->set('Cross-Origin-Resource-Policy', 'same-origin');
-        $response->headers->set(
-            'Permissions-Policy',
-            implode(', ', array_map(static fn (string $f): string => $f.'=()', self::PERMISSIONS)),
-        );
+        $response->headers->set('Permissions-Policy', self::permissionsPolicyFor($request));
 
         /*
          * ⚠ A POLICY THE RESPONSE ALREADY SET IS LEFT ALONE, AND THIS IS THE ONE HEADER THAT
@@ -209,6 +218,59 @@ final class HardenResponse
         $response->headers->set('Cache-Control', 'private, no-store');
 
         return $response;
+    }
+
+    /**
+     * The denial list, with the ONE path that needs two of them back.
+     *
+     * ================================================================================
+     * ⚠ THIS EXISTS BECAUSE THE FLAT LIST BROKE A REAL CEREMONY, AND ONLY CI COULD SEE IT
+     * ================================================================================
+     *
+     * `publickey-credentials-get=()` disables `navigator.credentials.get()`. CI run
+     * `42372017224`, `[passkey-chromium] browser/passkey.spec.ts:79` (`R-100`):
+     *
+     *     Expected substring: "passkey login -> 200"
+     *     Received string:    "nothing yet"
+     *
+     * `passkey-harness.blade.php:125` is `credentials.create()` — gated by
+     * `publickey-credentials-create`, which this list never denied, so REGISTRATION passed.
+     * Line 150 is `credentials.get()`, and line 166 prints `passkey login -> <status>` only
+     * after it resolves. So the failure landed exactly one leg in.
+     *
+     * ⚠ AND `ResponseHeaderTest` ASSERTED THE DENIAL WAS SAFE, WITH A FALSE COMMENT:
+     * *"A WebAuthn ceremony on THIS origin would need this — and there is none: the passkey
+     * ceremonies run on `apps/web`, and `/passkey-harness` is a local-only fixture page. If a
+     * real ceremony ever moves here, this line is what will say so."* It was already here. The
+     * page being local-only makes it no less a ceremony, and `R-100`'s whole proof drives it.
+     *
+     * ⚠ WHY FOUR GREEN LOCAL GATES COULD NOT SEE IT, which is the mechanism rather than bad
+     * luck: `routes/harness.php` exists because *"the credential ceremony lives in
+     * `navigator.credentials` and cannot be driven from HTTP"*. `composer gate` runs 1,377 PHP
+     * tests and no browser; a `Permissions-Policy` is enforced by a browser and by nothing
+     * else. The only instrument that can fail on this is `pnpm run gate:e2e`, which the PHP
+     * gate does not run. `ResponseHeaderTest` now asserts the HEADER on that path, which is
+     * the part a PHP test *can* hold.
+     *
+     * ⚠ `(self)` AND NOT `*`: the harness page is the document doing the ceremony, so the
+     * feature is allowed for this origin and for no embedded third party. And it is this ONE
+     * path, not `local`/`testing` globally — the route only exists in those environments
+     * (`RouteSurfaceTest` drives six environment names to prove it), so narrowing by path
+     * rather than by environment keeps the denial in force for everything else even there.
+     */
+    private static function permissionsPolicyFor(Request $request): string
+    {
+        $harness = ltrim($request->getPathInfo(), '/') === self::WEBAUTHN_PATH;
+
+        $directives = [];
+
+        foreach (self::PERMISSIONS as $feature) {
+            $directives[] = $harness && in_array($feature, self::WEBAUTHN_FEATURES, true)
+                ? $feature.'=(self)'
+                : $feature.'=()';
+        }
+
+        return implode(', ', $directives);
     }
 
     private static function isCacheable(Request $request): bool

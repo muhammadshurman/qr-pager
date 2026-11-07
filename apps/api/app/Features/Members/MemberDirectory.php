@@ -7,7 +7,9 @@ namespace App\Features\Members;
 use App\Domain\Audit\AuditActorType;
 use App\Domain\Tenancy\MemberActionDenied;
 use App\Domain\Tenancy\TenantRole;
+use App\Platform\Database\DriverError;
 use App\Platform\Tenancy\UserAttachment;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -223,56 +225,61 @@ final class MemberDirectory
         $userId = (string) $user->id;
         $membershipId = (string) Str::uuid7();
 
-        return withTenant($tenantId, function () use (
-            $tenantId, $userId, $membershipId, $role, $actorUserId, $actorIp
-        ): array {
-            // `role` IS SELECTED NOW, AND THAT IS `R-236` -- the response must describe what is
-            // STORED, not what the caller asked for.
-            $already = DB::selectOne('select id, role from tenant_users where user_id = ?', [$userId]);
+        /*
+         * ================================================================================
+         * ⚠ THE IDEMPOTENT BRANCH IS GONE — `R-244`, AND `R-236` WITH IT
+         * ================================================================================
+         *
+         * This method used to select `tenant_users` for an existing row and, if it found one,
+         * return it with a 201 instead of inserting. `R-236` was a defect INSIDE that branch
+         * (it answered with the REQUEST's role while writing nothing, so the body described a
+         * change that had not happened), and Task 12 first fixed it there.
+         *
+         * **`R-244`'s ruling removes the branch instead.** With the consent refusal above now
+         * reading `holdsAnyMembership()` on every call rather than a request-scoped memo, an
+         * address that already holds ANY membership — *including one on the caller's own
+         * tenant* — is refused before this closure runs. So the branch became unreachable on
+         * the ordinary path. Muhammad, rank 1: *"refuse, with the SAME answer as every other
+         * refusal and as an unknown address … A role change goes through the role endpoint,
+         * never through attach."*
+         *
+         * Keeping it would have left dead code that looks like a feature, which is what
+         * `R-240`'s ruling was about: *"keeping dead CSS because a test counts it is the test
+         * deciding the code."* And it was never a reliable guard for the RACE it appeared to
+         * cover: two concurrent first-adds both pass the refusal, and both can select no
+         * existing row before either commits.
+         *
+         * ⚠ SO THE RACE IS HANDLED WHERE IT ACTUALLY ARISES, and it answers the SAME `null`.
+         * `UNIQUE (tenant_id, user_id)` is what truly prevents the duplicate; the loser of a
+         * race gets `23505`, and turning that into the same refusal every other rejected
+         * attach gets is the whole of *one answer*. Left to propagate it would be a 500 for a
+         * request whose outcome is simply "not attached", and a distinguishable status is the
+         * oracle `MemberController::store()`'s in-force comment refuses.
+         */
+        try {
+            return withTenant($tenantId, function () use (
+                $tenantId, $userId, $membershipId, $role, $actorUserId, $actorIp
+            ): array {
+                DB::insert(
+                    'insert into tenant_users (id, tenant_id, user_id, role) values (?, ?, ?, ?::tenant_role)',
+                    [$membershipId, $tenantId, $userId, $role->value],
+                );
 
-            if ($already !== null) {
-                /*
-                 * Idempotent rather than a 409: adding somebody who is already here is not
-                 * an error worth a distinct answer, and UNIQUE (tenant_id, user_id) is what
-                 * actually prevents the duplicate.
-                 *
-                 * ⚠ `R-236`: THIS RETURNED `$role->value` -- THE REQUEST'S ROLE -- WHILE WRITING
-                 * NOTHING, so the body described a change that did not happen. Driven at the
-                 * `task-10` tag: a manager posting an existing **owner**'s address with
-                 * `role: staff` got `201 {"role":"staff"}` while `GET /v1/members` still showed
-                 * `owner`. An operator who trusts the answer believes a privilege was reduced
-                 * when it was not.
-                 *
-                 * ⚠ AND THE FIX IS THE STORED ROLE RATHER THAN A REFUSAL, which is the direction
-                 * the row argues and the direction `R-233` requires. A 409 or a 403 here would
-                 * make this endpoint an existing-membership oracle: `{201}` would mean the
-                 * address is free and `{409}` would mean it is taken, for any address an
-                 * authenticated manager types -- exactly what `MemberController::store()`'s
-                 * in-force one-message property exists to prevent. The idempotency is
-                 * deliberate; only the body was wrong.
-                 *
-                 * NO AUDIT ROW, deliberately and unchanged: nothing was written, and an
-                 * `member.added` row for a membership that already existed would be a false
-                 * entry in an append-only log.
-                 */
-                return [
-                    'id' => (string) $already->id,
-                    'user_id' => $userId,
-                    'role' => (string) $already->role,
-                ];
+                $this->audit($tenantId, $membershipId, 'member.added', $actorUserId, $actorIp, [
+                    'role' => $role->value,
+                ]);
+
+                return ['id' => $membershipId, 'user_id' => $userId, 'role' => $role->value];
+            });
+        } catch (QueryException $error) {
+            if (DriverError::sqlState($error) === DriverError::UNIQUE_VIOLATION) {
+                // The same `null` an unknown address and a held membership both produce, which
+                // the controller renders as the same 404. No audit row: nothing was written.
+                return null;
             }
 
-            DB::insert(
-                'insert into tenant_users (id, tenant_id, user_id, role) values (?, ?, ?, ?::tenant_role)',
-                [$membershipId, $tenantId, $userId, $role->value],
-            );
-
-            $this->audit($tenantId, $membershipId, 'member.added', $actorUserId, $actorIp, [
-                'role' => $role->value,
-            ]);
-
-            return ['id' => $membershipId, 'user_id' => $userId, 'role' => $role->value];
-        });
+            throw $error;
+        }
     }
 
     /**

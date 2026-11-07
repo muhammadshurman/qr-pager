@@ -102,6 +102,75 @@ final class Memberships
     public function __construct(private readonly ConnectionInterface $connection) {}
 
     /**
+     * Does this user hold ANY membership, anywhere? **NOT MEMOISED, AND THAT IS THE POINT.**
+     *
+     * ================================================================================
+     * ⚠ `R-244`: WHY A FOURTH READER EXISTS WHEN `for()` ANSWERS THE SAME QUESTION
+     * ================================================================================
+     *
+     * `UserAttachment::refusalFor()` implements `§4 › Security`'s consent clause — *an address
+     * already belonging to an account that holds ANY membership is refused rather than
+     * attached* — and it was asking `for($userId) === []`. That gave **two different answers
+     * to one question depending on container lifetime**, which Muhammad ruled is the defect
+     * rather than the status it produced: *"`refusalFor()` ANSWERING DIFFERENTLY ON AND OFF
+     * THE REQUEST PATH IS THE DEFECT. Make it one path, and write down in the code why it ever
+     * diverged — an unexplained divergence you preserve is a bug you have agreed to keep."*
+     *
+     * **WHY IT DIVERGED, measured 2026-11-07 with a trace inside `refusalFor()` across two
+     * real `POST /v1/members` requests in one test:**
+     *
+     *     request 1   memberships=0  raw=0  app.tenant_id=''  role=qrpager_app  conn=pgsql
+     *     request 2   memberships=0  raw=1  app.tenant_id=''  role=qrpager_app  conn=pgsql
+     *     outside     memberships=0  raw=1  app.tenant_id=''  role=qrpager_app  conn=pgsql
+     *
+     * `raw` is `select … from public.user_memberships(?)` issued on the SAME connection in the
+     * SAME call. On request 2 the function returns **1 row** and `for()` returns **none**. Not
+     * RLS, not the tenant scope, not the role, not the connection — **the memo below**, filled
+     * with `[]` during request 1 by the consent check itself, and still warm because this
+     * class is `scoped()` and the test harness runs one container per test (`R-102`).
+     *
+     * So in PRODUCTION the second attach is refused (fresh reader, 1 row) and in the SUITE it
+     * answered 201. `MembersTest`'s *"idempotent on a second add"* case asserted the harness's
+     * answer, not the application's, for three days.
+     *
+     * ================================================================================
+     * WHY THE MEMO IS RIGHT FOR `for()` AND WRONG HERE
+     * ================================================================================
+     *
+     * `for()` memoises because it answers *"which tenants may THIS CALLER act in"* — asked
+     * several times per request about the authenticated principal, and stable for a request by
+     * design (`QRPAGER-12 §10.5`). This reader asks *"does some OTHER account already hold a
+     * membership"*, about an id that arrived in a request body, **and the answer can change
+     * inside one request**: the attach two statements later is exactly such a change. A memo
+     * over that is not a cache, it is a stale authorisation decision.
+     *
+     * ⚠ IT ADDS NO CROSS-TENANT PATH. Same function, same connection, same `§4 › Tenancy`
+     * named path (*"a user's own memberships"*) that `for()` uses; the list stays at FOUR. It
+     * reads LESS than `for()` does — `exists`, never a tenant id, a slug or a name — so the
+     * caller cannot disclose another tenant's identity even by accident, which is the property
+     * `MemberConsentTest` asserts from the outside.
+     *
+     * ⚠ AND IT IS `limit 1` RATHER THAN A COUNT, because the question is existence and a count
+     * over another user's memberships is a number this caller has no use for.
+     */
+    public function holdsAnyMembership(string $userId): bool
+    {
+        // Shape-checked first, exactly as `for()` does and for its reason: the value becomes a
+        // tenant scope and a Redis namespace downstream, so a non-uuid means a guard produced
+        // something impossible and the honest answer is "no memberships" rather than a query.
+        if (! Str::isUuid($userId)) {
+            return false;
+        }
+
+        $row = $this->connection->selectOne(
+            'select 1 as present from public.user_memberships(?) limit 1',
+            [$userId],
+        );
+
+        return $row !== null;
+    }
+
+    /**
      * Every membership this user holds. Cross-tenant by design, bounded by the five
      * properties in the class docblock.
      *

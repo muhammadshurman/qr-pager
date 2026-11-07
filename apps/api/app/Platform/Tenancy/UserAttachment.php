@@ -103,8 +103,33 @@ final class UserAttachment
             return AttachmentRefusal::PlatformAdmin;
         }
 
-        return $this->memberships->for((string) $existing->id) === []
-            ? null
-            : AttachmentRefusal::AlreadyAMember;
+        /*
+         * ⚠ `holdsAnyMembership()` AND NOT `for() === []` — `R-244`, ruled by Muhammad.
+         *
+         * This line asked `for($userId) === []` and therefore read a REQUEST-SCOPED MEMO, so
+         * one question had two answers depending on container lifetime. Measured 2026-11-07,
+         * two real `POST /v1/members` in one test, traced inside this method — on the second
+         * request `public.user_memberships()` returned **1 row** on this very connection while
+         * `for()` returned **none**, because the consent check on the FIRST request had already
+         * memoised `[]` for this id and the attach happened after it.
+         *
+         * So in production the second attach was refused and in the suite it answered 201.
+         * His ruling: *"refuse, with the SAME answer as every other refusal and as an unknown
+         * address — the 404 you already chose, so no oracle opens. A role change goes through
+         * the role endpoint, never through attach. The part that matters is not the status:
+         * `refusalFor()` ANSWERING DIFFERENTLY ON AND OFF THE REQUEST PATH IS THE DEFECT."*
+         *
+         * `Memberships::holdsAnyMembership()` carries the full measurement and the reason the
+         * memo is right for `for()` and wrong for this. It queries every time, reads `exists`
+         * and never a tenant id, and adds no cross-tenant path: same function, same connection,
+         * same named path, so `§4 › Tenancy`'s list stays at FOUR.
+         *
+         * ⚠ AND THE CALLER'S OWN TENANT IS A MEMBERSHIP, which is the clause read literally and
+         * is now what happens: re-attaching somebody already on this tenant is refused like any
+         * other held membership, with the same 404 as an unknown address.
+         */
+        return $this->memberships->holdsAnyMembership((string) $existing->id)
+            ? AttachmentRefusal::AlreadyAMember
+            : null;
     }
 }

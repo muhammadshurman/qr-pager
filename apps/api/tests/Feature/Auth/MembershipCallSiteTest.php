@@ -5,7 +5,14 @@ declare(strict_types=1);
 use App\Platform\Auth\Memberships;
 
 /** The one pattern, defined once so the guard and its own control cannot diverge. */
-const MEMBERSHIP_CALL = '/\bmemberships\s*->\s*(for|in|sole)\s*\(/';
+// ⚠ `holdsAnyMembership` JOINED THE ALTERNATION AT TASK 12 (`R-244`), AND IT HAD TO.
+// This pattern ENUMERATES the method names, so a new public read is invisible to the
+// call-site case until it is added here -- and invisible is the one thing this guard must
+// not be. Measured: with the new reader in place and this list unchanged, the call-site
+// case reported `UserAttachment.php:131` MISSING from the live set while the call sat on
+// exactly that line. A name list that silently stops matching is `§4a`'s guard-goes-quiet
+// shape, and the surface case above is what forces this edit: it fails first.
+const MEMBERSHIP_CALL = '/\bmemberships\s*->\s*(for|holdsAnyMembership|in|sole)\s*\(/';
 
 /*
  * ================================================================================
@@ -74,7 +81,34 @@ function membershipCallSites(): array
     return $found;
 }
 
-it('exposes exactly the three public reads its docblock describes', function (): void {
+it('exposes exactly the four public reads its docblock describes', function (): void {
+    /*
+     * ⚠⚠ A FOURTH READER ARRIVED AT TASK 12 — `holdsAnyMembership()`, `R-244` — AND THIS
+     * GUARD'S QUESTION IS ANSWERED FOR IT HERE, which is what its failure message demands.
+     *
+     * **WHERE ITS USER ID COMES FROM.** The same place `UserAttachment`'s other call took it:
+     * `users.id`, from an EXACT-MATCH lookup on a lower-cased email two statements earlier in
+     * the same method. Never a request parameter, never a path segment, never a tenant-scoped
+     * row. `users` is global and RLS-free (`§2.4`).
+     *
+     * **WHY IT EXISTS WHEN `for()` ANSWERS THE SAME QUESTION.** Because `for()` MEMOISES, and
+     * the consent refusal must not. Measured 2026-11-07 across two real `POST /v1/members` in
+     * one test, traced inside `refusalFor()`: on the second request
+     * `public.user_memberships()` returned **1 row** on that very connection while `for()`
+     * returned **none** — the first request's own consent check had memoised `[]` for that id,
+     * and the attach happened after it. So one question had two answers depending on container
+     * lifetime: refused in production, `201` in the suite. Muhammad ruled the DIVERGENCE the
+     * defect rather than the status.
+     *
+     * **WHAT IT READS, AND IT IS LESS THAN `for()` DOES.** `select 1 … limit 1`. The function
+     * returns another user's tenant ids, slugs and names; this reader takes none of them, so
+     * the caller cannot disclose another tenant's identity even by accident —
+     * `MemberConsentTest` asserts that property from the outside.
+     *
+     * **IT ADDS NO CROSS-TENANT PATH.** Same function, same connection, same named path
+     * (`§4 › Tenancy`, *"a user's own memberships"*). The list stays at FOUR, and the call-site
+     * count below is unchanged at ten: one call became another on the same line.
+     */
     $public = array_values(array_map(
         fn (ReflectionMethod $method): string => $method->getName(),
         array_filter(
@@ -86,7 +120,7 @@ it('exposes exactly the three public reads its docblock describes', function ():
 
     sort($public);
 
-    expect($public)->toBe(['for', 'in', 'sole'],
+    expect($public)->toBe(['for', 'holdsAnyMembership', 'in', 'sole'],
         "Memberships' public surface changed. Every reader here is backed by the named "
         .'cross-tenant path user_memberships(uuid), so a new one needs its own argument '
         .'about where its user id comes from -- and this class\'s docblock, QRPAGER-12 '
@@ -96,7 +130,7 @@ it('exposes exactly the three public reads its docblock describes', function ():
     // AND EVERY ONE OF THEM TAKES A USER ID FIRST. That is the shape the bound depends on:
     // a reader whose first argument were a tenant, a filter or a list would be a different
     // kind of question being asked of a bypassing function.
-    foreach (['for', 'in', 'sole'] as $name) {
+    foreach (['for', 'holdsAnyMembership', 'in', 'sole'] as $name) {
         $parameters = (new ReflectionMethod(Memberships::class, $name))->getParameters();
 
         expect($parameters)->not->toBeEmpty($name);
@@ -215,7 +249,7 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
         'app/Platform/Auth/Http/AuthController.php:103',
         'app/Platform/Auth/Http/AuthController.php:268',
         'app/Platform/Auth/RequestPrincipal.php:85',
-        'app/Platform/Tenancy/UserAttachment.php:106',
+        'app/Platform/Tenancy/UserAttachment.php:131',
     ], 'the set of callers of the named cross-tenant membership path changed -- read the '
        .'new one and say where its user id comes from before updating this list');
 });

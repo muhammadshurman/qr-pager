@@ -185,11 +185,27 @@ it('denies every sensor capability in Permissions-Policy, from the middleware’
     // walked: a count tells you the list changed, this tells you which way.
     expect($policy)->toContain('camera=()')
         ->and($policy)->toContain('microphone=()')
-        ->and($policy)->toContain('geolocation=()')
-        // A WebAuthn ceremony on THIS origin would need this -- and there is none: the passkey
-        // ceremonies run on `apps/web`, and `/passkey-harness` is a local-only fixture page.
-        // If a real ceremony ever moves here, this line is what will say so.
-        ->and($policy)->toContain('publickey-credentials-get=()');
+        ->and($policy)->toContain('geolocation=()');
+
+    /*
+     * ⚠⚠ THIS CASE USED TO ASSERT `publickey-credentials-get=()` ON EVERY PATH, WITH A COMMENT
+     * THAT WAS FALSE, AND CI PAID FOR IT.
+     *
+     * It read: *"A WebAuthn ceremony on THIS origin would need this -- and there is none: the
+     * passkey ceremonies run on `apps/web`, and `/passkey-harness` is a local-only fixture
+     * page. If a real ceremony ever moves here, this line is what will say so."* The ceremony
+     * was ALREADY HERE. `/passkey-harness` is the fixture `R-100`'s whole proof drives, and
+     * being local-only makes it no less a ceremony.
+     *
+     * CI run `42372017224`, `[passkey-chromium] browser/passkey.spec.ts:79`:
+     * *Expected substring "passkey login -> 200", Received "nothing yet"* — registration
+     * passed (`credentials.create()`, a feature never denied) and the login leg never ran.
+     *
+     * So the denial now has ONE path-scoped exception, and both halves are asserted below:
+     * the feature is allowed on the harness and denied everywhere else.
+     */
+    expect(str_contains($policy, 'publickey-credentials-get=()'))
+        ->toBeTrue('the WebAuthn feature is no longer denied on an ordinary path');
 });
 
 it('gives EVERY tenant-data route `private, no-store` — R-235, with no route named', function (): void {
@@ -489,4 +505,126 @@ it('never REPLACES a policy a response built for itself — the regression this 
 
     expect($json->headers->get('Content-Security-Policy'))
         ->toBe(ContentSecurityPolicy::jsonPolicy(), 'a response with no policy of its own got none');
+});
+
+it('gives the strict policy to EVERY route that is not on the named panel allowlist', function (): void {
+    /*
+     * ================================================================================
+     * ⚠ MUHAMMAD'S CONDITION ON `R-242`, AS A TEST — AND IT CAUGHT A SECOND INSTANCE
+     * ================================================================================
+     *
+     * His ruling, rank 1: *"the relaxation is a NAMED ALLOWLIST OF PANEL PATHS, never a global
+     * weakening — with a test asserting that every non-panel route still gets the strict
+     * policy, so a new public route cannot inherit the exemption."*
+     *
+     * The first version of `ContentSecurityPolicy` keyed on the response's `Content-Type`:
+     * anything `text/html` got the panel policy. That is a global weakening wearing a narrow
+     * name — **every** HTML response inherited `'unsafe-inline' 'unsafe-eval'`, including
+     * `/passkey-harness`, a second credential surface, and any HTML route added later.
+     *
+     * So this case derives the route table and requires the panel relaxation to appear on the
+     * allowlisted paths and NOWHERE else. A new public route cannot inherit it, because a new
+     * public route is not on the list.
+     */
+    $relaxed = [];
+    $strict = 0;
+    $panels = 0;
+
+    foreach (drivableRoutes() as [$method, $uri]) {
+        $path = ltrim($uri, '/');
+
+        $onAllowlist = false;
+
+        foreach (ContentSecurityPolicy::panelPathPatterns() as $pattern) {
+            if (preg_match($pattern, $path) === 1) {
+                $onAllowlist = true;
+
+                break;
+            }
+        }
+
+        $csp = (string) $this->call($method, $uri)->headers->get('Content-Security-Policy');
+
+        if ($onAllowlist) {
+            $panels++;
+
+            expect($csp)->toBe(ContentSecurityPolicy::panelPolicy(), "{$method} {$uri} is on the allowlist but not on the panel policy");
+
+            continue;
+        }
+
+        // The harness has its own policy, which is narrower than the panel's and wider than
+        // JSON. It is named, it is one path, and it is asserted in its own case below.
+        if ($path === 'passkey-harness') {
+            continue;
+        }
+
+        if (str_contains($csp, 'unsafe-inline') || str_contains($csp, 'unsafe-eval')) {
+            $relaxed[] = "{$method} {$uri}: {$csp}";
+
+            continue;
+        }
+
+        $strict++;
+    }
+
+    expect($relaxed)->toBe([], "routes outside the panel allowlist carrying a relaxed policy:\n  ".implode("\n  ", $relaxed));
+
+    // NON-VACUITY, BOTH WAYS. A derivation that matched nothing would make the loop above
+    // assert nothing at all; an allowlist that matched everything would leave `$strict` at 0.
+    expect($strict)->toBeGreaterThan(30, "only {$strict} routes were checked against the strict policy")
+        ->and($panels)->toBeGreaterThan(0, 'the panel allowlist matched no route: it has gone stale and this case is vacuous');
+});
+
+it('serves the passkey harness a policy of its OWN, and gives back the WebAuthn feature there', function (): void {
+    /*
+     * ⚠ THE CI REGRESSION, AS A LOCAL TEST. Run `42372017224`,
+     * `[passkey-chromium] browser/passkey.spec.ts:79` (`R-100`):
+     * *Expected substring "passkey login -> 200", Received "nothing yet"*.
+     *
+     * `Permissions-Policy: publickey-credentials-get=()` disables
+     * `navigator.credentials.get()`, which is `passkey-harness.blade.php:150`. Registration
+     * (line 125, `credentials.create()`) was never gated, so the ceremony failed exactly one
+     * leg in — and line 166 prints `passkey login -> <status>` only after the `get()` resolves.
+     *
+     * ⚠ WHY NO PHP TEST COULD HAVE CAUGHT THE FAILURE ITSELF, and why this one is still worth
+     * having. `routes/harness.php` exists because *"the credential ceremony lives in
+     * `navigator.credentials` and cannot be driven from HTTP"* — a Permissions-Policy is
+     * enforced by a browser and by nothing else, so only `pnpm run gate:e2e` can fail on the
+     * ceremony. What a PHP test CAN hold is the HEADER, which is what this does: it closes the
+     * gap at the one place the gate can see it.
+     */
+    $response = $this->get('/passkey-harness');
+
+    $response->assertOk();
+
+    $policy = (string) $response->headers->get('Permissions-Policy');
+
+    // The feature the login leg needs, allowed for this origin and no embedded third party.
+    expect(str_contains($policy, 'publickey-credentials-get=(self)'))
+        ->toBeTrue("the harness cannot call navigator.credentials.get(): {$policy}")
+        // And nothing else was handed back with it. `camera`, `microphone` and `geolocation`
+        // have no business on a credential page.
+        ->and(str_contains($policy, 'camera=()'))->toBeTrue()
+        ->and(str_contains($policy, 'microphone=()'))->toBeTrue()
+        ->and(str_contains($policy, 'geolocation=()'))->toBeTrue();
+
+    // ITS OWN CSP, not the panel's: no `unsafe-eval`, because this page is hand-written
+    // JavaScript rather than Alpine.
+    $csp = (string) $response->headers->get('Content-Security-Policy');
+
+    expect($csp)->toBe(ContentSecurityPolicy::harnessPolicy())
+        ->and(str_contains($csp, 'unsafe-eval'))
+        ->toBeFalse('the harness is on the panel policy again, which is wider than it needs')
+        ->and($csp)->toContain("connect-src 'self'")
+        ->and($csp)->toContain("frame-ancestors 'none'");
+
+    // ⚠ AND THE EXEMPTION IS ONE PATH. Every other route keeps the denial, which is what makes
+    // this an exception rather than a removal.
+    foreach (['/healthz', '/v1/members', '/platform'] as $other) {
+        $elsewhere = (string) $this->call('GET', $other)->headers->get('Permissions-Policy');
+
+        expect(str_contains($elsewhere, 'publickey-credentials-get=()'))
+            ->toBeTrue("[{$other}] no longer denies the WebAuthn feature: the exception is not path-scoped");
+    }
 });

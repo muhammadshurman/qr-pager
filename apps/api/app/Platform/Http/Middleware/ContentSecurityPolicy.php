@@ -122,30 +122,123 @@ final class ContentSecurityPolicy
         ."form-action 'self'; "
         ."frame-ancestors 'none'";
 
+    /**
+     * THE PANEL PATHS, AND THE RELAXATION APPLIES NOWHERE ELSE — Muhammad's condition on `R-242`.
+     *
+     * His ruling, rank 1: *"the relaxation is a NAMED ALLOWLIST OF PANEL PATHS, never a global
+     * weakening — with a test asserting that every non-panel route still gets the strict
+     * policy, so a new public route cannot inherit the exemption."*
+     *
+     * ⚠ AND THAT CONDITION CAUGHT A SECOND INSTANCE OF ITS OWN CLASS IMMEDIATELY. The first
+     * version of this class keyed on the RESPONSE SHAPE — `Content-Type: text/html` got the
+     * panel policy — which is a global weakening wearing a narrow name: **every** HTML
+     * response on this origin inherited it, including `/passkey-harness`, which is not a panel
+     * and is a SECOND CREDENTIAL SURFACE. A new HTML route would have inherited it too,
+     * silently, which is precisely what he forbade.
+     *
+     * Listed one by one rather than as a `/platform*` + `/studio*` pair, for the reason
+     * `RouteSurfaceTest`'s own allowlist gives: a wildcard lets a new panel route arrive
+     * without a diff, and the diff is the mechanism.
+     *
+     * The Livewire prefix is matched by PATTERN because it is per-installation —
+     * `substr(hash('sha256', config('app.key').'livewire-endpoint'), 0, 8)` — so a literal
+     * here would be a pass that depends on this machine, which `§6` forbids. It is on the list
+     * because `POST livewire-<hash>/update` is how every panel interaction travels.
+     *
+     * @var list<string>
+     */
+    private const PANEL_PATHS = [
+        '#^platform$#',
+        '#^platform/#',
+        '#^studio$#',
+        '#^studio/#',
+        '#^livewire-[0-9a-f]{8}/#',
+    ];
+
+    /**
+     * The WebAuthn harness page, which needs a policy of its own and had NO business having the
+     * panel's.
+     *
+     * ⚠ THIS ENTRY EXISTS BECAUSE THE SHAPE-KEYED VERSION BROKE A REAL CEREMONY IN CI, AND
+     * ONLY IN CI. `/passkey-harness` is `text/html`, so it took the panel policy — and
+     * `HardenResponse`'s `Permissions-Policy` denied `publickey-credentials-get`, which is the
+     * feature `navigator.credentials.get()` needs. CI run `42372017224`:
+     *
+     *     ✘ [passkey-chromium] browser/passkey.spec.ts:79 R-100 — registers against a virtual
+     *       authenticator and then signs in with it
+     *       Expected substring: "passkey login -> 200"
+     *       Received string:    "nothing yet"
+     *
+     * `passkey-harness.blade.php:125` is `navigator.credentials.create()` — gated by
+     * `publickey-credentials-create`, which was never denied, so REGISTRATION passed. Line 150
+     * is `navigator.credentials.get()`, and line 166 prints `passkey login -> <status>` only
+     * after it resolves. The login leg never ran.
+     *
+     * ⚠ AND MY OWN TEST ASSERTED THE DENIAL WAS SAFE, WITH A COMMENT THAT WAS FALSE:
+     * *"A WebAuthn ceremony on THIS origin would need this — and there is none … If a real
+     * ceremony ever moves here, this line is what will say so."* The ceremony was already
+     * there. `routes/harness.php` exists precisely because *"the credential ceremony lives in
+     * `navigator.credentials` and cannot be driven from HTTP"* — so no number of PHP tests
+     * could see it, and four green local gates did not.
+     *
+     * Its own policy: same-origin everything, `'unsafe-inline'` for its one inline script
+     * (it is a hand-written fixture page, not Alpine, so NO `'unsafe-eval'`), and nothing else.
+     */
+    private const HARNESS_PATH = 'passkey-harness';
+
+    private const HARNESS = "default-src 'self'; "
+        ."script-src 'self' 'unsafe-inline'; "
+        ."style-src 'self' 'unsafe-inline'; "
+        ."img-src 'self' data:; "
+        ."connect-src 'self'; "
+        ."object-src 'none'; "
+        ."base-uri 'none'; "
+        ."form-action 'self'; "
+        ."frame-ancestors 'none'";
+
     public function forResponse(Request $request, Response $response): string
     {
-        return self::isHtmlDocument($response) ? self::PANEL : self::JSON;
+        $path = ltrim($request->getPathInfo(), '/');
+
+        if ($path === self::HARNESS_PATH) {
+            return self::HARNESS;
+        }
+
+        return self::isPanelPath($path) ? self::PANEL : self::JSON;
     }
 
     /**
-     * An HTML document gets the panel policy; everything else gets `default-src 'none'`.
+     * ⚠ KEYED ON THE PATH NOW, NOT ON THE RESPONSE'S `Content-Type`, AND THE REASON THE OLD
+     * KEY LOOKED SAFER IS WORTH KEEPING.
      *
-     * ⚠ KEYED ON THE RESPONSE'S `Content-Type` AND NOT ON THE PATH, which is the safe
-     * direction in both ways it can be wrong. A path prefix (`/platform`, `/studio`) would
-     * hand the WEAKER policy to every future route under those prefixes whatever it served,
-     * and would hand the STRICTER one to an HTML response from anywhere else — and there is
-     * one: `PanelProblemPage` renders an HTML error document for a panel request, from the
-     * exception handler, on whatever path failed. Under a path rule that page would be
-     * sandboxed and blank.
-     *
-     * The default when the type is missing or unrecognised is the JSON policy — the stricter
-     * one — because a response whose shape we cannot determine is not a response to relax for.
+     * The shape key was chosen because `PanelProblemPage` renders an HTML error document from
+     * the exception handler, on whatever path failed — so a path rule would have sandboxed a
+     * panel error page and left it blank. That reasoning was right and is now handled a better
+     * way: `HardenResponse` never REPLACES a policy a response built for itself, and
+     * `PanelProblemPage` and `PreviewController` all build their own (narrower) ones. So the
+     * path key costs nothing and closes the inheritance hole the shape key opened.
      */
-    private static function isHtmlDocument(Response $response): bool
+    private static function isPanelPath(string $path): bool
     {
-        $type = (string) $response->headers->get('Content-Type', '');
+        foreach (self::PANEL_PATHS as $pattern) {
+            if (preg_match($pattern, $path) === 1) {
+                return true;
+            }
+        }
 
-        return str_contains(strtolower($type), 'text/html');
+        return false;
+    }
+
+    /** @return list<string> */
+    public static function panelPathPatterns(): array
+    {
+        return self::PANEL_PATHS;
+    }
+
+    /** The harness policy, exposed for the same reason the other two are. */
+    public static function harnessPolicy(): string
+    {
+        return self::HARNESS;
     }
 
     /** The JSON policy, exposed so the test reads the guard's own value rather than a copy. */

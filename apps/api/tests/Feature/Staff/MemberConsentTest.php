@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Auth\AttachmentRefusal;
 use App\Domain\Tenancy\TenantRole;
+use App\Platform\Auth\Memberships;
+use App\Platform\Tenancy\UserAttachment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -213,4 +216,75 @@ it('still attaches an address with an account and no membership, which is the po
         ->assertStatus(201);
 
     expect(membershipCount($alpha))->toBe($before + 1);
+});
+
+it('answers the SAME refusal with a warm reader and a fresh one — R-244, the one-path clause', function (): void {
+    /*
+     * ================================================================================
+     * ⚠ THE DEFECT WAS THE DIVERGENCE, NOT THE STATUS — MUHAMMAD, RANK 1
+     * ================================================================================
+     *
+     * *"The part that matters is not the status: `refusalFor()` ANSWERING DIFFERENTLY ON AND
+     * OFF THE REQUEST PATH IS THE DEFECT. Make it one path, and write down in the code why it
+     * ever diverged — an unexplained divergence you preserve is a bug you have agreed to
+     * keep."*
+     *
+     * Measured 2026-11-07, before the fix, on one address immediately after a successful
+     * `POST /v1/members`:
+     *
+     *     the container's reader (warm memo)   ->  null              (no refusal)
+     *     a freshly constructed reader         ->  "already_a_member"
+     *
+     * Same connection, same role, same database, same `app.tenant_id` — a trace inside
+     * `refusalFor()` showed `public.user_memberships()` returning **1 row** while
+     * `Memberships::for()` returned **none**. The cause was the request-scoped memo
+     * (`R-102`): the first add's own consent check had memoised `[]` for that id.
+     *
+     * So production refused and this suite did not. This case holds the property that makes
+     * that impossible to reintroduce: **both readers answer the same thing.**
+     *
+     * ⚠ IT IS DRIVEN THROUGH THE CONTAINER'S READER DELIBERATELY, memo and all. A case that
+     * only built fresh readers would pass against the OLD code and prove nothing.
+     */
+    $tenant = $this->makeTenant();
+    $this->actingForTenant($tenant, TenantRole::Owner);
+
+    $candidate = accountWithNoMembership();
+
+    // The attach happens through the real route, so the memo is warmed by the application's
+    // own consent check rather than by this test.
+    $this->postJson('/v1/members', [
+        'email' => $candidate['email'],
+        'role' => TenantRole::Staff->value,
+    ])->assertStatus(201);
+
+    $warm = app(UserAttachment::class)->refusalFor($candidate['email']);
+    $fresh = (new UserAttachment(DB::connection(), new Memberships(DB::connection())))
+        ->refusalFor($candidate['email']);
+
+    expect($warm)->toBe(AttachmentRefusal::AlreadyAMember,
+        'the container\'s reader does not refuse an address it has just attached: the memo is back')
+        ->and($fresh)->toBe(AttachmentRefusal::AlreadyAMember)
+        ->and($warm)->toBe($fresh, 'the refusal still depends on which reader asks');
+
+    // AND OVER HTTP, which is where it mattered: a second attach in the same process is
+    // refused, with the same answer an unknown address gets.
+    $second = $this->postJson('/v1/members', [
+        'email' => $candidate['email'],
+        'role' => TenantRole::Manager->value,
+    ]);
+
+    $unknown = $this->postJson('/v1/members', [
+        'email' => 'nobody-'.Str::lower(Str::random(12)).'@example.test',
+        'role' => TenantRole::Staff->value,
+    ]);
+
+    expect($second->getStatusCode())->toBe(404)
+        // INDISTINGUISHABLE as whole (status, body) pairs, which is the no-oracle property his
+        // ruling names in the same sentence as the status: *"the 404 you already chose, so no
+        // oracle opens."*
+        ->and([$second->getStatusCode(), $second->json()])
+        ->toBe([$unknown->getStatusCode(), $unknown->json()],
+            'a held membership and an unknown address answer differently, which makes this an '
+            .'existing-membership oracle for any address a manager types');
 });

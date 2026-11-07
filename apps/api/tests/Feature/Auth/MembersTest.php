@@ -81,7 +81,34 @@ it('lists the tenant staff, with the role and the account behind each membership
     }
 });
 
-it('adds an existing account, audits it, and is idempotent on a second add', function (): void {
+it('adds an existing account, audits it, and REFUSES a second add — R-244', function (): void {
+    /*
+     * ⚠⚠ THIS CASE ASSERTED `201` FOR THREE DAYS AND PRODUCTION ANSWERED `404`. `R-244`.
+     *
+     * It used to say *"is idempotent on a second add"* and require the second `POST` to return
+     * **201** with the existing membership id. That is not what the application does outside
+     * this harness. `MemberDirectory::add()` asks `UserAttachment::refusalFor()`, which asked
+     * the REQUEST-SCOPED `Memberships` memo — and the first add's own consent check had
+     * already memoised `[]` for that id. Measured 2026-11-07, traced inside `refusalFor()`
+     * across two real requests in one test:
+     *
+     *     request 1   memberships=0  raw=0   <- correct: no membership yet
+     *     request 2   memberships=0  raw=1   <- the memo, on a connection that saw the row
+     *
+     * In production each request builds a fresh reader, finds the row, and refuses. This suite
+     * runs one container per test (`R-102`), so it saw the stale answer and this case wrote it
+     * down as the contract.
+     *
+     * ⚠ MUHAMMAD'S RULING, rank 1: *"`§4 › Security` says an address already holding ANY
+     * membership is refused, and the caller's own tenant is a membership. So: refuse, with the
+     * SAME answer as every other refusal and as an unknown address — the 404 you already
+     * chose, so no oracle opens. A role change goes through the role endpoint, never through
+     * attach."* `Memberships::holdsAnyMembership()` is the one path now, and it queries every
+     * time.
+     *
+     * So the second add is a **404**, identical to an unknown address and to the two `R-233`
+     * refusals, and `MemberConsentTest` holds that indistinguishability as a property.
+     */
     $tenant = $this->makeTenant();
     $this->actingForTenant($tenant, TenantRole::Owner);
 
@@ -105,19 +132,25 @@ it('adds an existing account, audits it, and is idempotent on a second add', fun
     expect($audit)->toHaveCount(1)
         ->and((string) $audit[0]['context'])->toContain(TenantRole::Staff->value);
 
-    // IDEMPOTENT, not a 409: adding somebody who is already here is not an error worth a
-    // distinct answer, and UNIQUE (tenant_id, user_id) is what actually prevents the
-    // duplicate. A second add returns the EXISTING membership id.
+    // THE SECOND ADD IS REFUSED, and asking for a DIFFERENT role does not change that: attach
+    // is not a role-change endpoint.
     $again = $this->postJson('/v1/members', [
         'email' => $candidate['email'],
         'role' => TenantRole::Manager->value,
     ]);
 
-    $again->assertStatus(201)
-        ->assertJsonPath('member.id', $added->json('member.id'));
+    $again->assertStatus(404);
 
-    expect($this->getJson('/v1/members')->json('members'))->toHaveCount(2)
-        ->and(auditRows($tenant, 'member.added'))->toHaveCount(1, 'the idempotent add wrote a second audit row');
+    // NOTHING MOVED. Not the membership count, not the stored role, not the audit trail --
+    // which is the half that matters: a refusal that had written something would be worse than
+    // the 201 it replaces.
+    $members = $this->getJson('/v1/members')->json('members');
+
+    expect($members)->toHaveCount(2)
+        ->and(collect($members)->firstWhere('user_id', $candidate['id'])['role'])
+        ->toBe(TenantRole::Staff->value, 'the refused add changed the stored role')
+        ->and(auditRows($tenant, 'member.added'))->toHaveCount(1, 'the refused add wrote a second audit row')
+        ->and(auditRows($tenant, 'member.role_changed'))->toBe([], 'the refused add audited a role change');
 });
 
 it('reports an unknown address as not found, the same way it reports one it may not see', function (): void {
@@ -330,29 +363,25 @@ it('refuses a malformed role or address before anything is written', function ()
     $this->patchJson('/v1/members/'.Str::uuid7(), ['role' => 'platform_admin'])->assertStatus(422);
 });
 
-it('answers the STORED role on an idempotent add, not the one the caller asked for', function (): void {
+it('refuses a re-add of an OWNER as staff, which is R-236 made unreachable rather than fixed', function (): void {
     /*
-     * ⚠ `R-236`, accepted 2026-11-03 from Task 10's scoped `§11` security review and fixed at
-     * Task 12, its owner.
+     * ⚠ THIS CASE REPLACES A FIX THAT IS NOW DEAD CODE, AND SAYS SO RATHER THAN BEING DELETED.
      *
-     * `MemberDirectory::add()`'s idempotent branch returned `'role' => $role->value` — the
-     * REQUEST's role — while writing nothing, so the response described a change that did not
-     * happen. The row's own measurement, driven at the `task-10` tag: a manager posting an
-     * existing **owner**'s address with `role: staff` got `201 {"role":"staff"}` while
-     * `GET /v1/members` still showed `owner`. An operator who trusts the answer believes a
-     * privilege was reduced when it was not.
+     * `R-236` was a real defect: `MemberDirectory::add()`'s idempotent branch returned the
+     * REQUEST's role while writing nothing, so a manager posting an existing **owner**'s
+     * address with `role: staff` got `201 {"role":"staff"}` while the directory still showed
+     * `owner` — an operator who trusts the answer believes a privilege was reduced when it was
+     * not. Task 12 first fixed it in place, by returning the stored role.
      *
-     * ⚠ THE FIX IS THE STORED ROLE AND NOT A REFUSAL, which is the direction the row argues
-     * and the direction `R-233` requires. A 409 or a 403 here would make this endpoint an
-     * existing-membership oracle — `{201}` the address is free, `{409}` it is taken, for any
-     * address an authenticated manager types — which is exactly what
-     * `MemberController::store()`'s in-force one-message property exists to prevent. The
-     * idempotency is deliberate; only the body was wrong.
+     * `R-244`'s ruling then removed the branch entirely: with the consent refusal reading
+     * `holdsAnyMembership()` on every call, an address holding any membership — including one
+     * on the caller's own tenant — never reaches it. So `R-236`'s defect is **unreachable**
+     * rather than corrected, and the honest test is the one that proves the refusal happens
+     * in its worst direction.
      *
-     * ⚠ AND IT IS AN **OWNER** BEING RE-ADDED AS **STAFF**, deliberately: that is the row's
-     * own case and it is the direction that matters. `staff` → `manager` would read as a
-     * privilege the caller was granted; `owner` → `staff` reads as a privilege REMOVED, and an
-     * operator acting on that belief leaves a tenant with an owner it thinks it demoted.
+     * OWNER re-added as STAFF is that direction, deliberately: `staff → manager` reads as a
+     * privilege granted, `owner → staff` reads as one REMOVED, and an operator acting on that
+     * belief leaves a tenant with an owner it thinks it demoted.
      */
     $tenant = $this->makeTenant();
     $this->actingForTenant($tenant, TenantRole::Owner);
@@ -365,25 +394,25 @@ it('answers the STORED role on an idempotent add, not the one the caller asked f
     ])->assertStatus(201)->assertJsonPath('member.role', TenantRole::Owner->value);
 
     // The premise: the directory really does hold `owner` for this account now.
-    $stored = collect($this->getJson('/v1/members')->json('members'))
-        ->firstWhere('user_id', $candidate['id']);
+    expect(collect($this->getJson('/v1/members')->json('members'))
+        ->firstWhere('user_id', $candidate['id'])['role'])
+        ->toBe(TenantRole::Owner->value);
 
-    expect($stored['role'] ?? null)->toBe(TenantRole::Owner->value);
-
-    // THE ROW'S CASE. A second add asking for `staff` must not answer `staff`.
+    // `R-236`'s exact request, and it no longer answers 201 with anything at all.
     $again = $this->postJson('/v1/members', [
         'email' => $candidate['email'],
         'role' => TenantRole::Staff->value,
     ]);
 
-    $again->assertStatus(201)
-        ->assertJsonPath('member.role', TenantRole::Owner->value)
-        ->assertJsonPath('member.user_id', $candidate['id']);
+    $again->assertStatus(404);
 
-    // And nothing moved: the body is the only thing that was ever wrong here.
-    $after = collect($this->getJson('/v1/members')->json('members'))
-        ->firstWhere('user_id', $candidate['id']);
+    // ⚠ AND THE BODY CARRIES NO ROLE AT ALL, which is stronger than `R-236`'s fix was: the
+    // defect was a body describing a change that did not happen, and the refusal has no
+    // `member` member to describe one with.
+    expect($again->json('member'))->toBeNull();
 
-    expect($after['role'] ?? null)->toBe(TenantRole::Owner->value, 'the idempotent branch wrote a role')
-        ->and(auditRows($tenant, 'member.role_changed'))->toBe([], 'the idempotent branch audited a change');
+    // The stored role is untouched, which is the thing an operator would have acted on.
+    expect(collect($this->getJson('/v1/members')->json('members'))
+        ->firstWhere('user_id', $candidate['id'])['role'])
+        ->toBe(TenantRole::Owner->value, 'the refused add changed the stored role');
 });

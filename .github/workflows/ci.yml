@@ -1,5 +1,37 @@
 name: CI
 
+# =============================================================================
+# ⚠ EVERY ACTION AND THE RUNNER IMAGE ARE PINNED EXACT — Task 12, on his instruction:
+# *"`actions/cache@v4` is being forced off deprecated Node 20 onto Node 24, and
+# `ubuntu-latest` has already migrated. Pin and update the actions so a runner image
+# change cannot redden a release."*
+#
+# MEASURED 2026-11-07, not assumed — each action's `using:` read out of its own `action.yml`
+# at the ref this file pins:
+#
+#   actions/cache@v4        node20   <- the ONLY node20 action here, and the one being forced
+#   actions/cache@v5.1.0    node24   <- what it is now
+#   actions/checkout@v5     node24   <- already fine, pinned exact rather than bumped
+#   actions/setup-node@v5   node24   <- already fine, pinned exact rather than bumped
+#
+# ⚠ SO ONLY `cache` WAS UPDATED, AND THE OTHERS WERE ONLY PINNED. `checkout` and `setup-node`
+# have v7 available; bumping two majors serves neither the Node deprecation nor the runner
+# pin, and it could not be verified here (CI is blocked on an account billing condition, so a
+# red would be unreadable). A major bump nobody can run is the wrong-sha-gate shape.
+#
+# ⚠ AND THE RUNNER IS PINNED TO `ubuntu-26.04` BECAUSE THAT IS WHAT THE RUN ACTUALLY USED.
+# Read out of run `42372017224`: `Image: ubuntu-26.04`, release `ubuntu26/20261101.186`, on
+# BOTH jobs — and both got through their whole step lists on it (the two failures were
+# `records:check` and a Playwright case, neither an image problem). So this pins the image
+# this project is demonstrably green on, rather than pinning backwards to a 24.04 nothing has
+# measured.
+#
+# `shivammathur/setup-php@v2` was a FLOATING MAJOR, which is the same exposure in a third-party
+# action: it now names `2.40.0`.
+#
+# `CiWorkflowPinTest` holds all of this, so a floating ref cannot come back quietly.
+# =============================================================================
+
 on:
   push:
     # Task branches as well as main, added 2026-10-26. Until now CI triggered on pushes
@@ -101,9 +133,9 @@ concurrency:
 jobs:
   gitleaks:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
         with:
           fetch-depth: 0
       - name: Install gitleaks
@@ -116,7 +148,7 @@ jobs:
 
   gates:
     name: Pint, PHPStan, Pest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: apps/api
@@ -164,10 +196,10 @@ jobs:
           --health-retries 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
 
       - name: Set up PHP 8.4
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@2.40.0
         with:
           php-version: '8.4'
           extensions: pdo_pgsql, redis, mbstring, intl, bcmath, gd, curl, zip, xml
@@ -175,7 +207,7 @@ jobs:
           tools: composer:v2
 
       - name: Cache Composer
-        uses: actions/cache@v4
+        uses: actions/cache@v5.1.0
         with:
           path: ~/.cache/composer/files
           key: composer-${{ hashFiles('apps/api/composer.lock') }}
@@ -352,7 +384,7 @@ jobs:
       # This is apps/api's SECOND npm tree (ADR-003 keeps it out of the pnpm workspace), so
       # it is `npm ci` from `apps/api/package-lock.json` and not pnpm. `--ignore-scripts`
       # matches `composer setup`.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version-file: .nvmrc
           # The same hazard the `frontend` job documents at length, for the same reason:
@@ -414,7 +446,7 @@ jobs:
       # nobody is required to run is a gate in name only, which is the hole `R-126` is about.
       #
       # It needs the workspace and the browsers, which this job did not have before.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version-file: .nvmrc
           # Same hazard the frontend job documents: setup-node v5 caches automatically when a
@@ -468,7 +500,7 @@ jobs:
 
   frontend:
     name: Frontend workspace — lint, types, Vitest, Playwright, build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     # ADR-003: "CI gains a second job for the frontend workspace." A SECOND JOB and not a
     # step in `gates`, for two reasons. It needs neither Postgres nor Redis, so bolting it on
@@ -482,7 +514,7 @@ jobs:
     # at a terminal, who gets one readable log file instead.
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
 
         with:
           # ⚠ TAGS, OR `check-records`' tag assertion READS AN EMPTY LIST AND PASSES.
@@ -507,7 +539,7 @@ jobs:
       # asks only for >=20. package.json's `engines` states the same floor and .npmrc sets
       # engine-strict, so a clone on Node 20 is refused at install rather than failing later
       # somewhere that does not name the cause.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version-file: .nvmrc
           # ⚠ THE ONE LINE THE JOB FAILED FOR, AND IT IS A DEFAULT RATHER THAN SOMETHING
@@ -555,7 +587,7 @@ jobs:
       - name: Resolve the pnpm store path, now that pnpm exists
         run: echo "STORE=$(pnpm store path --silent)" >> "$GITHUB_ENV"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5.1.0
         with:
           path: ${{ env.STORE }}
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -594,7 +626,7 @@ jobs:
       # `ci-parity.test.mjs` now asserts that any job building apps/api's assets also
       # installs its composer tree, proven red against the version of this file that did not.
       - name: PHP 8.4, for apps/api's composer tree
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@2.40.0
         with:
           php-version: '8.4'
           extensions: mbstring, intl, bcmath, curl, zip, xml
@@ -751,7 +783,7 @@ jobs:
 
   runtime:
     name: FrankenPHP runtime — SIGTERM drain and a Redis outage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     # Q7: "the drain proof runs in CI, not only locally." It cannot run in the gates job:
     # `php artisan test` has no FrankenPHP, no worker loop and no process to signal, so a
@@ -762,7 +794,7 @@ jobs:
     # One job for both, so the image is built once: the second proof reuses the layers of
     # the first.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5.1.0
 
       - name: Postgres and Redis, from the project's own compose file
         run: docker compose -f compose.yaml up -d --wait postgres redis
