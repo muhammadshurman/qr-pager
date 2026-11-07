@@ -103,6 +103,40 @@ class RetryingPostgresConnector extends PostgresConnector
     /** Absorbed stalls in THIS process, for the report at the end of the run. */
     private static int $absorbed = 0;
 
+    /**
+     * Whether an absorbed stall is written to the run report.
+     *
+     * ⚠ THIS EXISTS BECAUSE THE REPORT CRIED WOLF ON ITS VERY FIRST GREEN GATE, and a signal
+     * that is always on is not a signal. Measured, `gate-20261107T114517Z`:
+     *
+     *     ⚠ 2 stall(s) absorbed. Each one would have reddened this run before Task 12.
+     *       … port 41189 failed: timeout expired
+     *       … port 37865 failed: timeout expired
+     *
+     * Both were `ConnectRetryTest`'s OWN silent listeners on ephemeral ports, deliberately
+     * stalled for 2 s to exercise this class. The run had no host stall in it at all, and the
+     * report said the opposite in the voice it is supposed to use for a degrading machine.
+     *
+     * So the one caller that MANUFACTURES stalls says so. The counter above is untouched by
+     * this flag — `ConnectRetryTest` asserts against the counter and must keep seeing its own
+     * drills — and the only thing suppressed is the line in the report a human reads.
+     *
+     * A test that forgets to restore this would silence a real stall for the rest of the
+     * process, so `ConnectRetryTest` restores it in an `afterEach` and
+     * `it is actually IN FORCE` asserts the default is `true`.
+     */
+    private static bool $recording = true;
+
+    public static function recordToReport(bool $recording): void
+    {
+        self::$recording = $recording;
+    }
+
+    public static function isRecordingToReport(): bool
+    {
+        return self::$recording;
+    }
+
     public static function absorbed(): int
     {
         return self::$absorbed;
@@ -135,19 +169,45 @@ class RetryingPostgresConnector extends PostgresConnector
 
         while (true) {
             $attempt++;
-            $startedAt = microtime(true);
+
+            /*
+             * ⚠ `hrtime()` AND NOT `microtime()`, AND THIS IS A CORRECTION TO THIS FILE'S OWN
+             * FIRST MEASUREMENT RATHER THAN A PRECAUTION.
+             *
+             * The second full gate run after this class landed absorbed two REAL stalls on
+             * port 5432 and reported `elapsed=66.36s` for BOTH, to the same hundredth of a
+             * second. That figure cannot be wall time spent inside a connect: the slowest
+             * single test in that run was **6.06 s**, and the run itself took **276.18 s**
+             * against the no-stall run's **275.57 s** — so there is no room in the suite's own
+             * clock for 133 s of stalling, and an identical delta twice is the signature of a
+             * constant rather than of a measurement.
+             *
+             * `microtime(true)` reads the WALL clock, which WSL2 steps when the host suspends
+             * or when NTP corrects it, so a delta across a step measures the step. `hrtime()`
+             * is monotonic and immune to both.
+             *
+             * ⚠ WHAT THIS MEANS FOR THAT RUN, said plainly: **the two stalls were real and
+             * were absorbed — that is what the gate going green on the first run demonstrates
+             * — and their DURATION is unmeasured.** The 66.36 s figure is withdrawn rather
+             * than explained, which is `R-185`'s lesson (a diagnosis stated more firmly than
+             * its evidence) applied to this task's own instrument.
+             */
+            $startedAt = hrtime(true);
 
             try {
                 return $this->attempt($config);
             } catch (Throwable $error) {
-                $elapsed = microtime(true) - $startedAt;
+                $elapsed = (hrtime(true) - $startedAt) / 1_000_000_000;
 
                 if ($attempt >= self::ATTEMPTS || ! self::isConnectStall($error)) {
                     throw self::annotate($error, $attempt, $elapsed, self::deadline($config));
                 }
 
                 self::$absorbed++;
-                self::record($config, $attempt, $elapsed, $error);
+
+                if (self::$recording) {
+                    self::record($config, $attempt, $elapsed, $error);
+                }
             }
         }
     }

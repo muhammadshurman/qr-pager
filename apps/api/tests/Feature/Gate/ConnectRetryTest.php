@@ -100,6 +100,23 @@ final class StallsThenConnects extends RetryingPostgresConnector
 
 beforeEach(function (): void {
     RetryingPostgresConnector::resetAbsorbed();
+
+    // ⚠ THIS FILE MANUFACTURES CONNECT STALLS, SO IT KEEPS THEM OUT OF THE RUN REPORT.
+    // `bin/gate` prints `storage/logs/r191-absorbed.log` after the suite so that a degrading
+    // host is visible; on the first green gate it printed *"⚠ 2 stall(s) absorbed. Each one
+    // would have reddened this run before Task 12"* and both were THIS file's own silent
+    // listeners on ephemeral ports. A warning that fires on every clean run is a warning
+    // nobody reads by the third one.
+    //
+    // The COUNTER is untouched: every case below asserts against `absorbed()`, which still
+    // counts these drills. Only the human-readable line is suppressed.
+    RetryingPostgresConnector::recordToReport(false);
+});
+
+afterEach(function (): void {
+    // Restored, or this file would silence a REAL stall for every test that runs after it in
+    // the same process -- which is the defect this flag is supposed to avoid, inverted.
+    RetryingPostgresConnector::recordToReport(true);
 });
 
 it('absorbs ONE real libpq connect stall and returns a working connection', function (): void {
@@ -249,6 +266,15 @@ it('is actually IN FORCE for the application, not merely present in the tree', f
     // binding deleted and the suite back to dying on a stall. This reads the binding the
     // framework will actually use, and then reads the connection that came out of it.
     expect(app('db.connector.pgsql'))->toBeInstanceOf(RetryingPostgresConnector::class);
+
+    // AND THE REPORT IS ON BY DEFAULT. `beforeEach` above turns it off for this file, so a
+    // default of `false` would leave every absorbed stall in the whole suite unreported and
+    // every case here would still pass. Asserted against the constant's own default rather
+    // than against the live value, which this file has deliberately changed.
+    $fresh = new ReflectionClass(RetryingPostgresConnector::class);
+
+    expect($fresh->getDefaultProperties()['recording'] ?? null)
+        ->toBeTrue('absorbed stalls are no longer reported by default: the gate line goes silent');
 
     // And the real connections resolve through it: a bound connector that no connection uses
     // is the same defect one layer down.
