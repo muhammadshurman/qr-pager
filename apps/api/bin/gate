@@ -113,14 +113,25 @@ report_absorbed_stalls () {
 
   # Lines at or after this run's start. awk and not grep: the comparison is on the leading
   # timestamp, and a lexicographic >= on ISO-8601 UTC is a chronological one.
-  if ! awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" | grep -q .; then
+  #
+  # ⚠ READ ONCE INTO A VARIABLE, AND THE `|| true` IS NOT DECORATION. `tools/gate/bin/
+  # check-shell-evidence` refused the first version of this function -- *"a pipeline assignment
+  # under pipefail with no fallback: the substitution FAILS when a stage matches nothing"* --
+  # which is a true positive: `grep -c .` exits 1 on a count of zero, and this script runs
+  # under `pipefail`. The old form also ran the same awk THREE times and reasoned that the
+  # third could not see zero lines because the first had found some; that is the kind of
+  # argument this linter exists to stop, and it is wrong the moment the file is appended to
+  # concurrently by a second runner.
+  absorbed=$(awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" || true)
+
+  if [ -z "$absorbed" ]; then
     echo "  none" | tee -a "$log"
     return
   fi
 
-  awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" | sed 's/^/  /' | tee -a "$log"
-  count=$(awk -v since="$gate_started_at" '$1 >= since' "$absorbed_log" | grep -c .)
-  echo "  ⚠ $count stall(s) absorbed. Each one would have reddened this run before Task 12." | tee -a "$log"
+  printf '%s\n' "$absorbed" | sed 's/^/  /' | tee -a "$log"
+  count=$(printf '%s\n' "$absorbed" | grep -c . || true)
+  echo "  ⚠ ${count} stall(s) absorbed. Each one would have reddened this run before Task 12." | tee -a "$log"
 }
 
 # composer's own scripts, so this cannot drift from what CI runs.
