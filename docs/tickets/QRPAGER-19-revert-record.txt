@@ -194,3 +194,65 @@ Failed asserting that 'https://evil.example.com' is null.
    FAILED  Tests\Feature\Http\ResponseHeaderTest > it serves the panel marku…   
 Failed asserting that true is false.
   Tests:    1 failed, 8 passed (109 assertions)
+
+================================================================================
+5. THE FUZZ SUITE AND THE ASVS MAPPING
+================================================================================
+
+--- 5b. REVERT: the readyz exception widened to excuse every 5xx -- the silencer ----
+  ⨯ it WOULD catch a 5xx — the control, because every case above assert… 0.12s  
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it WOULD catch a 5xx — the c…   
+Failed asserting that false is true.
+  Tests:    1 failed, 3 passed (15 assertions)
+
+--- 5c. REVERT: one ASVS citation renamed to a file that does not exist (R-136) -----
+  ⨯ it cites no evidence path that does not exist — the R-136 shape, cl… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it cites no evidence…   
+  evidence paths that do not exist:
+Failed asserting that two arrays are identical.
+  ➜ 132▕     expect($missing)->toBe([], "evidence paths that do not exist:\n  ".implode("\n  ", $missing));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+--- 5d. REVERT: a MET row stripped of its evidence ---------------------------------
+  ⨯ it backs every MET row with at least one cited path, because MET is… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it backs every MET r…   
+  MET with no evidence:
+Failed asserting that two arrays are identical.
+  ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+--- 5b. REVERT: the readyz exception widened to excuse every 5xx -- the silencer ----
+  ⨯ it WOULD catch a 5xx — the control, because every case above assert… 0.12s  
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it WOULD catch a 5xx — the c…   
+Failed asserting that false is true.
+  Tests:    1 failed, 3 passed (15 assertions)
+
+--- 5c. REVERT: one ASVS citation renamed to a file that does not exist (R-136) -----
+  ⨯ it cites no evidence path that does not exist — the R-136 shape, cl… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it cites no evidence…   
+  evidence paths that do not exist:
+Failed asserting that two arrays are identical.
+  ➜ 132▕     expect($missing)->toBe([], "evidence paths that do not exist:\n  ".implode("\n  ", $missing));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+--- 5d. REVERT: a MET row stripped of its evidence ---------------------------------
+  ⨯ it backs every MET row with at least one cited path, because MET is… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it backs every MET r…   
+  MET with no evidence:
+Failed asserting that two arrays are identical.
+  ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+--- 5a. REVERT: the fuzz corpus gutted to ONE payload -- the vacuity direction ---
+  ⨯ it finds no 5xx anywhere on the surface, with a hostile BODY on eve… 0.33s  
+  ⨯ it finds no 5xx with a hostile value in every PATH PARAMETER         0.17s  
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it finds no 5xx anywhere on…    
+  the corpus is nearly empty
+Failed asserting that 1 is greater than 20.
+  ➜ 182▕         ->and(count($corpus))->toBeGreaterThan(20, 'the corpus is nearly empty');
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it finds no 5xx with a hosti…   
+  only 16 parameterised requests were sent
+Failed asserting that 16 is greater than 50.
+  ➜ 298▕         ->and($driven)->toBeGreaterThan(50, "only {$driven} parameterised requests were sent");
+
+
