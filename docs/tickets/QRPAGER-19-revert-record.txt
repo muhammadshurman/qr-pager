@@ -7,6 +7,10 @@ Measured 2026-11-07 on task-12-security-hardening.
 1. R-191 — tests/Feature/Gate/ConnectRetryTest.php
 ================================================================================
 
+================================================================================
+1. R-191 — tests/Feature/Gate/ConnectRetryTest.php
+================================================================================
+
 --- 1a. REVERT: the container binding removed (the guard-goes-quiet case) -------
   ────────────────────────────────────────────────────────────────────────────  
    FAILED  Tests\Feature\Gate\ConnectRetryTest >…  BindingResolutionException   
@@ -29,7 +33,6 @@ Measured 2026-11-07 on task-12-security-hardening.
 
   Tests:    1 failed, 5 passed (26 assertions)
   Duration: 6.98s
-
 
 --- 1b. REVERT: ATTEMPTS back to 1, so nothing is absorbed ----------------------
   ⨯ it absorbs ONE real libpq connect stall and returns a working conne… 2.35s  
@@ -97,6 +100,16 @@ Failed asserting that null is of type int.
   WITH the renderer removed (32,425 bytes vs the problem document's 149), and the
   revert below is the re-run.
 
+================================================================================
+2. THE NAMED INVARIANT — tests/Feature/Http/SurfaceDisclosureTest.php
+================================================================================
+
+⚠ THE FIRST ATTEMPT AT 2a WAS GREEN AND THE PROOF, NOT THE CODE, WAS AT FAULT.
+  It looked for 'pager_sessions_gone' and 'select *'; the table is RENAMED, so the
+  failing statement still says 'pager_sessions', and the board selects named columns.
+  Neither needle could ever appear. The needles are now the body measured WITH the
+  renderer removed (32,425 bytes against the problem document's 149).
+
 --- 2a. REVERT: ProblemRenderer unregistered, so Laravel's own renderer answers --
   ✓ it FINDS every needle when a route really discloses one — the contr… 0.33s  
   ✓ it discloses nothing across the WHOLE route surface, at APP_DEBUG f… 1.85s  
@@ -111,6 +124,10 @@ Failed asserting that null is of type int.
 
 ================================================================================
 3. R-234 / R-236 / R-237 AND THE RESPONSE-HARDENING WORK
+================================================================================
+
+================================================================================
+3. R-234 / R-236 / R-237
 ================================================================================
 
 --- 3a. R-234 REVERT: the scale unconfined again, as it was before Task 12 ----------
@@ -138,6 +155,10 @@ Failed asserting that null is identical to '01a1b5c7-1928-70b4-b713-b3003a917f34
    FAILED  Tests\Feature\Pager\PagerAuditActorTest > it records the caller o…   
   Failed asserting that null is identical to '01a1b5c7-1a03-7259-9079-238938928e6e'.
   Tests:    2 failed, 2 passed (21 assertions)
+
+================================================================================
+4. THE RESPONSE-HARDENING WORK — headers, CSP, CORS, the avatar
+================================================================================
 
 --- 4a. REVERT: HardenResponse unregistered -- R-038's state before Task 12 --------
   ⨯ it sets every hardening header on EVERY route in the table, driven…  0.47s  
@@ -199,49 +220,13 @@ Failed asserting that true is false.
 5. THE FUZZ SUITE AND THE ASVS MAPPING
 ================================================================================
 
---- 5b. REVERT: the readyz exception widened to excuse every 5xx -- the silencer ----
-  ⨯ it WOULD catch a 5xx — the control, because every case above assert… 0.12s  
-   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it WOULD catch a 5xx — the c…   
-Failed asserting that false is true.
-  Tests:    1 failed, 3 passed (15 assertions)
+================================================================================
+5. THE FUZZ SUITE AND THE ASVS MAPPING
+================================================================================
 
---- 5c. REVERT: one ASVS citation renamed to a file that does not exist (R-136) -----
-  ⨯ it cites no evidence path that does not exist — the R-136 shape, cl… 0.11s  
-   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it cites no evidence…   
-  evidence paths that do not exist:
-Failed asserting that two arrays are identical.
-  ➜ 132▕     expect($missing)->toBe([], "evidence paths that do not exist:\n  ".implode("\n  ", $missing));
-  Tests:    1 failed, 5 passed (88 assertions)
-
---- 5d. REVERT: a MET row stripped of its evidence ---------------------------------
-  ⨯ it backs every MET row with at least one cited path, because MET is… 0.11s  
-   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it backs every MET r…   
-  MET with no evidence:
-Failed asserting that two arrays are identical.
-  ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
-  Tests:    1 failed, 5 passed (88 assertions)
-
---- 5b. REVERT: the readyz exception widened to excuse every 5xx -- the silencer ----
-  ⨯ it WOULD catch a 5xx — the control, because every case above assert… 0.12s  
-   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it WOULD catch a 5xx — the c…   
-Failed asserting that false is true.
-  Tests:    1 failed, 3 passed (15 assertions)
-
---- 5c. REVERT: one ASVS citation renamed to a file that does not exist (R-136) -----
-  ⨯ it cites no evidence path that does not exist — the R-136 shape, cl… 0.11s  
-   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it cites no evidence…   
-  evidence paths that do not exist:
-Failed asserting that two arrays are identical.
-  ➜ 132▕     expect($missing)->toBe([], "evidence paths that do not exist:\n  ".implode("\n  ", $missing));
-  Tests:    1 failed, 5 passed (88 assertions)
-
---- 5d. REVERT: a MET row stripped of its evidence ---------------------------------
-  ⨯ it backs every MET row with at least one cited path, because MET is… 0.11s  
-   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it backs every MET r…   
-  MET with no evidence:
-Failed asserting that two arrays are identical.
-  ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
-  Tests:    1 failed, 5 passed (88 assertions)
+⚠ AND 5a HAD TO BE RE-RUN FOR THE SAME REASON. The first attempt removed ONE payload
+  from the corpus rather than the corpus, left 29 in place, and stayed green. Gutted to
+  one payload, the non-vacuity floors fire.
 
 --- 5a. REVERT: the fuzz corpus gutted to ONE payload -- the vacuity direction ---
   ⨯ it finds no 5xx anywhere on the surface, with a hostile BODY on eve… 0.33s  
@@ -255,4 +240,33 @@ Failed asserting that 1 is greater than 20.
 Failed asserting that 16 is greater than 50.
   ➜ 298▕         ->and($driven)->toBeGreaterThan(50, "only {$driven} parameterised requests were sent");
 
+--- 5b. REVERT: the readyz exception widened to excuse every 5xx -- the silencer ----
+  ⨯ it WOULD catch a 5xx — the control, because every case above assert… 0.12s  
+   FAILED  Tests\Feature\Http\FuzzSurfaceTest > it WOULD catch a 5xx — the c…   
+Failed asserting that false is true.
+  Tests:    1 failed, 3 passed (15 assertions)
 
+--- 5c. REVERT: one ASVS citation renamed to a file that does not exist (R-136) -----
+  ⨯ it cites no evidence path that does not exist — the R-136 shape, cl… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it cites no evidence…   
+  evidence paths that do not exist:
+Failed asserting that two arrays are identical.
+  ➜ 132▕     expect($missing)->toBe([], "evidence paths that do not exist:\n  ".implode("\n  ", $missing));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+--- 5d. REVERT: a MET row stripped of its evidence ---------------------------------
+  ⨯ it backs every MET row with at least one cited path, because MET is… 0.11s  
+   FAILED  Tests\Feature\Architecture\AsvsMappingTest > it backs every MET r…   
+  MET with no evidence:
+Failed asserting that two arrays are identical.
+  ➜ 164▕     expect($unevidenced)->toBe([], "MET with no evidence:\n  ".implode("\n  ", $unevidenced));
+  Tests:    1 failed, 5 passed (88 assertions)
+
+================================================================================
+TOTAL: 17 reverts, each run once, each output above.
+================================================================================
+⚠ THE COUNT WAS STATED AS 13 IN THREE PLACES BEFORE THIS FILE WAS COUNTED
+  (two commit messages and the QRPAGER-19 comment). It is 17. The error was in the
+  conservative direction and is corrected here rather than left to be re-counted,
+  because `bin/gate`'s own closing line exists for this: it said "all six steps green"
+  for the whole of Task 7 while running seven.
