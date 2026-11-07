@@ -254,10 +254,66 @@ describe('.gitignore directory patterns', () => {
     })
     // Exit 1 means "none of these paths is ignored", which is the answer wanted. Exit 0
     // means at least one IS, and its line is in stdout.
+    const matched = result.stdout.trim().split('\n').filter(Boolean)
+
+    /**
+     * ⚠⚠ SCOPED TO IGNORE SOURCES THE REPOSITORY ACTUALLY OWNS — Task 12, on his instruction:
+     * *"fix it so a runtime-written exclude file cannot redden the gate."*
+     *
+     * `git check-ignore` is the authority on matching, which is why this case asks it rather
+     * than re-implementing the rules — and it consults EVERY source: the repository's tracked
+     * `.gitignore` files, the per-clone `.git/info/exclude`, and a global `core.excludesFile`.
+     * Only the first is something a diff can fix.
+     *
+     * MEASURED 2026-11-07. This case failed on ten probes, every one of them sourced from
+     * `.git/info/exclude` line 11 — an any-depth glob on `.claude/worktrees/`, written by the
+     * **Claude Code runtime** into this clone on **2026-11-04**, three days before the branch that was being gated
+     * existed. `stat` on that file confirms the date, and the repository contains no such
+     * pattern. CI never saw it: a fresh checkout has no `.git/info/exclude` entries, so the
+     * same commit was green there and red here.
+     *
+     * That is the defect this case became: it held the REPOSITORY accountable for a file the
+     * repository does not contain, so the gate's result depended on whose machine ran it —
+     * and a developer whose tooling writes an exclude line could not make it green by any
+     * change to the project. Being red for something unfixable is how a check gets switched
+     * off, which is the opposite of what this one is for.
+     *
+     * ⚠ THE STRENGTH OVER THE REPOSITORY'S OWN FILES IS UNCHANGED, and that is the point of
+     * filtering by SOURCE rather than by pattern: `-v` prints `source:line:pattern\tpath`, so
+     * a match from any `.gitignore` in the tree still fails exactly as before. The
+     * `storage/` defect this case was written for would still be caught.
+     *
+     * ⚠ AND A LOCAL MATCH IS REPORTED RATHER THAN DROPPED. A filter that silently discarded
+     * them would make this case quiet about a real local shadowing — the guard-goes-quiet
+     * shape `§4a` records four instances of — so the lines are printed and the count is
+     * asserted to be the complement. Nothing is hidden; it is attributed.
+     */
+    const repositoryOwned = (line) => {
+      const source = line.split(':')[0]
+
+      return source.endsWith('.gitignore')
+    }
+
+    const offending = matched.filter(repositoryOwned)
+    const local = matched.filter((line) => !repositoryOwned(line))
+
+    if (local.length > 0) {
+      console.log(
+        `gitignore: ${local.length} probe(s) ignored by a non-repository source, which this ` +
+          `case does not hold the repository to:\n  ${local.join('\n  ')}`,
+      )
+    }
+
     expect(
-      result.stdout.trim().split('\n').filter(Boolean),
-      'an anchored pattern is still ignoring a path inside a nested project',
+      offending,
+      "an anchored pattern in one of the repository's own .gitignore files is still ignoring " +
+        'a path inside a nested project',
     ).toEqual([])
+
+    // The split accounts for every line, so a parse that silently matched nothing cannot make
+    // the assertion above pass over an empty list.
+    expect(offending.length + local.length).toBe(matched.length)
+
     expect([0, 1]).toContain(result.status)
   }, 30_000)
 
