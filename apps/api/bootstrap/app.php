@@ -22,6 +22,7 @@ use App\Platform\Http\Middleware\RequireTenantScope;
 use App\Platform\Http\Middleware\ResolvePrincipal;
 use App\Platform\Http\Middleware\ShedLoad;
 use App\Platform\Http\PanelProblemPage;
+use App\Platform\Http\PanelSignInRedirect;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemRenderer;
 use App\Platform\Logging\ReportRedactedException;
@@ -496,6 +497,26 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(function (Throwable $error, Request $request): SymfonyResponse {
             $problem = app(ProblemRenderer::class)->render($error, $request);
             $page = app(PanelProblemPage::class);
+
+            /*
+             * ⚠ AND SINCE QRPAGER-38, A SIGNED-OUT BROWSER ON A PANEL PATH IS SENT TO THE
+             * SIGN-IN SCREEN INSTEAD OF BEING TOLD IT NEEDS ONE -- `R-253`. BEFORE the page,
+             * because the page is the dead end: measured signed out, `/studio` answered a
+             * 1,990-byte 401 titled "Authentication is required." with nothing on it to
+             * press, and the panels have no login form of their own BY DESIGN (`§4 ›
+             * Tenancy`), so the only honest answer is the address of the one form there is.
+             *
+             * It returns null for everything else, which is nearly everything: only an
+             * `Unauthenticated` problem, only a real document navigation, and only on a
+             * registered panel's path. `/v1` therefore keeps its problem document unchanged
+             * -- it is not a panel path -- and so does a Livewire request, which asks for
+             * JSON. `PanelSignInRedirect`'s docblock argues all three.
+             */
+            $redirect = app(PanelSignInRedirect::class)->for($problem, $request);
+
+            if ($redirect !== null) {
+                return $redirect;
+            }
 
             return $page->wants($request)
                 ? $page->respond($problem)
