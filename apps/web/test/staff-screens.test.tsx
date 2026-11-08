@@ -276,7 +276,7 @@ describe('sign-in', () => {
       />,
     )
 
-    expect(screen.getByText(t('staff.signin.failed'))).toBeDefined()
+    expect(screen.getByText(t('staff.signin.failedHead'))).toBeDefined()
 
     const body = document.body.textContent
 

@@ -323,7 +323,7 @@ describe('signing in with a passkey', () => {
     press(t('staff.signin.passkey'))
 
     await waitFor(() => {
-      expect(everything()).toContain(t('staff.signin.failed'))
+      expect(everything()).toContain(t('staff.signin.failedHead'))
     })
 
     // The oracle clause: a refused credential must not tell a passer-by whether the account
@@ -405,7 +405,7 @@ describe('signing in with a password', () => {
     submitForm()
 
     await waitFor(() => {
-      expect(everything()).toContain(t('staff.signin.failed'))
+      expect(everything()).toContain(t('staff.signin.failedHead'))
     })
   })
 
@@ -424,7 +424,7 @@ describe('signing in with a password', () => {
       expect(everything()).toContain(t('staff.signin.offline'))
     })
 
-    expect(everything()).not.toContain(t('staff.signin.failed'))
+    expect(everything()).not.toContain(t('staff.signin.failedHead'))
   })
 
   it('says the network is down when the CODE cannot be delivered', async () => {
@@ -473,7 +473,7 @@ describe('signing in with a password', () => {
     submitForm()
 
     await waitFor(() => {
-      expect(everything()).toContain(t('staff.signin.failed'))
+      expect(everything()).toContain(t('staff.signin.failedHead'))
     })
   })
 })
@@ -530,7 +530,7 @@ describe('a person who works at two restaurants', () => {
     press('al-baik-jeddah · Owner')
 
     await waitFor(() => {
-      expect(everything()).toContain(t('staff.signin.failed'))
+      expect(everything()).toContain(t('staff.signin.failedHead'))
     })
 
     // ⚠ AND NO RESTAURANT NAME ANYWHERE. A refused choice must not leak that the OTHER
@@ -1448,7 +1448,7 @@ describe('R-224 and the board’s staleness, through the real client — 10b’s
 
     // ⚠ AND THE FALSE SENTENCE IS GONE. Asserting only the new copy would pass against a
     // screen that showed both.
-    expect(everything()).not.toContain(t('staff.signin.failed'))
+    expect(everything()).not.toContain(t('staff.signin.failedHead'))
 
     // The form stays usable, which is the whole difference from the board's throttle: on
     // sign-in the person must act, later.
@@ -1480,7 +1480,7 @@ describe('R-224 and the board’s staleness, through the real client — 10b’s
       expect(screen.getByText(t('staff.signin.throttled'))).toBeDefined()
     })
 
-    expect(everything()).not.toContain(t('staff.signin.failed'))
+    expect(everything()).not.toContain(t('staff.signin.failedHead'))
   })
 
   it('QA H-3: a throttled SHELL says what R-224 ruled, not “something went wrong on our side”', async () => {
@@ -1721,7 +1721,7 @@ function fireChange(element: HTMLElement, value: string): void {
  * works. Every press that reveals something is followed by a wait for the something.
  */
 async function fillCredentials(): Promise<void> {
-  press(t('staff.signin.password'))
+  // QRPAGER-38: the password form needs no reveal; see the note in staff-interactions.
 
   await waitFor(() => {
     expect(screen.getByLabelText(t('staff.signin.email'))).toBeDefined()

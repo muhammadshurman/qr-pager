@@ -126,14 +126,21 @@ export const EN = {
    *     "token", no "session".
    */
 
-  // ----------------------------------------------------------------- staff sign-in
+  'staff.signin.sub': "Staff access for today's shift",
+  'staff.signin.or': 'or',
+  'staff.signin.forgot': 'Forgot your password?',
+  // ⚠ "Nothing you did caused it" is DELETED, by the owner's ruling of 2026-11-08: an error
+  // says what happened and what to do, and reassurance that explains nothing is neither.
+  'staff.signin.failedHead': "We couldn't verify your passkey",
+  'staff.signin.failedBody': 'Try again, or sign in with your email and password below.',
+  'staff.signin.waiting': 'Waiting for your passkey…',
+  'staff.signin.waitingSub': 'Unlock with your device — fingerprint, face, or device code.',
+  'staff.signin.cancel': 'Cancel and use your password',
   'staff.signin.title': 'Sign in',
   'staff.signin.passkey': 'Use your passkey',
-  'staff.signin.password': 'Use a password instead',
   'staff.signin.working': 'Signing you in…',
   // ONE message for every cause, deliberately. Distinguishing "no such account" from
   // "wrong password" lets a form probe whether an address has an account here.
-  'staff.signin.failed': 'That did not work. Try your passkey again, or use your password.',
   'staff.signin.offline': 'No connection. Check the network and try again.',
   'staff.signin.unsupported': 'This browser cannot use passkeys. Use your password instead.',
   'staff.signin.email': 'Email',

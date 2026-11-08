@@ -59,12 +59,12 @@ function mount(stage: SignInStage) {
 /**
  * Is this sentence on the screen?
  *
- * ⚠ ASKED OF THE RENDERED TEXT RATHER THAN THROUGH `getByText`, because two of these phrases
- * legitimately appear twice and `getByText` throws on the second. `staff.signin.offline`'s
- * state renders *"Try again"* as both its own retry affordance and the action label, and
- * `staff.signin.code` is both a field label and part of its hint — so the element query failed
- * on a screen that was CORRECT, which is the failure mode that teaches you to loosen the
- * assertion. This is a boolean about the copy, which is exactly the claim each row makes;
+ * ⚠ ASKED OF THE RENDERED TEXT RATHER THAN THROUGH `getByText`, because a phrase can
+ * legitimately appear twice and `getByText` throws on the second. `staff.signin.code` is
+ * both a field label and part of its own hint, and until QRPAGER-38 `staff.signin.offline`'s
+ * state rendered *"Try again"* as both its own retry affordance and the action label — so the
+ * element query failed on a screen that was CORRECT, which is the failure mode that teaches
+ * you to loosen the assertion. This is a boolean about the copy, which is exactly the claim each row makes;
  * structure is asserted by `getByRole` / `getByLabelText` in the rows that care about it.
  */
 function shows(phrase: string): boolean {
@@ -87,8 +87,15 @@ interface StageExpectation {
 
 const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
   idle: {
-    says: [t('staff.signin.title'), t('staff.signin.passkey'), t('staff.signin.password')],
-    silentOn: [t('staff.signin.failed'), t('staff.signin.offline'), t('staff.signin.unsupported')],
+    says: [t('staff.signin.title'), t('staff.signin.sub'), t('staff.signin.passkey')],
+    silentOn: [
+      t('staff.signin.failedHead'),
+      t('staff.signin.offline'),
+      t('staff.signin.unsupported'),
+      // The waiting sentence belongs to `working` alone; a resting screen that says it is
+      // waiting is the spinner-that-never-stops bug as copy.
+      t('staff.signin.waiting'),
+    ],
     andAlso: () => {
       const passkey = passkeyButton()
 
@@ -96,15 +103,27 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
       expect(passkey).not.toBeNull()
       expect(passkey?.hasAttribute('disabled')).toBe(false)
 
-      // The password form is BEHIND the disclosure -- §12 S1 puts the passkey first and this
-      // is the half of that claim a screenshot cannot show.
-      expect(screen.queryByLabelText(t('staff.signin.email'))).toBeNull()
+      /*
+       * ⚠ AND THE PASSWORD FORM IS ON THE SCREEN, NOT BEHIND A DISCLOSURE. This row read
+       * `queryByLabelText(email)).toBeNull()` with "the password form is BEHIND the
+       * disclosure" beside it; QRPAGER-38 reverses that, and §12 S1's "passkey first" is now
+       * about ORDER and emphasis rather than about hiding the fallback. Both halves are
+       * asserted, because "first" is only meaningful if the second one is there.
+       */
+      expect(screen.getByLabelText(t('staff.signin.email'))).toBeTruthy()
+      expect(screen.getByLabelText(t('staff.signin.passwordLabel'))).toBeTruthy()
+
+      // The passkey button comes before the form in DOM order, which is the order a screen
+      // reader and the tab key both take.
+      const email = screen.getByLabelText(t('staff.signin.email'))
+
+      expect(passkey?.compareDocumentPosition(email)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     },
   },
 
   working: {
     says: [t('staff.signin.working')],
-    silentOn: [t('staff.signin.failed'), t('staff.signin.offline')],
+    silentOn: [t('staff.signin.failedHead'), t('staff.signin.offline')],
     andAlso: () => {
       const passkey = passkeyButton()
 
@@ -119,7 +138,7 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
   },
 
   failed: {
-    says: [t('staff.signin.failed'), t('staff.shell.error.body')],
+    says: [t('staff.signin.failedHead'), t('staff.signin.failedBody')],
     silentOn: [t('staff.signin.offline'), t('staff.signin.unsupported')],
     andAlso: () => {
       // ⚠ ONE MESSAGE FOR EVERY CAUSE. The screen must not name which half failed -- that is
@@ -134,13 +153,15 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
   },
 
   offline: {
-    says: [t('staff.signin.offline'), t('staff.shell.error.retry')],
-    silentOn: [t('staff.signin.failed'), t('staff.signin.unsupported')],
+    // The body is `staff.shell.error.body` ("Nothing you did caused it."), NOT the board's
+    // "We will keep trying." -- `R-224`, and the component's own note says why.
+    says: [t('staff.signin.offline'), t('staff.shell.error.body')],
+    silentOn: [t('staff.signin.failedHead'), t('staff.signin.unsupported')],
   },
 
   unsupported: {
     says: [t('staff.signin.unsupported')],
-    silentOn: [t('staff.signin.failed'), t('staff.signin.offline')],
+    silentOn: [t('staff.signin.failedHead'), t('staff.signin.offline')],
     andAlso: () => {
       /*
        * ⚠ THE PASSWORD FORM IS ALREADY OPEN, with no disclosure to find. A browser that
@@ -158,7 +179,7 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
 
   'two-factor': {
     says: [t('staff.signin.twoFactor'), t('staff.signin.code'), t('staff.signin.submit')],
-    silentOn: [t('staff.signin.passkey'), t('staff.signin.password')],
+    silentOn: [t('staff.signin.passkey'), t('staff.signin.email')],
     andAlso: () => {
       const code = screen.getByLabelText(t('staff.signin.code'))
 
@@ -198,7 +219,7 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
    * later.
    */
   throttled: {
-    says: [t('staff.signin.throttled')],
+    says: [t('staff.signin.throttled'), t('staff.signin.throttled.body')],
     silentOn: [
       // The board's reassurance would be false here: a sign-in does not happen until they
       // try again.
@@ -213,10 +234,16 @@ const EXPECTATIONS: Record<SignInStage, StageExpectation> = {
       expect(passkey).not.toBeNull()
       expect(passkey?.hasAttribute('disabled')).toBe(false)
 
-      // And the notice itself offers nothing to press -- a "Try again" inside it would be
-      // another 429. `StaffState`'s `throttled` case has no `action` member, so this is the
-      // type's doing rather than this screen's restraint.
-      expect(document.querySelector('[data-state="throttled"] button')).toBeNull()
+      /*
+       * ⚠ AND THE NOTICE ITSELF OFFERS NOTHING TO PRESS -- a "Try again" inside it would be
+       * another 429. Queried through `[data-signin-alert]`, which is the card's own alert
+       * block: this read `[data-state="throttled"] button`, an attribute `StaffState`
+       * rendered and QRPAGER-38's card does not, so after the rebuild it was asserting the
+       * absence of a button inside an element that was not there -- true of any screen,
+       * including a blank one. The attribute exists on the alert FOR this assertion.
+       */
+      expect(document.querySelector('[data-signin-alert="true"]')).not.toBeNull()
+      expect(document.querySelector('[data-signin-alert="true"] button')).toBeNull()
     },
   },
 }

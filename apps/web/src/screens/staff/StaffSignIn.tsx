@@ -1,7 +1,8 @@
-import { Button, Field, StaffState } from '@qrpager/ui'
+import { Button } from '@qrpager/ui'
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
 
-import type { Translate } from '../../copy/index.ts'
+import { BRAND } from '../../copy/brand.ts'
+import type { CopyKey, Translate } from '../../copy/index.ts'
 import type { StaffMembership } from '../../staff/api.ts'
 
 /**
@@ -65,6 +66,8 @@ export interface StaffSignInProps {
   readonly t: Translate
   readonly stage: SignInStage
   readonly onPasskey: () => void
+  /** Abandon the device prompt and fall back to the password. */
+  readonly onPasskeyCancel?: (() => void) | undefined
   readonly onPassword: (email: string, password: string) => void
   readonly onTwoFactor: (code: string) => void
   readonly memberships: readonly StaffMembership[]
@@ -75,6 +78,7 @@ export function StaffSignIn({
   t,
   stage,
   onPasskey,
+  onPasskeyCancel,
   onPassword,
   onTwoFactor,
   memberships,
@@ -83,7 +87,43 @@ export function StaffSignIn({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+
+  /** The device prompt is open: the whole screen waits on it. */
+  const waiting = stage === 'working'
+
+  /*
+   * ONE ALERT BLOCK FOR EVERY REFUSAL, with its own copy per cause. The states differ in
+   * what they say and not in what they are, so they share a shape -- and the shape carries
+   * `role="alert"` once rather than four times.
+   */
+  const alert: { readonly head: CopyKey; readonly body: CopyKey } | null =
+    stage === 'failed'
+      ? { head: 'staff.signin.failedHead', body: 'staff.signin.failedBody' }
+      : stage === 'offline'
+        ? /*
+           * ⚠ NOT `staff.shell.offline.body` ("We will keep trying."), WHICH WOULD BE FALSE
+           * HERE. That sentence is the BOARD's, where the shell really does re-poll by
+           * itself; sign-in makes no attempt until the person makes one -- Muhammad's
+           * `R-224` ruling, that on the board nothing is required of the person and on
+           * sign-in they must try again themselves. So the body reassures without promising:
+           * the head says what to do and this says it was not their fault.
+           */
+          { head: 'staff.signin.offline', body: 'staff.shell.error.body' }
+        : stage === 'throttled'
+          ? { head: 'staff.signin.throttled', body: 'staff.signin.throttled.body' }
+          : stage === 'unsupported'
+            ? { head: 'staff.signin.unsupported', body: 'staff.signin.failedBody' }
+            : null
+
+  /*
+   * The footer's date, in the viewer's own locale and calendar. `toLocaleDateString` with no
+   * locale argument follows the browser, which is what a staff member's device already says.
+   */
+  const today = new Date().toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 
   /*
    * ⚠ BOTH SUBMITS REFUSE TO FIRE TWICE, AND THE REFUSAL IS IN THE HANDLER AS WELL AS ON THE
@@ -193,140 +233,216 @@ export function StaffSignIn({
 
   return (
     <div className="qr-staff-signin">
-      <div className="qr-staff-signin__surface">
-        <h1 className="qr-staff-signin__title">{t('staff.signin.title')}</h1>
-
-        {stage === 'failed' && (
-          <StaffState
-            state="error"
-            title={t('staff.signin.failed')}
-            description={t('staff.shell.error.body')}
-            action={{ label: t('staff.signin.passkey'), onAction: onPasskey }}
-          />
-        )}
-
-        {stage === 'offline' && (
-          <StaffState
-            state="offline"
-            title={t('staff.signin.offline')}
-            description={t('staff.shell.offline.body')}
-            action={{ label: t('staff.shell.error.retry'), onAction: onPasskey }}
-          />
-        )}
-
+      {/*
+        ONE CARD, CENTRED. QRPAGER-38's spec, built literally. Every value below is a token:
+        no literal hex, no arbitrary length, and logical properties throughout so the English
+        mirror needs no second stylesheet.
+      */}
+      <div className="qr-staff-signin__card">
         {/*
-          `R-224`. The `throttled` STATE from the kit, so there is no button here either —
-          and that is correct for a different reason than the board's: a *"Try again"* inside
-          this notice would be another 429, while the FORM BELOW stays usable so the person
-          can try once they have waited. The sentence is the action, which is what `§12`
-          means by *every error says what to do*.
+          THE INK BAND ANCHORS AND BRANDS THE SCREEN. It names the PRODUCT and never the
+          restaurant, which is the owner's ruling of 2026-11-08 and is a privacy decision
+          rather than a layout one: memberships arrive AFTER authentication, so the only way
+          to name a restaurant here would be to remember the last one on the device — and
+          `/staff` runs on SHARED COUNTER TERMINALS, where that both misleads the next person
+          and leaks which tenant uses this terminal to anyone who opens it. One path, not
+          two: there is no optional name to pass.
         */}
-        {stage === 'throttled' && (
-          <StaffState
-            state="throttled"
-            title={t('staff.signin.throttled')}
-            /*
-             * ⚠ ITS OWN SENTENCE, AND THE FIRST VERSION PUT THE PASSKEY BUTTON'S LABEL HERE
-             * — `§11` QA M-11. *"Use your passkey"* under *"Too many tries. Wait a minute"*
-             * tells a rate-limited person to do the rate-limited thing, which is the defect
-             * `R-224` is about, reproduced inside `R-224`'s own fix. `§12` S1 specifies ONE
-             * sentence for this state; this is the second half of it, saying what the wait
-             * is for rather than naming a control.
-             */
-            description={t('staff.signin.throttled.body')}
-          />
-        )}
+        <div className="qr-staff-signin__band">
+          <span aria-hidden="true" className="qr-staff-signin__mark">
+            {BRAND.charAt(0)}
+          </span>
+          <span className="qr-staff-signin__restaurant">
+            {BRAND}
+          </span>
+        </div>
 
-        {stage === 'unsupported' && (
-          <StaffState
-            state="permission-denied"
-            title={t('staff.signin.unsupported')}
-            description={t('staff.signin.password')}
-          />
-        )}
+        <div className="qr-staff-signin__body">
+          <div className="qr-staff-signin__heading">
+            <h1 className="qr-staff-signin__title">{t('staff.signin.title')}</h1>
+            <p className="qr-staff-signin__sub">{t('staff.signin.sub')}</p>
+          </div>
 
-        {stage === 'two-factor' ? (
-          <form className="qr-staff-form" onSubmit={submitCode}>
-            <Field
-              label={t('staff.signin.code')}
-              hint={t('staff.signin.twoFactor')}
-              name="code"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(event) => {
-                setCode(event.target.value)
-              }}
-              required
-            />
-            <Button type="submit" loading={working} loadingLabel={t('staff.signin.working')}>
-              {t('staff.signin.submit')}
-            </Button>
-          </form>
-        ) : (
-          <>
-            {/* THE PRIMARY ACTION, AND IT IS FIRST IN THE DOM as well as first visually --
-                a keyboard user reaches it first for the same reason a touch user sees it
-                first, and the two orders agreeing is what `§12`'s keyboard clause means in
-                practice. */}
-            <Button
-              variant="primary"
-              onClick={onPasskey}
-              loading={stage === 'working'}
-              loadingLabel={t('staff.signin.working')}
-              disabled={stage === 'unsupported'}
-              data-passkey-signin="true"
-            >
-              {t('staff.signin.passkey')}
-            </Button>
-
-            {showPassword || stage === 'unsupported' ? (
-              <form className="qr-staff-form" onSubmit={submitPassword}>
-                <Field
-                  label={t('staff.signin.email')}
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
+          {/*
+            THE TWO-FACTOR CHALLENGE KEEPS ITS OWN BRANCH, and it REPLACES the passkey and
+            password groups rather than sitting beside them: the person has already proved
+            who they are and the only thing left to do is enter the code. Offering a passkey
+            button here would restart an authentication that is half finished.
+          */}
+          {stage === 'two-factor' ? (
+            <form className="qr-staff-signin__form" onSubmit={submitCode}>
+              <div className="qr-staff-signin__field">
+                <label className="qr-staff-signin__label" htmlFor="staff-code">
+                  {t('staff.signin.code')}
+                </label>
+                <input
+                  className="qr-staff-signin__input"
+                  id="staff-code"
+                  name="code"
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  aria-describedby="staff-code-hint"
+                  value={code}
                   onChange={(event) => {
-                    setEmail(event.target.value)
+                    setCode(event.target.value)
                   }}
                   required
                 />
-                <Field
-                  label={t('staff.signin.passwordLabel')}
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value)
-                  }}
-                  required
-                />
-                <Button
+                <p className="qr-staff-signin__sub" id="staff-code-hint">
+                  {t('staff.signin.twoFactor')}
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                className="qr-staff-signin__submit"
+                disabled={working}
+                aria-busy={working ? 'true' : undefined}
+                data-code-signin="true"
+              >
+                {working ? t('staff.signin.working') : t('staff.signin.submit')}
+              </button>
+            </form>
+          ) : (
+            <>
+              {alert !== null && (
+                <div
+                  className="qr-staff-signin__alert"
+                  role="alert"
+                  data-signin-alert="true"
+                >
+                  <p className="qr-staff-signin__alert-head">{t(alert.head)}</p>
+                  <p className="qr-staff-signin__alert-body">{t(alert.body)}</p>
+                </div>
+              )}
+
+              {/*
+            EXACTLY ONE PASSKEY BUTTON ON THE SCREEN. The previous version rendered a second
+            one inside the failure notice, so the failed state offered the same action twice.
+            The alert says what to do; this button is the only way to do it.
+          */}
+              <button
+                type="button"
+                className="qr-staff-signin__passkey"
+                onClick={onPasskey}
+                disabled={stage === 'unsupported' || waiting}
+                aria-busy={waiting ? 'true' : undefined}
+                data-passkey-signin="true"
+              >
+                {waiting ? (
+                  <span aria-hidden="true" className="qr-staff-signin__spinner" />
+                ) : (
+                  /* INLINE SVG, never an emoji and never an icon font: an emoji is a font the
+                 device chooses, and an icon font is text to a screen reader. */
+                  <svg
+                    aria-hidden="true"
+                    className="qr-staff-signin__key"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="8" cy="12" r="4" />
+                    <path d="M12 12h9" />
+                    <path d="M17 12v4" />
+                    <path d="M20.5 12v3" />
+                  </svg>
+                )}
+                {waiting ? t('staff.signin.waiting') : t('staff.signin.passkey')}
+              </button>
+
+              {waiting && (
+                <p className="qr-staff-signin__waiting">{t('staff.signin.waitingSub')}</p>
+              )}
+
+              <div className="qr-staff-signin__divider">
+                <span aria-hidden="true" className="qr-staff-signin__rule" />
+                <span className="qr-staff-signin__or">{t('staff.signin.or')}</span>
+                <span aria-hidden="true" className="qr-staff-signin__rule" />
+              </div>
+
+              {/*
+            EMAIL AND PASSWORD ARE VISIBLE BY DEFAULT. They sat behind a "Use a password
+            instead" button, so the screen showed no way in that did not require a device.
+          */}
+              <form
+                className="qr-staff-signin__form"
+                data-password-group="true"
+                data-dimmed={waiting ? 'true' : 'false'}
+                onSubmit={submitPassword}
+              >
+                <div className="qr-staff-signin__field">
+                  <label className="qr-staff-signin__label" htmlFor="staff-email">
+                    {t('staff.signin.email')}
+                  </label>
+                  <input
+                    className="qr-staff-signin__input"
+                    id="staff-email"
+                    name="email"
+                    type="email"
+                    dir="ltr"
+                    autoComplete="username"
+                    value={email}
+                    disabled={waiting}
+                    onChange={(event) => {
+                      setEmail(event.target.value)
+                    }}
+                    required
+                  />
+                </div>
+
+                <div className="qr-staff-signin__field">
+                  <label className="qr-staff-signin__label" htmlFor="staff-password">
+                    {t('staff.signin.passwordLabel')}
+                  </label>
+                  <input
+                    className="qr-staff-signin__input"
+                    id="staff-password"
+                    name="password"
+                    type="password"
+                    dir="ltr"
+                    autoComplete="current-password"
+                    value={password}
+                    disabled={waiting}
+                    onChange={(event) => {
+                      setPassword(event.target.value)
+                    }}
+                    required
+                  />
+                </div>
+
+                <button
                   type="submit"
-                  variant="secondary"
-                  loading={working}
-                  loadingLabel={t('staff.signin.working')}
+                  className="qr-staff-signin__submit"
+                  disabled={working}
+                  aria-busy={working ? 'true' : undefined}
                   data-password-signin="true"
                 >
-                  {t('staff.signin.submit')}
-                </Button>
+                  {working ? t('staff.signin.working') : t('staff.signin.submit')}
+                </button>
               </form>
-            ) : (
-              <Button
-                variant="quiet"
-                onClick={() => {
-                  setShowPassword(true)
-                }}
+
+              {/* The bottom link becomes CANCEL while the device prompt is open. */}
+              <button
+                type="button"
+                className="qr-staff-signin__link"
+                data-signin-link="true"
+                onClick={waiting ? onPasskeyCancel : undefined}
               >
-                {t('staff.signin.password')}
-              </Button>
-            )}
-          </>
-        )}
+                {waiting ? t('staff.signin.cancel') : t('staff.signin.forgot')}
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="qr-staff-signin__footer">
+          <span>{today}</span>
+          <span>{BRAND}</span>
+        </div>
       </div>
     </div>
   )
