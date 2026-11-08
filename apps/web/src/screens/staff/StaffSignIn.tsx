@@ -252,9 +252,7 @@ export function StaffSignIn({
           <span aria-hidden="true" className="qr-staff-signin__mark">
             {BRAND.charAt(0)}
           </span>
-          <span className="qr-staff-signin__restaurant">
-            {BRAND}
-          </span>
+          <span className="qr-staff-signin__restaurant">{BRAND}</span>
         </div>
 
         <div className="qr-staff-signin__body">
@@ -308,11 +306,7 @@ export function StaffSignIn({
           ) : (
             <>
               {alert !== null && (
-                <div
-                  className="qr-staff-signin__alert"
-                  role="alert"
-                  data-signin-alert="true"
-                >
+                <div className="qr-staff-signin__alert" role="alert" data-signin-alert="true">
                   <p className="qr-staff-signin__alert-head">{t(alert.head)}</p>
                   <p className="qr-staff-signin__alert-body">{t(alert.body)}</p>
                 </div>

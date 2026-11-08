@@ -213,9 +213,7 @@ describe('signing in', () => {
      * password path was never called.
      */
     expect(screen.getByLabelText<HTMLInputElement>(t('staff.signin.email')).value).toBe('')
-    expect(
-      screen.getByLabelText<HTMLInputElement>(t('staff.signin.passwordLabel')).value,
-    ).toBe('')
+    expect(screen.getByLabelText<HTMLInputElement>(t('staff.signin.passwordLabel')).value).toBe('')
     expect(props.onPassword).not.toHaveBeenCalled()
   })
 
