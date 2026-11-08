@@ -380,7 +380,7 @@ describe('the restricted tokens the approval singled out', () => {
     expect(ratioFloor2(APPROVED.signal, APPROVED.paper)).toBe(2.12)
   })
 
-  it('alert-fill and alert-ink are the SAME value under Rail, so the 2026-10-31 pairing is moot', () => {
+  it("alert-fill CLEARS AA as small text under Rail, and its >= 24px bound is the approval's not the ratio's", () => {
     /*
      * ⚠ THIS CASE ASSERTED THE OPPOSITE UNTIL 2026-11-08, AND IT IS THE PROPERTY THAT
      * INVERTED RATHER THAN A FIGURE THAT MOVED -- said here rather than quietly reversed.

@@ -583,13 +583,24 @@ test.describe('every pairing the kit RENDERS is in the generated table', () => {
      * over-covers, which bounds combinations no component renders yet.
      *
      * ⚠ LIGHT WAS 13 UNTIL 2026-11-08 AND THE DROP IS EXPECTED, WHICH IS WORTH SAYING
-     * BECAUSE A FALLING COUNT IS EXACTLY WHAT THIS CASE EXISTS TO CATCH. Rail gives
-     * `alert-fill` and `alert-ink` the SAME value (#8C2F27), so two pairings the kit used
-     * to render as distinct colours now resolve to one and are counted once. Nothing
-     * stopped being rendered. Dark is unchanged at 11 because its two are different
-     * derivations of that value -- mix(alert-fill, paper) at 35% and at 57% -- so they
-     * stay distinct there. If light ever drops BELOW 12, that is a component that stopped
-     * rendering and not a palette collapse.
+     * BECAUSE A FALLING COUNT IS EXACTLY WHAT THIS CASE EXISTS TO CATCH.
+     *
+     * THE PAIR THAT DISAPPEARED, NAMED FROM A MEASUREMENT RATHER THAN GUESSED: it is
+     * `brand` on `paper` -- the QUIET button's label, `.qr-button--quiet .qr-button__label`.
+     * Under Direction B the walk found `#0B6B4F on #F2F4F1` there, a pair of its own.
+     * Rail resolves `brand` to `ink`'s value, so that element now paints
+     * `#191C22 on #FCFCFA`, which is the SAME colour pair the heading already contributes
+     * -- and this walk dedupes by colour, not by role. Nothing stopped being rendered and
+     * no role lost its pairing; two roles now share one colour.
+     *
+     * ⚠ AN EARLIER VERSION OF THIS COMMENT BLAMED `alert-fill`/`alert-ink` COLLAPSING,
+     * AND THAT WAS WRONG: the kit renders no text on `alert-fill` in light at all, so
+     * those two never contributed two pairs to collapse. Measured by walking the fixture
+     * under both palettes and diffing, which is the only way to name it.
+     *
+     * Dark is unchanged at 11: there `brand` resolves to `paper` and `ink` to `paper` as
+     * well, a collapse that had ALREADY happened under Direction B. If light ever drops
+     * BELOW 12, that is a component that stopped rendering and not a palette collapse.
      */
     await openKit(page, 'light')
     const light = await renderedPairs(page)
