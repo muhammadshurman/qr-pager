@@ -86,7 +86,13 @@ echo "== every file the gate needs is TRACKED =="
 # single source `packages/tokens/test/fonts.test.ts` uses for this same question -- its
 # `referenced` set is these very url()s -- so the list now FOLLOWS the faces instead of being
 # edited beside them.
-fonts=$(sed -n "s|.*url('\./\([^']*\)').*|packages/tokens/fonts/\1|p" packages/tokens/fonts/fonts.css | sort -u)
+# ⚠ `|| true` IS LOAD-BEARING, AND `check-shell-evidence` CAUGHT ITS ABSENCE. Under
+# `set -e` with `pipefail`, a pipeline assignment whose stage matches nothing aborts the
+# script THERE -- before the guard below can say why. Finding nothing is a valid outcome of
+# the substitution precisely because the guard is what turns it into a message and an exit
+# code. Without the fallback the failure mode is a silent abort, which is the shape that
+# checker exists to refuse.
+fonts=$(sed -n "s|.*url('\./\([^']*\)').*|packages/tokens/fonts/\1|p" packages/tokens/fonts/fonts.css | sort -u || true)
 
 # A derivation that silently yields nothing is worse than the hard-coded list it replaced: the
 # check would pass by covering no fonts at all. `fonts.css` itself stays named below, so a
