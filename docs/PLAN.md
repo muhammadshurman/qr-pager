@@ -7977,7 +7977,7 @@ the field, measured.
 | gate | figure | measured at | evidence |
 | --- | --- | --- | --- |
 | `composer gate` | **10/10 steps green, 1392 passed / 13,614 assertions, 277.75s** | `c43c7fc` | `docs/tickets/QRPAGER-35-gate-php.txt`, `EXIT=0` |
-| `pnpm gate` | **1204 Vitest across 64 files, 103 browser cases** | `c43c7fc` | `storage/logs/gate-frontend-20261108T114617Z.log`; its one red was `records:check`, which could not pass before `§0` named this commit |
+| `pnpm gate` | **all 13 steps green — 1204 Vitest across 64 files, 103 browser cases** | `067bffc`, the docs commit | `docs/tickets/QRPAGER-35-gate-frontend.txt`, `EXIT=0`. At `c43c7fc` the one red was `records:check`, which could not pass before `§0` named that commit — so this figure is the first run where the whole gate could be green, and it is measured one commit later for that reason |
 | `pnpm run gate:e2e` | **531 passed / 16 skipped / 0 failed, 8.7m** | one commit before `c43c7fc` | `docs/tickets/QRPAGER-35-e2e.txt`, `EXIT=0`. The two later edits were `QRPAGER-15.md`'s table and a `ticket-tables` case; no browser spec reads either |
 | the invariant | **`summary.pairs` 42, `summary.failures` 0** | `c43c7fc` | `packages/tokens/generated/contrast.json` |
 
