@@ -8043,7 +8043,7 @@ the field, measured.
 | `composer gate` | **10/10 green, 1395 passed / 13,630 assertions** | `63f206f` | `docs/tickets/QRPAGER-37-gate-php.txt`, `EXIT=0` |
 | `pnpm run gate:e2e` | **531 passed / 16 skipped / 0 failed, 8.8m** | `63f206f` | `docs/tickets/QRPAGER-37-e2e.txt`, `EXIT=0` |
 | `pnpm gate` | **1204 Vitest, 103 browser cases**; its one red is `records:check`, which reads this commit's own `§0` | `63f206f` | `storage/logs/gate-frontend-20261108T170703Z.log` |
-| `fresh-clone-proof` | run BEFORE the push, per `R-252` | the docs commit | `docs/tickets/QRPAGER-37-fresh-clone.txt` |
+| `fresh-clone-proof` | **GREEN — all 13 steps in a clone sharing nothing with the working tree** | `94a52a2` | `docs/tickets/QRPAGER-37-fresh-clone.txt`, `EXIT=0`. Run BEFORE the push, per `R-252` |
 
 **THE INVARIANT IS A TEST.** `StudioMediaDropZoneTest` asserts the grid carries **every column the table carried** — name, type, size, dimensions, delete — by value, plus the thumbnail the table could not show. A redesign that quietly drops the file size is a redesign that lost something, and nothing else in the suite would have said so. 3 cases, 15 assertions; the 20 existing media tests still pass.
 
