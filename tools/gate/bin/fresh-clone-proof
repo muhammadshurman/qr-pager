@@ -78,6 +78,24 @@ done
 # pass on the builder's machine, where the file is merely untracked rather than absent.
 echo
 echo "== every file the gate needs is TRACKED =="
+
+# ⚠ THE FONT FILES ARE DERIVED, NOT NAMED -- 2026-11-08, R-252. This list carried
+# `plus-jakarta-sans-latin.woff2` by hand, and when Rail replaced that face with Archivo this
+# script failed on a file the project had deliberately removed: one hard-coded filename, four
+# red CI runs, and no local gate runs this script to catch it. `fonts.css` is already the
+# single source `packages/tokens/test/fonts.test.ts` uses for this same question -- its
+# `referenced` set is these very url()s -- so the list now FOLLOWS the faces instead of being
+# edited beside them.
+fonts=$(sed -n "s|.*url('\./\([^']*\)').*|packages/tokens/fonts/\1|p" packages/tokens/fonts/fonts.css | sort -u)
+
+# A derivation that silently yields nothing is worse than the hard-coded list it replaced: the
+# check would pass by covering no fonts at all. `fonts.css` itself stays named below, so a
+# missing stylesheet is caught as a missing file rather than as an empty list.
+if [ -z "$fonts" ]; then
+    echo "  MISSING: no url('./…') in packages/tokens/fonts/fonts.css -- the font check would be vacuous" >&2
+    exit 1
+fi
+
 for required in \
     package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc .npmrc \
     tsconfig.base.json tsconfig.json eslint.config.mjs prettier.config.mjs \
@@ -87,9 +105,7 @@ for required in \
     packages/tokens/generated/contrast.json packages/tokens/generated/contrast.md \
     packages/contracts/src/generated/status.ts \
     packages/tokens/fonts/fonts.css \
-    packages/tokens/fonts/plus-jakarta-sans-latin.woff2 \
-    packages/tokens/fonts/tajawal-arabic-400.woff2 \
-    packages/tokens/fonts/tajawal-arabic-700.woff2 \
+    $fonts \
     tools/design-tokens/patterns.mjs \
     tools/design-tokens/fixtures/bad-component.tsx.fixture \
     tools/design-tokens/fixtures/good-component.tsx.fixture \
