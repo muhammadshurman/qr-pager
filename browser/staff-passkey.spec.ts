@@ -212,8 +212,16 @@ test.describe('10a — a passkey registered and used through the staff screen', 
     await page.goto('/staff')
     await page.locator('[data-passkey-signin="true"]').click()
 
-    // The screen says the one thing it says for every cause, and the shell never appears.
-    await expect(page.getByText(/that did not work/i)).toBeVisible({ timeout: 30_000 })
+    /*
+     * The screen says the one thing it says for every cause, and the shell never appears.
+     * ⚠ THE SENTENCE CHANGED AT `QRPAGER-38` AND THE CLAIM DID NOT: the refusal was one
+     * string (*"That did not work…"*) and is now a head and a body in one `role="alert"`
+     * block, so this matches the HEAD and the block that carries it. Matched on *"verify
+     * your passkey"* rather than the whole sentence, because the apostrophe in
+     * *"couldn't"* is the one character a copy edit is most likely to move.
+     */
+    await expect(page.locator('[data-signin-alert="true"]')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/verify your passkey/i)).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('[data-staff-shell="true"]')).toHaveCount(0)
 
     // And no session was established, asserted at the server rather than at the screen.
