@@ -107,14 +107,14 @@ it('registers exactly the six families Filament would otherwise default', functi
 
 it('puts the approved value on the shade a primary button actually renders', function (): void {
     // ⚠ THE DEFECT THE RULING WAS ABOUT, inverted into an assertion. The one-liner's ladder
-    // contained `#0B6B4F` at NO shade; this one holds it at 600, and 600 is the shade
+    // contained the approved brand at NO shade; this one holds it at 600, and 600 is the shade
     // `ButtonComponent`'s first light candidate asks for -- so the approved brand is
     // literally what a primary button paints.
     $ladder = oklchLadder('primary');
     $map = (new ButtonComponent)->getColorMap($ladder);
 
     expect($map['bg'])->toBe(600)
-        ->and($ladder[600])->toBe(Color::convertToOklch('#0B6B4F'));
+        ->and($ladder[600])->toBe(Color::convertToOklch('#191C22'));
 });
 
 it('clears WCAG AA on the resolved button pair, in BOTH modes, for every family', function (): void {
@@ -227,12 +227,12 @@ it('emits the approved value into the rendered panel, where a browser reads it',
     // `warning`'s approved value sits at 400 and not 600, because `alert-fill`'s own approval
     // bounds it to text at >= 24px -- asserted at its own shade rather than skipped.
     foreach ([
-        'primary' => [600, '#0B6B4F'],
-        'danger' => [600, '#96351A'],
-        'success' => [600, '#3DDC97'],
-        'warning' => [400, '#E4572E'],
-        'info' => [600, '#5A6A62'],
-        'gray' => [600, '#5A6A62'],
+        'primary' => [600, '#191C22'],
+        'danger' => [600, '#8C2F27'],
+        'success' => [600, '#18C880'],
+        'warning' => [400, '#8C2F27'],
+        'info' => [600, '#6B6F7A'],
+        'gray' => [600, '#6B6F7A'],
     ] as $family => [$anchor, $hex]) {
         $oklch = Color::convertToOklch($hex);
 
