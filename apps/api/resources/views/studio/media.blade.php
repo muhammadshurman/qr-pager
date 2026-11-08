@@ -59,7 +59,7 @@
                 <span class="text-sm">or</span>
                 <span data-choose="true"
                       class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control
-                             inline-flex items-center justify-center min-h-[44px]">
+                             inline-flex items-center justify-center">
                     Choose an image
                 </span>
             </label>
@@ -83,7 +83,7 @@
         @enderror
 
         <button type="submit" @disabled($full)
-                class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control min-h-[44px] disabled:opacity-50">
+                class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control disabled:opacity-50">
             Upload
         </button>
     </form>
@@ -116,7 +116,7 @@
                         <img src="{{ route('filament.studio.preview.asset', ['asset' => $asset->id]) }}"
                              alt=""
                              loading="lazy"
-                             class="block w-full h-[160px] object-contain rounded-surface bg-gray-50 dark:bg-gray-900">
+                             class="block w-full aspect-square object-contain rounded-surface bg-gray-50 dark:bg-gray-900">
 
                         <p class="text-sm font-medium break-words">{{ $asset->originalName }}</p>
 
@@ -127,7 +127,8 @@
                         </p>
 
                         <button type="button" wire:click="delete('{{ $asset->id }}')"
-                                class="underline min-h-[44px] inline-flex items-center">
+                                data-media-delete="true"
+                                class="underline inline-flex items-center">
                             Delete<span class="sr-only"> {{ $asset->originalName }}</span>
                         </button>
                     </li>
