@@ -114,14 +114,15 @@ function scaleBlock(indent = '  ') {
   for (const n of SPACING) lines.push(`${indent}--space-${n}: ${n / 16}rem;`)
   lines.push('')
   lines.push(`${indent}/* Radius. */`)
-  for (const n of RADIUS) lines.push(`${indent}--radius-${n}: ${n / 16}rem;`)
+  for (const [role, value] of Object.entries(RADIUS))
+    lines.push(`${indent}--radius-${role}: ${value};`)
   lines.push('')
   lines.push(`${indent}/* Type scale -- one ratio, and deliberately no sizes between these. */`)
   for (const n of TYPE_SCALE) lines.push(`${indent}--size-${n}: ${n / 16}rem;`)
   lines.push('')
   lines.push(`${indent}/* Motion. */`)
   lines.push(`${indent}--motion-state: ${MOTION.state};`)
-  lines.push(`${indent}--motion-entrance: ${MOTION.entrance};`)
+  lines.push(`${indent}--motion-spin: ${MOTION.spin};`)
   lines.push(`${indent}--motion-easing: ${MOTION.easing};`)
   lines.push('')
   lines.push(`${indent}/* Focus -- never removed. */`)
@@ -202,7 +203,7 @@ ${cssBlock('dark', '    ')}
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-state: ${MOTION.reduced};
-    --motion-entrance: ${MOTION.reduced};
+    --motion-spin: ${MOTION.reduced};
   }
 }
 `
@@ -312,8 +313,10 @@ ${entries(
 )}
 
 ${entries(
-  `The approved radii: ${RADIUS.join(' ')}.`,
-  RADIUS.map((n) => [`--radius-${n}`, `--radius-${n}`]),
+  `The approved radii, by role: ${Object.entries(RADIUS)
+    .map(([r, v]) => `${r} ${v}`)
+    .join(', ')}.`,
+  Object.keys(RADIUS).map((role) => [`--radius-${role}`, `--radius-${role}`]),
 )}
 
 ${entries('The two self-hosted families, subset, no CDN request anywhere.', [
@@ -345,7 +348,9 @@ ${SPACING.map((n) => `  '${n}': '${n / 16}rem',`).join('\n')}
 } as const
 
 export const RADIUS_SCALE = {
-${RADIUS.map((n) => `  '${n}': '${n / 16}rem',`).join('\n')}
+${Object.entries(RADIUS)
+  .map(([role, value]) => `  ${role}: '${value}',`)
+  .join('\n')}
 } as const
 
 export const SIZE = {
@@ -354,7 +359,7 @@ ${TYPE_SCALE.map((n) => `  '${n}': '${n / 16}rem',`).join('\n')}
 
 export const MOTION_VALUES = {
   state: '${MOTION.state}',
-  entrance: '${MOTION.entrance}',
+  spin: '${MOTION.spin}',
   easing: '${MOTION.easing}',
   reduced: '${MOTION.reduced}',
 } as const
@@ -385,10 +390,12 @@ ${protectedProperties()
   .join('\n')}
 ${roles.map((r) => `  '${colourProperty(r)}',`).join('\n')}
 ${SPACING.map((n) => `  '--space-${n}',`).join('\n')}
-${RADIUS.map((n) => `  '--radius-${n}',`).join('\n')}
+${Object.keys(RADIUS)
+  .map((role) => `  '--radius-${role}',`)
+  .join('\n')}
 ${TYPE_SCALE.map((n) => `  '--size-${n}',`).join('\n')}
   '--motion-state',
-  '--motion-entrance',
+  '--motion-spin',
   '--motion-easing',
   '--focus-width',
   '--focus-offset',
@@ -506,7 +513,9 @@ ${SPACING.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
     ],
 
     'radius' => [
-${RADIUS.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
+${Object.entries(RADIUS)
+  .map(([role, value]) => `        '${role}' => '${value}',`)
+  .join('\n')}
     ],
 
     'size' => [
@@ -515,7 +524,7 @@ ${TYPE_SCALE.map((n) => `        ${n} => '${n / 16}rem',`).join('\n')}
 
     'motion' => [
         'state' => '${MOTION.state}',
-        'entrance' => '${MOTION.entrance}',
+        'spin' => '${MOTION.spin}',
         'easing' => '${MOTION.easing}',
         'reduced' => '${MOTION.reduced}',
     ],

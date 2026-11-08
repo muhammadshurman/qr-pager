@@ -12,7 +12,7 @@
 -->
 <div class="bg-paper text-ink p-16 p-4 gap-24">
   <p class="text-ink-mid text-13">Secondary text, on the approved scale.</p>
-  <span class="bg-surface rounded-16 shadow-card text-16">A card label.</span>
+  <span class="bg-surface rounded-surface shadow-card text-16">A card label.</span>
   <button class="bg-brand text-surface p-24 text-20">A primary action.</button>
   <em class="font-arabic text-28">Arabic, at an approved size.</em>
 </div>

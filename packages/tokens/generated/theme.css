@@ -73,10 +73,9 @@
   --text-64: var(--size-64);
   --text-96: var(--size-96);
 
-  /* The approved radii: 8 16 24. */
-  --radius-8: var(--radius-8);
-  --radius-16: var(--radius-16);
-  --radius-24: var(--radius-24);
+  /* The approved radii, by role: surface 2px, control 4px. */
+  --radius-surface: var(--radius-surface);
+  --radius-control: var(--radius-control);
 
   /* The two self-hosted families, subset, no CDN request anywhere. */
   --font-latin: var(--font-latin);

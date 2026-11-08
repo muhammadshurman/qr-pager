@@ -51,9 +51,8 @@ export const SPACE = {
 } as const
 
 export const RADIUS_SCALE = {
-  '8': '0.5rem',
-  '16': '1rem',
-  '24': '1.5rem',
+  surface: '2px',
+  control: '4px',
 } as const
 
 export const SIZE = {
@@ -67,9 +66,9 @@ export const SIZE = {
 } as const
 
 export const MOTION_VALUES = {
-  state: '160ms',
-  entrance: '240ms',
-  easing: 'cubic-bezier(.32,.72,0,1)',
+  state: '120ms',
+  spin: '800ms',
+  easing: 'linear',
   reduced: '0ms',
 } as const
 
@@ -117,9 +116,8 @@ export const ALL_PROPERTIES = [
   '--space-48',
   '--space-64',
   '--space-96',
-  '--radius-8',
-  '--radius-16',
-  '--radius-24',
+  '--radius-surface',
+  '--radius-control',
   '--size-13',
   '--size-16',
   '--size-20',
@@ -128,7 +126,7 @@ export const ALL_PROPERTIES = [
   '--size-64',
   '--size-96',
   '--motion-state',
-  '--motion-entrance',
+  '--motion-spin',
   '--motion-easing',
   '--focus-width',
   '--focus-offset',

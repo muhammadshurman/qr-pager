@@ -123,8 +123,21 @@ export const FILAMENT_TEXT_SIZES = {
   '3xl': 44,
 }
 
-/** Which approved radius each of Filament's own radius names becomes. */
-export const FILAMENT_RADII = { sm: 8, md: 8, lg: 16, xl: 24 }
+/**
+ * Which approved radius each of Filament's own radius names becomes.
+ *
+ * ⚠ MAPPED BY ROLE AS OF 2026-11-08 (Rail, `QRPAGER-36`), where it used to name the numeric
+ * steps `{ sm: 8, md: 8, lg: 16, xl: 24 }`. Filament's `sm` and `md` dress CONTROLS -- its
+ * buttons, inputs and selects -- so they take the control radius; `lg` dresses panels and
+ * cards, so it takes the surface radius.
+ *
+ * `xl` HAS NO CONSUMER in this repository (no `rounded-xl` in any blade, component or
+ * stylesheet) and is KEPT rather than dropped, mapped to `surface`: Filament's own CSS may
+ * `@apply rounded-xl` in a release we have not read, and an undefined custom property there
+ * would fall back to Tailwind's cleared namespace -- no radius at all. Keeping it costs one
+ * declaration and removes a failure nobody would see until a Filament upgrade.
+ */
+export const FILAMENT_RADII = { sm: 'control', md: 'control', lg: 'surface', xl: 'surface' }
 
 /**
  * The two radii that are STRUCTURAL rather than scale steps, and the only literals in the
@@ -158,13 +171,15 @@ export function buildPanelTheme({ colourRoles, spacing, radius, typeScale, banne
     line(`--text-${name}`, `var(--size-${step})`),
   )
   const tokenText = typeScale.map((n) => line(`--text-${n}`, `var(--size-${n})`))
-  const radii = Object.entries(FILAMENT_RADII).map(([name, step]) =>
-    line(`--radius-${name}`, `var(--radius-${step})`),
+  const radii = Object.entries(FILAMENT_RADII).map(([name, role]) =>
+    line(`--radius-${name}`, `var(--radius-${role})`),
   )
   const structuralRadii = Object.entries(STRUCTURAL_RADII).map(([name, value]) =>
     line(`--radius-${name}`, value),
   )
-  const tokenRadii = radius.map((n) => line(`--radius-${n}`, `var(--radius-${n})`))
+  const tokenRadii = Object.keys(radius).map((role) =>
+    line(`--radius-${role}`, `var(--radius-${role})`),
+  )
   const tokenColours = roles.map((r) => line(`--color-${r}`, `var(--color-${r})`))
   const tokenSpacing = spacing.map((n) => line(`--spacing-${n}`, `var(--space-${n})`))
 

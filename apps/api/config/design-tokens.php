@@ -195,9 +195,8 @@ return [
     ],
 
     'radius' => [
-        8 => '0.5rem',
-        16 => '1rem',
-        24 => '1.5rem',
+        'surface' => '2px',
+        'control' => '4px',
     ],
 
     'size' => [
@@ -211,9 +210,9 @@ return [
     ],
 
     'motion' => [
-        'state' => '160ms',
-        'entrance' => '240ms',
-        'easing' => 'cubic-bezier(.32,.72,0,1)',
+        'state' => '120ms',
+        'spin' => '800ms',
+        'easing' => 'linear',
         'reduced' => '0ms',
     ],
 

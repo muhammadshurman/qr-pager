@@ -157,7 +157,7 @@
 
   font-family: var(--font-latin);
   font-size: var(--size-16);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   cursor: pointer;
   transition:
@@ -224,7 +224,7 @@
 }
 
 .qr-spinner > svg {
-  animation: qr-spin var(--motion-entrance) linear infinite;
+  animation: qr-spin var(--motion-spin) linear infinite;
 }
 
 @keyframes qr-spin {
@@ -267,7 +267,7 @@
   color: var(--color-ink);
   background-color: var(--color-surface);
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
 }
 
 .qr-field__error {
@@ -289,7 +289,7 @@
   /* Decorative edge: a card is not an interactive control, so 1.4.11 does not apply and
      hairline is the correct token rather than merely the weaker one. */
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-16);
+  border-radius: var(--radius-surface);
   padding: var(--space-24);
   box-shadow: var(--elevation-card);
 }
@@ -312,7 +312,7 @@
   padding-inline: var(--space-8);
   padding-block: var(--space-4);
   font-size: var(--size-13);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-surface);
   border: 1px solid var(--color-border-strong);
   color: var(--color-ink);
   background-color: var(--color-surface-2);
@@ -335,7 +335,7 @@
   block-size: var(--space-8);
   inline-size: 100%;
   background-color: var(--color-surface-2);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-surface);
   overflow: hidden;
 }
 
@@ -447,7 +447,7 @@
   padding-block: var(--space-16);
   font-size: var(--size-20);
   border: 0;
-  border-radius: var(--radius-16);
+  border-radius: var(--radius-control);
   cursor: pointer;
 
   /* ready-field on ready-signal: 9.73:1, AAA. */
@@ -473,7 +473,7 @@
 /*
  * prefers-reduced-motion means NO motion, not less (QRPAGER-15 §6, trap 3).
  *
- * The token file already resolves --motion-state and --motion-entrance to 0ms under the
+ * The token file already resolves --motion-state and --motion-spin to 0ms under the
  * same query, so transitions stop. This block covers what a duration token cannot: an
  * `animation` with an infinite iteration count still runs at 0ms duration in some engines,
  * so the spinner's animation is removed outright rather than shortened.

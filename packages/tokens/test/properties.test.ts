@@ -38,7 +38,7 @@ describe('allProperties', () => {
       protectedProperties().length +
       roles.length +
       SPACING.length +
-      RADIUS.length +
+      Object.keys(RADIUS).length +
       TYPE_SCALE.length +
       // motion x3, focus x2, elevation, target, fonts x2
       9
@@ -46,11 +46,11 @@ describe('allProperties', () => {
 
     for (const role of roles) expect(all).toContain(colourProperty(role))
     for (const n of SPACING) expect(all).toContain(`--space-${String(n)}`)
-    for (const n of RADIUS) expect(all).toContain(`--radius-${String(n)}`)
+    for (const role of Object.keys(RADIUS)) expect(all).toContain(`--radius-${role}`)
     for (const n of TYPE_SCALE) expect(all).toContain(`--size-${String(n)}`)
     for (const name of [
       '--motion-state',
-      '--motion-entrance',
+      '--motion-spin',
       '--motion-easing',
       '--focus-width',
       '--focus-offset',
@@ -126,14 +126,24 @@ describe('the scales, as approved', () => {
     expect([...SPACING]).toEqual([4, 8, 12, 16, 24, 32, 48, 64, 96])
   })
 
-  it('has the approved radius and type scales', () => {
-    expect([...RADIUS]).toEqual([8, 16, 24])
+  it('has the approved radius roles and type scale', () => {
+    /*
+     * ⚠ RADIUS IS TWO ROLES, NOT THREE NUMBERS, AS OF 2026-11-08 (Rail, QRPAGER-36). It was
+     * `[8, 16, 24]`, a scale whose property names were its own values -- so Rail's `2px`
+     * surface and `4px` control could not be written into it without renaming every emitted
+     * property AND leaving `--radius-8` alive meaning the opposite of what it had meant.
+     * The third step had no consumer anywhere and is gone.
+     */
+    expect(RADIUS).toEqual({ surface: '2px', control: '4px' })
     expect([...TYPE_SCALE]).toEqual([13, 16, 20, 28, 44, 64, 96])
   })
 
   it('reduces motion to ZERO, not to something shorter', () => {
-    expect(MOTION.state).toBe('160ms')
-    expect(MOTION.entrance).toBe('240ms')
+    expect(MOTION.state).toBe('120ms')
+    // `spin`, not `entrance`: its only consumer is the spinner's rotation period, and the
+    // old name invited Rail's 120ms state duration -- about eight turns a second.
+    expect(MOTION.spin).toBe('800ms')
+    expect(MOTION.easing).toBe('linear')
     // "prefers-reduced-motion means no motion, not less motion" -- §6, trap 3.
     expect(MOTION.reduced).toBe('0ms')
   })

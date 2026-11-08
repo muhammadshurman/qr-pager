@@ -57,9 +57,8 @@
   --space-96: 6rem;
 
   /* Radius. */
-  --radius-8: 0.5rem;
-  --radius-16: 1rem;
-  --radius-24: 1.5rem;
+  --radius-surface: 2px;
+  --radius-control: 4px;
 
   /* Type scale -- one ratio, and deliberately no sizes between these. */
   --size-13: 0.8125rem;
@@ -71,9 +70,9 @@
   --size-96: 6rem;
 
   /* Motion. */
-  --motion-state: 160ms;
-  --motion-entrance: 240ms;
-  --motion-easing: cubic-bezier(.32,.72,0,1);
+  --motion-state: 120ms;
+  --motion-spin: 800ms;
+  --motion-easing: linear;
 
   /* Focus -- never removed. */
   --focus-width: 2px;
@@ -137,6 +136,6 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-state: 0ms;
-    --motion-entrance: 0ms;
+    --motion-spin: 0ms;
   }
 }
