@@ -675,7 +675,7 @@ test.describe('the vacuity guard is proven to fail', () => {
 // =========================================================== 4. prefers-reduced-motion
 
 test.describe('R-118 clause 4 -- prefers-reduced-motion suppresses motion', () => {
-  test('without the preference, the state token is the approved 160ms', async ({ page }) => {
+  test('without the preference, the state token is the approved 120ms', async ({ page }) => {
     // The positive control. Without it, the zero below could be a stylesheet that never
     // loaded rather than a preference being honoured -- and a check that passes on an
     // unstyled page is the vacuous-assertion shape this project has a proof script for.
@@ -687,17 +687,31 @@ test.describe('R-118 clause 4 -- prefers-reduced-motion suppresses motion', () =
     const value = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--motion-state').trim(),
     )
-    expect(value).toBe('160ms')
+    expect(value).toBe('120ms')
 
     const transition = await page
       .locator('#primary')
       .evaluate((el) => getComputedStyle(el).transitionDuration)
-    expect(transition).toContain('0.16s')
+    // The ENGINE's resolved value, not the token's: 120ms reaches the element as 0.12s.
+    // Was 0.16s under Direction B's 160ms state duration.
+    expect(transition).toContain('0.12s')
 
     const animation = await page
       .locator('#spinner svg')
       .evaluate((el) => getComputedStyle(el).animationName)
     expect(animation).toBe('qr-spin')
+
+    /*
+     * ⚠ AND THE SPINNER'S PERIOD IS ASSERTED HERE AS OF 2026-11-08, because this is the
+     * case that would have caught the defect the rename was for. `--motion-spin` was called
+     * `--motion-entrance`, and its only consumer is this animation -- so Rail's 120ms state
+     * duration, applied to a name that reads like a transition, would have spun it about
+     * eight times a second with every check in the suite still green.
+     */
+    const period = await page
+      .locator('#spinner svg')
+      .evaluate((el) => getComputedStyle(el).animationDuration)
+    expect(period).toBe('0.8s')
   })
 
   test('with the preference, motion is ZERO -- not merely shorter', async ({ page }) => {
@@ -710,11 +724,11 @@ test.describe('R-118 clause 4 -- prefers-reduced-motion suppresses motion', () =
       const s = getComputedStyle(document.documentElement)
       return {
         state: s.getPropertyValue('--motion-state').trim(),
-        entrance: s.getPropertyValue('--motion-entrance').trim(),
+        spin: s.getPropertyValue('--motion-spin').trim(),
       }
     })
     expect(tokens.state).toBe('0ms')
-    expect(tokens.entrance).toBe('0ms')
+    expect(tokens.spin).toBe('0ms')
 
     const transition = await page
       .locator('#primary')

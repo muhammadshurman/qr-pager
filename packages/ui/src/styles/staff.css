@@ -85,7 +85,7 @@
   font-size: var(--size-13);
   color: var(--color-ink);
   background-color: var(--color-surface-2);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-surface);
 }
 
 .qr-staff__nav {
@@ -110,7 +110,7 @@
   padding-block: var(--space-32);
   padding-inline: var(--space-24);
   background-color: var(--color-surface);
-  border-radius: var(--radius-16);
+  border-radius: var(--radius-surface);
 }
 
 .qr-staff-state--loading {
@@ -198,7 +198,7 @@
   padding-block: var(--space-16);
   padding-inline: var(--space-16);
   background-color: var(--color-surface);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-surface);
   box-shadow: var(--elevation-card);
 }
 
@@ -227,7 +227,7 @@
   word-break: break-all;
   background-color: var(--color-surface-2);
   border: var(--focus-width) solid var(--color-border-strong);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-surface);
 }
 
 .qr-staff-warning {
@@ -238,7 +238,7 @@
   line-height: 1.5;
   color: var(--color-alert-ink);
   background-color: var(--color-alert-fill);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-surface);
 }
 
 .qr-staff-form {
@@ -352,7 +352,7 @@
   font-size: var(--size-16);
   background-color: var(--color-surface);
   border: var(--focus-width) solid var(--color-hairline);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 

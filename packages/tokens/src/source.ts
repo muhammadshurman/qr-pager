@@ -422,8 +422,29 @@ export const FILL_PAIRS = [
 /** Spacing, in px. A component names a STEP; the number appears only here. */
 export const SPACING = [4, 8, 12, 16, 24, 32, 48, 64, 96] as const
 
-/** Radius, in px. */
-export const RADIUS = [8, 16, 24] as const
+/**
+ * Radius, BY ROLE rather than by number -- Rail, 2026-11-08 (`QRPAGER-36`).
+ *
+ * ⚠ THIS WAS `[8, 16, 24]`, A NUMERIC SCALE WHOSE PROPERTY NAMES WERE ITS OWN VALUES
+ * (`--radius-${n}`), AND THAT IS WHY IT HAD TO CHANGE SHAPE RATHER THAN VALUES. Rail names
+ * two radii, a surface and a control. Writing them into the old scale would have renamed
+ * every emitted property -- and worse, `--radius-8` would have SURVIVED while meaning the
+ * opposite: the smallest step under Direction B, the largest under Rail. Every
+ * `var(--radius-8)` on a button and an input would have silently painted the biggest radius
+ * in the system. No error, just wrong geometry. The owner lifted the no-new-property-set
+ * rule for this ticket on exactly that evidence (`§1`, 2026-11-08).
+ *
+ * THE RULE THE TWO NAMES ENCODE: **radius signals interactivity.** A control carries 4px
+ * because that is the affordance; everything else -- cards, sheets, rows, chips, tracks --
+ * carries the surface 2px. Rail is ink on paper, so a radius is a concession, not a style.
+ *
+ * The third step, `--radius-24`, is GONE rather than carried: it had no consumer anywhere
+ * outside the generated files, which is why nothing had to be remapped to lose it.
+ */
+export const RADIUS = {
+  surface: '2px',
+  control: '4px',
+} as const satisfies Record<string, string>
 
 /** The type scale, in px. One ratio, and deliberately no sizes between these. */
 export const TYPE_SCALE = [13, 16, 20, 28, 44, 64, 96] as const
@@ -436,9 +457,18 @@ export const TYPE_SCALE = [13, 16, 20, 28, 44, 64, 96] as const
  * exactly 0 rather than "something small".
  */
 export const MOTION = {
-  state: '160ms',
-  entrance: '240ms',
-  easing: 'cubic-bezier(.32,.72,0,1)',
+  state: '120ms',
+  /**
+   * ⚠ RENAMED FROM `entrance` ON 2026-11-08, AND THE NAME WAS THE DEFECT. Its only consumer
+   * is `animation: qr-spin var(--motion-spin) linear infinite` in `kit.css` -- the spinner's
+   * ROTATION PERIOD, never an entrance transition. Read as an entrance it would have taken
+   * Rail's `120ms` and spun about eight times a second.
+   *
+   * `800ms` is the owner's design call: Rail is quiet, this is the only continuous motion in
+   * the system, and 1.67 rev/s still reads busy against everything else on the screen.
+   */
+  spin: '800ms',
+  easing: 'linear',
   reduced: '0ms',
 } as const
 
@@ -646,10 +676,10 @@ export function allProperties(): string[] {
     ...protectedProperties(),
     ...roles.map(colourProperty),
     ...SPACING.map((n) => `--space-${String(n)}`),
-    ...RADIUS.map((n) => `--radius-${String(n)}`),
+    ...Object.keys(RADIUS).map((role) => `--radius-${role}`),
     ...TYPE_SCALE.map((n) => `--size-${String(n)}`),
     '--motion-state',
-    '--motion-entrance',
+    '--motion-spin',
     '--motion-easing',
     '--focus-width',
     '--focus-offset',

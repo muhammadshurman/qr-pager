@@ -74,13 +74,13 @@
      re-supplied too: Filament @applies plain `rounded`, which reads --radius, and
      the wildcard clear takes the bare key with it. */
   --radius-*: initial;
-  --radius-sm: var(--radius-8);
-  --radius-md: var(--radius-8);
-  --radius-lg: var(--radius-16);
-  --radius-xl: var(--radius-24);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-surface);
+  --radius-xl: var(--radius-surface);
   --radius-full: 9999px;
   --radius-none: 0;
-  --radius: var(--radius-8);
+  --radius: var(--radius-undefined);
 
   /* The approved scales under their own names, for panel-authored utilities. */
   --text-13: var(--size-13);
@@ -90,9 +90,8 @@
   --text-44: var(--size-44);
   --text-64: var(--size-64);
   --text-96: var(--size-96);
-  --radius-8: var(--radius-8);
-  --radius-16: var(--radius-16);
-  --radius-24: var(--radius-24);
+  --radius-surface: var(--radius-surface);
+  --radius-control: var(--radius-control);
   --spacing-4: var(--space-4);
   --spacing-8: var(--space-8);
   --spacing-12: var(--space-12);

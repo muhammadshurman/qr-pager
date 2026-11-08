@@ -118,8 +118,17 @@ it('agrees with the generated stylesheet on every length and size', function ():
     foreach ($scales as $key => $prefix) {
         $scale = config("design-tokens.{$key}");
 
+        /*
+         * ⚠ THE FLOOR IS PER SCALE AS OF 2026-11-08 (Rail, QRPAGER-36), and it used to be a
+         * flat `> 2`. Rail's radius is TWO ROLES -- a 2px surface and a 4px control -- where
+         * Direction B had a three-step numeric scale, so a blanket floor of three would now
+         * fail on a scale that is complete. The guard's purpose is unchanged: catch a scale
+         * that collapsed to nothing. `space` and `size` keep the original floor.
+         */
+        $floor = $key === 'radius' ? 2 : 3;
+
         expect($scale)->toBeArray()
-            ->and(count($scale))->toBeGreaterThan(2, "design-tokens.{$key} is too small to mean anything");
+            ->and(count($scale))->toBeGreaterThanOrEqual($floor, "design-tokens.{$key} is too small to mean anything");
 
         foreach ($scale as $step => $value) {
             $property = $prefix.$step;
@@ -132,8 +141,15 @@ it('agrees with the generated stylesheet on every length and size', function ():
         }
     }
 
-    // One number, so a scale silently emptied cannot pass this case.
-    expect($checked)->toBe(19);
+    /*
+     * One number, so a scale silently emptied cannot pass this case.
+     *
+     * ⚠ 18 AS OF 2026-11-08, AND IT WAS 19: 9 space + 3 radius + 7 size became 9 + 2 + 7
+     * when Rail replaced Direction B's three-step radius scale with two ROLES, a 2px
+     * surface and a 4px control. The third step had no consumer anywhere in the repository,
+     * so nothing was remapped to lose it.
+     */
+    expect($checked)->toBe(18);
 });
 
 it('agrees with the generated stylesheet on the three protected properties', function (): void {

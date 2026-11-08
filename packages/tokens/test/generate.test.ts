@@ -105,7 +105,8 @@ describe('buildCss', () => {
 
   it('emits every scale step, the motion values and the reduced-motion override', () => {
     for (const n of SPACING) expect(css).toContain(`--space-${String(n)}: ${String(n / 16)}rem;`)
-    for (const n of RADIUS) expect(css).toContain(`--radius-${String(n)}: ${String(n / 16)}rem;`)
+    for (const [role, value] of Object.entries(RADIUS))
+      expect(css).toContain(`--radius-${role}: ${value};`)
     for (const n of TYPE_SCALE) expect(css).toContain(`--size-${String(n)}: ${String(n / 16)}rem;`)
     expect(css).toContain(`--motion-state: ${MOTION.state};`)
     expect(css).toContain(`--target-min: ${String(TARGET_MIN_PX)}px;`)
@@ -114,7 +115,7 @@ describe('buildCss', () => {
     const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(css)
     expect(reduced).not.toBeNull()
     expect(reduced![1]!).toContain(`--motion-state: ${MOTION.reduced};`)
-    expect(reduced![1]!).toContain(`--motion-entrance: ${MOTION.reduced};`)
+    expect(reduced![1]!).toContain(`--motion-spin: ${MOTION.reduced};`)
   })
 
   it('states the mix colour space, so a percentage is reproducible', () => {
