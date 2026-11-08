@@ -8004,7 +8004,7 @@ the field, measured.
 | `composer gate` | **10/10 green, 1392 passed / 13,615 assertions, 312.85s** | `67e777e` | `docs/tickets/QRPAGER-36-gate-php.txt`, `EXIT=0` — the THIRD attempt; the first two were attributed reds and are in `§0` |
 | `pnpm gate` | **13/13 green, 1204 Vitest across 64 files, 103 browser cases** | `67e777e` | `docs/tickets/QRPAGER-36-gate-frontend.txt`, `EXIT=0` |
 | `pnpm run gate:e2e` | **531 passed / 16 skipped / 0 failed, 8.3m** | `67e777e` | `docs/tickets/QRPAGER-36-e2e.txt`, `EXIT=0` |
-| `fresh-clone-proof` | green in a clone sharing nothing with the working tree | the docs commit | run before the push, which is what `R-252` asks of a builder |
+| `fresh-clone-proof` | **GREEN — all 13 steps in a clone sharing nothing with the working tree** | `a404420`, the docs commit | `docs/tickets/QRPAGER-36-fresh-clone.txt`, `EXIT=0`. Run BEFORE the push, which is what `R-252` asks of a builder and what four red CI runs cost when `QRPAGER-35` did not |
 | the contrast invariant | **`summary.pairs` 42, `summary.failures` 0, file byte-identical** | `67e777e` | `git diff packages/tokens/generated/contrast.json` is empty |
 
 **THE SECOND HALF OF THE INVARIANT — no call site's radius ROLE changed in the move — and this table is how it is falsifiable.** The slot a site used under Direction B is not evidence of its role; what it *is* decides. Five sites sat in the control slot and are not interactive, and one sat in the surfaces slot and is a button.
