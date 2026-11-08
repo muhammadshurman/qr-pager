@@ -212,9 +212,9 @@ describe('signing in', () => {
      * paint now, so the same property is asserted directly: they are EMPTY, and the
      * password path was never called.
      */
-    expect((screen.getByLabelText(t('staff.signin.email')) as HTMLInputElement).value).toBe('')
+    expect(screen.getByLabelText<HTMLInputElement>(t('staff.signin.email')).value).toBe('')
     expect(
-      (screen.getByLabelText(t('staff.signin.passwordLabel')) as HTMLInputElement).value,
+      screen.getByLabelText<HTMLInputElement>(t('staff.signin.passwordLabel')).value,
     ).toBe('')
     expect(props.onPassword).not.toHaveBeenCalled()
   })
