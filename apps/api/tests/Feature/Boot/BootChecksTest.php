@@ -576,16 +576,23 @@ it('logs every reason at critical and then stops, which is the gate’s own word
 
     expect($stopped)->toBe(1);
 
-    // FIVE reasons, each its own line: credentials, sslmode, trusted proxies, debug and
-    // the VAPID keypair. One line carrying all of them is one line an operator has to
-    // parse.
+    // SIX reasons, each its own line: credentials, sslmode, trusted proxies, debug, the
+    // VAPID keypair and the staff sign-in URL. One line carrying all of them is one line
+    // an operator has to parse.
     //
     // Trusted proxies joined the list with security finding #2, and VAPID at Task 4: the
     // suite sets none of TRUSTED_PROXIES, VAPID_SUBJECT, VAPID_PUBLIC_KEY or
     // VAPID_PRIVATE_KEY, which is correct for local -- every push test generates its own
     // keypair at runtime so that none reaches the repository -- and refused for
     // production, so this production scenario reports both.
-    Log::shouldHaveReceived('critical')->times(5);
+    //
+    // ⚠ AND THE SIXTH IS QRPAGER-38's, FOR EXACTLY THE SAME REASON AS VAPID'S. The shipped
+    // `STAFF_SIGNIN_URL` is `http://localhost:3000/staff` -- right for `pnpm --filter web
+    // dev`, and in production it is a plaintext address on a developer's machine that a
+    // locked-out restaurant owner would be redirected to (`R-253`). The count is the
+    // assertion here: a new check that nothing reports is the dead-control shape `§4a`
+    // records four instances of, and this case is where it would show.
+    Log::shouldHaveReceived('critical')->times(6);
 });
 
 it('does not stop a healthy boot', function (): void {
