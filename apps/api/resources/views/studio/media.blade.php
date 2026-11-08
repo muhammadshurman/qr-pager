@@ -16,14 +16,54 @@
     <form wire:submit="store" class="fi-section p-16 space-y-12">
         <h2 class="text-base font-semibold">Add an image</h2>
 
-        <label for="media-upload" class="block text-sm font-medium">
-            Choose an image
-        </label>
+        {{--
+            THE DROP ZONE IS A LABEL, NOT A DIV WITH A CLICK HANDLER. A <label for> already
+            opens the picker on click and on Enter from the control it labels, so the zone
+            needs no key handler of its own and cannot become a mouse-only target -- §12's
+            "keyboard reachable" without a second code path to keep honest.
 
-        <input id="media-upload" type="file" wire:model="upload" @disabled($full)
-               accept="image/png,image/jpeg,image/webp,image/avif,image/svg+xml"
-               aria-describedby="media-upload-help"
-               class="block w-full text-sm">
+            THE INPUT IS STILL A PLAIN <input type="file">, which is the whole point of this
+            page (see MediaLibraryPage's docblock): Filament's FileUpload would write bytes to
+            the object store without passing InspectedImage. It is `sr-only peer` rather than
+            hidden: `hidden` and `display:none` remove it from the tab order, while sr-only
+            keeps it focusable and `peer-focus-visible:` puts the ring on the zone, so the
+            focus indicator is visible where the eye is -- §12's "visible focus ring".
+        --}}
+        <div
+            x-data="{ over: false }"
+            x-on:dragover.prevent="over = true"
+            x-on:dragleave.prevent="over = false"
+            x-on:drop.prevent="
+                over = false;
+                if (!$refs.input.disabled && $event.dataTransfer.files.length > 0) {
+                    $refs.input.files = $event.dataTransfer.files;
+                    $refs.input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            "
+        >
+            <input x-ref="input" id="media-upload" type="file" wire:model="upload" @disabled($full)
+                   accept="image/png,image/jpeg,image/webp,image/avif,image/svg+xml"
+                   aria-describedby="media-upload-help"
+                   class="sr-only peer">
+
+            <label for="media-upload"
+                   data-drop-zone="true"
+                   x-bind:data-over="over ? 'true' : 'false'"
+                   class="flex flex-col items-center justify-center gap-8 p-32 text-center
+                          border-2 border-dashed rounded-surface cursor-pointer
+                          border-gray-400 dark:border-gray-600
+                          peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2
+                          peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
+                   x-bind:class="over ? 'border-primary-600 bg-primary-50 dark:bg-primary-950' : ''">
+                <span class="text-base font-medium">Drag an image here</span>
+                <span class="text-sm">or</span>
+                <span data-choose="true"
+                      class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control
+                             inline-flex items-center justify-center min-h-[44px]">
+                    Choose an image
+                </span>
+            </label>
+        </div>
 
         <p id="media-upload-help" class="text-sm">
             @if ($full)
@@ -43,7 +83,7 @@
         @enderror
 
         <button type="submit" @disabled($full)
-                class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg disabled:opacity-50">
+                class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control min-h-[44px] disabled:opacity-50">
             Upload
         </button>
     </form>
@@ -56,36 +96,43 @@
         @if ($assets === [])
             <p>No images yet. PNG, JPEG, WebP, AVIF or script-free SVG, up to 5 MB.</p>
         @else
-            <table class="w-full text-left text-sm">
-                <caption class="sr-only">Images in your library</caption>
-                <thead>
-                    <tr>
-                        <th scope="col" class="py-8">Name</th>
-                        <th scope="col" class="py-8">Type</th>
-                        <th scope="col" class="py-8">Size</th>
-                        <th scope="col" class="py-8">Dimensions</th>
-                        <th scope="col" class="py-8"><span class="sr-only">Actions</span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($assets as $asset)
-                        <tr>
-                            <th scope="row" class="py-8 font-normal">{{ $asset->originalName }}</th>
-                            <td class="py-8">{{ $asset->contentType }}</td>
-                            <td class="py-8">{{ number_format($asset->byteSize / 1024, 1) }} KB</td>
-                            <td class="py-8">
-                                {{ $asset->width !== null ? $asset->width.'x'.$asset->height : 'not measured' }}
-                            </td>
-                            <td class="py-8">
-                                <button type="button" wire:click="delete('{{ $asset->id }}')"
-                                        class="underline">
-                                    Delete<span class="sr-only"> {{ $asset->originalName }}</span>
-                                </button>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+            {{--
+                A GRID OF THUMBNAILS, AND IT CARRIES EVERY COLUMN THE TABLE CARRIED: name,
+                type, size, dimensions and delete. The owner could not find where to upload
+                and could not tell one row from another -- a filename is not how anyone
+                recognises their own photograph.
+
+                THE THUMBNAIL IS THE PANEL'S OWN ASSET ROUTE, `filament.studio.preview.asset`,
+                which already serves a tenant's bytes under the panel's authorisation. No new
+                surface, no public URL, and nothing here reaches the object store directly.
+
+                `alt=""` IS DELIBERATE AND IS NOT A MISSING LABEL: the filename sits beside
+                the image as visible text, so a non-empty alt would make a screen reader say
+                it twice. The image is decorative BECAUSE the caption is not.
+            --}}
+            <ul role="list" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-16">
+                @foreach ($assets as $asset)
+                    <li data-asset="{{ $asset->id }}" class="fi-section p-12 space-y-8">
+                        <img src="{{ route('filament.studio.preview.asset', ['asset' => $asset->id]) }}"
+                             alt=""
+                             loading="lazy"
+                             class="block w-full h-[160px] object-contain rounded-surface bg-gray-50 dark:bg-gray-900">
+
+                        <p class="text-sm font-medium break-words">{{ $asset->originalName }}</p>
+
+                        <p class="text-sm">
+                            {{ $asset->contentType }} ·
+                            {{ number_format($asset->byteSize / 1024, 1) }} KB ·
+                            {{ $asset->width !== null ? $asset->width.'x'.$asset->height : 'not measured' }}
+                        </p>
+
+                        <button type="button" wire:click="delete('{{ $asset->id }}')"
+                                class="underline min-h-[44px] inline-flex items-center">
+                            Delete<span class="sr-only"> {{ $asset->originalName }}</span>
+                        </button>
+                    </li>
+                @endforeach
+            </ul>
         @endif
     </div>
 </x-filament-panels::page>
