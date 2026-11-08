@@ -49,14 +49,18 @@ const UA =
  */
 const WANTED = [
   {
-    family: 'Plus Jakarta Sans',
-    query: 'Plus+Jakarta+Sans:wght@400;600',
+    // RAIL, 2026-11-08: Archivo replaces Plus Jakarta Sans in the latin slot. Jakarta is
+    // REMOVED rather than kept as a declared face nobody renders -- `fonts.test.ts` asserts
+    // onDisk === referenced in BOTH directions, so an orphan woff2 is a failure, and a face
+    // declared but never rendered is payload on a cold 3G start.
+    family: 'Archivo',
+    query: 'Archivo:wght@400;600',
     subset: 'latin',
     // The latin range, as Google publishes it. Matched rather than assumed, so a change
     // upstream makes this script fail loudly instead of fetching the wrong block.
     marker: 'U+0000-00FF',
     weights: ['400', '600'],
-    file: 'plus-jakarta-sans-latin.woff2',
+    file: 'archivo-latin.woff2',
   },
   {
     family: 'Tajawal',

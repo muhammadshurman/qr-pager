@@ -177,10 +177,17 @@ async function assertStylesApplied(page: Page, theme: 'light' | 'dark'): Promise
 
   expect(applied.theme, 'the fixture is not in the theme under test').toBe(theme)
   expect(applied.brand, 'the token stylesheet did not apply').not.toBe('')
-  // brand is the one role whose value differs between themes by a whole hue, so this
-  // cannot pass in the wrong theme.
+  /*
+   * brand differs between the themes far enough that this cannot pass in the wrong one.
+   *
+   * ⚠ UNDER DIRECTION B THAT DIFFERENCE WAS A WHOLE HUE (#0B6B4F against #3DDC97, both
+   * greens); under RAIL it is a LIGHTNESS INVERSION -- light brand is `ink` #191C22 and
+   * dark brand is `paper` #FCFCFA, because Rail reserves the accent for the ready state
+   * and puts the primary action on an ink fill. The guard is at least as strong: the two
+   * values are now at opposite ends of the range rather than two points on one hue.
+   */
   expect(applied.brand, `the ${theme} theme did not take`).toBe(
-    theme === 'light' ? '#0B6B4F' : '#3DDC97',
+    theme === 'light' ? '#191C22' : '#FCFCFA',
   )
   expect(applied.card?.bg, 'the card is unstyled').not.toBe('rgba(0, 0, 0, 0)')
 
@@ -570,14 +577,36 @@ test.describe('every pairing the kit RENDERS is in the generated table', () => {
   test('the two themes together render the number of pairs this task measured', async ({
     page,
   }) => {
-    // An exact count, reported so a change is visible rather than absorbed. 13 light + 11
-    // dark = 24 distinct rendered pairs, against 42 DECLARED rows -- the table deliberately
-    // over-covers, which bounds combinations no component renders yet.
+    /*
+     * An exact count, reported so a change is visible rather than absorbed. 12 light + 11
+     * dark = 23 distinct rendered pairs, against 42 DECLARED rows -- the table deliberately
+     * over-covers, which bounds combinations no component renders yet.
+     *
+     * ⚠ LIGHT WAS 13 UNTIL 2026-11-08 AND THE DROP IS EXPECTED, WHICH IS WORTH SAYING
+     * BECAUSE A FALLING COUNT IS EXACTLY WHAT THIS CASE EXISTS TO CATCH.
+     *
+     * THE PAIR THAT DISAPPEARED, NAMED FROM A MEASUREMENT RATHER THAN GUESSED: it is
+     * `brand` on `paper` -- the QUIET button's label, `.qr-button--quiet .qr-button__label`.
+     * Under Direction B the walk found `#0B6B4F on #F2F4F1` there, a pair of its own.
+     * Rail resolves `brand` to `ink`'s value, so that element now paints
+     * `#191C22 on #FCFCFA`, which is the SAME colour pair the heading already contributes
+     * -- and this walk dedupes by colour, not by role. Nothing stopped being rendered and
+     * no role lost its pairing; two roles now share one colour.
+     *
+     * ⚠ AN EARLIER VERSION OF THIS COMMENT BLAMED `alert-fill`/`alert-ink` COLLAPSING,
+     * AND THAT WAS WRONG: the kit renders no text on `alert-fill` in light at all, so
+     * those two never contributed two pairs to collapse. Measured by walking the fixture
+     * under both palettes and diffing, which is the only way to name it.
+     *
+     * Dark is unchanged at 11: there `brand` resolves to `paper` and `ink` to `paper` as
+     * well, a collapse that had ALREADY happened under Direction B. If light ever drops
+     * BELOW 12, that is a component that stopped rendering and not a palette collapse.
+     */
     await openKit(page, 'light')
     const light = await renderedPairs(page)
     await openKit(page, 'dark')
     const dark = await renderedPairs(page)
-    expect({ light: light.length, dark: dark.length }).toEqual({ light: 13, dark: 11 })
+    expect({ light: light.length, dark: dark.length }).toEqual({ light: 12, dark: 11 })
     expect(CONTRAST.pairs).toHaveLength(42)
   })
 })

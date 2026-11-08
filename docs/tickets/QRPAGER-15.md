@@ -246,19 +246,35 @@ fifth instance of the shape in this round.
 `resolveColour()` and `describeRule()`**, so a value corrected in the source and not here
 reddens the gate.
 
+⚠⚠ **THESE ARE RAIL'S VALUES, AS OF 2026-11-08 (`QRPAGER-35`), NOT THE ONES TASK 8a
+DELIVERED.** Task 8a approved and shipped **Direction B (SERVICE)**; Rail superseded its
+eleven colours on 2026-11-07. This table is updated in place rather than left stale for one
+reason: `ticket-tables.test.mjs` holds every cell of it to `resolveColour()`, and a
+hand-typed table that disagrees with the source is the exact defect that test was built
+after — *"five record findings were one defect"*, above. **The delivery record is not
+touched by this: the tag `task-8a` carries this file as Task 8a shipped it**, with Direction
+B's eleven, and `git show task-8a:docs/tickets/QRPAGER-15.md` is the way to read it.
+
+Three cells moved for reasons beyond the colour swap and are worth naming here: **dark
+`brand` was `= signal` (approved) and is now `= paper`** — Rail reserves the accent for the
+ready state, so a dark primary action is a paper fill, not a green one; **dark `alert-fill`
+was `= alert-fill` (approved) and is now a mix**, because Rail's muted oxblood is too dark
+to carry its own label on the dark ground (1.67:1 against a 3.0 bar); and **dark
+`alert-ink`'s mix rose from 37% to 57%** for the same reason.
+
 | role | LIGHT | DARK | light derivation | dark derivation |
 | --- | --- | --- | --- | --- |
-| `paper` | `#F2F4F1` | `#0A1F17` | `= paper` (approved) | `= ready-field` (approved) |
-| `surface` | `#FFFFFF` | `#1D3028` | `= surface` (approved) | `mix(ready-field, paper, 8%)` |
-| `surface-2` | `#E7EBE6` | `#2A3D36` | `= surface-2` (approved) | `mix(ready-field, paper, 14%)` |
-| `hairline` | `#D3DAD2` | `#42524B` | `= hairline` (approved) | `mix(ready-field, paper, 24%)` — **decorative only** |
-| `border-strong` | `#77847C` | `#7E8A84` | `mix(hairline, ink, 47%)` | `mix(ready-field, paper, 50%)` |
-| `ink` | `#10231B` | `#F2F4F1` | `= ink` (approved) | `= paper` (approved) |
-| `ink-mid` | `#5A6A62` | `#9DA7A1` | `= ink-mid` (approved) | `mix(ink-mid, paper, 44%)` |
-| `brand` | `#0B6B4F` | `#3DDC97` | `= brand` (approved) | `= signal` (approved) |
-| `signal` | `#3DDC97` | `#3DDC97` | `= signal` (approved) | `= signal` (approved) |
-| `alert-fill` | `#E4572E` | `#E4572E` | `= alert-fill` (approved) | `= alert-fill` (approved) |
-| `alert-ink` | `#96351A` | `#E99176` | `= alert-ink` (approved) | `mix(alert-fill, paper, 37%)` |
+| `paper` | `#FCFCFA` | `#0A1F17` | `= paper` (approved) | `= ready-field` (approved) |
+| `surface` | `#FFFFFF` | `#1D3129` | `= surface` (approved) | `mix(ready-field, paper, 8%)` |
+| `surface-2` | `#F7F7F3` | `#2C3E37` | `= surface-2` (approved) | `mix(ready-field, paper, 14%)` |
+| `hairline` | `#DFDFD7` | `#44544D` | `= hairline` (approved) | `mix(ready-field, paper, 24%)` — **decorative only** |
+| `border-strong` | `#828382` | `#838E89` | `mix(hairline, ink, 47%)` | `mix(ready-field, paper, 50%)` |
+| `ink` | `#191C22` | `#FCFCFA` | `= ink` (approved) | `= paper` (approved) |
+| `ink-mid` | `#6B6F7A` | `#ABADB2` | `= ink-mid` (approved) | `mix(ink-mid, paper, 44%)` |
+| `brand` | `#191C22` | `#FCFCFA` | `= brand` (approved) | `= paper` (approved) |
+| `signal` | `#18C880` | `#18C880` | `= signal` (approved) | `= signal` (approved) |
+| `alert-fill` | `#8C2F27` | `#B37771` | `= alert-fill` (approved) | `mix(alert-fill, paper, 35%)` |
+| `alert-ink` | `#8C2F27` | `#CCA49F` | `= alert-ink` (approved) | `mix(alert-fill, paper, 57%)` |
 
 **`ready-field` is no longer a row here**, and that is the redesign rather than an omission:
 the order-ready colours stopped being theme roles (defect 1) and live in the `--ready-*`

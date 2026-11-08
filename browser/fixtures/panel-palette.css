@@ -19,80 +19,80 @@
 
 :root {
   /* primary <- brand @600: the approved brand, on the shade a primary button uses */
-  --primary-50: #E9EFEB;
-  --primary-100: #D5E3DC;
-  --primary-200: #ACCBC0;
-  --primary-300: #84B3A4;
-  --primary-400: #5C9B88;
-  --primary-500: #33836B;
-  --primary-600: #0B6B4F; /* the approved value, exactly */
-  --primary-700: #0C5B43;
-  --primary-800: #0D4A37;
-  --primary-900: #0E3A2B;
-  --primary-950: #0F3125;
+  --primary-50: #F3F3F1;
+  --primary-100: #DFDFDF;
+  --primary-200: #B7B8B9;
+  --primary-300: #909193;
+  --primary-400: #686A6D;
+  --primary-500: #414348;
+  --primary-600: #191C22; /* the approved value, exactly */
+  --primary-700: #191C22;
+  --primary-800: #191C22;
+  --primary-900: #191C22;
+  --primary-950: #191C22;
 
   /* danger <- alert-ink @600: FILL_PAIRS names this as the danger fill, with surface as its label */
-  --danger-50: #EEECE8;
-  --danger-100: #E6DCD6;
-  --danger-200: #D6BAB0;
-  --danger-300: #C6998B;
-  --danger-400: #B67865;
-  --danger-500: #A65640;
-  --danger-600: #96351A; /* the approved value, exactly */
-  --danger-700: #77311A;
-  --danger-800: #592D1A;
-  --danger-900: #3A291B;
-  --danger-950: #2B271B;
+  --danger-50: #F8F4F2;
+  --danger-100: #EEE2DF;
+  --danger-200: #DABEBA;
+  --danger-300: #C79A95;
+  --danger-400: #B37771;
+  --danger-500: #A0534C;
+  --danger-600: #8C2F27; /* the approved value, exactly */
+  --danger-700: #722B26;
+  --danger-800: #572625;
+  --danger-900: #3D2224;
+  --danger-950: #302023;
 
   /* success <- signal @600: the approved signal colour */
-  --success-50: #EBF3ED;
-  --success-100: #DBF1E6;
-  --success-200: #BBEDD6;
-  --success-300: #9CE9C6;
-  --success-400: #7CE4B6;
-  --success-500: #5DE0A7;
-  --success-600: #3DDC97; /* the approved value, exactly */
-  --success-700: #33B27B;
-  --success-800: #28875E;
-  --success-900: #1E5D42;
-  --success-950: #194834;
+  --success-50: #F3FAF5;
+  --success-100: #DFF5EA;
+  --success-200: #B7ECD5;
+  --success-300: #8FE3C0;
+  --success-400: #68DAAB;
+  --success-500: #40D195;
+  --success-600: #18C880; /* the approved value, exactly */
+  --success-700: #18A16B;
+  --success-800: #187955;
+  --success-900: #195240;
+  --success-950: #193E35;
 
   /* warning <- alert-fill @400: alert-fill carries small text on no shade, by its own approval */
-  --warning-50: #F1EEE9;
-  --warning-100: #F0D8CE;
-  --warning-200: #ECAD99;
-  --warning-300: #E88263;
-  --warning-400: #E4572E; /* the approved value, exactly */
-  --warning-500: #C54F2B;
-  --warning-600: #A64828;
-  --warning-700: #874026;
-  --warning-800: #693923;
-  --warning-900: #4A3120;
-  --warning-950: #3A2D1F;
+  --warning-50: #F8F4F2;
+  --warning-100: #E8D8D5;
+  --warning-200: #C99F9B;
+  --warning-300: #AB6761;
+  --warning-400: #8C2F27; /* the approved value, exactly */
+  --warning-500: #7B2C26;
+  --warning-600: #6B2926;
+  --warning-700: #5A2725;
+  --warning-800: #492424;
+  --warning-900: #382123;
+  --warning-950: #302023;
 
   /* info <- ink-mid @600: no approved info colour exists; informational emphasis is neutral */
-  --info-50: #ECEEEB;
-  --info-100: #DFE2DF;
-  --info-200: #C4CAC6;
-  --info-300: #AAB2AD;
-  --info-400: #8F9A94;
-  --info-500: #75827B;
-  --info-600: #5A6A62; /* the approved value, exactly */
-  --info-700: #495A52;
-  --info-800: #384A42;
-  --info-900: #273931;
-  --info-950: #1F3129;
+  --info-50: #F6F6F5;
+  --info-100: #EAEAEA;
+  --info-200: #D0D1D3;
+  --info-300: #B7B9BD;
+  --info-400: #9EA0A7;
+  --info-500: #848890;
+  --info-600: #6B6F7A; /* the approved value, exactly */
+  --info-700: #585C66;
+  --info-800: #464952;
+  --info-900: #33363E;
+  --info-950: #292D34;
 
   /* gray <- ink-mid @600: the approved mid-neutral, ramped between paper and ink */
-  --gray-50: #ECEEEB;
-  --gray-100: #DFE2DF;
-  --gray-200: #C4CAC6;
-  --gray-300: #AAB2AD;
-  --gray-400: #8F9A94;
-  --gray-500: #75827B;
-  --gray-600: #5A6A62; /* the approved value, exactly */
-  --gray-700: #495A52;
-  --gray-800: #384A42;
-  --gray-900: #273931;
-  --gray-950: #1F3129;
+  --gray-50: #F6F6F5;
+  --gray-100: #EAEAEA;
+  --gray-200: #D0D1D3;
+  --gray-300: #B7B9BD;
+  --gray-400: #9EA0A7;
+  --gray-500: #848890;
+  --gray-600: #6B6F7A; /* the approved value, exactly */
+  --gray-700: #585C66;
+  --gray-800: #464952;
+  --gray-900: #33363E;
+  --gray-950: #292D34;
 }

@@ -18,9 +18,30 @@
  * THE APPROVED VALUES, AND WHY THE DARK THEME IS A DERIVATION RATHER THAN A LIST
  * ================================================================================
  *
- * Direction B (SERVICE) was approved in writing on 2026-10-31 and fixes ELEVEN colours.
- * Those eleven are `APPROVED` below, verbatim, and nothing else in this file is a typed
- * colour.
+ * "RAIL" (السِجِل) is the approved direction as of 2026-11-07, and it SUPERSEDES Direction B
+ * (SERVICE). Those eleven are `APPROVED` below, verbatim, and nothing else in this file is
+ * a typed colour.
+ *
+ * RAIL'S PRINCIPLE IS A CONSTRAINT ON THE MAPPING BELOW, NOT DECORATION: ink on paper, and
+ * THE ACCENT IS RESERVED FOR THE "READY" STATE ALONE -- never a button, a link, a border, a
+ * focus ring or a heading. That is why `brand` carries `ink`'s value and why dark `brand`
+ * resolves to `paper` rather than to `signal`, which it did until 2026-11-08: a dark theme
+ * whose primary action was `signal` would have broken Rail's only rule INSIDE the token
+ * structure, where no diff would show it.
+ *
+ * THE HISTORY STANDS RATHER THAN BEING DELETED (the owner's instruction): Direction B was
+ * approved in writing on 2026-10-31 and Direction A (SIGNAL) was rejected the same day.
+ * Rail replaces B's eleven values; it does not retract that either happened.
+ *
+ * TWO OF RAIL'S OWN PROPOSED VALUES WERE WITHDRAWN BY ARITHMETIC, AND THE RECORD SAYS SO:
+ * a pale ready ground (#E6F2EC) with deep-green text (#0C6341) measured 6.35:1 as a pair,
+ * under §12's AAA floor of 7.0 for the order-ready screen -- so `ready-field` KEEPS the
+ * value it has had since Direction B, and on-ready text stays `paper`. `signal` could not
+ * be #0F7B4F either: AAA + headroom on `ready-field` puts a FLOOR on signal's luminance
+ * (>= 0.383552) while any text bar on paper puts a CEILING on it (<= 0.177152 at 4.5,
+ * <= 0.290728 at 3.0), and those windows do not overlap -- the most signal can ever reach
+ * on paper while clearing the ready floor is 2.36:1. #0F7B4F measures 3.24 on `ready-field`
+ * against a 7.10 target. So signal stays DARK FIELDS ONLY, which its role rule already said.
  *
  * The dark theme needs roles none of the eleven can fill. Measured: a card on the dark
  * ground (`ink` on `ready-field`) is **1.05:1** -- invisible -- and `ink-mid` is **3.01:1**
@@ -53,17 +74,17 @@ import { mix, ratioFloor2, type Hex } from './color.ts'
 // ---------------------------------------------------------------------------------------
 
 export const APPROVED = {
-  paper: '#F2F4F1',
+  paper: '#FCFCFA',
   surface: '#FFFFFF',
-  'surface-2': '#E7EBE6',
-  hairline: '#D3DAD2',
-  ink: '#10231B',
-  'ink-mid': '#5A6A62',
-  brand: '#0B6B4F',
-  signal: '#3DDC97',
+  'surface-2': '#F7F7F3',
+  hairline: '#DFDFD7',
+  ink: '#191C22',
+  'ink-mid': '#6B6F7A',
+  brand: '#191C22',
+  signal: '#18C880',
   'ready-field': '#0A1F17',
-  'alert-fill': '#E4572E',
-  'alert-ink': '#96351A',
+  'alert-fill': '#8C2F27',
+  'alert-ink': '#8C2F27',
 } as const satisfies Record<string, Hex>
 
 export type ApprovedName = keyof typeof APPROVED
@@ -109,14 +130,14 @@ export const COLOUR_ROLES = {
     hairline: {
       kind: 'approved',
       token: 'hairline',
-      why: 'DECORATIVE SEPARATION ONLY -- 1.29:1 on paper, below 1.4.11’s 3:1, so it may never be a control’s only boundary',
+      why: 'DECORATIVE SEPARATION ONLY -- 1.30:1 on paper under Rail (1.29 under Direction B), below 1.4.11’s 3:1, so it may never be a control’s only boundary',
     },
     'border-strong': {
       kind: 'mix',
       from: 'hairline',
       to: 'ink',
       amount: 0.47,
-      why: 'control and input boundaries (WCAG 1.4.11). RAISED from 44% to 47% on 2026-10-31: at 44% the worst background gave 3.02, a 0.02 margin over the 3:1 bar -- the same brittleness that had already been refused for ink-mid, applied to one role and not the other. 47% gives 3.24 on the hardest light background',
+      why: 'control and input boundaries (WCAG 1.4.11). RAISED from 44% to 47% on 2026-10-31: at 44% the worst background gave 3.02, a 0.02 margin over the 3:1 bar -- the same brittleness that had already been refused for ink-mid, applied to one role and not the other. 47% gives 3.51 on the hardest light background under Rail (3.24 under Direction B)',
     },
     ink: { kind: 'approved', token: 'ink', why: 'body and headings' },
     'ink-mid': { kind: 'approved', token: 'ink-mid', why: 'secondary text only' },
@@ -124,14 +145,18 @@ export const COLOUR_ROLES = {
     signal: {
       kind: 'approved',
       token: 'signal',
-      why: 'DARK FIELDS ONLY -- 1.60:1 on paper, so never text on paper',
+      why: 'DARK FIELDS ONLY -- 2.12:1 on paper under Rail (1.60 under Direction B), so never text on paper. Rail reserves this colour for the ready state alone, and the arithmetic in this file’s header is why it CANNOT also be legible on paper: the ready screen’s AAA floor and any text bar on paper have no overlapping window',
     },
     'alert-fill': {
       kind: 'approved',
       token: 'alert-fill',
-      why: 'fills and >= 24px text only -- 3.33:1 on paper fails 4.5:1 as body text',
+      why: 'fills and >= 24px text only. ⚠ UNDER RAIL THE RATIO NO LONGER FORCES THIS BOUND: alert-fill and alert-ink are both #8C2F27, so this measures 8.01:1 on paper and would pass as body text, where Direction B’s #E4572E measured 3.33 and failed. The bound is KEPT because it is the approval’s own, not because contrast compels it -- stated so a future reader does not take the passing figure as permission',
     },
-    'alert-ink': { kind: 'approved', token: 'alert-ink', why: 'alert text -- 6.73:1 on paper' },
+    'alert-ink': {
+      kind: 'approved',
+      token: 'alert-ink',
+      why: 'alert text -- 8.01:1 on paper under Rail (6.73 under Direction B). It is also the danger button’s FILL, by the ruling of 2026-10-31',
+    },
   },
   dark: {
     paper: {
@@ -144,7 +169,7 @@ export const COLOUR_ROLES = {
       from: 'ready-field',
       to: 'paper',
       amount: 0.08,
-      why: 'raised. NOT derivable from the approved eleven: ink on ready-field is 1.05:1, so a card would be invisible',
+      why: 'raised. NOT derivable from the approved eleven: ink on ready-field is 1.00:1 under Rail (1.05 under Direction B) -- Rail’s ink is so close to the field in luminance that a card would be invisible, which is the same argument with a starker figure',
     },
     'surface-2': {
       kind: 'mix',
@@ -158,14 +183,14 @@ export const COLOUR_ROLES = {
       from: 'ready-field',
       to: 'paper',
       amount: 0.24,
-      why: 'DECORATIVE SEPARATION ONLY -- 2.08:1 on the dark ground, below 1.4.11’s 3:1',
+      why: 'DECORATIVE SEPARATION ONLY -- 2.14:1 on the dark ground under Rail (2.08 under Direction B), below 1.4.11’s 3:1',
     },
     'border-strong': {
       kind: 'mix',
       from: 'ready-field',
       to: 'paper',
       amount: 0.5,
-      why: 'control and input boundaries (WCAG 1.4.11). RAISED from 48% to 50% on 2026-10-31: 48% gave 3.01 on the worst background, a 0.01 margin. 49% would have given exactly 3.10 -- clearing the 3.1 target by 0.00, which is worse than the margin being complained about -- so 50% was taken, at 3.21 on the hardest dark background',
+      why: 'control and input boundaries (WCAG 1.4.11). RAISED from 48% to 50% on 2026-10-31: 48% gave 3.01 on the worst background, a 0.01 margin. 49% would have given exactly 3.10 -- clearing the 3.1 target by 0.00, which is worse than the margin being complained about -- so 50% was taken, at 3.34 on the hardest dark background under Rail (3.21 under Direction B)',
     },
     ink: { kind: 'approved', token: 'paper', why: 'the role swap: paper becomes the text colour' },
     'ink-mid': {
@@ -173,25 +198,27 @@ export const COLOUR_ROLES = {
       from: 'ink-mid',
       to: 'paper',
       amount: 0.44,
-      why: 'ink-mid itself is 3.01:1 on the dark ground and fails AA. Raised until the GENERATED value clears >= 4.6:1 against the HARDEST dark background, not just the ground -- condition 3',
+      why: 'ink-mid itself is 3.42:1 on the dark ground under Rail (3.01 under Direction B) and fails AA. Raised until the GENERATED value clears >= 4.6:1 against the HARDEST dark background, not just the ground -- condition 3',
     },
     brand: {
       kind: 'approved',
-      token: 'signal',
-      why: 'brand is 2.64:1 on the dark ground; signal is 9.73:1',
+      token: 'paper',
+      why: "REPOINTED OFF `signal` ON 2026-11-08, AND THIS IS RAIL'S ONLY RULE HELD STRUCTURALLY. It read `signal` because signal was the one approved value legible on the dark ground -- which made the accent the dark theme's button fill, exactly what Rail forbids, in a place no screenshot and no diff would show. `paper` is the mirror of dark `ink`, which is also `paper`: a dark primary action is a paper fill with a dark label, as light's is an ink fill with a paper label",
     },
     signal: { kind: 'approved', token: 'signal', why: 'unchanged -- the dark theme IS its field' },
     'alert-fill': {
-      kind: 'approved',
-      token: 'alert-fill',
-      why: 'unchanged -- a fill is read against its own text, not against the ground, so the theme does not move it. 4.67:1 on the dark ground',
+      kind: 'mix',
+      from: 'alert-fill',
+      to: 'paper',
+      amount: 0.35,
+      why: "DERIVED AS OF 2026-11-08, and it was `= approved alert-fill` until then. That held while alert-fill was a BRIGHT #E4572E; Rail's muted oxblood #8C2F27 is too dark to be a fill in the dark theme -- the pair FILL_PAIRS actually checks is the dark `surface` colour as its >= 24px text, and raw #8C2F27 measured 1.67:1 against a 3.0 bar. 35% toward paper is the first step that clears 3.0 + 0.10 headroom",
     },
     'alert-ink': {
       kind: 'mix',
       from: 'alert-fill',
       to: 'paper',
-      amount: 0.37,
-      why: 'DERIVED, and it was `= approved alert-fill` until 2026-10-31. alert-ink itself is 2.31 on the dark ground, so the fill was promoted to the text role -- but alert-ink is a TEXT role, so its bar is 4.5, and alert-fill measured 4.66 / 3.78 / 3.13 against the three dark backgrounds: it FAILED AA on two of the three. It escaped because the bars table covered ink, ink-mid and border-strong only. 37% gives 4.82 on the hardest dark background',
+      amount: 0.57,
+      why: 'RAISED FROM 37% TO 57% ON 2026-11-08, because Rail moved alert-fill from a bright #E4572E to a muted oxblood #8C2F27 and 37% of a darker source lands darker: it measured 3.27 against dark surface-2, failing the 4.5 bar it had cleared before. 57% is the first step where all three dark backgrounds clear 4.5 + 0.10. The original note stands as history: DERIVED, and it was `= approved alert-fill` until 2026-10-31. alert-ink itself is 2.31 on the dark ground, so the fill was promoted to the text role -- but alert-ink is a TEXT role, so its bar is 4.5, and alert-fill measured 4.66 / 3.78 / 3.13 against the three dark backgrounds: it FAILED AA on two of the three. It escaped because the bars table covered ink, ink-mid and border-strong only. 37% gives 4.82 on the hardest dark background',
     },
   },
 } as const satisfies Record<Theme, Record<string, ColourRule>>
@@ -424,7 +451,7 @@ export const FOCUS = {
 
 /** One elevation. `1px` and `2px` are device pixels, not steps on the spacing scale. */
 export const ELEVATION = {
-  card: '0 1px 2px rgba(16, 35, 27, 0.06)',
+  card: '0 1px 2px rgba(25, 28, 34, 0.06)',
 } as const
 
 /** The minimum touch target, in px. §12, and measured in a real browser by Playwright. */
@@ -452,10 +479,10 @@ export const TARGET_MIN_PX = 44
  */
 export const FONTS = {
   latin: {
-    family: 'Plus Jakarta Sans',
+    family: 'Archivo',
     license: 'OFL-1.1',
     subset: 'latin',
-    files: ['plus-jakarta-sans-latin.woff2'],
+    files: ['archivo-latin.woff2'],
   },
   arabic: {
     family: 'Tajawal',

@@ -285,13 +285,19 @@ describe("§2.3's final-values table", () => {
   })
 
   it('no longer presents the superseded values as current', () => {
-    // The three exact cells, by value. §8: assert exact values.
-    for (const superseded of ['#7D8981', '#798580']) {
-      expect(section, `${superseded} is a superseded border-strong value`).not.toContain(
-        `| \`${superseded}\` |`,
-      )
+    /*
+     * The exact cells, by value. §8: assert exact values.
+     *
+     * ⚠ UPDATED 2026-11-08 BY RAIL, AND THE CASE'S PURPOSE IS UNCHANGED: a superseded
+     * value must never sit in this table as if it were current. The first two are
+     * Direction B's own superseded border-strong values from the 2026-10-31 correction.
+     * `#E99176` now JOINS them rather than being required: it was dark alert-ink under
+     * Direction B (mix at 37%), and Rail's is `#CCA49F` (mix at 57%), so the very value
+     * this case used to demand is now the kind of value it exists to exclude.
+     */
+    for (const superseded of ['#7D8981', '#798580', '#E99176']) {
+      expect(section, `${superseded} is a superseded value`).not.toContain(`| \`${superseded}\` |`)
     }
-    // Dark alert-ink was `= alert-fill` #E4572E, failing AA at 3.78 and 3.13.
-    expect(section).toContain('`#E99176`')
+    expect(section).toContain('`#CCA49F`')
   })
 })

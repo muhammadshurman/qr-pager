@@ -11,30 +11,30 @@
 
 export const THEME_COLOURS = {
   light: {
-  'paper': '#F2F4F1',
+  'paper': '#FCFCFA',
   'surface': '#FFFFFF',
-  'surface-2': '#E7EBE6',
-  'hairline': '#D3DAD2',
-  'border-strong': '#77847C',
-  'ink': '#10231B',
-  'ink-mid': '#5A6A62',
-  'brand': '#0B6B4F',
-  'signal': '#3DDC97',
-  'alert-fill': '#E4572E',
-  'alert-ink': '#96351A',
+  'surface-2': '#F7F7F3',
+  'hairline': '#DFDFD7',
+  'border-strong': '#828382',
+  'ink': '#191C22',
+  'ink-mid': '#6B6F7A',
+  'brand': '#191C22',
+  'signal': '#18C880',
+  'alert-fill': '#8C2F27',
+  'alert-ink': '#8C2F27',
   },
   dark: {
   'paper': '#0A1F17',
-  'surface': '#1D3028',
-  'surface-2': '#2A3D36',
-  'hairline': '#42524B',
-  'border-strong': '#7E8A84',
-  'ink': '#F2F4F1',
-  'ink-mid': '#9DA7A1',
-  'brand': '#3DDC97',
-  'signal': '#3DDC97',
-  'alert-fill': '#E4572E',
-  'alert-ink': '#E99176',
+  'surface': '#1D3129',
+  'surface-2': '#2C3E37',
+  'hairline': '#44544D',
+  'border-strong': '#838E89',
+  'ink': '#FCFCFA',
+  'ink-mid': '#ABADB2',
+  'brand': '#FCFCFA',
+  'signal': '#18C880',
+  'alert-fill': '#B37771',
+  'alert-ink': '#CCA49F',
   },
 } as const
 
@@ -81,8 +81,8 @@ export const TARGET_MIN = 44
  */
 export const ORDER_READY_COLOURS = {
   'ready-field': '#0A1F17',
-  'ready-ink': '#F2F4F1',
-  'ready-signal': '#3DDC97',
+  'ready-ink': '#FCFCFA',
+  'ready-signal': '#18C880',
 } as const
 
 /** The CSS custom properties the order-ready screen reads, and nothing else. */

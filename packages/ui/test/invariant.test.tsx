@@ -564,7 +564,9 @@ describe('clause 2 -- the order-ready pair is UNREACHABLE from a tenant theme', 
     // arithmetic over two values rather than a browser measurement -- which is why it is
     // asserted here and not left to R-118's browser harness.
     //
-    // ⚠ 15.54 / 9.72 / 9.72, AND THIS FILE SAID 15.55 / 9.73 / 9.73. Raw: 15.545990… and
+    // ⚠ RAIL, 2026-11-08: 16.73 / 7.87 / 7.87, raw 16.739645… and 7.870682…, where floor
+    // and round agree. Direction B's were 15.54 / 9.72 / 9.72 AND THIS FILE SAID
+    // 15.55 / 9.73 / 9.73. Raw: 15.545990… and
     // 9.729662…. Under the stated convention -- TRUNCATE at two decimals, never round up,
     // because every contrast threshold is a MINIMUM -- both floor rather than round. The
     // figures are read from orderReadyPairs() now instead of three literals typed here,
@@ -572,9 +574,9 @@ describe('clause 2 -- the order-ready pair is UNREACHABLE from a tenant theme', 
     // clause. All three clear AAA's 7.0 either way, so no conclusion changes.
     const pairs = orderReadyPairs()
     expect(pairs.map((p) => [p.fg, p.bg, p.ratio])).toEqual([
-      ['--ready-ink', '--ready-field', 15.54],
-      ['--ready-signal', '--ready-field', 9.72],
-      ['--ready-field', '--ready-signal', 9.72],
+      ['--ready-ink', '--ready-field', 16.73],
+      ['--ready-signal', '--ready-field', 7.87],
+      ['--ready-field', '--ready-signal', 7.87],
     ])
     for (const p of pairs) expect(p.pass).toBe(true)
   })

@@ -191,7 +191,7 @@ describe('every path a generated artefact names', () => {
     // The specific defect, pinned by exact value as well as by the class above -- §8's
     // "assert exact values, never ranges". The class check would catch a regression; this
     // says what the right answer is.
-    expect(FONTS.latin.files).toEqual(['plus-jakarta-sans-latin.woff2'])
+    expect(FONTS.latin.files).toEqual(['archivo-latin.woff2'])
     expect(FONTS.arabic.files).toEqual(['tajawal-arabic-400.woff2', 'tajawal-arabic-700.woff2'])
 
     // And the source agrees with the two artefacts the FETCH script writes, which is the

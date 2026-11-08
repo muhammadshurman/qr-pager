@@ -5,9 +5,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Your order">
   <title>Your order</title>
   <rect width="64" height="64" rx="12" fill="#0A1F17" />
-  <path fill="#3DDC97" d="M12 12h16v16H12zm3 3v10h10V15z" />
-  <path fill="#3DDC97" d="M36 12h16v16H36zm3 3v10h10V15z" />
-  <path fill="#3DDC97" d="M12 36h16v16H12zm3 3v10h10V39z" />
-  <rect x="38" y="38" width="6" height="6" fill="#3DDC97" />
-  <rect x="46" y="46" width="6" height="6" fill="#3DDC97" />
+  <path fill="#18C880" d="M12 12h16v16H12zm3 3v10h10V15z" />
+  <path fill="#18C880" d="M36 12h16v16H36zm3 3v10h10V15z" />
+  <path fill="#18C880" d="M12 36h16v16H12zm3 3v10h10V39z" />
+  <rect x="38" y="38" width="6" height="6" fill="#18C880" />
+  <rect x="46" y="46" width="6" height="6" fill="#18C880" />
 </svg>

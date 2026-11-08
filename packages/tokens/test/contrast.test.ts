@@ -176,48 +176,48 @@ describe('the generated contrast table is the source of every figure', () => {
 describe('every pair in the generated table, pinned to an exact literal', () => {
   /** theme, foreground role, background role, expected FLOORED ratio. */
   const EXPECTED: readonly [string, string, string, number][] = [
-    ['light', 'ink', 'paper', 14.85],
-    ['light', 'ink', 'surface', 16.42],
-    ['light', 'ink', 'surface-2', 13.63],
-    ['light', 'ink-mid', 'paper', 5.16],
-    ['light', 'ink-mid', 'surface', 5.71],
-    ['light', 'ink-mid', 'surface-2', 4.74],
-    ['light', 'alert-ink', 'paper', 6.73],
-    ['light', 'alert-ink', 'surface', 7.44],
-    ['light', 'alert-ink', 'surface-2', 6.17],
-    ['light', 'brand', 'paper', 5.87],
-    ['light', 'brand', 'surface', 6.5],
-    ['light', 'brand', 'surface-2', 5.39],
-    ['light', 'border-strong', 'paper', 3.53],
-    ['light', 'border-strong', 'surface', 3.9],
-    ['light', 'border-strong', 'surface-2', 3.24],
-    ['light', 'hairline', 'paper', 1.28],
-    ['light', 'hairline', 'surface', 1.42],
-    ['light', 'hairline', 'surface-2', 1.18],
-    ['light', 'surface', 'brand', 6.5],
-    ['light', 'surface', 'alert-ink', 7.44],
-    ['light', 'surface', 'alert-fill', 3.68],
-    ['dark', 'ink', 'paper', 15.54],
-    ['dark', 'ink', 'surface', 12.6],
-    ['dark', 'ink', 'surface-2', 10.43],
-    ['dark', 'ink-mid', 'paper', 6.94],
-    ['dark', 'ink-mid', 'surface', 5.62],
-    ['dark', 'ink-mid', 'surface-2', 4.65],
-    ['dark', 'alert-ink', 'paper', 7.18],
-    ['dark', 'alert-ink', 'surface', 5.82],
-    ['dark', 'alert-ink', 'surface-2', 4.82],
-    ['dark', 'brand', 'paper', 9.72],
-    ['dark', 'brand', 'surface', 7.89],
-    ['dark', 'brand', 'surface-2', 6.53],
-    ['dark', 'border-strong', 'paper', 4.79],
-    ['dark', 'border-strong', 'surface', 3.88],
-    ['dark', 'border-strong', 'surface-2', 3.21],
-    ['dark', 'hairline', 'paper', 2.07],
-    ['dark', 'hairline', 'surface', 1.68],
-    ['dark', 'hairline', 'surface-2', 1.39],
-    ['dark', 'surface', 'brand', 7.89],
-    ['dark', 'surface', 'alert-ink', 5.82],
-    ['dark', 'surface', 'alert-fill', 3.78],
+    ['light', 'ink', 'paper', 16.61],
+    ['light', 'ink', 'surface', 17.06],
+    ['light', 'ink', 'surface-2', 15.89],
+    ['light', 'ink-mid', 'paper', 4.89],
+    ['light', 'ink-mid', 'surface', 5.02],
+    ['light', 'ink-mid', 'surface-2', 4.67],
+    ['light', 'alert-ink', 'paper', 8.01],
+    ['light', 'alert-ink', 'surface', 8.23],
+    ['light', 'alert-ink', 'surface-2', 7.66],
+    ['light', 'brand', 'paper', 16.61],
+    ['light', 'brand', 'surface', 17.06],
+    ['light', 'brand', 'surface-2', 15.89],
+    ['light', 'border-strong', 'paper', 3.7],
+    ['light', 'border-strong', 'surface', 3.8],
+    ['light', 'border-strong', 'surface-2', 3.54],
+    ['light', 'hairline', 'paper', 1.3],
+    ['light', 'hairline', 'surface', 1.33],
+    ['light', 'hairline', 'surface-2', 1.24],
+    ['light', 'surface', 'brand', 17.06],
+    ['light', 'surface', 'alert-ink', 8.23],
+    ['light', 'surface', 'alert-fill', 8.23],
+    ['dark', 'ink', 'paper', 16.73],
+    ['dark', 'ink', 'surface', 13.41],
+    ['dark', 'ink', 'surface-2', 11.04],
+    ['dark', 'ink-mid', 'paper', 7.65],
+    ['dark', 'ink-mid', 'surface', 6.13],
+    ['dark', 'ink-mid', 'surface-2', 5.05],
+    ['dark', 'alert-ink', 'paper', 7.67],
+    ['dark', 'alert-ink', 'surface', 6.15],
+    ['dark', 'alert-ink', 'surface-2', 5.06],
+    ['dark', 'brand', 'paper', 16.73],
+    ['dark', 'brand', 'surface', 13.41],
+    ['dark', 'brand', 'surface-2', 11.04],
+    ['dark', 'border-strong', 'paper', 5.07],
+    ['dark', 'border-strong', 'surface', 4.06],
+    ['dark', 'border-strong', 'surface-2', 3.34],
+    ['dark', 'hairline', 'paper', 2.14],
+    ['dark', 'hairline', 'surface', 1.72],
+    ['dark', 'hairline', 'surface-2', 1.41],
+    ['dark', 'surface', 'brand', 13.41],
+    ['dark', 'surface', 'alert-ink', 6.15],
+    ['dark', 'surface', 'alert-fill', 3.8],
   ]
 
   it('pins all 42 rows, and the table carries no row this list omits', () => {
@@ -247,21 +247,24 @@ describe('every pair in the generated table, pinned to an exact literal', () => 
 
 describe('the eleven approved values are exactly what was approved', () => {
   it('holds the approved hexes verbatim', () => {
-    // Typed out from the 2026-10-31 approval comment. This is the ONE place these are
+    // Typed out from the RAIL approval of 2026-11-07 (Direction B's eleven, approved
+    // 2026-10-31, are superseded; signal, surface-2 and the alert pair were solved by
+    // measurement on 2026-11-08 and approved with the reasoning). This is the ONE place
+    // these are
     // written twice, and that is the test's job: if the source drifts from the approval,
     // this fails.
     expect(APPROVED).toEqual({
-      paper: '#F2F4F1',
+      paper: '#FCFCFA',
       surface: '#FFFFFF',
-      'surface-2': '#E7EBE6',
-      hairline: '#D3DAD2',
-      ink: '#10231B',
-      'ink-mid': '#5A6A62',
-      brand: '#0B6B4F',
-      signal: '#3DDC97',
+      'surface-2': '#F7F7F3',
+      hairline: '#DFDFD7',
+      ink: '#191C22',
+      'ink-mid': '#6B6F7A',
+      brand: '#191C22',
+      signal: '#18C880',
       'ready-field': '#0A1F17',
-      'alert-fill': '#E4572E',
-      'alert-ink': '#96351A',
+      'alert-fill': '#8C2F27',
+      'alert-ink': '#8C2F27',
     })
   })
 
@@ -288,12 +291,14 @@ describe('the eleven approved values are exactly what was approved', () => {
 
 describe('the order-ready screen — AAA, and the same in both themes', () => {
   it.each([
-    ['--ready-ink', '--ready-field', 15.54, 'the page text'],
-    ['--ready-signal', '--ready-field', 9.72, 'the order number'],
-    ['--ready-field', '--ready-signal', 9.72, 'the acknowledge button'],
+    ['--ready-ink', '--ready-field', 16.73, 'the page text'],
+    ['--ready-signal', '--ready-field', 7.87, 'the order number'],
+    ['--ready-field', '--ready-signal', 7.87, 'the acknowledge button'],
   ])('%s on %s is exactly %s:1 (%s)', (fg, bg, expected) => {
-    // ⚠ 15.54 / 9.72 / 9.72, NOT 15.55 / 9.73 / 9.73. The raw values are 15.545990… and
-    // 9.729662…, and under truncation they floor rather than round up. The task's own
+    // ⚠ RAIL'S RAW VALUES ARE 16.739645… and 7.870682…, floored to 16.73 and 7.87.
+    // Direction B's were 15.545990… and 9.729662…, where truncation and rounding DIFFERED
+    // (15.54 not 15.55, 9.72 not 9.73) and the approval comment carried the rounded forms;
+    // Rail's happen to agree under both. The convention is unchanged. The task's own
     // prompt and the approval comment both carried the rounded forms. All three clear
     // AAA's 7.0 by a wide margin either way, so no conclusion changes — but a published
     // figure that rounds up against a minimum is the defect this convention removes.
@@ -305,8 +310,8 @@ describe('the order-ready screen — AAA, and the same in both themes', () => {
 
   it('takes no theme argument at all, which is the mechanism', () => {
     expect(resolveOrderReady('ready-field')).toBe('#0A1F17')
-    expect(resolveOrderReady('ready-ink')).toBe('#F2F4F1')
-    expect(resolveOrderReady('ready-signal')).toBe('#3DDC97')
+    expect(resolveOrderReady('ready-ink')).toBe('#FCFCFA')
+    expect(resolveOrderReady('ready-signal')).toBe('#18C880')
   })
 
   it('is not a theme role in either theme, so no theme can redeclare it', () => {
@@ -321,17 +326,17 @@ describe('the order-ready screen — AAA, and the same in both themes', () => {
 
 describe('the three roles corrected on 2026-10-31, each pinned to its generated value', () => {
   it.each([
-    ['light', 'border-strong', '#77847C', 'raised 44% -> 47%: 44% cleared 3:1 by 0.02'],
+    ['light', 'border-strong', '#828382', 'raised 44% -> 47%: 44% cleared 3:1 by 0.02'],
     [
       'dark',
       'border-strong',
-      '#7E8A84',
+      '#838E89',
       'raised 48% -> 50%: 48% cleared by 0.01, and 49% cleared the 3.1 target by 0.00',
     ],
     [
       'dark',
       'alert-ink',
-      '#E99176',
+      '#CCA49F',
       'was `= approved alert-fill`, which FAILED AA on two of the three dark backgrounds',
     ],
   ])('%s %s resolves to %s', (theme, role, hex) => {
@@ -341,27 +346,27 @@ describe('the three roles corrected on 2026-10-31, each pinned to its generated 
   it('left dark ink-mid and the surface ladder where they were', () => {
     // The corrections were scoped: nothing else moved, so a reviewer diffing the table sees
     // three changed roles and not a repalette.
-    expect(resolveColour('dark', 'surface')).toBe('#1D3028')
-    expect(resolveColour('dark', 'surface-2')).toBe('#2A3D36')
-    expect(resolveColour('dark', 'hairline')).toBe('#42524B')
-    expect(resolveColour('dark', 'ink-mid')).toBe('#9DA7A1')
+    expect(resolveColour('dark', 'surface')).toBe('#1D3129')
+    expect(resolveColour('dark', 'surface-2')).toBe('#2C3E37')
+    expect(resolveColour('dark', 'hairline')).toBe('#44544D')
+    expect(resolveColour('dark', 'ink-mid')).toBe('#ABADB2')
   })
 
   it('clears each corrected role on its HARDEST background, not just its ground', () => {
     const worst = (theme: Theme, fg: ColourRole) =>
       Math.min(...BG.map((bg) => ratioFloor2(resolveColour(theme, fg), resolveColour(theme, bg))))
 
-    expect(worst('light', 'border-strong')).toBe(3.24)
-    expect(worst('dark', 'border-strong')).toBe(3.21)
-    expect(worst('dark', 'alert-ink')).toBe(4.82)
-    expect(worst('dark', 'ink-mid')).toBe(4.65)
+    expect(worst('light', 'border-strong')).toBe(3.54)
+    expect(worst('dark', 'border-strong')).toBe(3.34)
+    expect(worst('dark', 'alert-ink')).toBe(5.06)
+    expect(worst('dark', 'ink-mid')).toBe(5.05)
   })
 })
 
 describe('hairline is decorative only — the finding that produced border-strong', () => {
   it.each([
-    ['light', 1.28],
-    ['dark', 2.07],
+    ['light', 1.3],
+    ['dark', 2.14],
   ])('%s hairline is %s:1 on its ground, below 1.4.11’s 3:1', (theme, expected) => {
     const t = theme as Theme
     expect(ratioFloor2(resolveColour(t, 'hairline'), resolveColour(t, 'paper'))).toBe(expected)
@@ -370,21 +375,30 @@ describe('hairline is decorative only — the finding that produced border-stron
 })
 
 describe('the restricted tokens the approval singled out', () => {
-  it('signal is 1.59:1 on paper, so it is never text on paper', () => {
+  it('signal is 2.12:1 on paper, so it is never text on paper', () => {
     // 1.59 and not 1.60: raw 1.597793…, which the approval comment rounded up.
-    expect(ratioFloor2(APPROVED.signal, APPROVED.paper)).toBe(1.59)
+    expect(ratioFloor2(APPROVED.signal, APPROVED.paper)).toBe(2.12)
   })
 
-  it('alert-fill fails AA as small text, which is why it fills no button here', () => {
-    // 3.32 and not 3.33: raw 3.329999…. The comment's conclusion holds either way.
-    expect(ratioFloor2(APPROVED['alert-fill'], APPROVED.paper)).toBe(3.32)
-    expect(contrast(APPROVED.surface, APPROVED['alert-fill'])).toBeLessThan(BARS.aaText)
-    // And the pairing that replaced it.
-    expect(ratioFloor2(APPROVED.surface, APPROVED['alert-ink'])).toBe(7.44)
+  it("alert-fill CLEARS AA as small text under Rail, and its >= 24px bound is the approval's not the ratio's", () => {
+    /*
+     * ⚠ THIS CASE ASSERTED THE OPPOSITE UNTIL 2026-11-08, AND IT IS THE PROPERTY THAT
+     * INVERTED RATHER THAN A FIGURE THAT MOVED -- said here rather than quietly reversed.
+     *
+     * Under Direction B, alert-fill was #E4572E: 3.32 on paper, and `surface` on it measured
+     * BELOW 4.5, which is exactly why the danger button's fill was ruled to be alert-ink on
+     * 2026-10-31. Rail gives BOTH names the same value, #8C2F27, so alert-fill now CLEARS AA
+     * as small text and the >= 24px bound on it rests on the APPROVAL's own words rather than
+     * on a ratio. The 2026-10-31 pairing is kept because it is a ruling; it no longer bites.
+     */
+    expect(ratioFloor2(APPROVED['alert-fill'], APPROVED.paper)).toBe(8.01)
+    expect(contrast(APPROVED.surface, APPROVED['alert-fill'])).toBeGreaterThan(BARS.aaText)
+    expect(APPROVED['alert-fill']).toBe(APPROVED['alert-ink'])
+    expect(ratioFloor2(APPROVED.surface, APPROVED['alert-ink'])).toBe(8.23)
   })
 
-  it('ink on paper is 14.85:1 under both conventions', () => {
-    expect(ratioFloor2(APPROVED.ink, APPROVED.paper)).toBe(14.85)
+  it('ink on paper is 16.61:1 under both conventions', () => {
+    expect(ratioFloor2(APPROVED.ink, APPROVED.paper)).toBe(16.61)
   })
 })
 
@@ -488,14 +502,23 @@ describe('the ratio function, pinned', () => {
 
 describe('the arithmetic itself', () => {
   it('TRUNCATES rather than rounds, which is the convention', () => {
-    // The three cases that moved, as a property of the function rather than of a table.
-    expect(ratioFloor2(APPROVED.paper, APPROVED['ready-field'])).toBe(15.54)
-    expect(ratioFloor2(APPROVED.signal, APPROVED['ready-field'])).toBe(9.72)
-    expect(ratioFloor2(APPROVED.signal, APPROVED.paper)).toBe(1.59)
+    /*
+     * The cases that moved, as a property of the function rather than of a table.
+     *
+     * ⚠ UNDER RAIL THIS TRIO NO LONGER DEMONSTRATES THE CONVENTION BY ITSELF, and that is
+     * said rather than papered over: signal on ready-field is raw 7.870682…, which floors
+     * AND rounds to 7.87, so the pair cannot show the difference any more. Direction B's
+     * 9.729662… could. The demonstration now rests on the LITERAL-INPUT control above --
+     * `ratioFloor2('#3DDC97', '#0A1F17')` is 9.72 and never 9.73 -- which is independent of
+     * whatever the palette happens to be, and is the stronger place for it to live.
+     */
+    expect(ratioFloor2(APPROVED.paper, APPROVED['ready-field'])).toBe(16.73)
+    expect(ratioFloor2(APPROVED.signal, APPROVED['ready-field'])).toBe(7.87)
+    expect(ratioFloor2(APPROVED.signal, APPROVED.paper)).toBe(2.12)
     // …and a case where flooring and rounding agree, so the function is not merely
     // subtracting a hundredth from everything.
-    expect(ratioFloor2(APPROVED.ink, APPROVED.paper)).toBe(14.85)
-    expect(ratioFloor2(APPROVED.surface, APPROVED.brand)).toBe(6.5)
+    expect(ratioFloor2(APPROVED.ink, APPROVED.paper)).toBe(16.61)
+    expect(ratioFloor2(APPROVED.surface, APPROVED.brand)).toBe(17.06)
   })
 
   it('never reports a figure ABOVE the raw ratio', () => {

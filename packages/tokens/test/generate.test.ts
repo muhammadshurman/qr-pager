@@ -218,7 +218,7 @@ describe('buildPhp', () => {
     // files, so a singular key could only ever have been right for one of the two.
     expect(php).toContain("'tajawal-arabic-400.woff2',")
     expect(php).toContain("'tajawal-arabic-700.woff2',")
-    expect(php).toContain("'plus-jakarta-sans-latin.woff2',")
+    expect(php).toContain("'archivo-latin.woff2',")
     expect(php).not.toContain("'tajawal-arabic.woff2'")
   })
 
