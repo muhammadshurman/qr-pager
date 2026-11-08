@@ -445,7 +445,16 @@ export async function signInAsStaff(page: Page): Promise<StaffFixture> {
 
   staffCookies = null
 
-  await page.getByRole('button', { name: /use a password instead|استخدم كلمة المرور/i }).click()
+  /*
+   * ⚠ NO DISCLOSURE STEP SINCE `QRPAGER-38`, and its removal is what turned every staff
+   * project red: this read
+   * `getByRole('button', { name: /use a password instead|استخدم كلمة المرور/i }).click()`,
+   * and the rebuilt sign-in card has no such control — email and password are on the screen
+   * from the first paint. Every case in `staff.spec.ts` then spent its whole budget waiting
+   * for a button that cannot appear and reported a timeout on a line that was not the
+   * problem, which is the SECOND time this helper has produced that exact symptom (the race
+   * above is the first, and its docblock says so).
+   */
   await page.locator('input[name="email"]').fill(fixture.owner.email)
   await page.locator('input[name="password"]').fill(fixture.owner.password)
   await page.locator('[data-password-signin="true"]').click()
