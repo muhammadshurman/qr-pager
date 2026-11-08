@@ -76,7 +76,7 @@ import { mix, ratioFloor2, type Hex } from './color.ts'
 export const APPROVED = {
   paper: '#FCFCFA',
   surface: '#FFFFFF',
-  'surface-2': '#F6F6F2',
+  'surface-2': '#F7F7F3',
   hairline: '#DFDFD7',
   ink: '#191C22',
   'ink-mid': '#6B6F7A',
@@ -152,7 +152,11 @@ export const COLOUR_ROLES = {
       token: 'alert-fill',
       why: 'fills and >= 24px text only. ⚠ UNDER RAIL THE RATIO NO LONGER FORCES THIS BOUND: alert-fill and alert-ink are both #8C2F27, so this measures 8.01:1 on paper and would pass as body text, where Direction B’s #E4572E measured 3.33 and failed. The bound is KEPT because it is the approval’s own, not because contrast compels it -- stated so a future reader does not take the passing figure as permission',
     },
-    'alert-ink': { kind: 'approved', token: 'alert-ink', why: 'alert text -- 8.01:1 on paper under Rail (6.73 under Direction B). It is also the danger button’s FILL, by the ruling of 2026-10-31' },
+    'alert-ink': {
+      kind: 'approved',
+      token: 'alert-ink',
+      why: 'alert text -- 8.01:1 on paper under Rail (6.73 under Direction B). It is also the danger button’s FILL, by the ruling of 2026-10-31',
+    },
   },
   dark: {
     paper: {
@@ -447,7 +451,7 @@ export const FOCUS = {
 
 /** One elevation. `1px` and `2px` are device pixels, not steps on the spacing scale. */
 export const ELEVATION = {
-  card: '0 1px 2px rgba(16, 35, 27, 0.06)',
+  card: '0 1px 2px rgba(25, 28, 34, 0.06)',
 } as const
 
 /** The minimum touch target, in px. §12, and measured in a real browser by Playwright. */
@@ -475,10 +479,10 @@ export const TARGET_MIN_PX = 44
  */
 export const FONTS = {
   latin: {
-    family: 'Plus Jakarta Sans',
+    family: 'Archivo',
     license: 'OFL-1.1',
     subset: 'latin',
-    files: ['plus-jakarta-sans-latin.woff2'],
+    files: ['archivo-latin.woff2'],
   },
   arabic: {
     family: 'Tajawal',

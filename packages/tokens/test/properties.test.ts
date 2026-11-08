@@ -86,7 +86,7 @@ describe('describeRule', () => {
     // DERIVED on 2026-10-31: dark alert-ink was `= approved alert-fill` and failed AA on
     // two of the three dark backgrounds.
     expect(describeRule('dark', 'alert-ink')).toBe(
-      'mix(alert-fill, paper, 37%) in srgb-8bit-component-linear-round-half-up',
+      'mix(alert-fill, paper, 57%) in srgb-8bit-component-linear-round-half-up',
     )
     expect(describeRule('dark', 'border-strong')).toBe(
       'mix(ready-field, paper, 50%) in srgb-8bit-component-linear-round-half-up',

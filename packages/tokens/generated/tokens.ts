@@ -13,7 +13,7 @@ export const THEME_COLOURS = {
   light: {
   'paper': '#FCFCFA',
   'surface': '#FFFFFF',
-  'surface-2': '#F6F6F2',
+  'surface-2': '#F7F7F3',
   'hairline': '#DFDFD7',
   'border-strong': '#828382',
   'ink': '#191C22',

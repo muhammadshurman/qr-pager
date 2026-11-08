@@ -18,8 +18,8 @@
  * instead of twice -- 27 KB that would otherwise be downloaded for nothing.
  *
  * Provenance, so a reviewer can re-fetch and compare:
- *   plus-jakarta-sans-latin.woff2  27348 bytes  weights 400/600  sha256 153fc85b70298bee…
- *     https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2
+ *   archivo-latin.woff2  34928 bytes  weights 400/600  sha256 8f704806dbedeaae…
+ *     https://fonts.gstatic.com/s/archivo/v25/k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2
  *   tajawal-arabic-400.woff2  8932 bytes  weights 400  sha256 6c9081fd00db0880…
  *     https://fonts.gstatic.com/s/tajawal/v12/Iura6YBj_oCad4k1nzSBC45I.woff2
  *   tajawal-arabic-700.woff2  9024 bytes  weights 700  sha256 fa5e72326681abee…
@@ -27,11 +27,11 @@
  */
 
 @font-face {
-  font-family: 'Plus Jakarta Sans';
+  font-family: 'Archivo';
   font-style: normal;
   font-weight: 400 600;
   font-display: swap;
-  src: url('./plus-jakarta-sans-latin.woff2') format('woff2');
+  src: url('./archivo-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 

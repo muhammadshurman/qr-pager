@@ -42,7 +42,7 @@ use Tests\Support\LandingFixtures;
  *         ? BunnyFontProvider::class
  *         : LocalFontProvider::class)
  *
- * so `->font('Plus Jakarta Sans')` with no `provider:` argument defaults to
+ * so `->font('Archivo')` with no `provider:` argument defaults to
  * `BunnyFontProvider`, which emits `<link rel="preconnect" href="https://fonts.bunny.net">`
  * and a stylesheet from that host. Measured with the argument dropped: the rendered
  * `/platform` body carried both. That is removing a CDN font from one file and adding one in
@@ -266,7 +266,7 @@ it('declares the approved Latin family on every chrome route', function (): void
 
     // The family is read from the GENERATED token config, so this is the one place the
     // approved value is stated, and `pnpm tokens:check` holds the config to the source.
-    expect($family)->toBe('Plus Jakarta Sans');
+    expect($family)->toBe('Archivo');
 
     LandingFixtures::bucket();
 
@@ -338,7 +338,7 @@ it('resolves the local provider from the registration rather than from the defau
         $panel = Filament::getPanel($id);
 
         expect($panel->getFontProvider())->toBe(LocalFontProvider::class, "{$id} panel")
-            ->and($panel->getFontFamily())->toBe('Plus Jakarta Sans', "{$id} panel")
+            ->and($panel->getFontFamily())->toBe('Archivo', "{$id} panel")
             // LocalFontProvider with no URL emits the empty string, which is correct here:
             // the @font-face rules arrive inside the compiled theme, served same-origin.
             ->and((string) $panel->getFontHtml())->toBe('')

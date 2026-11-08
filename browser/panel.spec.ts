@@ -216,11 +216,12 @@ async function assertStylesApplied(page: Page): Promise<void> {
 
   // The palette block reached the document. Case-insensitively: the token source stores
   // upper-case hex ("so every emitted artefact is byte-comparable") and the engine reports
-  // a custom property's value as AUTHORED -- `#0B6B4F`, not the lower-case Chromium uses
-  // for a resolved colour. The first version of this guard compared the two and failed on
-  // the case while every value was already right.
+  // a custom property's value as AUTHORED -- `#191C22` under Rail, `#0B6B4F` under
+  // Direction B before 2026-11-08 -- not the lower-case Chromium uses for a resolved
+  // colour. The first version of this guard compared the two and failed on the case while
+  // every value was already right.
   expect(applied.primary600.toLowerCase(), 'the generated palette did not reach the document').toBe(
-    '#0b6b4f',
+    '#191c22',
   )
   // ...and the panel theme is resolving it onto Filament's own class, rather than the
   // element sitting at Chromium's default button colour.

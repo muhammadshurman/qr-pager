@@ -50,7 +50,7 @@ return [
         'light' => [
             'paper' => '#FCFCFA',
             'surface' => '#FFFFFF',
-            'surface-2' => '#F6F6F2',
+            'surface-2' => '#F7F7F3',
             'hairline' => '#DFDFD7',
             'border-strong' => '#828382',
             'ink' => '#191C22',
@@ -224,18 +224,18 @@ return [
     ],
 
     'elevation' => [
-        'card' => '0 1px 2px rgba(16, 35, 27, 0.06)',
+        'card' => '0 1px 2px rgba(25, 28, 34, 0.06)',
     ],
 
     'target_min_px' => 44,
 
     'fonts' => [
         'latin' => [
-            'family' => 'Plus Jakarta Sans',
+            'family' => 'Archivo',
             'license' => 'OFL-1.1',
             'subset' => 'latin',
             'files' => [
-                'plus-jakarta-sans-latin.woff2',
+                'archivo-latin.woff2',
             ],
         ],
         'arabic' => [

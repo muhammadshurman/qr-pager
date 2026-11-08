@@ -54,7 +54,7 @@ const provenance = (): Provenance =>
 
 describe('the two self-hosted families', () => {
   it('names exactly the two approved families, both OFL-1.1', () => {
-    expect(FONTS.latin.family).toBe('Plus Jakarta Sans')
+    expect(FONTS.latin.family).toBe('Archivo')
     expect(FONTS.arabic.family).toBe('Tajawal')
     expect(FONTS.latin.license).toBe('OFL-1.1')
     expect(FONTS.arabic.license).toBe('OFL-1.1')
@@ -63,7 +63,7 @@ describe('the two self-hosted families', () => {
 
   it('ships a @font-face for each family, with the right subset', () => {
     const css = fontsCss()
-    expect(css).toContain("font-family: 'Plus Jakarta Sans'")
+    expect(css).toContain("font-family: 'Archivo'")
     expect(css).toContain("font-family: 'Tajawal'")
     // The latin block and the arabic block, by their unicode-range markers rather than by
     // a filename -- the range is what actually decides which glyphs a browser fetches.
@@ -141,7 +141,7 @@ describe('the two self-hosted families', () => {
     const total = readdirSync(FONT_DIR)
       .filter((f) => f.endsWith('.woff2'))
       .reduce((sum, f) => sum + readFileSync(join(FONT_DIR, f)).length, 0)
-    expect(total).toBe(45304)
+    expect(total).toBe(52884)
     expect(total).toBeLessThan(64 * 1024)
     expect(provenance().totalBytes).toBe(total)
   })
@@ -152,7 +152,7 @@ describe('the two self-hosted families', () => {
     const files = readdirSync(FONT_DIR).filter((f) => f.endsWith('.woff2'))
     expect(files).toHaveLength(3)
     for (const file of files) {
-      expect(file).toMatch(/^(?:plus-jakarta-sans-latin|tajawal-arabic)/)
+      expect(file).toMatch(/^(?:archivo-latin|tajawal-arabic)/)
     }
   })
 })

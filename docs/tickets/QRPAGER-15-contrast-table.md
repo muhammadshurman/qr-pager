@@ -38,22 +38,22 @@ declaration that could differ.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `ink` | `paper` | `#191C22` | `#FCFCFA` | **16.61** | 7.0 | 7.10 | +9.61 | ✅ |
 | `ink` | `surface` | `#191C22` | `#FFFFFF` | **17.06** | 7.0 | 7.10 | +10.06 | ✅ |
-| `ink` | `surface-2` | `#191C22` | `#F6F6F2` | **15.75** | 7.0 | 7.10 | +8.75 | ✅ |
+| `ink` | `surface-2` | `#191C22` | `#F7F7F3` | **15.89** | 7.0 | 7.10 | +8.89 | ✅ |
 | `ink-mid` | `paper` | `#6B6F7A` | `#FCFCFA` | **4.89** | 4.5 | 4.60 | +0.39 | ✅ |
 | `ink-mid` | `surface` | `#6B6F7A` | `#FFFFFF` | **5.02** | 4.5 | 4.60 | +0.52 | ✅ |
-| `ink-mid` | `surface-2` | `#6B6F7A` | `#F6F6F2` | **4.63** | 4.5 | 4.60 | +0.13 | ✅ |
+| `ink-mid` | `surface-2` | `#6B6F7A` | `#F7F7F3` | **4.67** | 4.5 | 4.60 | +0.17 | ✅ |
 | `alert-ink` | `paper` | `#8C2F27` | `#FCFCFA` | **8.01** | 4.5 | 4.60 | +3.51 | ✅ |
 | `alert-ink` | `surface` | `#8C2F27` | `#FFFFFF` | **8.23** | 4.5 | 4.60 | +3.73 | ✅ |
-| `alert-ink` | `surface-2` | `#8C2F27` | `#F6F6F2` | **7.59** | 4.5 | 4.60 | +3.09 | ✅ |
+| `alert-ink` | `surface-2` | `#8C2F27` | `#F7F7F3` | **7.66** | 4.5 | 4.60 | +3.16 | ✅ |
 | `brand` | `paper` | `#191C22` | `#FCFCFA` | **16.61** | 4.5 | 4.60 | +12.11 | ✅ |
 | `brand` | `surface` | `#191C22` | `#FFFFFF` | **17.06** | 4.5 | 4.60 | +12.56 | ✅ |
-| `brand` | `surface-2` | `#191C22` | `#F6F6F2` | **15.75** | 4.5 | 4.60 | +11.25 | ✅ |
+| `brand` | `surface-2` | `#191C22` | `#F7F7F3` | **15.89** | 4.5 | 4.60 | +11.39 | ✅ |
 | `border-strong` | `paper` | `#828382` | `#FCFCFA` | **3.70** | 3.0 | 3.10 | +0.70 | ✅ |
 | `border-strong` | `surface` | `#828382` | `#FFFFFF` | **3.80** | 3.0 | 3.10 | +0.80 | ✅ |
-| `border-strong` | `surface-2` | `#828382` | `#F6F6F2` | **3.51** | 3.0 | 3.10 | +0.51 | ✅ |
+| `border-strong` | `surface-2` | `#828382` | `#F7F7F3` | **3.54** | 3.0 | 3.10 | +0.54 | ✅ |
 | `hairline` | `paper` | `#DFDFD7` | `#FCFCFA` | **1.30** | — | — | — | no bar — decorative |
 | `hairline` | `surface` | `#DFDFD7` | `#FFFFFF` | **1.33** | — | — | — | no bar — decorative |
-| `hairline` | `surface-2` | `#DFDFD7` | `#F6F6F2` | **1.23** | — | — | — | no bar — decorative |
+| `hairline` | `surface-2` | `#DFDFD7` | `#F7F7F3` | **1.24** | — | — | — | no bar — decorative |
 | `surface` | `brand` | `#FFFFFF` | `#191C22` | **17.06** | 4.5 | 4.60 | +12.56 | ✅ |
 | `surface` | `alert-ink` | `#FFFFFF` | `#8C2F27` | **8.23** | 4.5 | 4.60 | +3.73 | ✅ |
 | `surface` | `alert-fill` | `#FFFFFF` | `#8C2F27` | **8.23** | 3.0 | 3.10 | +5.23 | ✅ *(not rendered — bound stated only)* |
