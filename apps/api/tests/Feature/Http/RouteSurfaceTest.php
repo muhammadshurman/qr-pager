@@ -90,7 +90,7 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         '/platform/audit-log',
         '/platform/logout',
         '/platform/restaurants',
-        // SIX MORE JOINED AT TASK 7, from the SECOND panel. (The comment said FIVE and
+        // SIX JOINED AT TASK 7, from the SECOND panel, and a SEVENTH at `QRPAGER-40`. (The comment said FIVE and
         // listed six, which the §11 QA review counted -- this allowlist's whole value is
         // that a reader counts it.) `/studio` is the
         // TENANT-scoped builder (QRPAGER-14 decision D1, SR-1): the 2026-10-28 ruling
@@ -125,6 +125,15 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         '/studio/media',
         '/studio/preview',
         '/studio/preview/asset/{asset}',
+        // ⚠ A SEVENTH JOINED AT `QRPAGER-40`: the `الثيم` tab, which is the theme and
+        // search-and-sharing moved out of the landing-page form onto a page of their own.
+        // It is listed one by one like the rest, and the comment above says why -- a
+        // `/studio*` wildcard would let the next one arrive with no diff, and this
+        // allowlist's whole value is that a reader counts it. Nothing about the sentence
+        // "none of them is public" changes: it is a `Page` with `canAccess()` overridden,
+        // behind the same guard, and `StudioPanelInvariantTest` drives it for every
+        // principal alongside the other six.
+        '/studio/theme',
         '/{fallbackPlaceholder}',
     ];
 
