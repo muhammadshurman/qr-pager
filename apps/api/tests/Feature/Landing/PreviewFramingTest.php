@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
+use App\Features\Landing\LandingPages;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\LandingFixtures;
 
 /*
@@ -50,11 +52,11 @@ function previewDirectives(string $csp): array
     return $out;
 }
 
-function previewResponse(): Illuminate\Testing\TestResponse
+function previewResponse(): TestResponse
 {
     $tenant = test()->actingForTenant(role: TenantRole::Owner);
 
-    (new App\Features\Landing\LandingPages)->saveDraft($tenant, LandingFixtures::fullPage());
+    (new LandingPages)->saveDraft($tenant, LandingFixtures::fullPage());
 
     return test()->get('/studio/preview');
 }
