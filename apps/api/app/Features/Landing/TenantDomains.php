@@ -74,7 +74,7 @@ final class TenantDomains
         $hostname = strtolower(trim($hostname));
 
         if (! PublishedSite::isSafeHostname($hostname)) {
-            throw new DomainRefused('that is not a hostname we can serve');
+            throw new DomainRefused(__('landing.domains.not_servable'));
         }
 
         /*
@@ -98,7 +98,7 @@ final class TenantDomains
         $platform = (string) config('landing.platform_domain');
 
         if ($hostname === $platform || str_ends_with($hostname, '.'.$platform)) {
-            throw new DomainRefused('that hostname belongs to the platform and cannot be claimed');
+            throw new DomainRefused(__('landing.domains.platform_hostname'));
         }
 
         $id = (string) Str::uuid7();
@@ -106,7 +106,7 @@ final class TenantDomains
         return withTenant($tenantId, function () use ($tenantId, $id, $hostname): string {
             if (DB::table('tenant_domains')->count() >= self::MAX_DOMAINS) {
                 throw new DomainRefused(
-                    'you already have '.self::MAX_DOMAINS.' domains; remove one to add another'
+                    __('landing.domains.limit_reached', ['max' => self::MAX_DOMAINS])
                 );
             }
 
@@ -131,7 +131,7 @@ final class TenantDomains
                 // rather than by reading the code. The first version of this method used
                 // getCode().
                 if (DriverError::sqlState($e) === DriverError::UNIQUE_VIOLATION) {
-                    throw new DomainRefused('that hostname is not available');
+                    throw new DomainRefused(__('landing.domains.not_available'));
                 }
 
                 throw $e;
@@ -371,7 +371,7 @@ final class TenantDomains
     {
         if (! $from->allowsMoveTo($to)) {
             throw new DomainRefused(
-                'that domain cannot move from '.$from->value.' to '.$to->value
+                __('landing.domains.bad_transition', ['from' => $from->value, 'to' => $to->value])
             );
         }
     }

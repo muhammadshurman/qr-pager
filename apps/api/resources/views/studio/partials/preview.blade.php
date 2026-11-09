@@ -40,13 +40,21 @@
 
     The two toggles are plain links with `aria-pressed`, so the pane needs no JavaScript
     of its own: the width is a query parameter this page reads back.
+
+    ⚠ THE LANGUAGE TOGGLE'S OPTION LABELS ARE NOT TRANSLATED, AND THAT IS `§12`'s RULING
+    RATHER THAN A MISS — `QRPAGER-41` kept it on Muhammad's instruction: *"a restaurant
+    choosing Arabic looks for العربية, and a picker that renders every option in one language
+    makes the choice harder, not easier."* So `العربية` and `English` each stay in their own
+    language, with `lang` and `dir` on each so a screen reader pronounces them correctly, and
+    `English` is an ALLOW-LIST entry in `StudioLocalizationTest` with that reason recorded
+    beside it. Everything else on this pane is a key.
 --}}
 @php($previewWidth = request()->query('preview') === 'phone' ? 'phone' : 'desktop')
 @php($previewLang = request()->query('lang') === 'en' ? 'en' : 'ar')
 
-<aside class="studio-pane" aria-label="معاينة الصفحة">
+<aside class="studio-pane" aria-label="{{ __('studio.preview.pane_label') }}">
     <div class="studio-pane__bar">
-        @foreach (['desktop' => 'سطح المكتب', 'phone' => 'جوال'] as $value => $label)
+        @foreach (['desktop' => __('studio.preview.desktop'), 'phone' => __('studio.preview.phone')] as $value => $label)
             <a href="{{ request()->fullUrlWithQuery(['preview' => $value]) }}"
                class="fi-btn fi-btn-size-md px-16 py-8 rounded-lg underline"
                aria-pressed="{{ $previewWidth === $value ? 'true' : 'false' }}">{{ $label }}</a>
@@ -65,6 +73,6 @@
             data-width="{{ $previewWidth }}"
             data-studio-preview="true"
             src="{{ route('filament.studio.preview') }}"
-            title="معاينة الصفحة كما ستُنشر"
+            title="{{ __('studio.preview.frame_title') }}"
             loading="lazy"></iframe>
 </aside>

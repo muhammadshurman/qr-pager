@@ -8,6 +8,7 @@ use App\Features\Landing\LandingPages;
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\PublishedSite;
 use App\Features\Landing\TenantPageLanguage;
+use Illuminate\Support\Str;
 use Tests\Support\ImageFixtures;
 use Tests\Support\LandingFixtures;
 
@@ -127,23 +128,40 @@ it('announces its own state in text, in a live region, and never by colour alone
 
     expect($xpath->query('//*[@role="status"]')?->length)->toBeGreaterThan(0)
         ->and($xpath->query('//*[@aria-live="polite"]')?->length)->toBeGreaterThan(0)
-        // §12.1's empty state, in the exact words the ticket wrote before this was coded.
-        ->and($builder)->toContain('Your page has no blocks yet. Add one to get started.');
+        /*
+          * ⚠ §12.1's STATES, READ FROM THE LANGUAGE FILE SINCE `QRPAGER-41` — and pinned to
+          * `ar`, because `makeTenant` writes no language and `TenantLanguage::DEFAULT` is
+          * `ar`, so this panel is Arabic. The clause being measured has not moved: each
+          * state is announced in TEXT, in a live region, and never by colour alone. What
+          * changed is that the words now come from the one place that holds them, so a
+          * rewording cannot leave this case asserting a sentence the panel no longer shows.
+          */
+        ->and($builder)->toContain(__('studio.page.empty', [], 'ar'));
 
     (new LandingPages)->saveDraft($tenant, LandingFixtures::fullPage());
 
-    expect(studioHtml('/studio'))->toContain('Draft — not visible to anyone yet.');
+    expect(studioHtml('/studio'))->toContain(__('studio.page.draft', [], 'ar'));
 
     (new LandingPages)->publish($tenant);
 
-    expect(studioHtml('/studio'))->toContain('Published to ');
+    /*
+     * ⚠ THE PART OF THE SENTENCE BEFORE ITS FIRST PLACEHOLDER, which is what
+     * `'Published to '` was before `QRPAGER-41`: the same prefix assertion, taken from the
+     * language file instead of typed. Rendering the whole line would need this case to know
+     * the hostname and the publish timestamp the page chose, which is a second copy of the
+     * page's own logic -- and the clause being measured is only that the published state is
+     * announced in TEXT at all.
+     */
+    $publishedPrefix = trim(Str::before(__('studio.page.published_at', [], 'ar'), ':hostname'));
+
+    expect($publishedPrefix)->not->toBe('')
+        ->and(studioHtml('/studio'))->toContain($publishedPrefix);
 
     // §12.2's empty and full copy, and §12.3's "none" copy.
-    expect(studioHtml('/studio/media'))
-        ->toContain('No images yet. PNG, JPEG, WebP, AVIF or script-free SVG, up to 5 MB.');
+    expect(studioHtml('/studio/media'))->toContain(__('studio.media.empty', [], 'ar'));
 
     expect(studioHtml('/studio/domains'))
-        ->toContain('Add your own domain to use it instead.');
+        ->toContain(trim(Str::after(__('studio.domains.live_at_fallback', [], 'ar'), ':hostname')));
 });
 
 it('disables Publish rather than hiding it when there is nothing to publish', function (): void {

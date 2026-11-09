@@ -7,6 +7,7 @@ namespace App\Features\Landing\Panel\Pages;
 use App\Domain\Landing\DomainStatus;
 use App\Features\Landing\DomainRefused;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\Panel\HasStudioLocale;
 use App\Features\Landing\TenantDomainRow;
 use App\Features\Landing\TenantDomains;
 use App\Platform\Http\TenantPanelAccess;
@@ -25,9 +26,23 @@ use Illuminate\Support\Str;
  */
 class DomainsPage extends Page
 {
+    use HasStudioLocale;
+
     protected string $view = 'studio.domains';
 
-    protected static ?string $title = 'Domains';
+    /*
+     * ⚠ `getTitle()` AND NOT `protected static ?string $title` — `QRPAGER-41`.
+     *
+     * A static property initialiser is evaluated when the class is loaded, and PHP permits
+     * no function call there, so `__()` cannot appear in it at all. More to the point, a
+     * value fixed at class-load time could not follow a locale that is chosen per request
+     * from the tenant's own row. Filament calls `getTitle()` when it renders the heading,
+     * which is after `StudioLocale` has run, so this is the only form that can be correct.
+     */
+    public function getTitle(): string
+    {
+        return __('studio.domains.title');
+    }
 
     protected static ?string $slug = 'domains';
 
@@ -128,7 +143,7 @@ class DomainsPage extends Page
             app(TenantDomains::class)->add($tenantId, $this->hostname);
         } catch (DomainRefused $e) {
             Notification::make()
-                ->title('That domain was not added')
+                ->title(__('studio.notifications.domain_not_added'))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -140,8 +155,8 @@ class DomainsPage extends Page
         $this->hostname = '';
 
         Notification::make()
-            ->title('Domain added')
-            ->body('Add the TXT record shown below at your DNS provider, then choose Verify.')
+            ->title(__('studio.notifications.domain_added'))
+            ->body(__('studio.notifications.domain_added_body'))
             ->success()
             ->send();
     }
@@ -154,7 +169,7 @@ class DomainsPage extends Page
         // malformed id answered differently from an unknown one. Both §11 reviewers
         // found it; the refusal is now the same one a foreign id gets.
         if (! Str::isUuid($domainId)) {
-            Notification::make()->title('That domain is not on your account')->danger()->send();
+            Notification::make()->title(__('studio.notifications.domain_not_on_account'))->danger()->send();
 
             return;
         }
@@ -162,28 +177,28 @@ class DomainsPage extends Page
         try {
             $status = app(TenantDomains::class)->advance($tenantId, $domainId);
         } catch (DomainRefused $e) {
-            Notification::make()->title('That domain was not changed')->body($e->reason)->danger()->send();
+            Notification::make()->title(__('studio.notifications.domain_not_changed'))->body($e->reason)->danger()->send();
 
             return;
         }
 
         $notification = match ($status) {
             DomainStatus::PendingDns => Notification::make()
-                ->title('We could not verify that domain yet')
-                ->body($this->lastError($domainId) ?? 'The TXT record was not found.')
+                ->title(__('studio.notifications.could_not_verify_yet'))
+                ->body($this->lastError($domainId) ?? __('studio.notifications.txt_not_found'))
                 ->warning(),
             DomainStatus::DnsVerified => Notification::make()
-                ->title('DNS verified')
-                ->body('We are issuing a certificate — this usually takes a few minutes.')
+                ->title(__('studio.notifications.dns_verified'))
+                ->body(__('studio.domains.issuing_certificate'))
                 ->success(),
             DomainStatus::CertificatePending => Notification::make()
-                ->title('Still issuing')
-                ->body('Nothing to do yet. Check back in a few minutes.')
+                ->title(__('studio.notifications.still_issuing'))
+                ->body(__('studio.notifications.still_issuing_body'))
                 ->info(),
             DomainStatus::Active => Notification::make()
-                ->title('Your domain is live')
+                ->title(__('studio.notifications.domain_live'))
                 ->success(),
-            default => Notification::make()->title('No change')->info(),
+            default => Notification::make()->title(__('studio.notifications.no_change'))->info(),
         };
 
         $notification->send();

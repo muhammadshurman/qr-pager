@@ -18,7 +18,7 @@
         @php($full = $this->isFull())
 
         <form wire:submit="store" class="fi-section p-16 space-y-12">
-            <h2 class="text-base font-semibold">Add an image</h2>
+            <h2 class="text-base font-semibold">{{ __('studio.media.add_heading') }}</h2>
 
             {{--
                 THE DROP ZONE IS A LABEL, NOT A DIV WITH A CLICK HANDLER. A <label for> already
@@ -59,27 +59,27 @@
                               peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2
                               peer-disabled:cursor-not-allowed peer-disabled:opacity-50"
                        x-bind:class="over ? 'border-primary-600 bg-primary-50 dark:bg-primary-950' : ''">
-                    <span class="text-base font-medium">Drag an image here</span>
-                    <span class="text-sm">or</span>
+                    <span class="text-base font-medium">{{ __('studio.media.drag_here') }}</span>
+                    <span class="text-sm">{{ __('studio.media.or') }}</span>
                     <span data-choose="true"
                           class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control
                                  inline-flex items-center justify-center">
-                        Choose an image
+                        {{ __('studio.media.choose') }}
                     </span>
                 </label>
             </div>
 
             <p id="media-upload-help" class="text-sm">
                 @if ($full)
-                    You have reached {{ \App\Features\Landing\MediaLibrary::MAX_ASSETS }} images. Delete one to add another.
+                    {{ __('studio.media.full', ['max' => \App\Features\Landing\MediaLibrary::MAX_ASSETS]) }}
                 @else
-                    PNG, JPEG, WebP, AVIF or script-free SVG, up to 5 MB.
-                    An image is checked by its contents, not by its name.
+                    {{ __('studio.media.formats') }}
+                    {{ __('studio.media.checked_by_contents') }}
                 @endif
             </p>
 
             <p wire:loading wire:target="upload" role="status" aria-live="polite" class="text-sm">
-                Uploading…
+                {{ __('studio.media.uploading') }}
             </p>
 
             @error('upload')
@@ -88,17 +88,20 @@
 
             <button type="submit" @disabled($full)
                     class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control disabled:opacity-50">
-                Upload
+                {{ __('studio.media.upload') }}
             </button>
         </form>
 
         <div class="fi-section p-16 space-y-12">
             <h2 class="text-base font-semibold">
-                Your images ({{ count($assets) }} of {{ \App\Features\Landing\MediaLibrary::MAX_ASSETS }})
+                {{ __('studio.media.library_heading', [
+                    'count' => count($assets),
+                    'max' => \App\Features\Landing\MediaLibrary::MAX_ASSETS,
+                ]) }}
             </h2>
 
             @if ($assets === [])
-                <p>No images yet. PNG, JPEG, WebP, AVIF or script-free SVG, up to 5 MB.</p>
+                <p>{{ __('studio.media.empty') }}</p>
             @else
                 {{--
                     A GRID OF THUMBNAILS, AND IT CARRIES EVERY COLUMN THE TABLE CARRIED: name,
@@ -126,14 +129,14 @@
 
                             <p class="text-sm">
                                 {{ $asset->contentType }} ·
-                                {{ number_format($asset->byteSize / 1024, 1) }} KB ·
-                                {{ $asset->width !== null ? $asset->width.'x'.$asset->height : 'not measured' }}
+                                {{ number_format($asset->byteSize / 1024, 1) }} {{ __('studio.media.kilobytes') }} ·
+                                {{ $asset->width !== null ? $asset->width.'x'.$asset->height : __('studio.media.not_measured') }}
                             </p>
 
                             <button type="button" wire:click="delete('{{ $asset->id }}')"
                                     data-media-delete="true"
                                     class="underline inline-flex items-center">
-                                Delete<span class="sr-only"> {{ $asset->originalName }}</span>
+                                {{ __('studio.media.delete') }}<span class="sr-only"> {{ $asset->originalName }}</span>
                             </button>
                         </li>
                     @endforeach

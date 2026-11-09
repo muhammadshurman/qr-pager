@@ -6,6 +6,7 @@ namespace App\Features\Landing\Panel\Pages;
 
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\MediaRejected;
+use App\Features\Landing\Panel\HasStudioLocale;
 use App\Platform\Http\TenantPanelAccess;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -28,11 +29,24 @@ use Livewire\WithFileUploads;
  */
 class MediaLibraryPage extends Page
 {
+    use HasStudioLocale;
     use WithFileUploads;
 
     protected string $view = 'studio.media';
 
-    protected static ?string $title = 'Media';
+    /*
+     * ⚠ `getTitle()` AND NOT `protected static ?string $title` — `QRPAGER-41`.
+     *
+     * A static property initialiser is evaluated when the class is loaded, and PHP permits
+     * no function call there, so `__()` cannot appear in it at all. More to the point, a
+     * value fixed at class-load time could not follow a locale that is chosen per request
+     * from the tenant's own row. Filament calls `getTitle()` when it renders the heading,
+     * which is after `StudioLocale` has run, so this is the only form that can be correct.
+     */
+    public function getTitle(): string
+    {
+        return __('studio.media.title');
+    }
 
     protected static ?string $slug = 'media';
 
@@ -67,7 +81,7 @@ class MediaLibraryPage extends Page
         $tenantId = TenantPanelAccess::tenantId();
 
         if (! $this->upload instanceof TemporaryUploadedFile) {
-            Notification::make()->title('Choose a file first')->danger()->send();
+            Notification::make()->title(__('studio.notifications.choose_file_first'))->danger()->send();
 
             return;
         }
@@ -90,7 +104,7 @@ class MediaLibraryPage extends Page
             // reason names the DETECTED type, which libmagic produced from a bounded
             // vocabulary -- never a byte of the file.
             Notification::make()
-                ->title($name.' was refused')
+                ->title(__('studio.notifications.image_refused', ['name' => $name]))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -103,7 +117,7 @@ class MediaLibraryPage extends Page
 
         $this->reset('upload');
 
-        Notification::make()->title($name.' was added')->success()->send();
+        Notification::make()->title(__('studio.notifications.image_added', ['name' => $name]))->success()->send();
     }
 
     public function delete(string $assetId): void
@@ -112,7 +126,7 @@ class MediaLibraryPage extends Page
         // both §11 reviewers. `where('id', 'not-a-uuid')` raises 22P02, so a malformed
         // id answered differently from an unknown one. The refusal is now identical.
         if (! Str::isUuid($assetId)) {
-            Notification::make()->title('That image is not in your library')->danger()->send();
+            Notification::make()->title(__('studio.notifications.image_not_in_library'))->danger()->send();
 
             return;
         }
@@ -123,7 +137,7 @@ class MediaLibraryPage extends Page
             // §12.2's "in use" state names the block, because "this image is in use"
             // leaves the tenant hunting for where.
             Notification::make()
-                ->title('That image was not deleted')
+                ->title(__('studio.notifications.image_not_deleted'))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -132,6 +146,6 @@ class MediaLibraryPage extends Page
             return;
         }
 
-        Notification::make()->title('Image deleted')->success()->send();
+        Notification::make()->title(__('studio.notifications.image_deleted'))->success()->send();
     }
 }

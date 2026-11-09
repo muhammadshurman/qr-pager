@@ -156,8 +156,17 @@ it('refuses to preview a draft that no longer validates, rather than rendering p
 
     $response = $this->get('/studio/preview');
 
+    /*
+     * ⚠ THE REFUSAL IS IN THE TENANT'S LANGUAGE SINCE `QRPAGER-41`, and this document proves
+     * the harder half of that: it is rendered INSIDE the preview iframe, which is its own
+     * browsing context inheriting nothing from the panel, and it used to be a hard-coded
+     * `<html lang="en">`. The claim here is unchanged -- a draft that no longer validates is
+     * refused with 422 and does not serve the stale page -- and the direction assertion is
+     * added because a translated document with the wrong `dir` lays Arabic out left to right.
+     */
     expect($response->status())->toBe(422)
-        ->and($response->getContent())->toContain("can't be published")
+        ->and($response->getContent())->toContain(__('studio.preview.refused_heading', [], 'ar'))
+        ->and($response->getContent())->toContain('<html lang="ar" dir="rtl">')
         ->and($response->getContent())->not->toContain('Welcome to Olive');
 });
 

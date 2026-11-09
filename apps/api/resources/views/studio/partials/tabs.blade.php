@@ -7,17 +7,23 @@
     keys move between them; neither is true here, and a promise the page cannot keep is
     worse than the plainer control. `aria-current="page"` is what navigation says.
 
-    The labels are in Arabic because the studio's reader is the restaurant owner, and
-    `dir` comes from the panel. The active tab carries a 3px brand bottom border and 700
-    weight; the rest are `ink-mid` at 500 -- the ticket's own values, and both are set in
-    the studio theme's layout rules, never here.
+    ⚠ THE LABELS WERE ARABIC LITERALS AND ARE NOW KEYS — `QRPAGER-41`. They were written in
+    Arabic from the start because the studio's reader is the restaurant owner, which was
+    right about the reader and wrong about the mechanism: a literal cannot follow
+    `tenants.language`, so the four tabs were the ONLY Arabic on a page whose every other
+    string was English. The tab bar is where that contradiction was most visible, so it is
+    the first thing this ticket converts.
+
+    The active tab carries a 3px brand bottom border and 700 weight; the rest are `ink-mid`
+    at 500 -- the ticket's own values, and both are set in the studio theme's layout rules,
+    never here.
 --}}
-<nav class="studio-tabs" aria-label="أقسام الاستوديو">
+<nav class="studio-tabs" aria-label="{{ __('studio.tabs.nav_label') }}">
     @foreach ([
-        ['page' => \App\Features\Landing\Panel\Pages\LandingBuilderPage::class, 'label' => 'الصفحة'],
-        ['page' => \App\Features\Landing\Panel\Pages\MediaLibraryPage::class, 'label' => 'الوسائط'],
-        ['page' => \App\Features\Landing\Panel\Pages\ThemePage::class, 'label' => 'الثيم'],
-        ['page' => \App\Features\Landing\Panel\Pages\DomainsPage::class, 'label' => 'النطاق'],
+        ['page' => \App\Features\Landing\Panel\Pages\LandingBuilderPage::class, 'label' => __('studio.tabs.page')],
+        ['page' => \App\Features\Landing\Panel\Pages\MediaLibraryPage::class, 'label' => __('studio.tabs.media')],
+        ['page' => \App\Features\Landing\Panel\Pages\ThemePage::class, 'label' => __('studio.tabs.theme')],
+        ['page' => \App\Features\Landing\Panel\Pages\DomainsPage::class, 'label' => __('studio.tabs.domains')],
     ] as $tab)
         @php($isCurrent = static::class === $tab['page'])
 

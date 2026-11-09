@@ -271,13 +271,21 @@ it('names the side of the commit a publish failed on, and never 500s on a take-d
         Livewire::test(LandingBuilderPage::class)
             ->fillForm(StudioForm::fromDocument(LandingFixtures::fullPage()))
             ->call('publish')
-            ->assertNotified(PublishFailed::AFTER_RECORD);
+            /*
+              * ⚠ `__(PublishFailed::AFTER_RECORD)` — `QRPAGER-41` made that constant a KEY
+              * rather than a sentence, because a class constant is evaluated at class load
+              * and can hold no `__()` call. The notification carries the TRANSLATED
+              * headline, so this asserts the key's value in the tenant's language. The
+              * distinction the case exists for is untouched: it still requires the
+              * AFTER_RECORD headline and not the LIVE_UNCHANGED one.
+              */
+            ->assertNotified(__(PublishFailed::AFTER_RECORD, [], 'ar'));
 
         // And the take-down answers the tenant instead of throwing. `deleteDirectory`
         // returns false, `sweep()` raises, and the action renders it.
         Livewire::test(LandingBuilderPage::class)
             ->call('unpublish')
-            ->assertNotified('Take-down failed — your page is still public');
+            ->assertNotified(__('studio.notifications.take_down_failed', [], 'ar'));
     } finally {
         Storage::forgetDisk('s3');
     }
@@ -369,7 +377,7 @@ it('reports the full library state at the cap', function (): void {
 
     expect(Livewire::test(MediaLibraryPage::class)->instance()->isFull())->toBeTrue();
 
-    $this->get('/studio/media')->assertSee('Delete one to add another');
+    $this->get('/studio/media')->assertSee(__('studio.media.full', ['max' => MediaLibrary::MAX_ASSETS], 'ar'));
 });
 
 it('adds and advances a domain through the domains page', function (): void {

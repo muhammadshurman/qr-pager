@@ -31,14 +31,31 @@ use RuntimeException;
  */
 final class PublishFailed extends RuntimeException
 {
+    /*
+     * ================================================================================
+     * ⚠ THE TWO HEADLINES ARE TRANSLATION KEYS NOW, NOT SENTENCES — `QRPAGER-41`
+     * ================================================================================
+     *
+     * They were the English sentences themselves, which a class constant has to be: PHP
+     * evaluates a constant initialiser once, at class load, so `__()` cannot appear in one
+     * and a sentence fixed there could never follow a locale chosen per request.
+     *
+     * So the constant names what is wrong and `lang/{ar,en}/landing.php` says it. `$headline`
+     * is a KEY and the panel translates it at the moment it renders the notification --
+     * `LandingBuilderPage` does `__($e->headline)`. The two call sites that compare a
+     * headline keep comparing against the constant and are unaffected by what it holds,
+     * which is why this change does not weaken the distinction the class exists to make.
+     */
+
     /** Nothing was written: the store and the row are both on the previous publish. */
-    public const LIVE_UNCHANGED = 'Publish failed — your live page is unchanged';
+    public const LIVE_UNCHANGED = 'landing.publish.live_unchanged';
 
     /** The row committed and the store did not catch up. Publishing again converges. */
-    public const AFTER_RECORD = 'Publish failed — your page is recorded as published';
+    public const AFTER_RECORD = 'landing.publish.after_record';
 
     public function __construct(
         public readonly string $reason,
+        /** A translation key, not a sentence — see the note above. */
         public readonly string $headline = self::LIVE_UNCHANGED,
     ) {
         parent::__construct($reason);

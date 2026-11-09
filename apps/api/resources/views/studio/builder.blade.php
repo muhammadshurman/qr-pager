@@ -19,26 +19,33 @@
         @php($state = $this->state())
 
         <div role="status" aria-live="polite" class="fi-section p-16 space-y-8">
-            <h2 class="text-base font-semibold">Status</h2>
+            <h2 class="text-base font-semibold">{{ __('studio.page.status_heading') }}</h2>
 
             @if ($state['invalid'] !== null)
                 {{-- INVALID. The refusing field is named inline and Publish is disabled. --}}
                 <p class="text-danger-700 dark:text-danger-200">
-                    <strong>Not publishable.</strong> {{ $state['invalid'] }}
+                    <strong>{{ __('studio.page.not_publishable') }}</strong> {{ $state['invalid'] }}
                 </p>
             @elseif ($state['blocks'] === 0)
-                <p>Your page has no blocks yet. Add one to get started.</p>
+                <p>{{ __('studio.page.empty') }}</p>
             @elseif ($state['status'] === \App\Domain\Landing\LandingPageStatus::Draft)
-                <p>Draft — not visible to anyone yet.</p>
+                <p>{{ __('studio.page.draft') }}</p>
             @elseif ($state['has_unpublished_changes'])
-                <p>You have changes that are not published yet.</p>
-                <p>Published to {{ $state['published_hostname'] }} on {{ $state['published_at'] }}.</p>
+                <p>{{ __('studio.page.unpublished_changes') }}</p>
+                <p>{{ __('studio.page.published_at', ['hostname' => $state['published_hostname'], 'date' => $state['published_at']]) }}</p>
             @else
-                <p>Published to {{ $state['published_hostname'] }} on {{ $state['published_at'] }}.</p>
+                <p>{{ __('studio.page.published_at', ['hostname' => $state['published_hostname'], 'date' => $state['published_at']]) }}</p>
             @endif
 
+            {{-- The emphasis sits INSIDE a translated sentence, so the partial splits the
+                 sentence on its own placeholder and echoes every part with `{{ }}`. Its
+                 docblock carries the reason there is no raw echo here. --}}
             <p class="text-sm">
-                Your page will be published to <strong>{{ $state['hostname'] }}</strong>.
+                @include('studio.partials.emphasised', [
+                    'line' => __('studio.page.will_publish_to'),
+                    'placeholder' => ':hostname',
+                    'value' => $state['hostname'],
+                ])
             </p>
         </div>
 
@@ -65,12 +72,9 @@
             and `dir` beside it, because the two are halves of one fact.
         --}}
         <fieldset class="fi-section p-16 space-y-8">
-            <legend class="text-base font-semibold">Page language</legend>
+            <legend class="text-base font-semibold">{{ __('studio.page.language_legend') }}</legend>
 
-            <p class="text-sm">
-                This sets the language and the reading direction of your published page.
-                Publish again to apply a change to your live page.
-            </p>
+            <p class="text-sm">{{ __('studio.page.language_help') }}</p>
 
             <div class="flex flex-wrap gap-12">
                 @foreach ($this->pageLanguages() as $option)
@@ -85,7 +89,7 @@
                         </span>
 
                         @if ($isCurrent)
-                            <span class="text-sm">(Current)</span>
+                            <span class="text-sm">{{ __('studio.page.language_current') }}</span>
                         @endif
                     </button>
                 @endforeach
@@ -103,24 +107,24 @@
             <div class="studio-footer">
                 <p class="studio-footer__state">
                     @if ($state['invalid'] !== null)
-                        لا يمكن النشر
+                        {{ __('studio.footer.not_publishable') }}
                     @elseif ($state['blocks'] === 0)
-                        لا توجد كتل بعد
+                        {{ __('studio.footer.no_blocks') }}
                     @elseif ($state['has_unpublished_changes'])
-                        تغييرات غير منشورة
+                        {{ __('studio.footer.unpublished_changes') }}
                     @else
-                        محفوظ
+                        {{ __('studio.footer.saved') }}
                     @endif
                 </p>
 
                 <div class="studio-footer__actions">
                 <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
-                    Save
+                    {{ __('studio.page.save') }}
                 </button>
 
                 <a href="{{ route('filament.studio.preview') }}" target="_blank" rel="noopener"
                    class="fi-btn fi-btn-size-md px-16 py-8 rounded-lg underline">
-                    افتح المعاينة <span class="sr-only">(opens in a new tab)</span>
+                    {{ __('studio.preview.open') }} <span class="sr-only">{{ __('studio.preview.opens_in_new_tab') }}</span>
                 </a>
 
                 {{-- Disabled when there is nothing publishable, which is §12.1's empty and
@@ -129,7 +133,7 @@
                 <button type="button" wire:click="publish"
                         @disabled($state['blocks'] === 0 || $state['invalid'] !== null)
                         class="fi-btn fi-btn-size-md fi-color-success px-16 py-8 rounded-lg disabled:opacity-50">
-                    انشر
+                    {{ __('studio.page.publish') }}
                 </button>
 
                 {{-- ⚠ ALWAYS OFFERED, NOT ONLY WHEN THE ROW SAYS PUBLISHED. A page can be live
@@ -148,9 +152,9 @@
                 <button type="button" wire:click="unpublish"
                         class="fi-btn fi-btn-size-md fi-color-danger px-16 py-8 rounded-lg">
                     @if ($state['status'] === \App\Domain\Landing\LandingPageStatus::Published)
-                        Unpublish
+                        {{ __('studio.page.unpublish') }}
                     @else
-                        Take my site down
+                        {{ __('studio.page.take_down') }}
                     @endif
                 </button>
                 </div>

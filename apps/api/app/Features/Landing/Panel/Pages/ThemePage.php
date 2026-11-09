@@ -6,6 +6,7 @@ namespace App\Features\Landing\Panel\Pages;
 
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\Panel\HasStudioLocale;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
 use App\Platform\Http\TenantPanelAccess;
@@ -46,9 +47,23 @@ use Filament\Schemas\Schema;
  */
 class ThemePage extends Page
 {
+    use HasStudioLocale;
+
     protected string $view = 'studio.theme';
 
-    protected static ?string $title = 'Theme';
+    /*
+     * ⚠ `getTitle()` AND NOT `protected static ?string $title` — `QRPAGER-41`.
+     *
+     * A static property initialiser is evaluated when the class is loaded, and PHP permits
+     * no function call there, so `__()` cannot appear in it at all. More to the point, a
+     * value fixed at class-load time could not follow a locale that is chosen per request
+     * from the tenant's own row. Filament calls `getTitle()` when it renders the heading,
+     * which is after `StudioLocale` has run, so this is the only form that can be correct.
+     */
+    public function getTitle(): string
+    {
+        return __('studio.theme.title');
+    }
 
     protected static ?string $slug = 'theme';
 
@@ -87,7 +102,7 @@ class ThemePage extends Page
         } catch (LandingDocumentInvalid $e) {
             // §12.1's invalid state: the field is named and the VALUE is not.
             Notification::make()
-                ->title($e->field." can't be published")
+                ->title(__('studio.notifications.cannot_publish_field', ['field' => $e->field]))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -96,7 +111,7 @@ class ThemePage extends Page
             return;
         }
 
-        Notification::make()->title('Theme saved')->success()->send();
+        Notification::make()->title(__('studio.notifications.theme_saved'))->success()->send();
     }
 
     /** This page's own form schema, resolved by name, as `LandingBuilderPage` does. */

@@ -17,6 +17,12 @@ final class LanguageNotChanged extends RuntimeException
 {
     public function __construct()
     {
-        parent::__construct('that setting was not changed');
+        /*
+         * ⚠ TRANSLATED HERE AND NOT AT THE PANEL — `QRPAGER-41`. This exception takes no
+         * arguments and carries exactly one sentence, so the message IS the copy and there
+         * is nothing for a key to add. `App\Features` may call `__()`; `App\Domain` may
+         * not, which is the line this file sits on the right side of.
+         */
+        parent::__construct(__('landing.language.not_changed'));
     }
 }
