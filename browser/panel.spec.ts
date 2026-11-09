@@ -349,8 +349,15 @@ test.describe('every spacing class the panel blades use renders the px it names'
   const EXPECTED: Record<'platform' | 'studio', Record<string, string>> = {
     platform: { 'gap-16': '16px', 'mt-4': '4px', 'mt-8': '8px' },
     studio: {
+      // ⚠ QRPAGER-37 ADDED FOUR, AND THEY ARE PINNED HERE BECAUSE THE CHECK IS THE POINT:
+      // the media library's drop zone and thumbnail grid introduced gap-8, gap-16, p-12 and
+      // p-32, and a class added to a blade without a measured value here goes unmeasured.
+      'gap-8': '8px',
       'gap-12': '12px',
+      'gap-16': '16px',
+      'p-12': '12px',
       'p-16': '16px',
+      'p-32': '32px',
       'px-12': '12px',
       'px-16': '16px',
       'py-8': '8px',
