@@ -77,8 +77,11 @@ describe('describeRule', () => {
   it('describes a mix with its endpoints, its percentage AND its colour space', () => {
     // The colour space is in the string because a percentage without it is not a derivation
     // anyone can reproduce -- condition 2 of the dark theme's approval.
+    // `from` is `ink` and not `ready-field` since `QRPAGER-39`: the dark ground moved and
+    // every mix of it moved with it. The PERCENTAGE and the colour space are what this case
+    // is about, and neither changed.
     expect(describeRule('dark', 'surface')).toBe(
-      'mix(ready-field, paper, 8%) in srgb-8bit-component-linear-round-half-up',
+      'mix(ink, paper, 8%) in srgb-8bit-component-linear-round-half-up',
     )
     expect(describeRule('light', 'border-strong')).toBe(
       'mix(hairline, ink, 47%) in srgb-8bit-component-linear-round-half-up',
@@ -89,7 +92,7 @@ describe('describeRule', () => {
       'mix(alert-fill, paper, 57%) in srgb-8bit-component-linear-round-half-up',
     )
     expect(describeRule('dark', 'border-strong')).toBe(
-      'mix(ready-field, paper, 50%) in srgb-8bit-component-linear-round-half-up',
+      'mix(ink, paper, 50%) in srgb-8bit-component-linear-round-half-up',
     )
     expect(describeRule('dark', 'ink-mid')).toBe(
       'mix(ink-mid, paper, 44%) in srgb-8bit-component-linear-round-half-up',

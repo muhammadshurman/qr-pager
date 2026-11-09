@@ -246,6 +246,15 @@ fifth instance of the shape in this round.
 `resolveColour()` and `describeRule()`**, so a value corrected in the source and not here
 reddens the gate.
 
+⚠⚠⚠ **AND THE FIVE DARK GROUND CELLS MOVED AGAIN ON 2026-11-09 (`QRPAGER-39`), WHICH IS
+`R-250`'s SECOND OCCURRENCE AND NOT A NEW DEFECT.** Dark `paper` was re-pointed off
+`ready-field` onto `ink`, so `paper`, `surface`, `surface-2`, `hairline` and
+`border-strong` all land on new hexes and their derivations now read `mix(ink, …)`. **No
+mix percentage changed.** The rewrite was forced by the same checker and under the same
+ruling of 2026-11-08 — *"a checker that forces you to rewrite history is the defect, not
+your edit"* — and the fact that it has now happened twice in two days is the measurement
+that belongs on `R-250`, whose fix is owned by the follow-up ticket.
+
 ⚠⚠ **THESE ARE RAIL'S VALUES, AS OF 2026-11-08 (`QRPAGER-35`), NOT THE ONES TASK 8a
 DELIVERED.** Task 8a approved and shipped **Direction B (SERVICE)**; Rail superseded its
 eleven colours on 2026-11-07. This table is updated in place rather than left stale for one
@@ -264,11 +273,11 @@ to carry its own label on the dark ground (1.67:1 against a 3.0 bar); and **dark
 
 | role | LIGHT | DARK | light derivation | dark derivation |
 | --- | --- | --- | --- | --- |
-| `paper` | `#FCFCFA` | `#0A1F17` | `= paper` (approved) | `= ready-field` (approved) |
-| `surface` | `#FFFFFF` | `#1D3129` | `= surface` (approved) | `mix(ready-field, paper, 8%)` |
-| `surface-2` | `#F7F7F3` | `#2C3E37` | `= surface-2` (approved) | `mix(ready-field, paper, 14%)` |
-| `hairline` | `#DFDFD7` | `#44544D` | `= hairline` (approved) | `mix(ready-field, paper, 24%)` — **decorative only** |
-| `border-strong` | `#828382` | `#838E89` | `mix(hairline, ink, 47%)` | `mix(ready-field, paper, 50%)` |
+| `paper` | `#FCFCFA` | `#191C22` | `= paper` (approved) | `= ink` (approved) |
+| `surface` | `#FFFFFF` | `#2B2E33` | `= surface` (approved) | `mix(ink, paper, 8%)` |
+| `surface-2` | `#F7F7F3` | `#393B40` | `= surface-2` (approved) | `mix(ink, paper, 14%)` |
+| `hairline` | `#DFDFD7` | `#4F5256` | `= hairline` (approved) | `mix(ink, paper, 24%)` — **decorative only** |
+| `border-strong` | `#828382` | `#8B8C8E` | `mix(hairline, ink, 47%)` | `mix(ink, paper, 50%)` |
 | `ink` | `#191C22` | `#FCFCFA` | `= ink` (approved) | `= paper` (approved) |
 | `ink-mid` | `#6B6F7A` | `#ABADB2` | `= ink-mid` (approved) | `mix(ink-mid, paper, 44%)` |
 | `brand` | `#191C22` | `#FCFCFA` | `= brand` (approved) | `= paper` (approved) |

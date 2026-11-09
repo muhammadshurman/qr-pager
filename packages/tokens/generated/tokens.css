@@ -93,15 +93,55 @@
  * Dark is an ATTRIBUTE, not a media query alone, so a tenant's staff can be given a choice
  * later without this file changing. The media query below opts a visitor in by preference
  * unless the attribute has already decided.
+ *
+ * ⚠ AND LIGHT IS AN ATTRIBUTE TOO, AS OF QRPAGER-39. THIS BLOCK IS NOT SYMMETRY FOR ITS
+ * OWN SAKE; IT IS THE ONLY THING THAT MAKES theme="light" MEAN ANYTHING.
+ *
+ * (No backticks anywhere in this comment: it is inside the template literal that emits the
+ * stylesheet, so one would end the string. That is not a style note -- it is why the first
+ * version of this comment broke the generator with "Unexpected identifier 'QRPAGER'".)
+ *
+ * Light used to live at :root alone, and the media query below guards on
+ * :root:not([data-theme='light']) -- which reads the attribute ON the document element. But
+ * every surface in this product sets it on a DIV: ThemeProvider renders as="div" by default
+ * and all four callers use that, because a React provider cannot own the document element.
+ * So the guard never matched, the media query redefined the variables at :root, and the div
+ * inherited them -- nothing re-asserted light for an element that had asked for it.
+ *
+ * MEASURED on 2026-11-09 before this block existed, with Playwright at
+ * prefers-color-scheme: dark: /staff rendered --color-paper: #191C22 and a card at
+ * rgb(43, 46, 51) while the element it rendered carried data-theme="light". The staff app
+ * was dark on any device set to dark, whatever the prop said, and no test could see it --
+ * the suite asserts the ATTRIBUTE, and the attribute was correct.
+ *
+ * With this block, an element that says light IS light wherever it sits, and the media query
+ * keeps its job for a visitor who has expressed a preference and whose attribute has not
+ * decided.
  */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-paper: #FCFCFA; /* = approved 'paper' */
+  --color-surface: #FFFFFF; /* = approved 'surface' */
+  --color-surface-2: #F7F7F3; /* = approved 'surface-2' */
+  --color-hairline: #DFDFD7; /* = approved 'hairline' */
+  --color-border-strong: #828382; /* mix(hairline, ink, 47%) in srgb-8bit-component-linear-round-half-up */
+  --color-ink: #191C22; /* = approved 'ink' */
+  --color-ink-mid: #6B6F7A; /* = approved 'ink-mid' */
+  --color-brand: #191C22; /* = approved 'brand' */
+  --color-signal: #18C880; /* = approved 'signal' */
+  --color-alert-fill: #8C2F27; /* = approved 'alert-fill' */
+  --color-alert-ink: #8C2F27; /* = approved 'alert-ink' */
+}
+
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --color-paper: #0A1F17; /* = approved 'ready-field' */
-  --color-surface: #1D3129; /* mix(ready-field, paper, 8%) in srgb-8bit-component-linear-round-half-up */
-  --color-surface-2: #2C3E37; /* mix(ready-field, paper, 14%) in srgb-8bit-component-linear-round-half-up */
-  --color-hairline: #44544D; /* mix(ready-field, paper, 24%) in srgb-8bit-component-linear-round-half-up */
-  --color-border-strong: #838E89; /* mix(ready-field, paper, 50%) in srgb-8bit-component-linear-round-half-up */
+  --color-paper: #191C22; /* = approved 'ink' */
+  --color-surface: #2B2E33; /* mix(ink, paper, 8%) in srgb-8bit-component-linear-round-half-up */
+  --color-surface-2: #393B40; /* mix(ink, paper, 14%) in srgb-8bit-component-linear-round-half-up */
+  --color-hairline: #4F5256; /* mix(ink, paper, 24%) in srgb-8bit-component-linear-round-half-up */
+  --color-border-strong: #8B8C8E; /* mix(ink, paper, 50%) in srgb-8bit-component-linear-round-half-up */
   --color-ink: #FCFCFA; /* = approved 'paper' */
   --color-ink-mid: #ABADB2; /* mix(ink-mid, paper, 44%) in srgb-8bit-component-linear-round-half-up */
   --color-brand: #FCFCFA; /* = approved 'paper' */
@@ -114,11 +154,11 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --color-paper: #0A1F17; /* = approved 'ready-field' */
-    --color-surface: #1D3129; /* mix(ready-field, paper, 8%) in srgb-8bit-component-linear-round-half-up */
-    --color-surface-2: #2C3E37; /* mix(ready-field, paper, 14%) in srgb-8bit-component-linear-round-half-up */
-    --color-hairline: #44544D; /* mix(ready-field, paper, 24%) in srgb-8bit-component-linear-round-half-up */
-    --color-border-strong: #838E89; /* mix(ready-field, paper, 50%) in srgb-8bit-component-linear-round-half-up */
+    --color-paper: #191C22; /* = approved 'ink' */
+    --color-surface: #2B2E33; /* mix(ink, paper, 8%) in srgb-8bit-component-linear-round-half-up */
+    --color-surface-2: #393B40; /* mix(ink, paper, 14%) in srgb-8bit-component-linear-round-half-up */
+    --color-hairline: #4F5256; /* mix(ink, paper, 24%) in srgb-8bit-component-linear-round-half-up */
+    --color-border-strong: #8B8C8E; /* mix(ink, paper, 50%) in srgb-8bit-component-linear-round-half-up */
     --color-ink: #FCFCFA; /* = approved 'paper' */
     --color-ink-mid: #ABADB2; /* mix(ink-mid, paper, 44%) in srgb-8bit-component-linear-round-half-up */
     --color-brand: #FCFCFA; /* = approved 'paper' */
