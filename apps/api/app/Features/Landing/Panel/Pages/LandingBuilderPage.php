@@ -169,7 +169,7 @@ class LandingBuilderPage extends Page
         $tenantId = TenantPanelAccess::tenantId();
 
         try {
-            app(LandingPages::class)->saveDraft($tenantId, StudioForm::toDocument($this->landingForm()->getState()));
+            app(LandingPages::class)->saveDraft($tenantId, StudioForm::merged($tenantId, $this->landingForm()->getState()));
         } catch (LandingDocumentInvalid $e) {
             // §12.1's "invalid" state: "{Field} can't be published: {reason}". The field
             // is named and the VALUE is not -- see LandingDocumentInvalid for why.
@@ -194,7 +194,7 @@ class LandingBuilderPage extends Page
         // values would publish something the tenant is not looking at, which is worse
         // than refusing. If the save fails its notification is already on screen.
         try {
-            app(LandingPages::class)->saveDraft($tenantId, StudioForm::toDocument($this->landingForm()->getState()));
+            app(LandingPages::class)->saveDraft($tenantId, StudioForm::merged($tenantId, $this->landingForm()->getState()));
         } catch (LandingDocumentInvalid $e) {
             Notification::make()
                 ->title($e->field." can't be published")
