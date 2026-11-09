@@ -93,7 +93,6 @@ return [
         'telephone' => 'أرقام ومسافات وشرطات، مع + اختيارية في البداية.',
         'media_empty' => 'ارفع صورة في مكتبة الوسائط أولًا.',
         'number' => 'بين :min و:max.',
-        'colour' => 'رمز لون، مثل ‎#1a1a1a.',
         'length' => 'رقم ووحدة: px أو rem أو em أو %.',
         'max_characters' => 'حتى :max حرفًا.',
     ],
@@ -188,7 +187,6 @@ return [
         'checked_by_contents' => 'تُفحص الصورة بمحتواها لا باسمها.',
         'full' => 'وصلت إلى :max صورة. احذف واحدة لإضافة أخرى.',
         'uploading' => 'جارٍ الرفع…',
-        'upload' => 'ارفع',
         'library_heading' => 'صورك (:count من :max)',
         'empty' => 'لا توجد صور بعد. PNG أو JPEG أو WebP أو AVIF أو SVG بلا سكربتات، حتى ٥ ميغابايت.',
         'delete' => 'احذف',
@@ -228,6 +226,8 @@ return [
     ],
 
     'theme' => [
+        'clear_colour' => 'استخدم الافتراضي',
+        'using_default' => 'الافتراضي',
         'title' => 'الثيم',
         'save' => 'احفظ',
     ],

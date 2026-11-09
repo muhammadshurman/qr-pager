@@ -99,7 +99,6 @@ return [
         'telephone' => 'Digits, spaces and hyphens, with an optional leading +.',
         'media_empty' => 'Upload an image in the media library first.',
         'number' => 'Between :min and :max.',
-        'colour' => 'A hex colour, for example #1a1a1a.',
         'length' => 'A number and a unit: px, rem, em or %.',
         'max_characters' => 'Up to :max characters.',
     ],
@@ -210,7 +209,6 @@ return [
         'checked_by_contents' => 'An image is checked by its contents, not by its name.',
         'full' => 'You have reached :max images. Delete one to add another.',
         'uploading' => 'Uploading…',
-        'upload' => 'Upload',
         'library_heading' => 'Your images (:count of :max)',
         'empty' => 'No images yet. PNG, JPEG, WebP, AVIF or script-free SVG, up to 5 MB.',
         'delete' => 'Delete',
@@ -250,6 +248,8 @@ return [
     ],
 
     'theme' => [
+        'clear_colour' => 'Use the default',
+        'using_default' => 'Using the default',
         'title' => 'Theme',
         'save' => 'Save',
     ],

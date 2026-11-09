@@ -125,6 +125,20 @@ function arabicPage(?string $mediaId = null): array
         LandingFixtures::set($document, $path, 'نص تجريبي '.($index + 1));
     }
 
+    /*
+     * ⚠ ONE THEME COLOUR IS SET, AND `QRPAGER-41` PART B IS WHY. Item 5 replaced the six hex
+     * TEXT FIELDS with a native picker, so the placeholder `#1a1a1a` that used to appear six
+     * times on the theme tab appears nowhere -- and the allow-list's hex entry, which the
+     * ticket itself named as an example, became DEAD. The dead-entry case caught it
+     * immediately, which is the control working exactly as it was built to.
+     *
+     * The entry is kept rather than deleted, because a hex is still rendered: the picker's
+     * `<output>` reports the chosen value, so an owner who HAS picked a colour sees one. So
+     * the fixture now exercises that state instead, which also means the enumeration covers
+     * a populated picker rather than only an empty one.
+     */
+    $document['theme']['color.background'] = '#2b2e33';
+
     return $document;
 }
 
