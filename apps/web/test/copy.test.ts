@@ -96,7 +96,7 @@ describe('the copy catalogue', () => {
      * kitchen as its raw enum value.
      */
     /*
-     * ⚠ **282 AT 10e, AND THE EIGHTY-EIGHT ARE 10d's AND 10e's THREE SCREENS.** Past orders
+     * ⚠ **290 AT 10e, AND THE EIGHTY-EIGHT ARE 10d's AND 10e's THREE SCREENS.** Past orders
      * with its four filter controls and its TWO empty states; starting a pager and the sheet;
      * Muhammad's re-issue ruling rendered as a confirmation; and the staff screen with the two
      * refusals `QRPAGER-29 §6` calls the hard half of that ticket.
@@ -116,7 +116,22 @@ describe('the copy catalogue', () => {
      *   **The three member refusals** (`staff.team.denied.*`). None of them says *role*,
      *   *privilege*, *permission* or *senior*, and each says what to DO.
      */
-    expect(en.length).toBe(282)
+    /*
+     * ⚠ **288 AT QRPAGER-38, AND THE TWO THAT LEFT ARE THE ONLY KEYS EVER REMOVED.** The
+     * rebuilt sign-in card retired two controls, so it retired their words:
+     * `staff.signin.password` ("Use a password instead") was the DISCLOSURE that opened the
+     * email and password fields, and those fields are now on the screen from the first
+     * paint; `staff.signin.failed` was the one-sentence refusal, replaced by
+     * `staff.signin.failedHead` + `staff.signin.failedBody` so the alert can say what
+     * happened and what to do in two lines rather than one run-on.
+     *
+     * They were pruned rather than left in place because a key nothing renders cannot be
+     * reviewed on a screen — its Arabic in particular is unseen by anyone, and the next
+     * person to need that sentence finds two candidates and no way to tell which is live.
+     * The count is the only thing that makes a removal deliberate, which is why it is here
+     * and not merely in the diff.
+     */
+    expect(en.length).toBe(288)
   })
 
   it('has no empty value in either language', () => {

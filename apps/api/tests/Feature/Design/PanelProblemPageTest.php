@@ -194,6 +194,15 @@ it('answers every panel 4xx with the SAME page, whatever the reason — H-4, §4
      * Four principals, three of them refused for DIFFERENT reasons, all on panel paths with a
      * real navigation. The pages must be BYTE-IDENTICAL per status: that is the strongest
      * form of "it does not say what exists", and it is the one a per-reason sentence breaks.
+     *
+     * ⚠ AND SINCE QRPAGER-38 THE ANONYMOUS CASE IS NO LONGER ONE OF THE PAGES — `R-253`. A
+     * signed-out NAVIGATION to a panel path now answers 302 to the staff sign-in screen,
+     * because the panels have no login form of their own and the page it used to get was a
+     * dead end with nothing on it to press. It is still driven here, as a redirect: the
+     * byte-identical claim is about what a REFUSAL PAGE says, and a 302 says nothing at all,
+     * which is the strongest form of the same property. `PanelSignInRedirectTest` owns the
+     * redirect; this asserts that the page is not what an anonymous navigation gets, so a
+     * revert cannot pass both files.
      */
     LandingFixtures::bucket();
 
@@ -202,11 +211,13 @@ it('answers every panel 4xx with the SAME page, whatever the reason — H-4, §4
 
     $bodies = [];
 
-    // 401 — anonymous.
+    // 302 — anonymous, since `R-253`. NOT in $bodies: there is no page to compare.
     $this->app['auth']->forgetGuards();
     $this->flushSession();
     $anonymous = $this->get('/platform/audit-log', navigation());
-    $bodies['401 anonymous'] = [$anonymous->status(), (string) $anonymous->getContent()];
+
+    expect($anonymous->status())->toBe(302, 'an anonymous navigation did not reach sign-in')
+        ->and((string) $anonymous->getContent())->not->toContain('ask whoever set up your account');
 
     // 403 — a tenant principal on the platform panel.
     $this->actingForTenant(tenantId: $tenant, role: TenantRole::Owner);

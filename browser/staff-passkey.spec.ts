@@ -94,10 +94,11 @@ test.describe('10a — a passkey registered and used through the staff screen', 
       'the staff origin is not a secure context, so no ceremony can run',
     ).toBe(true)
 
-    // 1. Sign in with the password, through the screen's own disclosure and form. The
-    //    passkey does not exist yet -- which is why "passkey-first" needs a way to create
-    //    one and why `registerPasskey()` is in 10a at all.
-    await page.getByRole('button', { name: /use a password instead/i }).click()
+    // 1. Sign in with the password, through the screen's own form. The passkey does not
+    //    exist yet -- which is why "passkey-first" needs a way to create one and why
+    //    `registerPasskey()` is in 10a at all. ⚠ NO DISCLOSURE STEP SINCE `QRPAGER-38`:
+    //    this clicked *"Use a password instead"* first, and the rebuilt card has both
+    //    fields on screen from the first paint, so the control is gone rather than renamed.
     await page.locator('input[name="email"]').fill(fixture.owner.email)
     await page.locator('input[name="password"]').fill(fixture.owner.password)
     await page.locator('[data-password-signin="true"]').click()
@@ -211,8 +212,16 @@ test.describe('10a — a passkey registered and used through the staff screen', 
     await page.goto('/staff')
     await page.locator('[data-passkey-signin="true"]').click()
 
-    // The screen says the one thing it says for every cause, and the shell never appears.
-    await expect(page.getByText(/that did not work/i)).toBeVisible({ timeout: 30_000 })
+    /*
+     * The screen says the one thing it says for every cause, and the shell never appears.
+     * ⚠ THE SENTENCE CHANGED AT `QRPAGER-38` AND THE CLAIM DID NOT: the refusal was one
+     * string (*"That did not work…"*) and is now a head and a body in one `role="alert"`
+     * block, so this matches the HEAD and the block that carries it. Matched on *"verify
+     * your passkey"* rather than the whole sentence, because the apostrophe in
+     * *"couldn't"* is the one character a copy edit is most likely to move.
+     */
+    await expect(page.locator('[data-signin-alert="true"]')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/verify your passkey/i)).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('[data-staff-shell="true"]')).toHaveCount(0)
 
     // And no session was established, asserted at the server rather than at the screen.

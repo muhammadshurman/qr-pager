@@ -203,16 +203,32 @@ describe('signing in', () => {
     fireEvent.click(screen.getByRole('button', { name: t('staff.signin.passkey') }))
 
     expect(props.onPasskey).toHaveBeenCalledTimes(1)
-    // And no form was ever shown, so nothing could have been typed into one.
-    expect(screen.queryByLabelText(t('staff.signin.passwordLabel'))).toBeNull()
+
+    /*
+     * ⚠ AND NOTHING WAS TYPED, PROVED ON A SCREEN THAT NOW SHOWS THE FIELDS. Until
+     * QRPAGER-38 this read `queryByLabelText(passwordLabel)).toBeNull()` — "no form was
+     * ever shown, so nothing could have been typed into one" — which was a claim about the
+     * old disclosure and not about the ceremony. The fields are visible from the first
+     * paint now, so the same property is asserted directly: they are EMPTY, and the
+     * password path was never called.
+     */
+    expect(screen.getByLabelText<HTMLInputElement>(t('staff.signin.email')).value).toBe('')
+    expect(screen.getByLabelText<HTMLInputElement>(t('staff.signin.passwordLabel')).value).toBe('')
+    expect(props.onPassword).not.toHaveBeenCalled()
   })
 
-  it('reveals the password form only when asked, and submits both fields together', () => {
+  it('submits both fields together, from a form that needed no revealing', () => {
     const { props } = signIn()
 
-    expect(screen.queryByLabelText(t('staff.signin.email'))).toBeNull()
+    /*
+     * ⚠ PRESENT ON THE FIRST PAINT. The case was "reveals the password form only when
+     * asked", and the reveal is gone: QRPAGER-38 puts email and password on the screen
+     * unconditionally, so the disclosure step is deleted rather than renamed and the
+     * assertion is inverted into the new guarantee.
+     */
+    expect(screen.getByLabelText(t('staff.signin.email'))).toBeDefined()
+    expect(screen.getByLabelText(t('staff.signin.passwordLabel'))).toBeDefined()
 
-    fireEvent.click(screen.getByRole('button', { name: t('staff.signin.password') }))
     fireEvent.change(screen.getByLabelText(t('staff.signin.email')), {
       target: { value: 'hiba@example.test' },
     })
@@ -294,9 +310,15 @@ describe('signing in', () => {
         />,
       )
 
-      const label = stage === 'failed' ? t('staff.signin.passkey') : t('staff.shell.error.retry')
-
-      const [first] = screen.getAllByRole('button', { name: label })
+      /*
+       * ⚠ ONE CONTROL FOR BOTH STAGES SINCE QRPAGER-38. The offline stage used to render its
+       * own *"Try again"* button beside the passkey one, so this read
+       * `stage === 'failed' ? passkey : t('staff.shell.error.retry')`. The card has exactly
+       * one primary action and the alert says what to do, so the retry IS the ceremony in
+       * both stages — which is what this case was always about: that the way out of a
+       * refusal is the same way in.
+       */
+      const [first] = screen.getAllByRole('button', { name: t('staff.signin.passkey') })
 
       expect(first).toBeDefined()
       fireEvent.click(first!)
@@ -385,7 +407,7 @@ describe('a credential is submitted once, however hard the form is pressed', () 
 
     const { container } = render(<StaffSignIn {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: t('staff.signin.password') }))
+    // No disclosure step: QRPAGER-38 renders both fields from the first paint.
     fireEvent.change(screen.getByLabelText(t('staff.signin.email')), {
       target: { value: 'cook@al-baik.test' },
     })
@@ -523,17 +545,18 @@ describe('a credential is submitted once, however hard the form is pressed', () 
     expect(props.onTwoFactor).toHaveBeenCalledWith('123456')
 
     /*
-     * Queried structurally, because the accessible NAME changes when the button goes busy:
-     * `Button` prepends a visually-hidden `loadingLabel`, so the name becomes *"Signing you
-     * in… Sign in"* and a `getByRole({ name: 'Sign in' })` throws. That is the correct
-     * behaviour — it is how a screen-reader user learns the press registered — so the case
-     * asserts the new name rather than working around it.
+     * Queried structurally, because the accessible NAME changes when the button goes busy.
+     * It used to become *"Signing you in… Sign in"* — `Button` prepended a visually-hidden
+     * `loadingLabel` to its label — and QRPAGER-38's submit is a plain button whose own text
+     * SWAPS, so the name is the waiting sentence alone. Either way a
+     * `getByRole({ name: 'Sign in' })` throws here, and that is the correct behaviour: it is
+     * how a screen-reader user learns the press registered.
      */
     const submit = container.querySelector('form button[type="submit"]')
 
     expect(submit?.hasAttribute('disabled')).toBe(true)
     expect(submit?.getAttribute('aria-busy')).toBe('true')
-    expect(submit?.textContent).toBe(`${t('staff.signin.working')}${t('staff.signin.submit')}`)
+    expect(submit?.textContent).toBe(t('staff.signin.working'))
   })
 
   it('accepts a second attempt once the first has resolved', () => {
@@ -556,7 +579,7 @@ describe('a credential is submitted once, however hard the form is pressed', () 
 
     const { container, rerender } = render(<StaffSignIn {...props} />)
 
-    fireEvent.click(screen.getByRole('button', { name: t('staff.signin.password') }))
+    // No disclosure step: QRPAGER-38 renders both fields from the first paint.
     fireEvent.change(screen.getByLabelText(t('staff.signin.email')), {
       target: { value: 'cook@al-baik.test' },
     })

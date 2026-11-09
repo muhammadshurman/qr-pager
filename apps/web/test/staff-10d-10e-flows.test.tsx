@@ -258,7 +258,14 @@ describe('the history view', () => {
 
     render(<StaffApp apiBase="" view="history" locale="en" />)
 
-    expect(await screen.findByText(t('staff.signin.title'))).toBeTruthy()
+    /*
+     * By ROLE, because *"Sign in"* is on the screen twice: QRPAGER-38's card gives the
+     * heading and the password form's submit button the same two words, which is the spec
+     * read literally and is right -- a person reads one as the name of the screen and the
+     * other as the thing to press. `findByText` threw on the pair; the heading is the claim
+     * this case makes, so it asks for the heading.
+     */
+    expect(await screen.findByRole('heading', { name: t('staff.signin.title') })).toBeTruthy()
   })
 })
 

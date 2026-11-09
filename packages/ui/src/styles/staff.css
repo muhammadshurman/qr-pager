@@ -267,29 +267,318 @@
   background-color: var(--color-paper);
 }
 
-.qr-staff-signin__surface {
+/*
+ * ⚠ EVERY LENGTH AND SIZE BELOW IS A TOKEN OR A `ch`, AND QRPAGER-38's SPEC NAMED RAW px.
+ * The ticket asked for 420px, 62px, 15px, 17px, 14px and 56px AND for "no arbitrary value";
+ * those two cannot both hold, because 15, 17 and 14 are not on the approved type scale and
+ * `scan-css` refuses a raw length in a spacing or font-size declaration. The scale won, the
+ * nearest token was taken in each case, and every substitution is listed in §4a rather than
+ * absorbed silently -- a screen that quietly invents a 15px is how a scale stops being one.
+ */
+.qr-staff-signin__card {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  /* The spec's 420px. `ch` rather than px because this file may carry no raw length, and
+     48ch was already the measure this screen used before the redesign. */
+  max-inline-size: 44ch;
+  overflow: hidden;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-card);
+}
+
+/* The ink band: the restaurant's identity, before anything is typed. */
+.qr-staff-signin__band {
+  display: flex;
+  gap: var(--space-12);
+  align-items: center;
+  padding-inline: var(--space-24);
+  padding-block: var(--space-16);
+  color: var(--color-paper);
+  background-color: var(--color-brand);
+}
+
+.qr-staff-signin__mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-32);
+  block-size: var(--space-32);
+  font-size: var(--size-16);
+  font-weight: 700;
+  border: 2px solid var(--color-paper);
+  border-radius: var(--radius-surface);
+}
+
+.qr-staff-signin__restaurant {
+  overflow: hidden;
+  font-size: var(--size-16);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qr-staff-signin__body {
   display: flex;
   flex-direction: column;
   gap: var(--space-24);
-  align-items: flex-start;
-  inline-size: 100%;
-  max-inline-size: 48ch;
+  padding-inline: var(--space-32);
+  padding-block: var(--space-32) var(--space-24);
+}
+
+.qr-staff-signin__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .qr-staff-signin__title {
   margin: 0;
   font-size: var(--size-28);
+  font-weight: 800;
   line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.qr-staff-signin__sub {
+  margin: 0;
+  font-size: var(--size-16);
+  color: var(--color-ink-mid);
 }
 
 /*
- * ⚠ NO TRANSITION, NO ANIMATION AND NO TRANSFORM ANYWHERE IN THIS FILE, which is why there
- * is no `prefers-reduced-motion` block in it. `§12` requires the preference to be respected;
- * the strongest way to respect it is to have no motion to suppress, and a staff surface that
+ * The refusal block. `border-inline-start` and not `border-left`, so it mirrors in English
+ * without a second stylesheet -- which is the whole reason this file is written in logical
+ * properties.
+ *
+ * ⚠ `alert-ink`, NEVER `signal`. The live screen put its error text in the accent green,
+ * which breaks the one rule the approved direction has: the accent belongs to the "ready"
+ * state alone. `StaffSignInNoGreenTest` asserts the rendered output carries no `signal`.
+ */
+.qr-staff-signin__alert {
+  padding-inline: var(--space-16);
+  padding-block: var(--space-12);
+  background-color: var(--color-surface-2);
+  border-inline-start: 3px solid var(--color-alert-ink);
+  border-radius: var(--radius-surface);
+}
+
+.qr-staff-signin__alert-head {
+  margin: 0;
+  font-size: var(--size-16);
+  font-weight: 700;
+  color: var(--color-alert-ink);
+}
+
+.qr-staff-signin__alert-body {
+  margin: var(--space-4) 0 0;
+  font-size: var(--size-13);
+  color: var(--color-ink);
+}
+
+/* The primary action. Height comes from padding and the line box, not a pinned number. */
+.qr-staff-signin__passkey {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  min-block-size: var(--target-min);
+  padding-block: var(--space-16);
+  font: inherit;
+  font-size: var(--size-16);
+  font-weight: 700;
+  color: var(--color-paper);
+  cursor: pointer;
+  background-color: var(--color-brand);
+  border: 1px solid var(--color-brand);
+  border-radius: var(--radius-control);
+}
+
+.qr-staff-signin__passkey:disabled {
+  cursor: not-allowed;
+}
+
+.qr-staff-signin__key {
+  flex: none;
+  inline-size: var(--space-24);
+  block-size: var(--space-24);
+}
+
+/*
+ * ⚠ THE ONE PIECE OF MOTION ON THE STAFF SURFACE, AND THE FILE'S HEADER USED TO SAY THERE
+ * WAS NONE. That claim was about the signed-IN shell -- "a staff surface that animates while
+ * somebody is working a service is worse than one that does not" -- and this spinner is on
+ * the SIGN-IN, where the person is waiting on their own device and has nothing else to read.
+ * QRPAGER-38's spec requires it. It runs at the token, it is suppressed below, and
+ * `staff.spec.ts`'s no-motion sweep is scoped to `.qr-staff` and does not cover this screen.
+ */
+.qr-staff-signin__spinner {
+  flex: none;
+  inline-size: var(--space-24);
+  block-size: var(--space-24);
+  border: 2px solid currentcolor;
+  border-block-start-color: transparent;
+  border-radius: 50%;
+  animation: qr-staff-signin-spin var(--motion-spin) linear infinite;
+}
+
+@keyframes qr-staff-signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qr-staff-signin__spinner {
+    animation: none;
+  }
+}
+
+.qr-staff-signin__waiting {
+  margin: 0;
+  font-size: var(--size-13);
+  color: var(--color-ink-mid);
+}
+
+.qr-staff-signin__divider {
+  display: flex;
+  gap: var(--space-12);
+  align-items: center;
+}
+
+.qr-staff-signin__rule {
+  flex: 1;
+  block-size: 1px;
+  background-color: var(--color-hairline);
+}
+
+.qr-staff-signin__or {
+  font-size: var(--size-13);
+  color: var(--color-ink-mid);
+}
+
+.qr-staff-signin__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* The password group dims while the device prompt is open; its controls are `disabled` too,
+   so the dimming is a consequence and never the only signal. */
+.qr-staff-signin__form[data-dimmed='true'] {
+  opacity: 0.45;
+}
+
+.qr-staff-signin__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.qr-staff-signin__label {
+  font-size: var(--size-13);
+  font-weight: 500;
+}
+
+.qr-staff-signin__input {
+  min-block-size: var(--target-min);
+  padding-inline: var(--space-12);
+  font: inherit;
+  font-size: var(--size-16);
+  color: var(--color-ink);
+  text-align: start;
+  background-color: var(--color-paper);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+}
+
+.qr-staff-signin__submit {
+  inline-size: 100%;
+  min-block-size: var(--target-min);
+  padding-block: var(--space-12);
+  font: inherit;
+  font-size: var(--size-16);
+  font-weight: 700;
+  color: var(--color-brand);
+  cursor: pointer;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-brand);
+  border-radius: var(--radius-control);
+}
+
+.qr-staff-signin__link {
+  align-self: center;
+  padding: var(--space-8);
+  font: inherit;
+  font-size: var(--size-13);
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.qr-staff-signin__footer {
+  display: flex;
+  justify-content: space-between;
+  padding-inline: var(--space-16);
+  padding-block: var(--space-12);
+  font-size: var(--size-13);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-mid);
+  background-color: var(--color-surface-2);
+  border-block-start: 1px solid var(--color-hairline);
+}
+
+/*
+ * 390px: no card. The band goes full width at the top of the viewport and the footer pins to
+ * the bottom, so the screen is the card rather than holding one.
+ */
+@media (max-width: 30rem) {
+  .qr-staff-signin {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .qr-staff-signin__card {
+    max-inline-size: none;
+    min-block-size: 100dvh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .qr-staff-signin__body {
+    flex: 1;
+    padding-inline: var(--space-16);
+  }
+}
+
+/*
+ * ⚠ NO TRANSITION, NO ANIMATION AND NO TRANSFORM ON THE SIGNED-IN SHELL — `.qr-staff` AND
+ * EVERYTHING INSIDE IT. `§12` requires `prefers-reduced-motion` to be respected, and the
+ * strongest way to respect it is to have no motion to suppress: a staff surface that
  * animates while somebody is working a service is worse than one that does not. `browser/
  * staff.spec.ts` asserts the computed `animation-name` and `transition-duration` are `none`
  * and `0s` under BOTH media settings, so this is a measured property rather than an absence
  * a later commit can fill in unnoticed.
+ *
+ * ⚠⚠ THIS HEADER USED TO CLAIM "ANYWHERE IN THIS FILE", AND THAT BECAME FALSE ON 2026-11-08
+ * WHEN `QRPAGER-38` ADDED THE SIGN-IN'S SPINNER. The owner's ruling, and the reason it is a
+ * correction rather than a footnote: *"a stated absolute that the file contradicts is worse
+ * than the animation — the next session reads the header, not the test."*
+ *
+ * THE REAL SCOPE, so the two can be told apart: the sweep above is bounded to `.qr-staff`,
+ * the shell behind authentication. `.qr-staff-signin` is a DIFFERENT SURFACE and is not
+ * covered by it — nobody is working a service there; they are waiting on their own device
+ * with nothing else to read, which is the one place feedback earns its motion. That spinner
+ * is the file's ONLY animation, it runs at `--motion-spin` rather than a number, and it is
+ * suppressed outright by the `prefers-reduced-motion` block beside it.
  */
 
 /* ------------------------------------------------- the board's quiet notices, added at 10b

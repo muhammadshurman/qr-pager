@@ -7,6 +7,7 @@ namespace App\Platform\Boot;
 use App\Platform\Database\DatabaseRoles;
 use App\Platform\Database\RuntimeRoleGuard;
 use App\Platform\Database\UnsafeDatabaseRoleException;
+use Filament\Facades\Filament;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Env;
@@ -44,6 +45,9 @@ final class BootChecks
     public const UNTRUSTED_PROXY_CONFIGURATION = 'untrusted-proxy-configuration';
 
     public const UNSAFE_LANDING_URL = 'unsafe-landing-url';
+
+    /** `R-253`: the address a signed-out panel visitor is redirected to. */
+    public const UNSAFE_SIGNIN_URL = 'unsafe-signin-url';
 
     /**
      * No usable VAPID keypair, so every Web Push notification would fail (Task 4).
@@ -147,6 +151,7 @@ final class BootChecks
             ...$this->sslmodeIsNotWeak(),
             ...$this->trustedProxiesAreSound(),
             ...$this->landingUrlIsSound(),
+            ...$this->staffSignInUrlIsSound(),
             ...$this->vapidKeysAreUsable(),
             ...$this->connectionCarriesNoTenantSetting($connection),
             ...$this->debugIsOff(),
@@ -336,6 +341,117 @@ final class BootChecks
         }
 
         return [];
+    }
+
+    /**
+     * Refuse to serve if the panels would redirect a signed-out person somewhere useless.
+     *
+     * `R-253` sends a signed-out browser on `/studio` or `/platform` to
+     * `surfaces.staff_signin_url`, because those panels have no login form of their own by
+     * design (`§4 › Tenancy`, and each panel provider's docblock). That makes the value a
+     * SERVING dependency rather than a convenience: unset or wrong, the one affordance a
+     * locked-out restaurant owner has is a link to nowhere, and nothing else in the system
+     * will ever notice -- a redirect to a dead host looks identical to a redirect that
+     * works until somebody follows it.
+     *
+     * THE SAME THREE REFUSALS AS `landingUrlIsSound()`, FOR TWO OF THE SAME REASONS AND ONE
+     * DIFFERENT ONE:
+     *
+     *   - NOT A URL WITH A HOST. The shipped default is `http://localhost:3000/staff`, which
+     *     is right for `pnpm --filter web dev` and resolves to nothing anywhere else -- the
+     *     exact shape `PAGER_LANDING_URL` was found in, and the reason that check exists.
+     *   - NOT https. A sign-in page reached over plaintext is a credential form an active
+     *     network attacker can rewrite, which is a worse failure than the dead end this
+     *     whole feature replaces.
+     *   - A PANEL PATH ON THIS HOST, which `landingUrlIsSound()` has no analogue for: that
+     *     is the redirect loop, and `PanelSignInRedirect` already refuses to emit it at
+     *     request time. This makes the misconfiguration loud at boot instead of silently
+     *     restoring the dead-end page in production.
+     *
+     * Exempt in local and testing like every other clause here: the compose stack has no
+     * TLS, and `config/surfaces.php` ships the local web dev server on purpose.
+     *
+     * @return list<string>
+     */
+    public function staffSignInUrlIsSound(): array
+    {
+        if ($this->isDevelopment()) {
+            return [];
+        }
+
+        $configured = config('surfaces.staff_signin_url');
+
+        if (! $this->isNonEmpty($configured)) {
+            return [self::UNSAFE_SIGNIN_URL.': surfaces.staff_signin_url is empty, so a signed-out '
+                .'visitor to /studio or /platform is told to sign in and given nowhere to do it. '
+                .'Set STAFF_SIGNIN_URL to the absolute https URL of the staff sign-in screen.'];
+        }
+
+        /** @var string $url */
+        $url = $configured;
+        $parts = parse_url($url);
+
+        if ($parts === false || ! isset($parts['host']) || ! $this->isNonEmpty($parts['host'])) {
+            return [self::UNSAFE_SIGNIN_URL.': surfaces.staff_signin_url ['.$url.'] is not an '
+                .'absolute URL with a host, so the redirect would not resolve anywhere.'];
+        }
+
+        if (strtolower((string) ($parts['scheme'] ?? '')) !== 'https') {
+            return [self::UNSAFE_SIGNIN_URL.': surfaces.staff_signin_url ['.$url.'] is not https. '
+                .'A credential form reached over plaintext can be rewritten in flight, which is '
+                .'worse than the dead-end 401 this redirect replaces.'];
+        }
+
+        $path = '/'.ltrim((string) ($parts['path'] ?? ''), '/');
+
+        /*
+         * ⚠ DERIVED FROM THE REGISTERED PANELS, NEVER A LITERAL `['/studio', '/platform']`,
+         * which is `PanelProblemPage`'s own rule for the same question -- a panel added later
+         * is covered with no edit here, and a second hand-written copy of that list is the
+         * thing this file has been bitten by (`R-136`'s shape: a control that is not where it
+         * says it is).
+         *
+         * AND IT IS SKIPPED RATHER THAN GUESSED WHEN THE REGISTRY IS NOT THERE. This method
+         * runs from `boot:check` and from the serving path, and `Filament::getPanels()` reads
+         * a registry that a console context need not have booted. An empty or throwing
+         * registry means this ONE clause cannot be stated -- the two above it still are --
+         * and the loop itself is refused at request time by `PanelSignInRedirect`, which
+         * reads the same registry when it is certainly populated. So the cost of the skip is
+         * a late warning, not an open loop.
+         */
+        foreach ($this->panelPrefixes() as $prefix) {
+            if ($path === $prefix || str_starts_with($path, $prefix.'/')) {
+                return [self::UNSAFE_SIGNIN_URL.': surfaces.staff_signin_url ['.$url.'] is itself '
+                    .'a panel path, so a signed-out browser would be redirected back to the '
+                    .'refusal it came from. The sign-in screen is served by apps/web.'];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Every registered panel's path prefix, or an empty list when none can be read.
+     *
+     * @return list<string>
+     */
+    private function panelPrefixes(): array
+    {
+        try {
+            $prefixes = [];
+
+            foreach (Filament::getPanels() as $panel) {
+                $prefix = '/'.trim($panel->getPath(), '/');
+
+                if ($prefix !== '/') {
+                    $prefixes[] = $prefix;
+                }
+            }
+
+            return $prefixes;
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     /**
