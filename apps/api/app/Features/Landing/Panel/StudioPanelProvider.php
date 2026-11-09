@@ -215,10 +215,21 @@ class StudioPanelProvider extends PanelProvider
              * Filament flips on `html.dark`, and `packages/tokens/generated/tokens.css`
              * flips on `[data-theme='dark']` (or `prefers-color-scheme` when no attribute
              * decides). The compiled stylesheet carries BOTH -- measured, `--color-paper`
-             * appears as `#fcfcfa` and `#191c22` in the same file -- but nothing ever set
-             * the attribute here, so every `var(--color-…)` in panel Blade resolved to the
-             * LIGHT value inside a dark panel. The studio's own footer bar rendered white
-             * on a dark page.
+             * is declared twice with two different values in the same build, one per mode:
+             *
+             *     grep -ho -- '--color-paper:[^;]*' public/build/assets/*.css | sort -u
+             *
+             * -- but nothing ever set the attribute here, so every `var(--color-…)` in panel
+             * Blade resolved to the LIGHT value inside a dark panel. The studio's own footer
+             * bar rendered white on a dark page.
+             *
+             * ⚠ THE TWO VALUES ARE REPRODUCED BY THAT COMMAND AND NOT QUOTED HERE, and that
+             * is not squeamishness: `scan-panel.mjs` reads this file and has no parser, so a
+             * hex in a comment is a finding exactly like a hex in a value. Its only exemption
+             * is the span inside four copy methods, written narrow on purpose -- *"a blanket
+             * per-file or per-line exemption would have covered both"*. Widening it so a
+             * docblock could quote a measurement would trade the rule for a sentence. CI
+             * caught this at `7e48d0d`, after the gate figures were taken at `c55f786`.
              *
              * This is the one line that joins them, and it is deliberately a MIRROR rather
              * than a second source of truth: Filament decides the mode, this copies its
