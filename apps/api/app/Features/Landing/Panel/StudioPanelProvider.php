@@ -11,6 +11,7 @@ use App\Features\Landing\Panel\Pages\PreviewController;
 use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Panel\ApprovedPalette;
+use Filament\Enums\ThemeMode;
 use Filament\FontProviders\LocalFontProvider;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -84,6 +85,15 @@ class StudioPanelProvider extends PanelProvider
             //     `ViteManifestNotFoundException` at render time, not a styling difference.
             //     Read from `HasTheme::getTheme()`, not from documentation.
             ->viteTheme('resources/css/filament/studio/theme.css')
+            // ⚠ LIGHT IS THE DEFAULT, STATED RATHER THAN INHERITED -- `QRPAGER-39`, Muhammad's
+            // ruling of 2026-11-08: *"Rail is ink on paper."* Filament's own default is
+            // `ThemeMode::System`, so until this line the panel followed the operating
+            // system and a restaurant owner on a dark laptop met a dark product -- the one
+            // the same ticket re-pointed off `ready-field` precisely because it was the
+            // colour of the order-ready state. Dark stays AVAILABLE: this is the default a
+            // person has not chosen yet, not a removal, and `§12`'s floors are asserted for
+            // both themes by `contrast.test.ts` whichever one is showing.
+            ->defaultThemeMode(ThemeMode::Light)
             // ⚠ WITHOUT THIS, EVERY PAGE OF THIS PANEL RENDERED `<title>… - Laravel</title>`.
             // `Panel::getBrandName()` falls back to `config('app.name')`, and `.env.example`
             // ships `APP_NAME=Laravel` — so `§12`'s *"a reviewer cannot name the UI framework

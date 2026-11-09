@@ -578,9 +578,22 @@ test.describe('every pairing the kit RENDERS is in the generated table', () => {
     page,
   }) => {
     /*
-     * An exact count, reported so a change is visible rather than absorbed. 12 light + 11
-     * dark = 23 distinct rendered pairs, against 42 DECLARED rows -- the table deliberately
+     * An exact count, reported so a change is visible rather than absorbed. 12 light + 12
+     * dark = 24 distinct rendered pairs, against 42 DECLARED rows -- the table deliberately
      * over-covers, which bounds combinations no component renders yet.
+     *
+     * ⚠⚠ DARK WENT 11 -> 12 ON 2026-11-09, AND THE PAIR THAT APPEARED IS THE WHOLE POINT OF
+     * `QRPAGER-39`. It is `#FCFCFA on #191C22` -- `ink` on the dark GROUND. Until that day
+     * dark `paper` resolved to the approved `ready-field` (`#0A1F17`), so the product's own
+     * text-on-ground pair and the ORDER-READY screen's text-on-field pair were the SAME TWO
+     * COLOURS, and this walk -- which dedupes by colour, not by role -- counted them once.
+     * Re-pointing the ground onto `ink` separated them, and the count is the proof: the dark
+     * list now carries `#FCFCFA/#0A1F17` (the ready screen) AND `#FCFCFA/#191C22` (every
+     * other screen) where it used to carry one entry standing for both.
+     *
+     * That is `R-249`'s mechanism, visible as an integer. ⚠ AND IT IS NOT THE WHOLE OF
+     * `R-249`: the two grounds are 1.00:1 -- they differ in hue and not in value -- which is
+     * `R-257`, and no count in this file can see it.
      *
      * ⚠ LIGHT WAS 13 UNTIL 2026-11-08 AND THE DROP IS EXPECTED, WHICH IS WORTH SAYING
      * BECAUSE A FALLING COUNT IS EXACTLY WHAT THIS CASE EXISTS TO CATCH.
@@ -598,15 +611,16 @@ test.describe('every pairing the kit RENDERS is in the generated table', () => {
      * those two never contributed two pairs to collapse. Measured by walking the fixture
      * under both palettes and diffing, which is the only way to name it.
      *
-     * Dark is unchanged at 11: there `brand` resolves to `paper` and `ink` to `paper` as
-     * well, a collapse that had ALREADY happened under Direction B. If light ever drops
-     * BELOW 12, that is a component that stopped rendering and not a palette collapse.
+     * Dark's OTHER collapse is unchanged: there `brand` resolves to `paper` and `ink` to
+     * `paper` as well, which had ALREADY happened under Direction B, so those two roles
+     * still share one entry. If light ever drops BELOW 12, or dark below 12, that is a
+     * component that stopped rendering and not a palette collapse.
      */
     await openKit(page, 'light')
     const light = await renderedPairs(page)
     await openKit(page, 'dark')
     const dark = await renderedPairs(page)
-    expect({ light: light.length, dark: dark.length }).toEqual({ light: 12, dark: 11 })
+    expect({ light: light.length, dark: dark.length }).toEqual({ light: 12, dark: 12 })
     expect(CONTRAST.pairs).toHaveLength(42)
   })
 })

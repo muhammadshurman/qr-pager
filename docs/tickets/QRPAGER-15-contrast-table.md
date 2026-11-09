@@ -62,27 +62,27 @@ declaration that could differ.
 
 | fg | bg | fg hex | bg hex | ratio | bar | target | margin over bar | verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ink` | `paper` | `#FCFCFA` | `#0A1F17` | **16.73** | 7.0 | 7.10 | +9.73 | ✅ |
-| `ink` | `surface` | `#FCFCFA` | `#1D3129` | **13.41** | 7.0 | 7.10 | +6.41 | ✅ |
-| `ink` | `surface-2` | `#FCFCFA` | `#2C3E37` | **11.04** | 7.0 | 7.10 | +4.04 | ✅ |
-| `ink-mid` | `paper` | `#ABADB2` | `#0A1F17` | **7.65** | 4.5 | 4.60 | +3.15 | ✅ |
-| `ink-mid` | `surface` | `#ABADB2` | `#1D3129` | **6.13** | 4.5 | 4.60 | +1.63 | ✅ |
-| `ink-mid` | `surface-2` | `#ABADB2` | `#2C3E37` | **5.05** | 4.5 | 4.60 | +0.55 | ✅ |
-| `alert-ink` | `paper` | `#CCA49F` | `#0A1F17` | **7.67** | 4.5 | 4.60 | +3.17 | ✅ |
-| `alert-ink` | `surface` | `#CCA49F` | `#1D3129` | **6.15** | 4.5 | 4.60 | +1.65 | ✅ |
-| `alert-ink` | `surface-2` | `#CCA49F` | `#2C3E37` | **5.06** | 4.5 | 4.60 | +0.56 | ✅ |
-| `brand` | `paper` | `#FCFCFA` | `#0A1F17` | **16.73** | 4.5 | 4.60 | +12.23 | ✅ |
-| `brand` | `surface` | `#FCFCFA` | `#1D3129` | **13.41** | 4.5 | 4.60 | +8.91 | ✅ |
-| `brand` | `surface-2` | `#FCFCFA` | `#2C3E37` | **11.04** | 4.5 | 4.60 | +6.54 | ✅ |
-| `border-strong` | `paper` | `#838E89` | `#0A1F17` | **5.07** | 3.0 | 3.10 | +2.07 | ✅ |
-| `border-strong` | `surface` | `#838E89` | `#1D3129` | **4.06** | 3.0 | 3.10 | +1.06 | ✅ |
-| `border-strong` | `surface-2` | `#838E89` | `#2C3E37` | **3.34** | 3.0 | 3.10 | +0.34 | ✅ |
-| `hairline` | `paper` | `#44544D` | `#0A1F17` | **2.14** | — | — | — | no bar — decorative |
-| `hairline` | `surface` | `#44544D` | `#1D3129` | **1.72** | — | — | — | no bar — decorative |
-| `hairline` | `surface-2` | `#44544D` | `#2C3E37` | **1.41** | — | — | — | no bar — decorative |
-| `surface` | `brand` | `#1D3129` | `#FCFCFA` | **13.41** | 4.5 | 4.60 | +8.91 | ✅ |
-| `surface` | `alert-ink` | `#1D3129` | `#CCA49F` | **6.15** | 4.5 | 4.60 | +1.65 | ✅ |
-| `surface` | `alert-fill` | `#1D3129` | `#B37771` | **3.80** | 3.0 | 3.10 | +0.80 | ✅ *(not rendered — bound stated only)* |
+| `ink` | `paper` | `#FCFCFA` | `#191C22` | **16.61** | 7.0 | 7.10 | +9.61 | ✅ |
+| `ink` | `surface` | `#FCFCFA` | `#2B2E33` | **13.26** | 7.0 | 7.10 | +6.26 | ✅ |
+| `ink` | `surface-2` | `#FCFCFA` | `#393B40` | **10.91** | 7.0 | 7.10 | +3.91 | ✅ |
+| `ink-mid` | `paper` | `#ABADB2` | `#191C22` | **7.59** | 4.5 | 4.60 | +3.09 | ✅ |
+| `ink-mid` | `surface` | `#ABADB2` | `#2B2E33` | **6.06** | 4.5 | 4.60 | +1.56 | ✅ |
+| `ink-mid` | `surface-2` | `#ABADB2` | `#393B40` | **4.99** | 4.5 | 4.60 | +0.49 | ✅ |
+| `alert-ink` | `paper` | `#CCA49F` | `#191C22` | **7.62** | 4.5 | 4.60 | +3.12 | ✅ |
+| `alert-ink` | `surface` | `#CCA49F` | `#2B2E33` | **6.08** | 4.5 | 4.60 | +1.58 | ✅ |
+| `alert-ink` | `surface-2` | `#CCA49F` | `#393B40` | **5.00** | 4.5 | 4.60 | +0.50 | ✅ |
+| `brand` | `paper` | `#FCFCFA` | `#191C22` | **16.61** | 4.5 | 4.60 | +12.11 | ✅ |
+| `brand` | `surface` | `#FCFCFA` | `#2B2E33` | **13.26** | 4.5 | 4.60 | +8.76 | ✅ |
+| `brand` | `surface-2` | `#FCFCFA` | `#393B40` | **10.91** | 4.5 | 4.60 | +6.41 | ✅ |
+| `border-strong` | `paper` | `#8B8C8E` | `#191C22` | **5.07** | 3.0 | 3.10 | +2.07 | ✅ |
+| `border-strong` | `surface` | `#8B8C8E` | `#2B2E33` | **4.04** | 3.0 | 3.10 | +1.04 | ✅ |
+| `border-strong` | `surface-2` | `#8B8C8E` | `#393B40` | **3.33** | 3.0 | 3.10 | +0.33 | ✅ |
+| `hairline` | `paper` | `#4F5256` | `#191C22` | **2.17** | — | — | — | no bar — decorative |
+| `hairline` | `surface` | `#4F5256` | `#2B2E33` | **1.73** | — | — | — | no bar — decorative |
+| `hairline` | `surface-2` | `#4F5256` | `#393B40` | **1.42** | — | — | — | no bar — decorative |
+| `surface` | `brand` | `#2B2E33` | `#FCFCFA` | **13.26** | 4.5 | 4.60 | +8.76 | ✅ |
+| `surface` | `alert-ink` | `#2B2E33` | `#CCA49F` | **6.08** | 4.5 | 4.60 | +1.58 | ✅ |
+| `surface` | `alert-fill` | `#2B2E33` | `#B37771` | **3.75** | 3.0 | 3.10 | +0.75 | ✅ *(not rendered — bound stated only)* |
 
 ## What each foreground role is
 

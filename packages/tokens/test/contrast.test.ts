@@ -197,27 +197,27 @@ describe('every pair in the generated table, pinned to an exact literal', () => 
     ['light', 'surface', 'brand', 17.06],
     ['light', 'surface', 'alert-ink', 8.23],
     ['light', 'surface', 'alert-fill', 8.23],
-    ['dark', 'ink', 'paper', 16.73],
-    ['dark', 'ink', 'surface', 13.41],
-    ['dark', 'ink', 'surface-2', 11.04],
-    ['dark', 'ink-mid', 'paper', 7.65],
-    ['dark', 'ink-mid', 'surface', 6.13],
-    ['dark', 'ink-mid', 'surface-2', 5.05],
-    ['dark', 'alert-ink', 'paper', 7.67],
-    ['dark', 'alert-ink', 'surface', 6.15],
-    ['dark', 'alert-ink', 'surface-2', 5.06],
-    ['dark', 'brand', 'paper', 16.73],
-    ['dark', 'brand', 'surface', 13.41],
-    ['dark', 'brand', 'surface-2', 11.04],
+    ['dark', 'ink', 'paper', 16.61],
+    ['dark', 'ink', 'surface', 13.26],
+    ['dark', 'ink', 'surface-2', 10.91],
+    ['dark', 'ink-mid', 'paper', 7.59],
+    ['dark', 'ink-mid', 'surface', 6.06],
+    ['dark', 'ink-mid', 'surface-2', 4.99],
+    ['dark', 'alert-ink', 'paper', 7.62],
+    ['dark', 'alert-ink', 'surface', 6.08],
+    ['dark', 'alert-ink', 'surface-2', 5],
+    ['dark', 'brand', 'paper', 16.61],
+    ['dark', 'brand', 'surface', 13.26],
+    ['dark', 'brand', 'surface-2', 10.91],
     ['dark', 'border-strong', 'paper', 5.07],
-    ['dark', 'border-strong', 'surface', 4.06],
-    ['dark', 'border-strong', 'surface-2', 3.34],
-    ['dark', 'hairline', 'paper', 2.14],
-    ['dark', 'hairline', 'surface', 1.72],
-    ['dark', 'hairline', 'surface-2', 1.41],
-    ['dark', 'surface', 'brand', 13.41],
-    ['dark', 'surface', 'alert-ink', 6.15],
-    ['dark', 'surface', 'alert-fill', 3.8],
+    ['dark', 'border-strong', 'surface', 4.04],
+    ['dark', 'border-strong', 'surface-2', 3.33],
+    ['dark', 'hairline', 'paper', 2.17],
+    ['dark', 'hairline', 'surface', 1.73],
+    ['dark', 'hairline', 'surface-2', 1.42],
+    ['dark', 'surface', 'brand', 13.26],
+    ['dark', 'surface', 'alert-ink', 6.08],
+    ['dark', 'surface', 'alert-fill', 3.75],
   ]
 
   it('pins all 42 rows, and the table carries no row this list omits', () => {
@@ -330,8 +330,8 @@ describe('the three roles corrected on 2026-10-31, each pinned to its generated 
     [
       'dark',
       'border-strong',
-      '#838E89',
-      'raised 48% -> 50%: 48% cleared by 0.01, and 49% cleared the 3.1 target by 0.00',
+      '#8B8C8E',
+      'raised 48% -> 50%: 48% cleared by 0.01, and 49% cleared the 3.1 target by 0.00. ⚠ THE HEX MOVED ON 2026-11-09 AND THE PERCENTAGE DID NOT -- QRPAGER-39 re-pointed the dark ground off `ready-field` onto `ink`, so every mix of it lands on a new value. It was `#838E89`; the 2026-10-31 correction this row records is unchanged',
     ],
     [
       'dark',
@@ -344,11 +344,24 @@ describe('the three roles corrected on 2026-10-31, each pinned to its generated 
   })
 
   it('left dark ink-mid and the surface ladder where they were', () => {
-    // The corrections were scoped: nothing else moved, so a reviewer diffing the table sees
-    // three changed roles and not a repalette.
-    expect(resolveColour('dark', 'surface')).toBe('#1D3129')
-    expect(resolveColour('dark', 'surface-2')).toBe('#2C3E37')
-    expect(resolveColour('dark', 'hairline')).toBe('#44544D')
+    /*
+     * The 2026-10-31 corrections were scoped: nothing else moved, so a reviewer diffing the
+     * table saw three changed roles and not a repalette. That claim is about the MIX
+     * PERCENTAGES, and it still holds -- none of them has changed since.
+     *
+     * ⚠ THE VALUES BELOW MOVED ON 2026-11-09 ANYWAY, AND NOT BY A CORRECTION TO THESE ROLES.
+     * `QRPAGER-39` re-pointed dark `paper` off `ready-field` onto `ink`, and the ladder is
+     * three MIXES OF THE GROUND -- so a one-line change to a different role rewrote all of
+     * them. That is the chain working as designed (`§6.2`: the derivation is stored, never
+     * the result), and it is the reason the ladder is pinned here at all: a reviewer sees
+     * the blast radius of a ground change in one diff rather than discovering it on a screen.
+     *
+     * `ink-mid` is the control in this group: it is a mix of `ink-mid` toward `paper` and
+     * touches the ground in no way, so it reads `#ABADB2` before and after.
+     */
+    expect(resolveColour('dark', 'surface')).toBe('#2B2E33')
+    expect(resolveColour('dark', 'surface-2')).toBe('#393B40')
+    expect(resolveColour('dark', 'hairline')).toBe('#4F5256')
     expect(resolveColour('dark', 'ink-mid')).toBe('#ABADB2')
   })
 
@@ -357,16 +370,20 @@ describe('the three roles corrected on 2026-10-31, each pinned to its generated 
       Math.min(...BG.map((bg) => ratioFloor2(resolveColour(theme, fg), resolveColour(theme, bg))))
 
     expect(worst('light', 'border-strong')).toBe(3.54)
-    expect(worst('dark', 'border-strong')).toBe(3.34)
-    expect(worst('dark', 'alert-ink')).toBe(5.06)
-    expect(worst('dark', 'ink-mid')).toBe(5.05)
+    expect(worst('dark', 'border-strong')).toBe(3.33)
+    expect(worst('dark', 'alert-ink')).toBe(5)
+    expect(worst('dark', 'ink-mid')).toBe(4.99)
   })
 })
 
 describe('hairline is decorative only — the finding that produced border-strong', () => {
+  // ⚠ DARK MOVED 2.14 -> 2.17 ON 2026-11-09 and the CLAIM did not: hairline is a 24% mix
+  // of the ground, and `QRPAGER-39` re-pointed the ground off `ready-field` onto `ink`. Both
+  // figures are far below 3:1, which is what this case is about -- the second assertion
+  // below is the one that carries the claim, and it needs no literal at all.
   it.each([
     ['light', 1.3],
-    ['dark', 2.14],
+    ['dark', 2.17],
   ])('%s hairline is %s:1 on its ground, below 1.4.11’s 3:1', (theme, expected) => {
     const t = theme as Theme
     expect(ratioFloor2(resolveColour(t, 'hairline'), resolveColour(t, 'paper'))).toBe(expected)
