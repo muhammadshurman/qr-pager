@@ -482,21 +482,26 @@ it('never REPLACES a policy a response built for itself — the regression this 
      *
      *   the ASSET response  `default-src 'none'; style-src 'unsafe-inline'; sandbox`
      *   the PAGE response   `default-src 'none'; img-src 'self'; style-src 'unsafe-inline';
-     *                        frame-ancestors 'none'; base-uri 'none'; form-action 'none'`
+     *                        frame-ancestors 'self'; base-uri 'none'; form-action 'none'`
      *
      * `/studio/preview` is the page. Both are `default-src 'none'` and both are narrower than
      * the panel policy, which is the property this case is about; `sandbox` belongs to the
      * bytes served for a tenant's document, not to the page that frames them.
+     *
+     * ⚠ THE PAGE'S `frame-ancestors` READ `'none'` UNTIL `QRPAGER-40` and now reads `'self'`,
+     * so the studio's preview pane can frame it from this same origin. Narrowed, not dropped:
+     * every cross-origin framer is still refused, and `default-src 'none'` -- the clause this
+     * case is actually about -- did not move.
      */
     expect($csp)->toContain("default-src 'none'")
-        ->and($csp)->toContain("frame-ancestors 'none'")
+        ->and($csp)->toContain("frame-ancestors 'self'")
         // And NOT the panel policy's script allowances, which is the actual regression.
         ->and(str_contains($csp, 'unsafe-eval'))
         ->toBeFalse('the tenant-content preview was given the panel policy: its markup can execute script');
 
     // It is still HARDENED, which is the other half: skipping the CSP must not skip the rest.
     expect($preview->headers->get('X-Content-Type-Options'))->toBe('nosniff')
-        ->and($preview->headers->get('X-Frame-Options'))->toBe('DENY')
+        ->and($preview->headers->get('X-Frame-Options'))->toBe('SAMEORIGIN')
         ->and($preview->headers->get('Referrer-Policy'))->toBe('no-referrer');
 
     // THE POSITIVE CONTROL: a response with NO policy of its own still gets one, or "do not

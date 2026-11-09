@@ -243,9 +243,13 @@ it('serves a content security policy on the preview document, not only on its as
 
     expect($document->status())->toBe(200)
         ->and($document->headers->get('Content-Security-Policy'))->toContain("default-src 'none'")
-        ->and($document->headers->get('Content-Security-Policy'))->toContain("frame-ancestors 'none'")
+        // ⚠ `'self'` AND NOT `'none'` SINCE `QRPAGER-40`, and it is narrowed rather than
+        // dropped: the studio's preview pane frames this from the SAME origin, every
+        // third-party framer is still refused, and the execution policy -- `default-src
+        // 'none'` above -- did not move. Muhammad's ruling of 2026-11-09, rank 2.
+        ->and($document->headers->get('Content-Security-Policy'))->toContain("frame-ancestors 'self'")
         ->and($document->headers->get('X-Content-Type-Options'))->toBe('nosniff')
-        ->and($document->headers->get('X-Frame-Options'))->toBe('DENY');
+        ->and($document->headers->get('X-Frame-Options'))->toBe('SAMEORIGIN');
 
     // The asset keeps its own, tighter policy -- an image needs no images.
     $image = $this->get('/studio/preview/asset/'.$asset);
