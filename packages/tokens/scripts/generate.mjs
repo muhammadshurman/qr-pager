@@ -180,7 +180,37 @@ ${scaleBlock()}
  * Dark is an ATTRIBUTE, not a media query alone, so a tenant's staff can be given a choice
  * later without this file changing. The media query below opts a visitor in by preference
  * unless the attribute has already decided.
+ *
+ * ⚠ AND LIGHT IS AN ATTRIBUTE TOO, AS OF QRPAGER-39. THIS BLOCK IS NOT SYMMETRY FOR ITS
+ * OWN SAKE; IT IS THE ONLY THING THAT MAKES theme="light" MEAN ANYTHING.
+ *
+ * (No backticks anywhere in this comment: it is inside the template literal that emits the
+ * stylesheet, so one would end the string. That is not a style note -- it is why the first
+ * version of this comment broke the generator with "Unexpected identifier 'QRPAGER'".)
+ *
+ * Light used to live at :root alone, and the media query below guards on
+ * :root:not([data-theme='light']) -- which reads the attribute ON the document element. But
+ * every surface in this product sets it on a DIV: ThemeProvider renders as="div" by default
+ * and all four callers use that, because a React provider cannot own the document element.
+ * So the guard never matched, the media query redefined the variables at :root, and the div
+ * inherited them -- nothing re-asserted light for an element that had asked for it.
+ *
+ * MEASURED on 2026-11-09 before this block existed, with Playwright at
+ * prefers-color-scheme: dark: /staff rendered --color-paper: #191C22 and a card at
+ * rgb(43, 46, 51) while the element it rendered carried data-theme="light". The staff app
+ * was dark on any device set to dark, whatever the prop said, and no test could see it --
+ * the suite asserts the ATTRIBUTE, and the attribute was correct.
+ *
+ * With this block, an element that says light IS light wherever it sits, and the media query
+ * keeps its job for a visitor who has expressed a preference and whose attribute has not
+ * decided.
  */
+[data-theme='light'] {
+  color-scheme: light;
+
+${cssBlock('light')}
+}
+
 [data-theme='dark'] {
   color-scheme: dark;
 
