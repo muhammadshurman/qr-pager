@@ -197,3 +197,27 @@ it('keeps all four surfaces reachable, which is what the sidebar used to give', 
             ->toBeTrue("[{$page}] has no route, so the tab bar cannot link to it");
     }
 });
+
+it('mirrors Filament’s dark mode onto the attribute the token layer reads', function (): void {
+    /*
+     * ⚠ TWO THEMING SYSTEMS MEET IN THIS PANEL AND DID NOT TOUCH BEFORE `QRPAGER-40`.
+     * Filament flips on `html.dark`; `packages/tokens/generated/tokens.css` flips on
+     * `[data-theme='dark']`. The compiled stylesheet carries BOTH -- `--color-paper`
+     * appears as `#fcfcfa` and `#191c22` in the same file -- and nothing set the attribute,
+     * so every `var(--color-…)` in panel Blade resolved to the LIGHT value inside a dark
+     * panel. The studio's footer bar rendered white on a dark page.
+     *
+     * ⚠ THIS ASSERTS THE MECHANISM IS WIRED, NOT THAT THE COLOURS ARE RIGHT. A PHP test
+     * cannot run the script or read a computed style; what it can do is fail if the hook is
+     * removed or renamed, which is the regression worth catching. The colours are a
+     * BROWSER claim and belong to a rendered frame.
+     */
+    $html = studioTabs()['page'];
+
+    expect(str_contains($html, "root.classList.contains('dark')"))
+        ->toBeTrue('the panel no longer mirrors Filament’s mode onto data-theme');
+    expect(str_contains($html, 'root.dataset.theme'))
+        ->toBeTrue('the mirror no longer writes the attribute the token layer reads');
+    expect(str_contains($html, 'MutationObserver'))
+        ->toBeTrue('the mirror is set once and never updated, so flipping the mode mid-session desyncs it');
+});
