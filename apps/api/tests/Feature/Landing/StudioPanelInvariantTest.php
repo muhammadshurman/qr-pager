@@ -133,6 +133,10 @@ function studioExpectations(string $principal): array
         'GET /studio/media' => $status,
         'GET /studio/preview' => $status,
         'GET /studio/preview/asset/{asset}' => $status,
+        // `QRPAGER-40`'s fourth tab. It is a page of this panel like any other, so it
+        // takes the same answer as the rest for every principal -- which is the whole
+        // point of enumerating them uniformly.
+        'GET /studio/theme' => $status,
         'POST /studio/logout' => $status,
     ];
 
@@ -154,6 +158,7 @@ function studioExpectations(string $principal): array
             'GET /studio/media' => 200,
             'GET /studio/preview' => 200,
             'GET /studio/preview/asset/{asset}' => 404,
+            'GET /studio/theme' => 200,
             'POST /studio/logout' => 302,
         ],
         default => [],
@@ -194,6 +199,7 @@ it('enumerates the studio routes, so every case below has a subject', function (
         'GET /studio/media',
         'GET /studio/preview',
         'GET /studio/preview/asset/{asset}',
+        'GET /studio/theme',
         'POST /livewire-<hash>/update',
         'POST /studio/logout',
     ]);

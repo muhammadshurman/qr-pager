@@ -100,7 +100,10 @@ function renderedControlElements(): array
     // invisible to this floor check, which is one of the two controls R-174 rests on.
     $chrome = PanelRoutes::chrome();
 
-    expect($chrome)->toHaveCount(6);
+    // ⚠ SEVEN SINCE `QRPAGER-40` ADDED `/studio/theme` — it was six, and the count is a
+    // FLOOR on the derivation rather than a description of the panel, so it moves with the
+    // panel and a route that stopped rendering still fails here.
+    expect($chrome)->toHaveCount(7);
 
     foreach (array_keys($chrome) as $uri) {
         if (str_starts_with($uri, '/studio')) {

@@ -155,13 +155,21 @@ it('disables Publish rather than hiding it when there is nothing to publish', fu
     $xpath = dom(studioHtml('/studio'));
     $publish = null;
 
+    /*
+     * ⚠ MATCHED ON THE ARABIC LABEL SINCE `QRPAGER-40` PUT THE ACTIONS IN A FOOTER BAR.
+     * It read `=== 'Publish'`; the ticket's own words for the two footer actions are
+     * `افتح المعاينة` and `انشر`, so the button this case is about now says `انشر`. The
+     * CLAIM is unchanged and is the only reason the label is allowed to move here: a
+     * control that disappears is one a keyboard user cannot find to learn why it is
+     * unavailable, and that is about `disabled` rather than about the word on it.
+     */
     foreach ($xpath->query('//button') ?: [] as $button) {
-        if ($button instanceof DOMElement && trim($button->textContent) === 'Publish') {
+        if ($button instanceof DOMElement && trim($button->textContent) === 'انشر') {
             $publish = $button;
         }
     }
 
-    expect($publish)->not->toBeNull('the Publish button is not in the document')
+    expect($publish)->not->toBeNull('the publish button is not in the document')
         ->and($publish?->hasAttribute('disabled'))->toBeTrue();
 });
 

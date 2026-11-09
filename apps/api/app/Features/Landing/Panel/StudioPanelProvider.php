@@ -8,6 +8,7 @@ use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
+use App\Features\Landing\Panel\Pages\ThemePage;
 use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Panel\ApprovedPalette;
@@ -18,6 +19,7 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -183,8 +185,79 @@ class StudioPanelProvider extends PanelProvider
             ->pages([
                 LandingBuilderPage::class,
                 MediaLibraryPage::class,
+                ThemePage::class,
                 DomainsPage::class,
             ])
+            /*
+             * ⚠ THE SIDEBAR IS OFF AND THE TABS ARE THE NAVIGATION — `QRPAGER-40`.
+             *
+             * Muhammad's ticket: *"Tabs replace the sidebar."* The four pages above are
+             * still registered — they must be, or their routes do not exist and
+             * `StudioPanelInvariantTest` has no enumerable set to drive — but Filament's
+             * own sidebar is not rendered, and `studio/partials/tabs.blade.php` is
+             * included by each page's view instead.
+             *
+             * The tabs are LINKS with `aria-current="page"`, not `role="tab"`: each is a
+             * separate page with its own URL and its own Livewire state, so they are
+             * navigation, and `role="tab"` would promise a screen-reader user that the
+             * panels are in this document and that arrow keys move between them. Neither
+             * is true, and a promise the page cannot keep is worse than the plainer
+             * control.
+             */
+            ->sidebarCollapsibleOnDesktop(false)
+            ->navigation(false)
+            /*
+             * ⚠ `data-theme` MIRRORS FILAMENT'S OWN MODE, OR EVERY TOKEN IN THIS PANEL IS
+             * STUCK ON LIGHT — `QRPAGER-40`, and it was found by looking at the dark
+             * screenshots rather than by reading anything.
+             *
+             * Two theming systems meet in this panel and never touched before this ticket:
+             * Filament flips on `html.dark`, and `packages/tokens/generated/tokens.css`
+             * flips on `[data-theme='dark']` (or `prefers-color-scheme` when no attribute
+             * decides). The compiled stylesheet carries BOTH -- measured, `--color-paper`
+             * is declared twice with two different values in the same build, one per mode:
+             *
+             *     grep -ho -- '--color-paper:[^;]*' public/build/assets/*.css | sort -u
+             *
+             * -- but nothing ever set the attribute here, so every `var(--color-…)` in panel
+             * Blade resolved to the LIGHT value inside a dark panel. The studio's own footer
+             * bar rendered white on a dark page.
+             *
+             * ⚠ THE TWO VALUES ARE REPRODUCED BY THAT COMMAND AND NOT QUOTED HERE, and that
+             * is not squeamishness: `scan-panel.mjs` reads this file and has no parser, so a
+             * hex in a comment is a finding exactly like a hex in a value. Its only exemption
+             * is the span inside four copy methods, written narrow on purpose -- *"a blanket
+             * per-file or per-line exemption would have covered both"*. Widening it so a
+             * docblock could quote a measurement would trade the rule for a sentence. CI
+             * caught this at `7e48d0d`, after the gate figures were taken at `c55f786`.
+             *
+             * This is the one line that joins them, and it is deliberately a MIRROR rather
+             * than a second source of truth: Filament decides the mode, this copies its
+             * decision onto the attribute the token layer reads. The observer keeps it true
+             * when the user flips the mode without a reload.
+             *
+             * It is inline script, which the panel policy already permits (`R-242`'s named
+             * allowlist) and which no other mechanism can replace: the class is written by
+             * Filament's own boot script before any stylesheet can respond to it.
+             */
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => <<<'HTML'
+                    <script>
+                        (function () {
+                            var root = document.documentElement
+                            var sync = function () {
+                                root.dataset.theme = root.classList.contains('dark') ? 'dark' : 'light'
+                            }
+                            sync()
+                            new MutationObserver(sync).observe(root, {
+                                attributes: true,
+                                attributeFilter: ['class'],
+                            })
+                        })()
+                    </script>
+                    HTML,
+            )
             ->widgets([])
             ->middleware([
                 // FIRST, before StartSession, which is Task 6's security H-2 applied

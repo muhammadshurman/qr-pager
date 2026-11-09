@@ -11,6 +11,7 @@ use App\Domain\Landing\FieldKind;
 use App\Domain\Landing\LandingTemplate;
 use App\Domain\Landing\ThemeTokenKind;
 use App\Domain\Landing\ThemeTokens;
+use App\Features\Landing\LandingPages;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\Radio;
@@ -19,6 +20,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
+use Illuminate\Support\Str;
 
 /**
  * The builder's form, GENERATED FROM BlockSchema (§6.2, decision D4).
@@ -103,18 +105,89 @@ final class StudioForm
                 ->reorderable()
                 ->reorderableWithButtons()
                 ->collapsible()
+                // ⚠ COLLAPSED BY DEFAULT SINCE `QRPAGER-40`. A running order is a list of
+                // rows the owner reads to find the one he wants; expanded, seven blocks are
+                // seven forms and the ORDER -- the thing the numbers are for -- is off the
+                // bottom of the screen. Every field is one click away and nothing is lost,
+                // which `StudioCapabilityTest` is what proves rather than this comment.
+                ->collapsed()
+                // ⚠ FILAMENT'S OWN NUMBER IS OFF, OR THE ROW CARRIES TWO. It appends the
+                // index to each item's label by default, so with the running order's CSS
+                // counter in front the row read *"١  Hero — … 1"*. The counter is the one
+                // that stays correct when a row is dragged, so it is the one that stays.
+                ->blockNumbers(false)
                 ->addActionLabel('Add a block'),
 
+        ];
+    }
+
+    /**
+     * The `الثيم` tab's schema — theme and search-and-sharing, in that order.
+     *
+     * ================================================================================
+     * ⚠ THESE TWO MOVED OUT OF `schema()` AT `QRPAGER-40`, AND THE MOVE IS DELIBERATE
+     * ================================================================================
+     *
+     * They were two collapsed `Section`s at the bottom of the landing-page form. Muhammad's
+     * ticket moves them to their own tab, in his words *"a deliberate move, not a side
+     * effect — the Landing page form is for the page's CONTENT, and the theme is not
+     * content"*.
+     *
+     * ⚠⚠ **AND THE MOVE IS WHY `LandingBuilderPage::save()` AND `ThemePage::save()` BOTH
+     * MERGE OVER THE STORED DRAFT.** `toDocument()` reads the theme values out of the SAME
+     * FLAT STATE as the blocks, by `themeKey()`. Split the schema across two pages without
+     * changing how they save, and every save from the page tab writes a document whose
+     * `theme` is EMPTY — **a tenant's theme deleted by saving a block, invisible in any
+     * screenshot, and silent until they looked at their own site.** Found by reading
+     * `toDocument()` before any of this was written, not by a test going red.
+     *
+     * `StudioDraftMergeTest` is the control, both directions, per tab. Muhammad's ruling:
+     * this does not land without that test in the same commit.
+     *
+     * @return list<Component>
+     */
+    public static function themeSchema(MediaOptions $media): array
+    {
+        return [
             Section::make('Theme')
                 ->description('A theme changes colours, fonts and spacing. It cannot change the layout.')
-                ->schema(self::theme())
-                ->collapsed(),
+                ->schema(self::theme()),
 
             Section::make('Search and sharing')
                 ->description('What search engines and social networks show. Structured data is derived from these and is not editable.')
-                ->schema(self::seo($media))
-                ->collapsed(),
+                ->schema(self::seo($media)),
         ];
+    }
+
+    /**
+     * This page's form state, merged over the STORED draft, as a document.
+     *
+     * ================================================================================
+     * ⚠ THE ONE FUNCTION THAT STOPS A TAB DELETING WHAT ANOTHER TAB OWNS
+     * ================================================================================
+     *
+     * `toDocument()` builds the WHOLE document — blocks, template, theme and seo — from one
+     * flat state array. That was correct while one form carried all of it. `QRPAGER-40`
+     * split it across two tabs, and a page that passed only its OWN state would write a
+     * document with the other tab's members missing: saving a block would delete the theme.
+     *
+     * So each page reads the stored draft, turns it back into the same flat shape with
+     * `fromDocument()`, and lays its own state over the top. The members a page does not
+     * carry survive **because they are still in the array**, not because anything special
+     * is done for them — which is what makes this robust to a THIRD tab being added later.
+     *
+     * ⚠ `array_replace` AND NOT `array_merge`: the state is a string-keyed map and
+     * `array_merge` would renumber any integer-like key. `blocks` is keyed by ORDER INDEX
+     * (`fromDocument()` says why), so `array_merge` would silently reindex a tenant's page.
+     *
+     * @param  array<string, mixed>  $state  the saving page's own form state
+     * @return array<string, mixed>
+     */
+    public static function merged(string $tenantId, array $state): array
+    {
+        $stored = self::fromDocument(app(LandingPages::class)->draft($tenantId)->toArray());
+
+        return self::toDocument(array_replace($stored, $state));
     }
 
     /** @return list<Block> */
@@ -124,7 +197,26 @@ final class StudioForm
 
         foreach (BlockType::cases() as $type) {
             $blocks[] = Block::make($type->value)
-                ->label($type->label())
+                /*
+                 * ⚠ THE LABEL IS THE BLOCK'S NAME PLUS A ONE-LINE SUMMARY — `QRPAGER-40`
+                 * item 4, which asks each row of the running order to carry both.
+                 *
+                 * The summary is the block's own HEADING when it has one, because that is
+                 * what the owner typed and what the row IS: a list of "Hero" seven times
+                 * tells him nothing, and he is looking for the row that says *أشهر أطباقنا*.
+                 * A block with no heading keeps its type name alone rather than inventing
+                 * a summary out of some other field.
+                 *
+                 * `getStateUsing`-style closures run per item, so this is evaluated against
+                 * each row's own state rather than once for the schema.
+                 */
+                ->label(static function (?array $state) use ($type): string {
+                    $heading = $state['heading'] ?? null;
+
+                    return is_string($heading) && trim($heading) !== ''
+                        ? $type->label().' — '.Str::limit(trim($heading), 60)
+                        : $type->label();
+                })
                 ->schema(self::fields(BlockSchema::fields($type), $media));
         }
 
@@ -203,6 +295,12 @@ final class StudioForm
                 ->reorderable()
                 ->reorderableWithButtons()
                 ->collapsible()
+                // ⚠ COLLAPSED BY DEFAULT SINCE `QRPAGER-40`. A running order is a list of
+                // rows the owner reads to find the one he wants; expanded, seven blocks are
+                // seven forms and the ORDER -- the thing the numbers are for -- is off the
+                // bottom of the screen. Every field is one click away and nothing is lost,
+                // which `StudioCapabilityTest` is what proves rather than this comment.
+                ->collapsed()
                 ->addActionLabel('Add'),
         };
     }

@@ -200,7 +200,7 @@ it('enumerates the panel routes, so every case below has a subject', function ()
     // these two functions; a derivation that silently returned [] would make all of them
     // pass vacuously, which is the shape §4a records four instances of.
     //
-    // ⚠ AND THE LIST IS SEVEN, NOT EIGHT. This expectation was first written with
+    // ⚠ THE LIST IS EIGHT SINCE `QRPAGER-40` ADDED `/studio/theme`, AND WAS SEVEN, NOT EIGHT, BEFORE IT. This expectation was first written with
     // `/platform/login` in it, from memory of what a Filament panel serves, and the
     // derivation reddened. There is no login route on either panel, deliberately:
     // `PlatformPanelProvider`'s docblock explains that `->login()` would be a THIRD
@@ -214,11 +214,12 @@ it('enumerates the panel routes, so every case below has a subject', function ()
         '/studio/domains',
         '/studio/media',
         '/studio/preview',
+        '/studio/theme',
     ])
         ->and(panelGetRoutes())->not->toContain('/platform/login')
         ->and(panelGetRoutes())->not->toContain('/studio/login');
 
-    // Six of the seven render the panel layout. /studio/preview renders the tenant landing
+    // Seven of the eight render the panel layout. /studio/preview renders the tenant landing
     // page through a controller, which is why it is not a subject for the chrome cases.
     expect(panelChromeRoutes())->toBe([
         '/platform' => 'platform',
@@ -227,6 +228,7 @@ it('enumerates the panel routes, so every case below has a subject', function ()
         '/studio' => 'studio',
         '/studio/domains' => 'studio',
         '/studio/media' => 'studio',
+        '/studio/theme' => 'studio',
     ]);
 });
 
