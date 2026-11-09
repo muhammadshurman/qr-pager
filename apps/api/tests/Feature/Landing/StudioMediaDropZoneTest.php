@@ -37,7 +37,11 @@ it('offers a drop zone and a visible button, and keeps the plain file input', fu
     foreach ([
         'data-drop-zone="true"' => 'there is no drop zone',
         'data-choose="true"' => 'there is no visible choose button',
-        'Drag an image here' => 'the drop zone does not say what to drag',
+        // ⚠ FROM THE LANGUAGE FILE AND PINNED TO `ar` SINCE `QRPAGER-41`. The page is the
+        // tenant's and the fixture tenant has no language set, so it is `ar` by default.
+        // The claim is unchanged -- the drop zone says what to drag -- and reading the key
+        // means a reworded line cannot redden a case about the ZONE being there.
+        __('studio.media.drag_here', [], 'ar') => 'the drop zone does not say what to drag',
         // The input stays a PLAIN file input: Filament's FileUpload would write bytes to the
         // object store without passing InspectedImage. MediaLibraryPage's docblock is the
         // argument; this is the assertion that keeps it true.
@@ -83,7 +87,7 @@ it('carries every column the table carried, so the move to a grid loses nothing'
     foreach ([
         'invariant-fixture.png' => 'the NAME column is gone',
         $asset->contentType => 'the TYPE column is gone',
-        number_format($asset->byteSize / 1024, 1).' KB' => 'the SIZE column is gone',
+        number_format($asset->byteSize / 1024, 1).' '.__('studio.media.kilobytes', [], 'ar') => 'the SIZE column is gone',
         $asset->width.'x'.$asset->height => 'the DIMENSIONS column is gone',
         "delete('{$asset->id}')" => 'the DELETE action is gone',
         // And the thumbnail itself, which is what the table could not show.

@@ -127,10 +127,18 @@ it('keeps every theme property, now on the theme tab', function (): void {
 it('keeps the page-content controls on the page tab', function (): void {
     $page = studioTabs()['page'];
 
-    // `template` is "Page arrangement", which the ticket says stays where it is for now.
-    expect(str_contains($page, 'Page arrangement'))->toBeTrue('Page arrangement is gone from the page tab');
-    expect(str_contains($page, 'Add a block'))->toBeTrue('the block builder is gone from the page tab');
-    expect(str_contains($page, 'Page language'))->toBeTrue('the page language control is gone');
+    /*
+     * ⚠ READ FROM THE LANGUAGE FILE AND PINNED TO `ar` — `QRPAGER-41`. These were the three
+     * English literals, and the tenant this test acts for has no language set, so it is
+     * `TenantLanguage::DEFAULT` = `ar` and the panel renders Arabic. The CLAIM is unchanged
+     * and is the only reason the strings may move: these three controls are still on the
+     * page tab. Asserting the key's value rather than a copy of it means a reworded label
+     * cannot make this case red, and a DELETED control still can -- which is the whole
+     * point of a capability test.
+     */
+    expect(str_contains($page, __('studio.form.template_label', [], 'ar')))->toBeTrue('Page arrangement is gone from the page tab');
+    expect(str_contains($page, __('studio.form.add_block', [], 'ar')))->toBeTrue('the block builder is gone from the page tab');
+    expect(str_contains($page, __('studio.page.language_legend', [], 'ar')))->toBeTrue('the page language control is gone');
 });
 
 it('puts theme and search-and-sharing on the theme tab and NOT on the page tab', function (): void {
@@ -158,8 +166,8 @@ it('puts theme and search-and-sharing on the theme tab and NOT on the page tab',
      * The claim this case makes is that the CONTROL moved, so it asks after the control: the
      * section's own description, which appears exactly where the section is rendered.
      */
-    $themeCopy = 'A theme changes colours, fonts and spacing';
-    $seoCopy = 'What search engines and social networks show';
+    $themeCopy = __('studio.form.theme_section_help', [], 'ar');
+    $seoCopy = __('studio.form.seo_section_help', [], 'ar');
 
     expect(str_contains($tabs['theme'], $themeKey))->toBeTrue('the theme field is not on the theme tab');
     expect(str_contains($tabs['theme'], $themeCopy))->toBeTrue('the theme section is not on the theme tab');

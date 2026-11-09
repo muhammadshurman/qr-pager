@@ -282,6 +282,11 @@ class StudioPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                // ⚠ HERE AND NOT IN `middleware()` ABOVE — `QRPAGER-41`. The locale comes
+                // from the signed-in user's membership, so this must run AFTER
+                // `Authenticate`; in the stack above it would read null every time and do
+                // nothing, silently. `StudioLocale`'s own docblock carries the rest.
+                StudioLocale::class,
             ])
             // ⚠ authenticatedRoutes() AND NOT routes(), WHICH IS WHERE THIS STARTED.
             //

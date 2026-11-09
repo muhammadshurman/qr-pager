@@ -9,6 +9,7 @@ use App\Domain\Landing\LandingPageStatus;
 use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\LanguageNotChanged;
+use App\Features\Landing\Panel\HasStudioLocale;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishFailed;
@@ -33,9 +34,23 @@ use Filament\Schemas\Schema;
  */
 class LandingBuilderPage extends Page
 {
+    use HasStudioLocale;
+
     protected string $view = 'studio.builder';
 
-    protected static ?string $title = 'Landing page';
+    /*
+     * ⚠ `getTitle()` AND NOT `protected static ?string $title` — `QRPAGER-41`.
+     *
+     * A static property initialiser is evaluated when the class is loaded, and PHP permits
+     * no function call there, so `__()` cannot appear in it at all. More to the point, a
+     * value fixed at class-load time could not follow a locale that is chosen per request
+     * from the tenant's own row. Filament calls `getTitle()` when it renders the heading,
+     * which is after `StudioLocale` has run, so this is the only form that can be correct.
+     */
+    public function getTitle(): string
+    {
+        return __('studio.page.title');
+    }
 
     protected static ?string $slug = '/';
 
@@ -137,7 +152,7 @@ class LandingBuilderPage extends Page
              * would refuse it too (`22P02`) -- this is the belt to that brace, and
              * `§4.2`'s rule keeps the message free of what was sent.
              */
-            Notification::make()->title('That is not one of the available languages')->danger()->send();
+            Notification::make()->title(__('studio.notifications.language_not_available'))->danger()->send();
 
             return;
         }
@@ -158,8 +173,8 @@ class LandingBuilderPage extends Page
          * the feature rather than a nicety.
          */
         Notification::make()
-            ->title('Language saved')
-            ->body('Publish again to apply it to your live page.')
+            ->title(__('studio.notifications.language_saved'))
+            ->body(__('studio.notifications.language_saved_body'))
             ->success()
             ->send();
     }
@@ -174,7 +189,7 @@ class LandingBuilderPage extends Page
             // §12.1's "invalid" state: "{Field} can't be published: {reason}". The field
             // is named and the VALUE is not -- see LandingDocumentInvalid for why.
             Notification::make()
-                ->title($e->field." can't be published")
+                ->title(__('studio.notifications.cannot_publish_field', ['field' => $e->field]))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -183,7 +198,7 @@ class LandingBuilderPage extends Page
             return;
         }
 
-        Notification::make()->title('Draft saved')->success()->send();
+        Notification::make()->title(__('studio.notifications.draft_saved'))->success()->send();
     }
 
     public function publish(): void
@@ -197,7 +212,7 @@ class LandingBuilderPage extends Page
             app(LandingPages::class)->saveDraft($tenantId, StudioForm::merged($tenantId, $this->landingForm()->getState()));
         } catch (LandingDocumentInvalid $e) {
             Notification::make()
-                ->title($e->field." can't be published")
+                ->title(__('studio.notifications.cannot_publish_field', ['field' => $e->field]))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -217,7 +232,7 @@ class LandingBuilderPage extends Page
             // no unpublished changes". PublishFailed carries which of the two states its
             // throw site leaves; the third scoped re-review found this one.
             Notification::make()
-                ->title($e->headline)
+                ->title(__($e->headline))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -227,7 +242,7 @@ class LandingBuilderPage extends Page
         }
 
         Notification::make()
-            ->title('Published to '.$published->hostname)
+            ->title(__('studio.notifications.published_to', ['hostname' => $published->hostname]))
             ->success()
             ->send();
     }
@@ -245,7 +260,7 @@ class LandingBuilderPage extends Page
             app(LandingPages::class)->unpublish(TenantPanelAccess::tenantId());
         } catch (PublishFailed $e) {
             Notification::make()
-                ->title('Take-down failed — your page is still public')
+                ->title(__('studio.notifications.take_down_failed'))
                 ->body($e->reason)
                 ->danger()
                 ->persistent()
@@ -254,6 +269,6 @@ class LandingBuilderPage extends Page
             return;
         }
 
-        Notification::make()->title('Your page is no longer public')->success()->send();
+        Notification::make()->title(__('studio.notifications.no_longer_public'))->success()->send();
     }
 }

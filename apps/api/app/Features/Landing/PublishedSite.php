@@ -81,7 +81,7 @@ final class PublishedSite
             // §12.1's "Publish failed — your live page is unchanged". This one escaped
             // to a 500, so the one guard that fires when a constraint has been relaxed
             // was also the one that told the tenant nothing. Found by the §11 QA review.
-            throw new PublishFailed('your site address is not one we can publish to');
+            throw new PublishFailed(__('landing.publish.address_not_publishable'));
         }
 
         return self::PREFIX.'/'.$hostname;

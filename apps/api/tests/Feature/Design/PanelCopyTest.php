@@ -182,8 +182,15 @@ it('renders the real record on the rendered page, with no blank row anywhere in 
 
     $html = (string) $this->get('/studio/domains')->getContent();
 
+    /*
+     * ⚠ `Value:` BECAME A KEY AT `QRPAGER-41`, and the tenant here is Arabic by default, so
+     * the label is read from the language file rather than typed. The claim is untouched and
+     * is `R-154`'s: the record's VALUE is rendered with its label beside it, and never as a
+     * blank `<code></code>` the owner is told to copy. The verification token on the line
+     * above stays a literal, because it is one -- the owner copies it byte for byte.
+     */
     expect($html)->toContain('qrpager-verification=')
-        ->and($html)->toContain('Value:')
+        ->and($html)->toContain(__('studio.domains.record_value', [], 'ar'))
         ->and(str_contains($html, '<code></code>'))
         ->toBeFalse('the page renders an empty code element, which is R-154s blank row');
 });

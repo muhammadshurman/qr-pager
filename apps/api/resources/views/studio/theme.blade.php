@@ -16,7 +16,7 @@
 
             <div class="flex flex-wrap gap-12">
                 <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
-                    Save
+                    {{ __('studio.theme.save') }}
                 </button>
             </div>
         </form>

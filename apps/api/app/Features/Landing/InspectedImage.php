@@ -62,15 +62,14 @@ final class InspectedImage
         $size = strlen($bytes);
 
         if ($size === 0) {
-            throw new MediaRejected('it is empty');
+            throw new MediaRejected(__('landing.media.empty'));
         }
 
         if ($size > self::MAX_BYTES) {
-            throw new MediaRejected(sprintf(
-                'it is %.1f MB, and the limit is %d MB',
-                $size / 1048576,
-                (int) (self::MAX_BYTES / 1048576),
-            ));
+            throw new MediaRejected(__('landing.media.too_large', [
+                'size' => sprintf('%.1f', $size / 1048576),
+                'max' => (int) (self::MAX_BYTES / 1048576),
+            ]));
         }
 
         $detected = (new finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
@@ -79,15 +78,14 @@ final class InspectedImage
             // §12.2's copy: "{name} was refused: it is a {detected} file, not an image."
             // The detected type is libmagic's output, from a bounded vocabulary, and is
             // the one thing about the file that is safe to repeat back.
-            throw new MediaRejected(sprintf(
-                'it is a %s file, not one of the five image types this builder accepts',
-                self::safeType($detected),
-            ));
+            throw new MediaRejected(__('landing.media.wrong_type', [
+                'detected' => self::safeType($detected),
+            ]));
         }
 
         if ($detected === 'image/svg+xml') {
             if ($refusal = SvgPolicy::refuse($bytes)) {
-                throw new MediaRejected('it is an SVG, but '.$refusal);
+                throw new MediaRejected(__('landing.media.svg_refused', ['refusal' => $refusal]));
             }
 
             return new self($detected, self::EXTENSIONS[$detected], $size, hash('sha256', $bytes), null, null);
@@ -106,7 +104,7 @@ final class InspectedImage
         }
 
         if ($measured === false || $measured['mime'] !== $detected) {
-            throw new MediaRejected('its contents do not decode as the image type they claim to be');
+            throw new MediaRejected(__('landing.media.does_not_decode'));
         }
 
         return new self(

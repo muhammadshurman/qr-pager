@@ -213,11 +213,11 @@ final class LandingPages
                     new TenantMediaReferences($tenantId),
                 );
             } catch (LandingDocumentInvalid $e) {
-                throw new PublishFailed($e->field.' can\'t be published: '.$e->reason);
+                throw new PublishFailed(__('landing.publish.field_invalid', ['field' => $e->field, 'reason' => $e->reason]));
             }
 
             if ($document->isEmpty()) {
-                throw new PublishFailed('your page has no blocks yet, so there is nothing to publish');
+                throw new PublishFailed(__('landing.publish.no_blocks'));
             }
 
             $references = $document->mediaReferences();
@@ -235,7 +235,7 @@ final class LandingPages
                     // Cannot happen after validation, and it is checked anyway: the step
                     // this guards is a COPY, and copying from a key that is not there
                     // would publish a page with a broken image rather than refusing.
-                    throw new PublishFailed('an image this page uses is no longer in your library');
+                    throw new PublishFailed(__('landing.publish.image_missing'));
                 }
 
                 $keys[$id] = (string) $assets[$id];
@@ -332,9 +332,7 @@ final class LandingPages
             // introduced a clause-1 failure of its own; the third version left a
             // snapshot whose name the manifest had already published. Removing the need
             // for a compensation is worth more than getting one right.
-            throw new PublishFailed(
-                'your page changed while it was publishing; nothing was published, try again'
-            );
+            throw new PublishFailed(__('landing.publish.changed_while_publishing'));
         }
 
         // ---- PHASE 4: everything reachable, all of it after the row. --------------
@@ -358,9 +356,7 @@ final class LandingPages
 
         foreach ($destinations as $privateKey => $destination) {
             if (! $this->media->copyObject($privateKey, $destination)) {
-                throw PublishFailed::afterRecord(
-                    'an image could not be copied to your site, so your page is recorded as published but is not live yet; publish again'
-                );
+                throw PublishFailed::afterRecord(__('landing.publish.image_not_copied'));
             }
 
             $copied[] = $destination;
@@ -430,9 +426,7 @@ final class LandingPages
         $decoded = is_string($written) ? json_decode($written, true) : null;
 
         if (($decoded['checksum'] ?? null) !== $checksum) {
-            throw PublishFailed::afterRecord(
-                'your page is live, but the site metadata beside it does not match it; publish again'
-            );
+            throw PublishFailed::afterRecord(__('landing.publish.metadata_mismatch'));
         }
 
         // ---- PHASE 5: reconcile the one window phase 4 leaves open. ---------------
@@ -470,17 +464,13 @@ final class LandingPages
                     fn (): array => $this->publishedPrefixes($tenantId, $hostname),
                 ));
 
-                throw PublishFailed::afterRecord(
-                    'your page was taken down while it was publishing, so nothing is live; publish again when you are ready'
-                );
+                throw PublishFailed::afterRecord(__('landing.publish.taken_down_while_publishing'));
             }
 
             // The row records a DIFFERENT publish, so some other actor holds the prefix
             // and this one must not touch it. Reachable only with the lock lost
             // (`R-160`); recorded as `R-169` rather than guessed at here.
-            throw PublishFailed::afterRecord(
-                'another publish for your site finished while this one was running; check your page and publish again'
-            );
+            throw PublishFailed::afterRecord(__('landing.publish.another_publish_finished'));
         }
 
         return new PublishedPage(
@@ -791,7 +781,7 @@ final class LandingPages
     {
         foreach ($prefixes as $prefix) {
             if (MediaLibrary::disk()->deleteDirectory($prefix) === false) {
-                throw new PublishFailed('your site could not be taken down; your page is unchanged');
+                throw new PublishFailed(__('landing.publish.take_down_failed'));
             }
         }
     }

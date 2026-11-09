@@ -85,7 +85,7 @@ final class MediaLibrary
         return withTenant($tenantId, function () use ($tenantId, $id, $originalName, $image, $bytes): string {
             if (DB::table('media_assets')->count() >= self::MAX_ASSETS) {
                 throw new MediaRejected(
-                    'your library already holds '.self::MAX_ASSETS.' images; delete one to add another'
+                    __('landing.media.library_full', ['max' => self::MAX_ASSETS])
                 );
             }
 
@@ -136,7 +136,7 @@ final class MediaLibrary
             ]);
 
             if ($written === false) {
-                throw new MediaRejected('the image could not be stored; nothing was saved');
+                throw new MediaRejected(__('landing.media.not_stored'));
             }
 
             return $id;
@@ -159,7 +159,7 @@ final class MediaLibrary
             $asset = DB::table('media_assets')->where('id', $assetId)->first();
 
             if ($asset === null) {
-                throw new MediaRejected('that image is not in your library');
+                throw new MediaRejected(__('landing.media.not_in_library'));
             }
 
             $references = new TenantMediaReferences($tenantId);
@@ -180,14 +180,12 @@ final class MediaLibrary
                 try {
                     $document = LandingDocument::fromStored($decoded, $references);
                 } catch (LandingDocumentInvalid) {
-                    throw new MediaRejected(
-                        'your page cannot be read right now, so images cannot be deleted; fix the page first'
-                    );
+                    throw new MediaRejected(__('landing.media.page_unreadable'));
                 }
 
                 if ($block = $document->blockUsing($assetId)) {
                     throw new MediaRejected(
-                        'it is used by the '.$block->label().' block; remove it there first'
+                        __('landing.media.in_use_by_block', ['block' => __('studio.blocks.'.$block->value)])
                     );
                 }
             }

@@ -82,8 +82,8 @@ final class StudioForm
              * in the panel's locale, so a third arrangement adds a button here with no edit.
              */
             Radio::make('template')
-                ->label('Page arrangement')
-                ->helperText('How your blocks are laid out. Publish again to apply a change to your live page.')
+                ->label(__('studio.form.template_label'))
+                ->helperText(__('studio.form.template_help'))
                 ->options(collect(LandingTemplate::cases())
                     ->mapWithKeys(static fn (LandingTemplate $t): array => [
                         $t->value => $t->label(app()->getLocale()),
@@ -96,7 +96,7 @@ final class StudioForm
                 ->default(LandingTemplate::DEFAULT->value),
 
             Builder::make('blocks')
-                ->label('Blocks')
+                ->label(__('studio.form.blocks_label'))
                 ->blocks(self::blocks($media))
                 ->maxItems(BlockSchema::MAX_BLOCKS)
                 // §12.1: "block list with reorder". Buttons AND drag, because a
@@ -116,7 +116,7 @@ final class StudioForm
                 // counter in front the row read *"١  Hero — … 1"*. The counter is the one
                 // that stays correct when a row is dragged, so it is the one that stays.
                 ->blockNumbers(false)
-                ->addActionLabel('Add a block'),
+                ->addActionLabel(__('studio.form.add_block')),
 
         ];
     }
@@ -149,12 +149,12 @@ final class StudioForm
     public static function themeSchema(MediaOptions $media): array
     {
         return [
-            Section::make('Theme')
-                ->description('A theme changes colours, fonts and spacing. It cannot change the layout.')
+            Section::make(__('studio.form.theme_section'))
+                ->description(__('studio.form.theme_section_help'))
                 ->schema(self::theme()),
 
-            Section::make('Search and sharing')
-                ->description('What search engines and social networks show. Structured data is derived from these and is not editable.')
+            Section::make(__('studio.form.seo_section'))
+                ->description(__('studio.form.seo_section_help'))
                 ->schema(self::seo($media)),
         ];
     }
@@ -213,9 +213,11 @@ final class StudioForm
                 ->label(static function (?array $state) use ($type): string {
                     $heading = $state['heading'] ?? null;
 
+                    $name = __('studio.blocks.'.$type->value);
+
                     return is_string($heading) && trim($heading) !== ''
-                        ? $type->label().' — '.Str::limit(trim($heading), 60)
-                        : $type->label();
+                        ? $name.' — '.Str::limit(trim($heading), 60)
+                        : $name;
                 })
                 ->schema(self::fields(BlockSchema::fields($type), $media));
         }
@@ -240,21 +242,21 @@ final class StudioForm
 
     private static function field(string $name, Field $field, MediaOptions $media): Component
     {
-        $label = self::label($name);
+        $label = __('studio.fields.'.$name);
 
         return match ($field->kind) {
             FieldKind::Text => TextInput::make($name)
                 ->label($label)
                 ->required($field->required)
                 ->maxLength($field->maxLength)
-                ->helperText('Plain text, up to '.$field->maxLength.' characters. One line.'),
+                ->helperText(__('studio.help.text', ['max' => $field->maxLength])),
 
             FieldKind::Url => TextInput::make($name)
                 ->label($label)
                 ->required($field->required)
                 ->url()
                 ->maxLength($field->maxLength)
-                ->helperText('A full https:// address.'),
+                ->helperText(__('studio.help.url')),
 
             FieldKind::Email => TextInput::make($name)
                 ->label($label)
@@ -266,7 +268,7 @@ final class StudioForm
                 ->label($label)
                 ->required($field->required)
                 ->tel()
-                ->helperText('Digits, spaces and hyphens, with an optional leading +.'),
+                ->helperText(__('studio.help.telephone')),
 
             FieldKind::Media => Select::make($name)
                 ->label($label)
@@ -277,7 +279,7 @@ final class StudioForm
                 ->options($media->options())
                 ->searchable()
                 ->native(false)
-                ->helperText($media->options() === [] ? 'Upload an image in the media library first.' : null),
+                ->helperText($media->options() === [] ? self::line('studio.help.media_empty') : null),
 
             FieldKind::Number => TextInput::make($name)
                 ->label($label)
@@ -285,7 +287,7 @@ final class StudioForm
                 ->numeric()
                 ->minValue($field->min)
                 ->maxValue($field->max)
-                ->helperText('Between '.$field->min.' and '.$field->max.'.'),
+                ->helperText(__('studio.help.number', ['min' => $field->min, 'max' => $field->max])),
 
             FieldKind::ItemList => Repeater::make($name)
                 ->label($label)
@@ -301,7 +303,7 @@ final class StudioForm
                 // bottom of the screen. Every field is one click away and nothing is lost,
                 // which `StudioCapabilityTest` is what proves rather than this comment.
                 ->collapsed()
-                ->addActionLabel('Add'),
+                ->addActionLabel(__('studio.form.add_item')),
         };
     }
 
@@ -317,18 +319,21 @@ final class StudioForm
 
             $components[] = match ($kind) {
                 ThemeTokenKind::Colour => TextInput::make($key)
-                    ->label(self::label($name))
+                    ->label(__('studio.tokens.'.$name))
                     ->placeholder('#1a1a1a')
-                    ->helperText('A hex colour, for example #1a1a1a.'),
+                    ->helperText(__('studio.help.colour')),
                 ThemeTokenKind::Length => TextInput::make($key)
-                    ->label(self::label($name))
+                    ->label(__('studio.tokens.'.$name))
                     ->placeholder('1rem')
-                    ->helperText('A number and a unit: px, rem, em or %.'),
+                    ->helperText(__('studio.help.length')),
                 ThemeTokenKind::FontChoice => Select::make($key)
-                    ->label(self::label($name))
+                    ->label(__('studio.tokens.'.$name))
                     ->options(array_combine(
                         array_keys(ThemeTokens::STACKS),
-                        array_map(self::label(...), array_keys(ThemeTokens::STACKS)),
+                        array_map(
+                            static fn (string $stack): string => __('studio.fonts.'.$stack),
+                            array_keys(ThemeTokens::STACKS),
+                        ),
                     ))
                     ->native(false),
             };
@@ -342,15 +347,15 @@ final class StudioForm
     {
         return [
             TextInput::make('seo_title')
-                ->label('Page title')
+                ->label(__('studio.form.seo_title'))
                 ->maxLength(BlockSchema::MAX_SEO_TITLE)
-                ->helperText('Up to '.BlockSchema::MAX_SEO_TITLE.' characters.'),
+                ->helperText(__('studio.help.max_characters', ['max' => BlockSchema::MAX_SEO_TITLE])),
             TextInput::make('seo_description')
-                ->label('Description')
+                ->label(__('studio.form.seo_description'))
                 ->maxLength(BlockSchema::MAX_SEO_DESCRIPTION)
-                ->helperText('Up to '.BlockSchema::MAX_SEO_DESCRIPTION.' characters.'),
+                ->helperText(__('studio.help.max_characters', ['max' => BlockSchema::MAX_SEO_DESCRIPTION])),
             Select::make('seo_og_image')
-                ->label('Sharing image')
+                ->label(__('studio.form.seo_og_image'))
                 ->options($media->options())
                 ->searchable()
                 ->native(false),
@@ -469,9 +474,49 @@ final class StudioForm
     }
 
     /** `cta_label` -> `Cta label`; `color.accent` -> `Color accent`. */
-    private static function label(string $name): string
+    /**
+     * ⚠ DELETED AT `QRPAGER-41`, AND THE DELETION IS THE POINT.
+     *
+     * This method was `ucfirst(str_replace(['_', '.'], ' ', $name))` -- every field label in
+     * the studio DERIVED from the contract's own field name. That is why the theme tab said
+     * *"Color background"*: nobody wrote those words, a `str_replace` did.
+     *
+     * **A derived label cannot be translated.** There is no string to put in a language file,
+     * and a second derivation per language is not a translation -- Arabic does not reach
+     * `heading` from `heading` by any transformation. So the names became KEYS, and the
+     * lookups are `studio.fields.*` and `studio.tokens.*`.
+     *
+     * ⚠ AND THE REPLACEMENT HAS A TOTALITY TEST, which the derivation did not need and could
+     * not have: `StudioLocalizationTest` requires one key per field in `BlockSchema` and per
+     * token in `ThemeTokens::NAMES`, in BOTH language files. A field added later fails there
+     * rather than rendering as `studio.fields.whatever` in the panel -- the one failure mode
+     * a lookup has that a derivation does not.
+     *
+     * The method is gone rather than kept as a fallback: a fallback would turn that failure
+     * back into an English label appearing silently, which is the defect this ticket exists
+     * to remove.
+     */
+    /**
+     * A translated line, as the string it is.
+     *
+     * ⚠ NOT A CAST TO SILENCE A CHECKER. `__()` is typed `array|string|null` because a key
+     * MAY address a nested array of lines -- `studio.tokens` is exactly such a key -- and
+     * PHPStan is right to say so. Most Filament setters accept the whole union, so the
+     * ordinary `->label(__(…))` calls in this file need nothing; `helperText()` does not,
+     * and it is the one place the union has to be resolved.
+     *
+     * The resolution is a real runtime check with a defined outcome, not an assertion: a key
+     * that addresses an array returns the KEY, which renders as `studio.help.media_empty` in
+     * the panel and is visible immediately. `StudioLocalizationTest`'s totality case is what
+     * makes that outcome unreachable for every key this form actually uses.
+     *
+     * @param  array<string, mixed>  $replace
+     */
+    private static function line(string $key, array $replace = []): string
     {
-        return ucfirst(str_replace(['_', '.'], ' ', $name));
+        $line = __($key, $replace);
+
+        return is_string($line) ? $line : $key;
     }
 
     private static function blankToNull(mixed $value): ?string
