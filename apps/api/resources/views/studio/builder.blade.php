@@ -95,14 +95,32 @@
         <form wire:submit="save" class="space-y-24">
             {{ $this->form }}
 
-            <div class="flex flex-wrap gap-12">
+            {{-- ⚠ A FOOTER BAR — QRPAGER-40 item 6. A hairline top on `surface`, the save
+                 state on one side and the actions on the other, which is `rail.html`'s own
+                 footer rhythm. `افتح المعاينة` and `انشر` are the ticket's words; the other
+                 two keep theirs, because renaming an action the capability gate names is a
+                 change to what the owner can DO rather than to the layout. --}}
+            <div class="studio-footer">
+                <p class="studio-footer__state">
+                    @if ($state['invalid'] !== null)
+                        لا يمكن النشر
+                    @elseif ($state['blocks'] === 0)
+                        لا توجد كتل بعد
+                    @elseif ($state['has_unpublished_changes'])
+                        تغييرات غير منشورة
+                    @else
+                        محفوظ
+                    @endif
+                </p>
+
+                <div class="studio-footer__actions">
                 <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
                     Save
                 </button>
 
                 <a href="{{ route('filament.studio.preview') }}" target="_blank" rel="noopener"
                    class="fi-btn fi-btn-size-md px-16 py-8 rounded-lg underline">
-                    Preview <span class="sr-only">(opens in a new tab)</span>
+                    افتح المعاينة <span class="sr-only">(opens in a new tab)</span>
                 </a>
 
                 {{-- Disabled when there is nothing publishable, which is §12.1's empty and
@@ -111,7 +129,7 @@
                 <button type="button" wire:click="publish"
                         @disabled($state['blocks'] === 0 || $state['invalid'] !== null)
                         class="fi-btn fi-btn-size-md fi-color-success px-16 py-8 rounded-lg disabled:opacity-50">
-                    Publish
+                    انشر
                 </button>
 
                 {{-- ⚠ ALWAYS OFFERED, NOT ONLY WHEN THE ROW SAYS PUBLISHED. A page can be live
@@ -135,6 +153,7 @@
                         Take my site down
                     @endif
                 </button>
+                </div>
             </div>
         </form>
         </div>
