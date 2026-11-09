@@ -20,6 +20,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
+use Illuminate\Support\Str;
 
 /**
  * The builder's form, GENERATED FROM BlockSchema (§6.2, decision D4).
@@ -104,6 +105,17 @@ final class StudioForm
                 ->reorderable()
                 ->reorderableWithButtons()
                 ->collapsible()
+                // ⚠ COLLAPSED BY DEFAULT SINCE `QRPAGER-40`. A running order is a list of
+                // rows the owner reads to find the one he wants; expanded, seven blocks are
+                // seven forms and the ORDER -- the thing the numbers are for -- is off the
+                // bottom of the screen. Every field is one click away and nothing is lost,
+                // which `StudioCapabilityTest` is what proves rather than this comment.
+                ->collapsed()
+                // ⚠ FILAMENT'S OWN NUMBER IS OFF, OR THE ROW CARRIES TWO. It appends the
+                // index to each item's label by default, so with the running order's CSS
+                // counter in front the row read *"١  Hero — … 1"*. The counter is the one
+                // that stays correct when a row is dragged, so it is the one that stays.
+                ->blockNumbers(false)
                 ->addActionLabel('Add a block'),
 
         ];
@@ -185,7 +197,26 @@ final class StudioForm
 
         foreach (BlockType::cases() as $type) {
             $blocks[] = Block::make($type->value)
-                ->label($type->label())
+                /*
+                 * ⚠ THE LABEL IS THE BLOCK'S NAME PLUS A ONE-LINE SUMMARY — `QRPAGER-40`
+                 * item 4, which asks each row of the running order to carry both.
+                 *
+                 * The summary is the block's own HEADING when it has one, because that is
+                 * what the owner typed and what the row IS: a list of "Hero" seven times
+                 * tells him nothing, and he is looking for the row that says *أشهر أطباقنا*.
+                 * A block with no heading keeps its type name alone rather than inventing
+                 * a summary out of some other field.
+                 *
+                 * `getStateUsing`-style closures run per item, so this is evaluated against
+                 * each row's own state rather than once for the schema.
+                 */
+                ->label(static function (?array $state) use ($type): string {
+                    $heading = $state['heading'] ?? null;
+
+                    return is_string($heading) && trim($heading) !== ''
+                        ? $type->label().' — '.Str::limit(trim($heading), 60)
+                        : $type->label();
+                })
                 ->schema(self::fields(BlockSchema::fields($type), $media));
         }
 
@@ -264,6 +295,12 @@ final class StudioForm
                 ->reorderable()
                 ->reorderableWithButtons()
                 ->collapsible()
+                // ⚠ COLLAPSED BY DEFAULT SINCE `QRPAGER-40`. A running order is a list of
+                // rows the owner reads to find the one he wants; expanded, seven blocks are
+                // seven forms and the ORDER -- the thing the numbers are for -- is off the
+                // bottom of the screen. Every field is one click away and nothing is lost,
+                // which `StudioCapabilityTest` is what proves rather than this comment.
+                ->collapsed()
                 ->addActionLabel('Add'),
         };
     }
