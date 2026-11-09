@@ -78,8 +78,13 @@ test.describe('the studio — QRPAGER-41 part B', () => {
      * The ticket's words: *"The separate `Upload` button goes."* Checked first so a case that
      * somehow uploaded by pressing it could not pass -- the absence is part of the claim, not
      * a tidy-up after it.
+     *
+     * ⚠ SCOPED TO THE UPLOAD FORM, because a bare `form button[type="submit"]` is not that
+     * claim: Filament's user menu renders a sign-out FORM with a submit button on every panel
+     * page, so the first version of this line failed on the panel's own chrome and would have
+     * kept failing however correct the upload became.
      */
-    await expect(page.locator('form button[type="submit"]')).toHaveCount(0)
+    await expect(page.locator('form:has(#media-upload) button[type="submit"]')).toHaveCount(0)
 
     const name = `chosen-${String(Date.now())}.png`
 
@@ -99,20 +104,41 @@ test.describe('the studio — QRPAGER-41 part B', () => {
     const pane = page.locator('.studio-pane')
     await expect(pane).toBeVisible()
 
-    const viewport = page.viewportSize()
-    expect(viewport).not.toBeNull()
+    /*
+     * ⚠ THE PREMISE FIRST, AND THIS CASE PASSED VACUOUSLY WITHOUT IT. Before the harness
+     * served the panel its stylesheet, `position` resolved to `static` and the pane simply
+     * happened to sit inside the viewport -- the two box assertions below were both true of
+     * a page with no CSS at all, so the case reported a sticky pane that did not exist.
+     *
+     * Asserting the resolved `position` is what makes the rest a measurement: it fails loudly
+     * when the rule is absent instead of passing on a coincidence of layout.
+     */
+    await expect(pane).toHaveCSS('position', 'sticky')
 
     /*
-     * ⚠ THE SCROLL HAS TO BE REAL, AND IT HAS TO BE LONGER THAN THE PANE. A page that cannot
-     * scroll would pass this case trivially -- the pane never moves because nothing moves --
-     * which is the vacuity shape this repository names everywhere else. So the scroll height
-     * is asserted first, and only then is the position measured.
+     * ⚠ THE SCROLL IS MADE REAL RATHER THAN HOPED FOR, AND IT IS NOT A SKIP. The first
+     * version read the page's scroll height and skipped when it was short -- and it WAS
+     * short, so the case skipped and reported nothing. `playwright.config.ts` states the rule
+     * this broke in its own words: the two spec sets are separated by `testIgnore` *"rather
+     * than by a skip -- a reasoned skip is not a measurement"*.
+     *
+     * A short viewport creates the condition instead. The WIDTH stays at 1280 because that is
+     * what the sticky rule is conditioned on -- below `56rem` the columns stack and the pane
+     * is deliberately not sticky -- and only the height changes, which is the axis the scroll
+     * happens on. So this measures the real page at the real width, with a window short
+     * enough that it has somewhere to scroll.
      */
+    await page.setViewportSize({ width: 1280, height: 420 })
+    await page.waitForTimeout(200)
+
     const scrollable = await page.evaluate(
       () => document.documentElement.scrollHeight - window.innerHeight,
     )
 
-    test.skip(scrollable < 200, 'the page does not scroll far enough to measure stickiness')
+    expect(
+      scrollable,
+      'the page does not scroll, so "stays in view while scrolling" would be true of nothing',
+    ).toBeGreaterThan(200)
 
     await page.evaluate(() => {
       window.scrollTo(0, document.documentElement.scrollHeight)
@@ -125,7 +151,7 @@ test.describe('the studio — QRPAGER-41 part B', () => {
 
     // Still on screen after scrolling to the bottom: its top edge is inside the viewport and
     // its bottom edge is below the top of it. A pane that scrolled away fails both.
-    expect(box!.y).toBeLessThan(viewport!.height)
+    expect(box!.y).toBeLessThan(420)
     expect(box!.y + box!.height).toBeGreaterThan(0)
   })
 
@@ -146,6 +172,28 @@ test.describe('the studio — QRPAGER-41 part B', () => {
       for (const path of ['/studio', '/studio/media', '/studio/theme', '/studio/domains']) {
         await page.goto(`${apiOrigin()}${path}`, { waitUntil: 'domcontentloaded' })
         await page.waitForTimeout(600)
+
+        /*
+         * ⚠ THE VACUITY GUARD, AND IT IS NOT DECORATION — it is the first thing this case
+         * learned. An earlier run reported 131 off-token colours in light, every one of them
+         * a browser DEFAULT (`#000000` text, `#0000ee` links, `#efefef` buttons): the panel's
+         * compiled theme had not loaded at all, so the measurement was of an unstyled
+         * document and said nothing whatever about the token layer.
+         *
+         * A colour measurement on a page with no stylesheet is not a measurement, and the
+         * failure it produces points at the tokens rather than at the missing CSS. So the
+         * premise is asserted first, by a value that only the panel theme defines.
+         */
+        const themed = await page.evaluate(() =>
+          getComputedStyle(document.documentElement).getPropertyValue('--color-ink').trim(),
+        )
+
+        expect(
+          themed,
+          `${path}: the panel theme did not load, so any colour read here is a browser ` +
+            'default rather than a token. Check that `composer assets` has run and that the ' +
+            'built manifest is reachable from the browser.',
+        ).not.toBe('')
 
         offToken.push(
           ...(await page.evaluate(() => {

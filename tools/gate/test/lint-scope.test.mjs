@@ -155,9 +155,18 @@ describe('Playwright collects the browser specs and nothing else', () => {
     // The top level, for the projects that declare no ignore of their own.
     expect(resolved.testIgnore).toContain('**/support/test/**')
 
-    // Not vacuous: there ARE projects, and the count is exact so a project added without a
-    // selector fails here rather than silently inheriting the default pattern.
-    expect(resolved.projects).toHaveLength(22)
+    /*
+     * Not vacuous: there ARE projects, and the count is exact so a project added without a
+     * selector fails here rather than silently inheriting the default pattern.
+     *
+     * ⚠ 23 SINCE `QRPAGER-41` PART B ADDED `studio-chromium`, and the count moving is the
+     * guard working rather than a tax on it: that project carries its own `testMatch`, so the
+     * rule below was satisfied the moment it was written, and this line is what made a human
+     * look at it anyway. The project exists because three of part B's items -- an upload that
+     * happens because a file was chosen, a pane that stays in view, and a resolved colour --
+     * cannot be settled without the stack.
+     */
+    expect(resolved.projects).toHaveLength(23)
 
     for (const project of resolved.projects) {
       const selects = project.testMatch !== undefined

@@ -333,9 +333,23 @@ say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
 # number, `RateLimitTest` drives the buckets at scale 1, and `RateLimitScaleTest` pins the
 # default AT 1. 20x is this stack only, so the suite measures the application rather than a
 # bound written for real traffic and exceeded by a synthetic burst.
-setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" exec php artisan serve --host=0.0.0.0 --port="$2"' \
+# ⚠ `TRUSTED_PROXIES` IS SET FOR THIS RUN, AND WITHOUT IT A FILAMENT PANEL SERVES NO ASSETS.
+# `QRPAGER-41` part B measured it: the API is reached through `tls-proxy.mjs`, which
+# terminates TLS and forwards over plain http. The proxy now says so with
+# `X-Forwarded-Proto: https` -- and Laravel IGNORES that header from an untrusted peer, which
+# is correct and is the whole argument of `config/trustedproxy.php`. Untrusted, `asset()`
+# generated `http://` URLs for an `https://` page, and the panel's own CSP (`style-src
+# 'self'`) blocked its theme, all seven Filament bundles and Livewire. The panel rendered as
+# unstyled HTML with no JavaScript, and every browser case against it measured that.
+#
+# The value is the proxy's own address and not a catch-all: `BootChecks` refuses to serve on
+# every spelling of one, for the reason that file gives -- a trusted catch-all makes
+# `X-Forwarded-For` attacker-controlled and the per-IP limit bypassable. `127.0.0.1` is where
+# `tls-proxy.mjs` runs, on both the native and container paths, because the proxy and the API
+# are always the same machine; only the BROWSER is ever elsewhere.
+setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" TRUSTED_PROXIES="$6" exec php artisan serve --host=0.0.0.0 --port="$2"' \
   e2e-api "${REPO}/apps/api" "${API_PORT}" "https://${BROWSER_HOST}:${TLS_API_PORT}" \
-  "https://${BROWSER_HOST}:${TLS_PORT}" "20" \
+  "https://${BROWSER_HOST}:${TLS_PORT}" "20" "127.0.0.1" \
   >"${API_LOG}" 2>&1 &
 api_pid=$!
 

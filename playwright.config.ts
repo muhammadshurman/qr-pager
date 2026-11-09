@@ -145,6 +145,26 @@ const KDS_SPECS = ['**/kds.spec.ts'] as const
 const STAFF_PASSKEY_SPECS = ['**/staff-passkey.spec.ts'] as const
 
 /**
+ * `QRPAGER-41` PART B's STUDIO. The three of its items that no other instrument can settle:
+ * an upload that happens because a file was CHOSEN, a pane that stays in view while the page
+ * scrolls, and a resolved colour.
+ *
+ * It needs the stack, and for a reason sharper than the other sets': `§4a` records that the
+ * one validated upload surface in this product sat behind a globally-refused `POST` for a
+ * whole task **with a green suite**, because its only driver was `Livewire::test()->set()`,
+ * which makes the temporary file in process and never issues a request. Muhammad's ruling for
+ * this ticket is that *"uploads when chosen" is a browser case*, and this is where it lives.
+ *
+ * ⚠ ONE ENGINE AND A DESKTOP VIEWPORT, WHICH IS NOT THE STAFF SET'S SHAPE. The studio is the
+ * owner's desk — the ticket measures it at 1280px — not a mounted kitchen tablet, and none of
+ * the three claims is engine- or direction-specific: a sticky box, a round trip and a
+ * computed colour are the same in every engine. Six configurations would spend six times the
+ * wall clock to assert one fact six ways. The panel's RTL behaviour is measured where it
+ * belongs, in `panel.spec.ts`'s own `dir=rtl` case.
+ */
+const STUDIO_SPECS = ['**/studio.spec.ts'] as const
+
+/**
  * A WALL TABLET, NOT A PHONE, and that is `§12`'s own reasoning rather than a preference: a
  * kitchen screen is *"greasy, bright and viewed from two metres"*. Measuring staff chrome at
  * 390x844 would measure a layout no kitchen has. 1024x768 at DPR 2 is the commonest mounted
@@ -208,6 +228,7 @@ export default defineConfig({
         ...STAFF_SPECS,
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
+        ...STUDIO_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'] },
@@ -225,6 +246,7 @@ export default defineConfig({
         ...STAFF_SPECS,
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
+        ...STUDIO_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
@@ -293,6 +315,20 @@ export default defineConfig({
         deviceScaleFactor: TABLET_DPR,
         hasTouch: true,
         ignoreHTTPSErrors: true,
+      },
+    },
+
+    {
+      name: 'studio-chromium',
+      testMatch: [...STUDIO_SPECS],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.QRPAGER_E2E_BASE,
+        // The width the ticket measures the studio at, and the width its screenshots are
+        // taken at, so a layout claim here is a claim about the same box.
+        viewport: { width: 1280, height: 1100 },
+        ignoreHTTPSErrors: true,
+        locale: 'ar-JO',
       },
     },
 

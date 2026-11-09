@@ -490,6 +490,19 @@
  * these rules name tokens and the scanner is satisfied by substance. Both are scoped to this
  * panel's body class, so neither reaches the platform panel.
  */
+/*
+ * ⚠ `html` IS IN THIS LIST, AND LEAVING IT OUT IS WHAT THE BROWSER CASE CAUGHT. `fi-panel-
+ * studio` is on `body`, so a rule scoped to it leaves the ROOT element on the UA default --
+ * `#000000` in light, `#ffffff` in dark. Nothing visible inherits from `html` once `body`
+ * sets a colour, which is exactly why reading the file would not have found it; the
+ * measurement walks every element and reported `color #000000 on html.fi` as the one
+ * off-token value left in the panel.
+ *
+ * `:has()` rather than `html.fi`, because `fi` is on the root of BOTH panels and part B is
+ * the studio's ticket. An engine without `:has()` simply keeps the default on an element
+ * that paints no text of its own, so the fallback is the state this rule found.
+ */
+html:has(body.fi-panel-studio),
 .fi-panel-studio,
 .fi-panel-studio .fi-main {
   color: var(--color-ink);
@@ -575,4 +588,34 @@
   color: var(--color-ink-mid);
   font-size: var(--size-13);
   text-decoration: underline;
+}
+
+/*
+ * ⚠ FILAMENT'S DARK TEXT IS `var(--color-white)`, AND REDEFINING THAT ONE VARIABLE IS THE
+ * WHOLE FIX — QRPAGER-41 part B item 6.
+ *
+ * The browser measurement listed twelve elements painting `#ffffff` in dark where the token
+ * layer's `ink` is `#fcfcfa`: the heading, every button, field labels, the radio text, the
+ * logo. Chasing them class by class would be twelve rules that go stale the moment Filament
+ * renames one. Read out of the COMPILED theme instead:
+ *
+ *   .dark,.dark *){color:var(--color-white)
+ *
+ * So the panel redefines `--color-white` for itself. Every rule that already references it
+ * resolves to the token, including rules this stylesheet has never heard of, and the ticket's
+ * instruction is satisfied exactly: *"override it from the token layer rather than matching
+ * its grey by eye — a matched hex is the dead-control shape."*
+ *
+ * ⚠ DARK ONLY, AND THAT BOUND IS LOAD-BEARING. `--color-white` is also what Tailwind's
+ * `bg-white` resolves to, so redefining it unconditionally would paint every light-mode
+ * surface in ink. Scoped to `.dark`, the only rules it reaches are the ones Filament uses for
+ * dark text, and in that mode `ink` is a near-white (`#fcfcfa`) so a background that did
+ * reference it is visually unchanged.
+ *
+ * ⚠ AND IT IS SCOPED TO THIS PANEL. `.dark` is on the root and `fi-panel-studio` on the body,
+ * so the descendant form reaches the studio and leaves the platform panel alone — part B is
+ * the studio's ticket.
+ */
+.dark .fi-panel-studio {
+  --color-white: var(--color-ink);
 }
