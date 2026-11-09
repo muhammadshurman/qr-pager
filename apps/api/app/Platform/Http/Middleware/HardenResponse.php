@@ -158,7 +158,32 @@ final class HardenResponse
          */
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('Referrer-Policy', 'no-referrer');
-        $response->headers->set('X-Frame-Options', 'DENY');
+        /*
+         * ⚠ `DENY` UNLESS THE RESPONSE'S OWN POLICY SAYS SAME-ORIGIN, AND THE CONDITION IS
+         * THE CSP RATHER THAN A PATH — `QRPAGER-40`, 2026-11-09.
+         *
+         * `PreviewController` serves the studio's draft with `frame-ancestors 'self'` so the
+         * preview pane can frame it (Muhammad's ruling, rank 2, `§1`). This middleware used
+         * to overwrite its `SAMEORIGIN` with `DENY` three lines later, which would have left
+         * the two headers DISAGREEING about who may frame a tenant's draft — CSP permitting
+         * the panel, `X-Frame-Options` refusing it — and the pane blank in every engine that
+         * reads the older header. **Found by `PreviewFramingTest`, not by reading this file.**
+         *
+         * ⚠ **THE EXCEPTION IS DERIVED, NOT LISTED, WHICH IS WHY IT CANNOT BE TRIPPED BY
+         * ACCIDENT.** It is not "the preview route is exempt" — a path allowlist here would
+         * be a second place to keep in step with `PreviewController`, and the `R-242` ruling
+         * on allowlists is that they must be NAMED and TESTED, which is a cost worth paying
+         * only when nothing else will do. Here something else does: the two headers answer
+         * the SAME question, so the modern one decides and the legacy one follows it. A
+         * controller gets `SAMEORIGIN` only by having deliberately set a same-origin
+         * `frame-ancestors`, and every other response — including one that merely forgot to
+         * set a CSP — still gets `DENY`.
+         *
+         * The property the original comment claims is intact: a controller still cannot
+         * weaken this header by accident, because the only thing that moves it is an explicit
+         * framing policy on the same response.
+         */
+        $response->headers->set('X-Frame-Options', self::frameOptionsFor($response));
         $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin');
         $response->headers->set('Cross-Origin-Resource-Policy', 'same-origin');
         $response->headers->set('Permissions-Policy', self::permissionsPolicyFor($request));
@@ -271,6 +296,29 @@ final class HardenResponse
         }
 
         return implode(', ', $directives);
+    }
+
+    /**
+     * `SAMEORIGIN` when the response's own CSP permits this origin to frame it, else `DENY`.
+     *
+     * Only `'self'` EXACTLY, as the whole directive value: a policy listing `'self'` beside
+     * another source, or a wildcard, is not a same-origin policy and gets `DENY` here. That
+     * keeps the legacy header at least as strict as the modern one in every case, which is
+     * the only direction a disagreement between the two is safe in.
+     */
+    private static function frameOptionsFor(Response $response): string
+    {
+        $csp = (string) $response->headers->get('Content-Security-Policy', '');
+
+        foreach (array_filter(array_map('trim', explode(';', $csp))) as $directive) {
+            $parts = preg_split('/\s+/', $directive, 2);
+
+            if (($parts[0] ?? '') === 'frame-ancestors') {
+                return trim($parts[1] ?? '') === "'self'" ? 'SAMEORIGIN' : 'DENY';
+            }
+        }
+
+        return 'DENY';
     }
 
     private static function isCacheable(Request $request): bool

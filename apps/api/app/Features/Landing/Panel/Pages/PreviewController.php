@@ -136,9 +136,49 @@ class PreviewController
      *
      * `default-src 'none'` with `img-src 'self'` and `style-src 'unsafe-inline'` is what
      * the rendered page actually needs: its own images, its own inline stylesheet, and
-     * nothing else -- no script of any origin, no frame, no fetch. `frame-ancestors
-     * 'none'` keeps the draft out of an iframe, which `X-Frame-Options` says again for
-     * anything that does not read CSP.
+     * nothing else -- no script of any origin, no frame, no fetch.
+     *
+     * ================================================================================
+     * ⚠ WHO MAY FRAME THIS: THE PANEL, AND NOBODY ELSE — `QRPAGER-40`, 2026-11-09
+     * ================================================================================
+     *
+     * **This USED to read `frame-ancestors 'none'` with `X-Frame-Options: DENY`, and the
+     * comment here said *"keeps the draft out of an iframe"*. Both are now narrowed to
+     * same-origin: `frame-ancestors 'self'` and `SAMEORIGIN`.** A future reader must not
+     * find the old sentence beside a policy that permits one, so it is replaced rather
+     * than appended to.
+     *
+     * **WHAT IS NEWLY PERMITTED, exactly:** the authenticated studio panel, served from
+     * this same origin, framing its own draft in the preview pane that `QRPAGER-40` pins
+     * beside the form on every tab. Nothing else.
+     *
+     * **WHAT IS STILL REFUSED, and it is the part that matters:**
+     *
+     *   - **Every third-party framer.** `'self'` is an origin match, so no other site can
+     *     frame this response, and clickjacking needs a CROSS-ORIGIN frame. The attack the
+     *     original `'none'` was defending against is still defended against.
+     *   - **Script, of any origin, framed or not.** `default-src 'none'` is untouched, so
+     *     the draft executes nothing either way. Framing changes WHO MAY EMBED the bytes,
+     *     never WHAT THE BYTES MAY DO.
+     *   - **The §11 finding itself.** That review's subject was draft bytes served from the
+     *     session-bearing origin under a WEAKER policy than the image inside them. That
+     *     asymmetry is what got fixed and it stays fixed: `default-src 'none'`,
+     *     `img-src 'self'`, `style-src 'unsafe-inline'`, `base-uri 'none'` and
+     *     `form-action 'none'` are byte-identical to what it left here.
+     *
+     * **WHY IT MOVED, and the reason is not "a ticket needed it".** Muhammad's ruling of
+     * 2026-11-09, rank 2, recorded in `§1`: `'none'` was a **default-deny taken when
+     * nothing needed to frame the draft**. The studio preview pane now does, so the deny is
+     * narrowed deliberately and on the record rather than left to be discovered as an
+     * obstacle and widened quietly by whoever hits it next.
+     *
+     * **TWO ALTERNATIVES WERE REFUSED** in the same ruling, and they are named here because
+     * the next person to need something from this response will reach for one of them: a
+     * SECOND ROUTE serving the same bytes with its own framing policy (two responses of one
+     * thing under different policies is the asymmetry that produced the original finding),
+     * and a `srcdoc` frame inside the panel page (whose child inherits the PANEL policy,
+     * `script-src 'unsafe-inline' 'unsafe-eval'` and all -- `R-242` -- which is precisely
+     * the execution the strict policy here exists to prevent).
      *
      * @return array<string, string>
      */
@@ -149,9 +189,9 @@ class PreviewController
             'X-Robots-Tag' => 'noindex, nofollow',
             'Referrer-Policy' => 'no-referrer',
             'X-Content-Type-Options' => 'nosniff',
-            'X-Frame-Options' => 'DENY',
+            'X-Frame-Options' => 'SAMEORIGIN',
             'Content-Security-Policy' => "default-src 'none'; img-src 'self'; "
-                ."style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+                ."style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
         ];
     }
 }
