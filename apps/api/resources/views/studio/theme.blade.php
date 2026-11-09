@@ -7,13 +7,21 @@
     pane beside it -- is the panel's own chrome.
 --}}
 <x-filament-panels::page>
-    <form wire:submit="save" class="space-y-24">
-        {{ $this->form }}
+    @include('studio.partials.tabs')
 
-        <div class="flex flex-wrap gap-12">
-            <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
-                Save
-            </button>
+    <div class="studio-layout">
+        <div class="studio-layout__form">
+        <form wire:submit="save" class="space-y-24">
+            {{ $this->form }}
+
+            <div class="flex flex-wrap gap-12">
+                <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">
+                    Save
+                </button>
+            </div>
+        </form>
         </div>
-    </form>
+
+        @include('studio.partials.preview')
+    </div>
 </x-filament-panels::page>

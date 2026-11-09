@@ -46,3 +46,95 @@
 
 @source '../../../../app/Features/Landing/Panel/**/*';
 @source '../../../../resources/views/studio/**/*';
+
+/*
+ * ================================================================================
+ * LAYOUT CONSTANTS — QRPAGER-40, and they are deliberately NOT tokens
+ * ================================================================================
+ *
+ * Muhammad's ruling of 2026-11-09, rank 1, recorded in PLAN.md section 1: a value the
+ * system REPEATS is a token; a one-off layout dimension is a layout constant and lives
+ * with the layout. The preview pane's basis has exactly one consumer, so putting it in
+ * packages/tokens would regenerate five artefacts and the contrast table for a width,
+ * and would set the precedent that every layout dimension becomes a token.
+ *
+ * They are declared TOGETHER, IN ONE BLOCK AT THE TOP OF THE LAYOUT RULES, so there is
+ * still a single place to read them -- which is the property the token source would
+ * otherwise have given. Every Blade references the NAME and never a number, so the panel
+ * scanner is satisfied by substance rather than by a loophole.
+ *
+ * --studio-pane-basis  the preview pane's flex basis. 26rem rather than the 440px the
+ *                      reference drew: the pane holds a phone-width frame at 390px plus
+ *                      its own hairline and padding, and 26rem is the step that fits that
+ *                      without the form dropping under its own comfortable measure at
+ *                      1280px, which is the width the studio is used at.
+ * --studio-frame-phone the preview frame at phone width. 390px is the device width the
+ *                      whole product is already measured at -- browser/one-handed.spec.ts
+ *                      drives 390x844 -- so this is not a new number, it is that one.
+ */
+:root {
+  --studio-pane-basis: 26rem;
+  --studio-frame-phone: 390px;
+}
+
+.studio-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-24);
+  border-block-end: 1px solid var(--color-hairline);
+  margin-block-end: var(--space-24);
+}
+
+.studio-tab {
+  padding-block: var(--space-12);
+  border-block-end: 3px solid transparent;
+  color: var(--color-ink-mid);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.studio-tab[aria-current='page'] {
+  border-block-end-color: var(--color-brand);
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.studio-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-24);
+  align-items: flex-start;
+}
+
+.studio-layout__form {
+  flex: 1 1 var(--studio-pane-basis);
+  min-width: 0;
+}
+
+.studio-pane {
+  flex: 1 1 var(--studio-pane-basis);
+  min-width: 0;
+  border-inline-start: 1px solid var(--color-hairline);
+  background: var(--color-surface-2);
+  padding-inline-start: var(--space-16);
+}
+
+.studio-pane__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+  margin-block-end: var(--space-12);
+}
+
+.studio-pane__frame {
+  inline-size: 100%;
+  block-size: 40rem;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-paper);
+}
+
+.studio-pane__frame[data-width='phone'] {
+  inline-size: var(--studio-frame-phone);
+  max-inline-size: 100%;
+}

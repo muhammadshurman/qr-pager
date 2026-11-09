@@ -25,7 +25,7 @@ use Tests\Support\LandingFixtures;
  * than a mocked exception — the same distinction `bin/deps` makes between an audit that found
  * nothing and an audit that could not run.
  *
- * ⚠ WHAT THE WALK FOUND, AND IT IS A FINDING RATHER THAN A PASS. All seven screens answer a
+ * ⚠ WHAT THE WALK FOUND, AND IT IS A FINDING RATHER THAN A PASS. All seven screens answered a
  * database outage with **`application/problem+json`, 503, ~160 bytes** — a machine-readable
  * API document on an HTML surface. The security half is CLEAN: no SQLSTATE, no exception
  * class, no role name, no port, no connection string, no stack trace, at `APP_DEBUG=true`,
@@ -155,7 +155,7 @@ function withSourceDown(callable $work): mixed
     }
 }
 
-it('derives all seven panel routes, so no sweep below runs over nothing', function (): void {
+it('derives all eight panel routes, so no sweep below runs over nothing', function (): void {
     // ⚠ `walkRoutes()` HAD NO SIZE ASSERTION, and three cases loop over it with no bound --
     // the brand sweep, the 503 case and the disclosure sweep, whose `expect($found)->toBe([])`
     // is trivially true of an empty set. Only the CHROME subset was pinned, while the
@@ -168,6 +168,7 @@ it('derives all seven panel routes, so no sweep below runs over nothing', functi
         '/studio/domains',
         '/studio/media',
         '/studio/preview',
+        '/studio/theme',
     ]);
 });
 
@@ -218,7 +219,10 @@ it('names the product on every panel page that has a title', function (): void {
     // THE CHROME ROUTES ONLY, derived structurally. /studio/preview renders the tenant's
     // page and its title is the RESTAURANT's name -- our brand there would be us putting
     // our name on their page, which is the opposite of what §12 wants.
-    expect(walkChromeRoutes())->toHaveCount(6);
+    // ⚠ SEVEN SINCE `QRPAGER-40` ADDED `/studio/theme` — it was six, and the count is a
+    // FLOOR on the derivation rather than a description of the panel, so it moves with the
+    // panel and a route that stopped rendering still fails here.
+    expect(walkChromeRoutes())->toHaveCount(7);
 
     // ⚠ array_keys(), BECAUSE THE SHARED DERIVATION RETURNS uri => PANEL ID. The local
     // function this replaced returned a plain list, so `foreach (… as $uri)` iterated URIs;
@@ -263,8 +267,9 @@ it('names the product on every panel page that has a title', function (): void {
         $titled++;
     }
 
-    // The six chrome routes; /studio/preview is the tenant's page and has its own title.
-    expect($titled)->toBe(6);
+    // The SEVEN chrome routes — six until `QRPAGER-40` added `/studio/theme`.
+    // `/studio/preview` is the tenant's page and has its own title, so it is not among them.
+    expect($titled)->toBe(7);
 });
 
 it('answers every panel screen 503 when its database is unreachable', function (): void {

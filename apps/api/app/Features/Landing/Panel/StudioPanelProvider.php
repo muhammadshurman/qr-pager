@@ -8,6 +8,7 @@ use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
+use App\Features\Landing\Panel\Pages\ThemePage;
 use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Panel\ApprovedPalette;
@@ -183,8 +184,27 @@ class StudioPanelProvider extends PanelProvider
             ->pages([
                 LandingBuilderPage::class,
                 MediaLibraryPage::class,
+                ThemePage::class,
                 DomainsPage::class,
             ])
+            /*
+             * ⚠ THE SIDEBAR IS OFF AND THE TABS ARE THE NAVIGATION — `QRPAGER-40`.
+             *
+             * Muhammad's ticket: *"Tabs replace the sidebar."* The four pages above are
+             * still registered — they must be, or their routes do not exist and
+             * `StudioPanelInvariantTest` has no enumerable set to drive — but Filament's
+             * own sidebar is not rendered, and `studio/partials/tabs.blade.php` is
+             * included by each page's view instead.
+             *
+             * The tabs are LINKS with `aria-current="page"`, not `role="tab"`: each is a
+             * separate page with its own URL and its own Livewire state, so they are
+             * navigation, and `role="tab"` would promise a screen-reader user that the
+             * panels are in this document and that arrow keys move between them. Neither
+             * is true, and a promise the page cannot keep is worse than the plainer
+             * control.
+             */
+            ->sidebarCollapsibleOnDesktop(false)
+            ->navigation(false)
             ->widgets([])
             ->middleware([
                 // FIRST, before StartSession, which is Task 6's security H-2 applied

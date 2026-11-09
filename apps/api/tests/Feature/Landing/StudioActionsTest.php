@@ -14,6 +14,7 @@ use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
+use App\Features\Landing\Panel\Pages\ThemePage;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishedSite;
 use App\Features\Landing\PublishFailed;
@@ -62,8 +63,23 @@ it('saves a draft through the builder, and reports the fields it refuses', funct
     $document = app(LandingPages::class)->draft($tenant);
 
     expect($document->blocks)->toHaveCount(7)
-        ->and($document->blocks[0]['fields']['heading'])->toBe('Welcome to Olive')
-        ->and($document->theme)->toHaveKey('color.accent');
+        ->and($document->blocks[0]['fields']['heading'])->toBe('Welcome to Olive');
+
+    /*
+     * ⚠ THE THEME MOVED TABS AT `QRPAGER-40`, SO THE ASSERTION MOVED WITH IT. This case
+     * used to end `->and($document->theme)->toHaveKey('color.accent')` off the SAME
+     * `fillForm()`, because one form carried blocks and theme together. The builder form no
+     * longer has a theme control, so filling it with theme keys now sets nothing — which is
+     * the move working, not a regression.
+     *
+     * The claim is still worth making, so it is made where the control lives. That it
+     * SURVIVES this page's save is `StudioDraftMergeTest`'s subject and is not repeated.
+     */
+    Livewire::test(ThemePage::class)
+        ->fillForm($state)
+        ->call('save');
+
+    expect(app(LandingPages::class)->draft($tenant)->theme)->toHaveKey('color.accent');
 
     // And a refusal names the field without publishing anything. A heading of 200
     // characters is past the 80 the schema allows.

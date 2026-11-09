@@ -110,7 +110,10 @@ it('carries only class lists the panel really renders', function (): void {
     // ⚠ DERIVED, NOT LISTED -- the §11 QA round's M-4, same reason as PanelTargetTest.
     $chrome = PanelRoutes::chrome();
 
-    expect($chrome)->toHaveCount(6);
+    // ⚠ SEVEN SINCE `QRPAGER-40` ADDED `/studio/theme` — it was six, and the count is a
+    // FLOOR on the derivation rather than a description of the panel, so it moves with the
+    // panel and a route that stopped rendering still fails here.
+    expect($chrome)->toHaveCount(7);
 
     foreach (array_keys($chrome) as $uri) {
         if (str_starts_with($uri, '/studio')) {
