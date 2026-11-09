@@ -117,6 +117,49 @@ $owner = $makeUser('Hiba Mansour', $alpha['id'], TenantRole::Owner);
 // A membership row in alpha, so the suite has one of ITS OWN tenant's ids to contrast with.
 $colleague = $makeUser('Omar Haddad', $alpha['id'], TenantRole::Staff);
 
+/*
+ * A PLATFORM ADMIN, SO `/platform` CAN BE OPENED ON A FRESH SETUP. Added 2026-11-08
+ * (QRPAGER-37): no seeder made one, so every local setup needed a hand-written `tinker`
+ * one-liner to see the platform panel at all, and the one surface nobody could reach was
+ * the one that administers every restaurant.
+ *
+ * ⚠ A FIXED ADDRESS, UNLIKE EVERY OTHER ACCOUNT HERE, AND THAT IS THE POINT. The others
+ * derive their email from a fresh uuid7 so repeated runs cannot collide; this one is
+ * written down in `PLAN.md` for a human to type, so it must survive a re-run unchanged.
+ * `updateOrInsert` keyed on the address makes the script idempotent for this row.
+ *
+ * ⚠ AND IT HOLDS NO MEMBERSHIP, which `§4 › Tenancy` requires: a platform admin can see
+ * that a restaurant exists and cannot see inside it. Giving this account a tenant row to
+ * make local poking easier would make the fixture contradict the invariant the panel is
+ * built on.
+ */
+$adminEmail = 'admin@qrpager.test';
+$adminPassword = 'platform-admin-not-a-secret';
+
+/*
+ * ⚠ NOT `updateOrInsert`, AND THE FIRST VERSION OF THIS WAS: that helper passes the SAME
+ * values to the update, so a re-run tried to rewrite the existing row's `id` and Postgres
+ * refused with `23503` -- `tenant_provisionings.requested_by_user_id` still referenced it.
+ * An id is the one column an idempotent upsert must never touch, so the insert and the
+ * update are written apart.
+ */
+$adminRow = DB::connection('pgsql_owner')->table('users')->where('email', $adminEmail)->first();
+
+if ($adminRow === null) {
+    DB::connection('pgsql_owner')->table('users')->insert([
+        'id' => (string) Str::uuid7(),
+        'name' => 'Local Platform Admin',
+        'email' => $adminEmail,
+        'password' => Hash::make($adminPassword),
+        'is_platform_admin' => true,
+    ]);
+} else {
+    DB::connection('pgsql_owner')->table('users')->where('email', $adminEmail)->update([
+        'password' => Hash::make($adminPassword),
+        'is_platform_admin' => true,
+    ]);
+}
+
 // BETA's real rows. Created through the real services, so the ids are the ones the
 // application's own comparisons are written against.
 $betaOwner = $makeUser('Lina Qasem', $beta['id'], TenantRole::Owner);
@@ -209,6 +252,12 @@ echo json_encode([
         'email' => $owner['email'],
         'password' => $owner['password'],
         'name' => $owner['name'],
+    ],
+    // The platform panel's account. Fixed address, no membership -- see the comment above.
+    'platform_admin' => [
+        'email' => $adminEmail,
+        'password' => $adminPassword,
+        'name' => 'Local Platform Admin',
     ],
     // Beta's REAL ids, for the cross-tenant half. No credential of beta's is included: the
     // suite aims at these from alpha's session, which is the whole point.
