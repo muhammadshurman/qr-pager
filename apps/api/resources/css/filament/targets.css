@@ -57,6 +57,13 @@
 }
 
 /* Standalone controls: a floor on the height only — see the note above. */
+/*
+ * QRPAGER-37, 2026-11-08: the media library's per-tile Delete. It is a BUTTON inside a grid
+ * cell rather than inline text inside a sentence, so the WCAG 2.5.8 exception above -- which
+ * is why breadcrumb and skip links are excluded -- does not cover it. The value is the token,
+ * like every other selector here; 44 appears nowhere in this file.
+ */
+[data-media-delete='true'],
 .fi-input,
 .fi-select-input,
 .fi-sidebar-item-btn,
