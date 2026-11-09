@@ -8199,6 +8199,7 @@ the field, measured.
 | --- | --- | --- | --- |
 | `composer gate` | **10/10 green, 1447 passed / 13,831 assertions, 312.72s** | `6712cb3` | `docs/tickets/QRPAGER-41-gate-php.txt`, `EXIT=0` |
 | `pnpm gate` | **13/13 green, 1209 Vitest across 65 files, 103 browser cases** | `6712cb3` | `docs/tickets/QRPAGER-41-gate-frontend.txt`, `EXIT=0` |
+| `fresh-clone-proof` | **GREEN — all 13 steps in a clone sharing nothing with the working tree. FIRST attempt** | `46329ce`, the docs commit | `docs/tickets/QRPAGER-41-fresh-clone.txt`, `EXIT=0`. Run BEFORE the push (`R-252`) |
 | part B's own gate | **`browser/studio.spec.ts`, 3 cases, all green** | `6712cb3` | items 2, 4 and 6, in the `studio-chromium` project against the live stack |
 
 ⚠ **`gate:e2e` IS NOT ONE OF THE THREE GATE FIGURES AND ITS STATE IS REPORTED ANYWAY.** Two full journey runs on this tree: **533 passed / 16 skipped / 1 failed**, both times, and a DIFFERENT staff case each time (`staff.spec.ts:1071` `staff-firefox-ltr`, then `:798` `staff-chromium-rtl`). Both are `R-256`'s family — a staff screen's marker failing to appear inside 60 s under the run's own load — and that row now carries four occurrences across runs that bracket this ticket's harness change on both sides, which is what shows the change is not their cause. **Part B's own three cases passed in every run**, including a dedicated `--project=studio-chromium` run of 3/3.
