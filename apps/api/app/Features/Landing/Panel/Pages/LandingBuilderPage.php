@@ -212,6 +212,21 @@ class LandingBuilderPage extends Page
      */
     public function previewChanged(): void
     {
+        /*
+         * ⚠ THIS GUARD IS REDUNDANT BY CONSTRUCTION, AND SAYING SO IS THE POINT.
+         * The `§11` security round of 2026-11-11 (M-3) reported it as untested, and
+         * measured correctly: deleting it leaves all 248 Landing tests green. The reason is
+         * not a missing case — it is that `canAccess()` and `tenantId()` ARE THE SAME CHECK.
+         * `TenantPanelAccess::allows()` is `membership() !== null`, and `tenantId()` calls
+         * the same `membership()` and aborts 403 when it is null. So every principal this
+         * line would refuse is refused two lines down, and NO test can distinguish them.
+         *
+         * It stays because the panel's convention is that every action re-asks — Task 6's
+         * security M-1 — and because a future edit that stops calling `tenantId()` first
+         * would otherwise remove the only barrier silently. But a reader must not mistake
+         * it for an independently verified control: the case below proves the ACTION
+         * refuses and writes nothing, not that this line is what refused.
+         */
         abort_unless(static::canAccess(), 403);
 
         $tenantId = TenantPanelAccess::tenantId();

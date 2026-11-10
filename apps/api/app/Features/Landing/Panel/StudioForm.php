@@ -419,6 +419,25 @@ final class StudioForm
             FieldKind::ItemList => Repeater::make($name)
                 ->label($label)
                 ->required($field->required)
+                /*
+                 * ⚠ ZERO, AND FILAMENT'S DEFAULT IS ONE — `QRPAGER-45`, `§11` QA round H-1.
+                 * A seeded item is not an empty list: its own fields are REQUIRED at item
+                 * level (`BlockSchema`: *"what is NOT optional is each ITEM being
+                 * complete"*), so a block added from the picker was INVALID the moment it
+                 * appeared — before the owner had typed anything. `getState()` threw
+                 * `ValidationException`, Save was refused, and after `QRPAGER-45` the live
+                 * preview silently stopped following them with nothing on screen to say why.
+                 *
+                 * The list itself is optional by schema (*"a block whose list is empty is a
+                 * section the tenant added and has not filled in yet, which is a draft state
+                 * and not an error"*), so zero is what that sentence already describes. An
+                 * owner adds a step when they want one.
+                 *
+                 * ⚠ IT CHANGES NO STORED DOCUMENT. Hydration from a document wins over this,
+                 * so every existing page keeps exactly the items it has; this is only what a
+                 * NEWLY ADDED block starts with.
+                 */
+                ->defaultItems(0)
                 ->schema(self::fields($field->item ?? [], $media))
                 ->maxItems($field->maxItems)
                 ->reorderable()

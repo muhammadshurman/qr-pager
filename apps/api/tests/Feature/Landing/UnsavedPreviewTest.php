@@ -10,7 +10,11 @@ use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\UnsavedPreview;
+use App\Platform\Http\Middleware\RateLimit;
+use Filament\Forms\Components\Repeater;
+use Filament\Http\Middleware\Authenticate;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
 use Tests\Support\ImageFixtures;
@@ -420,4 +424,378 @@ it('keeps the preview’s silence out of the save path, which must still tell th
     // And the draft the owner already had is untouched by the refused save.
     expect(app(LandingPages::class)->draft($tenant)->toArray()['blocks'][0]['fields']['heading'])
         ->toBe('Welcome to Olive');
+});
+
+/*
+ * ================================================================================
+ * THE `§11` SECURITY ROUND'S M-3 AND M-4 — two controls that could not fail
+ * ================================================================================
+ */
+
+it('refuses previewChanged to a principal the panel refuses, and writes nothing', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
+
+    $page = Livewire::test(LandingBuilderPage::class);
+
+    /*
+     * ⚠ MEASURED BEFORE THIS CASE EXISTED: deleting `abort_unless(static::canAccess(), 403)`
+     * from `previewChanged()` left all 248 Landing tests GREEN. Every case in this file and
+     * in `StudioActionsTest` acts as an Owner, so only the passing branch was ever driven —
+     * and this is the one action reached by a TIMER rather than a click, over
+     * `POST /livewire-<hash>/update`, which runs neither `SetUpPanel` nor Filament's
+     * `Authenticate`. That deletion is Task 6's security M-1 verbatim.
+     *
+     * The principal changes AFTER the component is mounted, which is the shape of the real
+     * attack: a snapshot captured from an authorised page, replayed by somebody else.
+     *
+     * ⚠⚠ AND THIS CASE DOES NOT PROVE THE `abort_unless` LINE, WHICH IS WORTH STATING
+     * BECAUSE IT LOOKS LIKE IT DOES. Measured: with that line deleted this case STILL
+     * PASSES, because `TenantPanelAccess::tenantId()` two lines down calls the same
+     * `membership()` and aborts 403 itself. The two checks are one check, so no test can
+     * separate them. What this case does prove — and what nothing proved before it — is
+     * that the ACTION refuses such a principal AND writes no key, which is the property
+     * that matters: a 403 arriving after the write would have leaked the owner's in-flight
+     * edits into a store the refused caller's own session can be keyed to.
+     */
+    test()->actingForTenant(role: TenantRole::Staff);
+
+    /*
+     * ⚠ LIVEWIRE'S OWN ASSERTION AND NOT A `try/catch`. The test harness CATCHES the abort
+     * and records it as a response status, so a `catch (Throwable)` here never fires and
+     * the first version of this case reported "previewChanged served a refused principal"
+     * against a `previewChanged` that had refused correctly. A control that cannot
+     * distinguish those two is the thing this case exists to prevent.
+     */
+    $page->call('previewChanged')->assertForbidden();
+
+    // AND NOTHING WAS WRITTEN. A 403 that had already written the key would leak the
+    // owner's in-flight edits into a store the refused caller's session can be keyed to.
+    expect(app(UnsavedPreview::class)->get($tenant, $sid))->toBeNull();
+});
+
+it('refuses a neighbour’s media through previewChanged itself, not only through the service', function (): void {
+    $neighbour = test()->actingForTenant(role: TenantRole::Owner);
+    app(MediaLibrary::class)->store($neighbour, 'neighbour-asset.png', ImageFixtures::png());
+    $stolen = app(MediaLibrary::class)->all($neighbour)[0]->id;
+
+    $mine = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
+
+    /*
+     * ⚠ THE ENTRY POINT AND NOT THE SERVICE. The case above this file already asserts that
+     * `LandingPages::validated()` throws for another tenant's media — but nothing drove it
+     * through `previewChanged()`, which is the path that carries CLIENT-SUPPLIED state to
+     * the renderer. §11.2's bar is *"proven by a test, not by reading the code"*: if
+     * `previewChanged` stopped calling `validated()` tomorrow, the case named for that risk
+     * could not fail. This one can.
+     */
+    Livewire::test(LandingBuilderPage::class)
+        ->fillForm(StudioForm::fromDocument(LandingFixtures::fullPage($stolen)))
+        ->call('previewChanged');
+
+    expect(app(UnsavedPreview::class)->get($mine, $sid))->toBeNull();
+});
+
+it('renders no neighbour asset even from a key that already holds one', function (): void {
+    $neighbour = test()->actingForTenant(role: TenantRole::Owner);
+    app(MediaLibrary::class)->store($neighbour, 'neighbour-asset.png', ImageFixtures::png());
+    $stolen = app(MediaLibrary::class)->all($neighbour)[0]->id;
+
+    $mine = test()->actingForTenant(role: TenantRole::Owner);
+    [$sid, $carried] = studioSession();
+
+    app(LandingPages::class)->saveDraft($mine, LandingFixtures::fullPage());
+
+    /*
+     * ⚠ PLANTED PAST THE WRITER, which is the half the write-side case cannot reach. The
+     * read path re-validates through `fromStored()` → `fromInput()` with this tenant's own
+     * `TenantMediaReferences`, so a key holding a foreign id must not produce an asset URL
+     * for it — it must fall through to the stored draft, defence in depth for a store with
+     * no policy behind it.
+     */
+    app('redis')->connection()->setex(
+        'qrpager:studio:unsaved-preview:'.$mine.':'.UnsavedPreview::fingerprint($sid),
+        60,
+        (string) json_encode(LandingFixtures::fullPage($stolen)),
+    );
+
+    $html = (string) previewIn($carried)->getContent();
+
+    expect($html)->not->toContain($stolen)
+        ->and($html)->toContain('Welcome to Olive');
+});
+
+/*
+ * ================================================================================
+ * THE `§11` QA ROUND'S TWO HIGHS, AND THE CONTROLS IT FOUND MISSING
+ * ================================================================================
+ */
+
+it('meters the preview on its own bucket, not on the one sized for a person clicking', function (): void {
+    /*
+     * ⚠ H-2. After `QRPAGER-45` one debounce fire is a Livewire update PLUS the preview
+     * document PLUS one asset request per media reference — up to 24 — all `no-store`, so
+     * the browser refetches every one on every reload. On the `panel` bucket (240/min per
+     * IP, whose own comment says it is sized for "a human clicking through an admin
+     * panel") a ten-image page burns the whole budget in about eleven seconds and the
+     * owner is then 429'd out of the page they are editing.
+     *
+     * Read off the ROUTER rather than from a second copy of the list, which is the shape
+     * `ReviewFixesTest` already uses for `Authenticate` on these same two routes.
+     */
+    $routes = collect(app('router')->getRoutes()->getRoutes())
+        ->filter(fn ($route) => in_array($route->getName(), [
+            'filament.studio.preview',
+            'filament.studio.preview.asset',
+        ], true));
+
+    expect($routes)->toHaveCount(2, 'the preview routes are not registered under the names this asserts');
+
+    foreach ($routes as $route) {
+        /*
+         * ⚠ `gatherRouteMiddleware()` AND NOT `$route->gatherMiddleware()`. The latter
+         * returns what is ATTACHED and ignores `withoutMiddleware()` exclusions entirely,
+         * so the first version of this case reported the panel bucket still present on a
+         * route `php artisan route:list` already showed without it. It would have failed
+         * forever on a correct fix — which is the opposite of a vacuous assertion and just
+         * as useless.
+         */
+        $middleware = app('router')->gatherRouteMiddleware($route);
+
+        expect($middleware)->toContain(RateLimit::class.':studio-preview')
+            ->and($middleware)->not->toContain(RateLimit::class.':panel');
+
+        // ⚠ AND THE AUTH LAYER SURVIVED THE SWAP. `withoutMiddleware()` is a blunt tool and
+        // these two routes were single-layered once already (the §11 security review of
+        // 2026-10-28); losing `Authenticate` here would open the draft with the suite green.
+        expect($middleware)->toContain(Authenticate::class);
+    }
+
+    // The bucket is real and meters BOTH halves — §4 › Edge & ops' "per IP AND per tenant".
+    expect(config('ratelimit.buckets.studio-preview.per_ip'))->not->toBeNull()
+        ->and(config('ratelimit.buckets.studio-preview.per_tenant'))->not->toBeNull();
+});
+
+it('starts a newly added block with no seeded item, so it is valid on arrival', function (): void {
+    /*
+     * ⚠ H-1, AND IT IS THE TICKET'S OWN INVARIANT. Filament seeds a `Repeater` with ONE
+     * item unless told otherwise, and an item's fields are required at item level — so a
+     * block added from the picker was invalid before the owner typed anything, Save was
+     * refused, and after this ticket the live preview silently stopped following them.
+     *
+     * Asserted on the SCHEMA rather than through the browser, because this is where the
+     * decision lives; `browser/studio.spec.ts` covers what the owner then sees.
+     */
+    /*
+     * ⚠ READ OFF THE SOURCE, AND THE BEHAVIOUR IS PROVEN IN THE BROWSER. Filament's
+     * components cannot be walked outside a mounted container, and the property this
+     * changes — what a block looks like when ADDED from the picker — exists only on the
+     * UI path, which is why a `Livewire::test()` hydrated from a document could never see
+     * the defect in the first place. So this case pins the decision where the decision
+     * lives, the way `PanelTargetTest` reads `targets.css`, and
+     * `browser/studio.spec.ts` drives what the owner then sees.
+     */
+    $source = (string) file_get_contents(app_path('Features/Landing/Panel/StudioForm.php'));
+    $code = (string) preg_replace('#/\*[\s\S]*?\*/#', ' ', $source);
+
+    expect($code)->toContain('FieldKind::ItemList => Repeater::make($name)')
+        ->and($code)->toMatch('/FieldKind::ItemList => Repeater::make\(\$name\)(?s).{0,400}?->defaultItems\(0\)/');
+});
+
+it('writes the key when the state is valid, which nothing in PHP proved', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
+
+    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
+
+    /*
+     * ⚠ M-3. Deleting `put()` from `previewChanged()` left the whole Landing suite green:
+     * the feature's CENTRAL WRITE was guarded only by a ten-minute browser suite with four
+     * recorded flake families. Every other case in this file asserts what happens when the
+     * write does NOT happen.
+     */
+    $edited = LandingFixtures::fullPage();
+    $edited['blocks'][0]['fields']['heading'] = 'WRITTEN BY previewChanged';
+
+    Livewire::test(LandingBuilderPage::class)
+        ->fillForm(StudioForm::fromDocument($edited))
+        ->call('previewChanged')
+        ->assertDispatched('studio-preview-updated');
+
+    $held = app(UnsavedPreview::class)->get($tenant, $sid);
+
+    /*
+     * ⚠ SEARCHED RATHER THAN INDEXED, because `fillForm()` MERGES with the mounted state
+     * rather than replacing it — the QA round's L-5 measured the same thing from the other
+     * side (a save that came back with 14 blocks, not 7). Asserting `blocks[0]` pinned a
+     * position this helper does not promise, and failed on a key that had been written
+     * perfectly well.
+     */
+    expect($held)->not->toBeNull()
+        ->and(json_encode($held))->toContain('WRITTEN BY previewChanged');
+});
+
+it('tells the pane to refresh on save and on publish, not only while typing', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
+
+    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
+    app(UnsavedPreview::class)->put($tenant, $sid, app(LandingPages::class)->draft($tenant)->toArray());
+
+    /*
+     * ⚠ M-4. All three `dispatch('studio-preview-updated')` calls could be deleted with the
+     * PHP suite green — including `save()`'s, which was one of the three defects this
+     * ticket found for itself. And `publish()`'s `forget()` was reached by no test at all:
+     * no PHP case called publish and the browser suite never clicks it.
+     */
+    Livewire::test(LandingBuilderPage::class)
+        ->call('save')
+        ->assertDispatched('studio-preview-updated');
+
+    expect(app(UnsavedPreview::class)->get($tenant, $sid))->toBeNull();
+
+    // And publish, which until now nothing drove.
+    app(UnsavedPreview::class)->put($tenant, $sid, app(LandingPages::class)->draft($tenant)->toArray());
+
+    Livewire::test(LandingBuilderPage::class)
+        ->call('publish')
+        ->assertDispatched('studio-preview-updated');
+
+    expect(app(UnsavedPreview::class)->get($tenant, $sid))->toBeNull();
+});
+
+it('costs the same number of queries however many images are on the page', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+
+    for ($i = 0; $i < 6; $i++) {
+        app(MediaLibrary::class)->store($tenant, "cost-{$i}.png", ImageFixtures::png());
+    }
+
+    $ids = array_map(static fn ($asset) => $asset->id, app(MediaLibrary::class)->all($tenant));
+
+    $document = static function (int $images) use ($ids): array {
+        $blocks = [];
+
+        for ($i = 0; $i < $images; $i++) {
+            $blocks[] = ['type' => 'hero', 'fields' => ['heading' => "H{$i}", 'image' => $ids[$i]]];
+        }
+
+        return ['blocks' => $blocks, 'theme' => [], 'seo' => []];
+    };
+
+    $cost = function (array $doc) use ($tenant): int {
+        app(LandingPages::class)->saveDraft($tenant, $doc);
+
+        $page = Livewire::test(LandingBuilderPage::class)->fillForm(StudioForm::fromDocument($doc));
+
+        $queries = 0;
+        DB::listen(function () use (&$queries): void {
+            $queries++;
+        });
+
+        $page->call('previewChanged');
+
+        return $queries;
+    };
+
+    /*
+     * ⚠ THE COST, NOT THE CEILING — Muhammad's ruling of 2026-11-11 on the `§11` QA round's
+     * H-2. That High is *"a keystroke costs 2 + N metered requests"*, and the first fix
+     * raised the rate limit to fit it: the 429 went away and the cost stayed. Worse, the
+     * number was chosen to fit an operation the same round's M-7 showed was UNBOUNDED —
+     * `TenantMediaReferences::has()` ran one query per reference, twice per call, behind
+     * every keystroke.
+     *
+     * A limit sized to an unbounded operation is not a limit. So this asserts the shape
+     * rather than a threshold: **the query count does not grow with the number of images**.
+     * `1200` was a number nothing could falsify; this fails the moment the per-reference
+     * query comes back.
+     */
+    $one = $cost($document(1));
+    $six = $cost($document(6));
+
+    expect($six)->toBe(
+        $one,
+        "previewChanged cost {$one} queries with one image and {$six} with six: the cost grows with the page"
+    );
+
+    // A bound as well, so a future change that makes BOTH equally expensive still reddens.
+    expect($one)->toBeLessThan(45);
+})->group('slow');
+
+it('serves every preview response no-store, which is what makes a reload cost N+1', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+
+    app(MediaLibrary::class)->store($tenant, 'cacheable.png', ImageFixtures::png());
+    $asset = app(MediaLibrary::class)->all($tenant)[0]->id;
+
+    /*
+     * ⚠ THIS PINS A COST RATHER THAN A FIX, AND IT IS HERE BECAUSE I NEARLY SHIPPED A DEAD
+     * ONE. Chasing the `§11` QA round's H-2 I set `Cache-Control: private, max-age=300` on
+     * this response, reasoning that an asset id is immutable so the owner's browser may keep
+     * it. Measured, the header came back **`no-store, private`**: `HardenResponse` applies
+     * `private, no-store` to every response outside a named allowlist, so the change did
+     * nothing. A test asserting only `toContain('private')` would have PASSED on it.
+     *
+     * So the asset stays `no-store`, the per-fire cost stays 1 + N, and making it cacheable
+     * is an allowlist entry in a deliberate security control — `R-289`, for the security
+     * round to rule on rather than for this ticket to take. What this case does is keep the
+     * COST visible: if the header ever changes, the bucket's arithmetic must change with it.
+     */
+    $cacheControl = (string) test()
+        ->get(route('filament.studio.preview.asset', ['asset' => $asset]))
+        ->assertOk()
+        ->headers->get('Cache-Control');
+
+    expect($cacheControl)->toContain('no-store');
+
+    $document = (string) test()->get('/studio/preview')->headers->get('Cache-Control');
+
+    expect($document)->toContain('no-store');
+});
+
+it('gives the empty item list a visible next action, so H-1 traded no dead end', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+
+    // A block with an EMPTY item list — exactly what `->defaultItems(0)` now produces when
+    // the owner adds one from the picker.
+    app(LandingPages::class)->saveDraft($tenant, [
+        'blocks' => [['type' => 'how_it_works', 'fields' => ['heading' => 'How it works', 'steps' => []]]],
+        'theme' => [],
+        'seo' => [],
+    ]);
+
+    $html = (string) test()->get('/studio')->getContent();
+
+    /*
+     * ⚠ §12: "no empty state without a next action." `defaultItems(0)` fixed a block that
+     * was invalid on arrival; it must not have bought that with a dead end — a list showing
+     * nothing and offering nothing.
+     *
+     * ⚠ AND THIS READS THE RENDERED DOM RATHER THAN THE SCHEMA, because `addActionLabel()`
+     * being configured is configuration, not evidence. The first probe asserted the label
+     * string was present and was WORTHLESS: `أضف` is a substring of `أضف كتلة`, the block
+     * picker's own label, so it matched a control in a different part of the page.
+     */
+    $at = strpos($html, 'fi-fo-repeater-add');
+
+    expect($at, 'the empty item list renders no add control at all')->not->toBeFalse();
+
+    $region = substr($html, (int) $at, 600);
+
+    // A real button, wired to the repeater's own add action — not a label that happens to
+    // appear, and not a disabled placeholder.
+    expect($region)->toContain('<button')
+        ->and($region)->toContain("mountAction('add'");
+
+    /*
+     * ⚠ AND IT IS NOT THE HIDDEN ONE. The repeater also renders
+     * `fi-fo-repeater-actions fi-hidden` when the list is empty — that is the EXPAND-ALL
+     * link, correctly hidden because there is nothing to expand. Measured in the rendered
+     * page: `fi-hidden` sits on that container and not on the add control. Without this
+     * assertion the case above would pass on a repeater whose add button was hidden too,
+     * which is precisely the dead end it exists to refuse.
+     */
+    expect($region)->not->toContain('fi-hidden');
 });

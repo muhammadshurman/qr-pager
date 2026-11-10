@@ -362,6 +362,47 @@ return [
         ],
 
         /*
+        | THE LIVE PREVIEW — `QRPAGER-45`, and the number is DERIVED FROM A MEASUREMENT
+        | RATHER THAN FITTED TO A SYMPTOM.
+        |
+        | ⚠ THE FIRST VERSION OF THIS BUCKET WAS 1200/3000 AND THAT WAS THE WRONG FIX.
+        | The `§11` QA round's H-2 is *"a keystroke costs 2 + N metered requests"*; raising
+        | the ceiling removed the 429 and left the cost — and the ceiling was sized to an
+        | operation the same round's M-7 showed was UNBOUNDED. **A limit sized to an
+        | unbounded operation is not a limit.** Muhammad, 2026-11-11: bound the cost first,
+        | then re-derive and say what it is.
+        |
+        | WHAT WAS BOUNDED, AND MEASURED AFTERWARDS. `TenantMediaReferences` read the
+        | tenant's media one row per reference, twice per call, behind every keystroke. It
+        | now reads the id set ONCE per instance. Measured with `DB::listen` around
+        | `previewChanged()`: **32 queries at one media reference and 32 at six** — flat.
+        | `UnsavedPreviewTest` asserts that SHAPE, which a threshold cannot express.
+        |
+        | WHAT IS STILL N, AND WHY IT IS NOT FIXED HERE. Every preview response is
+        | `no-store` — not by this feature's choice but because `HardenResponse` applies
+        | `private, no-store` to everything outside a named allowlist — so a reload refetches
+        | each image: 1 + N metered requests per fire, N <= `MAX_MEDIA_REFERENCES` = 24.
+        | Making an asset cacheable is an entry in that allowlist and a security ruling, not
+        | a line in this ticket: `R-289`.
+        |
+        | SO THE ARITHMETIC THIS NUMBER COMES FROM. A fire needs a 400ms quiet window, so a
+        | brisk editing session is on the order of 30 fires a minute; at the document cap of
+        | 24 images that is 30 x 25 = 750 metered requests. 900 per IP carries that with
+        | headroom, and 2,400 per tenant carries three such sessions at once. Both are far
+        | below what a script needs to make this expensive, which is the property every
+        | other bucket here is chosen for — and both will come DOWN when `R-289` lands,
+        | because the N term disappears.
+        |
+        | ⚠ THE PER-TENANT HALF IS KEPT — `§4 › Edge & ops`' "per IP AND per tenant", and
+        | the reason this is a bucket and not an exemption: every request here runs the
+        | publish path's own renderer over a whole document.
+        */
+        'studio-preview' => [
+            'per_ip' => $limit(900, 60),
+            'per_tenant' => $limit(2400, 60),
+        ],
+
+        /*
         | Unknown routes get their own, much tighter bucket. A 404 costs almost nothing
         | to serve and everything to scan with, so path enumeration is the traffic this
         | one exists for -- and the gate names it: "the rate limiter covers unknown

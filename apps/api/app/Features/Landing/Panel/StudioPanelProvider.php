@@ -429,9 +429,25 @@ class StudioPanelProvider extends PanelProvider
                 // Named `preview`, not `studio.preview`: Filament prefixes a panel's
                 // routes with `filament.{panel id}.`, so the full names are
                 // `filament.studio.preview` and `filament.studio.preview.asset`.
-                Route::get('preview', PreviewController::class)->name('preview');
+                /*
+                 * ⚠ THEIR OWN BUCKET, AND THE PANEL'S REMOVED — `QRPAGER-45`, `§11` QA
+                 * round H-2. These two are no longer "a human clicking": the live preview
+                 * re-requests the document and every one of its images on every debounce
+                 * fire, all `no-store`, so they would spend the panel's per-IP budget in
+                 * seconds and 429 the page the owner is editing. `config/ratelimit.php`'s
+                 * `studio-preview` entry carries the arithmetic. Still metered, still per
+                 * IP AND per tenant — `§4 › Edge & ops` — because a preview that could
+                 * not be metered would be a free renderer over a whole document.
+                 */
+                Route::get('preview', PreviewController::class)
+                    ->name('preview')
+                    ->withoutMiddleware(RateLimit::class.':panel')
+                    ->middleware(RateLimit::class.':studio-preview');
+
                 Route::get('preview/asset/{asset}', [PreviewController::class, 'asset'])
-                    ->name('preview.asset');
+                    ->name('preview.asset')
+                    ->withoutMiddleware(RateLimit::class.':panel')
+                    ->middleware(RateLimit::class.':studio-preview');
             });
     }
 }
