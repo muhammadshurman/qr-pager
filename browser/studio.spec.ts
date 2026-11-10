@@ -999,8 +999,33 @@ test.describe('the studio — QRPAGER-44', () => {
     await signInAsStaff(page)
     await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
 
-    await page.getByRole('button', { name: 'أضف كتلة' }).first().click()
-    await page.getByRole('menuitem').first().click()
+    /*
+     * ⚠ THE PICKER IS RETRIED RATHER THAN SLEPT AT, AND THE FIRST VERSION OF THIS CASE DID
+     * NEITHER. The add control is an Alpine dropdown; a click that lands before Alpine binds
+     * it is SWALLOWED with no error and no console message, so the case sat for its whole
+     * 90-second budget waiting for a menu that was never going to open — a timeout on line
+     * 1003 whose cause was on line 1002. Playwright's auto-waiting cannot help: the button is
+     * present, visible and enabled the entire time; it simply is not listening yet.
+     *
+     * A fixed `waitForTimeout` would work on this machine and encode its speed. Asking for
+     * the menu and clicking again when it is absent is the same idea without the guess.
+     */
+    const add = page.getByRole('button', { name: 'أضف كتلة' }).first()
+    await expect(add).toBeVisible()
+
+    const picked = page.getByRole('menuitem').first()
+    let opened = false
+
+    for (let attempt = 0; attempt < 5 && !opened; attempt++) {
+      await add.click()
+      opened = await picked
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false)
+    }
+
+    expect(opened, 'the block picker never opened, so no row was ever added').toBe(true)
+    await picked.click()
 
     const header = page.locator('.fi-fo-builder-item-header').first()
     await expect(header).toBeVisible()
