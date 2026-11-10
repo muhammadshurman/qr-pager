@@ -8422,6 +8422,7 @@ Items **A** and **B**. **Item C was removed from the ticket BEFORE any code was 
 | `composer gate` | **10/10 green, 1456 passed / 13,879 assertions** | `151b4bd` | `docs/tickets/QRPAGER-44-gate-php.txt` (`EXIT=0`), **first attempt** |
 | `pnpm gate` | **13/13 green, 1210 Vitest across 65 files, 103 browser cases, 93.55% statements** | `050d480` | `docs/tickets/QRPAGER-44-gate-frontend.txt` (`EXIT=0`), **third attempt** |
 | `pnpm run gate:e2e` | **540 passed / 16 skipped / 0 failed in 9.5m, `e2e: green`** | `050d480` | `docs/tickets/QRPAGER-44-e2e.txt` (`EXIT=0`), **second run** |
+| `fresh-clone-proof` | **PASSED, FIRST ATTEMPT — 1456 passed / 13,880 assertions**, in a clone that arrived without `vendor/`, `.env` or `node_modules/` | `eefff05` | `docs/tickets/QRPAGER-44-fresh-clone.txt` (`EXIT=0`), run BEFORE the push (`R-252`) |
 | the ticket's own gate | **`browser/studio.spec.ts` 2 new cases in `studio-chromium`, both green on BOTH e2e runs; `PanelTargetTest` 4 cases / 17 assertions; `StudioPanelInvariantTest` + 1 case** | `050d480` | the revert proofs below |
 
 ⚠ **EVERY ITEM WAS MEASURED IN THE BOOTED PANEL BEFORE AND AFTER, AT 1280px, AND THE BEFORE COLUMN CHANGED TWO OF THE THREE FIXES.**
@@ -8436,6 +8437,8 @@ Items **A** and **B**. **Item C was removed from the ticket BEFORE any code was 
 | `.fi-fo-builder-item-header` | **618x56**, padding-block 12 | **618x48**, padding-block 8 | 56 = Filament's `12 + 32 + 12`, and the 44px buttons already overflow their own 32px action rows — so `--space-4` (40) is NOT available |
 | block row title (`<h2>`) | **20px / 500** | **16px / 700** | the rows were never at 16; the heading rule was catching them |
 | `.studio-tabs`, scrolled 150 | **y = -286** — gone above the viewport, having passed under the bar | **y = 64** — parked at the topbar's bottom edge | the defect is stacking, not type size |
+
+⚠ **THE CLONE COUNTS ONE ASSERTION MORE THAN THIS MACHINE — 13,880 against 13,879 — AND THE CASE COUNT IS IDENTICAL AT 1456.** `QRPAGER-42` recorded the same shape (13,873 in the clone against 13,872 local), so this is the established delta rather than a new one; it is stated here rather than smoothed to one number, because a figure that is quietly the same in two places it is not is the kind of record this section exists to refuse.
 
 ⚠ **ITEM B IS NOT A RESTING OVERLAP, WHICH IS WHY THE FIX IS NOT A SIZE.** At rest the topbar spans `0..64`, `.fi-header` `72..106` and the tab row `114..165` — nothing is clipped. `div.fi-topbar-ctn` is `position: sticky; top: 0; z-index: 30; height: 64`, so the row passes UNDER an opaque bar from roughly 50px of scroll. The before/after screenshots at `docs/tickets/qrpager-44-{before,after}-scrolled.png` show it: the active tab reduced to a clipped sliver of its own underline, then whole.
 
