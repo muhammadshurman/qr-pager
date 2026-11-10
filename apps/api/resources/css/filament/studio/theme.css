@@ -491,6 +491,49 @@
  * panel's body class, so neither reaches the platform panel.
  */
 /*
+ * ================================================================================
+ * THE GROUND IS THE PAPER TOKEN — QRPAGER-42 A1
+ * ================================================================================
+ *
+ * MEASURED IN THE BOOTED PANEL BEFORE THE CHANGE: `body.fi-body` computed
+ * `oklch(0.973 0.001 106.424)` = `#f6f6f5`. That is FILAMENT'S OWN stylesheet — not this
+ * file, which emits nothing but `var(--color-*)`, and not a token: it sits between `paper`
+ * `#fcfcfa` and `surface-2` `#f7f7f3` and matches neither.
+ *
+ * ⚠ AND IT IS NOT THE TENANT'S STORED THEME, WHICH WAS THE FIRST THING CHECKED.
+ * `ThemeStylesheet::declarations()` has exactly one consumer -- `LandingRenderer.php:55` ->
+ * `landing/page.blade.php` -- which renders inside the preview IFRAME, its own browsing
+ * context. A tenant's value cannot reach the panel chrome, and `StudioPreviewIsolationTest`
+ * is what keeps that true rather than this sentence.
+ *
+ * ⚠ WHY THE `data-theme` MIRROR FROM `QRPAGER-40` SURVIVES A2, which looks like dead code
+ * once dark is gone and is the opposite. `tokens.css:153` is
+ * `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { … } }` -- the
+ * dark token VALUES apply on an OS-dark machine unless the attribute says otherwise. The
+ * mirror pins `data-theme="light"`, which is what suppresses that branch. Remove it as
+ * "unreachable after A2" and this rule would paint `--color-paper` with the DARK paper.
+ */
+/*
+ * ⚠ SCOPED TO THE LIGHT STATE BY THE `§11` QA ROUND OF 2026-11-10, AND THE UNSCOPED VERSION
+ * WAS A LATENT 1.02:1. Measured there against the compiled cascade: Filament emits
+ * `.fi-body{background-color:var(--gray-50)}` and
+ * `.fi-body:where(.dark,.dark *){background-color:var(--gray-950);color:var(--color-white)}`.
+ * `:where()` contributes no specificity and this rule is later in source, so with `.dark` on
+ * the root the body took OUR light ground and KEPT Filament's white text -- near-white on
+ * near-white. The rule that used to prevent that (`.dark .fi-panel-studio{--color-white:
+ * var(--color-ink)}`, `QRPAGER-41` part B item 6) was deleted in this same delivery as
+ * unreachable, so the two changes together produced the pair.
+ *
+ * `.dark` cannot appear while `->darkMode(false)` stands, which is why no case was red -- and
+ * re-enabling dark is ONE LINE, which `R-266` itself contemplates. So the ground stands down
+ * in that state rather than half-applying: whoever re-enables dark makes a dark decision and
+ * inherits no hybrid. `studio.spec.ts` asserts the stand-down with `.dark` forced on.
+ */
+:root:not(.dark) .fi-panel-studio {
+  background-color: var(--color-paper);
+}
+
+/*
  * ⚠ `html` IS IN THIS LIST, AND LEAVING IT OUT IS WHAT THE BROWSER CASE CAUGHT. `fi-panel-
  * studio` is on `body`, so a rule scoped to it leaves the ROOT element on the UA default --
  * `#000000` in light, `#ffffff` in dark. Nothing visible inherits from `html` once `body`
@@ -501,10 +544,15 @@
  * `:has()` rather than `html.fi`, because `fi` is on the root of BOTH panels and part B is
  * the studio's ticket. An engine without `:has()` simply keeps the default on an element
  * that paints no text of its own, so the fallback is the state this rule found.
+ *
+ * ⚠ NARROWED BY `QRPAGER-42` A2, AND KEPT. It was written against both modes -- `#000000` in
+ * light and `#ffffff` in dark. With the dark surface gone only the light half can occur, but
+ * the rule itself is mode-agnostic and the light half is the one the measurement found
+ * first, so it stands unchanged. What narrows is its justification, not its text.
  */
-html:has(body.fi-panel-studio),
-.fi-panel-studio,
-.fi-panel-studio .fi-main {
+html:not(.dark):has(body.fi-panel-studio),
+:root:not(.dark) .fi-panel-studio,
+:root:not(.dark) .fi-panel-studio .fi-main {
   color: var(--color-ink);
 }
 
@@ -591,31 +639,123 @@ html:has(body.fi-panel-studio),
 }
 
 /*
- * ⚠ FILAMENT'S DARK TEXT IS `var(--color-white)`, AND REDEFINING THAT ONE VARIABLE IS THE
- * WHOLE FIX — QRPAGER-41 part B item 6.
+ * ================================================================================
+ * ⚠ SUPERSEDED — QRPAGER-41 part B's DARK RULE IS REMOVED BY QRPAGER-42 A2
+ * ================================================================================
  *
- * The browser measurement listed twelve elements painting `#ffffff` in dark where the token
- * layer's `ink` is `#fcfcfa`: the heading, every button, field labels, the radio text, the
- * logo. Chasing them class by class would be twelve rules that go stale the moment Filament
- * renames one. Read out of the COMPILED theme instead:
+ * This block carried `.dark .fi-panel-studio { --color-white: var(--color-ink) }`. It was
+ * correct for what it was: Filament's dark stylesheet paints text with `var(--color-white)`,
+ * so redefining that one variable inside the panel resolved twelve elements at once, read
+ * out of the compiled theme rather than chased class by class.
  *
- *   .dark,.dark *){color:var(--color-white)
+ * **It is removed because the studio is LIGHT ONLY** — Muhammad's ruling of 2026-11-10,
+ * recorded in `§1` and applied to both panels in their providers. `->darkMode(false)` means
+ * `html.dark` is never set, so a rule scoped to `.dark` can never match. Keeping it would be
+ * a rule that cannot fire, which is the dead-control shape this repository refuses
+ * everywhere else.
  *
- * So the panel redefines `--color-white` for itself. Every rule that already references it
- * resolves to the token, including rules this stylesheet has never heard of, and the ticket's
- * instruction is satisfied exactly: *"override it from the token layer rather than matching
- * its grey by eye — a matched hex is the dead-control shape."*
- *
- * ⚠ DARK ONLY, AND THAT BOUND IS LOAD-BEARING. `--color-white` is also what Tailwind's
- * `bg-white` resolves to, so redefining it unconditionally would paint every light-mode
- * surface in ink. Scoped to `.dark`, the only rules it reaches are the ones Filament uses for
- * dark text, and in that mode `ink` is a near-white (`#fcfcfa`) so a background that did
- * reference it is visually unchanged.
- *
- * ⚠ AND IT IS SCOPED TO THIS PANEL. `.dark` is on the root and `fi-panel-studio` on the body,
- * so the descendant form reaches the studio and leaves the platform panel alone — part B is
- * the studio's ticket.
+ * Named here rather than deleted quietly, because `R-250` exists for a delivered ticket that
+ * was rewritten with no record. What is superseded: the dark half of part B item 6. What
+ * stands: its light half, immediately below, which is what the measurement actually found.
  */
-.dark .fi-panel-studio {
-  --color-white: var(--color-ink);
+
+
+/*
+ * ================================================================================
+ * A COLOUR VALUE READS `#RRGGBB`, NOT `RRGGBB#` — QRPAGER-42 A3
+ * ================================================================================
+ *
+ * MEASURED IN THE BOOTED PANEL, with the owner's own stored values: the caption's DOM text
+ * was `#eee8e8`, in the correct order, while the RENDER read `eee8e8#`. Per-character
+ * geometry, taken with a Range over the text node at 1280px in the RTL document:
+ *
+ *   #   x=1180        e e e 8 e 8   x=1138 .. 1173
+ *
+ * The `#` box sat 42px to the RIGHT of every hex digit, i.e. visually last.
+ *
+ * ⚠ THE TICKET PRESCRIBED HALF THE FIX, AND THE MEASUREMENT IS WHAT SHOWED IT. It asked for
+ * `unicode-bidi: isolate` -- and `isolate` was ALREADY the computed value on the `<output>`.
+ * What was missing is `direction: ltr`. A leading `#` is a NEUTRAL under the bidi algorithm,
+ * so in an RTL run it takes the paragraph direction and lands at the run's end. Isolation
+ * stops the run reordering its NEIGHBOURS; only direction decides the order WITHIN it. Both
+ * are set here: isolation so a hex cannot drag the Arabic label around it, direction so the
+ * hash comes first.
+ *
+ * ⚠ AND THE TEST FOR THIS MUST NOT ASSERT `textContent`. The DOM string was already correct
+ * on the broken build, so a text assertion PASSES while the owner reads the value backwards
+ * -- the `R-264` class of lying test, from the same week. `studio.spec.ts` asserts the
+ * computed `direction` and `unicode-bidi`, and the per-character geometry above: the `#` box
+ * must sit LEFT of the first hex digit.
+ *
+ * ⚠ SCOPED BY ROLE, NOT BY ELEMENT -- AND THE ROLES THIS RULE ACTUALLY COVERS ARE NAMED,
+ * BECAUSE THE FIRST VERSION OF THIS PARAGRAPH CLAIMED THE WHOLE CLAUSE. `§12`'s clause is
+ * every Latin-and-digits run the owner reads as a literal. What carries a mark is: a colour
+ * value (`.studio-colour__value`), the hostname input (`#hostname`), the literal-valued form
+ * fields (`.studio-ltr`, by `FieldKind`) and the media chooser's own value
+ * (`.studio-ltr-select`, below).
+ *
+ * ⚠ WHAT THE CLAUSE COVERS AND THIS RULE DOES NOT, filed as `R-279` by the `§11` QA round of
+ * 2026-11-10 (L-7) rather than left as a wider claim than the selector: the media card's
+ * `image/png · 12.3 KB · 1024x768` line, which is three LTR runs laid out right-to-left so
+ * the owner reads the three facts in reverse, and a hostname emphasised inside an Arabic
+ * sentence. The same row carries the customer-facing half, which matters more: the tenant's
+ * email and phone are rendered to the CUSTOMER with no isolation at all.
+ */
+.studio-colour__value,
+.studio-ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  /* `start` rather than `left`: inside an isolate the start edge IS the left edge, and a
+     physical property here would be the one thing `panel.spec.ts` refuses in this file. */
+  text-align: start;
+}
+
+/*
+ * ⚠⚠ NOT EVERY INPUT — AND THE FIRST VERSION OF THIS RULE WOULD HAVE CORRUPTED THE OWNER'S
+ * OWN WRITING. It read `.studio-layout__form .fi-input`, which is every text field in the
+ * form: `heading`, `subheading`, `seo_title`, `description`, the menu item names, the
+ * address. Those hold ARABIC PROSE -- the whole subject of `QRPAGER-41` -- and forcing
+ * `direction: ltr` on them renders the restaurant's own sentences backwards. A rule written
+ * to fix a literal would have broken the content.
+ *
+ * So the literals are marked at the SOURCE, by contract rather than by selector: the form
+ * tags a field with `studio-ltr` when its `FieldKind` is one whose value is a literal --
+ * `Url`, `Email`, `Telephone`, `Number` -- and leaves `Text` and `ItemList` alone.
+ * `StudioForm::field()` carries that decision, which means a field kind added later is
+ * covered or excluded deliberately rather than by whatever a CSS selector happens to match.
+ *
+ * The hostname input is hand-rolled and outside that schema, so it names itself.
+ */
+#hostname {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/*
+ * ================================================================================
+ * ⚠ A SELECT NEEDS ITS OWN SELECTOR, AND THE `§11` QA ROUND IS WHAT PROVED IT
+ * ================================================================================
+ *
+ * `FieldKind::Media` is a `Select` with `->native(false)`, and Filament's non-native branch
+ * DISCARDS `extraInputAttributes`: `vendor/filament/forms/src/Components/Select.php:1925` is
+ * `<?php if ($isNative) { ?>`, which is the only branch that spreads the bag, and the
+ * non-native branch at `:1979` keeps `->only([...six aria keys])`. Measured on the rendered
+ * page before this rule existed: every media chooser carried
+ * `data-select-accessibility="{aria-describedby,aria-invalid,aria-required}"` and ZERO
+ * occurrences of `studio-ltr`, while `StudioPreviewIsolationTest` asserted the decision for
+ * that kind was `true`. The mark was a no-op and a test said otherwise.
+ *
+ * ⚠ AND IT IS NOT APPLIED TO THE WRAPPER'S OWN TEXT, WHICH IS THE TRAP IN THE OBVIOUS FIX.
+ * `->extraAttributes()` lands on the field wrapper, which CONTAINS THE LABEL -- the owner's
+ * own Arabic. So the wrapper only carries the marker class and the isolation is applied to
+ * the two descendants that hold the filename: the value container and the option rows. The
+ * label inherits nothing from this rule, which is the same distinction the block above draws
+ * between a literal and the owner's prose.
+ */
+.studio-ltr-select .fi-select-input-value-ctn,
+.studio-ltr-select .fi-select-input-option {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
 }

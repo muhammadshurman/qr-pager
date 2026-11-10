@@ -37,8 +37,39 @@ const EXEMPT_PREFIXES = [
   // scanner at them on purpose; sweeping them in the ordinary pass would make `pnpm lint`
   // permanently red.
   'tools/design-tokens/fixtures',
-  // The Laravel half. Not this workspace, and `composer guard` rule 11 covers it.
-  'apps/api',
+  /*
+   * ⚠ THIS WAS THE BLANKET PREFIX `apps/api`, AND ITS COMMENT WAS THE DEFECT.
+   *
+   * It read: *"The Laravel half. Not this workspace, and `composer guard` rule 11 covers
+   * it."* **Rule 11 does not cover it.** Measured at `QRPAGER-42`: the guard's `PATHS` are
+   * `app, config, database, routes, tests, guard/src` — `resources/` is not among them —
+   * and rule 11's own `APPLICATION_PATHS` is narrower still (`app/`, `routes/`). So the
+   * sentence handed the file to a scanner that never received it, and because it named an
+   * owner, nobody looked again.
+   *
+   * What that left unscanned was not a corner: `resources/css/filament/studio/theme.css`
+   * and its platform sibling define the ENTIRE appearance of both admin panels, and
+   * `scan-panel.mjs` does not read them either — its subjects come from the `@source`
+   * globs, which point at the panel directory under `app/Features` and at
+   * `resources/views`, never at `resources/css`. (Those globs are described rather than
+   * spelled here: written out, one of them ends in the two characters that CLOSE a block
+   * comment, which is the hazard `studio/theme.css` records at its own top and which this
+   * very comment hit on its first run.) PROVEN on a deliberately bad file, which is now the committed fixture
+   * `fixtures/panel-theme-literals.css`: a raw hex, an off-ladder padding and an off-scale
+   * font size in that stylesheet were reported clean by all three scanners.
+   *
+   * So the Laravel half's AUTHORED stylesheets are scanned here, by the reader whose job
+   * this is — `scan-panel.mjs` says so itself: *"Patterns that judge a declaration VALUE
+   * belong to the CSS reader."* Two narrower prefixes replace the blanket one.
+   *
+   * ⚠ WHAT THIS STILL DOES NOT COVER, stated rather than implied: the two directories
+   * below, and nothing else under `apps/api`. `public/` is Vite's compiled output — 700 KB
+   * of Tailwind whose literals are the build's own and are regenerated on every run — and
+   * `vendor/` is third-party. 243 CSS files live in those two; four are authored, and those
+   * four are now read.
+   */
+  'apps/api/public',
+  'apps/api/vendor',
   /*
    * `§11`'s REVIEWER WORKTREES, for the reason `eslint.config.mjs` records at length: the two
    * reviewers run concurrently in detached worktrees under `.claude/worktrees/`, so the

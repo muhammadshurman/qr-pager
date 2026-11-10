@@ -381,6 +381,55 @@ describe('the CSS half', () => {
     )
   })
 
+  it('catches every colour syntax and every magnitude literal a panel theme can carry', () => {
+    /*
+     * ⚠ EXACT COUNTS, NEVER `> 0`. A `toBeGreaterThan(0)` here would pass while two of the
+     * three rules had silently stopped matching — which is the failure this whole fixture
+     * exists for, since the hole it was written about was itself three scanners each
+     * reporting clean.
+     */
+    const findings = scanSource(fixture('panel-theme-literals.css.fixture'), 'panel-theme.css')
+
+    expect(findings.length).toBe(19)
+
+    const perRule = {}
+    for (const f of findings) perRule[f.rule] = (perRule[f.rule] ?? 0) + 1
+
+    expect(perRule).toEqual({
+      // Ten colour LINES, twelve findings: `color-mix(in srgb, #ff00ff, #00ff00)` is one
+      // colour function carrying two hexes, and each is a separate decision typed at the
+      // use site.
+      'no-raw-color': 12,
+      'no-raw-spacing': 4,
+      'no-raw-font-size': 3,
+    })
+
+    expect([...new Set(findings.map((f) => f.id))].sort()).toEqual([
+      'color-function',
+      'css-font-size-declaration',
+      'css-spacing-declaration',
+      'hex',
+      'named-color',
+    ])
+
+    /*
+     * ⚠ `oklch()` BY NAME. The grey `QRPAGER-42` A1 replaces is Filament's own
+     * `oklch(0.973 0.001 106.424)`, so an override written in that syntax has to be visible
+     * or the gap is closed on paper and open in practice.
+     */
+    expect(findings.some((f) => f.match.includes('oklch'))).toBe(true)
+
+    /*
+     * ⚠ AND BOTH SIDES OF THE LADDER. `§12` forbids a hard-coded magnitude, not only an
+     * off-scale one, so the ON-scale `16px` is a finding exactly like the off-scale `13px`.
+     * A rule that only caught the off-scale value would let a component type a step's number
+     * instead of naming it.
+     */
+    expect(findings.some((f) => f.match.includes('13px'))).toBe(true)
+    expect(findings.some((f) => f.match.includes('16px'))).toBe(true)
+    expect(findings.some((f) => f.match.includes('17px'))).toBe(true)
+  })
+
   it('catches a shorthand whose parts are MIXED, which it once did not', () => {
     // THE REGRESSION. valueIsAcceptable early-returned on "the value contains a var()",
     // so one token laundered the literal beside it. The bad fixture predicted this line as
@@ -564,8 +613,11 @@ describe('the scanner’s exemptions', () => {
       'packages/tokens/generated/tokens.css',
       // Deliberately-wrong files, proven on by the cases above.
       'tools/design-tokens/fixtures/bad-styles.css.fixture',
-      // The Laravel half: `composer guard` rule 11 covers it.
-      'apps/api/resources/css/app.css',
+      'tools/design-tokens/fixtures/panel-theme-literals.css.fixture',
+      // Vite's compiled output and the third-party tree under the Laravel half. Not
+      // authored here, regenerated on every build, and 243 stylesheets between them.
+      'apps/api/public/build/assets/app-oTEylG5A.css',
+      'apps/api/vendor/filament/filament/dist/theme.css',
     ]) {
       expect(isExempt(join(REPO, path)), `${path} should be exempt`).toBe(true)
     }
@@ -575,7 +627,30 @@ describe('the scanner’s exemptions', () => {
     // `packages/ui/src/styles/templates.css` was the second entry here and is DELETED --
     // `R-240`, Muhammad 2026-11-04, the other half of the orphan QRPAGER-33 retired. Its
     // sibling note below records the identical shape for `apps/site/app/globals.css`.
-    for (const path of ['packages/ui/src/styles/kit.css', 'apps/web/app/globals.css']) {
+    /*
+     * ⚠ THE FOUR `apps/api` ENTRIES ARE NEW AT `QRPAGER-42`, AND ONE OF THEM USED TO BE
+     * ASSERTED IN THE LIST ABOVE — `apps/api/resources/css/app.css`, with the comment *"The
+     * Laravel half: `composer guard` rule 11 covers it."*
+     *
+     * Rule 11 does not cover it. The guard's scanned paths are `app, config, database,
+     * routes, tests, guard/src`, with no `resources/`, and rule 11's own application paths
+     * are narrower still. So the exemption was double-locked: a comment naming an owner that
+     * never received the file, and a TEST asserting the exemption was correct. Removing only
+     * the comment would have reddened this case and invited someone to restore the hole.
+     *
+     * What it left unscanned was the two panel themes — the files that decide the entire
+     * appearance of both admin panels. Proven before the change: a raw magenta, an
+     * off-ladder padding and an off-scale font size appended to the studio theme were
+     * reported clean by `scan-css`, `scan-panel` AND `composer guard`.
+     */
+    for (const path of [
+      'packages/ui/src/styles/kit.css',
+      'apps/web/app/globals.css',
+      'apps/api/resources/css/app.css',
+      'apps/api/resources/css/filament/studio/theme.css',
+      'apps/api/resources/css/filament/platform/theme.css',
+      'apps/api/resources/css/filament/targets.css',
+    ]) {
       expect(isExempt(join(REPO, path)), `${path} must be scanned`).toBe(false)
     }
   })

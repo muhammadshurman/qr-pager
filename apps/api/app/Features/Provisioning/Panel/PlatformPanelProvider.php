@@ -17,11 +17,13 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /**
@@ -100,10 +102,116 @@ class PlatformPanelProvider extends PanelProvider
             // `ThemeMode::System`, so until this line the panel followed the operating
             // system and a restaurant owner on a dark laptop met a dark product -- the one
             // the same ticket re-pointed off `ready-field` precisely because it was the
-            // colour of the order-ready state. Dark stays AVAILABLE: this is the default a
-            // person has not chosen yet, not a removal, and `§12`'s floors are asserted for
-            // both themes by `contrast.test.ts` whichever one is showing.
+            // colour of the order-ready state.
+            //
+            // ⚠⚠ THE SENTENCE THAT STOOD HERE IS SUPERSEDED, AND IT IS STRUCK RATHER THAN
+            // DELETED. It read *"Dark stays AVAILABLE: this is the default a person has not
+            // chosen yet, not a removal"* -- true on 2026-11-08 and false since the ruling in
+            // the docblock below, which REMOVES the dark surface on both panels. The `§11` QA
+            // round of 2026-11-10 found the two comments adjacent and contradicting (L-2), in a
+            // file where the docblock IS the record, so the correction is recorded in place.
+            /*
+             * ================================================================================
+             * ⚠ LIGHT ONLY. THE DARK SURFACE IS REMOVED, NOT MERELY DEFAULTED AWAY FROM.
+             * ================================================================================
+             *
+             * Muhammad's ruling of 2026-11-10, `§1`, for BOTH panels. `defaultThemeMode` alone
+             * was never enough and the measurement is why: with `localStorage['filament:theme:mode']`
+             * set to `dark` and the OS preferring LIGHT, the panel rendered `html.class="fi dark"`,
+             * `data-theme="dark"`, a body painted from Filament's dark grey, and the token layer
+             * flipped -- `ink` and `paper` exchanged values, which is what the dark block in
+             * `packages/tokens/generated/tokens.css` does. A person who pressed the switcher once
+             * had a dark panel for ever, whatever the default said. (The figures are reproduced by
+             * the browser case rather than quoted here: `scan-panel.mjs` reads this file and has no
+             * parser, so a colour in PROSE is a finding exactly like one in a value -- `R-260`,
+             * which this very docblock hit on its first run.)
+             *
+             * ⚠ THE REASON IS NOT THE `localStorage` COLLISION BETWEEN THE TWO PANELS -- that is a
+             * side effect. In his words: *"/platform's dark mode today is not a feature anyone
+             * chose -- it is Filament's unsuppressed default. There is no designed dark palette
+             * anywhere in this product: Rail's ready-field is a FIELD, not a mode. So an admin who
+             * hits the switcher gets Filament's own dark colours, which is precisely the 'library
+             * default look' `§12` rejects, on a surface no token decision and no contrast proof
+             * covers. We are not removing a capability; we are closing a state we never specified."*
+             *
+             * ⚠ AND `->themeSwitcher(false)` IS NOT CALLED, BY MEASUREMENT RATHER THAN BY
+             * OVERSIGHT. `user-menu.blade.php:122` renders the control under
+             * `hasDarkMode() && (! hasDarkModeForced()) && hasThemeSwitcher()`, so `darkMode(false)`
+             * has already removed it. A second flag that changes nothing would read as protection
+             * which is not there.
+             *
+             * ⚠ WHAT `darkMode(false)` ALSO DOES, AND IT IS THE HALF A CUSTOM FIX WOULD HAVE
+             * DUPLICATED: `base.blade.php:102-105` emits
+             * `localStorage.setItem('filament:theme:mode', 'light')` on every page load, so the
+             * stored preference is cleared by the framework rather than by code of ours.
+             * VERIFIED IN THE SERVED DOCUMENT, not read from vendor source: signed in as the
+             * seeded platform administrator, `/platform` is 42,113 bytes, carries
+             * `fi-body fi-panel-platform`, and contains that `setItem` exactly once -- beside
+             * the static `data-theme` pin below, which is this panel's own and is the only
+             * other script in the head that touches the theme.
+             *
+             * ⚠ THE FIGURES HERE WERE THE STUDIO'S UNTIL THE `§11` QA ROUND OF 2026-11-10
+             * (L-1): the paragraph cited *"54,343 bytes, carries `fi-panel-studio`"* -- a
+             * measurement of the OTHER panel, a few lines above this docblock's own warning
+             * that a measurement of the wrong document is not evidence. It falsified itself,
+             * which is the most useful kind of error to keep.
+             *
+             * ⚠ AN EARLIER VERSION OF THIS COMMENT SAID THE OPPOSITE, AND THE ERROR IS WORTH
+             * KEEPING: the check that "found" it absent had no session, so it measured the
+             * 5 KB sign-in redirect rather than the panel. A measurement of the wrong document
+             * is not evidence, and `is the panel: true` is the assertion that would have
+             * caught it -- which is why the browser cases now assert their premise first.
+             *
+             * `defaultThemeMode` stays below because it is what the switcher-less panel reads
+             * as its mode, and because removing it would make this depend on Filament's default.
+             */
+            ->darkMode(false)
             ->defaultThemeMode(ThemeMode::Light)
+            /*
+             * ================================================================================
+             * ⚠ `data-theme` IS PINNED TO LIGHT, OR THE TOKEN LAYER GOES DARK ON ITS OWN
+             * ================================================================================
+             *
+             * `->darkMode(false)` above stops FILAMENT adding `.dark`. It does nothing at all
+             * to the token layer, which decides independently:
+             * `packages/tokens/generated/tokens.css:153` is
+             * `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { … } }`.
+             *
+             * So on a machine that prefers dark, this panel resolved the DARK values while
+             * having no dark mode -- MEASURED here before the fix: `--color-paper` came back
+             * as the dark paper on `/platform`, against a ground painted by Filament's own
+             * grey. The studio never showed it because `QRPAGER-40` gave that panel a mirror
+             * script for an unrelated reason, and the mirror happens to pin the attribute.
+             *
+             * A static pin rather than a mirror: with `darkMode(false)` there is no `.dark`
+             * to mirror, so an observer would watch for a class that cannot appear. If a dark
+             * surface is ever specified for this panel, this is the line that must change
+             * with it -- which is the point of it being one line and not a script.
+             */
+            /*
+             * ⚠ AND IT CARRIES A NONCE WHEN ONE IS CONFIGURED, WHICH IS NOT COSMETIC.
+             * `§11` L-4, 2026-11-10: Filament's own adjacent script is
+             * `<script @if (filled($cspNonce)) nonce="{{ $cspNonce }}" @endif>`
+             * (`base.blade.php:103`, fed by `Vite::cspNonce()`), and this hook emitted a bare
+             * `<script>`. It executes today only because the panel policy carries
+             * `script-src 'self' 'unsafe-inline' 'unsafe-eval'` (`R-242`) -- and a browser
+             * IGNORES `'unsafe-inline'` the moment a nonce appears in the policy. So adopting
+             * `Vite::cspNonce()` later would have silently stopped this script running, and
+             * the symptom would be `/platform` back on the dark palette on an OS-dark machine
+             * with nothing failing. MEASURED on the served document: 12 scripts, 0 of them
+             * carrying a nonce -- so none is configured in this application today and this
+             * branch is a no-op until one is. It is here so that adopting one cannot un-pin
+             * the panel.
+             */
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                function (): string {
+                    $nonce = Vite::cspNonce();
+                    $attribute = $nonce === null || $nonce === '' ? '' : ' nonce="'.e($nonce).'"';
+
+                    return '<script'.$attribute.">document.documentElement.dataset.theme = 'light'</script>";
+                },
+            )
             // ⚠ WITHOUT THIS, EVERY PAGE OF THIS PANEL RENDERED `<title>… - Laravel</title>`.
             // `Panel::getBrandName()` falls back to `config('app.name')`, and `.env.example`
             // ships `APP_NAME=Laravel` — so `§12`'s *"a reviewer cannot name the UI framework

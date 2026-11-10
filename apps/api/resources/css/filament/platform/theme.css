@@ -46,3 +46,62 @@
 
 @source '../../../../app/Features/Provisioning/Panel/**/*';
 @source '../../../../resources/views/platform/**/*';
+
+/*
+ * ================================================================================
+ * THE GROUND IS THE PAPER TOKEN, ON THIS PANEL TOO — QRPAGER-42 A1
+ * ================================================================================
+ *
+ * MEASURED IN THE BOOTED PANEL, signed in as the seeded platform administrator on a context
+ * with `colorScheme: 'dark'`, before this rule existed:
+ *
+ *     body.fi-body.fi-panel-platform   background-color: oklch(0.973 0.001 106.424)
+ *     --color-paper                    #fcfcfa  ->  rgb(252, 252, 250)
+ *
+ * The same `oklch(0.973 0.001 106.424)` the studio computed before `A1`, from the same place:
+ * FILAMENT'S OWN stylesheet. It is not a token -- it sits between `paper` `#fcfcfa` and
+ * `surface-2` `#f7f7f3` and matches neither -- and it is not emitted by this file, which
+ * before this rule emitted nothing at all.
+ *
+ * ⚠ WHY THIS IS HERE AND NOT IN A FOLLOW-UP, WHICH IS WHERE THE FIRST DRAFT PUT IT.
+ * Muhammad, 2026-11-10: *"A1 is a token substitution, not a restyle. §12 defers what the
+ * panels LOOK like to Task 8; it does not license a ground that comes from no token at all.
+ * Leaving one panel on Filament's oklch is how `R-268` happened -- one role, two values, from
+ * two sources."* `R-268` is `--color-surface` falling back to `#f5f5f5` in one place and
+ * `#f6f6f6` in another, neither of them the token's own `#f7f7f3`. Two panels whose ground is
+ * the same role and a different value is that defect with a larger blast radius.
+ *
+ * ⚠ AND THE `data-theme` PIN IS A PREREQUISITE OF THIS RULE, NOT A SEPARATE FIX.
+ * `tokens.css:153` is `@media (prefers-color-scheme: dark) { :root:not([data-theme='light'])
+ * { … } }`, so without the attribute `--color-paper` resolves to the DARK paper on an OS set
+ * to dark and this rule would paint the panel `#191c22`. That is the state this panel was
+ * measured in on 2026-11-10 and what `PlatformPanelProvider`'s `HEAD_END` hook now pins. The
+ * browser case asserts the resolved value, not the attribute, for exactly that reason.
+ *
+ * ⚠ THE INK IS *NOT* CHANGED HERE, AND THAT IS A DECISION. The same measurement found
+ * `html.fi` at `rgb(0, 0, 0)` (the UA default, on an element that paints no text of its own)
+ * and `body` at `oklch(0.296 0.014 261.704)` -- Filament's ink, not `--color-ink`
+ * `rgb(25, 28, 34)`. Substituting the token there would move every text colour on a panel
+ * Task 8b styled with utilities, and `panel.spec.ts` asserts AA pairs against those values:
+ * that is the restyle `§12` defers, so it is REPORTED rather than done. Lightening the ground
+ * from `#f6f6f5` to `#fcfcfa` can only raise the ratios OF TEXT ON THAT GROUND, which is why
+ * this half is safe alone.
+ *
+ * ⚠ AND NOT EVERY PAIR, WHICH IS HOW THE FIRST VERSION OF THIS SENTENCE OVERREACHED. The
+ * `§11` QA round of 2026-11-10 (L-12) measured the ground-to-surface boundary going
+ * **1.08:1 -> 1.02:1** against Filament's white sections. Both sides are far below WCAG
+ * 1.4.11's 3:1, so nothing regresses from pass to fail -- and non-text contrast on either
+ * panel is measured by nothing, since `panel.spec.ts` computes its pairs in a fixture rather
+ * than on the painted panel.
+ */
+/*
+ * ⚠ SCOPED TO THE LIGHT STATE BY THE `§11` QA ROUND, for the reason the studio theme's own
+ * copy of this rule states at length: unscoped, it outranked Filament's
+ * `.fi-body:where(.dark,.dark *)` background while leaving that rule's white TEXT in place,
+ * which is near-white on near-white if dark is ever re-enabled. `.dark` cannot appear while
+ * `->darkMode(false)` stands; the point is that it stops applying rather than half-applying
+ * if it ever can.
+ */
+:root:not(.dark) .fi-panel-platform {
+  background-color: var(--color-paper);
+}

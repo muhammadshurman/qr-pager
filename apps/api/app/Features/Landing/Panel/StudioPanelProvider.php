@@ -92,9 +92,62 @@ class StudioPanelProvider extends PanelProvider
             // `ThemeMode::System`, so until this line the panel followed the operating
             // system and a restaurant owner on a dark laptop met a dark product -- the one
             // the same ticket re-pointed off `ready-field` precisely because it was the
-            // colour of the order-ready state. Dark stays AVAILABLE: this is the default a
-            // person has not chosen yet, not a removal, and `§12`'s floors are asserted for
-            // both themes by `contrast.test.ts` whichever one is showing.
+            // colour of the order-ready state.
+            //
+            // ⚠⚠ THE SENTENCE THAT STOOD HERE IS SUPERSEDED, AND IT IS STRUCK RATHER THAN
+            // DELETED. It read *"Dark stays AVAILABLE: this is the default a person has not
+            // chosen yet, not a removal"* -- true on 2026-11-08 and false since the ruling in
+            // the docblock below, which REMOVES the dark surface on both panels. The `§11` QA
+            // round of 2026-11-10 found the two comments adjacent and contradicting (L-2), in a
+            // file where the docblock IS the record, so the correction is recorded in place.
+            /*
+             * ================================================================================
+             * ⚠ LIGHT ONLY. THE DARK SURFACE IS REMOVED, NOT MERELY DEFAULTED AWAY FROM.
+             * ================================================================================
+             *
+             * Muhammad's ruling of 2026-11-10, `§1`, for BOTH panels. `defaultThemeMode` alone
+             * was never enough and the measurement is why: with `localStorage['filament:theme:mode']`
+             * set to `dark` and the OS preferring LIGHT, the panel rendered `html.class="fi dark"`,
+             * `data-theme="dark"`, a body painted from Filament's dark grey, and the token layer
+             * flipped -- `ink` and `paper` exchanged values, which is what the dark block in
+             * `packages/tokens/generated/tokens.css` does. A person who pressed the switcher once
+             * had a dark panel for ever, whatever the default said. (The figures are reproduced by
+             * the browser case rather than quoted here: `scan-panel.mjs` reads this file and has no
+             * parser, so a colour in PROSE is a finding exactly like one in a value -- `R-260`,
+             * which this very docblock hit on its first run.)
+             *
+             * ⚠ THE REASON IS NOT THE `localStorage` COLLISION BETWEEN THE TWO PANELS -- that is a
+             * side effect. In his words: *"/platform's dark mode today is not a feature anyone
+             * chose -- it is Filament's unsuppressed default. There is no designed dark palette
+             * anywhere in this product: Rail's ready-field is a FIELD, not a mode. So an admin who
+             * hits the switcher gets Filament's own dark colours, which is precisely the 'library
+             * default look' `§12` rejects, on a surface no token decision and no contrast proof
+             * covers. We are not removing a capability; we are closing a state we never specified."*
+             *
+             * ⚠ AND `->themeSwitcher(false)` IS NOT CALLED, BY MEASUREMENT RATHER THAN BY
+             * OVERSIGHT. `user-menu.blade.php:122` renders the control under
+             * `hasDarkMode() && (! hasDarkModeForced()) && hasThemeSwitcher()`, so `darkMode(false)`
+             * has already removed it. A second flag that changes nothing would read as protection
+             * which is not there.
+             *
+             * ⚠ WHAT `darkMode(false)` ALSO DOES, AND IT IS THE HALF A CUSTOM FIX WOULD HAVE
+             * DUPLICATED: `base.blade.php:102-105` emits
+             * `localStorage.setItem('filament:theme:mode', 'light')` on every page load, so the
+             * stored preference is cleared by the framework rather than by code of ours.
+             * VERIFIED IN THE SERVED DOCUMENT, not read from vendor source: the authenticated
+             * panel is 54,343 bytes, carries `fi-panel-studio`, and contains that `setItem`
+             * exactly once, in the head, immediately before this panel's own mirror script.
+             *
+             * ⚠ AN EARLIER VERSION OF THIS COMMENT SAID THE OPPOSITE, AND THE ERROR IS WORTH
+             * KEEPING: the check that "found" it absent had no session, so it measured the
+             * 5 KB sign-in redirect rather than the panel. A measurement of the wrong document
+             * is not evidence, and `is the panel: true` is the assertion that would have
+             * caught it -- which is why the browser cases now assert their premise first.
+             *
+             * `defaultThemeMode` stays below because it is what the switcher-less panel reads
+             * as its mode, and because removing it would make this depend on Filament's default.
+             */
+            ->darkMode(false)
             ->defaultThemeMode(ThemeMode::Light)
             // ⚠ WITHOUT THIS, EVERY PAGE OF THIS PANEL RENDERED `<title>… - Laravel</title>`.
             // `Panel::getBrandName()` falls back to `config('app.name')`, and `.env.example`
