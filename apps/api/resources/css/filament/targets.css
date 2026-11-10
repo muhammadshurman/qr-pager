@@ -63,7 +63,17 @@
  * is why breadcrumb and skip links are excluded -- does not cover it. The value is the token,
  * like every other selector here; 44 appears nowhere in this file.
  */
+/*
+ * ⚠ `.fi-fo-radio-label` IS THE RADIO'S TARGET, and it is here rather than in the square
+ * group for `.fi-input`'s reason: it is full-width by layout (620px in the studio at
+ * 1280px), so a width floor would assert something the layout already guarantees. The
+ * HEIGHT is the axis that moves, and it is the axis that would have dropped under the bar
+ * when the circle stopped being 44px tall -- so this line is what makes shrinking the
+ * circle safe, and removing it is what a check has to catch. The square group BELOW records
+ * what the floor was doing on the input before `QRPAGER-44` moved it here.
+ */
 [data-media-delete='true'],
+.fi-fo-radio-label,
 .fi-input,
 .fi-select-input,
 .fi-sidebar-item-btn,
@@ -72,14 +82,55 @@
   min-height: var(--target-min);
 }
 
+/*
+ * ================================================================================
+ * THE RADIO'S PAINTED CIRCLE — `QRPAGER-44` item A, and the other half of the ruling
+ * ================================================================================
+ *
+ * A VALUE FROM THE SPACE SCALE, which is the form the ruling asks for: *"the painted circle
+ * takes a value from the scale"*. `--space-24` and not a literal, so `scan-css` reads this
+ * file the same way it reads the panel themes.
+ *
+ * 24 rather than 16 because the label's own text block measures 24px tall, so the circle and
+ * the words it belongs to share one line box instead of the circle sitting light beside them.
+ *
+ * ⚠ IT IS DECLARED HERE AND NOT IN A PANEL THEME, because both panels import this file and
+ * a radio is one role. Declaring it in `studio/theme.css` would give the studio 24px and
+ * leave the platform panel on whatever Filament ships -- one role, two values, two sources,
+ * which is `R-268`'s shape and the reason that row exists.
+ *
+ * ⚠ AND IT ONLY APPLIES BECAUSE THE FLOOR CAME OFF. `.studio-colour-input`'s own note in
+ * `studio/theme.css` records the trap: *"`targets.css` puts a 44px floor on both axes of this
+ * class, and declaring a height beside it would be a second number for one decision -- the
+ * floor would silently win and this file would read as though it had not."* With
+ * `.fi-radio-input` still in the square group these two lines would have changed nothing.
+ */
+.fi-radio-input {
+  inline-size: var(--space-24);
+  block-size: var(--space-24);
+}
+
 /* Square controls: a floor on both axes, because the target is the icon's box.
  *
- * ⚠ `.fi-radio-input` JOINED AT QRPAGER-33, and it was `PanelTargetTest` that asked for it
- * rather than a reading of this file: the studio builder's new *Page arrangement* control is
- * a Filament `Radio`, and the suite reported `fi-radio-input fi-valid` as a rendered
- * interactive class covered by nothing here. A radio's hit area IS its own box -- the label
- * beside it is not part of the control -- so it takes both axes like the other square ones,
- * and not the height-only treatment `.fi-input` gets for being full-width by layout. */
+ * ⚠ `.fi-radio-input` WAS IN THIS GROUP FROM `QRPAGER-33` UNTIL `QRPAGER-44`, AND THE
+ * SENTENCE THAT PUT IT HERE WAS WRONG. It read: *"A radio's hit area IS its own box -- the
+ * label beside it is not part of the control"*. The label IS part of the control: Filament
+ * renders `<label class="fi-fo-radio-label">` AROUND the input, so a pointer anywhere on the
+ * row selects that option. Measured in the booted studio at 1280px, before any change:
+ *
+ *     label.fi-fo-radio-label   620x52      <- already over the bar, on both axes
+ *     input.fi-radio-input      44x44       <- min-width/min-height from THIS file
+ *
+ * So the floor was never what made this control reachable; the label's own size was. What
+ * the floor actually did was decide how big the circle is PAINTED, which is not a thing
+ * `§12` has an opinion about. `§12` requires a 44px TOUCH TARGET and says nothing about
+ * painted size, and this file conflated the two -- Muhammad's ruling of 2026-11-10, which
+ * calls that conflation out and separates them rather than waiving anything.
+ *
+ * THE SEPARATION: the LABEL carries the target (below, with the height-only group, because
+ * it is full-width by layout like `.fi-input`), and the circle is painted from the space
+ * scale (further below). `PanelTargetTest` holds the pair together -- it refuses a radio
+ * whose label has lost the floor -- so neither half can be removed on its own. */
 /*
  * ⚠ `.studio-colour-input` JOINED AT `QRPAGER-41` PART B, AND AGAIN IT WAS `PanelTargetTest`
  * THAT ASKED RATHER THAN A READING. Item 5 replaced six hex text fields with a native
@@ -92,7 +143,6 @@
  * it is an `<output>`, not part of the target.
  */
 .studio-colour-input,
-.fi-radio-input,
 .fi-icon-btn,
 .fi-theme-switcher-btn,
 .fi-pagination-item-btn,

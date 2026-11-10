@@ -861,3 +861,356 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
     )
   })
 })
+
+/*
+ * ================================================================================
+ * THE STUDIO AT `QRPAGER-44` — DENSITY, AND A TAB ROW THAT IS NOT CUT
+ * ================================================================================
+ *
+ * Both cases here are about geometry a server-rendered assertion cannot reach. The PHP
+ * suite can prove `targets.css` says the right thing; only an engine can prove the page
+ * then MEASURES the right thing, and the two have disagreed on this exact control before —
+ * `QRPAGER-41` part B's first attempt named three classes Filament does not render, changed
+ * nothing, and was green the whole time.
+ */
+test.describe('the studio — QRPAGER-44', () => {
+  test('gives the radio a 44px target on its label and a 24px painted circle — item A', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    const label = page.locator('.fi-fo-radio-label').first()
+    const input = page.locator('.fi-radio-input').first()
+
+    await expect(label).toBeVisible()
+
+    const labelBox = await label.boundingBox()
+    const inputBox = await input.boundingBox()
+
+    expect(
+      labelBox,
+      'the radio label is not in the layout, so nothing below measures it',
+    ).not.toBeNull()
+    expect(
+      inputBox,
+      'the radio input is not in the layout, so nothing below measures it',
+    ).not.toBeNull()
+
+    /*
+     * ⚠ THE TARGET IS THE LABEL, AND THE LABEL IS WHAT §12's 44px APPLIES TO. Muhammad's
+     * ruling of 2026-11-10: *"§12 requires a 44px TOUCH TARGET. It says nothing about the
+     * painted size."* A pointer anywhere on this row selects the option, because Filament
+     * renders the input INSIDE the label — which is the fact the old comment in
+     * `targets.css` denied.
+     */
+    expect(
+      Math.round(labelBox!.height),
+      'the radio row is under §12’s 44px minimum target',
+    ).toBeGreaterThanOrEqual(44)
+
+    /*
+     * ⚠ AND THE CIRCLE IS SMALLER THAN THE TARGET, which is the half that would silently
+     * not happen. With the floor still on `.fi-radio-input` this measures 44 and the whole
+     * ticket is inert — so this is an UPPER bound, deliberately, and it is the assertion
+     * that fails if the separation is undone.
+     */
+    expect(
+      Math.round(inputBox!.width),
+      'the painted circle is still carrying the touch-target floor',
+    ).toBe(24)
+    expect(Math.round(inputBox!.height)).toBe(24)
+
+    /*
+     * ⚠ AND THE INPUT IS INSIDE THE FLOORED LABEL — `§11` QA round, Medium 5. Everything
+     * above is true of a 24px input sitting NEXT TO a 44px label, which would be a 24px
+     * target with two green assertions over it. The floor only reaches this control because
+     * Filament nests them, and nothing asserted the nesting: `targets.css` names the label,
+     * `PanelTargetTest` maps the input to it by STRING, and neither can see the DOM.
+     */
+    const nested = await label.locator('.fi-radio-input').count()
+
+    expect(
+      nested,
+      'the radio input is not inside its floored label, so its target is its own 24px box',
+    ).toBeGreaterThan(0)
+  })
+
+  /*
+   * ⚠ THE CONTROL WHOSE ABSENCE LET A DEFECT THROUGH EVERY GATE — `§11` QA round, High 1
+   * and Medium 4. Two thirds of item A's stated invariant had NO measuring control: nothing
+   * asserted the heading set's computed size or weight, and nothing asserted the row height.
+   * What slipped through was `.studio-fieldset > legend { font-weight: 600 }` beating the
+   * heading rule on source order at equal specificity — so the legend rendered 600 while the
+   * CSS comment, `PLAN.md §4a` and this suite all said 700. A rule can be correct, committed
+   * and overridden, and only a measurement of the RENDERED element can tell the difference.
+   */
+  test('renders the whole heading set at one step and one weight — item A', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    await expect(page.locator('.studio-section-field .fi-fo-field-label')).toBeVisible()
+
+    const measured = await page.evaluate(() => {
+      const read = (sel: string) => {
+        const el = document.querySelector(sel)
+
+        if (el === null) return null
+
+        const c = getComputedStyle(el)
+
+        return {
+          size: c.fontSize,
+          weight: c.fontWeight,
+          text: el.textContent.trim().slice(0, 24),
+        }
+      }
+
+      return {
+        h2: read('.studio-layout__form h2'),
+        legend: read('.studio-layout__form legend'),
+        blocks: read('.studio-section-field .fi-fo-field-label'),
+        // the control's OWN name, which is deliberately NOT in the set
+        fieldLabel: read('.fi-fo-field:not(.studio-section-field) .fi-fo-field-label'),
+        row: read('.fi-fo-builder-item-header-label'),
+      }
+    })
+
+    for (const key of ['h2', 'legend', 'blocks'] as const) {
+      const m = measured[key]
+
+      expect(m, `${key} is not in the layout, so nothing here measures it`).not.toBeNull()
+      expect(m!.size, `${key} is off the heading step`).toBe('16px')
+      // 700 and not 600: Tajawal ships 400 and 700 here, so anything between is synthesised.
+      expect(m!.weight, `${key} is not at the heavy weight`).toBe('700')
+    }
+
+    // And the set is DISCRIMINATING: a control's own name stays regular, or "the heading set"
+    // would just mean "every label on the page" and the assertions above would be empty.
+    expect(measured.fieldLabel, 'no ordinary field label is rendered').not.toBeNull()
+    expect(measured.fieldLabel!.weight, 'an ordinary field label took the heading weight').toBe(
+      '400',
+    )
+  })
+
+  test('keeps the block row at the shrunk height with its 44px cluster intact — item A', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    /*
+     * ⚠ THE PICKER IS RETRIED RATHER THAN SLEPT AT, AND THE FIRST VERSION OF THIS CASE DID
+     * NEITHER. The add control is an Alpine dropdown; a click that lands before Alpine binds
+     * it is SWALLOWED with no error and no console message, so the case sat for its whole
+     * 90-second budget waiting for a menu that was never going to open — a timeout on line
+     * 1003 whose cause was on line 1002. Playwright's auto-waiting cannot help: the button is
+     * present, visible and enabled the entire time; it simply is not listening yet.
+     *
+     * A fixed `waitForTimeout` would work on this machine and encode its speed. Asking for
+     * the menu and clicking again when it is absent is the same idea without the guess.
+     */
+    const add = page.getByRole('button', { name: 'أضف كتلة' }).first()
+    await expect(add).toBeVisible()
+
+    const picked = page.getByRole('menuitem').first()
+    let opened = false
+
+    for (let attempt = 0; attempt < 5 && !opened; attempt++) {
+      await add.click()
+      opened = await picked
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false)
+    }
+
+    expect(opened, 'the block picker never opened, so no row was ever added').toBe(true)
+    await picked.click()
+
+    const header = page.locator('.fi-fo-builder-item-header').first()
+    await expect(header).toBeVisible()
+
+    const box = await header.boundingBox()
+
+    expect(box, 'no block row is in the layout, so nothing here measures one').not.toBeNull()
+
+    // 56 -> 48. An UPPER bound, because the defect this guards is the row growing back.
+    expect(Math.round(box!.height), 'the block row is not at the shrunk height').toBe(48)
+
+    /*
+     * ⚠ AND THE CLUSTER IS STILL AT THE BAR, which is the half that makes 48 the FLOOR
+     * rather than a free choice: `4 + 32 + 4` would be 40 and the 44px buttons inside would
+     * overflow the row they sit between. If this ever fails while the height above passes,
+     * the row was shrunk past what its own controls fit in.
+     */
+    const buttons = header.locator('button')
+    const count = await buttons.count()
+
+    expect(
+      count,
+      'the row renders no controls, so the cluster is not being measured',
+    ).toBeGreaterThan(2)
+
+    for (let i = 0; i < count; i++) {
+      const b = await buttons.nth(i).boundingBox()
+
+      if (b === null) continue
+
+      expect(
+        Math.round(b.height),
+        `cluster button ${String(i)} is under §12's 44px bar`,
+      ).toBeGreaterThanOrEqual(44)
+    }
+  })
+
+  test('keeps the tab row clear of the sticky topbar while the form scrolls — item B', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+
+    /*
+     * ⚠ A SHORT VIEWPORT, AND IT IS THIS CASE'S PRECONDITION RATHER THAN A STYLE CHOICE.
+     * The `studio-chromium` project runs at 1280x1100 and this fixture's tenant has no
+     * blocks, so the document is SHORTER than that viewport and the page cannot scroll at
+     * all -- measured, `window.scrollY` stayed 0 at every offset asked for. A case about a
+     * row being covered WHILE SCROLLING that cannot scroll would pass without ever reaching
+     * the state it is about, which is the dead-control shape this suite keeps finding. The
+     * WIDTH stays 1280, which is what every measurement in this ticket was taken at, and is
+     * above the 56rem breakpoint so the two columns are still side by side.
+     */
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    const tab = page.locator('.studio-tab[aria-current="page"]')
+    await expect(tab).toBeVisible()
+
+    /*
+     * At rest the row sits at y=114 and `div.fi-topbar-ctn` spans 0..64. 150 is past the
+     * offset where a row that does NOT stick has carried its own top edge out of the
+     * viewport entirely -- so on the defect this scroll leaves nothing to hit, and on the
+     * fix the row is parked against the bar.
+     */
+    await page.evaluate(() => {
+      window.scrollTo(0, 150)
+    })
+    await page.waitForTimeout(300)
+
+    const scrolled = await page.evaluate(() => Math.round(window.scrollY))
+    expect(scrolled, 'the page did not scroll, so nothing here was ever at risk').toBeGreaterThan(
+      120,
+    )
+
+    /*
+     * ⚠ `elementFromPoint` AND NOT A `position` ASSERTION. `toHaveCSS('position', 'sticky')`
+     * would pass on a sticky row parked at the WRONG offset — still cut, still green. This
+     * asks the engine what is actually painted at the tab's own top edge, which is the pixel
+     * the ticket says is lost.
+     */
+    const verdict = await page.evaluate(() => {
+      const el = document.querySelector('.studio-tab[aria-current="page"]')
+
+      if (el === null) {
+        return { ok: false, why: 'the active tab is gone' }
+      }
+
+      const r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + 1)
+      const bar = document.querySelector('.fi-topbar')?.getBoundingClientRect() ?? null
+      const barBottom = bar === null ? 0 : bar.y + bar.height
+
+      return {
+        // Both halves: the row parked AT OR BELOW the bar's bottom edge, and the pixel at
+        // its own top edge painted by the row itself rather than by the bar over it.
+        ok: r.y >= barBottom - 1 && hit !== null && hit.closest('.studio-tabs') !== null,
+        why:
+          `top edge at y=${String(Math.round(r.y))}, topbar ends at ` +
+          `y=${String(Math.round(barBottom))}, painted there: ` +
+          (hit === null ? 'nothing' : `${hit.tagName.toLowerCase()}.${hit.className}`),
+      }
+    })
+
+    expect(verdict.ok, `the active tab’s top edge is covered — ${verdict.why}`).toBe(true)
+
+    /*
+     * ⚠ THE OPAQUE GROUND IS THE OTHER HALF OF THE FIX, AND `elementFromPoint` CANNOT SEE IT
+     * — `§11` QA round, Low 7. A sticky row with no background still returns itself from
+     * that probe while the form scrolls visibly through it, so the assertion above passes on
+     * a shelf nobody can read.
+     */
+    const ground = await page.evaluate(() => {
+      const el = document.querySelector('.studio-tabs')
+
+      return el === null ? null : getComputedStyle(el).backgroundColor
+    })
+
+    expect(ground, 'the tab row is not in the layout').not.toBeNull()
+    expect(ground, 'the sticky tab row paints no ground, so the form scrolls through it').not.toBe(
+      'rgba(0, 0, 0, 0)',
+    )
+  })
+
+  /*
+   * ⚠ THE REGRESSION TEST FOR `§11`'s HIGH 2, AND IT IS A SEPARATE CASE BECAUSE IT CHANGES
+   * THE ROOT FONT SIZE. The shelf offset was `64px`, measured off a booted panel at the
+   * default root font size — right number, wrong unit. Filament declares
+   * `.fi-body { --topbar-height: 4rem }` and applies it as `min-height`, and nothing in this
+   * repo pins `html`/`:root` font-size, so a reader who raises their browser's default to
+   * 20px got an 80px bar over a shelf still parked at 64 and the active tab's top 16px went
+   * back under it — item B's own defect, returning for exactly the readers `§12` exists for.
+   *
+   * `addStyleTag` reproduces the same condition the preference does: `rem` resolves against
+   * the root font size either way. Full-page zoom scales both and was never the hazard.
+   */
+  test('keeps the tab row clear of the topbar at a non-default root font size — item B', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    await page.addStyleTag({ content: 'html { font-size: 20px }' })
+    await page.waitForTimeout(300)
+
+    const grown = await page.evaluate(() => {
+      const bar = document.querySelector('.fi-topbar')
+
+      return bar === null ? 0 : Math.round(bar.getBoundingClientRect().height)
+    })
+
+    // The precondition, asserted: if the bar did NOT grow, this case is measuring the
+    // default layout under a different name and proves nothing.
+    expect(
+      grown,
+      'the topbar did not grow, so the root font size never took effect',
+    ).toBeGreaterThan(64)
+
+    await page.evaluate(() => {
+      window.scrollTo(0, 150)
+    })
+    await page.waitForTimeout(300)
+
+    const verdict = await page.evaluate(() => {
+      const el = document.querySelector('.studio-tab[aria-current="page"]')
+      const bar = document.querySelector('.fi-topbar')
+
+      if (el === null || bar === null)
+        return { ok: false, why: 'the tab row or the topbar is gone' }
+
+      const r = el.getBoundingClientRect()
+      const br = bar.getBoundingClientRect()
+      const barBottom = br.y + br.height
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + 1)
+
+      return {
+        ok: r.y >= barBottom - 1 && hit !== null && hit.closest('.studio-tabs') !== null,
+        why:
+          `tab top y=${String(Math.round(r.y))}, topbar ends y=${String(Math.round(barBottom))}, ` +
+          `painted there: ${hit === null ? 'nothing' : hit.tagName.toLowerCase()}`,
+      }
+    })
+
+    expect(verdict.ok, `the shelf did not follow the topbar when it grew — ${verdict.why}`).toBe(
+      true,
+    )
+  })
+})

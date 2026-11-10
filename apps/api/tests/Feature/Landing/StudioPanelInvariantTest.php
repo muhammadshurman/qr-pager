@@ -360,3 +360,64 @@ it('keeps the tenant out of the Livewire snapshot, so it cannot be tampered with
         }
     }
 });
+
+/*
+ * ================================================================================
+ * THE HEADING HOOK REACHES THE HTML — `QRPAGER-44` item A
+ * ================================================================================
+ *
+ * `الكتل` is painted as a peer of the studio's section headings by a CSS rule that selects
+ * `.studio-section-field .fi-fo-field-label`, and the class gets there from
+ * `Builder::make('blocks')->extraFieldWrapperAttributes([...])` rather than from any view.
+ *
+ * ⚠ WITHOUT THIS CASE THE WHOLE ITEM FAILS SILENTLY AND LOOKS FINE. If Filament stops
+ * merging that attribute -- a renamed method, a wrapper that no longer takes extras, a
+ * `plain-field-wrapper` chosen instead -- the selector matches nothing, `الكتل` simply keeps
+ * the field-label step, and NOTHING in this suite or the browser suite says so: the type
+ * scale still resolves to tokens, the heading rule still applies to every real `<h2>`, and
+ * `scan-css` only reads values. The failure mode is a stylesheet rule with no subject, which
+ * is the same shape as `QRPAGER-41` part B's three classes Filament does not render -- that
+ * changed nothing and was green the whole time.
+ */
+it('renders the blocks field with the class its heading rule selects', function (): void {
+    $this->actingForTenant(role: TenantRole::Owner);
+
+    $html = (string) $this->get('/studio')->getContent();
+
+    // The class is on the field WRAPPER, beside Filament's own, so both are asserted: a
+    // wrapper that lost `fi-fo-field` would mean the DOM moved under the selector even if
+    // our own class survived.
+    expect($html)->toContain('studio-section-field');
+
+    $pattern = '/class="[^"]*\bfi-fo-field\b[^"]*\bstudio-section-field\b[^"]*"'
+        .'|class="[^"]*\bstudio-section-field\b[^"]*\bfi-fo-field\b[^"]*"/';
+
+    expect($html)->toMatch($pattern);
+
+    /*
+     * ⚠ AND THE THIRD COMPONENT OF THE SELECTOR, WHICH THIS CASE DID NOT ASSERT UNTIL THE
+     * `§11` QA ROUND OF 2026-11-10 (Medium 3). The rule is
+     * `.studio-section-field .fi-fo-field-label`, and the two expectations above cover only
+     * the wrapper's own two classes. The reviewer renamed Filament's `fi-fo-field-label` to
+     * `fi-fo-field-lbl` in a worktree's vendor view and THIS CASE STAYED GREEN -- while its
+     * own docblock says it exists so the heading item cannot fail silently. It was the exact
+     * shape it was written to refuse.
+     *
+     * So: the label element must be rendered INSIDE the wrapper this ticket classed. The
+     * `(?s)` and the bounded `.*?` keep it to one element's worth of markup rather than
+     * matching a label anywhere later on the page.
+     */
+    /*
+     * ⚠ `(?<![-\w])…(?![-\w])` AND NOT `\b…\b`, AND THE DIFFERENCE IS THE WHOLE ASSERTION.
+     * `-` is a non-word character, so `\bfi-fo-field-label\b` MATCHES INSIDE
+     * `fi-fo-field-label-col` and `fi-fo-field-label-ctn` -- two classes Filament renders on
+     * the wrapper right beside the one this selector needs. Measured: with the real
+     * `fi-fo-field-label` renamed in Filament's compiled renderer
+     * (`vendor/filament/forms/src/Components/Field.php:497`), the `\b` form stayed GREEN off
+     * the `-col` wrapper alone. It was a second dead control inside the case written to
+     * prevent the first one.
+     */
+    $inside = '/<div[^>]*\bstudio-section-field\b[^>]*>(?s).{0,2000}?(?<![-\w])fi-fo-field-label(?![-\w])/';
+
+    expect($html)->toMatch($inside);
+});

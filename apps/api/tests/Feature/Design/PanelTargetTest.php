@@ -74,6 +74,66 @@ function inlineTextTargets(): array
 }
 
 /**
+ * Controls whose TOUCH TARGET IS A WRAPPING LABEL rather than their own box.
+ *
+ * ⚠ THIS EXISTS BECAUSE `targets.css` CONFLATED TWO THINGS AND THIS FILE HELPED IT. A
+ * radio input was floored to 44px on both axes and the comment that put it there said *"a
+ * radio's hit area IS its own box -- the label beside it is not part of the control"*, which
+ * is false: Filament renders `<label class="fi-fo-radio-label">` AROUND the input, so the
+ * whole row selects the option. The floor was therefore deciding how big the circle is
+ * PAINTED, which `§12` has no opinion about -- it requires a 44px TARGET. Muhammad's ruling
+ * of 2026-11-10 separates them, and `QRPAGER-44` moves the floor to the label.
+ *
+ * ⚠ IT IS A MAP AND NOT A SKIP LIST, which is the whole point. An entry does not excuse
+ * the control from the bar; it says WHICH element has to carry it, and the assertion below
+ * then demands that element be floored in `targets.css`. Deleting `.fi-fo-radio-label` from
+ * that file reddens here, so the two halves of the ruling cannot drift apart.
+ *
+ * @return array<string, string> control class => the class that carries its 44px floor
+ */
+function labelledTargets(): array
+{
+    return [
+        'fi-radio-input' => 'fi-fo-radio-label',
+    ];
+}
+
+/**
+ * The selectors `targets.css` actually applies the floor to, read from the file.
+ *
+ * Rule by rule rather than by a flat class sweep, because the question here is not *"does
+ * this name appear"* -- `.fi-radio-input` still appears, carrying its painted size -- it is
+ * *"does this name appear in a rule that sets `var(--target-min)`"*.
+ *
+ * @return list<string>
+ */
+function flooredSelectors(): array
+{
+    $css = (string) file_get_contents(resource_path('css/filament/targets.css'));
+    $code = (string) preg_replace('#/\*[\s\S]*?\*/#', ' ', $css);
+
+    $floored = [];
+
+    preg_match_all('/([^{}]+)\{([^{}]*)\}/', $code, $rules, PREG_SET_ORDER);
+
+    foreach ($rules as $rule) {
+        if (! str_contains($rule[2], 'var(--target-min)')) {
+            continue;
+        }
+
+        foreach (preg_split('/\s*,\s*/', trim($rule[1])) as $selector) {
+            $selector = trim((string) $selector);
+
+            if ($selector !== '') {
+                $floored[] = $selector;
+            }
+        }
+    }
+
+    return $floored;
+}
+
+/**
  * Every interactive element across the six chrome routes, as its list of Filament classes.
  *
  * ⚠ PER ELEMENT AND NOT A FLAT SET OF CLASSES, which is a correction. The first version
@@ -155,22 +215,28 @@ it('derives a real control set from six rendered pages', function (): void {
 });
 
 it('covers every rendered control, or names it as an inline exception', function (): void {
-    $css = (string) file_get_contents(resource_path('css/filament/targets.css'));
-
     // The selectors the floor actually applies to, read from the file rather than listed
     // here -- a second copy of that list is what this test exists to prevent.
     //
-    // ⚠ `\s*[,{]` AND NOT `[,{]`. The LAST selector of a group is followed by a space before
-    // the brace, so the tighter pattern missed exactly one per group -- it reported
-    // `fi-ta-header-cell-sort-btn` and `fi-user-menu-trigger` as uncovered when both are in
-    // the file. A reader of that failure would have added them a second time.
-    preg_match_all('/^\.([a-z0-9-]+)\s*[,{]/m', $css, $selectors);
-
-    $covered = $selectors[1];
+    // ⚠ DERIVED FROM THE RULES THAT DECLARE `var(--target-min)`, AND IT USED TO BE EVERY
+    // RULE IN THE FILE (`preg_match_all('/^\.([a-z0-9-]+)\s*[,{]/m', ...)`). That was
+    // accurate only while every rule in `targets.css` WAS a floor, which stopped being true
+    // at `QRPAGER-44`: that ticket adds a rule painting `.fi-radio-input` at `--space-24`,
+    // and under the old derivation THAT rule reported the radio as covered -- a control
+    // marked as meeting the 44px bar by the very line that shrank it below it.
+    //
+    // MEASURED RATHER THAN REASONED: with `.fi-fo-radio-label` deleted from the floor, so
+    // the radio genuinely had no 44px target anywhere, the old derivation still passed this
+    // case. It is the dead-control shape, and it was introduced and caught in the same hour.
+    $covered = array_map(
+        static fn (string $selector): string => ltrim($selector, '.'),
+        flooredSelectors(),
+    );
 
     expect(count($covered))->toBeGreaterThan(8, 'targets.css applies to almost nothing');
 
     $uncovered = [];
+    $labelled = labelledTargets();
 
     foreach (renderedControlElements() as $element) {
         // ONE covered class is enough: the floor is a min-height on the element, and an
@@ -181,6 +247,22 @@ it('covers every rendered control, or names it as an inline exception', function
 
         // Or the element is an inline text target, which takes no minimum by WCAG 2.5.8.
         if (array_intersect($element, inlineTextTargets()) !== []) {
+            continue;
+        }
+
+        // Or its target is a wrapping label -- and then THAT element must be floored, which
+        // is a demand rather than an exemption. See `labelledTargets()`.
+        $carrier = null;
+
+        foreach ($element as $class) {
+            if (array_key_exists($class, $labelled)) {
+                $carrier = $labelled[$class];
+
+                break;
+            }
+        }
+
+        if ($carrier !== null && in_array($carrier, $covered, true)) {
             continue;
         }
 
@@ -208,4 +290,39 @@ it('states the token rather than the number, so 44 lives in one place', function
 
     $tokens = (string) file_get_contents(dirname(base_path(), 2).'/packages/tokens/generated/tokens.css');
     expect($tokens)->toContain('--target-min: 44px;');
+});
+
+/*
+ * ================================================================================
+ * THE TARGET AND THE PAINT ARE TWO DECISIONS — `QRPAGER-44`, Muhammad's ruling
+ * ================================================================================
+ *
+ * The ruling: *"§12 requires a 44px TOUCH TARGET. It says nothing about the painted size.
+ * The current implementation conflates them by putting --target-min on the control itself."*
+ *
+ * This is the pair that cannot be half-applied. Put the floor back on `.fi-radio-input` and
+ * the first expectation's partner fails; take it off `.fi-fo-radio-label` and the control
+ * loses its target with nothing to say so. Both halves are asserted here, against the file
+ * rather than against a second copy of the list.
+ */
+it('puts the radio target on its label and the painted circle on the space scale', function (): void {
+    $floored = flooredSelectors();
+
+    // A bound first, so a regex that matched nothing cannot make the two claims below pass
+    // by vacancy -- the dead-control shape this suite has recorded four times.
+    expect(count($floored))->toBeGreaterThan(5);
+
+    // The LABEL carries the bar, because the label is what a pointer hits.
+    expect(in_array('.fi-fo-radio-label', $floored, true))->toBeTrue();
+
+    // And the INPUT does not -- otherwise the painted size below is inert and this file
+    // would read as though it had been applied. `.studio-colour-input` records that trap.
+    expect(in_array('.fi-radio-input', $floored, true))->toBeFalse();
+
+    $css = (string) file_get_contents(resource_path('css/filament/targets.css'));
+    $code = (string) preg_replace('#/\*[\s\S]*?\*/#', ' ', $css);
+
+    // The circle is painted from the space scale on both axes, and never from a literal.
+    expect($code)->toMatch('/\.fi-radio-input\s*\{[^}]*inline-size:\s*var\(--space-\d+\)/')
+        ->and($code)->toMatch('/\.fi-radio-input\s*\{[^}]*block-size:\s*var\(--space-\d+\)/');
 });

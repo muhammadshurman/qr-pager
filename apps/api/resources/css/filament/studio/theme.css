@@ -71,8 +71,28 @@
  * --studio-frame-phone the preview frame at phone width. 390px is the device width the
  *                      whole product is already measured at -- browser/one-handed.spec.ts
  *                      drives 390x844 -- so this is not a new number, it is that one.
- * --studio-pane-top    where the sticky pane parks: clear of Filament's own topbar.
- *                      QRPAGER-41 part B item 2.
+ * ⚠ THERE IS NO `--studio-topbar` CONSTANT, AND THERE WAS ONE FOR ABOUT AN HOUR. It read
+ *   `--studio-topbar: 64px`, measured off the booted panel, and the `§11` SECURITY ROUND of
+ *   2026-11-10 (M-1) showed that the measurement was right and the UNIT was wrong. Filament
+ *   declares `.fi-body { --topbar-height: 4rem }` and applies it as `min-height` on
+ *   `.fi-topbar`; nothing in this repo pins `html`/`:root` font-size. So at a root font size
+ *   of 20px the bar becomes 80px while a 64px shelf stays where it was, and the active tab's
+ *   top 16px go back under it -- **item B's own defect, returning for exactly the readers
+ *   `§12`'s accessibility bar exists for.** Full-page zoom scales both and is unaffected; the
+ *   font-size preference and text-only zoom are not.
+ *   THE FIX IS TO STOP MIRRORING THE VALUE AND READ IT. `--topbar-height` is declared on
+ *   `.fi-body`, which is the same element as `.fi-panel-studio`, so it inherits into
+ *   everything on this page -- which is also why `--studio-pane-top` moved OFF `:root`: a
+ *   `var()` of a property declared on `body` resolves to nothing on `html`, and the whole
+ *   declaration would have been invalid at computed-value time.
+ * --studio-pane-top    where the sticky pane parks, declared on `.fi-panel-studio` and NOT
+ *                      here, for the reason in the note above. ⚠ THIS SAID *"clear of Filament's own
+ *                      topbar"* AND WAS `var(--space-16)`, WHICH IS NOT CLEAR OF A 64px BAR.
+ *                      Measured at `044d1bf`, scrolled: the pane parked at y=16 under a
+ *                      topbar spanning 0..64 at `z-index: 30`, so its top 48px were painted
+ *                      over. `QRPAGER-44` item B is the same defect one row up, and fixing
+ *                      the tab row without this would have parked the pane under the new
+ *                      shelf as well -- so the constant now clears the topbar AND the tabs.
  *
  * ⚠ ONE CONSTANT CANNOT BE A CUSTOM PROPERTY, AND IT IS NAMED HERE RATHER THAN HIDDEN
  * IN THE RULE. A media query is evaluated before the cascade, so `@media (min-width:
@@ -86,7 +106,45 @@
 :root {
   --studio-pane-basis: 26rem;
   --studio-frame-phone: 390px;
-  --studio-pane-top: var(--space-16);
+  /* `--studio-pane-top` lives on `.fi-panel-studio` below -- see the note above. */
+}
+
+/*
+ * ================================================================================
+ * THE TAB ROW IS NOT CLIPPED BY THE TOPBAR — `QRPAGER-44` item B
+ * ================================================================================
+ *
+ * THE DEFECT, MEASURED AT `044d1bf` AND NOT GUESSED. At rest nothing is clipped: at 1280px
+ * the topbar spans y 0..64, `.fi-header` 72..106 and this row 114..165, so the ticket's
+ * *"clipped under the header"* is not a resting overlap and shrinking the type -- which the
+ * ticket forbids in the same breath -- would not have touched it. What is actually there:
+ *
+ *     div.fi-topbar-ctn   position: sticky   top: 0   z-index: 30   height: 64
+ *
+ * so the row passes UNDER an opaque bar the moment the page scrolls past ~50px, and the
+ * active tab's top edge is the first thing to go. That is a stacking problem, which is why
+ * the ticket says to fix the layout.
+ *
+ * THE FIX IS A SHELF: the row sticks directly beneath the topbar instead of sliding under
+ * it, so it is never cut and the four tabs stay reachable while the form scrolls -- the
+ * same argument `QRPAGER-41` part B item 2 made for the preview pane.
+ *
+ * ⚠ `z-index: 20` IS CHOSEN AGAINST THE TOPBAR'S 30 RATHER THAN PICKED. Above the form, so
+ * the fields scroll under this row; below the topbar, so the user menu and the skip link
+ * still paint over it. A bare `position: sticky` with no z-index would leave this row in the
+ * auto stacking context and let later-painted siblings cover it.
+ *
+ * ⚠ AND IT NEEDS AN OPAQUE GROUND. A sticky row over scrolling content shows that content
+ * through unless it paints one, and the ground is the panel's own `paper` token -- the value
+ * `QRPAGER-42` A1 put on `body.fi-body`, so the shelf matches the page rather than
+ * introducing a second surface.
+ */
+/*
+ * Declared on the panel's own body class because that is the element Filament puts
+ * `--topbar-height` on, and a `var()` cannot reach a property declared on a descendant.
+ */
+.fi-panel-studio {
+  --studio-pane-top: calc(var(--topbar-height) + var(--space-64));
 }
 
 .studio-tabs {
@@ -95,6 +153,10 @@
   gap: var(--space-24);
   border-block-end: 1px solid var(--color-hairline);
   margin-block-end: var(--space-24);
+  position: sticky;
+  inset-block-start: var(--topbar-height);
+  z-index: 20;
+  background: var(--color-paper);
 }
 
 .studio-tab {
@@ -225,6 +287,30 @@
 }
 
 /*
+ * ================================================================================
+ * THE ROW'S OWN HEIGHT — `QRPAGER-44` item A, the third of the three
+ * ================================================================================
+ *
+ * MEASURED AT `044d1bf` WITH ONE BLOCK IN THE LIST, at 1280px:
+ *
+ *     div.fi-fo-builder-item-header            618x56   padding-block 12px
+ *     ul.fi-fo-builder-item-header-*-actions   ...x32
+ *     button.fi-icon-btn.fi-size-sm             44x44   ← the floor, from `targets.css`
+ *
+ * So the 56 is Filament's `12 + 32 + 12`, and the reorder / clone / delete buttons already
+ * OVERFLOW their own 32px action rows by 6px on each side -- the row is not sized by them.
+ *
+ * `12` -> `8` takes the header to `8 + 32 + 8` = 48. ⚠ AND THE NEXT STEP DOWN IS NOT
+ * AVAILABLE, which is the arithmetic rather than a preference: `--space-4` would give
+ * `4 + 32 + 4` = 40, and the 44px buttons inside it would then overflow the row itself
+ * rather than their action list, so the cluster would paint outside the hairline it sits
+ * between. 48 is the smallest step that still contains a 44px target.
+ */
+.fi-fo-builder .fi-fo-builder-item-header {
+  padding-block: var(--space-8);
+}
+
+/*
  * ⚠ THE NUMBER IS A COUNTER, WHICH IS THE WHOLE REASON IT IS CORRECT. The ticket asks
  * for "the block's position on the page", and a position written into the markup would
  * be stale the moment a row is dragged -- the server would have to re-render to fix it.
@@ -252,8 +338,9 @@
   padding: var(--space-16);
 }
 
+/* `8` -> `4` at `QRPAGER-44`, the same ruling as the field ladder above. */
 .studio-plate > * + * {
-  margin-block-start: var(--space-8);
+  margin-block-start: var(--space-4);
 }
 
 .studio-footer {
@@ -311,13 +398,33 @@
 }
 
 /*
- * Section headings and the fieldset legend, one step above body copy. These are `h2` in the
- * studio's own views and the legend of the language fieldset; both are "the heading of a
- * group of controls" and so take the same step.
+ * ================================================================================
+ * ONE HEADING LEVEL, AND WEIGHT CARRIES IT — `QRPAGER-44` item A
+ * ================================================================================
+ *
+ * These were `--size-20`, one step above body copy, which `QRPAGER-41` part B item 3 set
+ * deliberately. `QRPAGER-44` brings the whole set down one step on Muhammad's ruling of
+ * 2026-11-10, and the ruling is specific about what replaces the size difference:
+ * *"at 16 a heading and body copy share a size, so weight carries the hierarchy: heading at
+ * the heavy weight, body at regular."*
+ *
+ * ⚠ 700 AND NOT 600, AND THAT IS A FACE AND NOT A PREFERENCE. This panel's Arabic is
+ * Tajawal, self-hosted from `packages/tokens/fonts` as exactly TWO files -- `-400` and
+ * `-700`. The legend computed `600` before this rule, which no file provides, so the engine
+ * was synthesising it. Asking for 700 asks for a face that exists.
+ *
+ * ⚠ AND `الكتل` JOINS THE SET HERE, WHICH IS WHY `StudioForm` PUTS A CLASS ON THAT
+ * FIELD. It is a Filament field label and `الحالة` beside it is a real `<h2>`; measured,
+ * they rendered at 16 and 20 while reading as peers. The ruling is to paint them as peers
+ * and leave the structure to the preset ticket (`PLAN.md §5`), so this selector reaches
+ * one named field rather than every field label -- `ترتيب الصفحة` is a control's own
+ * name and stays regular.
  */
 .studio-layout__form h2,
-.studio-layout__form legend {
-  font-size: var(--size-20);
+.studio-layout__form legend,
+.studio-layout__form .studio-section-field .fi-fo-field-label {
+  font-size: var(--size-16);
+  font-weight: 700;
   line-height: 1.3;
 }
 
@@ -389,17 +496,37 @@
   padding-block-start: var(--space-16);
 }
 
+/*
+ * ⚠ NO `font-weight` HERE, AND THERE WAS ONE UNTIL THE `§11` QA ROUND OF 2026-11-10 (High 1).
+ * It read `font-weight: 600`, and it SILENTLY BEAT the heading-set rule above: both selectors
+ * are specificity (0,1,1) -- `.studio-fieldset > legend` and `.studio-layout__form legend` --
+ * and this one is later in the file, so source order decided it. Measured in the booted panel
+ * after `QRPAGER-44`'s heading change and before this fix: the legend computed **16px / 600**
+ * while every other member of the set computed 700, the file's own comment claimed *"asking
+ * for 700 asks for a face that exists"*, and `PLAN.md §4a` recorded it as 700. Three records
+ * agreed with each other and not with the panel.
+ *
+ * 600 ALSO HAS NO FACE: this panel ships Tajawal as `-400` and `-700` only, so the one member
+ * of the heading set that kept its own weight was the one being synthesised.
+ *
+ * The weight is now stated in exactly one place -- the heading set -- and
+ * `browser/studio.spec.ts` measures every member of that set, which is the control whose
+ * absence let this through every gate.
+ */
 .studio-fieldset > legend {
   /* `float: none` and `padding: 0` undo the UA's legend box, which is what cut the border. */
   float: none;
   padding: 0;
   margin-block-end: var(--space-8);
-  font-weight: 600;
 }
 
-/* label -> control -> helper, with the ladder between them and nothing else. */
+/* label -> control -> helper, with the ladder between them and nothing else.
+ *
+ * ⚠ `24` -> `16` AT `QRPAGER-44`. The ticket's complaint is density, and Muhammad's ruling
+ * of 2026-11-10 says where it comes from: *"the perceived heaviness is mass and air, not
+ * glyph size, and the type step alone will not fix it."* One step down the same ladder. */
 .studio-field + .studio-field {
-  margin-block-start: var(--space-24);
+  margin-block-start: var(--space-16);
 }
 
 .studio-field > * + * {
@@ -451,12 +578,23 @@
   flex: 0 0 auto;
 }
 
+/*
+ * ⚠ THE SUMMARY IS REGULAR WHILE THE ROW'S NAME IS NOT, AND THAT IS THE HEADING RULE
+ * REACHING IN HERE. `fi-fo-builder-item-header-label` is an `<h2>`, so the one-level rule
+ * above now paints this whole row 16/700 where Filament had 20/500. 16 is Muhammad's
+ * instruction -- *"leave the block row TITLES at 16; they are the content of the list, and
+ * at 13 the list stops being scannable"* -- and the weight split is what keeps the row
+ * scannable at that size: the block's NAME carries 700, the heading the owner typed is the
+ * detail and takes 400 beside it. 500 is not an option for either; Tajawal ships 400 and
+ * 700 here and anything between them is synthesised.
+ */
 .studio-block-summary {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-weight: 400;
   color: var(--color-ink-mid);
 }
 
