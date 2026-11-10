@@ -393,4 +393,31 @@ it('renders the blocks field with the class its heading rule selects', function 
         .'|class="[^"]*\bstudio-section-field\b[^"]*\bfi-fo-field\b[^"]*"/';
 
     expect($html)->toMatch($pattern);
+
+    /*
+     * ⚠ AND THE THIRD COMPONENT OF THE SELECTOR, WHICH THIS CASE DID NOT ASSERT UNTIL THE
+     * `§11` QA ROUND OF 2026-11-10 (Medium 3). The rule is
+     * `.studio-section-field .fi-fo-field-label`, and the two expectations above cover only
+     * the wrapper's own two classes. The reviewer renamed Filament's `fi-fo-field-label` to
+     * `fi-fo-field-lbl` in a worktree's vendor view and THIS CASE STAYED GREEN -- while its
+     * own docblock says it exists so the heading item cannot fail silently. It was the exact
+     * shape it was written to refuse.
+     *
+     * So: the label element must be rendered INSIDE the wrapper this ticket classed. The
+     * `(?s)` and the bounded `.*?` keep it to one element's worth of markup rather than
+     * matching a label anywhere later on the page.
+     */
+    /*
+     * ⚠ `(?<![-\w])…(?![-\w])` AND NOT `\b…\b`, AND THE DIFFERENCE IS THE WHOLE ASSERTION.
+     * `-` is a non-word character, so `\bfi-fo-field-label\b` MATCHES INSIDE
+     * `fi-fo-field-label-col` and `fi-fo-field-label-ctn` -- two classes Filament renders on
+     * the wrapper right beside the one this selector needs. Measured: with the real
+     * `fi-fo-field-label` renamed in Filament's compiled renderer
+     * (`vendor/filament/forms/src/Components/Field.php:497`), the `\b` form stayed GREEN off
+     * the `-col` wrapper alone. It was a second dead control inside the case written to
+     * prevent the first one.
+     */
+    $inside = '/<div[^>]*\bstudio-section-field\b[^>]*>(?s).{0,2000}?(?<![-\w])fi-fo-field-label(?![-\w])/';
+
+    expect($html)->toMatch($inside);
 });

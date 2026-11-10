@@ -116,6 +116,14 @@ final class StudioForm
                  * field. A `:has()` on the builder inside would have worked and would have
                  * tied the panel's type scale to Filament's internal DOM; this names the
                  * intent instead.
+                 *
+                 * ⚠ THE VALUE IS A LITERAL AND IT HAS TO STAY ONE. `field-wrapper.blade.php`
+                 * merges this with `escape: false`, and `ComponentAttributeBag::__toString()`
+                 * escapes only `"` -- so ANY non-constant passed here is HTML-attribute
+                 * injection into the admin panel. The `§11` security round of 2026-11-10 (L-3)
+                 * confirmed nothing is exploitable today for exactly that reason, and named
+                 * the preset ticket -- which rebuilds this region -- as where a tenant-derived
+                 * class would plausibly arrive. It must not arrive through this argument.
                  */
                 ->extraFieldWrapperAttributes(['class' => 'studio-section-field'])
                 ->blocks(self::blocks($media))

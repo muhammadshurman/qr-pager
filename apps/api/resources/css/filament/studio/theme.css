@@ -71,15 +71,22 @@
  * --studio-frame-phone the preview frame at phone width. 390px is the device width the
  *                      whole product is already measured at -- browser/one-handed.spec.ts
  *                      drives 390x844 -- so this is not a new number, it is that one.
- * --studio-topbar      Filament's own sticky topbar, measured. `div.fi-topbar-ctn` is
- *                      `position: sticky; top: 0; z-index: 30` and 64px tall at 1280px, and
- *                      it is the thing every sticky offset on this page has to clear.
- *                      It is a LITERAL for `--studio-frame-phone`'s reason -- it is not our
- *                      dimension, it is Filament's, so reading it off the scale would be a
- *                      coincidence of values rather than a decision. `--space-64` happens to
- *                      equal it today; naming it that way is the `--radius-8` hazard this
- *                      project already paid for once.
- * --studio-pane-top    where the sticky pane parks. ⚠ THIS SAID *"clear of Filament's own
+ * ⚠ THERE IS NO `--studio-topbar` CONSTANT, AND THERE WAS ONE FOR ABOUT AN HOUR. It read
+ *   `--studio-topbar: 64px`, measured off the booted panel, and the `§11` SECURITY ROUND of
+ *   2026-11-10 (M-1) showed that the measurement was right and the UNIT was wrong. Filament
+ *   declares `.fi-body { --topbar-height: 4rem }` and applies it as `min-height` on
+ *   `.fi-topbar`; nothing in this repo pins `html`/`:root` font-size. So at a root font size
+ *   of 20px the bar becomes 80px while a 64px shelf stays where it was, and the active tab's
+ *   top 16px go back under it -- **item B's own defect, returning for exactly the readers
+ *   `§12`'s accessibility bar exists for.** Full-page zoom scales both and is unaffected; the
+ *   font-size preference and text-only zoom are not.
+ *   THE FIX IS TO STOP MIRRORING THE VALUE AND READ IT. `--topbar-height` is declared on
+ *   `.fi-body`, which is the same element as `.fi-panel-studio`, so it inherits into
+ *   everything on this page -- which is also why `--studio-pane-top` moved OFF `:root`: a
+ *   `var()` of a property declared on `body` resolves to nothing on `html`, and the whole
+ *   declaration would have been invalid at computed-value time.
+ * --studio-pane-top    where the sticky pane parks, declared on `.fi-panel-studio` and NOT
+ *                      here, for the reason in the note above. ⚠ THIS SAID *"clear of Filament's own
  *                      topbar"* AND WAS `var(--space-16)`, WHICH IS NOT CLEAR OF A 64px BAR.
  *                      Measured at `044d1bf`, scrolled: the pane parked at y=16 under a
  *                      topbar spanning 0..64 at `z-index: 30`, so its top 48px were painted
@@ -99,8 +106,7 @@
 :root {
   --studio-pane-basis: 26rem;
   --studio-frame-phone: 390px;
-  --studio-topbar: 64px;
-  --studio-pane-top: calc(var(--studio-topbar) + var(--space-64));
+  /* `--studio-pane-top` lives on `.fi-panel-studio` below -- see the note above. */
 }
 
 /*
@@ -133,6 +139,14 @@
  * `QRPAGER-42` A1 put on `body.fi-body`, so the shelf matches the page rather than
  * introducing a second surface.
  */
+/*
+ * Declared on the panel's own body class because that is the element Filament puts
+ * `--topbar-height` on, and a `var()` cannot reach a property declared on a descendant.
+ */
+.fi-panel-studio {
+  --studio-pane-top: calc(var(--topbar-height) + var(--space-64));
+}
+
 .studio-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -140,7 +154,7 @@
   border-block-end: 1px solid var(--color-hairline);
   margin-block-end: var(--space-24);
   position: sticky;
-  inset-block-start: var(--studio-topbar);
+  inset-block-start: var(--topbar-height);
   z-index: 20;
   background: var(--color-paper);
 }
@@ -482,12 +496,28 @@
   padding-block-start: var(--space-16);
 }
 
+/*
+ * ⚠ NO `font-weight` HERE, AND THERE WAS ONE UNTIL THE `§11` QA ROUND OF 2026-11-10 (High 1).
+ * It read `font-weight: 600`, and it SILENTLY BEAT the heading-set rule above: both selectors
+ * are specificity (0,1,1) -- `.studio-fieldset > legend` and `.studio-layout__form legend` --
+ * and this one is later in the file, so source order decided it. Measured in the booted panel
+ * after `QRPAGER-44`'s heading change and before this fix: the legend computed **16px / 600**
+ * while every other member of the set computed 700, the file's own comment claimed *"asking
+ * for 700 asks for a face that exists"*, and `PLAN.md §4a` recorded it as 700. Three records
+ * agreed with each other and not with the panel.
+ *
+ * 600 ALSO HAS NO FACE: this panel ships Tajawal as `-400` and `-700` only, so the one member
+ * of the heading set that kept its own weight was the one being synthesised.
+ *
+ * The weight is now stated in exactly one place -- the heading set -- and
+ * `browser/studio.spec.ts` measures every member of that set, which is the control whose
+ * absence let this through every gate.
+ */
 .studio-fieldset > legend {
   /* `float: none` and `padding: 0` undo the UA's legend box, which is what cut the border. */
   float: none;
   padding: 0;
   margin-block-end: var(--space-8);
-  font-weight: 600;
 }
 
 /* label -> control -> helper, with the ladder between them and nothing else.
