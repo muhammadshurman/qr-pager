@@ -926,22 +926,37 @@ test.describe('the studio — QRPAGER-44', () => {
     page,
   }) => {
     await signInAsStaff(page)
+
+    /*
+     * ⚠ A SHORT VIEWPORT, AND IT IS THIS CASE'S PRECONDITION RATHER THAN A STYLE CHOICE.
+     * The `studio-chromium` project runs at 1280x1100 and this fixture's tenant has no
+     * blocks, so the document is SHORTER than that viewport and the page cannot scroll at
+     * all -- measured, `window.scrollY` stayed 0 at every offset asked for. A case about a
+     * row being covered WHILE SCROLLING that cannot scroll would pass without ever reaching
+     * the state it is about, which is the dead-control shape this suite keeps finding. The
+     * WIDTH stays 1280, which is what every measurement in this ticket was taken at, and is
+     * above the 56rem breakpoint so the two columns are still side by side.
+     */
+    await page.setViewportSize({ width: 1280, height: 600 })
     await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
 
     const tab = page.locator('.studio-tab[aria-current="page"]')
     await expect(tab).toBeVisible()
 
-    // Enough scroll to carry the row under a 64px bar it used to pass beneath. The page is
-    // taller than the viewport on this fixture; if it ever stops being, the guard below
-    // says so rather than letting the case pass without having scrolled.
+    /*
+     * At rest the row sits at y=114 and `div.fi-topbar-ctn` spans 0..64. 150 is past the
+     * offset where a row that does NOT stick has carried its own top edge out of the
+     * viewport entirely -- so on the defect this scroll leaves nothing to hit, and on the
+     * fix the row is parked against the bar.
+     */
     await page.evaluate(() => {
-      window.scrollTo(0, 400)
+      window.scrollTo(0, 150)
     })
     await page.waitForTimeout(300)
 
     const scrolled = await page.evaluate(() => Math.round(window.scrollY))
     expect(scrolled, 'the page did not scroll, so nothing here was ever at risk').toBeGreaterThan(
-      100,
+      120,
     )
 
     /*
@@ -959,11 +974,16 @@ test.describe('the studio — QRPAGER-44', () => {
 
       const r = el.getBoundingClientRect()
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + 1)
+      const bar = document.querySelector('.fi-topbar')?.getBoundingClientRect() ?? null
+      const barBottom = bar === null ? 0 : bar.y + bar.height
 
       return {
-        ok: hit !== null && hit.closest('.studio-tabs') !== null,
+        // Both halves: the row parked AT OR BELOW the bar's bottom edge, and the pixel at
+        // its own top edge painted by the row itself rather than by the bar over it.
+        ok: r.y >= barBottom - 1 && hit !== null && hit.closest('.studio-tabs') !== null,
         why:
-          `top edge at y=${String(Math.round(r.y))}, painted there: ` +
+          `top edge at y=${String(Math.round(r.y))}, topbar ends at ` +
+          `y=${String(Math.round(barBottom))}, painted there: ` +
           (hit === null ? 'nothing' : `${hit.tagName.toLowerCase()}.${hit.className}`),
       }
     })

@@ -360,3 +360,37 @@ it('keeps the tenant out of the Livewire snapshot, so it cannot be tampered with
         }
     }
 });
+
+/*
+ * ================================================================================
+ * THE HEADING HOOK REACHES THE HTML — `QRPAGER-44` item A
+ * ================================================================================
+ *
+ * `الكتل` is painted as a peer of the studio's section headings by a CSS rule that selects
+ * `.studio-section-field .fi-fo-field-label`, and the class gets there from
+ * `Builder::make('blocks')->extraFieldWrapperAttributes([...])` rather than from any view.
+ *
+ * ⚠ WITHOUT THIS CASE THE WHOLE ITEM FAILS SILENTLY AND LOOKS FINE. If Filament stops
+ * merging that attribute -- a renamed method, a wrapper that no longer takes extras, a
+ * `plain-field-wrapper` chosen instead -- the selector matches nothing, `الكتل` simply keeps
+ * the field-label step, and NOTHING in this suite or the browser suite says so: the type
+ * scale still resolves to tokens, the heading rule still applies to every real `<h2>`, and
+ * `scan-css` only reads values. The failure mode is a stylesheet rule with no subject, which
+ * is the same shape as `QRPAGER-41` part B's three classes Filament does not render -- that
+ * changed nothing and was green the whole time.
+ */
+it('renders the blocks field with the class its heading rule selects', function (): void {
+    $this->actingForTenant(role: TenantRole::Owner);
+
+    $html = (string) $this->get('/studio')->getContent();
+
+    // The class is on the field WRAPPER, beside Filament's own, so both are asserted: a
+    // wrapper that lost `fi-fo-field` would mean the DOM moved under the selector even if
+    // our own class survived.
+    expect($html)->toContain('studio-section-field');
+
+    $pattern = '/class="[^"]*\bfi-fo-field\b[^"]*\bstudio-section-field\b[^"]*"'
+        .'|class="[^"]*\bstudio-section-field\b[^"]*\bfi-fo-field\b[^"]*"/';
+
+    expect($html)->toMatch($pattern);
+});
