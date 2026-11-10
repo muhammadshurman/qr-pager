@@ -8422,7 +8422,7 @@ Items **A** and **B**. **Item C was removed from the ticket BEFORE any code was 
 | `composer gate` | **10/10 green, 1456 passed / 13,880 assertions** | `3582e03` | `docs/tickets/QRPAGER-44-gate-php.txt` (`EXIT=0`), **first attempt** |
 | `pnpm gate` | **13/13 green, 1210 Vitest across 65 files, 103 browser cases, 93.55% statements** | `3582e03` | `docs/tickets/QRPAGER-44-gate-frontend.txt` (`EXIT=0`), **third attempt** |
 | `pnpm run gate:e2e` | **543 passed / 16 skipped / 0 failed in 8.4m, `e2e: green`** | `3582e03` | `docs/tickets/QRPAGER-44-e2e.txt` (`EXIT=0`), **fourth run** — all four are listed below |
-| `fresh-clone-proof` | **PASSED, FIRST ATTEMPT — 1456 passed / 13,880 assertions**, in a clone that arrived without `vendor/`, `.env` or `node_modules/` | `eefff05` | `docs/tickets/QRPAGER-44-fresh-clone.txt` (`EXIT=0`), run BEFORE the push (`R-252`) |
+| `fresh-clone-proof` | **PASSED, FIRST ATTEMPT BOTH TIMES — 1456 passed / 13,881 assertions after the `§11` round, and 1456 / 13,880 before it**, each in a clone that arrived without `vendor/`, `.env` or `node_modules/` | `c4a0f0e` | `docs/tickets/QRPAGER-44-fresh-clone.txt` (`EXIT=0`), run BEFORE the push (`R-252`) |
 | the ticket's own gate | **`browser/studio.spec.ts` 5 new cases in `studio-chromium`, all green; `PanelTargetTest` 4 cases / 17 assertions; `StudioPanelInvariantTest` + 1 case** | `3582e03` | the revert proofs below |
 
 ⚠ **EVERY ITEM WAS MEASURED IN THE BOOTED PANEL BEFORE AND AFTER, AT 1280px, AND THE BEFORE COLUMN CHANGED TWO OF THE THREE FIXES.**
@@ -8438,7 +8438,7 @@ Items **A** and **B**. **Item C was removed from the ticket BEFORE any code was 
 | block row title (`<h2>`) | **20px / 500** | **16px / 700** | the rows were never at 16; the heading rule was catching them |
 | `.studio-tabs`, scrolled 150 | **y = -286** — gone above the viewport, having passed under the bar | **y = 64** — parked at the topbar's bottom edge | the defect is stacking, not type size |
 
-⚠ **THE CLONE COUNTS ONE ASSERTION MORE THAN THIS MACHINE — 13,880 against 13,879 — AND THE CASE COUNT IS IDENTICAL AT 1456.** `QRPAGER-42` recorded the same shape (13,873 in the clone against 13,872 local), so this is the established delta rather than a new one; it is stated here rather than smoothed to one number, because a figure that is quietly the same in two places it is not is the kind of record this section exists to refuse.
+⚠ **THE CLONE COUNTS ONE ASSERTION MORE THAN THIS MACHINE — 13,881 against 13,880 after the `§11` round, 13,880 against 13,879 before it — AND THE CASE COUNT IS IDENTICAL AT 1456 BOTH TIMES.** `QRPAGER-42` recorded the same shape (13,873 in the clone against 13,872 local), so this is the established delta rather than a new one; it is stated here rather than smoothed to one number, because a figure that is quietly the same in two places it is not is the kind of record this section exists to refuse.
 
 **THE FOUR `gate:e2e` RUNS, AND WHAT EACH ONE COST:**
 
