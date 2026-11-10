@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Features\Landing\Panel\Pages;
 
+use App\Domain\Landing\LandingDocument;
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\LandingRenderer;
 use App\Features\Landing\MediaLibrary;
+use App\Features\Landing\TenantMediaReferences;
+use App\Features\Landing\UnsavedPreview;
 use App\Platform\Http\TenantPanelAccess;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * `/studio/preview` — the draft, rendered, for the tenant who owns it and nobody else.
@@ -43,13 +47,70 @@ use Illuminate\Support\Str;
  */
 class PreviewController
 {
-    public function __invoke(LandingPages $pages, LandingRenderer $renderer): Response
+    public function __invoke(LandingPages $pages, LandingRenderer $renderer, UnsavedPreview $preview): Response
     {
         // No input, no parameter: the tenant is the authenticated session's, and this
         // aborts 403 when there is not exactly one owner/manager membership.
         $tenantId = TenantPanelAccess::tenantId();
 
-        $hostname = $pages->hostname($tenantId);
+        /*
+         * ================================================================================
+         * ⚠ THE UNSAVED STATE FIRST, THE STORED DRAFT OTHERWISE — `QRPAGER-45`
+         * ================================================================================
+         *
+         * Muhammad's ruling of 2026-11-10: *"PreviewController renders from that key when
+         * present, else the stored draft as today."* The preview's job is to show what the
+         * owner is LOOKING AT, and until this existed it could only show what they had
+         * saved.
+         *
+         * ⚠ THE TENANT ID IS THE SAME ONE, DERIVED THE SAME WAY, AND THAT IS THE WHOLE
+         * TENANT CONTROL ON THIS PATH. `§4`: Redis carries no RLS. `tenantId()` above
+         * re-resolves it from the authenticated session; no parameter, no header and no
+         * query string reaches this key.
+         *
+         * ⚠ AND IT IS RE-VALIDATED ON READ RATHER THAN TRUSTED. `fromStored()` is
+         * `fromInput()`, so the document goes through the same schema and the same
+         * `TenantMediaReferences` check the writer already applied — defence in depth for a
+         * store that has no policy behind it. Anything that does not survive that is treated
+         * as "nothing to show" and the stored draft is rendered, which is the behaviour this
+         * route had before the feature.
+         */
+        /*
+         * ⚠ PER TENANT **AND** PER SESSION — Muhammad's specification of 2026-11-11. One key
+         * per tenant would mean two studio tabs, or two people holding the owner role,
+         * writing over each other: each would watch the other's in-flight edits appear in
+         * their own preview, with nothing on screen to explain it. Still tenant-namespaced,
+         * so `§4`'s boundary is unchanged — this is finer, not looser.
+         *
+         * The frame is same-origin and carries the same cookie as the panel that wrote the
+         * key, so this resolves to the same session the Livewire action ran in.
+         */
+        $unsaved = $preview->get($tenantId, session()->getId());
+
+        if ($unsaved !== null) {
+            try {
+                $document = withTenant(
+                    $tenantId,
+                    static fn (): LandingDocument => LandingDocument::fromStored(
+                        $unsaved,
+                        new TenantMediaReferences($tenantId),
+                    ),
+                );
+
+                return $this->respond($document, $pages, $renderer, $tenantId);
+            } catch (Throwable) {
+                /*
+                 * ⚠ NO REFUSAL HERE, AND THAT IS THE RULING RATHER THAN LENIENCY:
+                 * *"an unsaved preview has nothing to refuse, so render it defensively."*
+                 * An unsaved state that does not validate should never have been written —
+                 * the writer applies the same gate — so reaching this branch means the key
+                 * is stale, corrupt or from a schema that has since moved. Falling through
+                 * to the stored draft shows the owner something real; a 422 here would put
+                 * the studio's own refusal screen inside the preview pane for a document
+                 * nobody asked to publish.
+                 */
+            }
+        }
 
         try {
             $document = $pages->draft($tenantId);
@@ -62,6 +123,26 @@ class PreviewController
                 422,
             )->withHeaders(self::headers());
         }
+
+        return $this->respond($document, $pages, $renderer, $tenantId);
+    }
+
+    /**
+     * Render one document as this route's response.
+     *
+     * ⚠ EXTRACTED AT `QRPAGER-45` SO THE TWO DOCUMENT SOURCES CANNOT DRIFT. The unsaved
+     * state and the stored draft now both reach the renderer, and a second copy of this
+     * block would be a second set of asset URLs, a second language lookup and a second
+     * header set — three ways for the preview of what you are typing to differ from the
+     * preview of what you saved, for reasons that have nothing to do with what you typed.
+     */
+    private function respond(
+        LandingDocument $document,
+        LandingPages $pages,
+        LandingRenderer $renderer,
+        string $tenantId,
+    ): Response {
+        $hostname = $pages->hostname($tenantId);
 
         /*
          * ⚠ THE NAME AND THE LANGUAGE FROM ONE ROW, BECAUSE THE PREVIEW MUST AGREE WITH THE

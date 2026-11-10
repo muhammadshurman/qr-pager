@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 import { signInAsStaff, staffFixture } from './support/e2e.ts'
@@ -1212,5 +1213,330 @@ test.describe('the studio — QRPAGER-44', () => {
     expect(verdict.ok, `the shelf did not follow the topbar when it grew — ${verdict.why}`).toBe(
       true,
     )
+  })
+})
+
+/*
+ * ================================================================================
+ * THE PREVIEW FOLLOWS THE FORM — `QRPAGER-45`'s stated invariant
+ * ================================================================================
+ *
+ * *"changing the arrangement, or editing a block field, is reflected in the preview with no
+ * Save click and no page refresh — proven by a browser test asserting the preview CONTENT
+ * changed, not that a reload was requested."*
+ *
+ * ⚠ BUILT SO IT CANNOT PASS ON A RELOAD THAT CHANGED NOTHING — Muhammad's instruction of
+ * 2026-11-11. "Content changed" is satisfiable by an iframe that merely re-fetched the same
+ * stored draft with a different nonce. So each case asserts the marker is ABSENT first,
+ * changes the form without saving, asserts it is PRESENT, and then asserts the STORED DRAFT
+ * still holds the old value — the database disagreeing with the screen is the whole claim.
+ *
+ * ⚠⚠ AND READING "THE STORED DRAFT" IS NOT WHAT IT LOOKS LIKE. The first version of these
+ * cases fetched `/studio/preview` in a second tab to get it — and that route now PREFERS
+ * the unsaved key, in the same session, which is the entire feature. It could never have
+ * returned the stored draft and the assertion was unsatisfiable by construction. The
+ * database is read HERE through the panel's own mount instead: `LandingBuilderPage::mount()`
+ * fills the form from `LandingPages::draft()`, and the collapsed block row shows that
+ * value as its summary.
+ */
+test.describe('the studio preview follows the form — QRPAGER-45', () => {
+  /** What `/studio/preview` is rendering right now, as text. */
+  async function previewText(page: Page): Promise<string> {
+    return (await page.frameLocator('[data-studio-preview]').locator('body').innerText()).trim()
+  }
+
+  /** The same render as markup, for a change that reorders rather than retypes. */
+  async function previewHtml(page: Page): Promise<string> {
+    return page.frameLocator('[data-studio-preview]').locator('body').innerHTML()
+  }
+
+  /**
+   * Add one block through the real picker, and give it the heading it requires.
+   *
+   * The retry is `QRPAGER-44`'s finding, kept: the control is an Alpine dropdown and a click
+   * landing before Alpine binds it is swallowed with no error and no console message.
+   *
+   * ⚠ AND THE HEADING IS FILLED HERE RATHER THAN BY THE CALLER, because a block with an
+   * empty required field makes SAVE fail — which the second case discovered the slow way,
+   * as a preview that rendered an empty page and an assertion that said so.
+   */
+  async function addBlock(page: Page, nth: number, heading: string): Promise<void> {
+    const rows = page.locator('.fi-fo-builder-item')
+    const before = await rows.count()
+
+    const add = page.getByRole('button', { name: 'أضف كتلة' }).first()
+    await expect(add).toBeVisible()
+
+    const item = page.getByRole('menuitem').nth(nth)
+    let opened = false
+
+    for (let attempt = 0; attempt < 5 && !opened; attempt++) {
+      await add.click()
+      opened = await item
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false)
+    }
+
+    expect(opened, `the block picker never opened for item ${String(nth)}`).toBe(true)
+    await item.click()
+
+    /*
+     * ⚠ WAIT FOR THE ROW TO EXIST BEFORE REACHING FOR IT, AND THIS IS NOT A FORMALITY.
+     * Without it `.last()` resolves against the DOM as it stands the instant the click
+     * returns — which is still the PREVIOUS row — so both calls filled the SAME field and
+     * the second block went to the server with an empty required heading. The save was then
+     * refused, the preview stayed on an empty page, and the case failed three times on a
+     * precondition while the feature under test was never reached. Diagnosed by dumping the
+     * rows: `itemCount: 2`, `headings: ["HOW …", ""]`.
+     */
+    await expect(rows).toHaveCount(before + 1, { timeout: 15_000 })
+
+    /*
+     * ⚠ `.last()` AND NOT `.nth(nth)`. The picker index is not the row index: this fixture
+     * tenant is shared across the whole e2e run, so by the time this case runs the page may
+     * already hold blocks another case saved — and those render COLLAPSED, so their inputs
+     * are hidden. Indexing by the picker position found one of those and waited five seconds
+     * for a field nobody can see. A newly added block is appended and expanded, so it is the
+     * last one, whatever was there before.
+     */
+    const field = rows.last().locator('input[type="text"]').first()
+    await expect(field).toBeVisible()
+    await field.fill(heading)
+
+    /*
+     * ⚠ THE FILL IS VERIFIED WHERE IT HAPPENS. Every precondition failure in this describe
+     * has been a value that did not land where it was aimed, reported three steps later as
+     * an empty preview. Asserting here turns "the preview is empty" into "this field is not
+     * the one you think it is".
+     */
+    await expect(field, `the heading for picker item ${String(nth)} did not take`).toHaveValue(
+      heading,
+    )
+
+    /*
+     * ⚠ AND EVERY OTHER REQUIRED FIELD THE NEW ROW CAME WITH, WHICH IS NOT NONE.
+     * `StudioForm` builds an item list as a Filament `Repeater` and never calls
+     * `defaultItems(0)`, so Filament seeds it with ONE EMPTY ITEM — and for `how_it_works`
+     * that item's `title` and `body` are required. A freshly added block is therefore
+     * INVALID the moment it appears, `getState()` throws `ValidationException`, and
+     * `previewChanged()` silently returns per the ruling. The preview then correctly shows
+     * nothing new, and this case spent six runs reading that as a broken feature.
+     *
+     * Filling them is what an owner would do, and it is what makes this case about
+     * arrangements rather than about an empty step.
+     */
+    const seeded = await rows.last().evaluate((root, text) => {
+      const fields = Array.from(
+        root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+          'input[required], textarea[required]',
+        ),
+      )
+      let touched = 0
+
+      for (const el of fields) {
+        if (el.value !== '') continue
+
+        el.value = `${text} ${String(touched)}`
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        touched++
+      }
+
+      return touched
+    }, heading)
+
+    /*
+     * ⚠ THROUGH THE DOM AND NOT `fill()`, BECAUSE THE FIELDS ARE COLLAPSED. The repeater is
+     * `->collapsed()`, so the seeded item's inputs are present, required and HIDDEN —
+     * `fill()` refuses a hidden field and a visibility check skips it, which is what the
+     * previous version did and why this case failed a seventh time with the same empty
+     * preview. Setting the value and dispatching `input` is what Livewire's binding
+     * listens for, and this is SETUP: every assertion in this case still runs against the
+     * rendered page.
+     */
+    expect(
+      seeded,
+      `the new row exposed no empty required field to seed for picker item ${String(nth)}`,
+    ).toBeGreaterThanOrEqual(0)
+  }
+
+  /** What the DATABASE holds, read back through the panel's own mount. */
+  async function storedHeading(page: Page): Promise<string> {
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    // The block this case added is the last one — see `addBlock()` for why not the first.
+    const summary = page.locator('.studio-block-summary').last()
+    await expect(summary).toBeVisible()
+
+    return (await summary.innerText()).trim()
+  }
+
+  test('reflects a block field edit with no Save and no refresh', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.setViewportSize({ width: 1280, height: 1100 })
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    const saved = `SAVED ${String(Date.now())}`
+
+    await addBlock(page, 0, saved)
+    await page.getByRole('button', { name: 'احفظ' }).first().click()
+
+    // The save has landed when the PREVIEW shows it.
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(saved)
+
+    const typed = `UNSAVED ${String(Date.now())}`
+
+    // 1. absent to begin with — otherwise step 3 proves nothing
+    expect(await previewText(page), 'the marker is already on screen').not.toContain(typed)
+
+    // 2. type it, and do NOT save
+    const heading = page.locator('.fi-fo-builder-item').last().locator('input[type="text"]').first()
+    await heading.fill(typed)
+
+    // 3. the preview catches up on its own, with no Save and no page refresh
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(typed)
+
+    // 4. ⚠ AND THE DATABASE STILL DISAGREES, which is what "without Save" means.
+    const stored = await storedHeading(page)
+
+    expect(stored, 'the stored draft moved, so this was an autosave and not a preview').toBe(saved)
+    expect(stored, 'the stored draft already holds the typed value — nothing was unsaved').not.toBe(
+      typed,
+    )
+  })
+
+  test('reflects an arrangement change with no Save and no refresh', async ({ page }) => {
+    const noise: string[] = []
+
+    page.on('pageerror', (e) => noise.push(`pageerror: ${e.message.slice(0, 200)}`))
+    page.on('console', (m) => {
+      if (m.type() === 'error') noise.push(`console: ${m.text().slice(0, 200)}`)
+    })
+    page.on('requestfailed', (r) => noise.push(`requestfailed: ${r.url().slice(0, 120)}`))
+    page.on('response', (r) => {
+      if (r.status() >= 400) noise.push(`http ${String(r.status())}: ${r.url().slice(0, 120)}`)
+    })
+
+    await signInAsStaff(page)
+    await page.setViewportSize({ width: 1280, height: 1100 })
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    /*
+     * ⚠ TWO BLOCKS, AND THAT IS THE CASE'S PRECONDITION RATHER THAN SETUP DRESSING. The
+     * arrangements decide *"order, grouping and emphasis and nothing else"* — `editorial`
+     * promotes `how_it_works` to sit directly under the hero — so on a ONE-block page the
+     * two render the same thing and a comparison proves nothing. The first version of this
+     * case had one block and failed for exactly that reason: the oracle was wrong, not the
+     * feature.
+     */
+    const hero = `HERO ${String(Date.now())}`
+    const how = `HOW ${String(Date.now())}`
+
+    await addBlock(page, 0, hero)
+    await addBlock(page, 1, how)
+
+    /*
+     * ⚠ THE LIVE PREVIEW IS LET TO SETTLE BEFORE SAVING, AND NOT AS POLITENESS. Clicking
+     * Save within the 400ms debounce means no `previewChanged` ever ran for the final
+     * state, so the pane is still on the render it loaded with. That is what made this case
+     * fail five times on a precondition — and chasing it is what found the real gap, which
+     * is that `save()` dispatched no reload at all. Waiting for the markers here asserts
+     * the live path works for BLOCKS before the case goes on to arrangements.
+     */
+    const settled = await expect
+      .poll(async () => previewText(page), { timeout: 20_000 })
+      .toContain(hero)
+      .then(() => true)
+      .catch(() => false)
+
+    if (!settled) {
+      /*
+       * Splits the two remaining explanations: the KEY was never written (so a direct fetch
+       * of the route is also empty) versus the FRAME never reloaded (so the route has the
+       * hero and the pane does not).
+       */
+      const probe = await page.context().newPage()
+      let direct: string
+
+      try {
+        await probe.goto(`${apiOrigin()}/studio/preview`, { waitUntil: 'domcontentloaded' })
+        direct = (await probe.locator('body').innerText()).trim().slice(0, 200)
+      } catch (e) {
+        direct = `could not fetch: ${String(e)}`
+      } finally {
+        await probe.close()
+      }
+
+      expect(
+        settled,
+        `the live preview never showed the hero.\n  FRAME: ${(await previewText(page)).slice(0, 200)}\n  DIRECT: ${direct}\n  NOISE: ${noise.join(' || ')}`,
+      ).toBe(true)
+    }
+
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(how)
+
+    await page.getByRole('button', { name: 'احفظ' }).first().click()
+    await page.waitForTimeout(2_000)
+
+    /*
+     * ⚠ AND THE REFUSAL IS READ BEFORE THE PREVIEW IS. A save refused for a field this case
+     * did not fill looks, from the preview, exactly like a preview that never updated — and
+     * that ambiguity cost four runs. Any validation message on the page is reported here,
+     * with its text, rather than being left to infer.
+     */
+    /*
+     * ⚠ FIELD ERRORS ONLY. This matched `.fi-no-notification` too and caught the SUCCESS
+     * toast — *“حُفظت المسودة”*, draft saved — reporting a refusal on a save that had just
+     * worked. A check that fires on success is worse than no check: it hides the state it
+     * was added to reveal.
+     */
+    const refusals = await page.locator('.fi-fo-field-error-message').allInnerTexts()
+
+    expect(
+      refusals.join(' | '),
+      'the save was refused, so the preview below was never going to change',
+    ).toBe('')
+
+    /*
+     * ⚠ THE SAVE IS ASSERTED, NOT ASSUMED, AND THE FIRST VERSION OF THIS CASE ONLY CHECKED
+     * THAT THE PREVIEW WAS "BIG ENOUGH" — which failed at 148 characters and then at 94 and
+     * said nothing about why either time. A refused save looks exactly like a slow one from
+     * outside. Polling for the two markers names the failure if validation refused a block.
+     */
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(hero)
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(how)
+
+    const options = page.locator('.fi-fo-radio-label input[type="radio"]')
+    await expect(options.first()).toBeVisible()
+
+    const previewBefore = await previewHtml(page)
+    const firstChecked = await options.first().isChecked()
+
+    expect(firstChecked, 'the page did not start on the first arrangement').toBe(true)
+
+    await options.nth(1).check()
+    expect(await options.nth(1).isChecked(), 'the arrangement did not actually change').toBe(true)
+
+    /*
+     * ⚠ MARKUP AND NOT TEXT. These two arrangements reorder and regroup the same blocks, so
+     * `innerText` can be identical across them while the page is visibly different. Text is
+     * the right oracle for a retyped field and the wrong one for a reordered page.
+     */
+    await expect.poll(async () => previewHtml(page), { timeout: 20_000 }).not.toBe(previewBefore)
+
+    /*
+     * ...and the DATABASE does not move. `template` is a member of the landing document, so
+     * an autosave would show up on mount as the SECOND option being the stored one.
+     */
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    const afterReload = page.locator('.fi-fo-radio-label input[type="radio"]')
+    await expect(afterReload.first()).toBeVisible()
+
+    expect(
+      await afterReload.first().isChecked(),
+      'the stored draft changed, so the arrangement was saved rather than previewed',
+    ).toBe(true)
   })
 })

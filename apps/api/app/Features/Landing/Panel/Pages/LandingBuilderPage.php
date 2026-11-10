@@ -14,10 +14,12 @@ use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishFailed;
 use App\Features\Landing\TenantPageLanguage;
+use App\Features\Landing\UnsavedPreview;
 use App\Platform\Http\TenantPanelAccess;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
+use Illuminate\Validation\ValidationException;
 
 /**
  * `/studio` — the landing page builder (§12.1).
@@ -179,6 +181,70 @@ class LandingBuilderPage extends Page
             ->send();
     }
 
+    /**
+     * ================================================================================
+     * THE PREVIEW FOLLOWS THE FORM — `QRPAGER-45`
+     * ================================================================================
+     *
+     * Called by the view on a 400ms debounce after the owner stops changing something. It
+     * writes what they are looking at to a short-TTL Redis key and tells the page to reload
+     * the preview frame; `PreviewController` reads that key in preference to the stored
+     * draft. **No autosave** — Muhammad's ruling of 2026-11-10 rules it out by name, and
+     * `landing_pages.draft_document` still changes only in `save()` and `publish()` below.
+     *
+     * ⚠ `merged()` AND NOT `getState()`, FOR `StudioDraftMergeTest`'s REASON. `toDocument()`
+     * builds the WHOLE document from one flat state, so previewing from this tab's state
+     * alone would render a page whose theme is empty — the owner would watch their colours
+     * disappear as they typed and nothing would be wrong with the stored draft. The same
+     * trap `QRPAGER-40` found for saving, one route further on.
+     *
+     * ⚠ IT RE-ASKS `canAccess()` LIKE EVERY OTHER ACTION HERE. `POST /livewire-<hash>/update`
+     * runs neither `SetUpPanel` nor Filament's `Authenticate` (Task 6 security M-1), and this
+     * one is reached on a timer rather than by a click, so it is the action most likely to be
+     * driven by something other than the page.
+     *
+     * ⚠ AND AN INVALID STATE IS SILENCE, NOT A NOTIFICATION. This runs behind every
+     * keystroke: a half-typed URL is the NORMAL condition here, not an error, and
+     * `save()`'s persistent danger notification fired on a timer would bury the owner in
+     * refusals for a document they have not asked to save. Nothing is written, so the
+     * preview simply keeps showing the last state that did validate — which is the ruling's
+     * *"an unsaved preview has nothing to refuse, so render it defensively."*
+     */
+    public function previewChanged(): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $tenantId = TenantPanelAccess::tenantId();
+
+        try {
+            $document = app(LandingPages::class)->validated(
+                $tenantId,
+                StudioForm::merged($tenantId, $this->landingForm()->getState()),
+            );
+        } catch (ValidationException|LandingDocumentInvalid) {
+            /*
+             * ⚠ BOTH, AND `ValidationException` WAS MISSING UNTIL A TEST ASKED FOR IT.
+             * `getState()` runs FILAMENT's validation before the document gate ever sees the
+             * state, so a required field the owner has just emptied throws here rather than
+             * raising `LandingDocumentInvalid` — and an uncaught `ValidationException` in a
+             * Livewire action is a user-facing error bag, on a method that fires behind every
+             * keystroke. Muhammad's specification of 2026-11-11 is that an invalid state
+             * raises NOTHING user-facing and clears NOTHING; one of the two ways to be
+             * invalid was doing both.
+             */
+            return;
+        }
+
+        app(UnsavedPreview::class)->put($tenantId, session()->getId(), $document->toArray());
+
+        /*
+         * The reload itself is the view's — the ruling puts *"the debounce and the reload
+         * in the parent"* and keeps the pane JS-free, so this says only that there is
+         * something new to show.
+         */
+        $this->dispatch('studio-preview-updated');
+    }
+
     public function save(): void
     {
         $tenantId = TenantPanelAccess::tenantId();
@@ -197,6 +263,26 @@ class LandingBuilderPage extends Page
 
             return;
         }
+
+        /*
+         * ⚠ THE UNSAVED KEY GOES WHEN THE SAVE LANDS — `QRPAGER-45`. Right now the key and
+         * the stored draft hold the same document, so nothing looks wrong either way; the
+         * bug this prevents is later. Save, edit, then undo the edit by hand: the key still
+         * holds the edit, the preview still shows it, and the owner has no control that
+         * clears it but waiting for the TTL.
+         */
+        app(UnsavedPreview::class)->forget($tenantId, session()->getId());
+
+        /*
+         * ⚠ AND THE PANE IS TOLD, WHICH IT WAS NOT UNTIL THE BROWSER CASE CAUGHT IT.
+         * `forget()` removes the unsaved key, so the next render of `/studio/preview` shows
+         * the stored draft — but nothing was asking it to render. The frame kept whatever it
+         * last loaded, so a Save could leave the owner looking at a stale preview with no
+         * way to refresh it but reloading the page, which is the thing this ticket set out
+         * to remove. Measured in a real browser: after a save the pane still showed the
+         * page as it was before the blocks existed.
+         */
+        $this->dispatch('studio-preview-updated');
 
         Notification::make()->title(__('studio.notifications.draft_saved'))->success()->send();
     }
@@ -240,6 +326,11 @@ class LandingBuilderPage extends Page
 
             return;
         }
+
+        // Same reason as `save()`: what is stored is now what the owner meant, and the pane
+        // has to be told or it keeps the render it already had.
+        app(UnsavedPreview::class)->forget($tenantId, session()->getId());
+        $this->dispatch('studio-preview-updated');
 
         Notification::make()
             ->title(__('studio.notifications.published_to', ['hostname' => $published->hostname]))
