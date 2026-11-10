@@ -80,6 +80,18 @@
  * interactive class covered by nothing here. A radio's hit area IS its own box -- the label
  * beside it is not part of the control -- so it takes both axes like the other square ones,
  * and not the height-only treatment `.fi-input` gets for being full-width by layout. */
+/*
+ * ⚠ `.studio-colour-input` JOINED AT `QRPAGER-41` PART B, AND AGAIN IT WAS `PanelTargetTest`
+ * THAT ASKED RATHER THAN A READING. Item 5 replaced six hex text fields with a native
+ * `<input type="color">`, whose own CSS sized the swatch at 48x32 -- under the bar on one
+ * axis, in a brand-new control, on the tab whose whole purpose is that control. The suite
+ * reported `fi-valid` as a rendered interactive class covered by nothing here, which is the
+ * identical sentence the radio's note above records from `QRPAGER-33`.
+ *
+ * Both axes, for the radio's reason: a swatch's hit area IS its own box. The caption beside
+ * it is an `<output>`, not part of the target.
+ */
+.studio-colour-input,
 .fi-radio-input,
 .fi-icon-btn,
 .fi-theme-switcher-btn,

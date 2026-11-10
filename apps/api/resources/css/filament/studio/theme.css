@@ -71,10 +71,22 @@
  * --studio-frame-phone the preview frame at phone width. 390px is the device width the
  *                      whole product is already measured at -- browser/one-handed.spec.ts
  *                      drives 390x844 -- so this is not a new number, it is that one.
+ * --studio-pane-top    where the sticky pane parks: clear of Filament's own topbar.
+ *                      QRPAGER-41 part B item 2.
+ *
+ * ⚠ ONE CONSTANT CANNOT BE A CUSTOM PROPERTY, AND IT IS NAMED HERE RATHER THAN HIDDEN
+ * IN THE RULE. A media query is evaluated before the cascade, so `@media (min-width:
+ * var(--x))` is not a thing any browser implements -- the stacking breakpoint below has
+ * to be a literal in the query. It is 56rem, which is not a free choice: the two columns
+ * are `flex: 1 1 26rem` with a `--space-24` gap, so they wrap at just under 54rem, and
+ * the query has to fire on the side of that where they are still side by side. A smaller
+ * number would make the pane sticky while it is stacked UNDER the form, which is the one
+ * arrangement where sticky is wrong.
  */
 :root {
   --studio-pane-basis: 26rem;
   --studio-frame-phone: 390px;
+  --studio-pane-top: var(--space-16);
 }
 
 .studio-tabs {
@@ -117,6 +129,42 @@
   border-inline-start: 1px solid var(--color-hairline);
   background: var(--color-surface-2);
   padding-inline-start: var(--space-16);
+}
+
+/*
+ * ================================================================================
+ * THE PREVIEW STAYS WITH THE OWNER AS THE FORM SCROLLS — QRPAGER-41 part B item 2
+ * ================================================================================
+ *
+ * The ticket's own description of the defect: the pane "sits at the top and scrolls away,
+ * so by the time he is editing block four the preview is off screen and the pane is a tall
+ * empty column". Sticky WITHIN ITS OWN COLUMN is the fix, with its own internal scroll so a
+ * tall frame does not push the page.
+ *
+ * ⚠ ONLY WHILE THE COLUMNS ARE SIDE BY SIDE. Below the breakpoint `.studio-layout` wraps
+ * and the pane sits UNDER the form; sticky there would pin the preview over the fields the
+ * owner is typing into, which is worse than scrolling away. The ticket says so directly --
+ * "At narrow widths, where the two columns stack, it is not sticky — it returns to flow" --
+ * and that is why the whole rule is inside the query rather than being `position: static`
+ * at the small end.
+ *
+ * ⚠ AND `align-items: flex-start` ON THE PARENT IS LOAD-BEARING. A flex child defaults to
+ * `align-items: stretch`, which makes the pane as tall as the form -- and a sticky element
+ * whose box already spans the scroll range has nothing to stick within, so it never moves.
+ * `.studio-layout` has carried `flex-start` since QRPAGER-40 for a different reason; this
+ * rule now depends on it, which is why the dependency is written down rather than left to
+ * be rediscovered when someone "tidies" that line.
+ */
+@media (min-width: 56rem) {
+  .studio-pane {
+    position: sticky;
+    inset-block-start: var(--studio-pane-top);
+    /* The viewport, less where the pane parks and a gap at the bottom so the frame's
+       own border is not flush against the window edge. */
+    max-block-size: calc(100dvh - var(--studio-pane-top) - var(--space-24));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
 
 .studio-pane__bar {
@@ -228,4 +276,346 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-12);
+}
+
+/*
+ * ================================================================================
+ * ONE TYPE SCALE ACROSS THE PANEL — QRPAGER-41 part B item 3
+ * ================================================================================
+ *
+ * `TYPE_SCALE` is `[13, 16, 20, 28, 44, 64, 96]`, and the token source says of it:
+ * *"One ratio, and deliberately no sizes between these."* MEASURED IN THE BOOTED PANEL
+ * BEFORE ANY OF THIS WAS WRITTEN, at 1280px:
+ *
+ *   page heading      44px / 700     the DISPLAY step, on a panel page title
+ *   tab label         16px / 700
+ *   section heading   16px / 600     the same size as the body text under it
+ *   legend            16px / 600
+ *   radio option      13px / 400     the HELPER step, on a control's own label
+ *   button label      13px / 500
+ *   body / helper     16px / 13px
+ *
+ * ⚠ THE SIZES WERE ALREADY ON THE SCALE. THE HIERARCHY WAS NOT. Three different roles --
+ * section heading, legend and body copy -- all landed on 16, the page title jumped straight
+ * to the 44 display step, and the two middle steps the scale exists to provide (20 and 28)
+ * were rendered by NOTHING. So the panel read as a title followed by one flat size, which is
+ * the "unrelated sizes" the ticket names: not off-scale values, a missing middle.
+ *
+ * Every rule below resolves to a step. Nothing is off-scale and nothing new was invented.
+ */
+
+/* The page title. 28 and not 44: 44 is the display step, for a published page's hero. */
+.fi-panel-studio .fi-header-heading {
+  font-size: var(--size-28);
+  line-height: 1.2;
+}
+
+/*
+ * Section headings and the fieldset legend, one step above body copy. These are `h2` in the
+ * studio's own views and the legend of the language fieldset; both are "the heading of a
+ * group of controls" and so take the same step.
+ */
+.studio-layout__form h2,
+.studio-layout__form legend {
+  font-size: var(--size-20);
+  line-height: 1.3;
+}
+
+/*
+ * ⚠ A CONTROL'S OWN LABEL IS NOT A HELPER LINE, AND THE SELECTORS HERE WERE MEASURED RATHER
+ * THAN GUESSED -- the first version of this block named three classes Filament does not
+ * render (`fi-fo-radio-option-label`, `fi-fo-field-wrp-label`, `fi-fo-field-wrp-hint`), so it
+ * changed nothing and the screenshot said so. Read off the booted panel:
+ *
+ *   .fi-fo-field-label            13px   the FIELD's own name -- "Page arrangement"
+ *   .fi-fo-field-label-content    13px   the text inside it
+ *   .fi-fo-radio-label            16px   one option's row
+ *
+ * A field's name rendered at the helper step is the defect: 13 is the size reserved for the
+ * line UNDER a control that explains it, so the control's own name was set smaller than the
+ * body text beside it and the same size as its own footnote.
+ */
+.studio-layout__form .fi-fo-field-label,
+.studio-layout__form .fi-fo-field-label-content,
+.studio-layout__form label {
+  font-size: var(--size-16);
+}
+
+/*
+ * The helper line keeps 13. It is the one role that step is for, and the only place in the
+ * panel that may be smaller than body copy. `.text-sm` is Tailwind's 14px, which is OFF the
+ * scale entirely -- the views use it for every helper line, so this is where those land back
+ * on a step.
+ */
+.studio-layout__form .fi-fo-field-helper-text,
+.studio-layout__form .text-sm {
+  font-size: var(--size-13);
+}
+
+/*
+ * ⚠ BUTTONS AT 16, AND THE TOKEN SOURCE ALREADY ASSUMED THEY WERE. `packages/tokens/src/
+ * source.ts` reasons about the danger button's contrast with *"the button's label is
+ * `--size-16` — not large text, so its bar is 4.5 and not 3.0"*. The panel rendered them at
+ * 13px. That is not a contrast FAILURE -- 13 and 16 are both "normal text" and take the same
+ * 4.5 bar, so nothing was below its bar -- but it is a drift between what the design system
+ * says it is reasoning about and what the panel actually paints, and the system's premise is
+ * the one to keep.
+ */
+.fi-panel-studio .fi-btn {
+  font-size: var(--size-16);
+}
+
+/*
+ * ================================================================================
+ * THE TWO FIELDSETS — QRPAGER-41 part B item 3
+ * ================================================================================
+ *
+ * The ticket: *"the legend collides with the border and the radio labels crowd their
+ * controls. Both are Filament fieldset and radio defaults. Rebuild them to the reference's
+ * rhythm — label, control, helper line, with the spacing steps between them — and drop the
+ * fieldset border; a heading and a hairline do that job."*
+ *
+ * `rail.html`'s rhythm is one bordered box per REGION with hairline rules BETWEEN rows --
+ * never a border around each individual group. A legend sitting on a border is a browser
+ * default that exists because `<fieldset>` predates any of this; removing the border removes
+ * the collision rather than nudging the legend off it, which is what "a heading and a
+ * hairline do that job" means.
+ */
+.studio-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-block-start: 1px solid var(--color-hairline);
+  padding-block-start: var(--space-16);
+}
+
+.studio-fieldset > legend {
+  /* `float: none` and `padding: 0` undo the UA's legend box, which is what cut the border. */
+  float: none;
+  padding: 0;
+  margin-block-end: var(--space-8);
+  font-weight: 600;
+}
+
+/* label -> control -> helper, with the ladder between them and nothing else. */
+.studio-field + .studio-field {
+  margin-block-start: var(--space-24);
+}
+
+.studio-field > * + * {
+  margin-block-start: var(--space-8);
+}
+
+/*
+ * ⚠ THE RADIO ROW, AND THE MEASUREMENT CORRECTED WHAT THE FIX WAS. The ticket calls it
+ * "the radio labels crowd their controls", and the obvious reading is that the gap is too
+ * small. Measured at 1280px: the input sits at x=1228 w=44 and the text ends at x=1216 --
+ * a gap of exactly 12px, which is a step of the ladder and is correct.
+ *
+ * What is actually wrong is the CROSS axis. `.fi-fo-radio-label` is a flex row with
+ * `align-items: normal`, so the text block stretches to the full height of a 44px control
+ * (44px because `targets.css` floors every radio's hit area) and its first line sits at the
+ * top of that box rather than beside the circle. Centring is the whole fix, and the gap --
+ * which a reading would have changed -- is left alone.
+ */
+.studio-layout__form .fi-fo-radio-label {
+  align-items: center;
+}
+
+.studio-layout__form .fi-fo-radio {
+  gap: var(--space-12);
+}
+
+/*
+ * ================================================================================
+ * A BLOCK ROW'S TITLE MUST NOT RUN UNDER ITS OWN CONTROLS — part B item 3
+ * ================================================================================
+ *
+ * At 1280px a row reads `٣  أشهر أطباقنا — <the heading the owner typed>` with the reorder,
+ * clone and delete buttons at the far end. The ticket: *"truncate the summary, never the
+ * number or the name."*
+ *
+ * So the label is two spans (`StudioForm` builds them) and only the SUMMARY one truncates.
+ * The number is a counter on `::before` and is never part of the text, so it cannot be cut;
+ * the name is `flex: 0 0 auto` and keeps its full width whatever the summary does.
+ */
+.fi-fo-builder .fi-fo-builder-item-header-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.studio-block-name {
+  flex: 0 0 auto;
+}
+
+.studio-block-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-ink-mid);
+}
+
+/*
+ * ================================================================================
+ * EVERY PANEL SURFACE RESOLVES TO A TOKEN IN BOTH MODES — QRPAGER-41 part B item 6
+ * ================================================================================
+ *
+ * MEASURED IN THE BOOTED PANEL ACROSS ALL FOUR TABS, in both modes, by walking every
+ * element and comparing its `background-color`, `color` and painted border colours against
+ * the resolved token set:
+ *
+ *   light   1 off-token colour    `color: #000000` on `html.fi`
+ *   dark    4 off-token colours   `color: #ffffff` on `html.fi`, and the hostname
+ *                                 input's three painted borders at `#ffffff`
+ *
+ * ⚠ AND THE FIRST RUN OF THAT WALK OVER-REPORTED, which is worth recording because the
+ * conclusion would have been wrong in the other direction: `--color-surface` resolves to the
+ * SHORTHAND `#fff`, and a string compare against `#ffffff` called every white surface in the
+ * panel off-palette. Normalising three-digit hex first took the finding from "the panel is
+ * painted in Filament's greys" to the two real items above.
+ *
+ * ⚠ SO THE DEFECT IS NARROWER AND WORSE THAN "SOME GREYS": it is the INHERITED text colour.
+ * Nothing sets `color` on the panel root, so every element that does not set its own
+ * inherits the browser default -- pure black in light, pure white in dark -- while the token
+ * layer's `ink` is `#191c22` / `#fcfcfa`. Two palettes on screen, exactly as the ticket says,
+ * and the one carrying most of the words.
+ *
+ * ⚠ OVERRIDDEN FROM THE TOKEN LAYER, NEVER BY MATCHING A GREY. The ticket is explicit --
+ * *"a matched hex is the dead-control shape, and `lint:panel` would refuse it anyway"* -- so
+ * these rules name tokens and the scanner is satisfied by substance. Both are scoped to this
+ * panel's body class, so neither reaches the platform panel.
+ */
+/*
+ * ⚠ `html` IS IN THIS LIST, AND LEAVING IT OUT IS WHAT THE BROWSER CASE CAUGHT. `fi-panel-
+ * studio` is on `body`, so a rule scoped to it leaves the ROOT element on the UA default --
+ * `#000000` in light, `#ffffff` in dark. Nothing visible inherits from `html` once `body`
+ * sets a colour, which is exactly why reading the file would not have found it; the
+ * measurement walks every element and reported `color #000000 on html.fi` as the one
+ * off-token value left in the panel.
+ *
+ * `:has()` rather than `html.fi`, because `fi` is on the root of BOTH panels and part B is
+ * the studio's ticket. An engine without `:has()` simply keeps the default on an element
+ * that paints no text of its own, so the fallback is the state this rule found.
+ */
+html:has(body.fi-panel-studio),
+.fi-panel-studio,
+.fi-panel-studio .fi-main {
+  color: var(--color-ink);
+}
+
+/*
+ * The hand-rolled hostname input. It carries Tailwind's bare `border`, which sets a width
+ * and no colour, so it resolved to the inherited text colour -- a pure-white 1px box on a
+ * dark page. The input stays hand-rolled for the reason `§4a` records about the file input
+ * beside it; what changes is that its border now names the hairline token like every other
+ * boundary in this panel.
+ */
+.fi-panel-studio .studio-layout__form input[type='text'],
+.fi-panel-studio .studio-layout__form input[type='url'] {
+  border-color: var(--color-hairline);
+}
+
+/*
+ * ================================================================================
+ * THE COLOUR PICKER — QRPAGER-41 part B item 5
+ * ================================================================================
+ *
+ * A native `<input type="color">`, the hex beside it as an `<output>`, and a clear action
+ * that appears only when there is an override to clear. `ColourField` carries the reasoning
+ * for the control; this is only its arrangement.
+ *
+ * ⚠ `[x-cloak]` IS DECLARED HERE AND IT IS LOAD-BEARING. Alpine removes that attribute once
+ * it has evaluated the element, and without a rule hiding it in the meantime the clear
+ * button is painted for one frame on EVERY field -- including the five with nothing to
+ * clear -- which reads as five buttons flashing on page load.
+ */
+[x-cloak] {
+  display: none !important;
+}
+
+.studio-colour {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+/*
+ * The swatch. A native colour input is drawn by the platform, so its own chrome is stripped
+ * to a plain square and the hairline is this panel's, not the OS's -- which is what keeps it
+ * from being the one control a reviewer can name the operating system from.
+ */
+/*
+ * ⚠ NO `block-size` HERE. `targets.css` puts a 44px floor on both axes of this class, and
+ * declaring a height beside it would be a second number for one decision -- the floor would
+ * silently win and this file would read as though it had not. The width is a preference
+ * above that floor, so it stays.
+ */
+.studio-colour-input {
+  inline-size: var(--space-48);
+  padding: 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+}
+
+.studio-colour-input::-webkit-color-swatch-wrapper {
+  padding: var(--space-4);
+}
+
+.studio-colour-input::-webkit-color-swatch {
+  border: 0;
+  border-radius: var(--radius-control);
+}
+
+/*
+ * The hex, read-only by ELEMENT rather than by attribute: `<output>` is announced as a live
+ * region, so a screen-reader user hears the value change as the picker moves. Tabular
+ * figures so six digits do not reflow the row while it changes.
+ */
+.studio-colour__value {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-colour__clear {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+  text-decoration: underline;
+}
+
+/*
+ * ⚠ FILAMENT'S DARK TEXT IS `var(--color-white)`, AND REDEFINING THAT ONE VARIABLE IS THE
+ * WHOLE FIX — QRPAGER-41 part B item 6.
+ *
+ * The browser measurement listed twelve elements painting `#ffffff` in dark where the token
+ * layer's `ink` is `#fcfcfa`: the heading, every button, field labels, the radio text, the
+ * logo. Chasing them class by class would be twelve rules that go stale the moment Filament
+ * renames one. Read out of the COMPILED theme instead:
+ *
+ *   .dark,.dark *){color:var(--color-white)
+ *
+ * So the panel redefines `--color-white` for itself. Every rule that already references it
+ * resolves to the token, including rules this stylesheet has never heard of, and the ticket's
+ * instruction is satisfied exactly: *"override it from the token layer rather than matching
+ * its grey by eye — a matched hex is the dead-control shape."*
+ *
+ * ⚠ DARK ONLY, AND THAT BOUND IS LOAD-BEARING. `--color-white` is also what Tailwind's
+ * `bg-white` resolves to, so redefining it unconditionally would paint every light-mode
+ * surface in ink. Scoped to `.dark`, the only rules it reaches are the ones Filament uses for
+ * dark text, and in that mode `ink` is a near-white (`#fcfcfa`) so a background that did
+ * reference it is visually unchanged.
+ *
+ * ⚠ AND IT IS SCOPED TO THIS PANEL. `.dark` is on the root and `fi-panel-studio` on the body,
+ * so the descendant form reaches the studio and leaves the platform panel alone — part B is
+ * the studio's ticket.
+ */
+.dark .fi-panel-studio {
+  --color-white: var(--color-ink);
 }

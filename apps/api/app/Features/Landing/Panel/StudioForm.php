@@ -20,6 +20,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
+use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
 /**
@@ -210,14 +211,34 @@ final class StudioForm
                  * `getStateUsing`-style closures run per item, so this is evaluated against
                  * each row's own state rather than once for the schema.
                  */
-                ->label(static function (?array $state) use ($type): string {
+                /*
+                 * ⚠ TWO SPANS, AND THAT IS ITEM 3's *"truncate the summary, never the number
+                 * or the name"* — `QRPAGER-41` part B. One text node cannot be half
+                 * truncated: `text-overflow: ellipsis` cuts the END of a box, so a single
+                 * string would lose the owner's heading AND, on a narrow row, the block's own
+                 * name with it. The name is `flex: 0 0 auto` and keeps its width whatever
+                 * happens; only `.studio-block-summary` shrinks. The NUMBER is untouchable by
+                 * construction -- it is a CSS counter on `::before`, not text in this string.
+                 *
+                 * ⚠ `HtmlString`, SO THE TENANT'S HEADING IS ESCAPED HERE AND NOWHERE ELSE.
+                 * Returning markup from a label means Blade will not escape it, so `e()` is
+                 * applied to the one value that is tenant input and to nothing else. The
+                 * block's own name comes from `lang/`, and `Str::limit` still bounds the
+                 * heading before it is escaped -- a long heading is a layout problem, not a
+                 * safety one, and both are handled rather than one standing in for the other.
+                 */
+                ->label(static function (?array $state) use ($type): HtmlString {
                     $heading = $state['heading'] ?? null;
-
                     $name = __('studio.blocks.'.$type->value);
 
-                    return is_string($heading) && trim($heading) !== ''
-                        ? $name.' — '.Str::limit(trim($heading), 60)
-                        : $name;
+                    if (! is_string($heading) || trim($heading) === '') {
+                        return new HtmlString('<span class="studio-block-name">'.e($name).'</span>');
+                    }
+
+                    return new HtmlString(
+                        '<span class="studio-block-name">'.e($name).'</span>'
+                        .'<span class="studio-block-summary">'.e(Str::limit(trim($heading), 60)).'</span>'
+                    );
                 })
                 ->schema(self::fields(BlockSchema::fields($type), $media));
         }
@@ -318,10 +339,15 @@ final class StudioForm
             $key = self::themeKey($name);
 
             $components[] = match ($kind) {
-                ThemeTokenKind::Colour => TextInput::make($key)
-                    ->label(__('studio.tokens.'.$name))
-                    ->placeholder('#1a1a1a')
-                    ->helperText(__('studio.help.colour')),
+                /*
+                 * ⚠ A PICKER, NOT A HEX FIELD — `QRPAGER-41` part B item 5, and the helper
+                 * line went WITH the field rather than being reworded. It read *"A hex
+                 * colour, for example …"*, which only ever existed to teach the owner the
+                 * format the control demanded; a control that demands no format needs no
+                 * line explaining one. `ColourField` carries the rest of the reasoning.
+                 */
+                ThemeTokenKind::Colour => ColourField::make($key)
+                    ->label(__('studio.tokens.'.$name)),
                 ThemeTokenKind::Length => TextInput::make($key)
                     ->label(__('studio.tokens.'.$name))
                     ->placeholder('1rem')

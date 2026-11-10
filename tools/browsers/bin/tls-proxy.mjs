@@ -24,10 +24,43 @@
  * `ignoreHTTPSErrors` accepts it, and an https origin with an accepted certificate IS a
  * secure context in all three engines.
  *
- * ⚠ IT PROXIES AND DECIDES NOTHING. Every request, every header, every byte and every status
- * is forwarded unchanged in both directions. It adds no header, strips none, and caches
- * nothing -- so the bytes the suite measures are the bytes `next start` served. A proxy that
- * edited anything would make every figure a figure about the proxy.
+ * ⚠ IT PROXIES AND DECIDES NOTHING, WITH EXACTLY ONE EXCEPTION, NAMED BELOW. Every request,
+ * every header, every byte and every status is forwarded unchanged in both directions. It
+ * strips nothing and caches nothing -- so the bytes the suite measures are the bytes the
+ * upstream served. A proxy that edited anything would make every figure a figure about the
+ * proxy.
+ *
+ * ================================================================================
+ * ⚠ THE ONE HEADER IT ADDS: `X-Forwarded-Proto` — `QRPAGER-41` part B
+ * ================================================================================
+ *
+ * This front terminates TLS and talks to the upstream over plain http. Without saying so, it
+ * is not a TLS-terminating proxy at all -- it is a scheme mismatch no deployment has, and the
+ * upstream has no way to know the browser is on https.
+ *
+ * MEASURED, and the symptom was a long way from the cause. A Filament panel served through
+ * this front rendered with **no stylesheet and no JavaScript**: `asset()` generated
+ * `http://host:3097/build/...` from the request it actually received, the page itself was
+ * `https://host:3097/...`, and the panel's own CSP (`style-src 'self'`, `script-src 'self'`)
+ * treats a different SCHEME as a different origin. So the panel blocked its own theme, all
+ * seven Filament bundles and Livewire:
+ *
+ *   Loading the stylesheet 'http://…/build/assets/theme-….css' violates the following
+ *   Content Security Policy directive: "style-src 'self'"
+ *
+ * Nothing was wrong with the application. `TrustProxies` is on its global stack and
+ * `BootChecks` refuses to serve on an empty or catch-all trust list, so behind the locked
+ * topology the scheme is honoured and the URLs are https. The harness was the only place
+ * where an https page was served by an upstream that believed it was http.
+ *
+ * ⚠ AND THE HEADER ALONE DOES NOTHING. Laravel ignores `X-Forwarded-*` from an untrusted
+ * peer, correctly -- trusting every peer is what makes `X-Forwarded-For` attacker-controlled
+ * and `config/trustedproxy.php` argues that at length. So `tools/browsers/bin/e2e` also
+ * starts its API with `TRUSTED_PROXIES` set to this proxy's own address, which is a specific
+ * host and not any of the four catch-all spellings that file refuses.
+ *
+ * It is added rather than forwarded-if-present on purpose: this process IS the TLS boundary,
+ * so it is the one that knows, and an inbound value would be a client's claim about it.
  *
  * DEVELOPMENT AND TEST INFRASTRUCTURE ONLY. Nothing under `apps/` knows it exists, which is
  * `§1`'s rule for a local stand-in.
@@ -66,9 +99,10 @@ const server = createServer({ cert, key }, (incoming, outgoing) => {
       port: target.port,
       path: incoming.url,
       method: incoming.method,
-      // Verbatim, including `host`: Next uses it for nothing here, and rewriting it would be
-      // this proxy making a decision.
-      headers: incoming.headers,
+      // Verbatim, including `host`: the upstream uses it for nothing here, and rewriting it
+      // would be this proxy making a decision. The one addition is the scheme, which only
+      // this process can know -- see the note at the top of the file.
+      headers: { ...incoming.headers, 'x-forwarded-proto': 'https' },
     },
     (answer) => {
       outgoing.writeHead(answer.statusCode ?? 502, answer.headers)

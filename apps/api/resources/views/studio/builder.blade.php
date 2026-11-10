@@ -18,8 +18,8 @@
         <div class="studio-layout__form">
         @php($state = $this->state())
 
-        <div role="status" aria-live="polite" class="fi-section p-16 space-y-8">
-            <h2 class="text-base font-semibold">{{ __('studio.page.status_heading') }}</h2>
+        <div role="status" aria-live="polite" class="studio-plate studio-field">
+            <h2>{{ __('studio.page.status_heading') }}</h2>
 
             @if ($state['invalid'] !== null)
                 {{-- INVALID. The refusing field is named inline and Publish is disabled. --}}
@@ -71,8 +71,18 @@
             attribute on each label is what stops a screen reader pronouncing Arabic as English --
             and `dir` beside it, because the two are halves of one fact.
         --}}
-        <fieldset class="fi-section p-16 space-y-8">
-            <legend class="text-base font-semibold">{{ __('studio.page.language_legend') }}</legend>
+        {{-- ⚠ NO BORDER, AND THE LEGEND IS A HEADING — `QRPAGER-41` part B item 3. It was
+             `fi-section p-16`, a bordered box, and a `<legend>` sits ON its parent's border
+             by UA default, so the heading cut the frame it was inside. The ticket's ruling:
+             *"drop the fieldset border; a heading and a hairline do that job."* `studio-
+             fieldset` is that hairline, and the rhythm below is label → control → helper
+             with the space ladder between them.
+
+             It stays a real `<fieldset>` with a real `<legend>`: that pairing is what tells
+             a screen reader the buttons are one group with one name, which is `§12`'s clause
+             and is about the ELEMENTS, never about the border they happened to draw. --}}
+        <fieldset class="studio-fieldset studio-field">
+            <legend>{{ __('studio.page.language_legend') }}</legend>
 
             <p class="text-sm">{{ __('studio.page.language_help') }}</p>
 

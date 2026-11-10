@@ -17,7 +17,7 @@
         @php($statuses = \App\Domain\Landing\DomainStatus::class)
 
         <div class="fi-section p-16 space-y-12">
-            <h2 class="text-base font-semibold">{{ __('studio.domains.address_heading') }}</h2>
+            <h2 class="font-semibold">{{ __('studio.domains.address_heading') }}</h2>
 
             @if ($domains === [])
                 {{-- Three sentences with the hostname emphasised inside them. The partial
@@ -43,7 +43,7 @@
         </div>
 
         <form wire:submit="add" class="fi-section p-16 space-y-12">
-            <h2 class="text-base font-semibold">{{ __('studio.domains.add_heading') }}</h2>
+            <h2 class="font-semibold">{{ __('studio.domains.add_heading') }}</h2>
 
             <label for="hostname" class="block text-sm font-medium">{{ __('studio.domains.hostname_label') }}</label>
 
@@ -63,7 +63,7 @@
 
         @foreach ($domains as $domain)
             <div class="fi-section p-16 space-y-12">
-                <h2 class="text-base font-semibold">{{ $domain->hostname }}</h2>
+                <h2 class="font-semibold">{{ $domain->hostname }}</h2>
 
                 {{-- The state is TEXT, never a colour alone (§12's accessibility bar). --}}
                 <div role="status" aria-live="polite" class="space-y-8">

@@ -258,6 +258,66 @@ class StudioPanelProvider extends PanelProvider
                     </script>
                     HTML,
             )
+            /*
+             * ⚠ THE COLOUR PICKER'S ALPINE COMPONENT — `QRPAGER-41` part B item 5.
+             *
+             * Registered on `alpine:init`, which is the one moment Alpine guarantees is
+             * before any `x-data` on the page is evaluated. A plain `<script>` that called
+             * `Alpine.data` directly would race Filament's own bundle.
+             *
+             * ⚠ THE FALLBACK IS READ FROM THE CASCADE, NEVER WRITTEN HERE. `ColourField`
+             * sends a token NAME and this resolves it with `getComputedStyle`, so the colour
+             * the picker opens on is whatever the token layer says in the mode that is
+             * actually on screen. That is also why no hex appears in this file -- the panel
+             * scanner reads it, and `R-260` is what happens when one does.
+             *
+             * ⚠ AND THE SHORTHAND IS EXPANDED, which is not a nicety: `--color-surface`
+             * resolves to a THREE-DIGIT hex, `<input type="color">` accepts only the
+             * six-digit form, and an unexpanded value is silently ignored by the element --
+             * the picker would open on black and nothing would say why. Measured while
+             * probing this panel's palette, where the same shorthand made a token look
+             * off-palette.
+             */
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => <<<'HTML'
+                    <script>
+                        document.addEventListener('alpine:init', function () {
+                            window.Alpine.data('studioColour', function (config) {
+                                return {
+                                    chosen: this.$wire.$entangle(config.statePath),
+                                    picked: '',
+                                    fallback: '',
+                                    init: function () {
+                                        var raw = getComputedStyle(this.$el)
+                                            .getPropertyValue(config.fallbackToken)
+                                            .trim()
+                                            .toLowerCase()
+
+                                        if (/^#[0-9a-f]{3}$/.test(raw)) {
+                                            raw = '#' + raw.slice(1).split('').map(function (c) {
+                                                return c + c
+                                            }).join('')
+                                        }
+
+                                        // An unresolvable token is a broken token layer, and
+                                        // this file does not get to choose a colour instead:
+                                        // the fallback stays empty and the element shows its
+                                        // own default. Naming one here would be a design
+                                        // decision made outside the token source.
+                                        this.fallback = /^#[0-9a-f]{6}$/.test(raw) ? raw : ''
+                                        this.picked = this.chosen || this.fallback
+                                    },
+                                    clear: function () {
+                                        this.chosen = ''
+                                        this.picked = this.fallback
+                                    },
+                                }
+                            })
+                        })
+                    </script>
+                    HTML,
+            )
             ->widgets([])
             ->middleware([
                 // FIRST, before StartSession, which is Task 6's security H-2 applied

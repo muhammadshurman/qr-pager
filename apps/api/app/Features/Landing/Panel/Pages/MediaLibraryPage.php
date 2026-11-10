@@ -76,6 +76,32 @@ class MediaLibraryPage extends Page
         return count($this->assets()) >= MediaLibrary::MAX_ASSETS;
     }
 
+    /*
+     * ================================================================================
+     * CHOOSING A FILE UPLOADS IT — `QRPAGER-41` part B item 4
+     * ================================================================================
+     *
+     * Livewire calls `updated<Property>()` once the temporary file has finished arriving,
+     * so this is the moment the bytes exist and the only moment `store()` can run without
+     * a second click. The separate `Upload` button is gone from the view; the ticket's
+     * words are *"Choosing a file, or dropping one, uploads it."*
+     *
+     * ⚠ IT IS A HOOK, NOT A `wire:change` ON THE INPUT. An event handler on the element
+     * fires when the BROWSER has the file, which is before Livewire has finished
+     * transferring it -- `store()` would then find `$this->upload` still null and show the
+     * "choose a file first" refusal on a file the owner had just chosen. The hook fires
+     * after the transfer by construction.
+     *
+     * ⚠ AND IT CHANGES NOTHING ABOUT WHAT IS CHECKED. `store()` is called with the same
+     * property, reads the same bytes and hands them to the same `InspectedImage` boundary.
+     * The drop zone's `change` event already routed through `wire:model`, so a DROPPED file
+     * takes this path too and needed no second code path.
+     */
+    public function updatedUpload(): void
+    {
+        $this->store();
+    }
+
     public function store(): void
     {
         $tenantId = TenantPanelAccess::tenantId();

@@ -17,8 +17,13 @@
         @php($assets = $this->assets())
         @php($full = $this->isFull())
 
-        <form wire:submit="store" class="fi-section p-16 space-y-12">
-            <h2 class="text-base font-semibold">{{ __('studio.media.add_heading') }}</h2>
+        {{-- ⚠ NO `wire:submit` AND NO SUBMIT BUTTON — `QRPAGER-41` part B item 4. Choosing a
+             file uploads it; `MediaLibraryPage::updatedUpload()` carries the reasoning. The
+             element stays a `<form>` so the input keeps a form owner and the drop zone's
+             `<label for>` keeps working, and so a keyboard Enter on the file input does
+             nothing surprising rather than submitting a form with no action. --}}
+        <form class="studio-plate studio-field">
+            <h2>{{ __('studio.media.add_heading') }}</h2>
 
             {{--
                 THE DROP ZONE IS A LABEL, NOT A DIV WITH A CLICK HANDLER. A <label for> already
@@ -78,22 +83,22 @@
                 @endif
             </p>
 
-            <p wire:loading wire:target="upload" role="status" aria-live="polite" class="text-sm">
+            {{-- ⚠ PROGRESS WHILE IT RUNS, AND IT TARGETS BOTH HALVES — `QRPAGER-41` part B
+                 item 4. `wire:target="upload"` covers the transfer; `store` covers the
+                 inspection and the write that follow it, which is the part that takes the
+                 time on a 5 MB file. Targeting only the first would have shown the owner a
+                 line that vanished while the page was still working. --}}
+            <p wire:loading wire:target="upload, store" role="status" aria-live="polite" class="text-sm">
                 {{ __('studio.media.uploading') }}
             </p>
 
             @error('upload')
                 <p role="alert" class="text-sm text-danger-700 dark:text-danger-200">{{ $message }}</p>
             @enderror
-
-            <button type="submit" @disabled($full)
-                    class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-control disabled:opacity-50">
-                {{ __('studio.media.upload') }}
-            </button>
         </form>
 
         <div class="fi-section p-16 space-y-12">
-            <h2 class="text-base font-semibold">
+            <h2 class="font-semibold">
                 {{ __('studio.media.library_heading', [
                     'count' => count($assets),
                     'max' => \App\Features\Landing\MediaLibrary::MAX_ASSETS,
