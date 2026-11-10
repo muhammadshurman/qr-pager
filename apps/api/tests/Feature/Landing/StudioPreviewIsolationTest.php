@@ -69,7 +69,7 @@ function isolationTabs(): array
     return $html;
 }
 
-it('renders the preview as an iframe on every tab, in every state the panel has', function (): void {
+it('renders the preview as an iframe on all four tabs, for an owner with a saved draft', function (): void {
     foreach (isolationTabs() as $path => $html) {
         $xpath = isolationDom($html);
 
@@ -82,7 +82,15 @@ it('renders the preview as an iframe on every tab, in every state the panel has'
          * an inlined copy would pass the count above and fail the point of it, so what is
          * asserted is the absence of the published page's own markers from the panel.
          */
-        expect(str_contains($html, '<html lang='))->toBeFalse("{$path} carries a nested document");
+        /*
+         * ⚠ COUNTED, NOT SEARCHED FOR A STRING WITH AN ATTRIBUTE IN IT. This was
+         * `str_contains($html, '<html lang=')`, and the `§11` SECURITY round showed that it
+         * passed only because Filament's own `base.blade.php` happens to put a NEWLINE
+         * between `<html` and `lang=`: vendor formatting, one `prettier` run away from
+         * making this assertion vacuous. Counting the opening tag depends on no attribute
+         * and on no whitespace.
+         */
+        expect(substr_count($html, '<html'))->toBe(1, "{$path} carries a nested document");
     }
 });
 
@@ -123,6 +131,47 @@ it('keeps the tenant stylesheet out of the panel document entirely', function ()
                 ->toBeFalse("{$path} applies the tenant's theme as CSS in the panel document");
         }
     }
+});
+
+it('serves the framed preview under a policy that permits it nothing', function (): void {
+    /*
+     * ================================================================================
+     * ⚠ THE ELEMENT IS NOT THE CONTROL, AND THE `§11` SECURITY ROUND OF 2026-11-10 SAID SO
+     * ================================================================================
+     *
+     * *"What this file asserts is a security property; what actually holds it is elsewhere.
+     * The frame is same-origin and carries no `sandbox` attribute … the thing that keeps
+     * tenant content from reaching `parent.document` is the child response's
+     * `default-src 'none'`."* Correct, and the iframe count above says nothing about it — a
+     * reader of this file took the count for the control, which is how a control disappears
+     * while its test stays green.
+     *
+     * So the policy is asserted HERE, beside the structure it depends on. `PreviewFramingTest`
+     * asserts the same directive for the clickjacking half; this is not a duplicate of it but
+     * the other half of A1's claim: tenant-authored CSS renders in a document that may load
+     * nothing, run nothing and submit nowhere.
+     */
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+
+    (new LandingPages)->saveDraft($tenant, LandingFixtures::fullPage());
+
+    $policy = (string) test()->get('/studio/preview')->headers->get('Content-Security-Policy');
+
+    expect($policy)->not->toBe('', 'the framed preview is served with no policy at all');
+
+    $directives = [];
+
+    foreach (array_filter(array_map('trim', explode(';', $policy))) as $directive) {
+        $parts = preg_split('/\s+/', $directive, 2) ?: [];
+        $directives[$parts[0]] = $parts[1] ?? '';
+    }
+
+    expect($directives['default-src'] ?? null)
+        ->toBe("'none'", 'the framed preview may load something, so tenant CSS is not contained by it')
+        ->and(array_key_exists('script-src', $directives))
+        ->toBeFalse('the framed preview declares a script source, which `default-src` would otherwise refuse')
+        ->and($directives['frame-ancestors'] ?? null)
+        ->toBe("'self'", 'the pane may be framed cross-origin, which is the other half of this control');
 });
 
 /*
@@ -173,45 +222,125 @@ it('decides direction for every theme token kind, with no silent default', funct
     ], 'a theme token kind changed its direction decision, or a new one arrived undecided');
 });
 
-it('marks the literal fields in the rendered form and leaves the prose fields alone', function (): void {
+it('marks every literal control on the page tab and no prose control — A3', function (): void {
     /*
-     * The decision reaching the DOM, and BOTH halves of it on one page.
+     * ================================================================================
+     * ⚠ THE CASE THE `§11` QA ROUND PROVED WAS MISSING, AND ITS REVERT PROOF
+     * ================================================================================
      *
-     * `/studio/theme` is the surface that carries both: the four `radius`/`space`/`size`
-     * tokens are `ThemeTokenKind::Length` — `1rem`, `12px`, literals — and the two
-     * search-and-sharing fields are `FieldKind::Text`, which hold the owner's own Arabic. The
-     * page tab would not do: its literal fields live inside blocks, which `QRPAGER-40`
-     * renders collapsed, so nothing would be marked and the case would pass vacuously.
+     * QA H-3, 2026-11-10: *"the five `FieldKind` marks have no test anywhere; all five can be
+     * deleted with the suite green."* Proven there by revert — `tests/Feature/Landing`,
+     * `Feature/Design` and `Unit` came to **279 passed, zero failures** with every
+     * `->extraInputAttributes($literal)` removed. The only case that looked at the mark read
+     * `//input[@type="text"]` on `/studio/theme`, a node set that CANNOT CONTAIN a `url`,
+     * `email`, `tel`, `number` or `select` control. So A3's five delivered roles were
+     * asserted by nothing.
      *
-     * ⚠ THE SECOND HALF IS THE ONE THAT MATTERS. The first version of A3 was a stylesheet
-     * rule over every input in the form, which would have marked `seo_title` too and rendered
-     * the restaurant's own sentences backwards. That is what this case forbids.
+     * ⚠ AND THE OLD CASE'S STATED REASON FOR CHOOSING THAT TAB WAS FALSE, WHICH IS WHY THIS
+     * ONE EXISTS RATHER THAN BEING AN EXTRA ASSERTION ON IT. It claimed the page tab's
+     * literal fields *"live inside blocks, which `QRPAGER-40` renders collapsed, so nothing
+     * would be marked"*. Measured on this fixture: `/studio` renders **38** controls with a
+     * `wire:model`, of which **8** carry the mark — 3 `url`, 3 `number`, 1 `email`, 1 `tel`.
+     * A collapsed section still renders its inputs. The field count made that sentence easy
+     * to believe and the DOM refutes it.
+     *
+     * BY INPUT TYPE, which is the one mapping that cannot drift from the decision: `StudioForm`
+     * chooses the HTML type FROM the `FieldKind`, so `url`/`email`/`tel`/`number` are exactly
+     * the literal kinds on this tab and `text` is `FieldKind::Text`. Both halves are asserted
+     * non-vacuously, so a mark cannot be lost and a prose field cannot gain one.
      */
-    $this->actingForTenant(role: TenantRole::Owner);
+    $xpath = isolationDom(isolationTabs()['/studio']);
 
-    $xpath = isolationDom((string) $this->get('/studio/theme')->getContent());
+    /** @var array<string, array{marked: int, unmarked: int}> $byType */
+    $byType = [];
 
-    $marked = [];
-    $unmarked = [];
-
-    foreach ($xpath->query('//input[@type="text"]') ?: [] as $input) {
+    foreach ($xpath->query('//input[@*[starts-with(name(), "wire:model")]]') ?: [] as $input) {
         if (! $input instanceof DOMElement) {
             continue;
         }
 
-        $name = $input->getAttribute('wire:model') ?: $input->getAttribute('id');
-        $isMarked = str_contains($input->getAttribute('class'), 'studio-ltr');
+        $type = $input->getAttribute('type');
 
-        $isMarked ? $marked[] = $name : $unmarked[] = $name;
+        // `radio` is the template chooser and `hidden`/`checkbox` hold no literal a reader
+        // sees, so neither is in A3's scope. Named rather than filtered silently.
+        if (in_array($type, ['radio', 'checkbox', 'hidden', ''], true)) {
+            continue;
+        }
+
+        $key = str_contains($input->getAttribute('class'), 'studio-ltr') ? 'marked' : 'unmarked';
+        $byType[$type] ??= ['marked' => 0, 'unmarked' => 0];
+        $byType[$type][$key]++;
     }
 
-    // Not vacuous on either side: the page must render some of each.
-    expect($marked)->not->toBe([], 'no field is marked as holding a literal, so this proves nothing')
-        ->and($unmarked)->not->toBe([], 'every field is marked, so the prose half proves nothing');
-
-    // And the halves must not overlap: a prose field carrying the mark is the defect.
-    foreach ($unmarked as $name) {
-        expect(str_contains((string) $name, 'seo_') || ! str_contains((string) $name, 'radius'))
-            ->toBeTrue("a literal field [{$name}] is not marked");
+    foreach (['url', 'email', 'tel', 'number'] as $type) {
+        expect(($byType[$type]['marked'] ?? 0) > 0)
+            ->toBeTrue("no [{$type}] control on /studio is marked, so this case proves nothing about that kind")
+            ->and($byType[$type]['unmarked'] ?? 0)
+            ->toBe(0, "a [{$type}] control is NOT marked, and its `FieldKind` says its value is a literal");
     }
+
+    expect(($byType['text']['unmarked'] ?? 0) > 0)
+        ->toBeTrue('no prose control is rendered, so the half that protects the owner\'s Arabic proves nothing')
+        ->and($byType['text']['marked'] ?? 0)
+        ->toBe(0, 'a prose control carries the literal mark, which renders the owner\'s own sentences backwards');
+
+    /*
+     * ⚠ AND THE MEDIA CHOOSER, WHOSE MARK IS ON THE WRAPPER BECAUSE IT HAS NOWHERE ELSE TO GO.
+     * QA H-2 measured that `extraInputAttributes` is discarded by a non-native `Select`
+     * (`Select.php:1925` spreads the bag only `if ($isNative)`), so A3's media role shipped as
+     * a no-op while the enum case asserted the decision was `true`. This is the assertion that
+     * the delivery and the decision agree.
+     */
+    $wrappers = $xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' studio-ltr-select ')]");
+
+    expect(($wrappers?->length ?? 0) > 0)
+        ->toBeTrue('no media chooser carries the select mark, so `FieldKind::Media` decides `true` and delivers nothing');
+});
+
+it('marks exactly the four length tokens on the theme tab, by name — A3', function (): void {
+    /*
+     * ⚠ SET EQUALITY, AND THE CASE THIS REPLACES COULD ONLY FAIL FOR A FIELD NAMED `radius`.
+     * QA M-1, 2026-11-10: it asserted
+     * `str_contains($name, 'seo_') || ! str_contains($name, 'radius')`, which is
+     * `false || !false` for every other unmarked literal — *"marking only `radius` → PASS;
+     * marking everything except `radius` → fails naming `data.theme_radius_small`"*. Two of
+     * the four length tokens were unguarded, and `§1`'s own ruling of the same day says an
+     * invariant is a SET EQUALITY and not a count.
+     *
+     * The four names are the `ThemeTokenKind::Length` tokens. A fifth arriving unmarked, or
+     * any of these four losing its mark, is one red naming the set difference.
+     */
+    $xpath = isolationDom(isolationTabs()['/studio/theme']);
+
+    $marked = [];
+
+    foreach ($xpath->query('//input[@*[starts-with(name(), "wire:model")]]') ?: [] as $input) {
+        if (! $input instanceof DOMElement || ! str_contains($input->getAttribute('class'), 'studio-ltr')) {
+            continue;
+        }
+
+        $path = $input->getAttribute('wire:model')
+            ?: ($input->getAttribute('wire:model.live') ?: $input->getAttribute('wire:model.blur'));
+        $segments = explode('.', (string) $path);
+        $marked[] = end($segments);
+    }
+
+    sort($marked);
+
+    expect($marked)->toBe([
+        'theme_radius_large',
+        'theme_radius_small',
+        'theme_size_heading',
+        'theme_space_section',
+    ], 'the set of marked length tokens changed, or a length token arrived unmarked');
+
+    /*
+     * AND THE FONT CHOICES ARE SELECTS AND MUST *NOT* BE MARKED: `ThemeTokenKind::FontChoice`
+     * decides `false`, because what the owner reads there is a font's NAME in his own
+     * language, not a value typed character by character. This is the half that would redden
+     * if somebody marked every select rather than the kinds that hold a literal.
+     */
+    $wrappers = $xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' studio-ltr-select ')]");
+
+    expect($wrappers?->length)->toBe(0, 'a font choice is marked as holding a literal, and its value is a name');
 });

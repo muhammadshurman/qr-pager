@@ -317,6 +317,18 @@ final class StudioForm
         $label = __('studio.fields.'.$name);
         $literal = self::holdsLiteralValue($field->kind) ? ['class' => 'studio-ltr'] : [];
 
+        /*
+         * ⚠ A SECOND MARK, BECAUSE A NON-NATIVE SELECT THROWS THE FIRST ONE AWAY. Filament's
+         * `Select` spreads `extraInputAttributes` only in its `$isNative` branch
+         * (`Select.php:1925`); the branch this form uses keeps six aria keys and nothing else
+         * (`:1979`). The `§11` QA round of 2026-11-10 measured the consequence on the rendered
+         * page -- zero `studio-ltr` on any media chooser while the enum test asserted the
+         * decision was `true` -- so the mark goes on the WRAPPER, as a marker class only, and
+         * `theme.css` isolates the two descendants that hold the filename. The wrapper's own
+         * text is the LABEL, which is Arabic prose and must not be touched.
+         */
+        $literalSelect = self::holdsLiteralValue($field->kind) ? ['class' => 'studio-ltr-select'] : [];
+
         return match ($field->kind) {
             FieldKind::Text => TextInput::make($name)
                 ->label($label)
@@ -357,7 +369,8 @@ final class StudioForm
             FieldKind::Media => Select::make($name)
                 ->label($label)
                 ->required($field->required)
-                ->extraInputAttributes($literal)
+                // ⚠ `extraAttributes` AND NOT `extraInputAttributes`: see `$literalSelect`.
+                ->extraAttributes($literalSelect)
                 // The tenant's OWN library, and nothing else can be chosen. The server
                 // re-checks the id against media_assets inside this tenant's scope
                 // anyway -- a select is a convenience, not the boundary.

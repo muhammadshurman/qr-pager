@@ -84,9 +84,24 @@
  * `rgb(25, 28, 34)`. Substituting the token there would move every text colour on a panel
  * Task 8b styled with utilities, and `panel.spec.ts` asserts AA pairs against those values:
  * that is the restyle `§12` defers, so it is REPORTED rather than done. Lightening the ground
- * from `#f6f6f5` to `#fcfcfa` can only raise those ratios, which is why this half is safe
- * alone.
+ * from `#f6f6f5` to `#fcfcfa` can only raise the ratios OF TEXT ON THAT GROUND, which is why
+ * this half is safe alone.
+ *
+ * ⚠ AND NOT EVERY PAIR, WHICH IS HOW THE FIRST VERSION OF THIS SENTENCE OVERREACHED. The
+ * `§11` QA round of 2026-11-10 (L-12) measured the ground-to-surface boundary going
+ * **1.08:1 -> 1.02:1** against Filament's white sections. Both sides are far below WCAG
+ * 1.4.11's 3:1, so nothing regresses from pass to fail -- and non-text contrast on either
+ * panel is measured by nothing, since `panel.spec.ts` computes its pairs in a fixture rather
+ * than on the painted panel.
  */
-.fi-panel-platform {
+/*
+ * ⚠ SCOPED TO THE LIGHT STATE BY THE `§11` QA ROUND, for the reason the studio theme's own
+ * copy of this rule states at length: unscoped, it outranked Filament's
+ * `.fi-body:where(.dark,.dark *)` background while leaving that rule's white TEXT in place,
+ * which is near-white on near-white if dark is ever re-enabled. `.dark` cannot appear while
+ * `->darkMode(false)` stands; the point is that it stops applying rather than half-applying
+ * if it ever can.
+ */
+:root:not(.dark) .fi-panel-platform {
   background-color: var(--color-paper);
 }

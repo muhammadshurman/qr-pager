@@ -513,7 +513,23 @@
  * mirror pins `data-theme="light"`, which is what suppresses that branch. Remove it as
  * "unreachable after A2" and this rule would paint `--color-paper` with the DARK paper.
  */
-.fi-panel-studio {
+/*
+ * ⚠ SCOPED TO THE LIGHT STATE BY THE `§11` QA ROUND OF 2026-11-10, AND THE UNSCOPED VERSION
+ * WAS A LATENT 1.02:1. Measured there against the compiled cascade: Filament emits
+ * `.fi-body{background-color:var(--gray-50)}` and
+ * `.fi-body:where(.dark,.dark *){background-color:var(--gray-950);color:var(--color-white)}`.
+ * `:where()` contributes no specificity and this rule is later in source, so with `.dark` on
+ * the root the body took OUR light ground and KEPT Filament's white text -- near-white on
+ * near-white. The rule that used to prevent that (`.dark .fi-panel-studio{--color-white:
+ * var(--color-ink)}`, `QRPAGER-41` part B item 6) was deleted in this same delivery as
+ * unreachable, so the two changes together produced the pair.
+ *
+ * `.dark` cannot appear while `->darkMode(false)` stands, which is why no case was red -- and
+ * re-enabling dark is ONE LINE, which `R-266` itself contemplates. So the ground stands down
+ * in that state rather than half-applying: whoever re-enables dark makes a dark decision and
+ * inherits no hybrid. `studio.spec.ts` asserts the stand-down with `.dark` forced on.
+ */
+:root:not(.dark) .fi-panel-studio {
   background-color: var(--color-paper);
 }
 
@@ -534,9 +550,9 @@
  * the rule itself is mode-agnostic and the light half is the one the measurement found
  * first, so it stands unchanged. What narrows is its justification, not its text.
  */
-html:has(body.fi-panel-studio),
-.fi-panel-studio,
-.fi-panel-studio .fi-main {
+html:not(.dark):has(body.fi-panel-studio),
+:root:not(.dark) .fi-panel-studio,
+:root:not(.dark) .fi-panel-studio .fi-main {
   color: var(--color-ink);
 }
 
@@ -671,10 +687,19 @@ html:has(body.fi-panel-studio),
  * computed `direction` and `unicode-bidi`, and the per-character geometry above: the `#` box
  * must sit LEFT of the first hex digit.
  *
- * ⚠ SCOPED BY ROLE, NOT BY ELEMENT. `§12`'s clause is every Latin-and-digits run the owner
- * reads as a literal -- a colour value, a file size, pixel dimensions, a hostname, a CSS
- * length. Each is a value typed or copied character by character, and each reverses the same
- * way in an RTL document for the same reason.
+ * ⚠ SCOPED BY ROLE, NOT BY ELEMENT -- AND THE ROLES THIS RULE ACTUALLY COVERS ARE NAMED,
+ * BECAUSE THE FIRST VERSION OF THIS PARAGRAPH CLAIMED THE WHOLE CLAUSE. `§12`'s clause is
+ * every Latin-and-digits run the owner reads as a literal. What carries a mark is: a colour
+ * value (`.studio-colour__value`), the hostname input (`#hostname`), the literal-valued form
+ * fields (`.studio-ltr`, by `FieldKind`) and the media chooser's own value
+ * (`.studio-ltr-select`, below).
+ *
+ * ⚠ WHAT THE CLAUSE COVERS AND THIS RULE DOES NOT, filed as `R-279` by the `§11` QA round of
+ * 2026-11-10 (L-7) rather than left as a wider claim than the selector: the media card's
+ * `image/png · 12.3 KB · 1024x768` line, which is three LTR runs laid out right-to-left so
+ * the owner reads the three facts in reverse, and a hostname emphasised inside an Arabic
+ * sentence. The same row carries the customer-facing half, which matters more: the tenant's
+ * email and phone are rendered to the CUSTOMER with no isolation at all.
  */
 .studio-colour__value,
 .studio-ltr {
@@ -702,6 +727,34 @@ html:has(body.fi-panel-studio),
  * The hostname input is hand-rolled and outside that schema, so it names itself.
  */
 #hostname {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/*
+ * ================================================================================
+ * ⚠ A SELECT NEEDS ITS OWN SELECTOR, AND THE `§11` QA ROUND IS WHAT PROVED IT
+ * ================================================================================
+ *
+ * `FieldKind::Media` is a `Select` with `->native(false)`, and Filament's non-native branch
+ * DISCARDS `extraInputAttributes`: `vendor/filament/forms/src/Components/Select.php:1925` is
+ * `<?php if ($isNative) { ?>`, which is the only branch that spreads the bag, and the
+ * non-native branch at `:1979` keeps `->only([...six aria keys])`. Measured on the rendered
+ * page before this rule existed: every media chooser carried
+ * `data-select-accessibility="{aria-describedby,aria-invalid,aria-required}"` and ZERO
+ * occurrences of `studio-ltr`, while `StudioPreviewIsolationTest` asserted the decision for
+ * that kind was `true`. The mark was a no-op and a test said otherwise.
+ *
+ * ⚠ AND IT IS NOT APPLIED TO THE WRAPPER'S OWN TEXT, WHICH IS THE TRAP IN THE OBVIOUS FIX.
+ * `->extraAttributes()` lands on the field wrapper, which CONTAINS THE LABEL -- the owner's
+ * own Arabic. So the wrapper only carries the marker class and the isolation is applied to
+ * the two descendants that hold the filename: the value container and the option rows. The
+ * label inherits nothing from this rule, which is the same distinction the block above draws
+ * between a literal and the owner's prose.
+ */
+.studio-ltr-select .fi-select-input-value-ctn,
+.studio-ltr-select .fi-select-input-option {
   direction: ltr;
   unicode-bidi: isolate;
   text-align: start;

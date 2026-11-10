@@ -347,11 +347,42 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
         prefersDark: matchMedia('(prefers-color-scheme: dark)').matches,
         ground: getComputedStyle(document.body).backgroundColor,
         paper: resolve(root.getPropertyValue('--color-paper').trim()),
+        // ⚠ THE RAW CUSTOM PROPERTY, KEPT SO THE PREMISE BELOW CAN BE ASSERTED.
+        paperRaw: root.getPropertyValue('--color-paper').trim(),
       }
     })
 
     // The premise: without it the case would pass on a machine that prefers light.
     expect(seen.prefersDark, 'the context does not prefer dark, so this proves nothing').toBe(true)
+
+    /*
+     * ================================================================================
+     * ⚠ AND THE SECOND PREMISE, WHICH THIS CASE SHIPPED WITHOUT — `§11` QA H-1, 2026-11-10
+     * ================================================================================
+     *
+     * The assertion below compares the page against ITSELF, and that is vacuous on a page
+     * with no stylesheet: `getPropertyValue` returns `''` for an undefined custom property,
+     * `probe.style.backgroundColor = ''` leaves the probe unset, and a probe with no
+     * background computes `rgba(0, 0, 0, 0)` — which is exactly what `body` computes with no
+     * CSS. **MEASURED rather than reasoned:** these two probe functions, run verbatim against
+     * `<html class="fi"><body class="fi-body">` with no stylesheet at all, returned
+     * `ground`, `paper` and `forcedPaper` all `rgba(0, 0, 0, 0)`, and every colour assertion
+     * in this block was GREEN.
+     *
+     * That is `R-264`'s own incident — *"looked green in every PHP test while no panel asset
+     * loaded at all"* — and it is the reason `§4a` gives for running the e2e suite. The guard
+     * already existed 150 lines above, in this same file, added when a run reported 131
+     * off-token colours because the theme had not loaded; these cases did not use it.
+     */
+    expect(
+      seen.paperRaw,
+      'the panel theme did not load, so this is a browser default and not a token. Check ' +
+        'that `composer assets` has run and that the built manifest is reachable.',
+    ).not.toBe('')
+
+    expect(seen.ground, 'the ground is transparent, which no token ever resolves to').not.toBe(
+      'rgba(0, 0, 0, 0)',
+    )
 
     /*
      * ⚠ COMPARED AS RESOLVED COLOURS, NOT AS STRINGS. `--color-paper` is authored as a hex
@@ -656,6 +687,10 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
         isPanel: document.querySelector('.fi-body') !== null,
         ground: getComputedStyle(document.body).backgroundColor,
         paper: resolve('--color-paper'),
+        // ⚠ AND THE SECOND PREMISE -- `§11` QA H-1. Without it every comparison below is
+        // vacuous on a page whose stylesheet did not load; the studio case above carries the
+        // measurement that proved it.
+        paperRaw: getComputedStyle(root).getPropertyValue('--color-paper').trim(),
       }
 
       // And the same token with the attribute forced: equal to the reading above only when
@@ -677,6 +712,15 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
       seen.isPanel,
       'this is not the platform panel, so the measurement is of something else',
     ).toBe(true)
+
+    expect(
+      seen.paperRaw,
+      'the platform theme did not load, so every colour below is a browser default',
+    ).not.toBe('')
+
+    expect(seen.ground, 'the ground is transparent, which no token ever resolves to').not.toBe(
+      'rgba(0, 0, 0, 0)',
+    )
 
     /*
      * A2 ON THIS PANEL: light paint with a stored dark preference. The measurement that
@@ -705,6 +749,42 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
     expect(seen.ground, 'the platform panel paints a ground that comes from no token').toBe(
       seen.paper,
     )
+
+    /*
+     * ================================================================================
+     * ⚠ AND THE GROUND STANDS DOWN IF `.dark` EVER APPEARS — `§11` QA M-3, 2026-11-10
+     * ================================================================================
+     *
+     * The rule above was written unconditional, and QA measured what that cost against the
+     * compiled cascade: Filament emits `.fi-body:where(.dark,.dark *){background-color:
+     * var(--gray-950); color: var(--color-white)}`, `:where()` adds no specificity and our
+     * rule is later in source — so with `.dark` on the root the body took OUR light ground
+     * and KEPT their white text. **Near-white on near-white, about 1.02:1.** The rule that
+     * used to prevent it (`.dark .fi-panel-studio{--color-white: var(--color-ink)}`) was
+     * deleted in this same delivery as unreachable, so the two changes together made the pair.
+     *
+     * `.dark` cannot appear while `->darkMode(false)` stands, which is why nothing was red.
+     * Re-enabling dark is ONE LINE. So the selectors are scoped to `:root:not(.dark)` and
+     * this is the case that holds them there: forced into the state the panel does not
+     * currently have, the ground must NOT be the light paper.
+     */
+    const forcedDark = await page.evaluate(() => {
+      const root = document.documentElement
+      root.classList.add('dark')
+      const seenDark = {
+        ground: getComputedStyle(document.body).backgroundColor,
+        text: getComputedStyle(document.body).color,
+      }
+      root.classList.remove('dark')
+
+      return seenDark
+    })
+
+    expect(
+      forcedDark.ground,
+      `with .dark forced on, the ground is still the light paper (${forcedDark.ground}) while ` +
+        `Filament paints its text ${forcedDark.text} -- the 1.02:1 pair QA M-3 measured`,
+    ).not.toBe(seen.paper)
   })
 
   test('renders a colour value with the hash first — A3', async ({ page }) => {

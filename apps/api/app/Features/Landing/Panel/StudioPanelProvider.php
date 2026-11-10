@@ -92,9 +92,14 @@ class StudioPanelProvider extends PanelProvider
             // `ThemeMode::System`, so until this line the panel followed the operating
             // system and a restaurant owner on a dark laptop met a dark product -- the one
             // the same ticket re-pointed off `ready-field` precisely because it was the
-            // colour of the order-ready state. Dark stays AVAILABLE: this is the default a
-            // person has not chosen yet, not a removal, and `§12`'s floors are asserted for
-            // both themes by `contrast.test.ts` whichever one is showing.
+            // colour of the order-ready state.
+            //
+            // ⚠⚠ THE SENTENCE THAT STOOD HERE IS SUPERSEDED, AND IT IS STRUCK RATHER THAN
+            // DELETED. It read *"Dark stays AVAILABLE: this is the default a person has not
+            // chosen yet, not a removal"* -- true on 2026-11-08 and false since the ruling in
+            // the docblock below, which REMOVES the dark surface on both panels. The `§11` QA
+            // round of 2026-11-10 found the two comments adjacent and contradicting (L-2), in a
+            // file where the docblock IS the record, so the correction is recorded in place.
             /*
              * ================================================================================
              * ⚠ LIGHT ONLY. THE DARK SURFACE IS REMOVED, NOT MERELY DEFAULTED AWAY FROM.

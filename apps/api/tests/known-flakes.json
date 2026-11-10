@@ -1,207 +1,224 @@
 {
-  "_README": [
-    "THE NAMED KNOWN-FLAKE LIST. bin/gate reports entries matched here SEPARATELY from",
-    "failures, so that a red OUTSIDE this list is a real red and Task 9's gate clause",
-    "'all previous tasks' tests still pass' can be discharged honestly rather than",
-    "probabilistically. Before this file existed, three live intermittents meant any new",
-    "red could be attributed to one of them by assertion.",
-    "",
-    "RULES FOR THIS FILE, and they are the whole value of it:",
-    "  - An entry is a NAMED §5 row, its OWNER and its MEASURED rate with the commit and",
-    "    date it was measured at. No entry without all three. KnownFlakeListTest enforces",
-    "    it, and also enforces that every 'row' here is a real row in PLAN.md §5.",
-    "  - Adding an entry is a disposition, not a convenience. A red that is merely",
-    "    unexplained does NOT belong here -- that is the opposite of this file's purpose.",
-    "  - An entry is REMOVED when its row is closed, and removing it is how a fix is",
-    "    proven to have landed. R-200 was removed on 2026-11-01 by being fixed.",
-    "  - THERE ARE TWO SYMPTOM FAMILIES, NOT ONE PER ROW, and this file says so rather",
-    "    than listing rows as if they were independent. R-092 predates and is the parent",
-    "    of both.",
-    "",
-    "MATCHING. 'tests' matches the failing test's class as Pest prints it. 'signature' is",
-    "a regex over that failure's own block of output. A family whose identity is a random",
-    "test CANNOT be matched by name -- R-191 strikes a different file every time -- so it",
-    "is matched by its SQLSTATE and frame, which is exactly what its own row instructs a",
-    "reader to check."
-  ],
-  "flakes": [
-    {
-      "row": "R-191",
-      "with": [
-        "R-092 (fault one)",
-        "R-049",
-        "R-047",
-        "R-058"
-      ],
-      "title": "08006 connect timeout on pgsql_owner at TestCase::setUp's TRUNCATE, striking a random test",
-      "owner": "Task 13 (infrastructure)",
-      "rate": "3 of 3 full `composer gate` runs red at a6ece55; 0 of 2 under a bare `php artisan test`. Predecessor R-092 measured 3 red in 10 full-suite runs at 056d7a1 (2026-10-27), 2 of those this family. ⚠ AND 3 OF 3 FULL `composer gate` RUNS RED AT `r233-and-spec-paths` ON 2026-11-04, each striking a DIFFERENT test (LogRedactionTest, TenantProvisioningTest, DomainLifecycleTest) and each the same 08006 at TestCase::setUp's TRUNCATE -- which is this family's signature, and is why a locally green full gate was not obtainable that day. The same suite passed in isolation each time and CI was green at the pushed head. ⚠ BOUNDED AT TASK 12 ON 2026-11-07 AND THIS ENTRY STAYS: the suite now absorbs ONE stall per connect (tests/Support/RetryingPostgresConnector) and runs with a 45 s deadline instead of pdo_pgsql's undocumented 30, so the rate ABOVE is the rate of the symptom this entry was measured for and is no longer the rate at which it reddens a run. What can still redden a run is an EXHAUSTED retry -- two consecutive stalls on one connect -- which is rarer than the measured 1-outright-failure-in-864 and keeps this signature. The row is NOT closed: the host fault is untouched and the production deadline question stays with Task 13.",
-      "measured": "2026-10-31/2026-11-01 at a6ece55; R-092 2026-10-27 at 056d7a1; 3 of 3 again 2026-11-04 on r233-and-spec-paths",
-      "identities": [
-        "AuditLogAssertionTest",
-        "TenantContextTest",
-        "ShedLoadTest",
-        "EnumContractTest",
-        "BootstrapDatabaseCommandTest",
-        "MemberConcurrencyTest (stated as a hypothesis, not a cause)",
-        "BootstrapLoggingTest (as R-092)",
-        "PagerTransactionTest (as R-092)",
-        "ReadinessCarrierTest (as R-092, third symptom)",
-        "PasskeyTest (2026-11-02 at e761f2c, on pgsql_owner at the TRUNCATE)",
-        "PanelProblemPageTest (2026-11-02 at 94f5b5b, on pgsql at a users SELECT -- the symptom that proved the matcher narrower than the cause)"
-      ],
-      "match": {
-        "signature": "SQLSTATE\\[08006\\][\\s\\S]*?timeout expired",
-        "frame": "Connector\\.php:\\d+"
-      },
-      "matcher_history": [
-        "THE FRAME WAS TestCase.php:112 UNTIL 2026-11-02, AND IT HAD BEEN STALE SINCE TASK 9.",
-        "This family strikes setUp()'s TRUNCATE, and Task 9 moved that call site from line 112 to",
-        "222 (git log -- tests/TestCase.php -> 46e3e52). From that commit on, every R-191 red came",
-        "out of bin/classify-reds as a REAL RED. Measured at e761f2c: PasskeyTest failed with",
-        "08006/timeout expired on pgsql_owner at TestCase.php:223 and the verdict was REAL RED,",
-        "1 of 1 failure(s) are on no row -- for a fault whose own row describes it exactly.",
+    "_README": [
+        "THE NAMED KNOWN-FLAKE LIST. bin/gate reports entries matched here SEPARATELY from",
+        "failures, so that a red OUTSIDE this list is a real red and Task 9's gate clause",
+        "'all previous tasks' tests still pass' can be discharged honestly rather than",
+        "probabilistically. Before this file existed, three live intermittents meant any new",
+        "red could be attributed to one of them by assertion.",
         "",
-        "A line-pinned frame goes stale whenever the file moves, and the failure mode is the worst",
-        "available: an UNEXPLAINED red, which PLAN 4a calls this project's most expensive defect",
-        "shape. The frame now matches the FILE and any line, and the widening is paid for by making",
-        "the SIGNATURE carry what this family's own title already says -- pgsql_owner and the",
-        "TRUNCATE. The pair is at least as specific as before and no longer depends on a line",
-        "number nobody maintains.",
+        "RULES FOR THIS FILE, and they are the whole value of it:",
+        "  - An entry is a NAMED §5 row, its OWNER and its MEASURED rate with the commit and",
+        "    date it was measured at. No entry without all three. KnownFlakeListTest enforces",
+        "    it, and also enforces that every 'row' here is a real row in PLAN.md §5.",
+        "  - Adding an entry is a disposition, not a convenience. A red that is merely",
+        "    unexplained does NOT belong here -- that is the opposite of this file's purpose.",
+        "  - An entry is REMOVED when its row is closed, and removing it is how a fix is",
+        "    proven to have landed. R-200 was removed on 2026-11-01 by being fixed.",
+        "  - THERE ARE TWO SYMPTOM FAMILIES, NOT ONE PER ROW, and this file says so rather",
+        "    than listing rows as if they were independent. R-092 predates and is the parent",
+        "    of both.",
         "",
-        "NOT a new entry and NOT a new rate: the family, its owner and its measured rate are",
-        "untouched. What changed is that the matcher matches the family it was measured for.",
-        "KnownFlakeListTest's negative control -- the same SQLSTATE at a DIFFERENT frame must come",
-        "out REAL -- is unchanged and still green, and a third fixture pins the stale-line case.",
-        "",
-        "AND THE FIRST REPAIR WAS STILL TOO NARROW -- CORRECTED THE SAME DAY, WITH A FRESH",
-        "MEASUREMENT. Pinning pgsql_owner and the TRUNCATE matched the symptom as this row's",
-        "TITLE describes it, and the very next full gate run produced the same fault on a",
-        "DIFFERENT connection and a different statement: PanelProblemPageTest, 08006 timeout",
-        "expired on connection pgsql, on a SELECT of users. Still REAL, still unexplained.",
-        "",
-        "MEASURED AT 94f5b5b, which is what justifies the wider pattern rather than assertion:",
-        "  full composer gate      2 of 2 RED -- 08006 both times, two different tests, two",
-        "                          different connections, two different statements",
-        "  bare php artisan test   2 of 2 GREEN -- 1198 passed / 10604 assertions each",
-        "That is this row's own recorded rate reproduced at a new commit (a6ece55 gave 3 of 3",
-        "red under the gate and 0 of 2 under a bare run), and it says the variable is HOST LOAD",
-        "rather than any statement: the gate runs nine steps before the suite.",
-        "",
-        "SO THE MATCHER NOW KEYS ON THE CONNECT PATH, which is what the why_not_a_code_defect",
-        "measurement below actually identifies: Connectors/Connector.php is where PDO::connect",
-        "is called, and a connect timeout CANNOT be caused by any code in this repository --",
-        "only by the host. That is the strongest available argument for a wide pattern, and it",
-        "is why this widening is defensible where a bare 08006 would not be.",
-        "",
-        "⚠⚠ AND `TestCase` WAS IN THAT ALTERNATION AND HAD TO COME OUT -- §11 QA M-4, FALSIFIED",
-        "BY THE REVIEWER AND REPRODUCED. classify-reds applies `frame` to the WHOLE failure block,",
-        "not to the raising frame, and a real Pest block routinely lists tests/TestCase.php in its",
-        "trace. Measured: the control fixture r191-wrong-frame.txt -- an 08006 raised from",
-        "app/Features/Pager/PagerSessions.php:204, which MUST stay REAL -- was attributed as",
-        "R-191 (exit 2) as soon as one `2   tests/TestCase.php:318` line was added inside its",
-        "block. So the widening swallowed exactly what the control exists to protect: a genuine",
-        "connection defect in application code would have been waved off as a host flake, on a",
-        "surface where that could be a security test.",
-        "",
-        "The frame is Connector.php ALONE now, which is the connect path and the only thing the",
-        "why_not_a_code_defect measurement actually identifies. `TestCase` was there only to keep",
-        "the pre-capture fixture r191-attributed.txt matching; that fixture was a CONSTRUCTION with",
-        "no vendor frame, it is DELETED rather than edited to fit, and the two verbatim captures",
-        "beside it carry the real frame. Editing a capture to match a matcher is the wrong",
-        "direction entirely.",
-        "",
-        "⚠ AND THE PATTERN CARRIES NO SLASH, WHICH COST ONE ITERATION: bin/classify-reds calls",
-        "preg_match('/'.$frame.'/', ...), so a frame of Connectors/Connector\\.php was an INVALID",
-        "pattern -- the directory separator closed the delimiter -- and preg_match returned false",
-        "for every fixture at once. All five came out REAL, including the two that had just been",
-        "proven attributed, which is the loud failure rather than the quiet one and is how it was",
-        "caught immediately. The file name alone is specific: there is one Connector.php on the",
-        "connect path. TestCase.php is kept beside it because r191-attributed.txt is a constructed",
-        "fixture from before this project captured a real block and carries no vendor frame.",
-        "",
-        "THE CONTROLS THAT PAY FOR IT, all green: r191-app-code-with-testcase-frame.txt is QA M-4's",
-        "own falsification, committed -- an 08006 from app code WITH a TestCase frame, which must stay",
-        "REAL; r191-wrong-frame.txt puts the same",
-        "SQLSTATE at app/Features/Pager/PagerSessions.php:204 -- an 08006 raised by a QUERY",
-        "rather than by a connect -- and stays REAL; mixed.txt keeps a real red beside an",
-        "attributed one and stays REAL; and r191-other-connection.txt is the verbatim capture",
-        "of the run described above."
-      ],
-      "why_not_a_code_defect": "Measured to the host, not argued: 300 bare TCP connects to 127.0.0.1:5432 idle gave 0 failed / median 0.0 ms / max 0.9 ms; the same 300 with eight CPU-spinning threads gave 0 failed / median 162.6 ms / p95 320.1 ms / max 35,648 ms -- a 35-second stall on one connect() with no Postgres in the path. The WSL2 + Docker userspace port forward is the cause. qrpager_owner peaked at 2 backends against a CONNECTION LIMIT of 10, so role limits are not it. ⚠⚠ AND THE LAST CLAUSE OF THIS FIELD WAS WRONG, CORRECTED AT TASK 12 ON 2026-11-07. It read 'no connect_timeout is configured anywhere ... so the message is libpq reporting an OS-level connect() that did not complete'. The premise is true of this repository and the conclusion does not follow: pdo_pgsql appends connect_timeout ITSELF, from PDO::ATTR_TIMEOUT, DEFAULTING TO 30, whenever any driver option is passed -- and Illuminate\\Database\\Connectors\\Connector always passes five. Measured against 192.0.2.1 (TEST-NET-1, packets dropped not refused): ATTR_TIMEOUT=3 failed in 3.01s, Laravel's defaults failed in 32.75s, both with this exact 'timeout expired'. So a 30 s deadline nobody chose has been in force since Task 1, against a stall this host's own measurements put at 31-36 s (AppPoolSaturator's 32.430 s, read correctly there as 1+2+4+8+16 SYN retransmission; this field's 35,648 ms with 0 OF 300 CONNECTS ACTUALLY FAILING). The connects were succeeding and the deadline expired first, which is why the identity is random, why it tracks gate load, and why a bare php artisan test was green. The host fault is still the host's and still Task 13's; what changed is that the mechanism is measured rather than hypothesised."
-    },
-    {
-      "row": "R-172",
-      "with": [
-        "R-185",
-        "R-092 (fault two)",
-        "R-160",
-        "R-166",
-        "R-169"
-      ],
-      "title": "OutboxWorker::claim() returns ZERO rows where the test expects one, under full-suite load",
-      "owner": "Task 12",
-      "rate": "2 failures in roughly 7 full-suite runs on task-8b-precoding (2026-11-01); 8 of 8 green for the file in isolation; the §11 QA round did not reproduce it in 3 full runs at 5f7ffdc. Predecessor R-092 fault two: 1 red in 10 full-suite runs at 056d7a1. ⚠ AND ONCE MORE ON 2026-11-02 at da551e6, in `bin/fresh-clone-proof` -- `OutboxCrashTest.php:184`, `toMatchArray(['claimed' => 1, 'sent' => 1])` answering claimed 0 -- which is this family's symptom in a FOURTH file and was reported as a REAL red because this matcher is a name list and that name was not on it.",
-      "measured": "2026-11-01 on task-8b-precoding; R-092 2026-10-27 at 056d7a1; OutboxCrashTest 2026-11-02 at da551e6",
-      "identities": [
-        "OutboxWorkerTest",
-        "OutboxLeaseTest",
-        "WorkOutboxCommandTest (as R-092, the --limit 2 claim shortfall)",
-        "OutboxCrashTest (measured 2026-11-02 at da551e6, in a fresh clone)"
-      ],
-      "match": {
-        "tests": [
-          "OutboxWorkerTest",
-          "OutboxLeaseTest",
-          "WorkOutboxCommandTest",
-          "OutboxCrashTest"
-        ]
-      },
-      "why_not_a_code_defect": "⚠ UNRESOLVED, AND THAT IS WHY THIS ENTRY IS THE WEAKER OF THE TWO. R-185 exists precisely because R-172's diagnosis is a hypothesis presented as a cause: nothing yet distinguishes 'the test's own fixture races' from 'claim() drops work under load', and the second would be a failure of TASK 4's NAMED INVARIANT rather than a flaky test. Strongly load-correlated (the failing run took 335.53s against a typical ~205s). An entry here attributes the red to a named row; it does NOT certify the row's diagnosis. If this family is ever reproduced in isolation, it leaves this file and becomes a Task 4 defect. ⚠ WHY THIS STAYS A NAME LIST RATHER THAN A MECHANISM REGEX, decided 2026-11-02 when it under-matched: the mechanism is `claim()` returning fewer rows than the test seeded, and a signature keyed on that would match a GENUINE claim() regression just as well -- which is `§11` QA M-4's defect exactly, in the direction that loses a real red instead of raising a false alarm. Under-matching costs one re-run and a reading; over-matching costs a regression nobody sees. So the list grows by MEASUREMENT: a fifth file will again read as a REAL red, and that is the intended behaviour rather than a gap."
-    },
-    {
-      "row": "R-248",
-      "with": [],
-      "title": "cURL 28 operation timeout on Mailpit's HTTP API (/api/v1/info), where the port accepted the connection, /readyz answered 200, and no bytes arrived for the next call inside the 5s budget",
-      "owner": "QRPAGER-34 (CI resilience), item 2",
-      "rate": "1 failure in 3 full-suite runs at tree 62a8a74 on 2026-11-07: GREEN twice in CI run 42420801321 (plain and under coverage, 1392 passed / 13,596 assertions) and RED once in run 42420825707 (1 failed / 1391 passed) -- the same tree both times, two minutes apart, so it is not a property of the tree.",
-      "measured": "2026-11-07 in CI runs 42420801321 and 42420825707 at 62a8a74; the three failure shapes driven in-session 2026-11-08",
-      "identities": [
-        "LocalMailCatcherTest (2026-11-07 at 41be12a, on /api/v1/info with 0 bytes received, after /readyz had answered 200)"
-      ],
-      "match": {
-        "signature": "cURL error 28: Operation timed out after \\d+ milliseconds with 0 bytes received",
-        "frame": "LocalMailCatcherTest\\.php:\\d+"
-      },
-      "why_no_tests_key": "DELIBERATE, AND IT IS THIS ENTRY'S ONLY REAL CONTROL. bin/classify-reds attributes a block by NAME before it ever looks at a signature -- in_array($short, $match['tests'] ?? [], true) then break -- so putting LocalMailCatcherTest on a tests list would attribute EVERY failure of that file, including a genuinely absent mail catcher. That absence is the only thing the test exists to report ('FAILS rather than skipping when it is absent'), so a name entry would swallow the true positive and leave nothing asserting the instrument is there at all. That is the direction of R-172's under-match/over-match note and of the QA M-4 defect: under-matching costs a re-run, over-matching costs a red nobody sees.",
-      "why_not_a_code_defect": "Measured to the three shapes rather than argued, on 2026-11-08 through this project's own Guzzle client at timeout => 5. Nothing listening on 127.0.0.1:9 gave 'cURL error 7: Failed to connect ... Couldn't connect to server' in 0.01s. Packets dropped at 192.0.2.1 (TEST-NET-1, R-191's own idiom) gave 'cURL error 28: Connection timed out after 5058 milliseconds' in 5s. A socket that accepts and never answers gave 'cURL error 28: Operation timed out after 5059 milliseconds with 0 bytes received' in 5s -- CI's string verbatim. So the failure CI saw is a service whose port was open and whose SECOND response never arrived -- /readyz answered 200 and /api/v1/info did not answer at all, which no code in this repository can cause: the test issues two GETs at a 5s budget each and the catcher is a pinned container the runner starts. An ABSENT catcher is cURL 7 and a DIFFERENT shape, which this matcher does not take, so the red that was missing is still reachable. Raising the budget is not the fix and is refused in R-248: a longer timeout detects the instrument's absence more slowly without making it more present."
-    },
-    {
-      "row": "R-273",
-      "with": [
-        "R-092 (the host fault)",
-        "R-191",
-        "R-274 (why no retry absorbed it)"
-      ],
-      "title": "StaffBoardConcurrencyTest's children never reach the start barrier — a pre-barrier connect stall in a forked child, both children alive and silent at 60s",
-      "owner": "Task 13 (infrastructure)",
-      "rate": "1 of 2 full `composer gate` runs red at 8b3bc3f (2026-11-10): the 11:02Z run of the same tree passed this test and the 11:16Z run failed it. 0 of 5 in isolation at 1.28-1.42s. 0 of 3 under 24 busy loops on 12 cores at 4.78-5.67s -- contention scales the child's pre-barrier work about 4x and does not approach the bound, which is why this entry names a connect stall and not CPU time. The host fault itself is R-191's measurement: max 35,648 ms on one connect() to 127.0.0.1:5432 under spin load, with no Postgres in the path.",
-      "measured": "2026-11-10 at 8b3bc3f",
-      "identities": [
-        "StaffBoardConcurrencyTest"
-      ],
-      "match": {
-        "signature": "the children never all reached the barrier[\\s\\S]*?NEVER ANNOUNCED"
-      },
-      "why_not_a_code_defect": "The diagnostic says what each child was doing: NEVER ANNOUNCED, still running, terminated, with BOTH streams empty. A child that threw writes to stderr; a child that died is not running. Alive and silent is a stall, and the child's only pre-barrier I/O is a Redis connect for its session store (mark-ready-over-http-in-another-process.php:121-127). The same tree passed this test in a full gate run fourteen minutes earlier and passes it 5 of 5 in isolation, so nothing in the tree decides it. R-274 records why no retry absorbed it: the retrying connector is bound in Tests\\TestCase, which a forked child never runs -- measured, a child-shaped boot reports db.connector.pgsql bound: false -- and it covers pgsql rather than Redis in any case."
-    }
-  ],
-  "removed": [
-    {
-      "row": "R-200",
-      "title": "PagerPollLatencyTest's exec()'d harness lost its seeded session to the suite",
-      "removed_on": "2026-11-01",
-      "why": "FIXED, not deferred. The row named the wrong mechanism -- it said a concurrent test's TRUNCATE, and the harness has run on its own Postgres database (qrpager_poll_proof) since it was written while the suite runs on qrpager_test, so no statement the suite issues can reach its rows. The shared resource was REDIS, which every Postgres database shares: TestCase::setUp's clearPagerProjection() deletes t:*:pager:* and pager:tok:* before every test, and a pager session IS a Redis key. The harness now runs in its own logical databases and under its own prefix. Measured both ways: a loop deleting *pager* from Redis while the harness runs failed 10 of 10 before the change and 0 of 10 after it. PagerPollLatencyTest asserts the isolation property and is proven red by putting the harness back on the suite's keyspace."
-    }
-  ]
+        "MATCHING. 'tests' matches the failing test's class as Pest prints it. 'signature' is",
+        "a regex over that failure's own block of output. A family whose identity is a random",
+        "test CANNOT be matched by name -- R-191 strikes a different file every time -- so it",
+        "is matched by its SQLSTATE and frame, which is exactly what its own row instructs a",
+        "reader to check."
+    ],
+    "flakes": [
+        {
+            "row": "R-191",
+            "with": [
+                "R-092 (fault one)",
+                "R-049",
+                "R-047",
+                "R-058"
+            ],
+            "title": "08006 connect timeout on pgsql_owner at TestCase::setUp's TRUNCATE, striking a random test",
+            "owner": "Task 13 (infrastructure)",
+            "rate": "3 of 3 full `composer gate` runs red at a6ece55; 0 of 2 under a bare `php artisan test`. Predecessor R-092 measured 3 red in 10 full-suite runs at 056d7a1 (2026-10-27), 2 of those this family. ⚠ AND 3 OF 3 FULL `composer gate` RUNS RED AT `r233-and-spec-paths` ON 2026-11-04, each striking a DIFFERENT test (LogRedactionTest, TenantProvisioningTest, DomainLifecycleTest) and each the same 08006 at TestCase::setUp's TRUNCATE -- which is this family's signature, and is why a locally green full gate was not obtainable that day. The same suite passed in isolation each time and CI was green at the pushed head. ⚠ BOUNDED AT TASK 12 ON 2026-11-07 AND THIS ENTRY STAYS: the suite now absorbs ONE stall per connect (tests/Support/RetryingPostgresConnector) and runs with a 45 s deadline instead of pdo_pgsql's undocumented 30, so the rate ABOVE is the rate of the symptom this entry was measured for and is no longer the rate at which it reddens a run. What can still redden a run is an EXHAUSTED retry -- two consecutive stalls on one connect -- which is rarer than the measured 1-outright-failure-in-864 and keeps this signature. The row is NOT closed: the host fault is untouched and the production deadline question stays with Task 13.",
+            "measured": "2026-10-31/2026-11-01 at a6ece55; R-092 2026-10-27 at 056d7a1; 3 of 3 again 2026-11-04 on r233-and-spec-paths",
+            "identities": [
+                "AuditLogAssertionTest",
+                "TenantContextTest",
+                "ShedLoadTest",
+                "EnumContractTest",
+                "BootstrapDatabaseCommandTest",
+                "MemberConcurrencyTest (stated as a hypothesis, not a cause)",
+                "BootstrapLoggingTest (as R-092)",
+                "PagerTransactionTest (as R-092)",
+                "ReadinessCarrierTest (as R-092, third symptom)",
+                "PasskeyTest (2026-11-02 at e761f2c, on pgsql_owner at the TRUNCATE)",
+                "PanelProblemPageTest (2026-11-02 at 94f5b5b, on pgsql at a users SELECT -- the symptom that proved the matcher narrower than the cause)"
+            ],
+            "match": {
+                "signature": "SQLSTATE\\[08006\\][\\s\\S]*?timeout expired",
+                "frame": "Connector\\.php:\\d+"
+            },
+            "matcher_history": [
+                "THE FRAME WAS TestCase.php:112 UNTIL 2026-11-02, AND IT HAD BEEN STALE SINCE TASK 9.",
+                "This family strikes setUp()'s TRUNCATE, and Task 9 moved that call site from line 112 to",
+                "222 (git log -- tests/TestCase.php -> 46e3e52). From that commit on, every R-191 red came",
+                "out of bin/classify-reds as a REAL RED. Measured at e761f2c: PasskeyTest failed with",
+                "08006/timeout expired on pgsql_owner at TestCase.php:223 and the verdict was REAL RED,",
+                "1 of 1 failure(s) are on no row -- for a fault whose own row describes it exactly.",
+                "",
+                "A line-pinned frame goes stale whenever the file moves, and the failure mode is the worst",
+                "available: an UNEXPLAINED red, which PLAN 4a calls this project's most expensive defect",
+                "shape. The frame now matches the FILE and any line, and the widening is paid for by making",
+                "the SIGNATURE carry what this family's own title already says -- pgsql_owner and the",
+                "TRUNCATE. The pair is at least as specific as before and no longer depends on a line",
+                "number nobody maintains.",
+                "",
+                "NOT a new entry and NOT a new rate: the family, its owner and its measured rate are",
+                "untouched. What changed is that the matcher matches the family it was measured for.",
+                "KnownFlakeListTest's negative control -- the same SQLSTATE at a DIFFERENT frame must come",
+                "out REAL -- is unchanged and still green, and a third fixture pins the stale-line case.",
+                "",
+                "AND THE FIRST REPAIR WAS STILL TOO NARROW -- CORRECTED THE SAME DAY, WITH A FRESH",
+                "MEASUREMENT. Pinning pgsql_owner and the TRUNCATE matched the symptom as this row's",
+                "TITLE describes it, and the very next full gate run produced the same fault on a",
+                "DIFFERENT connection and a different statement: PanelProblemPageTest, 08006 timeout",
+                "expired on connection pgsql, on a SELECT of users. Still REAL, still unexplained.",
+                "",
+                "MEASURED AT 94f5b5b, which is what justifies the wider pattern rather than assertion:",
+                "  full composer gate      2 of 2 RED -- 08006 both times, two different tests, two",
+                "                          different connections, two different statements",
+                "  bare php artisan test   2 of 2 GREEN -- 1198 passed / 10604 assertions each",
+                "That is this row's own recorded rate reproduced at a new commit (a6ece55 gave 3 of 3",
+                "red under the gate and 0 of 2 under a bare run), and it says the variable is HOST LOAD",
+                "rather than any statement: the gate runs nine steps before the suite.",
+                "",
+                "SO THE MATCHER NOW KEYS ON THE CONNECT PATH, which is what the why_not_a_code_defect",
+                "measurement below actually identifies: Connectors/Connector.php is where PDO::connect",
+                "is called, and a connect timeout CANNOT be caused by any code in this repository --",
+                "only by the host. That is the strongest available argument for a wide pattern, and it",
+                "is why this widening is defensible where a bare 08006 would not be.",
+                "",
+                "⚠⚠ AND `TestCase` WAS IN THAT ALTERNATION AND HAD TO COME OUT -- §11 QA M-4, FALSIFIED",
+                "BY THE REVIEWER AND REPRODUCED. classify-reds applies `frame` to the WHOLE failure block,",
+                "not to the raising frame, and a real Pest block routinely lists tests/TestCase.php in its",
+                "trace. Measured: the control fixture r191-wrong-frame.txt -- an 08006 raised from",
+                "app/Features/Pager/PagerSessions.php:204, which MUST stay REAL -- was attributed as",
+                "R-191 (exit 2) as soon as one `2   tests/TestCase.php:318` line was added inside its",
+                "block. So the widening swallowed exactly what the control exists to protect: a genuine",
+                "connection defect in application code would have been waved off as a host flake, on a",
+                "surface where that could be a security test.",
+                "",
+                "The frame is Connector.php ALONE now, which is the connect path and the only thing the",
+                "why_not_a_code_defect measurement actually identifies. `TestCase` was there only to keep",
+                "the pre-capture fixture r191-attributed.txt matching; that fixture was a CONSTRUCTION with",
+                "no vendor frame, it is DELETED rather than edited to fit, and the two verbatim captures",
+                "beside it carry the real frame. Editing a capture to match a matcher is the wrong",
+                "direction entirely.",
+                "",
+                "⚠ AND THE PATTERN CARRIES NO SLASH, WHICH COST ONE ITERATION: bin/classify-reds calls",
+                "preg_match('/'.$frame.'/', ...), so a frame of Connectors/Connector\\.php was an INVALID",
+                "pattern -- the directory separator closed the delimiter -- and preg_match returned false",
+                "for every fixture at once. All five came out REAL, including the two that had just been",
+                "proven attributed, which is the loud failure rather than the quiet one and is how it was",
+                "caught immediately. The file name alone is specific: there is one Connector.php on the",
+                "connect path. TestCase.php is kept beside it because r191-attributed.txt is a constructed",
+                "fixture from before this project captured a real block and carries no vendor frame.",
+                "",
+                "THE CONTROLS THAT PAY FOR IT, all green: r191-app-code-with-testcase-frame.txt is QA M-4's",
+                "own falsification, committed -- an 08006 from app code WITH a TestCase frame, which must stay",
+                "REAL; r191-wrong-frame.txt puts the same",
+                "SQLSTATE at app/Features/Pager/PagerSessions.php:204 -- an 08006 raised by a QUERY",
+                "rather than by a connect -- and stays REAL; mixed.txt keeps a real red beside an",
+                "attributed one and stays REAL; and r191-other-connection.txt is the verbatim capture",
+                "of the run described above."
+            ],
+            "why_not_a_code_defect": "Measured to the host, not argued: 300 bare TCP connects to 127.0.0.1:5432 idle gave 0 failed / median 0.0 ms / max 0.9 ms; the same 300 with eight CPU-spinning threads gave 0 failed / median 162.6 ms / p95 320.1 ms / max 35,648 ms -- a 35-second stall on one connect() with no Postgres in the path. The WSL2 + Docker userspace port forward is the cause. qrpager_owner peaked at 2 backends against a CONNECTION LIMIT of 10, so role limits are not it. ⚠⚠ AND THE LAST CLAUSE OF THIS FIELD WAS WRONG, CORRECTED AT TASK 12 ON 2026-11-07. It read 'no connect_timeout is configured anywhere ... so the message is libpq reporting an OS-level connect() that did not complete'. The premise is true of this repository and the conclusion does not follow: pdo_pgsql appends connect_timeout ITSELF, from PDO::ATTR_TIMEOUT, DEFAULTING TO 30, whenever any driver option is passed -- and Illuminate\\Database\\Connectors\\Connector always passes five. Measured against 192.0.2.1 (TEST-NET-1, packets dropped not refused): ATTR_TIMEOUT=3 failed in 3.01s, Laravel's defaults failed in 32.75s, both with this exact 'timeout expired'. So a 30 s deadline nobody chose has been in force since Task 1, against a stall this host's own measurements put at 31-36 s (AppPoolSaturator's 32.430 s, read correctly there as 1+2+4+8+16 SYN retransmission; this field's 35,648 ms with 0 OF 300 CONNECTS ACTUALLY FAILING). The connects were succeeding and the deadline expired first, which is why the identity is random, why it tracks gate load, and why a bare php artisan test was green. The host fault is still the host's and still Task 13's; what changed is that the mechanism is measured rather than hypothesised."
+        },
+        {
+            "row": "R-172",
+            "with": [
+                "R-185",
+                "R-092 (fault two)",
+                "R-160",
+                "R-166",
+                "R-169"
+            ],
+            "title": "OutboxWorker::claim() returns ZERO rows where the test expects one, under full-suite load",
+            "owner": "Task 12",
+            "rate": "2 failures in roughly 7 full-suite runs on task-8b-precoding (2026-11-01); 8 of 8 green for the file in isolation; the §11 QA round did not reproduce it in 3 full runs at 5f7ffdc. Predecessor R-092 fault two: 1 red in 10 full-suite runs at 056d7a1. ⚠ AND ONCE MORE ON 2026-11-02 at da551e6, in `bin/fresh-clone-proof` -- `OutboxCrashTest.php:184`, `toMatchArray(['claimed' => 1, 'sent' => 1])` answering claimed 0 -- which is this family's symptom in a FOURTH file and was reported as a REAL red because this matcher is a name list and that name was not on it.",
+            "measured": "2026-11-01 on task-8b-precoding; R-092 2026-10-27 at 056d7a1; OutboxCrashTest 2026-11-02 at da551e6",
+            "identities": [
+                "OutboxWorkerTest",
+                "OutboxLeaseTest",
+                "WorkOutboxCommandTest (as R-092, the --limit 2 claim shortfall)",
+                "OutboxCrashTest (measured 2026-11-02 at da551e6, in a fresh clone)"
+            ],
+            "match": {
+                "tests": [
+                    "OutboxWorkerTest",
+                    "OutboxLeaseTest",
+                    "WorkOutboxCommandTest",
+                    "OutboxCrashTest"
+                ]
+            },
+            "why_not_a_code_defect": "⚠ UNRESOLVED, AND THAT IS WHY THIS ENTRY IS THE WEAKER OF THE TWO. R-185 exists precisely because R-172's diagnosis is a hypothesis presented as a cause: nothing yet distinguishes 'the test's own fixture races' from 'claim() drops work under load', and the second would be a failure of TASK 4's NAMED INVARIANT rather than a flaky test. Strongly load-correlated (the failing run took 335.53s against a typical ~205s). An entry here attributes the red to a named row; it does NOT certify the row's diagnosis. If this family is ever reproduced in isolation, it leaves this file and becomes a Task 4 defect. ⚠ WHY THIS STAYS A NAME LIST RATHER THAN A MECHANISM REGEX, decided 2026-11-02 when it under-matched: the mechanism is `claim()` returning fewer rows than the test seeded, and a signature keyed on that would match a GENUINE claim() regression just as well -- which is `§11` QA M-4's defect exactly, in the direction that loses a real red instead of raising a false alarm. Under-matching costs one re-run and a reading; over-matching costs a regression nobody sees. So the list grows by MEASUREMENT: a fifth file will again read as a REAL red, and that is the intended behaviour rather than a gap."
+        },
+        {
+            "row": "R-248",
+            "with": [],
+            "title": "cURL 28 operation timeout on Mailpit's HTTP API (/api/v1/info), where the port accepted the connection, /readyz answered 200, and no bytes arrived for the next call inside the 5s budget",
+            "owner": "QRPAGER-34 (CI resilience), item 2",
+            "rate": "1 failure in 3 full-suite runs at tree 62a8a74 on 2026-11-07: GREEN twice in CI run 42420801321 (plain and under coverage, 1392 passed / 13,596 assertions) and RED once in run 42420825707 (1 failed / 1391 passed) -- the same tree both times, two minutes apart, so it is not a property of the tree.",
+            "measured": "2026-11-07 in CI runs 42420801321 and 42420825707 at 62a8a74; the three failure shapes driven in-session 2026-11-08",
+            "identities": [
+                "LocalMailCatcherTest (2026-11-07 at 41be12a, on /api/v1/info with 0 bytes received, after /readyz had answered 200)"
+            ],
+            "match": {
+                "signature": "cURL error 28: Operation timed out after \\d+ milliseconds with 0 bytes received",
+                "frame": "LocalMailCatcherTest\\.php:\\d+"
+            },
+            "why_no_tests_key": "DELIBERATE, AND IT IS THIS ENTRY'S ONLY REAL CONTROL. bin/classify-reds attributes a block by NAME before it ever looks at a signature -- in_array($short, $match['tests'] ?? [], true) then break -- so putting LocalMailCatcherTest on a tests list would attribute EVERY failure of that file, including a genuinely absent mail catcher. That absence is the only thing the test exists to report ('FAILS rather than skipping when it is absent'), so a name entry would swallow the true positive and leave nothing asserting the instrument is there at all. That is the direction of R-172's under-match/over-match note and of the QA M-4 defect: under-matching costs a re-run, over-matching costs a red nobody sees.",
+            "why_not_a_code_defect": "Measured to the three shapes rather than argued, on 2026-11-08 through this project's own Guzzle client at timeout => 5. Nothing listening on 127.0.0.1:9 gave 'cURL error 7: Failed to connect ... Couldn't connect to server' in 0.01s. Packets dropped at 192.0.2.1 (TEST-NET-1, R-191's own idiom) gave 'cURL error 28: Connection timed out after 5058 milliseconds' in 5s. A socket that accepts and never answers gave 'cURL error 28: Operation timed out after 5059 milliseconds with 0 bytes received' in 5s -- CI's string verbatim. So the failure CI saw is a service whose port was open and whose SECOND response never arrived -- /readyz answered 200 and /api/v1/info did not answer at all, which no code in this repository can cause: the test issues two GETs at a 5s budget each and the catcher is a pinned container the runner starts. An ABSENT catcher is cURL 7 and a DIFFERENT shape, which this matcher does not take, so the red that was missing is still reachable. Raising the budget is not the fix and is refused in R-248: a longer timeout detects the instrument's absence more slowly without making it more present."
+        },
+        {
+            "row": "R-273",
+            "with": [
+                "R-092 (the host fault)",
+                "R-191",
+                "R-274 (why no retry absorbed it)"
+            ],
+            "title": "StaffBoardConcurrencyTest's children never reach the start barrier — a pre-barrier connect stall in a forked child, both children alive and silent at 60s",
+            "owner": "Task 13 (infrastructure)",
+            "rate": "1 of 2 full `composer gate` runs red at 8b3bc3f (2026-11-10): the 11:02Z run of the same tree passed this test and the 11:16Z run failed it. 0 of 5 in isolation at 1.28-1.42s. 0 of 3 under 24 busy loops on 12 cores at 4.78-5.67s -- contention scales the child's pre-barrier work about 4x and does not approach the bound, which is why this entry names a connect stall and not CPU time. The host fault itself is R-191's measurement: max 35,648 ms on one connect() to 127.0.0.1:5432 under spin load, with no Postgres in the path.",
+            "measured": "2026-11-10 at 8b3bc3f",
+            "identities": [
+                "StaffBoardConcurrencyTest"
+            ],
+            "match": {
+                "tests": [
+                    "StaffBoardConcurrencyTest"
+                ],
+                "signature": "the children never all reached the barrier[\\s\\S]*?NEVER ANNOUNCED"
+            },
+            "why_not_a_code_defect": "The diagnostic says what each child was doing: NEVER ANNOUNCED, still running, terminated, with BOTH streams empty. A child that threw writes to stderr; a child that died is not running. Alive and silent is a stall, and the child's only pre-barrier I/O is a Redis connect for its session store (mark-ready-over-http-in-another-process.php:121-127). The same tree passed this test in a full gate run fourteen minutes earlier and passes it 5 of 5 in isolation, so nothing in the tree decides it. R-274 records why no retry absorbed it: the retrying connector is bound in Tests\\TestCase, which a forked child never runs -- measured, a child-shaped boot reports db.connector.pgsql bound: false -- and it covers pgsql rather than Redis in any case.",
+            "matcher_history": [
+                "THE SIGNATURE WAS UNBOUND WHEN THIS ENTRY WAS FIRST WRITTEN, AND THE §11 SECURITY ROUND OF",
+                "2026-11-10 CAUGHT IT. Both of its strings -- 'the children never all reached the barrier'",
+                "and 'NEVER ANNOUNCED' -- are emitted by the SHARED helper tests/Support/StartBarrier.php,",
+                "whose other consumer is MemberConcurrencyTest: the concurrent proof of §4 › Security's",
+                "clause that no actor may grant a role senior to its own, assume one, or change its own role.",
+                "A pre-barrier child stall THERE would have been attributed to a row whose title, rate and",
+                "identities all name only StaffBoardConcurrencyTest -- and §11's disposition for a named row",
+                "is file-and-continue, which turns a privilege-escalation proof into an owned symptom.",
+                "R-172's own comment says it: over-matching costs a regression nobody sees.",
+                "⚠ A `frame` OF StaffBoardConcurrencyTest\\.php:\\d+ WAS TRIED FIRST AND MATCHED NOTHING --",
+                "classify-reds reported REAL RED against the very log this row was measured from. Measured,",
+                "not assumed, which is why the binding is match.tests instead."
+            ]
+        }
+    ],
+    "removed": [
+        {
+            "row": "R-200",
+            "title": "PagerPollLatencyTest's exec()'d harness lost its seeded session to the suite",
+            "removed_on": "2026-11-01",
+            "why": "FIXED, not deferred. The row named the wrong mechanism -- it said a concurrent test's TRUNCATE, and the harness has run on its own Postgres database (qrpager_poll_proof) since it was written while the suite runs on qrpager_test, so no statement the suite issues can reach its rows. The shared resource was REDIS, which every Postgres database shares: TestCase::setUp's clearPagerProjection() deletes t:*:pager:* and pager:tok:* before every test, and a pager session IS a Redis key. The harness now runs in its own logical databases and under its own prefix. Measured both ways: a loop deleting *pager* from Redis while the harness runs failed 10 of 10 before the change and 0 of 10 after it. PagerPollLatencyTest asserts the isolation property and is proven red by putting the harness back on the suite's keyspace."
+        }
+    ]
 }
