@@ -861,3 +861,113 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
     )
   })
 })
+
+/*
+ * ================================================================================
+ * THE STUDIO AT `QRPAGER-44` — DENSITY, AND A TAB ROW THAT IS NOT CUT
+ * ================================================================================
+ *
+ * Both cases here are about geometry a server-rendered assertion cannot reach. The PHP
+ * suite can prove `targets.css` says the right thing; only an engine can prove the page
+ * then MEASURES the right thing, and the two have disagreed on this exact control before —
+ * `QRPAGER-41` part B's first attempt named three classes Filament does not render, changed
+ * nothing, and was green the whole time.
+ */
+test.describe('the studio — QRPAGER-44', () => {
+  test('gives the radio a 44px target on its label and a 24px painted circle — item A', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    const label = page.locator('.fi-fo-radio-label').first()
+    const input = page.locator('.fi-radio-input').first()
+
+    await expect(label).toBeVisible()
+
+    const labelBox = await label.boundingBox()
+    const inputBox = await input.boundingBox()
+
+    expect(
+      labelBox,
+      'the radio label is not in the layout, so nothing below measures it',
+    ).not.toBeNull()
+    expect(
+      inputBox,
+      'the radio input is not in the layout, so nothing below measures it',
+    ).not.toBeNull()
+
+    /*
+     * ⚠ THE TARGET IS THE LABEL, AND THE LABEL IS WHAT §12's 44px APPLIES TO. Muhammad's
+     * ruling of 2026-11-10: *"§12 requires a 44px TOUCH TARGET. It says nothing about the
+     * painted size."* A pointer anywhere on this row selects the option, because Filament
+     * renders the input INSIDE the label — which is the fact the old comment in
+     * `targets.css` denied.
+     */
+    expect(
+      Math.round(labelBox!.height),
+      'the radio row is under §12’s 44px minimum target',
+    ).toBeGreaterThanOrEqual(44)
+
+    /*
+     * ⚠ AND THE CIRCLE IS SMALLER THAN THE TARGET, which is the half that would silently
+     * not happen. With the floor still on `.fi-radio-input` this measures 44 and the whole
+     * ticket is inert — so this is an UPPER bound, deliberately, and it is the assertion
+     * that fails if the separation is undone.
+     */
+    expect(
+      Math.round(inputBox!.width),
+      'the painted circle is still carrying the touch-target floor',
+    ).toBe(24)
+    expect(Math.round(inputBox!.height)).toBe(24)
+  })
+
+  test('keeps the tab row clear of the sticky topbar while the form scrolls — item B', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    const tab = page.locator('.studio-tab[aria-current="page"]')
+    await expect(tab).toBeVisible()
+
+    // Enough scroll to carry the row under a 64px bar it used to pass beneath. The page is
+    // taller than the viewport on this fixture; if it ever stops being, the guard below
+    // says so rather than letting the case pass without having scrolled.
+    await page.evaluate(() => {
+      window.scrollTo(0, 400)
+    })
+    await page.waitForTimeout(300)
+
+    const scrolled = await page.evaluate(() => Math.round(window.scrollY))
+    expect(scrolled, 'the page did not scroll, so nothing here was ever at risk').toBeGreaterThan(
+      100,
+    )
+
+    /*
+     * ⚠ `elementFromPoint` AND NOT A `position` ASSERTION. `toHaveCSS('position', 'sticky')`
+     * would pass on a sticky row parked at the WRONG offset — still cut, still green. This
+     * asks the engine what is actually painted at the tab's own top edge, which is the pixel
+     * the ticket says is lost.
+     */
+    const verdict = await page.evaluate(() => {
+      const el = document.querySelector('.studio-tab[aria-current="page"]')
+
+      if (el === null) {
+        return { ok: false, why: 'the active tab is gone' }
+      }
+
+      const r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + 1)
+
+      return {
+        ok: hit !== null && hit.closest('.studio-tabs') !== null,
+        why:
+          `top edge at y=${String(Math.round(r.y))}, painted there: ` +
+          (hit === null ? 'nothing' : `${hit.tagName.toLowerCase()}.${hit.className}`),
+      }
+    })
+
+    expect(verdict.ok, `the active tab’s top edge is covered — ${verdict.why}`).toBe(true)
+  })
+})

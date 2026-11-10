@@ -98,6 +98,26 @@ final class StudioForm
 
             Builder::make('blocks')
                 ->label(__('studio.form.blocks_label'))
+                /*
+                 * ⚠ A CLASS SO THE LABEL CAN BE PAINTED AS A SECTION HEADING — `QRPAGER-44`
+                 * item A, and it is deliberately NOT a change of element.
+                 *
+                 * `الكتل` heads the main content of this tab, and `الحالة` above it — a small
+                 * status panel — is an `<h2>`. So two things that read as peers are different
+                 * elements: one a real heading, one a Filament field label. Muhammad's ruling
+                 * of 2026-11-10 is to make them LOOK like the peers they are and to leave the
+                 * structure alone: *"the shrink papers over it; the structural fix belongs with
+                 * the preset ticket, which rebuilds that region anyway."* `PLAN.md §5` carries
+                 * that as a row rather than this comment carrying it alone.
+                 *
+                 * `extraFieldWrapperAttributes` merges onto the `fi-fo-field` wrapper
+                 * (`vendor/filament/forms/resources/views/components/field-wrapper.blade.php`),
+                 * which is why the studio theme can reach the label from one class on the
+                 * field. A `:has()` on the builder inside would have worked and would have
+                 * tied the panel's type scale to Filament's internal DOM; this names the
+                 * intent instead.
+                 */
+                ->extraFieldWrapperAttributes(['class' => 'studio-section-field'])
                 ->blocks(self::blocks($media))
                 ->maxItems(BlockSchema::MAX_BLOCKS)
                 // §12.1: "block list with reorder". Buttons AND drag, because a
