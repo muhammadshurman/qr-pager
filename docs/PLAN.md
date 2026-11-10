@@ -8503,6 +8503,7 @@ The ticket's stated invariant, in Muhammad's words: *"changing the arrangement, 
 | `composer gate` | **10/10 green, 1469 passed / 13,939 assertions** | `fdc83b5` | `docs/tickets/QRPAGER-45-gate-php.txt` (`EXIT=0`), **second attempt** |
 | `pnpm gate` | **13/13 green, 1210 Vitest across 65 files, 103 browser cases, 93.48% statements** | `fdc83b5` | `docs/tickets/QRPAGER-45-gate-frontend.txt` (`EXIT=0`), **first attempt** |
 | `pnpm run gate:e2e` | **545 passed / 16 skipped / 0 failed in 9.6m, `e2e: green`** | `fdc83b5` | `docs/tickets/QRPAGER-45-e2e.txt` (`EXIT=0`), **second run** — the first was `R-256`'s seventh |
+| `fresh-clone-proof` | **PASSED, FIRST ATTEMPT — 1469 passed / 13,940 assertions**, in a clone that arrived without `vendor/`, `.env` or `node_modules/`. The +1 assertion against this machine's 13,939 is the established delta `QRPAGER-42` and `QRPAGER-44` both recorded | `e67af0c` | `docs/tickets/QRPAGER-45-fresh-clone.txt` (`EXIT=0`), run BEFORE the push (`R-252`) |
 | the ticket's own gate | **`UnsavedPreviewTest` 13 cases; `browser/studio.spec.ts` 2 cases in `studio-chromium`, both green and both RED when the write is disabled** | `fdc83b5` | the falsifications below |
 
 ⚠ **SIX FALSIFICATIONS, EACH RUN AND EACH NAMED.** Every specification of this ticket has a case that reddens when it is undone:
