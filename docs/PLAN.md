@@ -8385,9 +8385,13 @@ PROCESS** — `§11` QA L-6. `php artisan test --coverage --min=90` on this host
 *“Code coverage driver not available. Did you install Xdebug or PCOV?”* and exits 1, so the number
 cannot be measured here at all; `composer gate`'s ten steps run the suite without `--coverage` for
 the same reason. **CI runs it with the floor** (`.github/workflows/ci.yml`, the *Pint, PHPStan,
-Pest* job), so the gate is enforced and only the figure is missing from the record. The Vitest
-half IS reported: **93.48 / 90.28 / 96.96 / 95.31**. The CI figure is recorded below once that
-job has run on this branch.
+Pest* job), so the gate is enforced. **READ OFF THAT JOB ON THIS BRANCH, which is where the number
+comes from rather than from a local run that cannot happen:** `Total: 95.0 %`, and on the three
+files this delivery changed — `Features/Landing/Panel/StudioForm` **99.2 %** (lines 482 and 543
+uncovered),
+`Features/Landing/Panel/StudioPanelProvider` **100.0 %**,
+`Features/Provisioning/Panel/PlatformPanelProvider` **100.0 %**. The Vitest half: **93.48 /
+90.28 / 96.96 / 95.31**.
 
 **FILED RATHER THAN FIXED, each with an owner and a date:** `R-275` (the error page),
 `R-276` (the panel states the isolation control is not asserted in), `R-277` (home paths in
