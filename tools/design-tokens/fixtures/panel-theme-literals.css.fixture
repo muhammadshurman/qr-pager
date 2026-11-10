@@ -1,0 +1,52 @@
+/*
+ * A deliberately-wrong panel stylesheet. QRPAGER-42.
+ *
+ * ⚠ THIS FILE EXISTS BECAUSE THE PANEL'S REAL STYLESHEET WAS SCANNED BY NOTHING. Measured
+ * before it was written: `apps/api/resources/css/filament/studio/theme.css` -- the file that
+ * defines the entire appearance of the studio -- was invisible to `scan-css` (a blanket
+ * `apps/api` exemption), to `scan-panel` (its subjects come from the @source globs, which
+ * point at the panel PHP and the views, never at the stylesheet) and to `composer guard`
+ * (whose scanned paths carry no `resources/`). A raw magenta, an off-ladder padding and an
+ * off-scale font size appended to that file were reported CLEAN by all three.
+ *
+ * Every line below is a form one of the three rules claims to catch. The point is not that
+ * the file is wrong; it is that each WAY of being wrong is proven to be caught, so a rule
+ * that silently stops matching one syntax fails here rather than in the panel.
+ */
+
+/* ---- no-raw-color: every colour syntax CSS offers -------------------------------- */
+.hex-six { color: #ff00ff; }
+.hex-three { color: #f0f; }
+.hex-four { color: #f0fa; }
+.hex-eight { color: #ff00ff80; }
+.fn-rgb { color: rgb(255, 0, 255); }
+.fn-rgba { color: rgba(255, 0, 255, 0.5); }
+.fn-hsl { color: hsl(300 100% 50%); }
+
+/*
+ * ⚠ `oklch()` IS THE ONE THIS FIXTURE WAS WRITTEN FOR. The grey that `QRPAGER-42` A1
+ * replaces is Filament's own `oklch(0.973 0.001 106.424)` on `body.fi-body`, and an
+ * override written in the same syntax would have been invisible if `no-raw-color` matched
+ * hex alone. It does not -- `color-function` covers it -- and this line is what keeps that
+ * true.
+ */
+.fn-oklch { background-color: oklch(0.973 0.001 106.424); }
+.fn-color-mix { color: color-mix(in srgb, #ff00ff, #00ff00); }
+.named { color: magenta; }
+
+/* ---- no-raw-spacing: ANY literal, not only an off-scale one ---------------------- */
+/*
+ * `§12` forbids a hard-coded spacing, not merely an unfashionable one, so BOTH of these are
+ * findings: 13 is off the ladder and 16 is on it, and the rule does not care. A version that
+ * only caught the off-scale value would let a component type the number for a step instead
+ * of naming it, which is the thing the ladder exists to stop.
+ */
+.spacing-off-ladder { padding: 13px; }
+.spacing-on-ladder { padding: 16px; }
+.spacing-rem { margin-block-start: 1rem; }
+.spacing-gap { gap: 12px; }
+
+/* ---- no-raw-font-size: likewise, any literal ------------------------------------- */
+.font-off-scale { font-size: 17px; }
+.font-on-scale { font-size: 16px; }
+.font-rem { font-size: 1rem; }
