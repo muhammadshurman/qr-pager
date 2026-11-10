@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { signInAsStaff } from './support/e2e.ts'
+import { signInAsStaff, staffFixture } from './support/e2e.ts'
 
 /**
  * ================================================================================
@@ -158,7 +158,16 @@ test.describe('the studio — QRPAGER-41 part B', () => {
   test('paints every surface from a token, in both modes — item 6', async ({ page }) => {
     await signInAsStaff(page)
 
-    for (const mode of ['light', 'dark'] as const) {
+    /*
+     * ⚠ ONE MODE SINCE `QRPAGER-42` A2, AND THE OTHER HALF IS REPLACED RATHER THAN DROPPED.
+     * This case ran over `['light', 'dark']` when the studio had both. Muhammad's ruling of
+     * 2026-11-10 removed the dark surface from both panels, so a dark assertion here would
+     * assert a state that cannot occur. The two cases below are what took its place: the
+     * ground paints the paper token under `prefers-color-scheme: dark`, and no element
+     * computes to a dark-palette value. Narrowed, not deleted -- `R-250` is why that
+     * distinction is written down.
+     */
+    for (const mode of ['light'] as const) {
       await page.addInitScript((m) => {
         try {
           localStorage.setItem('filament:theme:mode', m)
@@ -295,5 +304,480 @@ test.describe('the studio — QRPAGER-41 part B', () => {
           'palettes are on screen at once',
       ).toEqual([])
     }
+  })
+})
+
+/**
+ * ================================================================================
+ * `QRPAGER-42` — THE GROUND, THE ABSENT DARK PALETTE, AND A COLOUR VALUE'S ORDER
+ * ================================================================================
+ *
+ * The ticket's stated invariant, in Muhammad's words: *"On a fresh clone, with the OS set to
+ * prefer dark, loading the studio panel paints the ground as the paper token and paints no
+ * value from the dark palette anywhere on the page; and a colour value rendered in that RTL
+ * document reads `#RRGGBB` with the `#` first."*
+ *
+ * ⚠ THESE RUN WITH `colorScheme: 'dark'` AND NO STORED PREFERENCE — the condition the
+ * invariant names. An ATTRIBUTE assertion is explicitly refused: *"An attribute assertion is
+ * what missed this bug last time and does not count."* Every assertion below is a COMPUTED
+ * value or a measured box.
+ */
+test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
+  test.use({ colorScheme: 'dark' })
+
+  test('paints the ground as the paper token — A1', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(600)
+
+    const seen = await page.evaluate(() => {
+      const resolve = (value: string): string => {
+        const probe = document.createElement('div')
+        probe.style.backgroundColor = value
+        document.body.appendChild(probe)
+        const computed = getComputedStyle(probe).backgroundColor
+        probe.remove()
+
+        return computed
+      }
+
+      const root = getComputedStyle(document.documentElement)
+
+      return {
+        prefersDark: matchMedia('(prefers-color-scheme: dark)').matches,
+        ground: getComputedStyle(document.body).backgroundColor,
+        paper: resolve(root.getPropertyValue('--color-paper').trim()),
+      }
+    })
+
+    // The premise: without it the case would pass on a machine that prefers light.
+    expect(seen.prefersDark, 'the context does not prefer dark, so this proves nothing').toBe(true)
+
+    /*
+     * ⚠ COMPARED AS RESOLVED COLOURS, NOT AS STRINGS. `--color-paper` is authored as a hex
+     * and `background-color` computes to `rgb(...)`; a string compare would fail on two
+     * spellings of one colour, exactly as a shorthand compare did when this panel's palette
+     * was first measured.
+     */
+    expect(seen.ground).toBe(seen.paper)
+  })
+
+  test('paints no value from the dark palette anywhere on the page — A2', async ({ page }) => {
+    await signInAsStaff(page)
+
+    /*
+     * ⚠⚠ A STORED DARK PREFERENCE IS THE CONDITION, AND WITHOUT IT THIS CASE IS VACUOUS.
+     * The first version set nothing and PASSED with `->darkMode(false)` reverted — because
+     * reverting that only restores the ABILITY to choose dark, and `defaultThemeMode(Light)`
+     * still rendered light for a user who had never chosen. The case asserted something that
+     * was already true, which is the one failure mode this ticket has been about throughout.
+     *
+     * Muhammad's requirement names the real case: *"The real case is a user who toggled dark
+     * once: if removing dark mode leaves a persisted 'dark' value that still resolves, that
+     * user's panel renders dark forever."* Measured before the fix, with exactly this value
+     * present: `html.class="fi dark"`, the body painted from Filament's dark grey, and the
+     * token layer inverted. With `darkMode(false)`, Filament's own blade overwrites the key
+     * with `light` on every load, so the paint below is what proves the user is recovered.
+     */
+    /*
+     * ⚠ THE PREFERENCE IS STORED ONCE AND THE PAGE RELOADED — NOT VIA `addInitScript`, AND
+     * THE DIFFERENCE IS THE BUG THIS CASE KEPT REPORTING AS A PRODUCT DEFECT.
+     *
+     * An init script runs before the scripts of EVERY document in the context, and the
+     * studio embeds its preview as a SAME-ORIGIN iframe. The iframe's copy rewrote the
+     * shared key back to `dark` after the parent's head had cleared it to `light`, and
+     * before Filament's bundle read it on `alpine:init` — which then added `.dark`, which
+     * the `QRPAGER-40` mirror faithfully copied onto `data-theme`. The symptom was a dark
+     * panel; the cause was the test. It showed only on tabs carrying the preview, and only
+     * sometimes, being a race between that iframe's load and Alpine's init.
+     *
+     * Storing it once and reloading is also the real user's situation: a preference left
+     * from an earlier session, then an ordinary page load.
+     */
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await page.evaluate(() => {
+      try {
+        localStorage.setItem('filament:theme:mode', 'dark')
+      } catch {
+        /* a context with no storage cannot carry the preference this case is about */
+      }
+    })
+
+    const found: string[] = []
+
+    /*
+     * ⚠ THE STUDIO TABS ONLY, AND `/platform` IS A CASE OF ITS OWN BELOW. The first version
+     * put it in this loop and failed on it -- correctly, but for a reason with nothing to do
+     * with dark mode: `signInAsStaff()` authenticates a TENANT OWNER, and
+     * `User::canAccessPanel()` sends `/platform` to `is_platform_admin`, so what was measured
+     * was a 403 document titled *"That is not permitted."*. That page is not a panel, carries
+     * no `data-theme`, and therefore resolves the DARK token values under an OS that prefers
+     * dark -- a true finding about an error page, reported as a finding about the ruling.
+     */
+    for (const path of ['/studio', '/studio/media', '/studio/theme', '/studio/domains']) {
+      await page.goto(`${apiOrigin()}${path}`, { waitUntil: 'domcontentloaded' })
+
+      /*
+       * ⚠ WAIT FOR THE PAGE TO HAVE SETTLED, AND FAIL ON *THAT* IF IT HAS NOT. A fixed
+       * `waitForTimeout` made this case intermittent: one run reported eleven dark values
+       * and the next reported none, with no code between them. The cause is not dark mode --
+       * it is a PARTIALLY LOADED page. `data-theme` is written by the panel's own head
+       * script, and `tokens.css` resolves the DARK values under `:root:not([data-theme=
+       * 'light'])`, so a document whose scripts have not run yet legitimately computes dark
+       * colours under an OS that prefers dark.
+       *
+       * Measuring that and reporting it as a finding about the ruling is the lie this guard
+       * removes: if the attribute never appears, the failure says the page did not settle.
+       */
+      await page
+        .waitForFunction(() => document.documentElement.dataset.theme !== undefined, null, {
+          timeout: 15_000,
+        })
+        .catch(() => {
+          throw new Error(
+            `${path} never set data-theme, so its scripts did not run — the colour measurement below would be of a half-loaded document`,
+          )
+        })
+
+      found.push(
+        ...(await page.evaluate((where: string) => {
+          /*
+           * The dark palette, by VALUE. `tokens.css` holds both sets, so the dark values are
+           * knowable without the dark mode being reachable — which is the point: the claim
+           * is that none of them is painted, not that a class is absent.
+           */
+          /*
+           * ⚠ THE DARK-ONLY VALUES, AND THE TWO THAT ARE MISSING ARE MISSING ON PURPOSE.
+           * The palette is a deliberate INVERSION: dark `paper` is `#191c22`, which is
+           * light `ink`, and dark `ink` is `#fcfcfa`, which is light `paper`. Those two
+           * values therefore prove nothing about which mode is rendering — a correct light
+           * page paints `#191c22` as its text on every screen, and the first run of this
+           * case reported 69 findings that were all exactly that.
+           *
+           * What remains is the four values the dark palette does NOT share with the light
+           * one. A dark ground (`#2b2e33`), a dark raised surface (`#393b40`), dark muted
+           * text (`#abadb2`) or a dark hairline (`#4f5256`) cannot be produced by a light
+           * render at all, so any of them is the failure this case is for.
+           */
+          const DARK = ['#2b2e33', '#393b40', '#abadb2', '#4f5256']
+
+          const expand = (h: string): string =>
+            /^#[0-9a-f]{3}$/i.test(h) ? `#${h.slice(1).replace(/./g, (c) => `${c}${c}`)}` : h
+
+          const parse = (c: string): string | null => {
+            const m =
+              /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,/\s]+([\d.]+))?\s*\)$/.exec(c)
+
+            if (m === null) return null
+            if (m[4] !== undefined && parseFloat(m[4]) === 0) return null
+
+            return `#${[m[1], m[2], m[3]]
+              .map((x) =>
+                Math.round(parseFloat(x ?? '0'))
+                  .toString(16)
+                  .padStart(2, '0'),
+              )
+              .join('')}`
+          }
+
+          const dark = new Set(DARK.map((d) => expand(d.toLowerCase())))
+          const hits: string[] = []
+
+          for (const el of [
+            document.documentElement,
+            document.body,
+            ...document.querySelectorAll('body *'),
+          ]) {
+            if (el.tagName === 'IFRAME') continue
+
+            const box = el.getBoundingClientRect()
+            if (box.width === 0 || box.height === 0) continue
+
+            const c = getComputedStyle(el)
+
+            for (const prop of ['backgroundColor', 'color'] as const) {
+              const hex = parse(c[prop])
+
+              if (hex !== null && dark.has(hex)) {
+                hits.push(`${where} ${prop} ${hex} on ${el.tagName.toLowerCase()}`)
+              }
+            }
+          }
+
+          return [...new Set(hits)]
+        }, path)),
+      )
+    }
+
+    const stored = await page.evaluate(() => {
+      try {
+        return localStorage.getItem('filament:theme:mode')
+      } catch {
+        return null
+      }
+    })
+
+    /*
+     * ⚠ AND THE PREMISE IS ASSERTED, NOT ASSUMED. `darkMode(false)` makes Filament rewrite
+     * the key to `light` on every load, so by the time this reads it the value is `light` --
+     * which is itself the recovery working. What would make the case vacuous is the key
+     * being ABSENT, meaning the init script never ran and no preference was ever stored.
+     */
+    expect(
+      stored,
+      'no theme preference is stored, so the condition under test never existed',
+    ).not.toBeNull()
+
+    expect(found, 'a dark-palette value is painted on a panel that has no dark mode').toEqual([])
+  })
+
+  test('paints the platform panel from the paper token, light, with a stored dark preference — A1 and A2', async ({
+    page,
+  }) => {
+    /*
+     * The other half of Muhammad's requirement: *"The stored-dark-preference test runs
+     * against BOTH panels."* It is its own case because it needs its own principal -- the
+     * seeded platform administrator, the only one `canAccessPanel()` admits here.
+     *
+     * The two panels also share ONE origin-wide `localStorage` key (`R-266`), which is part
+     * of why the ruling covers both: had `darkMode(false)` landed on `/studio` alone, every
+     * studio page load would have rewritten this admin's stored preference to light.
+     */
+    const fixture = staffFixture()
+
+    /*
+     * ⚠ THE CONTEXT IS ESTABLISHED THROUGH `signInAsStaff()` FIRST, AND THEN THE PRINCIPAL IS
+     * SWITCHED. This case does not need the owner's session -- it replaces it a few lines
+     * below -- but it is the only case in this file whose first navigation went straight to
+     * the API origin in a fresh context, and that navigation came back
+     * `ERR_CONNECTION_REFUSED` while every other case reached the same origin happily after
+     * a web-origin navigation. Rather than assert a cause for that which I have not
+     * isolated, this uses the path the rest of the suite already proves.
+     *
+     * The replacement is also what makes the case meaningful: the second login below is a
+     * PLATFORM ADMIN, and `User::canAccessPanel()` admits only `is_platform_admin` here.
+     */
+    await signInAsStaff(page)
+
+    /*
+     * ⚠ THE PRINCIPAL IS SWITCHED FROM THE WEB ORIGIN, NOT FROM THE PANEL. Logging in with a
+     * `fetch` issued by the API-origin page fails with `TypeError: Failed to fetch`: as a
+     * tenant owner that page is a 403 PROBLEM DOCUMENT, and its policy does not permit the
+     * connection. The web front proxies `/v1` (`QRPAGER-24`), so the exchange happens there,
+     * exactly as the staff shell does it.
+     *
+     * The session then reaches the API origin because a cookie is scoped by host and not by
+     * port — which is the same property `R-266` records for the two panels' shared storage.
+     */
+    const signedIn = await page.evaluate(
+      async ({ email, password }: { email: string; password: string }) => {
+        const raw = document.cookie.split('; ').find((c) => c.startsWith('XSRF-TOKEN='))
+        const token = raw === undefined ? '' : decodeURIComponent(raw.slice('XSRF-TOKEN='.length))
+        const response = await fetch('/v1/auth/login', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-XSRF-TOKEN': token,
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ email, password }),
+          cache: 'no-store',
+        })
+
+        return response.status
+      },
+      { email: fixture.platform_admin.email, password: fixture.platform_admin.password },
+    )
+
+    expect(signedIn, 'the platform administrator could not sign in').toBeLessThan(400)
+
+    await page.goto(`${apiOrigin()}/platform`, { waitUntil: 'domcontentloaded' })
+
+    /*
+     * The preference is stored on the API origin, which is where BOTH panels live — browser
+     * storage is scoped by port where a cookie is not, so it has to be set here rather than
+     * on the web front. Then an ordinary reload, which is the real user's situation.
+     */
+    await page.evaluate(() => {
+      try {
+        localStorage.setItem('filament:theme:mode', 'dark')
+      } catch {
+        /* a context with no storage cannot carry the preference this case is about */
+      }
+    })
+
+    const stored = await page.evaluate(() => {
+      try {
+        return localStorage.getItem('filament:theme:mode')
+      } catch {
+        return null
+      }
+    })
+
+    expect(stored, 'the dark preference was not stored, so the condition never existed').toBe(
+      'dark',
+    )
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(600)
+
+    const seen = await page.evaluate(() => {
+      /*
+       * ⚠ THE ORDER OF THESE THREE READS IS THE CASE, AND THE FIRST VERSION GOT IT WRONG --
+       * IT WAS ALWAYS GREEN. It was an object literal whose `lightPaper` member set
+       * `documentElement.dataset.theme = 'light'` and never put it back, and whose `paper`
+       * member came AFTER it. Object members evaluate in source order, so `paper` was read
+       * with the attribute the probe had just written: the two agreed whether or not the
+       * panel pins it, which is the one thing this case exists to tell apart. Revert the
+       * `HEAD_END` hook and that version still passed.
+       *
+       * So the page's OWN state is read first, every probe that forces the attribute restores
+       * what was there, and `forcedPaper` is a separate reading taken afterwards.
+       */
+      const root = document.documentElement
+
+      const resolve = (name: string): string => {
+        const probe = document.createElement('div')
+        probe.style.backgroundColor = getComputedStyle(root).getPropertyValue(name).trim()
+        document.body.appendChild(probe)
+        const computed = getComputedStyle(probe).backgroundColor
+        probe.remove()
+
+        return computed
+      }
+
+      const observed = {
+        /*
+         * ⚠ THE PREMISE FIRST. A 403 document would satisfy every colour assertion below
+         * while proving nothing -- which is precisely how this measurement first went wrong
+         * when it ran under the tenant owner's session.
+         */
+        isPanel: document.querySelector('.fi-body') !== null,
+        ground: getComputedStyle(document.body).backgroundColor,
+        paper: resolve('--color-paper'),
+      }
+
+      // And the same token with the attribute forced: equal to the reading above only when
+      // the page is genuinely on the light palette already.
+      const previous = root.getAttribute('data-theme')
+      root.setAttribute('data-theme', 'light')
+      const forcedPaper = resolve('--color-paper')
+
+      if (previous === null) {
+        root.removeAttribute('data-theme')
+      } else {
+        root.setAttribute('data-theme', previous)
+      }
+
+      return { ...observed, forcedPaper }
+    })
+
+    expect(
+      seen.isPanel,
+      'this is not the platform panel, so the measurement is of something else',
+    ).toBe(true)
+
+    /*
+     * A2 ON THIS PANEL: light paint with a stored dark preference. The measurement that
+     * mattered is the TOKEN rather than the ground -- before the `data-theme` pin,
+     * `--color-paper` resolved on `/platform` to the DARK paper under an OS that prefers
+     * dark, because `darkMode(false)` does not reach the token layer's own media query. A
+     * dark token value resolving on a panel with no dark mode is the failure, whatever the
+     * ground happens to be.
+     */
+    expect(seen.paper, 'the token layer resolved a dark value on a panel with no dark mode').toBe(
+      seen.forcedPaper,
+    )
+
+    /*
+     * ⚠ AND A1 IS ASSERTED HERE, NOT REPORTED. An earlier version of this case recorded
+     * `/platform`'s ground as a finding on the grounds that extending `A1` was not this
+     * ticket's -- Muhammad, 2026-11-10: *"A1 is a token substitution, not a restyle …
+     * leaving one panel on Filament's oklch recreates `R-268`."* So the rule exists in
+     * `platform/theme.css` and this is what holds it there.
+     *
+     * Measured before that rule: `oklch(0.973 0.001 106.424)`, Filament's own, the same value
+     * the studio carried before `A1`. The comparison is against the TOKEN as this page
+     * resolves it, so the case fails both ways -- a ground from Filament, and a ground from
+     * the right token on the wrong palette.
+     */
+    expect(seen.ground, 'the platform panel paints a ground that comes from no token').toBe(
+      seen.paper,
+    )
+  })
+
+  test('renders a colour value with the hash first — A3', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(800)
+
+    /*
+     * ⚠ THE CASE CREATES ITS OWN CONDITION. The e2e tenant has no theme saved, so every
+     * caption reads "الافتراضي" and there is no hex to measure — the first run failed on
+     * exactly that, which is the vacuity guard working before the assertion it guards.
+     * Driving the picker also exercises the live Alpine binding rather than a server render.
+     */
+    await page
+      .locator('.studio-colour-input')
+      .first()
+      .evaluate((el: HTMLInputElement) => {
+        el.value = '#eee8e8'
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+
+    await page.waitForTimeout(400)
+
+    const caption = page.locator('.studio-colour__value').first()
+    await expect(caption).toBeVisible()
+    await expect(caption).toHaveText('#eee8e8')
+
+    // The CSS contract: both halves. `isolate` alone was already true on the broken build.
+    await expect(caption).toHaveCSS('direction', 'ltr')
+    await expect(caption).toHaveCSS('unicode-bidi', 'isolate')
+
+    const order = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('.studio-colour__value')].find((e) =>
+        e.textContent.trim().startsWith('#'),
+      )
+
+      if (!el?.firstChild) return null
+
+      const node = el.firstChild
+      // `ChildNode.textContent` is nullable where `Element.textContent` is not — the
+      // typechecker and the linter disagreed about this line until each was given its own.
+      const text = node.textContent ?? ''
+      const boxes: { ch: string; x: number }[] = []
+
+      for (let i = 0; i < text.length; i++) {
+        const range = document.createRange()
+        range.setStart(node, i)
+        range.setEnd(node, i + 1)
+        boxes.push({ ch: text[i] ?? '', x: range.getBoundingClientRect().x })
+      }
+
+      return boxes
+    })
+
+    expect(order, 'no colour value is rendered, so this proves nothing').not.toBeNull()
+    expect(order!.length).toBeGreaterThan(1)
+
+    /*
+     * ⚠ GEOMETRY, NOT `textContent`. Measured on the broken build the DOM string was already
+     * `#eee8e8` in the correct order while the render read `eee8e8#` — so a text assertion
+     * PASSES on the defect. That is the `R-264` class of lying test, from the same week, and
+     * Muhammad named it when specifying this case.
+     *
+     * The document is RTL, so a larger x is further right. The hash must sit LEFT of the
+     * first hex digit; on the broken build it sat 42px to its right.
+     */
+    const hash = order!.find((b) => b.ch === '#')
+    const firstDigit = order!.find((b) => b.ch !== '#')
+
+    expect(hash, 'the caption carries no hash').not.toBeUndefined()
+    expect(firstDigit).not.toBeUndefined()
+    expect(hash!.x, 'the hash renders after the digits, so the owner reads RRGGBB#').toBeLessThan(
+      firstDigit!.x,
+    )
   })
 })

@@ -261,9 +261,61 @@ final class StudioForm
         return $components;
     }
 
+    /**
+     * Does a field of this kind hold a LITERAL, or the owner's own prose?
+     *
+     * ================================================================================
+     * ⚠ DIRECTION FOLLOWS THE KIND THE CONTRACT DECLARES, NEVER A CSS SELECTOR
+     * ================================================================================
+     *
+     * Muhammad's ruling of 2026-11-10, generalised past the bug that produced it: *"A
+     * selector-shaped rule cannot distinguish a hostname from a sentence; the contract
+     * already can."* The first version of `QRPAGER-42` A3 was a stylesheet rule over
+     * `.studio-layout__form .fi-input` -- every text field in the form, including `heading`,
+     * `seo_title` and the menu item names, which hold ARABIC PROSE. It would have rendered
+     * the restaurant's own sentences backwards in the name of fixing a hex code.
+     *
+     * ⚠ NO DEFAULT ARM, AND THAT IS THE WHOLE POINT OF THE FUNCTION. A lookup with a silent
+     * fallback would give a kind added later no mark at all, and the bug would return with
+     * nothing failing -- the preset ticket is expected to add exactly that, a field whose
+     * value IS a literal. `match` without a default throws `UnhandledMatchError` on an
+     * unhandled case and PHPStan reports the match as non-exhaustive, so the next kind
+     * cannot ship undecided. `StudioPreviewIsolationTest` iterates every case of both
+     * enums and asserts a decision exists for each.
+     */
+    public static function holdsLiteralValue(FieldKind $kind): bool
+    {
+        return match ($kind) {
+            // Typed or copied character by character; reversed by the bidi algorithm in an
+            // RTL document for the same reason a colour value is.
+            FieldKind::Url, FieldKind::Email, FieldKind::Telephone, FieldKind::Number => true,
+            // A media field's value is an asset chosen from the tenant's own library and
+            // shown by its filename, which is a literal on the same grounds.
+            FieldKind::Media => true,
+            // The owner's own writing. `ItemList` is a container whose CHILDREN are each
+            // decided by this same function.
+            FieldKind::Text, FieldKind::ItemList => false,
+        };
+    }
+
+    /** The same decision for a theme token. */
+    public static function tokenHoldsLiteralValue(ThemeTokenKind $kind): bool
+    {
+        return match ($kind) {
+            // `1rem`, `12px` -- a magnitude and a unit, read left to right.
+            ThemeTokenKind::Length => true,
+            // A colour is a literal too, but `ColourField` renders its own markup and marks
+            // its caption there; nothing in this function reaches it.
+            ThemeTokenKind::Colour => false,
+            // A named stack, shown to the owner in his own language.
+            ThemeTokenKind::FontChoice => false,
+        };
+    }
+
     private static function field(string $name, Field $field, MediaOptions $media): Component
     {
         $label = __('studio.fields.'.$name);
+        $literal = self::holdsLiteralValue($field->kind) ? ['class' => 'studio-ltr'] : [];
 
         return match ($field->kind) {
             FieldKind::Text => TextInput::make($name)
@@ -272,9 +324,18 @@ final class StudioForm
                 ->maxLength($field->maxLength)
                 ->helperText(__('studio.help.text', ['max' => $field->maxLength])),
 
+            /*
+              * ⚠ `studio-ltr` MARKS A LITERAL — `QRPAGER-42` A3. A URL, an address, a phone
+              * number and a coordinate are read and typed character by character, so each
+              * renders LTR and isolated however the document around it runs. The kinds NOT
+              * marked are `Text` and `ItemList`, which hold the owner's own Arabic prose:
+              * forcing direction there would render his sentences backwards, which is what
+              * the first version of the stylesheet rule would have done.
+              */
             FieldKind::Url => TextInput::make($name)
                 ->label($label)
                 ->required($field->required)
+                ->extraInputAttributes($literal)
                 ->url()
                 ->maxLength($field->maxLength)
                 ->helperText(__('studio.help.url')),
@@ -282,18 +343,21 @@ final class StudioForm
             FieldKind::Email => TextInput::make($name)
                 ->label($label)
                 ->required($field->required)
+                ->extraInputAttributes($literal)
                 ->email()
                 ->maxLength($field->maxLength),
 
             FieldKind::Telephone => TextInput::make($name)
                 ->label($label)
                 ->required($field->required)
+                ->extraInputAttributes($literal)
                 ->tel()
                 ->helperText(__('studio.help.telephone')),
 
             FieldKind::Media => Select::make($name)
                 ->label($label)
                 ->required($field->required)
+                ->extraInputAttributes($literal)
                 // The tenant's OWN library, and nothing else can be chosen. The server
                 // re-checks the id against media_assets inside this tenant's scope
                 // anyway -- a select is a convenience, not the boundary.
@@ -305,6 +369,7 @@ final class StudioForm
             FieldKind::Number => TextInput::make($name)
                 ->label($label)
                 ->required($field->required)
+                ->extraInputAttributes($literal)
                 ->numeric()
                 ->minValue($field->min)
                 ->maxValue($field->max)
@@ -350,6 +415,7 @@ final class StudioForm
                     ->label(__('studio.tokens.'.$name)),
                 ThemeTokenKind::Length => TextInput::make($key)
                     ->label(__('studio.tokens.'.$name))
+                    ->extraInputAttributes(self::tokenHoldsLiteralValue($kind) ? ['class' => 'studio-ltr'] : [])
                     ->placeholder('1rem')
                     ->helperText(__('studio.help.length')),
                 ThemeTokenKind::FontChoice => Select::make($key)

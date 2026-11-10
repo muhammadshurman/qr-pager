@@ -204,6 +204,18 @@ export interface StaffFixture {
     readonly second_order_reference: string
   }
   readonly owner: { readonly email: string; readonly password: string; readonly name: string }
+  /**
+   * The seeded platform administrator. `bin/issue-staff-fixture` has always written these
+   * three fields; `QRPAGER-42` is the first consumer, because its light-only ruling applies
+   * to `/platform` as well and that panel's PAINT can only be asserted by a principal who
+   * may open it -- `User::canAccessPanel()` sends everything but `studio` to
+   * `is_platform_admin`, and this fixture's owner is a tenant owner with no such flag.
+   */
+  readonly platform_admin: {
+    readonly email: string
+    readonly password: string
+    readonly name: string
+  }
   readonly beta: {
     readonly id: string
     readonly name: string
