@@ -21,6 +21,12 @@
 
     ⚠ THE PANE STAYS JS-FREE. `partials/preview.blade.php` is untouched — its own docblock's
     claim that it needs no JavaScript is still true, because all of it lives here.
+
+    ⚠ THIS PARTIAL EMITS ATTRIBUTES AND DOES NOT CLOSE THE TAG. It used to end
+    `reload()">`, and both call sites add their own `>` — so every studio page served a
+    stray `>` as the first child of `.studio-layout`, which is `display:flex`, making it an
+    anonymous flex item: a visible glyph plus an extra gap before the form column. Found by
+    the §11 QA round of 2026-11-11, on a page that was correct before the partial existed.
 --}}
 x-data="{
             timer: null,
@@ -44,4 +50,4 @@ x-data="{
          }"
          x-on:input="schedule()"
          x-on:change="schedule()"
-         x-on:studio-preview-updated.window="reload()">
+         x-on:studio-preview-updated.window="reload()"

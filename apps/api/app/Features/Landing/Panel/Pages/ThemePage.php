@@ -125,12 +125,22 @@ class ThemePage extends Page
         Notification::make()->title(__('studio.notifications.theme_saved'))->success()->send();
     }
 
-    /** This page's own form schema, resolved by name, as `LandingBuilderPage` does. */
+    /** `KeepsPreviewInStep`'s abstract, answered with this page's own form. */
     protected function studioForm(): Schema
     {
         return $this->themeForm();
     }
 
+    /**
+     * This page's own form schema, resolved by name, as `LandingBuilderPage` does.
+     *
+     * `$this->form` works at runtime — `InteractsWithSchemas` has a `__get` — and is
+     * invisible to PHPStan, which reports it as an undefined property; `getSchema()` is the
+     * real method behind that magic. It throws rather than returning null because every
+     * caller is already past `canAccess()`, so a null schema would mean the page did not
+     * boot. (The docblock was on `studioForm()` until the `§11` QA round's L-10 pointed out
+     * that `studioForm()` does neither of those things.)
+     */
     private function themeForm(): Schema
     {
         $schema = $this->getSchema('form');
