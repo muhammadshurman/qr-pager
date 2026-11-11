@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Landing\LandingTemplate;
 use Tests\Support\LandingFixtures;
+use Tests\Support\LandingPages;
 
 /*
  * ================================================================================
@@ -16,7 +17,7 @@ use Tests\Support\LandingFixtures;
  *
  * ⚠ ONE DOCUMENT, AND IT IS THE SAME OBJECT FOR ALL FIVE ARRANGEMENTS. The claim is about the
  * ARRANGEMENT and nothing else, so a case that changed the content between renders would be
- * measuring the content. `renderTemplate()` (in `TemplateTokenSetTest`, which Pest loads for
+ * measuring the content. `LandingPages::render()` (in `TemplateTokenSetTest`, which Pest loads for
  * the whole directory) takes the fixture and replaces only `template`.
  *
  * ⚠ AND THE FINGERPRINT IS A PARSED DOM, NOT A SUBSTRING COUNT. `QRPAGER-45`'s own round
@@ -78,11 +79,29 @@ function structuralFingerprint(string $html): array
     return $fingerprint;
 }
 
+/** The text inside one region of the rendered page, by class, read from the parsed DOM. */
+function regionText(string $html, string $class): string
+{
+    $dom = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    $dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    $region = (new DOMXPath($dom))
+        ->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' {$class} ')]")
+        ?->item(0);
+
+    expect($region)->not->toBeNull("the page carries no .{$class} region");
+
+    return (string) $region->textContent;
+}
+
 it('arranges one unchanged document into three structurally different pages', function (): void {
     $prints = [];
 
     foreach (['rail', 'ember', 'tile'] as $template) {
-        $prints[$template] = structuralFingerprint(renderTemplate($template));
+        $prints[$template] = structuralFingerprint(LandingPages::render($template));
 
         // Not vacuous: every block of the fixture is accounted for in each fingerprint, so a
         // difference below is a difference in ARRANGEMENT and not a dropped block.
@@ -149,6 +168,106 @@ it('arranges one unchanged document into three structurally different pages', fu
         );
 });
 
+it('renders no empty region for a document that has none of its blocks', function (): void {
+    /*
+     * ⚠ THE `§11` QA ROUND'S M-4: every case in this feature rendered `LandingFixtures::
+     * fullPage()`, which carries one block of every type — so only the TRUE arm of each
+     * arrangement's conditionals was ever executed. `rail`'s `@if ($find !== [])`, `tile`'s
+     * `@if ($tiles !== [])` and `ember`'s hero guard had no test, and an arrangement that
+     * emitted an empty wrapper would have looked identical to one that did not.
+     *
+     * A footer-only document is the sparsest a tenant can publish and still have a page.
+     */
+    $footerOnly = LandingFixtures::fullPage();
+    $footerOnly['blocks'] = array_values(array_filter(
+        $footerOnly['blocks'],
+        static fn (array $block): bool => $block['type'] === 'footer',
+    ));
+
+    expect($footerOnly['blocks'])->toHaveCount(1, 'the fixture no longer carries exactly one footer');
+
+    foreach (['rail' => 'rail-find', 'tile' => 'tile-grid', 'ember' => 'ember-hero'] as $template => $region) {
+        $html = LandingPages::render($template, [], ['blocks' => $footerOnly['blocks']]);
+
+        /*
+         * ⚠ `str_contains` AND NOT `not->toContain($needle, $message)` — `composer guard`'s
+         * `[vacuous-negated-contains]` rule refused the first version of this line, correctly:
+         * `toContain` is VARIADIC, so a message passed as a second argument is read as another
+         * NEEDLE and the assertion becomes *"contains neither"* — which a message that never
+         * appears makes trivially true. The negated form is the silently always-green one, and
+         * it is in this repository's own notes.
+         */
+        expect(str_contains($html, 'class="'.$region.'"'))->toBeFalse(
+            $template.' emitted its '.$region.' region for a document with none of its blocks'
+        );
+
+        // The footer still renders, exactly once, and the page is not otherwise empty.
+        expect(substr_count($html, '<section>'))->toBe(1, $template.' dropped or duplicated the only block');
+        expect($html)->toContain('Olive, 1 High Street');
+    }
+
+    /*
+     * ⚠ AND `ember`'s COLUMN IS EMITTED UNCONDITIONALLY, which the round names and which is a
+     * DECISION rather than an oversight: it is the measure every non-hero block sits in, so a
+     * document whose only block is a footer still gets the wrapper and nothing inside it. An
+     * empty `<div>` paints nothing, carries no role and costs one element; making it
+     * conditional would put a second condition in a file whose whole job is grouping. Asserted
+     * so that it stays an empty div rather than becoming an empty div with a region in it.
+     */
+    $ember = LandingPages::render('ember', [], ['blocks' => $footerOnly['blocks']]);
+
+    expect($ember)->toContain('<div class="ember-column">')
+        ->and($ember)->toContain('<div class="ember-column">'."\n".'</div>');
+});
+
+it('arranges a document that repeats a type, which the schema allows and the fixture does not test', function (): void {
+    /*
+     * `BlockSchema` says two galleries is a legitimate page, and `tile` is the arrangement that
+     * MERGES two block types into one grid — so a repeated type is the case where a merge can
+     * drop or double a block. The `§11` QA round measured it by hand and nothing asserted it.
+     */
+    $page = LandingFixtures::fullPage();
+    $gallery = null;
+
+    foreach ($page['blocks'] as $block) {
+        if ($block['type'] === 'gallery') {
+            $gallery = $block;
+        }
+    }
+
+    expect($gallery)->not->toBeNull('the fixture carries no gallery block to repeat');
+
+    $second = $gallery;
+    $second['fields']['heading'] = 'The yard';
+
+    $blocks = [...$page['blocks'], $second];
+
+    foreach (['rail', 'ember', 'tile'] as $template) {
+        $html = LandingPages::render($template, [], ['blocks' => $blocks]);
+
+        expect(substr_count($html, '<section>'))->toBe(
+            count($blocks),
+            $template.' rendered a different number of sections than a document with a repeated type holds'
+        );
+
+        expect($html)->toContain('The room')->and($html)->toContain('The yard');
+    }
+
+    /*
+     * And in `tile` both galleries are inside the one grid, which is what the merge claims.
+     *
+     * ⚠ READ FROM THE DOM, AND THE FIRST VERSION SLICED THE STRING — from
+     * `<div class="tile-grid">` to the next `</div>`, which closes the BLOCK's own inner
+     * `<div class="grid">` and not the region. The slice stopped inside the first cell and the
+     * case failed on correct markup. This project has paid for the same mistake three times
+     * now (a `>` found inside an `x-data` attribute, an `innerText` that could not tell two
+     * orders apart): a string landmark cannot find the end of a nested element.
+     */
+    $grid = regionText(LandingPages::render('tile', [], ['blocks' => $blocks]), 'tile-grid');
+
+    expect($grid)->toContain('The room')->and($grid)->toContain('The yard');
+});
+
 it('keeps the footer last in every arrangement that takes the order into its own hands', function (): void {
     /*
      * The clause `editorial.blade.php` states in words and `TemplateTotalityTest` asserts for
@@ -161,7 +280,7 @@ it('keeps the footer last in every arrangement that takes the order into its own
             continue; // the builder's own order: a footer in the middle is the tenant's word
         }
 
-        $print = structuralFingerprint(renderTemplate($template->value));
+        $print = structuralFingerprint(LandingPages::render($template->value));
         $last = $print[count($print) - 1] ?? '';
 
         /*
@@ -188,11 +307,11 @@ it('gives the three new arrangements a root element of their own, and the old tw
      * byte for byte, and `editorial`'s own wrappers are `.band` and `.wide` INSIDE the flow.
      */
     foreach (['rail' => 'class="rail"', 'ember' => 'class="ember"', 'tile' => 'class="tile"'] as $template => $root) {
-        expect(renderTemplate($template))->toContain($root);
+        expect(LandingPages::render($template))->toContain($root);
     }
 
     foreach (['classic', 'editorial'] as $template) {
-        $html = renderTemplate($template);
+        $html = LandingPages::render($template);
 
         expect($html)->not->toContain('class="rail"')
             ->and($html)->not->toContain('class="ember"')

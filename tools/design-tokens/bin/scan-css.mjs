@@ -170,6 +170,28 @@ export function readBaseline(path = BASELINE) {
 }
 
 /**
+ * The baseline's own files that this run did not scan — `§11` security round, M-4.
+ *
+ * ⚠ THE FLOOR USED TO BE *"at least one Blade template"*, AND TWO FILES QUALIFY. Measured by
+ * the reviewer: a scanned set that kept `errors/panel-problem.blade.php` and lost
+ * `landing/page.blade.php` reported `0 findings, 0 stale, 0 excused` — all twenty-three frozen
+ * findings and all eighteen entries evaporated with NO message — while the floor stayed
+ * satisfied by the other file and printed a reassuring count. That is the precise condition
+ * `R-267` describes: the customer-facing page unscanned while the gate looks green. No malice
+ * needed — a renamed directory, a widened exemption, a `<style>` the regex stops matching (an
+ * unterminated one drops the file from the walk outright).
+ *
+ * So the floor is derived from the RECORD instead of from a count: every file the baseline
+ * names must be in the scanned set. The baseline is the list of files this repository knows
+ * carry frozen debt, so a run that cannot see one of them has lost the file, not the debt.
+ */
+export function missingBaselineFiles(scanned, baseline) {
+  const named = new Set(baseline.entries.map((entry) => entry.file))
+
+  return [...named].filter((file) => !scanned.has(file)).sort()
+}
+
+/**
  * Split findings into the ones the baseline excuses and the ones it does not.
  *
  * Returns the unexcused findings and the baseline entries that matched nothing, so `main()`
@@ -319,6 +341,24 @@ export function main(explicit = []) {
 
   const baseline = readBaseline()
   const scanned = new Set(targets.map((path) => relative(ROOT, path).split(sep).join('/')))
+
+  /*
+   * ⚠ AND EVERY FILE THE BASELINE NAMES MUST HAVE BEEN SCANNED — see `missingBaselineFiles`.
+   * The Blade floor above counts to one and two files qualify, so it cannot tell which one is
+   * missing; this can, because the record says which files matter.
+   */
+  const missing = explicit.length === 0 ? missingBaselineFiles(scanned, baseline) : []
+
+  if (missing.length > 0) {
+    console.error(
+      'design tokens: the walk did not reach ' +
+        `${missing.join(', ')}, which tools/design-tokens/landing-baseline.json names as ` +
+        'carrying frozen literals. A run that cannot see a file it has debt for reports a ' +
+        'clean tree for the wrong reason (R-267), so this is a FAILURE.',
+    )
+
+    return 1
+  }
   const { reported, stale, excused } = applyBaseline(scanPaths(targets), baseline, scanned)
 
   for (const entry of stale) {

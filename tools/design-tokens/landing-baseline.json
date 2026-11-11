@@ -7,7 +7,8 @@
     "So this file is a FREEZE, not a fix. R-268 stays open with its owner: what it records is that --color-surface falls back to #f5f5f5 in one rule and #f6f6f6 in another, live on every published page, and neither is a Rail value. What QRPAGER-46 makes unrepresentable is a SEVENTEENTH fallback, not these.",
     "R-267 counted 16 var() fallbacks with literal values. This file counts SCANNER FINDINGS, which is a different measure: three rules fire here (hex, css-spacing-declaration, css-font-size-declaration) and a single declaration can carry more than one. 23 findings, 10 of them colours.",
     "MATCHING IS BY (file, id, match) WITH A COUNT, AND THE LINES ARE FOR THE READER. Keying on the line number would turn every edit above a literal into a build failure, which is the baseline rotting into a tax; keying on the text alone would let a seventeenth copy of an existing literal in the same file pass unnoticed. The count is what refuses that. An entry that matches NOTHING fails the build too, with its own message: a literal that has been fixed must leave this list rather than sit in it claiming debt that no longer exists.",
-    "The line numbers were refreshed on 2026-11-11 after the <style> block gained comment lines: matching is by (file, id, match) and count, so the shift changed no verdict, and a lines field that pointed at the wrong line would be a record that reads as wrong."
+    "The line numbers were refreshed on 2026-11-11 after the <style> block gained comment lines: matching is by (file, id, match) and count, so the shift changed no verdict, and a lines field that pointed at the wrong line would be a record that reads as wrong.",
+    "Regenerated on 2026-11-11 after the §11 QA round's H-1: a no-var-fallback rule was added, because valueIsAcceptable only judges the VALUE of a spacing, colour or font-size declaration and never saw a fallback on border-radius, grid-template-columns or outline. The eighteen var-fallback findings below are the thirteen that already existed in this file, frozen like the rest; a fourteenth anywhere in a scanned file is red."
   ],
   "entries": [
     {
@@ -153,6 +154,118 @@
       "match": "#ffffff",
       "count": 2,
       "lines": [92, 105]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-accent-text,#ffffff)",
+      "count": 1,
+      "lines": [105]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-accent,#0b5fff)",
+      "count": 3,
+      "lines": [99, 100, 105]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-background,#ffffff)",
+      "count": 1,
+      "lines": [92]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-muted,#666666)",
+      "count": 1,
+      "lines": [110]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-muted,#dddddd)",
+      "count": 1,
+      "lines": [95]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-surface,#f5f5f5)",
+      "count": 1,
+      "lines": [196]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-surface,#f6f6f6)",
+      "count": 1,
+      "lines": [102]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--color-text,#111111)",
+      "count": 1,
+      "lines": [92]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--font-body,system-ui,sans-serif)",
+      "count": 1,
+      "lines": [93]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--font-heading,system-ui,sans-serif)",
+      "count": 1,
+      "lines": [97]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--radius-large,.75rem)",
+      "count": 1,
+      "lines": [102]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--radius-small,.25rem)",
+      "count": 2,
+      "lines": [101, 106]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--size-heading,2rem)",
+      "count": 1,
+      "lines": [98]
+    },
+    {
+      "file": "apps/api/resources/views/landing/page.blade.php",
+      "rule": "no-var-fallback",
+      "id": "var-fallback",
+      "match": "var(--space-section,3rem)",
+      "count": 2,
+      "lines": [95, 196]
     }
   ]
 }

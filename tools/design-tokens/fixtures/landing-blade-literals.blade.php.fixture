@@ -29,6 +29,14 @@
 .bad-function{border-color:rgba(16,35,27,0.06)}
 .bad-spacing{padding:13px}
 .bad-size{font-size:17px}
+/* ⚠ A `var()` FALLBACK ON A PROPERTY NO OTHER RULE JUDGES — the §11 QA round's H-1. The
+   value guard reads the VALUE of a spacing, colour or font-size declaration, so it never
+   saw this one: `border-radius` is none of the three. The fallback form is the finding. */
+.bad-fallback{border-radius:var(--radius-large,2px)}
+/* ⚠ A REAL RULE ON THE SAME LINE AS A DIRECTIVE — the §11 security round's M-2. The first
+   blanker's argument group was greedy to the last `)` on the line, so this whole rule was
+   masked away and its literal reported by nothing. */
+@if ($template === 'rail') .same-line{color:#ff00ff}
 
 /* ---- what MUST NOT be reported, each for its own reason ---- */
 

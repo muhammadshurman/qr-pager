@@ -113,7 +113,23 @@ final class ThemeDefaults
      */
     public static function fill(array $theme): array
     {
-        return array_replace(self::values(), $theme);
+        /*
+         * ⚠ FILTERED HERE AS WELL AS AT THE EMISSION POINT — the `§11` security round's L-1.
+         * `array_replace()` alone passed any key the caller held straight through: the round
+         * measured `fill(['ready.field' => '#000000', …])` returning a THIRTEEN-key map with
+         * `ready.field` in it. Nothing escaped — `ThemeStylesheet` re-asks `accepts()` and
+         * dropped it, and `--ready-field` is outside theming by decision D4 — but the standard
+         * this project holds itself to is written eight lines above that call: *"a control
+         * that is only correct because its caller is correct is not a control."* This method
+         * is public, and the next caller is not guaranteed to be that one.
+         */
+        $filled = array_replace(self::values(), $theme);
+
+        return array_filter(
+            $filled,
+            static fn (string $name): bool => ThemeTokens::knows($name),
+            ARRAY_FILTER_USE_KEY,
+        );
     }
 
     /**

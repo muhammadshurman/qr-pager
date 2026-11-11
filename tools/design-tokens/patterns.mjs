@@ -284,6 +284,39 @@ export const PATTERNS = [
       'hard-coded font size in {{match}}. Use var(--size-…). The approved type scale is ' +
       '13 16 20 28 44 64 96 -- one ratio, with no in-between sizes.',
   },
+  // ------------------------------------------------- the fallback inside var() (QRPAGER-46)
+  {
+    rule: 'no-var-fallback',
+    id: 'var-fallback',
+    where: 'css',
+    /*
+     * ⚠ THE SECOND ARGUMENT OF `var()` IS A DEFAULT, AND A DEFAULT BELONGS TO THE TOKEN LAYER.
+     *
+     * `R-268` is what two of them cost: `--color-surface` falls back to `#f5f5f5` in one rule
+     * of the public landing page and `#f6f6f6` in another, live, and NEITHER is a Rail value —
+     * one token with two values, because the fallback is a second source competing with the
+     * generated one. `§1`'s ruling of 2026-11-10 made a count of NOUGHT the preset ticket's
+     * invariant for exactly that reason.
+     *
+     * ⚠ AND IT IS A PATTERN OF ITS OWN RATHER THAN A JOB FOR `valueIsAcceptable`, WHICH IS THE
+     * `§11` QA ROUND'S H-1. That guard judges the VALUE of a declaration whose PROPERTY this
+     * list names — so it reads `padding:var(--space-16,13px)` and refuses it, and it never sees
+     * `border-radius:var(--radius-large,2px)`, `grid-template-columns:…var(--x,14rem)…` or
+     * `outline:3px solid var(--color-accent,White)`, because those properties are not spacing,
+     * colour or font-size declarations. Measured by the reviewer: a fallback injected into the
+     * new arrangements' rules was reported by NOTHING and 22 cases stayed green.
+     *
+     * The form is the finding, whatever property carries it and whatever the fallback says, so
+     * this rule reads the TEXT. The thirteen that already exist in
+     * `resources/views/landing/page.blade.php` are frozen by `landing-baseline.json` — the
+     * ticket forbids rewriting delivered work (`R-250`) — and a fourteenth anywhere is red.
+     */
+    regex: /var\(\s*--[a-z0-9-]+\s*,[^)]*\)/gi,
+    message:
+      'a var() FALLBACK in {{match}}. The second argument is a competing default: the token ' +
+      'layer owns the value, and a fallback is where one token comes to carry two (R-268). ' +
+      'Emit the token for every property that reads it instead -- see ThemeDefaults.',
+  },
   // ------------------------------------------------- the Filament panels (Task 8b)
   {
     rule: 'no-raw-spacing',

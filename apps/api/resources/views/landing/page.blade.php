@@ -173,6 +173,28 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
      the scanner refuses. Inventing a fourth spacing literal here would be `R-268` with this
      ticket's name on it.
 
+     ⚠⚠ THE TWO `.ember-hero` LINES THAT RE-COLOUR A LINK AND ITS FOCUS RING ARE THE `§11`
+     SECURITY ROUND'S M-1, AND THE DEFECT WAS INVISIBLE BY ARITHMETIC. `colours.light.ink` and
+     `colours.light.brand` are THE SAME HEX — `#191C22` — so with the shipped defaults
+     `--color-accent` equals `--color-text`, and this band paints `background:var(--color-text)`
+     while the shared rule above draws `outline:3px solid var(--color-accent)` at
+     `outline-offset:2px` — i.e. OVER the band. Measured: **1.00:1**, on the page's only
+     interactive control, against WCAG 2.2 SC 1.4.11's 3:1. The band's TEXT was fine (16.61:1)
+     and `.cta`'s own fill is re-inverted a line above, so the one thing that disappeared was
+     the focus ring — `§12`'s *"visible focus ring … required on every screen"* and this file's
+     own docblock promise, broken by a colour nobody chose. A tenant who sets their own accent
+     never sees it; it is the DEFAULT that collides. `a{color:var(--color-accent)}` would be
+     ink-on-ink in here too — not reachable today, because only `.cta` can occur inside a hero
+     and `TemplateTotalityTest` pins block markup, so that line is for the next block type.
+     `TemplateContrastTest` is the proof, and it reads the ratio rather than the colours.
+
+     ⚠ `14rem` IN `.tile-grid`'s `minmax()` IS A LAYOUT CONSTANT TOO — the `§11` QA round's
+     L-2, and it is declared here rather than left for the next reader to wonder about. It is
+     the measure of one tile, copied from the shared `.grid` rule's own `minmax(14rem,1fr)`
+     above so the two grids agree; `grid-template-columns` is judged by no scanner rule, and
+     `§1`'s ruling of 2026-11-09 is the authority: *"a one-off layout dimension is a layout
+     constant and lives with the layout."*
+
      ⚠ THE TWO `@media (min-width:48rem)` BREAKPOINTS ARE LAYOUT CONSTANTS, AND `§1`'s RULING
      OF 2026-11-09 IS THE AUTHORITY RATHER THAN A HABIT: *"a value the system repeats is a
      token; a one-off layout dimension is a layout constant and lives with the layout."* There
@@ -208,6 +230,8 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 .ember-hero{background:var(--color-text);color:var(--color-background);text-align:center;padding-inline:calc(var(--space-section)/4);border-radius:var(--radius-large)}
 .ember-hero section{border-bottom:0}
 .ember-hero .cta{background:var(--color-background);color:var(--color-text)}
+.ember-hero a{color:var(--color-background)}
+.ember-hero a:focus-visible,.ember-hero button:focus-visible{outline-color:var(--color-background)}
 .ember-hero img{margin-inline:auto}
 .ember-column{text-align:center}
 .ember-column .card,.ember-column address,.ember-column table{text-align:start}

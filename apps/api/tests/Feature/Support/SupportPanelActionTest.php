@@ -42,7 +42,16 @@ function provisionedRestaurant(object $test, ProvisioningStatus $status = Provis
     /** @var string $tenantId */
     $tenantId = (function (): string {
         /** @var TestCase $this */
-        return $this->makeTenant(slug: 'panel-'.substr(str_replace('-', '', (string) Str::uuid7()), 0, 20));
+        /*
+         * ⚠ THE WHOLE ID, AND IT WAS A 20-HEX PREFIX — the `§11` QA round's L-4 on
+         * `QRPAGER-46`, found as an intermittent red at HEAD: *"it releases it from the row it
+         * was taken on"* failed with `23505 tenants_slug_unique` in one full-suite run and
+         * passed in the next. The reason is written out TEN LINES BELOW this one, for the
+         * sibling slug on `tenant_provisionings`, and it applies identically here: Laravel's
+         * uuid7 keeps its first 25 hex digits stable inside one millisecond, so two tenants
+         * made back to back in one case collide on a prefix. This is the case that makes two.
+         */
+        return $this->makeTenant(slug: 'panel-'.str_replace('-', '', (string) Str::uuid7()));
     })->call($test);
 
     // `owner_email` is NOT NULL on `tenant_provisionings` -- the column the provisioning

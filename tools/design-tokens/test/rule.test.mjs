@@ -22,6 +22,7 @@ import {
   cssFiles,
   isExempt,
   main,
+  missingBaselineFiles,
   readBaseline,
   scanSource,
 } from '../bin/scan-css.mjs'
@@ -275,8 +276,24 @@ describe('the exit-code hazard checker', () => {
 })
 
 describe('the rule exists in one place and both readers see all of it', () => {
-  it('defines exactly the three rules the gate clause names', () => {
-    expect(RULE_IDS).toEqual(['no-raw-color', 'no-raw-spacing', 'no-raw-font-size'])
+  it('defines the three rules the gate clause names, plus the one QRPAGER-46 added', () => {
+    /*
+     * ⚠ FOUR RULE NAMES, THREE ESLINT RULES, AND THE DIFFERENCE IS THE POINT. The gate clause
+     * names three (`no-raw-color`, `no-raw-spacing`, `no-raw-font-size`) and the ESLint plugin
+     * still exposes exactly those: a `var()` fallback is a CSS form that TypeScript cannot
+     * carry, so `no-var-fallback` is `where: 'css'` and has no plugin rule.
+     *
+     * It exists because of the `§11` QA round's H-1 on `QRPAGER-46`: the three above judge the
+     * VALUE of a declaration whose PROPERTY they name, so a fallback on `border-radius`,
+     * `grid-template-columns` or `outline` was read by nothing, and a fallback is where one
+     * token comes to carry two values (`R-268`, live on every published page).
+     */
+    expect(RULE_IDS).toEqual([
+      'no-raw-color',
+      'no-raw-spacing',
+      'no-raw-font-size',
+      'no-var-fallback',
+    ])
     expect(Object.keys(plugin.rules).sort()).toEqual([
       'no-raw-color',
       'no-raw-font-size',
@@ -293,9 +310,11 @@ describe('the rule exists in one place and both readers see all of it', () => {
     // name. The union below GAINED the third reader rather than loosening: without it the
     // two panel patterns would be in the list and applied by nobody, which is exactly the
     // orphan this case exists to refuse.
-    expect(PATTERNS).toHaveLength(13)
+    expect(PATTERNS).toHaveLength(14)
     expect(patternsFor('js')).toHaveLength(8)
-    expect(patternsFor('css')).toHaveLength(8)
+    // ⚠ NINE FOR THE CSS READER AT `QRPAGER-46`: `no-var-fallback` is CSS-only, for the reason
+    // the rule-name case above gives.
+    expect(patternsFor('css')).toHaveLength(9)
     expect(patternsFor('panel')).toHaveLength(7)
 
     const applied = new Set([
@@ -776,17 +795,22 @@ describe('CSS out of a Blade template — R-267', () => {
       'landing-blade-literals.blade.php',
     )
 
-    expect(findings.length).toBe(7)
+    expect(findings.length).toBe(9)
 
     const perRule = {}
     for (const f of findings) perRule[f.rule] = (perRule[f.rule] ?? 0) + 1
 
     expect(perRule).toEqual({
-      // `#ff00ff`, `teal;` and `rgba(…)` — a hex, a named colour and a colour function.
-      'no-raw-color': 3,
+      // `#ff00ff`, `teal;`, `rgba(…)` — a hex, a named colour, a colour function — and the
+      // `#ff00ff` on the same line as a directive, which the §11 security round's M-2 showed
+      // the first blanker swallowing whole.
+      'no-raw-color': 4,
       // `13px` in the plain block, `11px` inside an `@if` branch, `19px` inside `@media`.
       'no-raw-spacing': 3,
       'no-raw-font-size': 1,
+      // `border-radius:var(--radius-large,2px)` — the §11 QA round's H-1: a fallback on a
+      // property no value guard judges.
+      'no-var-fallback': 1,
     })
 
     expect([...new Set(findings.map((f) => f.id))].sort()).toEqual([
@@ -795,6 +819,7 @@ describe('CSS out of a Blade template — R-267', () => {
       'css-spacing-declaration',
       'hex',
       'named-color',
+      'var-fallback',
     ])
 
     /*
@@ -816,6 +841,66 @@ describe('CSS out of a Blade template — R-267', () => {
     // The `@media` rule's own padding IS reported, which is the half a blanket `@word`
     // blanker would have lost.
     expect(lines).toContain(lineOf('.in-media{padding:19px}'))
+
+    /*
+     * ⚠ AND THE TWO SHAPES THE `§11` ROUND FOUND INVISIBLE, EACH BY LINE. H-1: a `var()`
+     * fallback on `border-radius`, which no value guard judges, because those guards read the
+     * VALUE of a spacing, colour or font-size declaration. M-2: a real rule sharing its line
+     * with `@if (…)`, which the first blanker masked away entirely because its argument group
+     * was greedy to the last `)` on the line.
+     */
+    expect(lines).toContain(lineOf('.bad-fallback{border-radius:var(--radius-large,2px)}'))
+    expect(lines).toContain(lineOf('.same-line{color:#ff00ff}'))
+
+    const sameLine = findings.find((f) => f.line === lineOf('.same-line{color:#ff00ff}'))
+
+    expect(sameLine?.match).toBe('#ff00ff')
+  })
+
+  it('blanks a directive’s argument to the MATCHING paren, not to the line’s last one', () => {
+    /*
+     * The `§11` security round's M-2, as a property rather than as one fixture line: whether
+     * CSS is read must not depend on whether a `)` appears later on the same line. The three
+     * inputs below are the reviewer's own, measured against the first blanker.
+     */
+    const read = (css) => scanSource(maskBladeCss(`<style>\n${css}\n</style>`), 'x.blade.php')
+
+    expect(
+      read('@if ($t) .x{color:#ff00ff;background:var(--color-text)}').map((f) => f.id),
+    ).toEqual(['hex'])
+    expect(read('@if ($t) .x{color:#ff00ff}').map((f) => f.id)).toEqual(['hex'])
+    expect(read('@elseif ($t) .y{padding:13px;gap:var(--a)}').map((f) => f.id)).toEqual([
+      'css-spacing-declaration',
+    ])
+
+    // And the ordinary multi-line form still blanks the directive itself: the condition's own
+    // text is PHP and must not be read as CSS.
+    expect(read('@if ($t === 13) .z{padding:var(--space-section)}')).toEqual([])
+  })
+
+  it('refuses a run that never reached a file the baseline has debt for', () => {
+    /*
+     * The `§11` security round's M-4. The Blade floor counts to ONE and two templates qualify,
+     * so a scanned set that kept `errors/panel-problem.blade.php` and lost the landing page
+     * reported `0 findings, 0 stale, 0 excused` with no message — `R-267`'s own condition, with
+     * the gate printing a reassuring count. The floor is derived from the record now.
+     */
+    const baseline = readBaseline()
+    const landing = 'apps/api/resources/views/landing/page.blade.php'
+
+    expect(missingBaselineFiles(new Set(baseline.entries.map((e) => e.file)), baseline)).toEqual([])
+    expect(
+      missingBaselineFiles(
+        new Set(['apps/api/resources/views/errors/panel-problem.blade.php']),
+        baseline,
+      ),
+    ).toEqual([landing])
+
+    // And the silence it used to produce, named: with that file unscanned, every frozen
+    // finding and every entry evaporates — which is why a count cannot be the floor.
+    const { reported, stale, excused } = applyBaseline([], baseline, new Set())
+
+    expect({ reported, stale, excused }).toEqual({ reported: [], stale: [], excused: 0 })
   })
 
   it('is not fooled by a style tag quoted inside a Blade comment', () => {

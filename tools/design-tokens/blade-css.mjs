@@ -167,10 +167,63 @@ export function maskBladeCss(source) {
 
   //    Then the remaining directives, by NAME, with their parenthesised argument if present.
   //    `@media` and the other CSS at-rules are not in the list and survive.
-  const directive = new RegExp(`@(?:${BLADE_DIRECTIVES.join('|')})\\b(\\s*\\([^\\n]*\\))?`, 'gi')
-  masked = masked.replace(directive, blank)
+  masked = blankDirectives(masked)
 
   return masked
+}
+
+/**
+ * Blank every Blade directive and its argument, stopping at the MATCHING parenthesis.
+ *
+ * ⚠ THE FIRST VERSION USED ONE REGEX WITH `(\s*\([^\n]*\))?`, WHICH IS GREEDY TO THE LAST
+ * `)` ON THE LINE — the `§11` security round's M-2. Measured by the reviewer:
+ *
+ *     @if ($t) .x{color:#ff00ff;background:var(--color-text)}   ->  nothing reported
+ *     @if ($t) .x{color:#ff00ff}                                ->  reported
+ *
+ * so whether a rule was scanned at all depended on whether a `)` happened to appear later on
+ * the same line. The control installed to close `R-267` could be evaded by one space, silently.
+ * `page.blade.php` was not affected — no line there is partially masked — but this file is
+ * written at the edge of that formatting (`--}}@if`, and `@endif@if` was tried and recorded),
+ * so the next person compacting a branch was one keystroke away from an unscanned rule.
+ *
+ * Balanced counting also stops at a newline: no Blade directive in this project spans lines
+ * inside a `<style>` element, and a run-away scan would blank the rest of the stylesheet.
+ */
+function blankDirectives(text) {
+  const names = new RegExp(`@(?:${BLADE_DIRECTIVES.join('|')})\\b`, 'gi')
+  let out = text
+  let match
+
+  while ((match = names.exec(out)) !== null) {
+    let end = match.index + match[0].length
+    let cursor = end
+
+    while (cursor < out.length && (out[cursor] === ' ' || out[cursor] === '\t')) cursor++
+
+    if (out[cursor] === '(') {
+      let depth = 0
+
+      for (; cursor < out.length; cursor++) {
+        if (out[cursor] === '\n') break
+
+        if (out[cursor] === '(') depth++
+        else if (out[cursor] === ')') {
+          depth--
+
+          if (depth === 0) {
+            end = cursor + 1
+            break
+          }
+        }
+      }
+    }
+
+    out = out.slice(0, match.index) + blank(out.slice(match.index, end)) + out.slice(end)
+    names.lastIndex = end
+  }
+
+  return out
 }
 
 /**
