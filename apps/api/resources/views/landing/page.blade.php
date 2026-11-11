@@ -131,9 +131,93 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
      -- no <style, no CSS rule"*, scanned over `app/` and `routes/`. A `match` returning CSS
      from `LandingTemplate` tripped `[css-rule-set]` twice, correctly: the rule exists so CSS
      lives in CSS. So the arrangement's rules sit beside the page's own, behind one `@if`.
-     Logical properties only, like everything else here, so RTL needs no second rule. --}}@if ($template === \App\Domain\Landing\LandingTemplate::Editorial)
+     Logical properties only, like everything else here, so RTL needs no second rule.
+
+     ⚠⚠ `QRPAGER-46` MADE THIS AN `@if`/`@elseif` CHAIN, AND `@elseif` IS NOT A STYLE CHOICE:
+     `@endif@if (…)` DOES NOT COMPILE. Blade's statement pattern is anchored with `\B`, so a
+     directive preceded by a WORD character is left as literal text — `@endif@if` produced
+     *"syntax error, unexpected token endif"* on the first run, with the second `@if` sitting
+     uncompiled in the cached view. A Blade comment between them does not help either, because
+     `compileComments()` runs BEFORE `compileStatements()` (`BladeCompiler::compileString`), so
+     by the time statements are compiled the two directives are adjacent again. `@elseif` at
+     the start of a line has a newline before it, and the arrangements are mutually exclusive
+     anyway — which is what the chain now says.
+
+     ⚠ AND FOR `classic` THE WHOLE CHAIN EMITS NOTHING, including every newline inside it,
+     which is the property `tests/Fixtures/landing/pre-template-page.html` holds to the byte.
+
+     ⚠ NOT ONE `var()` FALLBACK IN THE THREE NEW BRANCHES, which is `QRPAGER-46`'s stated
+     invariant rather than a house style. A fallback literal is a SECOND default competing with
+     the token layer, and `R-268` is what that costs: `--color-surface` falls back to `#f5f5f5`
+     in `.band` below and to `#f6f6f6` in `.card` above, live on every published page, and
+     NEITHER is a Rail value. The three branches reference tokens only, and
+     `LandingTemplate::resolvesEveryToken()` is true for exactly those three, so `ThemeDefaults`
+     has already put every one of those tokens in the `style` attribute — there is nothing for a
+     fallback to do. `TemplateTokenSetTest` asserts the two sets are EQUAL in both directions.
+
+     ⚠⚠ AND EVERY VALUE IN THE THREE BRANCHES COMES FROM THE **TWELVE LANDING TOKENS**, NOT
+     FROM THE PRODUCT'S SCALE — WHICH `TemplateTokenSetTest` CAUGHT ON THE FIRST RUN. The
+     branches were first written with `var(--space-24)`, `var(--space-32)` and `var(--space-96)`
+     from `packages/tokens/generated/tokens.css`, which reads like the right thing to do and is
+     not: `§4b` B3 traced this page's whole chain and it links NO stylesheet — the only custom
+     properties it ever carries are the twelve `ThemeStylesheet` writes into the `style`
+     attribute. Those three references resolved to nothing, which with no fallback paints
+     nothing, and the equality case named all three in one failure (14 referenced against 12
+     emitted). A smaller rhythm than `--space-section` is therefore `calc()` over it, which is
+     a composition of a decision already taken rather than a new magnitude.
+
+     ⚠ THE EMBER BAND IS A PANEL INSIDE THE MEASURE RATHER THAN FULL-BLEED, for the same
+     reason and it is a real loss against the artboard. Breaking out of `main`'s padding needs
+     that padding's own value, which is the literal `1rem` in the shared rules above — frozen
+     by the baseline, not a token — and `margin-inline:calc(50% - 50vw)` carries a magnitude
+     the scanner refuses. Inventing a fourth spacing literal here would be `R-268` with this
+     ticket's name on it.
+
+     ⚠ THE TWO `@media (min-width:48rem)` BREAKPOINTS ARE LAYOUT CONSTANTS, AND `§1`'s RULING
+     OF 2026-11-09 IS THE AUTHORITY RATHER THAN A HABIT: *"a value the system repeats is a
+     token; a one-off layout dimension is a layout constant and lives with the layout."* There
+     is no breakpoint in `packages/tokens` — `config/design-tokens.php` carries colours, space,
+     radius, size, motion, focus, elevation and fonts, and nothing else — so a token for one
+     would be a token-layer change this ticket is not scoped to make. The value appears twice,
+     in one file, for one decision: *below this width the two-up regions stack*. The scanner
+     does not read a media-query condition, which its own spacing pattern says in as many
+     words, so this is a stated decision and not a value that slipped past a check.
+
+     ⚠ `display:contents` ON `.tile-grid>section` COSTS NO LANDMARK, which is worth stating
+     because it usually does. A `<section>` is exposed as `role="region"` only when it has an
+     accessible name, and `landing.block`'s sections carry none — no `aria-label`, no
+     `aria-labelledby` — so there is no landmark for `display:contents` to remove. `§12`'s
+     accessibility bar applies to this page in full and this is the one rule here that could
+     have touched it.
+
+     ⚠ THE SIXTEEN FALLBACKS ABOVE ARE FROZEN, NOT FIXED — `tools/design-tokens/landing-baseline.json`,
+     dated, by file and line. Muhammad's instruction for this ticket: *"Do NOT fix the pre-existing
+     literals in the old templates … Forcing a rewrite of delivered work is R-250."* --}}@if ($template === \App\Domain\Landing\LandingTemplate::Editorial)
 .band{background:var(--color-surface,#f5f5f5);padding-block:var(--space-section,3rem);padding-inline:1rem;margin-inline:-1rem}
 .wide{margin-inline:-1rem}
+@elseif ($template === \App\Domain\Landing\LandingTemplate::Rail)
+.rail>section+section,.rail>.rail-find{border-top:1px solid var(--color-muted)}
+.rail>section,.rail-find>section{border-bottom:0}
+.rail .card{background:none;border-radius:0;padding-inline:0}
+.rail .grid{display:block}
+.rail .grid>*+*{margin-block-start:calc(var(--space-section)/3)}
+.rail-find{padding-block:var(--space-section)}
+.rail-find>section{padding-block:0}
+@media (min-width:48rem){.rail-find{display:flex;gap:calc(var(--space-section)/2)}.rail-find>section{flex:1}}
+@elseif ($template === \App\Domain\Landing\LandingTemplate::Ember)
+.ember-hero{background:var(--color-text);color:var(--color-background);text-align:center;padding-inline:calc(var(--space-section)/4);border-radius:var(--radius-large)}
+.ember-hero section{border-bottom:0}
+.ember-hero .cta{background:var(--color-background);color:var(--color-text)}
+.ember-hero img{margin-inline:auto}
+.ember-column{text-align:center}
+.ember-column .card,.ember-column address,.ember-column table{text-align:start}
+@media (min-width:48rem){.ember-column{padding-inline:var(--space-section)}}
+@elseif ($template === \App\Domain\Landing\LandingTemplate::Tile)
+.tile-grid{display:grid;gap:calc(var(--space-section)/4);grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))}
+.tile-grid>section,.tile-grid .grid{display:contents}
+.tile-grid>section>h2{grid-column:1/-1}
+.tile-grid .card,.tile-grid figure{margin:0}
+.tile-grid img{aspect-ratio:1/1;object-fit:cover;width:100%}
 @endif</style>
 </head>
 <body>

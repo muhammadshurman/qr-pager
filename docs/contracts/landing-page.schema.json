@@ -578,7 +578,10 @@
             "type": "string",
             "enum": [
                 "classic",
-                "editorial"
+                "editorial",
+                "rail",
+                "ember",
+                "tile"
             ],
             "default": "classic",
             "description": "How the blocks are arranged. Absent means classic, which is the arrangement every page published before this member existed already used."

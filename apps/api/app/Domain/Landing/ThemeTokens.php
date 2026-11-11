@@ -61,6 +61,55 @@ final class ThemeTokens
     ];
 
     /**
+     * Where each token's DEFAULT value comes from in the generated token layer — `QRPAGER-46`.
+     *
+     * ⚠ IT IS IN THIS FILE BECAUSE `composer guard` RULE 11c PUT IT HERE, and the rule is
+     * right: *"one token list, one emitter."* The map was written in
+     * `App\Features\Landing\ThemeDefaults` and refused with twelve findings —
+     * `[theme-token-copied] names the theme token [color.background]; the list lives only in
+     * app/Domain/Landing/ThemeTokens.php` — which is the same refusal `QRPAGER-33` got for a
+     * `match` returning CSS rules. A second file spelling these twelve names is a second list.
+     *
+     * ⚠ AND IT CARRIES PATHS, NEVER VALUES, so this class still holds no colour and no length.
+     * `apps/api/config/design-tokens.php` is the single source for those — generated from
+     * `packages/tokens/src/source.ts` and byte-diffed by `pnpm tokens:check` — and
+     * `ThemeDefaults` resolves a path to a value, lower-casing the hex that `accepts()` takes
+     * in lower case only. `stack.*` is the one non-config source: a FontChoice's contract
+     * value is a key of `STACKS`, not a stack.
+     *
+     * ⚠ WHY DEFAULTS EXIST AT ALL. `§4b` B1 asked for each token's current value and found
+     * there is none: this list is an allow-list of names against kinds, and a token the tenant
+     * has not set is absent from the stored map — so until `QRPAGER-46` the default was the
+     * `var()` FALLBACK LITERAL in the landing Blade, which is `R-267` (nothing scanned that
+     * file) and `R-268` (one token, two greys, live on every published page). The three new
+     * arrangements carry no fallback, so a token they reference must arrive with a value.
+     *
+     * ⚠ `radius.large` RESOLVES SMALLER THAN `radius.small`, which is named rather than fixed.
+     * `QRPAGER-36` made radius two ROLES — surface `2px`, control `4px` — and
+     * `docs/design/public/rail.html` carries `2px` on panels and cards, `4px` on buttons. The
+     * landing contract's two radii are named for SIZE and used for ROLES: the small one styles
+     * images and the call to action, the large one styles `.card`. Mapping each to the role it
+     * is used for inverts the names; inventing a third value would be `R-268` again, and
+     * renaming these two is a contract change `QRPAGER-46` is not allowed to make.
+     *
+     * @var array<string, string>
+     */
+    public const DEFAULT_SOURCES = [
+        'color.background' => 'colours.light.paper',
+        'color.surface' => 'colours.light.surface',
+        'color.text' => 'colours.light.ink',
+        'color.muted' => 'colours.light.ink-mid',
+        'color.accent' => 'colours.light.brand',
+        'color.accent_text' => 'colours.light.paper',
+        'font.heading' => 'stack.system',
+        'font.body' => 'stack.system',
+        'radius.small' => 'radius.control',
+        'radius.large' => 'radius.surface',
+        'space.section' => 'space.64',
+        'size.heading' => 'size.64',
+    ];
+
+    /**
      * The four font choices, and the only stacks that can ever be emitted.
      *
      * No family here needs quoting, deliberately: a quoted family would put a `"` into a

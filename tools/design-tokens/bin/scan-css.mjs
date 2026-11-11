@@ -9,13 +9,15 @@
  * Exit 1 on any finding, with file:line:column and the matched text, so a failure names
  * what to change rather than that something is wrong somewhere.
  */
-import { lstatSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patternsFor, valueIsAcceptable } from '../patterns.mjs'
+import { hasStyleBlock, maskBladeCss } from '../blade-css.mjs'
 
 const ROOT = join(fileURLToPath(new URL('../../..', import.meta.url)))
 const CSS_PATTERNS = patternsFor('css')
+const BASELINE = join(ROOT, 'tools', 'design-tokens', 'landing-baseline.json')
 
 /**
  * Paths this rule does not apply to, each with the reason. An exemption without a reason is
@@ -119,6 +121,95 @@ export function cssFiles(dir, found = []) {
   return found
 }
 
+/**
+ * Every Blade template that carries a `<style>` element — `R-267`, closed at `QRPAGER-46`.
+ *
+ * ⚠ IT COLLECTS TEMPLATES WITH CSS IN THEM, NOT TEMPLATES. This repository has hundreds of
+ * Blade files and one of them has a stylesheet; a walk that returned all of them would make
+ * the count below meaningless and the FLOOR check unable to tell a broken walk from a tree
+ * with no CSS in its templates. `hasStyleBlock()` reads the file, which is the same cost the
+ * scan pays a line later.
+ */
+export function bladeFiles(dir, found = []) {
+  if (isExempt(dir)) return found
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry)
+    if (isExempt(full)) continue
+    const st = lstatSync(full)
+    if (st.isSymbolicLink()) continue
+    if (st.isDirectory()) bladeFiles(full, found)
+    else if (/\.blade\.php$/i.test(entry) && hasStyleBlock(readFileSync(full, 'utf8'))) {
+      found.push(full)
+    }
+  }
+  return found
+}
+
+/**
+ * The frozen pre-existing literals: `{file, id, match} -> how many are excused`.
+ *
+ * ⚠ A FREEZE, NOT AN EXEMPTION, AND THE DIFFERENCE IS THE COUNT. `landing-baseline.json`
+ * carries its own reasoning and Muhammad's instruction verbatim; what matters here is that an
+ * entry excuses EXACTLY as many findings as it recorded on 2026-11-11, so a seventeenth copy
+ * of an existing literal in the same file is a new finding. An absent baseline file is not an
+ * error — nothing else in this repository has one — and a baseline that excuses nothing is
+ * reported, because an entry that matches nothing is a claim of debt that no longer exists.
+ */
+export function readBaseline(path = BASELINE) {
+  if (!existsSync(path)) return { entries: [], budget: new Map() }
+
+  /** @type {{entries: Array<{file: string, id: string, match: string, count: number}>}} */
+  const doc = JSON.parse(readFileSync(path, 'utf8'))
+  const budget = new Map()
+
+  for (const entry of doc.entries ?? []) {
+    budget.set([entry.file, entry.id, entry.match].join('\u0000'), entry.count)
+  }
+
+  return { entries: doc.entries ?? [], budget }
+}
+
+/**
+ * Split findings into the ones the baseline excuses and the ones it does not.
+ *
+ * Returns the unexcused findings and the baseline entries that matched nothing, so `main()`
+ * can report both: a new literal, and a frozen literal that has since been fixed.
+ */
+export function applyBaseline(findings, baseline, scannedFiles = null) {
+  const remaining = new Map(baseline.budget)
+  const used = new Set()
+  const reported = []
+
+  for (const finding of findings) {
+    const key = [finding.file, finding.id, finding.match].join('\u0000')
+    const left = remaining.get(key) ?? 0
+
+    if (left > 0) {
+      remaining.set(key, left - 1)
+      used.add(key)
+      continue
+    }
+
+    reported.push(finding)
+  }
+
+  /*
+   * ⚠ AN ENTRY IS ONLY STALE IF ITS FILE WAS ACTUALLY SCANNED, and the first version left
+   * that out: `pnpm lint` on one stylesheet reported every landing-page entry as stale and
+   * exited 1, because nothing had read the template they are about. Two committed cases
+   * failed on it — the explicit-list ones — which is the guard working for the right reason.
+   */
+  const stale = baseline.entries.filter((entry) => {
+    if (scannedFiles !== null && !scannedFiles.has(entry.file)) return false
+
+    const key = [entry.file, entry.id, entry.match].join('\u0000')
+
+    return (remaining.get(key) ?? 0) > 0 || !used.has(key)
+  })
+
+  return { reported, stale, excused: findings.length - reported.length }
+}
+
 /** Strip /* … *\/ comments, so a hex in a comment is not a finding. */
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
@@ -155,7 +246,16 @@ export function scanPaths(paths) {
   const findings = []
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
-    findings.push(...scanSource(source, relative(ROOT, path).split(sep).join('/')))
+    const label = relative(ROOT, path).split(sep).join('/')
+
+    /*
+     * ⚠ A BLADE TEMPLATE IS MASKED, NEVER EXTRACTED, so the line and column a finding
+     * carries are the TEMPLATE's — `R-267`'s own prescription: *"maps offsets back to the
+     * template's own line numbers so a finding names a real line."* `maskBladeCss` returns a
+     * string of the same length with everything that is not CSS replaced by spaces, so
+     * `scanSource` does the arithmetic and there is no offset to get wrong.
+     */
+    findings.push(...scanSource(/\.blade\.php$/i.test(path) ? maskBladeCss(source) : source, label))
   }
   return findings
 }
@@ -172,7 +272,7 @@ export function scanPaths(paths) {
  * that proof is about the script's own root resolution.
  */
 export function main(explicit = []) {
-  const targets = explicit.length > 0 ? explicit : cssFiles(ROOT)
+  const targets = explicit.length > 0 ? explicit : [...cssFiles(ROOT), ...bladeFiles(ROOT)]
 
   /**
    * ⚠ AN EMPTY TARGET LIST IS A BROKEN SCANNER, NOT A CLEAN TREE. This printed
@@ -199,16 +299,54 @@ export function main(explicit = []) {
     return 1
   }
 
-  const findings = scanPaths(targets)
+  /*
+   * ⚠ AND THE SAME FLOOR FOR THE BLADE HALF, SEPARATELY, BECAUSE A ZERO HERE IS INVISIBLE IN
+   * THE TOTAL. `R-267` was open for a day with three scanners reporting clean; a Blade walk
+   * that silently found nothing — a renamed directory, an exemption that grew — would restore
+   * exactly that condition while the CSS count kept the line above green. One template in this
+   * repository carries a stylesheet, so the floor is one.
+   */
+  const blades = targets.filter((path) => /\.blade\.php$/i.test(path))
 
-  if (findings.length === 0) {
-    console.log(`design tokens: ${targets.length} CSS file(s) scanned, no hard-coded values.`)
+  if (explicit.length === 0 && blades.length < 1) {
+    console.error(
+      'design tokens: the walk found NO Blade template carrying a <style> element. One does ' +
+        '(apps/api/resources/views/landing/page.blade.php — the only surface a customer sees, ' +
+        'R-267), so this is a FAILURE and not a clean tree.',
+    )
+    return 1
+  }
+
+  const baseline = readBaseline()
+  const scanned = new Set(targets.map((path) => relative(ROOT, path).split(sep).join('/')))
+  const { reported, stale, excused } = applyBaseline(scanPaths(targets), baseline, scanned)
+
+  for (const entry of stale) {
+    console.error(
+      `${entry.file}  BASELINE  the frozen literal ${JSON.stringify(entry.match)} ` +
+        `(${entry.id}) is no longer there, or appears fewer than ${String(entry.count)} time(s). ` +
+        'It has been fixed — remove the entry from tools/design-tokens/landing-baseline.json ' +
+        'rather than leaving it to claim debt that no longer exists.',
+    )
+  }
+
+  if (reported.length === 0 && stale.length === 0) {
+    console.log(
+      `design tokens: ${targets.length} file(s) scanned (${blades.length} Blade template(s) ` +
+        `with a <style> element), no hard-coded values` +
+        (excused > 0 ? `; ${excused} pre-existing literal(s) frozen by the dated baseline.` : '.'),
+    )
     return 0
   }
-  for (const f of findings) {
+  for (const f of reported) {
     console.error(`${f.file}:${f.line}:${f.column}  ${f.rule}  ${f.message}`)
   }
-  console.error(`\ndesign tokens: ${findings.length} finding(s) in ${targets.length} file(s).`)
+  console.error(
+    `\ndesign tokens: ${reported.length} finding(s) in ${targets.length} file(s)` +
+      (stale.length > 0 ? ` and ${stale.length} stale baseline entry(ies)` : '') +
+      `. ${excused} pre-existing literal(s) are frozen by the dated baseline and are not ` +
+      'among them.',
+  )
   return 1
 }
 

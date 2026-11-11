@@ -52,7 +52,7 @@ final class LandingRenderer
             // own h1 is visible or visually hidden -- never whether it EXISTS. See the
             // template: exactly one h1 for every possible document (§11 QA review).
             'heroFirst' => ($document->toArray()['blocks'][0]['type'] ?? null) === 'hero',
-            'themeStyle' => ThemeStylesheet::declarations($document->theme),
+            'themeStyle' => ThemeStylesheet::declarations($document->theme, $document->template),
 
             // QRPAGER-33. The arrangement, from the document rather than from the tenant --
             // which is why this feature adds NO database read anywhere: `template` is a

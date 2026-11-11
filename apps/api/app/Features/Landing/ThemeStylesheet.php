@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Landing;
 
+use App\Domain\Landing\LandingTemplate;
 use App\Domain\Landing\ThemeTokens;
 
 /**
@@ -44,14 +45,37 @@ final class ThemeStylesheet
     /**
      * The declaration list for a validated theme map.
      *
-     * Only tokens the tenant actually set are emitted. A token they left alone falls
-     * through to the default in the template's own rules, which is what makes the theme
-     * an OVERRIDE rather than a replacement.
+     * Only tokens the tenant actually set are emitted — unless the ARRANGEMENT resolves
+     * every token, in which case the absent ones are filled from the generated token layer
+     * before anything is emitted. See `$template` below.
      *
      * @param  array<string, string>  $theme
+     * @param  LandingTemplate|null  $template  the arrangement this page is rendered in, or
+     *                                          null for a caller that has no document —
+     *                                          which behaves exactly as before `QRPAGER-46`
+     *
+     * ⚠ THE ARRANGEMENT DECIDES WHETHER DEFAULTS ARE EMITTED, AND IT IS NOT A STYLE CHOICE.
+     *
+     * `QRPAGER-46`'s invariant requires the three new arrangements to reference no token the
+     * resolver does not emit, because their rules carry **no `var()` fallback literal** —
+     * `R-268` is what a fallback literal costs (one token, two greys, live). So for those
+     * three, every token gets a value: the tenant's if they set one, otherwise
+     * `ThemeDefaults`'.
+     *
+     * `classic` and `editorial` must NOT gain that, and the reason is measured rather than
+     * aesthetic: `classic` reproduces `tests/Fixtures/landing/pre-template-page.html` BYTE
+     * FOR BYTE (`QRPAGER-33` invariant clause 2 — a tenant who published yesterday and
+     * republishes today gets the same page), and a twelve-property `style` attribute where
+     * that capture has two changes every page published before 2026-11-03. Their rules keep
+     * the fallbacks they already have, frozen by `tools/design-tokens/landing-baseline.json`
+     * rather than rewritten, because `QRPAGER-46` forbids rewriting delivered work (`R-250`).
      */
-    public static function declarations(array $theme): string
+    public static function declarations(array $theme, ?LandingTemplate $template = null): string
     {
+        if ($template !== null && $template->resolvesEveryToken()) {
+            $theme = ThemeDefaults::fill($theme);
+        }
+
         $declarations = [];
 
         foreach ($theme as $name => $value) {
