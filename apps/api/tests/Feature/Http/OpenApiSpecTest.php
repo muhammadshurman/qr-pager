@@ -256,7 +256,44 @@ it('exports the same bytes every time, so the diff means something', function ()
 
     for ($i = 0; $i < 3; $i++) {
         $path = tempnam(sys_get_temp_dir(), 'qrpager-spec');
-        Process::path(base_path())->run('php artisan scramble:export --path='.escapeshellarg((string) $path));
+
+        /*
+         * ⚠ AN EXPLICIT DEADLINE, BECAUSE THE IMPLICIT ONE IS 60 SECONDS AND NOBODY CHOSE IT.
+         * Found 2026-11-11 by `QRPAGER-46`'s `bin/fresh-clone-proof`, which went red here on a
+         * loaded host: `ProcessTimedOutException` from `Process.php:1247`, 1 failed / 1511
+         * passed, with no `R-191` stall absorbed — so it was reported as a REAL red, correctly,
+         * because this signature is in no flake family. Three sequential `artisan` boots are
+         * seconds when the machine is idle and minutes when a full gate, an e2e stack and a
+         * clone's `composer install` have been running all day.
+         *
+         * ⚠ AND RAISING IT IS NOT `R-248`'s REFUSED MOVE, which is worth saying because that
+         * row forbids exactly this shape elsewhere: *"a longer timeout detects the instrument's
+         * absence more slowly without making it more present."* There the instrument was an
+         * HTTP service whose absence looks like a timeout. Here an absent or broken `artisan`
+         * exits NON-ZERO at once — which the assertion below now reads — so the deadline only
+         * ever covers load, and detection of absence is unaffected.
+         */
+        $result = Process::path(base_path())
+            ->timeout(300)
+            ->run('php artisan scramble:export --path='.escapeshellarg((string) $path));
+
+        /*
+         * ⚠ AND THE EXIT STATUS IS READ, WHICH IT WAS NOT. The previous version discarded the
+         * result: three FAILED exports leave three empty files, `hash_file` returns the same
+         * digest for all three, and `array_unique(...)` has one member — so a generator that
+         * had stopped working entirely passed this case as *"deterministic"*. The non-empty
+         * check is the second half: a zero exit with no bytes written would read the same way.
+         */
+        expect($result->successful())->toBeTrue(
+            'scramble:export failed, so the three hashes below would agree about nothing: '
+            .$result->errorOutput()
+        );
+
+        expect(filesize((string) $path))->toBeGreaterThan(
+            0,
+            'scramble:export wrote no bytes, so an empty file is being hashed three times'
+        );
+
         $hashes[] = hash_file('sha256', (string) $path);
         @unlink((string) $path);
     }
