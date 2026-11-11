@@ -1,4 +1,4 @@
-fresh-clone-proof: test(46): an implicit 60s deadline, and a hash check that could not fail at dad7129
+fresh-clone-proof: test(46): R-301's second instance, which that row predicted by name at 6184492
 
 === clone through file:// so no object is shared
 
@@ -6,7 +6,7 @@ fresh-clone-proof: test(46): an implicit 60s deadline, and a hash check that cou
 no vendor/, no .env, no node_modules — the clone is bare
 
 === the clone's tracked tree is byte-identical to this commit's
-tree 8c73ea23fec0ead3d0682e5dd6e6993c45162c70
+tree e9743ce3a92f074129a8c0df3e6d4daa2966e90d
 
 === composer install, from the repository's own lock file
 host composer cache: present (a cache, not a source — it costs time, not correctness)
@@ -22,8 +22,8 @@ cp .env.example .env · php artisan key:generate · docker compose is already up
 === composer gate, in the clone
 gate: A green line above means apps/api's own gate passed. It is not a prediction of CI.
 
-fresh-clone-proof: PASSED at dad7129
+fresh-clone-proof: PASSED at 6184492
   Tests:    1512 passed (14427 assertions)
-  gate log: /tmp/qrpager-fresh-clone-7ZAx65/gate.log
+  gate log: /tmp/qrpager-fresh-clone-seUgeZ/gate.log
   (clone removed; pass --keep to inspect it)
 EXIT=0
