@@ -68,10 +68,38 @@ it('answers false when the other tenant asks whether an asset exists, with no hi
     expect(withTenant($alpha, fn () => (new TenantMediaReferences($alpha))->has($alphaAsset)))->toBeTrue()
         ->and(withTenant($beta, fn () => (new TenantMediaReferences($beta))->has($alphaAsset)))->toBeFalse();
 
-    // The implementation carries BOTH a tenant_id predicate and the RLS policy. Belt and
-    // braces: with the predicate pointed at alpha from inside beta's scope, the policy
-    // still refuses -- so neither half is load-bearing alone.
-    expect(withTenant($beta, fn () => (new TenantMediaReferences($alpha))->has($alphaAsset)))->toBeFalse();
+    /*
+     * The implementation carries BOTH a tenant_id predicate and the RLS policy, and
+     * neither half is load-bearing alone. ⚠ THE PROOF MOVED AT `QRPAGER-45` AND THE
+     * CLAIM DID NOT.
+     *
+     * This used to read `(new TenantMediaReferences($alpha))->has($alphaAsset)` from
+     * inside beta's scope and expect false — the predicate pointed one way, the policy
+     * refusing anyway. That ticket batched the lookup (one id-set read per instance
+     * instead of one query per reference) and the `§11` security round measured what it
+     * cost: a WARM instance answers from memory, so the policy is no longer consulted on
+     * every call and the old expression proved only that the instance happened to be
+     * cold.
+     *
+     * So the class now REFUSES a mismatch outright rather than returning a value that
+     * looks like a policy decision, and the policy is proven directly below — against
+     * the table, which is where the claim actually lives.
+     */
+    expect(fn () => withTenant($beta, fn () => (new TenantMediaReferences($alpha))->has($alphaAsset)))
+        ->toThrow(LogicException::class);
+
+    // THE POLICY, ON ITS OWN. A predicate pointed at alpha, from inside beta's scope,
+    // against the table itself: RLS returns nothing even though the row exists and the
+    // `where` names it. This is the half the port used to demonstrate.
+    expect(withTenant($beta, fn (): int => DB::table('media_assets')
+        ->where('tenant_id', $alpha)
+        ->where('id', $alphaAsset)
+        ->count()))->toBe(0);
+
+    // ...and the row really is there, so the zero above is the policy and not an absence.
+    expect(withTenant($alpha, fn (): int => DB::table('media_assets')
+        ->where('id', $alphaAsset)
+        ->count()))->toBe(1);
 });
 
 it('refuses a cross-tenant delete in the same words as a delete of nothing', function (): void {

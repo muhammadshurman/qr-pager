@@ -10,6 +10,7 @@ use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\LanguageNotChanged;
 use App\Features\Landing\Panel\HasStudioLocale;
+use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\PublishFailed;
@@ -35,6 +36,7 @@ use Filament\Schemas\Schema;
 class LandingBuilderPage extends Page
 {
     use HasStudioLocale;
+    use KeepsPreviewInStep;
 
     protected string $view = 'studio.builder';
 
@@ -89,6 +91,11 @@ class LandingBuilderPage extends Page
      * It throws rather than returning null, because every caller here is already past
      * canAccess() and a null schema would mean the page did not boot.
      */
+    protected function studioForm(): Schema
+    {
+        return $this->landingForm();
+    }
+
     private function landingForm(): Schema
     {
         $schema = $this->getSchema('form');
@@ -197,6 +204,8 @@ class LandingBuilderPage extends Page
 
             return;
         }
+        // The contract lives in `KeepsPreviewInStep`: forget, then tell the pane.
+        $this->forgetUnsavedPreview($tenantId);
 
         Notification::make()->title(__('studio.notifications.draft_saved'))->success()->send();
     }
@@ -240,6 +249,7 @@ class LandingBuilderPage extends Page
 
             return;
         }
+        $this->forgetUnsavedPreview($tenantId);
 
         Notification::make()
             ->title(__('studio.notifications.published_to', ['hostname' => $published->hostname]))

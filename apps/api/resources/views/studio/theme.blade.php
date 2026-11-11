@@ -9,7 +9,8 @@
 <x-filament-panels::page>
     @include('studio.partials.tabs')
 
-    <div class="studio-layout">
+    <div class="studio-layout"
+         @include('studio.partials.preview-sync')>
         <div class="studio-layout__form">
         <form wire:submit="save" class="space-y-24">
             {{ $this->form }}

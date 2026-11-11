@@ -14,7 +14,8 @@
 <x-filament-panels::page>
     @include('studio.partials.tabs')
 
-    <div class="studio-layout">
+    <div class="studio-layout"
+         @include('studio.partials.preview-sync')>
         <div class="studio-layout__form">
         @php($state = $this->state())
 

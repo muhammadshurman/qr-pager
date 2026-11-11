@@ -7,6 +7,7 @@ namespace App\Features\Landing\Panel\Pages;
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\Panel\HasStudioLocale;
+use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
 use App\Platform\Http\TenantPanelAccess;
@@ -48,6 +49,7 @@ use Filament\Schemas\Schema;
 class ThemePage extends Page
 {
     use HasStudioLocale;
+    use KeepsPreviewInStep;
 
     protected string $view = 'studio.theme';
 
@@ -111,10 +113,24 @@ class ThemePage extends Page
             return;
         }
 
+        /*
+         * ⚠ THIS LINE IS THE REPORTED BUG, AND ITS ABSENCE WAS THE WHOLE OF IT. Without
+         * it the key written while the owner was on the builder tab kept winning over the
+         * draft they had just saved here, so a colour change never reached the preview —
+         * and appeared only when they touched the arrangement control, whose write rebuilds
+         * the document from one flat state and carried the new theme in by accident.
+         */
+        $this->forgetUnsavedPreview($tenantId);
+
         Notification::make()->title(__('studio.notifications.theme_saved'))->success()->send();
     }
 
     /** This page's own form schema, resolved by name, as `LandingBuilderPage` does. */
+    protected function studioForm(): Schema
+    {
+        return $this->themeForm();
+    }
+
     private function themeForm(): Schema
     {
         $schema = $this->getSchema('form');

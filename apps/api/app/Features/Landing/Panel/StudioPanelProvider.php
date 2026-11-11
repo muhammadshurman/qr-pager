@@ -429,9 +429,34 @@ class StudioPanelProvider extends PanelProvider
                 // Named `preview`, not `studio.preview`: Filament prefixes a panel's
                 // routes with `filament.{panel id}.`, so the full names are
                 // `filament.studio.preview` and `filament.studio.preview.asset`.
-                Route::get('preview', PreviewController::class)->name('preview');
+                /*
+                 * ⚠ NO ROUTE-LEVEL RATE LIMIT HERE, AND THERE WAS ONE FOR ONE COMMIT.
+                 * These two routes are metered on the `studio-preview` bucket — the live
+                 * preview is not "a human clicking" — but the SELECTION happens in
+                 * `RateLimit::bucketFor()` via `config('ratelimit.route_buckets')`, not
+                 * here. Doing it here with `withoutMiddleware()` + `->middleware()` moved
+                 * the limiter to the END of the stack, behind `StartSession` and
+                 * `Authenticate`, which left an anonymous flood unmetered AND minting a
+                 * session key per request: Task 6's security H-2 again, measured by the
+                 * `§11` round of 2026-11-11. That class's docblock carries the detail.
+                 */
+                /*
+                 * ⚠ THE SECOND LIMITER, AND ITS LATENESS IS THE POINT. Route middleware is
+                 * APPENDED and then sorted, so this runs AFTER `Authenticate` — which is
+                 * exactly where a tenant resolves and the panel stack's early limiter
+                 * cannot. `§4 › Edge & ops` wants per IP AND per tenant; one instance can
+                 * only ever satisfy one of them from one position, which is what `R-143`
+                 * records for the page routes and what the `§11` round of 2026-11-11 asked
+                 * about here. The early instance counts the IP before a session is minted;
+                 * this one counts the tenant once there is one.
+                 */
+                Route::get('preview', PreviewController::class)
+                    ->name('preview')
+                    ->middleware(RateLimit::class.':studio-preview-tenant');
+
                 Route::get('preview/asset/{asset}', [PreviewController::class, 'asset'])
-                    ->name('preview.asset');
+                    ->name('preview.asset')
+                    ->middleware(RateLimit::class.':studio-preview-asset-tenant');
             });
     }
 }

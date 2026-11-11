@@ -102,6 +102,33 @@ final class LandingPages
     }
 
     /**
+     * Build a document from form input WITHOUT storing it — `QRPAGER-45`'s unsaved preview.
+     *
+     * ⚠ THE SAME GATE AS `saveDraft()`, AND DELIBERATELY NOT A SECOND ONE. Both call
+     * `LandingDocument::fromInput($input, new TenantMediaReferences($tenantId))`, which is
+     * where the schema is enforced AND where a media id belonging to another tenant is
+     * refused. The unsaved preview path reaches the renderer with client-supplied state, so
+     * it is the one path on this feature that could show a tenant an asset it does not own;
+     * routing it through the same static is what stops that, and is why this method exists
+     * here rather than as a `LandingDocument::fromInput()` call at the call site.
+     *
+     * What it does NOT do is touch `landing_pages`. Muhammad's ruling of 2026-11-10 is
+     * explicit that this feature *"writes nothing to Postgres on a keystroke"* and that
+     * `draft` keeps meaning what it means today.
+     *
+     * @param  array<mixed>  $input
+     *
+     * @throws LandingDocumentInvalid when the state does not satisfy the schema
+     */
+    public function validated(string $tenantId, array $input): LandingDocument
+    {
+        return withTenant($tenantId, static fn (): LandingDocument => LandingDocument::fromInput(
+            $input,
+            new TenantMediaReferences($tenantId),
+        ));
+    }
+
+    /**
      * Validate and store a new draft. Publishing is a separate act.
      *
      * @param  array<mixed>  $input
