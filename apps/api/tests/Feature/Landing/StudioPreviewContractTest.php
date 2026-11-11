@@ -3,30 +3,26 @@
 declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
+use App\Features\Landing\LandingPages;
 use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\ThemePage;
-use Filament\Pages\Page;
+use App\Features\Landing\Panel\StudioForm;
+use App\Features\Landing\Panel\StudioPanelProvider;
+use App\Features\Landing\UnsavedPreview;
+use Filament\Panel;
+use Livewire\Livewire;
+use Tests\Support\LandingFixtures;
 
 /*
  * ================================================================================
- * EVERY STUDIO PAGE THAT WRITES THE DRAFT KEEPS THE PREVIEW IN STEP
+ * EVERY STUDIO PAGE THAT CAN SAVE KEEPS THE PREVIEW IN STEP
  * ================================================================================
  *
- * `QRPAGER-45` was REJECTED on delivery, and this file is the shape of the fix rather than
- * the fix itself.
- *
- * The symptom the owner reported: a colour changed on `الثيم` and SAVED did not reach the
- * preview, and appeared only when he clicked the arrangement control on the builder page.
- * The cause was not subtle — `previewChanged()` and the `forget()` calls lived on
- * `LandingBuilderPage` alone, because the invariant the ticket was built against named only
- * builder-page controls: *"changing the arrangement, or editing a block field"*. The studio
- * has a SECOND page that writes the same document, and it was in neither the invariant nor
- * a single test.
- *
- * ⚠ SO A PER-PAGE FIX IS THE SHAPE THAT JUST FAILED. Muhammad, 2026-11-11: *"fix at the
- * SHARED level… and a test asserts that EVERY studio page does."* The contract is
- * `KeepsPreviewInStep`; this file is the thing that notices when a page does not have it.
+ * `QRPAGER-45` was REJECTED on delivery: a colour changed on `الثيم` and SAVED did not reach
+ * the preview, because `previewChanged()` and the `forget()` calls lived on
+ * `LandingBuilderPage` alone — the ticket's invariant named only builder-page controls and
+ * the studio's second document-writing page was in neither it nor a test.
  *
  * THE AMENDED INVARIANT, which replaces the one the ticket shipped against:
  *
@@ -34,137 +30,132 @@ use Filament\Pages\Page;
  *   and no page refresh; and after a save on any studio page, the preview and the stored
  *   draft agree.
  *
- * The second clause is the one the bug violated and the one nothing tested.
+ * ⚠ THIS FILE IS THE GUARD, AND ITS FIRST VERSION COULD BE EVADED. It globbed
+ * `Panel/Pages/*.php` while claiming to derive from the panel, and it decided "writes the
+ * draft" with `str_contains($source, 'saveDraft(')`. Measured by the §11 round: a `Page`
+ * subclass registered from `Panel/Screens/`, calling `saveDraft()` with no trait and no
+ * partial, left all four cases GREEN — and moving a save body into a trait, or a forget
+ * into an unreachable method, evaded it in the other direction.
+ *
+ * So: the page set comes from the PANEL (`StudioLocalizationTest` already does this), and
+ * the contract is DRIVEN rather than grepped.
  */
 
 /**
- * Every page class the studio panel registers.
- *
- * ⚠ DERIVED FROM THE PANEL, NEVER LISTED. A hand-written list is a snapshot, and a snapshot
- * is exactly how the theme page came to be outside this contract — `PanelRoutes::chrome()`
- * already derives the route set structurally and `PanelTargetTest` learned the same lesson
- * the same way (`§11` QA M-4, "a seventh chrome route would have been invisible").
+ * Every page the studio panel registers, from the panel itself.
  *
  * @return list<class-string>
  */
-function studioPageClasses(): array
+function previewContractPages(): array
 {
-    $pages = [];
-
-    foreach (glob(app_path('Features/Landing/Panel/Pages/*.php')) ?: [] as $file) {
-        $class = 'App\\Features\\Landing\\Panel\\Pages\\'.basename($file, '.php');
-
-        if (! class_exists($class) || ! is_subclass_of($class, Page::class)) {
-            continue;
-        }
-
-        $pages[] = $class;
-    }
+    /** @var list<class-string> $pages */
+    $pages = array_values((new StudioPanelProvider(app()))->panel(Panel::make())->getPages());
 
     return $pages;
 }
 
-it('derives a real set of studio pages, so the cases below have subjects', function (): void {
-    $pages = studioPageClasses();
+/** The pages that expose a save, which is what the invariant's second clause is about. */
+function previewContractSavingPages(): array
+{
+    return array_values(array_filter(
+        previewContractPages(),
+        static fn (string $page): bool => method_exists($page, 'save')
+    ));
+}
 
-    // A bound AND two names: a derivation that silently returned nothing, or only the page
-    // this contract was first written for, must not pass.
+it('derives its page set from the panel, so a page registered anywhere is covered', function (): void {
+    $pages = previewContractPages();
+
     expect(count($pages))->toBeGreaterThanOrEqual(4)
         ->and($pages)->toContain(LandingBuilderPage::class)
         ->and($pages)->toContain(ThemePage::class);
+
+    // ⚠ AND IT IS NOT THE FILESYSTEM. The first version globbed a directory while its own
+    // docblock said "derived from the panel, never listed"; a page registered from another
+    // directory evaded every case in this file.
+    expect(previewContractSavingPages())->not->toBeEmpty();
 });
 
-it('gives every page that writes the draft the preview contract', function (): void {
+it('gives every page that can save the preview contract', function (): void {
     $offenders = [];
-    $writers = 0;
 
-    foreach (studioPageClasses() as $class) {
-        $file = (new ReflectionClass($class))->getFileName();
-        $source = $file === false ? '' : (string) file_get_contents($file);
-
-        // "Writes the draft" is a property of the SOURCE, not a list: a page that calls
-        // saveDraft() can leave the stored draft disagreeing with the unsaved key.
-        if (! str_contains($source, 'saveDraft(')) {
-            continue;
-        }
-
-        $writers++;
-
-        if (! in_array(KeepsPreviewInStep::class, class_uses_recursive($class), true)) {
-            $offenders[] = class_basename($class).' writes the draft without KeepsPreviewInStep';
-
-            continue;
-        }
-
-        // Having the trait is not using it: the forget is what makes the saved state win.
-        if (! str_contains($source, 'forgetUnsavedPreview(')) {
-            $offenders[] = class_basename($class).' never forgets the unsaved preview on save';
+    foreach (previewContractSavingPages() as $page) {
+        if (! in_array(KeepsPreviewInStep::class, class_uses_recursive($page), true)) {
+            $offenders[] = class_basename($page).' exposes save() without KeepsPreviewInStep';
         }
     }
 
-    expect($writers)->toBeGreaterThanOrEqual(2, 'fewer than two pages write the draft, so this proves nothing');
-
-    expect($offenders, 'a studio page writes the landing draft without keeping the preview in '
-        .'step: after a save there, the pane can show an unsaved key that contradicts the '
-        .'database, which is the bug QRPAGER-45 was rejected for')->toBe([]);
+    expect(
+        $offenders,
+        'a studio page can save without keeping the preview in step, so after a save there the '
+        .'pane can show an unsaved key that contradicts the database — the bug QRPAGER-45 was '
+        .'rejected for: '.implode(' | ', $offenders)
+    )->toBe([]);
 });
 
-it('gives every page that writes the draft the debounce that drives it', function (): void {
-    /*
-     * The server half is useless without the client half: `previewChanged()` is called by
-     * the view's 400ms debounce, and the theme tab had no wrapper at all. One partial, so a
-     * page cannot have the contract in PHP and not in the DOM.
-     */
-    $offenders = [];
-    $checked = 0;
+it('drops the unsaved state when any such page actually saves', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
 
-    foreach (studioPageClasses() as $class) {
-        $file = (new ReflectionClass($class))->getFileName();
-        $source = $file === false ? '' : (string) file_get_contents($file);
+    $pages = app(LandingPages::class);
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
 
-        if (! str_contains($source, 'saveDraft(')) {
-            continue;
+    $state = StudioForm::fromDocument($pages->draft($tenant)->toArray());
+    $driven = 0;
+
+    foreach (previewContractSavingPages() as $page) {
+        if (! in_array(KeepsPreviewInStep::class, class_uses_recursive($page), true)) {
+            continue; // the case above already names it
         }
 
-        if (preg_match("/protected string \\\$view = '([^']+)'/", $source, $m) !== 1) {
-            $offenders[] = class_basename($class).' declares no view';
+        // A key exists, as it would after any editing on any tab.
+        app(UnsavedPreview::class)->put($tenant, $sid, $pages->draft($tenant)->toArray());
 
-            continue;
-        }
+        /*
+         * ⚠ DRIVEN, NOT GREPPED. The first version asserted `str_contains($source,
+         * 'forgetUnsavedPreview(')`, which stayed green when that call was moved into an
+         * unreachable private method — the reported bug restored, the guard satisfied.
+         */
+        Livewire::test($page)->fillForm($state)->call('save');
 
-        $checked++;
-        $view = resource_path('views/'.str_replace('.', '/', $m[1]).'.blade.php');
+        expect(
+            app(UnsavedPreview::class)->get($tenant, $sid),
+            class_basename($page).' saved and left an unsaved key behind to contradict the draft'
+        )->toBeNull();
 
-        if (! is_file($view)) {
-            $offenders[] = class_basename($class).": view {$m[1]} does not exist";
-
-            continue;
-        }
-
-        if (! str_contains((string) file_get_contents($view), 'studio.partials.preview-sync')) {
-            $offenders[] = class_basename($class).": {$m[1]} does not include the preview sync partial";
-        }
+        $driven++;
     }
 
-    expect($checked)->toBeGreaterThanOrEqual(2);
-
-    expect($offenders, 'a studio page writes the draft but its view carries no debounce, so '
-        .'nothing calls previewChanged() and the preview only moves on a save')->toBe([]);
+    expect($driven)->toBeGreaterThanOrEqual(2, 'fewer than two pages were driven, so this proves nothing');
 });
 
-it('renders the debounce on every studio page that writes the draft', function (): void {
+it('serves the debounce on every page that has the contract', function (): void {
     test()->actingForTenant(role: TenantRole::Owner);
 
     /*
-     * ⚠ THE RENDERED PAGE AND NOT THE TEMPLATE. The case above reads the Blade source, which
-     * is where the include is written; this one asks the panel what it actually served. The
-     * two have disagreed in this project before — `QRPAGER-41` part B named three classes
-     * Filament does not render, changed nothing, and was green the whole time.
+     * ⚠ THE RENDERED PAGE, AND THE URL COMES FROM THE PANEL. The first version iterated a
+     * two-element literal while being named "every studio page", so the rendered half was
+     * unchecked for anything added later. A template and a served page have disagreed in
+     * this project before — `QRPAGER-41` part B named three classes Filament does not
+     * render, changed nothing, and was green the whole time.
      */
-    foreach (['/studio', '/studio/theme'] as $uri) {
-        $html = (string) test()->get($uri)->getContent();
+    $checked = 0;
 
-        expect($html)->toContain('studio-preview-updated')
-            ->and($html)->toContain('previewChanged');
+    foreach (previewContractPages() as $page) {
+        if (! in_array(KeepsPreviewInStep::class, class_uses_recursive($page), true)) {
+            continue;
+        }
+
+        $html = (string) test()->get($page::getUrl(panel: 'studio'))->getContent();
+
+        expect($html, class_basename($page).' serves no debounce, so nothing calls previewChanged()')
+            ->toContain('previewChanged');
+
+        expect($html, class_basename($page).' serves no reload listener')
+            ->toContain('studio-preview-updated');
+
+        $checked++;
     }
+
+    expect($checked)->toBeGreaterThanOrEqual(2);
 });

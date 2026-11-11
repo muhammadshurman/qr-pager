@@ -770,6 +770,93 @@ export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
   }
 }
 
+/**
+ * (e) EVERY TICKET'S EVIDENCE ROW AGREES WITH ITS OWN TRANSCRIPT, NOT JUST THE ONE IN FLIGHT.
+ *
+ * ⚠ WRITTEN BECAUSE A PAST ROW WAS DESTROYED AND NOTHING NOTICED. On 2026-11-11 a `§4a`
+ * edit for `QRPAGER-45` matched every line beginning `| \`fresh-clone-proof\` |` and rewrote
+ * all thirteen — so eleven earlier deliveries each claimed a run that was not theirs, with
+ * another ticket's sha and another ticket's transcript. The suite was green, the gate was
+ * green, and `check-records` was green: its currency check is deliberately scoped to the
+ * delivery in flight (see `inFlightTicket()`), so a corrupted PAST row is outside what it
+ * looks at. Found by the `§11` QA round, by reading.
+ *
+ * That scope is the same hole this project has now closed three times from different
+ * directions: `R-027`'s guard enumerated `/platform` URIs and missed the panel route that
+ * lost its limiter; `scan-css` exempted `apps/api` and missed the panel themes that define
+ * both admin panels. **A check whose scope excludes exactly where the damage lands.**
+ *
+ * So this one is not scoped. It reads EVERY `§4a` evidence row that names a transcript, and
+ * requires any test total the row states to appear in that transcript. A row that quotes no
+ * figure is not an error — several deliberately say only "all 13 steps green" — but a row
+ * that quotes one must be able to point at it.
+ */
+export function checkEveryEvidenceRow(plan, dir = join(REPO, 'docs', 'tickets')) {
+  const rows = plan.split('\n').filter((line) => /^\|\s*`[^`]+`\s*\|/.test(line) && line.includes('docs/tickets/'))
+
+  let checked = 0
+
+  for (const row of rows) {
+    const named = /`(docs\/tickets\/[^`]+\.txt)`/.exec(row)
+
+    if (named === null) continue
+
+    const path = join(REPO, named[1])
+
+    if (!existsSync(path)) {
+      fail('records(e)', `an evidence row names ${named[1]}, which is not in the repository`)
+
+      continue
+    }
+
+    // The FIGURE cell only — the second column. The evidence cell legitimately names other
+    // tickets, other shas and other rows, and reading those as claims would be noise.
+    const cells = row.split('|')
+    const figure = cells.length > 2 ? cells[2] : ''
+    const claimed = [...figure.matchAll(/([\d][\d,]{2,})\s+passed/g)].map((m) => Number(m[1].replace(/,/g, '')))
+
+    if (claimed.length === 0) continue
+
+    const transcript = plain(readFileSync(path, 'utf8'))
+    const present = new Set(
+      [...transcript.matchAll(/([\d][\d,]*)\s+passed/g)].map((m) => Number(m[1].replace(/,/g, ''))),
+    )
+
+    checked++
+
+    /*
+     * ⚠ A ROW MAY DIFFER FROM ITS TRANSCRIPT, BUT ONLY IF IT SAYS SO. Three rows legitimately
+     * do: `QRPAGER-38`, `-39` and `-40` each quote a figure measured on their own branch
+     * while the transcript at that path was re-measured at a merge, and each row names the
+     * transcript's figure beside its own and explains why. Refusing those would be a check
+     * that reddens on correct records — `R-290`'s shape, which this repository filed the
+     * same week.
+     *
+     * What is refused is SILENT disagreement: a row quoting a total its transcript does not
+     * hold, without acknowledging the one it does. That is exactly the corruption this check
+     * was written for, where eleven rows were rewritten with another ticket's run.
+     */
+    const acknowledged = [...row.matchAll(/([\d][\d,]{2,})/g)]
+      .map((m) => Number(m[1].replace(/,/g, '')))
+      .some((n) => present.has(n))
+
+    for (const total of claimed) {
+      if (!present.has(total) && !acknowledged) {
+        fail(
+          'records(e)',
+          `an evidence row claims ${String(total)} passed and ${named[1]} records ` +
+            `${[...present].join(', ') || 'no total'} — the row and its own transcript ` +
+            'disagree and the row does not say so',
+        )
+      }
+    }
+  }
+
+  if (checked === 0) {
+    fail('records(e)', 'no evidence row states a test total, so nothing was cross-checked')
+  }
+}
+
 const SELF_TESTS = [
   {
     what: 'a §5 row count that disagrees with the table',
@@ -1253,6 +1340,7 @@ checkTagReality(plan)
 checkStatedHead(plan)
 checkStatedCounts(plan)
 checkTranscripts(inFlightTicket(plan))
+checkEveryEvidenceRow(plan)
 
 if (failures.length > 0) {
   console.error("check-records: the repository's account of itself is wrong:")
