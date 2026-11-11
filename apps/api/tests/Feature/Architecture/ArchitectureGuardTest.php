@@ -66,7 +66,19 @@ use Illuminate\Support\Facades\Process;
  */
 function deptracJson(): array
 {
+    /*
+     * ⚠ AN EXPLICIT DEADLINE, FOR `R-301`'s REASON AND AS ITS SECOND MEASURED INSTANCE.
+     * `Illuminate\Process`'s default is 60 seconds and nobody chose it; `bin/fresh-clone-proof`
+     * went red HERE on a loaded host — `ProcessTimedOutException` from `Process.php:1247`,
+     * 1 failed / 1511 passed — exactly as it had gone red on `OpenApiSpecTest` an hour
+     * earlier, which is what that row predicted: *"the default applies to every
+     * `Process::run()` in this suite and nothing says which of them chose it."* deptrac
+     * analysing 471 files with no cache is a minute's work on an idle machine and several
+     * on one that has been running gates all day. An absent or broken binary still fails at
+     * once, with the exit code and both streams, so the deadline covers load and nothing else.
+     */
     $result = Process::path(base_path())
+        ->timeout(300)
         ->run('vendor/bin/deptrac analyse --no-progress --no-cache --formatter=json');
 
     $raw = $result->output().$result->errorOutput();
