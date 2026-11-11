@@ -83,6 +83,20 @@ class LandingBuilderPage extends Page
     }
 
     /**
+     * `KeepsPreviewInStep`'s abstract, answered with this page's own form.
+     *
+     * ⚠ THIS METHOD WAS INSERTED BETWEEN `landingForm()` AND ITS DOCBLOCK, which is the
+     * `§11` QA round's L-10: the explanation of `getSchema()` and *"it throws rather than
+     * returning null"* ended up on a method that does neither, and the method it describes
+     * was left undocumented. The trait's `studioForm()` carries the contract's reasoning;
+     * this is the delegation and nothing else.
+     */
+    protected function studioForm(): Schema
+    {
+        return $this->landingForm();
+    }
+
+    /**
      * This page's own form schema, resolved by name.
      *
      * `$this->form` works at runtime -- InteractsWithSchemas has a `__get` -- and is
@@ -91,11 +105,6 @@ class LandingBuilderPage extends Page
      * It throws rather than returning null, because every caller here is already past
      * canAccess() and a null schema would mean the page did not boot.
      */
-    protected function studioForm(): Schema
-    {
-        return $this->landingForm();
-    }
-
     private function landingForm(): Schema
     {
         $schema = $this->getSchema('form');

@@ -71,6 +71,18 @@ trait KeepsPreviewInStep
      * /livewire-<hash>/update` runs neither `SetUpPanel` nor Filament's `Authenticate`
      * (Task 6 security M-1), and this one is reached on a TIMER rather than by a click.
      *
+     * ⚠⚠ AND THAT LINE IS REDUNDANT BY CONSTRUCTION, WHICH A READER MUST NOT HAVE TO
+     * REDISCOVER. `TenantPanelAccess::allows()` is `membership() !== null`, and
+     * `tenantId()` on the next line calls the SAME `membership()` and aborts 403 itself —
+     * so the two are one check and NO TEST CAN SEPARATE THEM: measured, deleting the
+     * `abort_unless` leaves all 248 Landing tests green, and the first control written for
+     * it passed with the line deleted too. It is kept because the panel's convention is
+     * that every action re-asks, not because anything verifies it independently. What IS
+     * verified is the action's behaviour — *refuses such a principal AND writes no key* —
+     * by `StudioPreviewContractTest` over every page the panel registers. This caveat was
+     * the `§11` security round's M-3 disposition; it lived only in the comment this trait
+     * replaced, and the `§11` QA round's L-12 found it gone with no `§5` row behind it.
+     *
      * ⚠ AND AN INVALID STATE IS SILENCE. Mid-edit invalid is the NORMAL condition behind a
      * keystroke, not an error: nothing is written, nothing is raised, and — deliberately —
      * nothing is CLEARED, so the last state that did validate stays on screen instead of

@@ -1376,6 +1376,54 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     ).toBeGreaterThanOrEqual(0)
   }
 
+  /**
+   * Click Save on the page that is open, and wait for THE SAVE'S OWN ROUND TRIP.
+   *
+   * ⚠ CLICKING IS NOT SAVING, AND TWO EARLIER ORACLES FOR "IT SAVED" BOTH PASSED BEFORE THE
+   * WRITE — each measured on a real e2e run of 2026-11-11, each reported as *"the saved
+   * colour is not in the draft"* by the remount assertion in the theme case, which is the
+   * only one of the three that reads Postgres:
+   *
+   *   1. THE PREVIEW. `click()` returns when the click is dispatched, so polling the pane
+   *      for the new colour passed while the save's POST was still in flight — the unsaved
+   *      key already held that colour, which is the whole feature. `page.goto()` then
+   *      cancelled the request and the draft kept `#828382`, the tenant's previous value.
+   *      The preview is the one oracle that cannot tell a landed save from an abandoned one.
+   *
+   *   2. THE SUCCESS TOAST. Filament's notification lingers for several seconds, so the
+   *      NEXT save found the PREVIOUS save's toast already on screen and returned
+   *      immediately — the draft kept `#123456`, the baseline this case saves first. A
+   *      durable marker is not an acknowledgement of the request that is in flight now.
+   *
+   * So the wait is on the response to the POST that carries `save` in its own Livewire
+   * payload, started before the click and awaited after it. Livewire answers it when
+   * `save()` has returned, which is after `saveDraft()` has committed.
+   */
+  async function saveAndWait(page: Page): Promise<void> {
+    const landed = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        (response.request().postData() ?? '').includes('"save"'),
+      { timeout: 20_000 },
+    )
+
+    await page.getByRole('button', { name: 'احفظ' }).first().click()
+    await landed
+
+    /*
+     * ⚠ AND A REFUSED SAVE IS NAMED HERE RATHER THAN INFERRED LATER. It answers 200 with an
+     * error bag, so the response above cannot tell the two apart — and from the preview a
+     * refusal looks exactly like a save that has not landed yet, which cost this file four
+     * runs once already.
+     */
+    const refusals = await page.locator('.fi-fo-field-error-message').allInnerTexts()
+
+    expect(
+      refusals.join(' | '),
+      'the save was refused, so nothing below is about a stored document',
+    ).toBe('')
+  }
+
   /** What the DATABASE holds, read back through the panel's own mount. */
   async function storedHeading(page: Page): Promise<string> {
     await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
@@ -1395,9 +1443,18 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     const saved = `SAVED ${String(Date.now())}`
 
     await addBlock(page, 0, saved)
-    await page.getByRole('button', { name: 'احفظ' }).first().click()
 
-    // The save has landed when the PREVIEW shows it.
+    /*
+     * ⚠ THE SAVE IS AWAITED, AND THE COMMENT HERE USED TO READ *"the save has landed when the
+     * PREVIEW shows it"* — which is not true of this feature: `addBlock()`'s own debounce has
+     * already written that heading into the unsaved key, so the poll below passes whether the
+     * save landed or not. Step 4 reads the DATABASE through a navigation, and a navigation
+     * that arrives while the save's POST is in flight cancels it — the latent flake the theme
+     * case hit twice for real on 2026-11-11.
+     */
+    await saveAndWait(page)
+
+    // And the pane has caught up, which is what step 1 below asserts the absence against.
     await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(saved)
 
     const typed = `UNSAVED ${String(Date.now())}`
@@ -1429,9 +1486,10 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
 
     // A page with something to colour, saved from the builder first.
     await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
-    await addBlock(page, 0, `THEME HOST ${String(Date.now())}`)
-    await page.getByRole('button', { name: 'احفظ' }).first().click()
-    await page.waitForTimeout(2_000)
+    const host = `THEME HOST ${String(Date.now())}`
+
+    await addBlock(page, 0, host)
+    await saveAndWait(page)
 
     await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
 
@@ -1448,7 +1506,34 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * round trip and the frame reload, which is what the owner actually experienced.
      */
     const colour = '#7d2b8f'
+
+    /*
+     * ⚠ A BASELINE COLOUR IS SAVED FIRST, SO THE PRECONDITION BELOW CAN BE REAL — the `§11`
+     * QA round's L-13. `ThemeStylesheet::declarations()` emits *"only tokens the tenant
+     * actually set"*, so on a tenant with no theme the rendered page carries no custom
+     * property at all; `previewTheme()` ends in `?? ''` and returns an empty string, which
+     * contains nothing — so `not.toContain(colour)` passed by measuring the absence of the
+     * WHOLE attribute, which is also exactly what a frame that failed to load looks like.
+     * One save makes "this colour is not there" and "nothing is there" tell apart.
+     */
+    const baseline = '#123456'
+
+    await swatch.fill(baseline)
+    await saveAndWait(page)
+
+    await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(baseline)
+
     const before = await previewTheme(page)
+
+    /*
+     * The pane is painting a theme, and it is not already painting the one this case is
+     * about to type.
+     */
+    expect(
+      before,
+      'the preview frame paints no custom property at all, so this case cannot tell a ' +
+        'colour that arrived from an attribute that never existed',
+    ).toContain('--')
 
     expect(
       before,
@@ -1460,15 +1545,82 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     // 1. No Save: the preview catches up on its own.
     await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
 
-    // 2. After a Save on THIS page, the preview and the stored draft agree — the clause the
-    //    bug violated and the one nothing tested.
-    await page.getByRole('button', { name: 'احفظ' }).first().click()
-    await page.waitForTimeout(2_000)
+    /*
+     * 2. After a Save on THIS page, the preview and the stored draft agree.
+     *
+     * 2a. THE REPORTED BUG, END TO END: the colour reaches the DATABASE, not just the key.
+     */
+    await saveAndWait(page)
 
     await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
 
-    // And it survives a full reload, which reads the STORED draft rather than any key.
+    // Re-mounted from Postgres. `ThemePage::mount()` fills this field from
+    // `LandingPages::draft()` and reads no key at all, so the swatch's value is the only
+    // oracle here for "the colour was STORED" rather than "the colour is on screen".
     await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const remounted = (
+      await page.locator('.studio-colour-input').first().inputValue()
+    ).toLowerCase()
+
+    expect(remounted, 'the saved colour is not in the draft, so Save did not store it').toContain(
+      colour,
+    )
+
+    await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
+
+    /*
+     * 2b. AND THE SAVE DROPS THE UNSAVED KEY, WHICH IS WHAT THE REJECTION WAS ABOUT.
+     *
+     * ⚠ NOTHING ABOVE CAN FALSIFY THAT, AND THE FIRST VERSION OF THIS CASE CLAIMED TO —
+     * the `§11` QA round's M-5. By the time it polled, the page's own debounce had already
+     * written the SAME colour into the unsaved key; `PreviewController` prefers that key and
+     * `get()` pushes its TTL out on every render. So with `forget()` deleted from
+     * `ThemePage::save()` every assertion above still passed: the key agreed with the draft
+     * by accident, which is precisely the condition the bug hides behind.
+     *
+     * The second attempt typed a second colour and raced the 400ms window, which is worse:
+     * if the debounce wins the key holds the new colour and the case passes vacuously again,
+     * so a green run would have meant nothing either way.
+     *
+     * So the stale key is written from the OTHER TAB, which is where the owner's came from:
+     * *"the key written while the owner was on the builder tab kept winning over the freshly
+     * saved draft"*. `StudioForm::merged()` builds the builder's document from the STORED
+     * draft, so that key holds a block this tab's save will not write — and the save has to
+     * clear it for the pane to agree with the database. Nothing is typed on the theme tab
+     * afterwards, so there is no debounce in flight and no race to lose.
+     */
+    const stale = `STALE KEY ${String(Date.now())}`
+
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await addBlock(page, 0, stale)
+
+    // The key holds it — asserted on the pane, because an unverified precondition here
+    // would turn the whole of 2b into a test of an empty Redis key.
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(stale)
+
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    // Still the key after a full navigation: this pane is showing something the database
+    // does not have.
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(stale)
+
+    await saveAndWait(page)
+
+    /*
+     * Both halves of `forgetUnsavedPreview()` are required to get here: without the `del`
+     * the reloaded frame re-reads the same key, and without the dispatch nothing asks the
+     * frame to reload at all — so deleting the call reddens this twice over.
+     */
+    await expect.poll(async () => previewText(page), { timeout: 20_000 }).not.toContain(stale)
+
+    // ⚠ AND NOT BECAUSE THE PANE WENT BLANK, which `not.toContain` cannot tell apart. The
+    // stored draft's own block is what should be there instead.
+    expect(
+      await previewText(page),
+      'the pane holds neither the stale block nor the stored one, so it rendered nothing and ' +
+        'the assertion above is vacuous',
+    ).toContain(host)
 
     await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
   })
