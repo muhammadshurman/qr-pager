@@ -173,6 +173,37 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
      the scanner refuses. Inventing a fourth spacing literal here would be `R-268` with this
      ticket's name on it.
 
+     ⚠⚠ AND `.rail .grid img`'s RATIO IS THE SECOND DEFECT THE PICTURES FOUND. `display:block`
+     on the shared `.grid` is what makes this arrangement a column rather than a grid — and it
+     makes every photograph full-measure, so a page with five of them rendered **6,618px** tall
+     against `tile`'s 2,777, a scroll of enormous images with the ledger lost between them. A
+     restaurant with a dozen dishes would publish twenty thousand pixels of photograph. The
+     reference artboard has no large photographs at all; a wide band is the closest honest
+     translation, and `16/5` is a RATIO rather than a magnitude, so it needs no token and the
+     scanner has nothing to refuse. `tile` keeps its square cells and `ember` its own measure.
+
+     ⚠⚠⚠ THE THREE `font-size:revert` LINES ARE A DEFECT ONLY A PICTURE COULD FIND, AND THEY
+     ARE THIS TICKET'S OWN. The shared rule above reads
+     `h1,section:first-of-type h2{font-size:var(--size-heading)}` — written when every block
+     was a direct child of `main`, so *"the first section"* meant THE HERO and the rule gave
+     the hero's heading the display size. Each of these three arrangements puts some blocks in
+     a wrapper of its own, and `:first-of-type` is scoped to the PARENT — so the rule started
+     matching whatever happened to be first inside the new wrapper. Rendered at 1280 with the
+     defaults: `ember` showed *"How the pager works"* at 64px, `tile` showed *"The room"*, and
+     `rail` showed *"Find us"* — each as large as the page's own title, with the real title
+     above it at the same size.
+
+     ⚠ **NO TEST IN THIS FEATURE COULD HAVE CAUGHT IT**, and that is not a gap to close here:
+     the ticket's own invariant says *"assert on structure … never on pixels"*, and the
+     structure is correct — the right heading is in the right region, in the right order. What
+     is wrong is a computed font size, which is a pixel. It was found by rendering the three
+     arrangements and looking at them, which is what Muhammad asked for before merging.
+
+     ⚠ `revert` RATHER THAN A SIZE, because the correct value is *"whatever the other `h2`s
+     get"* — the UA default, since no other rule sets one — and naming a size here would be a
+     fourth magnitude. `revert` is in the value guard's own safe list, so it needs no token and
+     no exemption. The shared rule is untouched, which keeps `classic` byte-for-byte.
+
      ⚠⚠ THE TWO `.ember-hero` LINES THAT RE-COLOUR A LINK AND ITS FOCUS RING ARE THE `§11`
      SECURITY ROUND'S M-1, AND THE DEFECT WAS INVISIBLE BY ARITHMETIC. `colours.light.ink` and
      `colours.light.brand` are THE SAME HEX — `#191C22` — so with the shipped defaults
@@ -223,6 +254,8 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 .rail .card{background:none;border-radius:0;padding-inline:0}
 .rail .grid{display:block}
 .rail .grid>*+*{margin-block-start:calc(var(--space-section)/3)}
+.rail .grid img{aspect-ratio:16/5;object-fit:cover}
+.rail-find>section:first-of-type h2{font-size:revert}
 .rail-find{padding-block:var(--space-section)}
 .rail-find>section{padding-block:0}
 @media (min-width:48rem){.rail-find{display:flex;gap:calc(var(--space-section)/2)}.rail-find>section{flex:1}}
@@ -233,6 +266,7 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 .ember-hero a{color:var(--color-background)}
 .ember-hero a:focus-visible,.ember-hero button:focus-visible{outline-color:var(--color-background)}
 .ember-hero img{margin-inline:auto}
+.ember-column>section:first-of-type h2{font-size:revert}
 .ember-column{text-align:center}
 .ember-column .card,.ember-column address,.ember-column table{text-align:start}
 @media (min-width:48rem){.ember-column{padding-inline:var(--space-section)}}
@@ -240,6 +274,7 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 .tile-grid{display:grid;gap:calc(var(--space-section)/4);grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))}
 .tile-grid>section,.tile-grid .grid{display:contents}
 .tile-grid>section>h2{grid-column:1/-1}
+.tile-grid>section:first-of-type h2{font-size:revert}
 .tile-grid .card,.tile-grid figure{margin:0}
 .tile-grid img{aspect-ratio:1/1;object-fit:cover;width:100%}
 @endif</style>
