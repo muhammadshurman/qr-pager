@@ -1,4 +1,4 @@
-fresh-clone-proof: docs(45): §0, §4a's six falsifications, and three §5 rows at e67af0c
+fresh-clone-proof: docs(45): the recount to 294, and figures measured at a sha that exists at ec00a69
 
 === clone through file:// so no object is shared
 
@@ -6,7 +6,7 @@ fresh-clone-proof: docs(45): §0, §4a's six falsifications, and three §5 rows 
 no vendor/, no .env, no node_modules — the clone is bare
 
 === the clone's tracked tree is byte-identical to this commit's
-tree b8bddbcb594774c1b273d18a5906e52a6cacbc15
+tree 54c75d0e677b0a5c9c632fbd51b1ab795f2f0885
 
 === composer install, from the repository's own lock file
 host composer cache: present (a cache, not a source — it costs time, not correctness)
@@ -22,8 +22,8 @@ cp .env.example .env · php artisan key:generate · docker compose is already up
 === composer gate, in the clone
 gate: A green line above means apps/api's own gate passed. It is not a prediction of CI.
 
-fresh-clone-proof: PASSED at e67af0c
-  Tests:    1469 passed (13940 assertions)
-  gate log: /tmp/qrpager-fresh-clone-tA2qYx/gate.log
+fresh-clone-proof: PASSED at ec00a69
+  Tests:    1486 passed (14026 assertions)
+  gate log: /tmp/qrpager-fresh-clone-jwTH09/gate.log
   (clone removed; pass --keep to inspect it)
 EXIT=0
