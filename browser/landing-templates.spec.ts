@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page } from '@playwright/test'
 
@@ -38,7 +40,14 @@ import { expect, test, type Page } from '@playwright/test'
  * carries it so it runs every time rather than when somebody remembers.
  */
 
-const DIR = '/repo/storage/landing-preview'
+/*
+ * ⚠ RESOLVED FROM THIS FILE, AND IT WAS THE LITERAL `/repo/storage/landing-preview` — the
+ * path INSIDE the browsers container, which is where this host runs the engines. CI launches
+ * them natively, so there the repository is at `/home/runner/work/qr-pager/qr-pager` and all
+ * thirteen cases failed with *"is not there"*. A path that is only correct on one of the two
+ * machines the gate runs on is the defect `tools/browsers/bin/browsers` exists to remove.
+ */
+const DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'storage', 'landing-preview')
 const ARRANGEMENTS = ['rail', 'ember', 'tile'] as const
 const STATES = ['default', 'tenant'] as const
 
@@ -77,7 +86,7 @@ async function openArrangement(page: Page, state: string, arrangement: string): 
   // `file://` would work and is deliberately not used: the images are beside the HTML, and
   // `setContent` with a base URL keeps the page's own bytes the subject rather than a
   // directory listing.
-  await page.goto(`file://${DIR}/${state}-${arrangement}.html`, { waitUntil: 'load' })
+  await page.goto(`file://${file}`, { waitUntil: 'load' })
 
   expect(html.length, 'the renderer wrote an empty page').toBeGreaterThan(1_000)
 

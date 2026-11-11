@@ -333,21 +333,35 @@ export default defineConfig({
       },
     },
 
-    {
-      /**
-       * `QRPAGER-46`'s two computed values — a heading that must not match the page title's
-       * size, and a document height bounded for one fixture. Its own project because the kit
-       * must run from a fresh clone with nothing built, and these cases read pages that
-       * `php artisan landing:render-arrangements` writes; `pnpm run gate:templates` runs both
-       * halves in order, and `bin/gate` carries that one command.
-       *
-       * The viewports are set by the spec rather than here: the same case runs at 1280 and at
-       * 390, and a project-level viewport would make one of the two a lie.
-       */
-      name: 'landing-templates',
-      testMatch: [...LANDING_TEMPLATE_SPECS],
-      use: { ...devices['Desktop Chrome'] },
-    },
+    /**
+     * `QRPAGER-46`'s two computed values — a heading that must not match the page title's
+     * size, and a document height bounded for one fixture.
+     *
+     * ⚠⚠ DECLARED ONLY WHEN ITS OWN RUNNER ASKS FOR IT, AND CI IS WHY. `tools/browsers/bin/e2e`
+     * runs `playwright test` with NO project filter — the journey suite is *everything that is
+     * not the kit* — so the moment this project existed unconditionally, the e2e step collected
+     * thirteen cases whose pages only `pnpm run gate:templates` renders, and the `Pint, PHPStan,
+     * Pest` job went red on a suite that had nothing to do with it. Playwright has no
+     * exclude-a-project flag, and listing the journey's fourteen projects in that script would
+     * be a second list to keep in step.
+     *
+     * So the gate sets `QRPAGER_TEMPLATE_GATE=1` and nothing else sees the project at all.
+     * `tools/browsers/bin/browsers` forwards every `QRPAGER_*` variable by pattern, so this
+     * works natively and in the container. `lint-scope.test.mjs` asserts BOTH states: absent by
+     * default, present when the gate asks — which is the defect CI found, as a test.
+     *
+     * The viewports are the spec's, not the project's: the same case runs at 1280 and at 390,
+     * and a project-level viewport would make one of the two a lie.
+     */
+    ...(process.env.QRPAGER_TEMPLATE_GATE === '1'
+      ? [
+          {
+            name: 'landing-templates',
+            testMatch: [...LANDING_TEMPLATE_SPECS],
+            use: { ...devices['Desktop Chrome'] },
+          },
+        ]
+      : []),
 
     {
       name: 'studio-chromium',
