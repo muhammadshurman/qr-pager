@@ -285,6 +285,23 @@ export function scanPaths(paths) {
 /**
  * The scan, as a function returning an exit status.
  *
+ * ⚠ `baselinePath` AND `root` ARE TEST SEAMS, AND THEY ARE THERE FOR A COVERAGE REASON RATHER
+ * THAN A STYLE ONE. `root` exists because the two FLOORS — too few stylesheets, and no Blade
+ * template carrying a `<style>` element — can only be reached by walking a tree that lacks
+ * them, and this module computes `ROOT` from its own location, so until now the only way to
+ * drive them was a copy of the script in a temporary tree, i.e. a child process, which
+ * coverage does not instrument. The Blade floor is the one `R-267` depends on; a branch
+ * nothing drives is what this whole file exists to argue against.
+ *
+ * ⚠ `baselinePath` IS THE SAME KIND OF SEAM.
+ * The two branches that REFUSE a run — a walk that never reached a baselined file, and a
+ * frozen literal that has been fixed — were driven only through `spawnSync` in a temporary
+ * tree, and a child process is instrumented by nothing: `§6` asks for coverage on the code a
+ * task adds, and CI measured those lines as the ones keeping the branch total under its
+ * threshold (89.99% against 90%). Driving them in-process needs a baseline the case can
+ * write. The CLI cases stay, because they prove the exit CODE and the message a developer
+ * actually sees.
+ *
  * ⚠ IT RETURNS THE STATUS RATHER THAN CALLING `process.exit`, for the same reason
  * `generate.mjs`'s `run` does: a spawned process is instrumented by nothing, so the CLI's
  * own logic -- the empty-target refusal, the finding report, the exit code -- counted
@@ -293,8 +310,8 @@ export function scanPaths(paths) {
  * `rule.test.mjs` still drives the SCRIPT as a process for the empty-tree proof, because
  * that proof is about the script's own root resolution.
  */
-export function main(explicit = []) {
-  const targets = explicit.length > 0 ? explicit : [...cssFiles(ROOT), ...bladeFiles(ROOT)]
+export function main(explicit = [], baselinePath = BASELINE, root = ROOT) {
+  const targets = explicit.length > 0 ? explicit : [...cssFiles(root), ...bladeFiles(root)]
 
   /**
    * ⚠ AN EMPTY TARGET LIST IS A BROKEN SCANNER, NOT A CLEAN TREE. This printed
@@ -339,8 +356,8 @@ export function main(explicit = []) {
     return 1
   }
 
-  const baseline = readBaseline()
-  const scanned = new Set(targets.map((path) => relative(ROOT, path).split(sep).join('/')))
+  const baseline = readBaseline(baselinePath)
+  const scanned = new Set(targets.map((path) => relative(root, path).split(sep).join('/')))
 
   /*
    * ⚠ AND EVERY FILE THE BASELINE NAMES MUST HAVE BEEN SCANNED — see `missingBaselineFiles`.

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -876,6 +876,326 @@ describe('CSS out of a Blade template — R-267', () => {
     // And the ordinary multi-line form still blanks the directive itself: the condition's own
     // text is PHP and must not be read as CSS.
     expect(read('@if ($t === 13) .z{padding:var(--space-section)}')).toEqual([])
+  })
+
+  it('reports the stale baseline entry through the CLI, and names what to do', () => {
+    /*
+     * The report a reader actually sees, driven through `main()` rather than through
+     * `applyBaseline()` — `§6` asks for coverage on the code a task adds, and the branch that
+     * PRINTS a stale entry is the half of it a unit call on the splitter never reaches. A
+     * literal that has been fixed must leave the list, or the baseline becomes a record of
+     * debt that no longer exists.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-stale-'))
+
+    try {
+      const bin = join(tree, 'tools', 'design-tokens', 'bin')
+      mkdirSync(bin, { recursive: true })
+      copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
+      copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
+
+      // A clean stylesheet, and a baseline claiming a literal in it that is not there.
+      const styles = join(tree, 'app.css')
+      writeFileSync(styles, '.a{color:var(--color-text)}\n', 'utf8')
+      writeFileSync(
+        join(bin, '..', 'landing-baseline.json'),
+        JSON.stringify({
+          generated: '2026-11-11',
+          entries: [
+            {
+              file: 'app.css',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#c0ffee',
+              count: 1,
+              lines: [1],
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      // The floor fires first in a tree with one CSS file, which is itself the point: the
+      // report below is what a REAL tree gets, so it is driven with an explicit target.
+      const explicit = spawnSync('node', [join(bin, 'scan-css.mjs'), styles], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      expect(result.status).toBe(1)
+      expect(explicit.status).toBe(1)
+      expect(explicit.stderr).toContain('BASELINE')
+      expect(explicit.stderr).toContain('#c0ffee')
+      expect(explicit.stderr).toContain('remove the entry')
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a walk that misses a baselined file, through the CLI', () => {
+    /*
+     * `missingBaselineFiles()` is asserted as a function above; this drives the branch that
+     * REPORTS it, which is the one a developer sees when a directory is renamed. An empty tree
+     * with a baseline naming a file is the same condition as a walk that lost one.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-missing-'))
+
+    try {
+      const bin = join(tree, 'tools', 'design-tokens', 'bin')
+      mkdirSync(bin, { recursive: true })
+      copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
+      copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
+
+      // Four CSS files clear the FLOOR, and a Blade template with a <style> clears the Blade
+      // floor — so the only thing left to fail on is the baselined file nobody scanned.
+      for (const name of ['a.css', 'b.css', 'c.css', 'd.css']) {
+        writeFileSync(join(tree, name), '.x{color:var(--color-text)}\n', 'utf8')
+      }
+
+      writeFileSync(
+        join(tree, 'page.blade.php'),
+        '<style>\n.y{padding:var(--space-section)}\n</style>\n',
+        'utf8',
+      )
+
+      writeFileSync(
+        join(bin, '..', 'landing-baseline.json'),
+        JSON.stringify({
+          generated: '2026-11-11',
+          entries: [
+            {
+              file: 'apps/api/resources/views/landing/page.blade.php',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#f5f5f5',
+              count: 1,
+              lines: [196],
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('the walk did not reach')
+      expect(result.stderr).toContain('landing/page.blade.php')
+      expect(result.stderr).toContain('R-267')
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  it('treats an absent baseline as no debt, which is what every other repository state is', () => {
+    /*
+     * `readBaseline()` is the one part of this scanner that has to work in a tree that has
+     * never had frozen debt — which is every repository but this one, and this one before
+     * `QRPAGER-46`. An absent file is not an error: it means nothing is excused.
+     */
+    const empty = readBaseline(join(tmpdir(), 'no-such-baseline-file.json'))
+
+    expect(empty.entries).toEqual([])
+    expect(empty.budget.size).toBe(0)
+
+    // And a malformed-but-parseable document — a baseline with no `entries` key — is the same
+    // thing rather than a crash: `?? []` is the branch, and a scanner that threw here would
+    // fail a run over a file it only reads for leniency.
+    const bare = mkdtempSync(join(tmpdir(), 'scan-css-bare-'))
+
+    try {
+      const path = join(bare, 'baseline.json')
+      writeFileSync(path, JSON.stringify({ generated: '2026-11-11' }), 'utf8')
+
+      const loaded = readBaseline(path)
+
+      expect(loaded.entries).toEqual([])
+      expect(missingBaselineFiles(new Set(), loaded)).toEqual([])
+
+      // With nothing excused, every finding is reported — the inverse of the freeze.
+      const findings = scanSource('.a{color:#ff00ff}', 'a.css')
+      const { reported, stale, excused } = applyBaseline(findings, loaded)
+
+      expect(reported).toEqual(findings)
+      expect(stale).toEqual([])
+      expect(excused).toBe(0)
+    } finally {
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses, IN PROCESS, a walk with no Blade template carrying a style element', () => {
+    /*
+     * `R-267`'s own condition, driven in-process for the same coverage reason as the case
+     * below: the Blade half of this scanner exists because the customer-facing page was read
+     * by nothing, and a walk that silently stopped finding it would restore exactly that while
+     * the CSS count kept the other floor green. The CLI case proves the exit code; this proves
+     * the branch and its message.
+     *
+     * ⚠ THE WALK IS PASSED AS AN EXPLICIT LIST OF CSS FILES ONLY, which is the shape of the
+     * failure — four stylesheets clear the CSS floor and no template clears the Blade one — and
+     * `main()` skips both floors for an explicit list by design (a caller naming one file means
+     * it), so the branch is reached through a baseline-less run of a tree with no templates.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-noblade-'))
+
+    try {
+      const bin = join(tree, 'tools', 'design-tokens', 'bin')
+      mkdirSync(bin, { recursive: true })
+
+      for (const name of ['a.css', 'b.css', 'c.css', 'd.css', 'e.css']) {
+        writeFileSync(join(tree, name), '.x{color:var(--color-text)}\n', 'utf8')
+      }
+
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+      // A scanner rooted in that tree: the module computes ROOT from its own location, so a
+      // copy three directories deep walks the temporary tree exactly as the empty-tree proof
+      // does — and this one finds five stylesheets and no Blade template.
+      copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
+      copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
+
+      const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('NO Blade template carrying a <style> element')
+
+      /*
+       * And the same two floors IN PROCESS, over the same tree: five stylesheets clear the CSS
+       * floor of four, and no template clears the Blade floor of one — which is the condition
+       * `R-267` describes, with the gate otherwise looking healthy.
+       */
+      expect(main([], join(bin, '..', 'absent-baseline.json'), tree)).toBe(1)
+      expect(error.mock.calls.flat().join('\n')).toContain(
+        'NO Blade template carrying a <style> element',
+      )
+
+      error.mockClear()
+
+      // And the CSS floor below it, on a tree with too few stylesheets to be this workspace.
+      const thin = mkdtempSync(join(tmpdir(), 'scan-css-thin-'))
+
+      try {
+        writeFileSync(join(thin, 'only.css'), '.x{color:var(--color-text)}\n', 'utf8')
+
+        expect(main([], join(bin, '..', 'absent-baseline.json'), thin)).toBe(1)
+        expect(error.mock.calls.flat().join('\n')).toContain('fewer than the 4')
+      } finally {
+        rmSync(thin, { recursive: true, force: true })
+      }
+
+      vi.restoreAllMocks()
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('refuses, IN PROCESS, a walk that misses a baselined file and a frozen literal that is gone', () => {
+    /*
+     * The same two refusals as the CLI cases above, called directly — because a child process
+     * is instrumented by nothing and `§6` asks for coverage on the code this task adds. CI
+     * measured these exact lines as the ones holding the branch total under its threshold.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-inproc-'))
+
+    try {
+      // 1. a baseline naming a file this run cannot have scanned.
+      const missingPath = join(tree, 'missing.json')
+      writeFileSync(
+        missingPath,
+        JSON.stringify({
+          entries: [
+            {
+              file: 'no/such/file.css',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#c0ffee',
+              count: 1,
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+      expect(main([], missingPath)).toBe(1)
+      expect(error.mock.calls.flat().join('\n')).toContain('the walk did not reach')
+
+      error.mockClear()
+
+      // 2. a baseline whose frozen literal is not in the file it names.
+      const stalePath = join(tree, 'stale.json')
+      writeFileSync(
+        stalePath,
+        JSON.stringify({
+          entries: [
+            {
+              file: 'apps/api/resources/views/landing/page.blade.php',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#c0ffee',
+              count: 1,
+              lines: [1],
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      expect(main([], stalePath)).toBe(1)
+
+      const said = error.mock.calls.flat().join('\n')
+
+      expect(said).toContain('BASELINE')
+      expect(said).toContain('#c0ffee')
+      expect(said).toContain('remove the entry')
+
+      // 3. and the ordinary green path still returns 0 with the real baseline, so the two
+      //    refusals above are not the only thing this function can do.
+      error.mockClear()
+      expect(main([])).toBe(0)
+      expect(log.mock.calls.flat().join('\n')).toContain('frozen by the dated baseline')
+
+      vi.restoreAllMocks()
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('stops a directive’s argument at a newline rather than running into the stylesheet', () => {
+    /*
+     * The two branches of the balanced scan a well-formed template never reaches: an
+     * unterminated `(` and a `)` that closes a nested pair rather than the directive's own.
+     * Both are one malformed line away, and the consequence of getting them wrong is a
+     * SILENTLY unscanned stylesheet — which is `R-267`'s whole shape.
+     */
+    const read = (css) => scanSource(maskBladeCss(`<style>\n${css}\n</style>`), 'x.blade.php')
+
+    // Unterminated: the blanker must stop at the line break, so the rule BELOW is still read.
+    expect(read('@if ($t\n.after{padding:13px}').map((f) => f.id)).toEqual([
+      'css-spacing-declaration',
+    ])
+
+    // Nested parens in the condition: the inner `)` must not end the argument early.
+    expect(read('@if (str_contains($t, (string) 1)) .z{color:#ff00ff}').map((f) => f.id)).toEqual([
+      'hex',
+    ])
   })
 
   it('refuses a run that never reached a file the baseline has debt for', () => {
