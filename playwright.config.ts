@@ -165,6 +165,19 @@ const STAFF_PASSKEY_SPECS = ['**/staff-passkey.spec.ts'] as const
 const STUDIO_SPECS = ['**/studio.spec.ts'] as const
 
 /**
+ * `QRPAGER-46`'s computed-value gate — the two properties its structural tests could not see:
+ * a section heading computing at the page title's size, and a document rendering 6,618px tall
+ * with the right structure. Both were found by a human looking at a render, which is the
+ * control this project makes repeatable.
+ *
+ * ⚠ EXCLUDED FROM THE KIT'S LISTS BELOW, for the reason the kit's own header gives: those
+ * projects must run from a fresh clone with nothing built, and these cases read pages that
+ * `php artisan landing:render-arrangements` writes — a PHP 8.4 application the browsers
+ * container cannot host. `pnpm run gate:templates` runs both halves in order.
+ */
+const LANDING_TEMPLATE_SPECS = ['**/landing-templates.spec.ts'] as const
+
+/**
  * A WALL TABLET, NOT A PHONE, and that is `§12`'s own reasoning rather than a preference: a
  * kitchen screen is *"greasy, bright and viewed from two metres"*. Measuring staff chrome at
  * 390x844 would measure a layout no kitchen has. 1024x768 at DPR 2 is the commonest mounted
@@ -229,6 +242,7 @@ export default defineConfig({
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
         ...STUDIO_SPECS,
+        ...LANDING_TEMPLATE_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'] },
@@ -247,6 +261,7 @@ export default defineConfig({
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
         ...STUDIO_SPECS,
+        ...LANDING_TEMPLATE_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
@@ -316,6 +331,22 @@ export default defineConfig({
         hasTouch: true,
         ignoreHTTPSErrors: true,
       },
+    },
+
+    {
+      /**
+       * `QRPAGER-46`'s two computed values — a heading that must not match the page title's
+       * size, and a document height bounded for one fixture. Its own project because the kit
+       * must run from a fresh clone with nothing built, and these cases read pages that
+       * `php artisan landing:render-arrangements` writes; `pnpm run gate:templates` runs both
+       * halves in order, and `bin/gate` carries that one command.
+       *
+       * The viewports are set by the spec rather than here: the same case runs at 1280 and at
+       * 390, and a project-level viewport would make one of the two a lie.
+       */
+      name: 'landing-templates',
+      testMatch: [...LANDING_TEMPLATE_SPECS],
+      use: { ...devices['Desktop Chrome'] },
     },
 
     {

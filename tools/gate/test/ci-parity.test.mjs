@@ -248,11 +248,22 @@ describe('the workspace gate and CI run the same steps', () => {
         'fails on whether the host happens to carry the Playwright OS libraries',
     ).toEqual([])
 
-    // Not vacuous: there IS a script that runs playwright, so the filter has something to
-    // judge. An empty `scripts` object would otherwise satisfy the assertion above.
+    /*
+     * Not vacuous: there ARE scripts that run playwright, so the filter has something to
+     * judge. An empty `scripts` object would otherwise satisfy the assertion above.
+     *
+     * ⚠ TWO SINCE `QRPAGER-46`, AND THE COUNT IS STILL EXACT RATHER THAN A FLOOR: `test:browser`
+     * (the kit and engine projects) and `gate:templates` (the computed-value gate, whose first
+     * half is a PHP render the browsers container cannot run). A third would mean a third place
+     * that can forget the engine runner, which is what the filter above is for — so adding one
+     * should be a deliberate edit here rather than a silent widening.
+     */
     expect(
-      Object.entries(pkg.scripts).filter(([, body]) => body.includes('playwright test')).length,
-    ).toBe(1)
+      Object.entries(pkg.scripts)
+        .filter(([, body]) => body.includes('playwright test'))
+        .map(([name]) => name)
+        .sort(),
+    ).toEqual(['gate:templates', 'test:browser'])
   })
 
   it('builds apps/web BEFORE Vitest, in the gate AND in CI -- QA C-1', () => {
