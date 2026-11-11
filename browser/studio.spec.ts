@@ -1245,6 +1245,21 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     return (await page.frameLocator('[data-studio-preview]').locator('body').innerText()).trim()
   }
 
+  /**
+   * The preview's THEME, which is not in the body.
+   *
+   * ⚠ `ThemeStylesheet` puts the tenant's tokens in ONE ATTRIBUTE of the rendered page's
+   * root element and nowhere else — `ThemeTokenTest` asserts exactly that. So `previewText`
+   * and `previewHtml` above, which read `body`, cannot see a colour at all: the first
+   * version of the theme case polled `previewHtml` for twenty seconds against markup that
+   * could never contain it. Third oracle in this suite to name a property and read a proxy.
+   */
+  async function previewTheme(page: Page): Promise<string> {
+    return (
+      (await page.frameLocator('[data-studio-preview]').locator('html').getAttribute('style')) ?? ''
+    )
+  }
+
   /** The same render as markup, for a change that reorders rather than retypes. */
   async function previewHtml(page: Page): Promise<string> {
     return page.frameLocator('[data-studio-preview]').locator('body').innerHTML()
@@ -1404,6 +1419,58 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     expect(stored, 'the stored draft already holds the typed value — nothing was unsaved').not.toBe(
       typed,
     )
+  })
+
+  test('reflects a THEME colour with no Save, and agrees with the draft after one', async ({
+    page,
+  }) => {
+    await signInAsStaff(page)
+    await page.setViewportSize({ width: 1280, height: 1100 })
+
+    // A page with something to colour, saved from the builder first.
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await addBlock(page, 0, `THEME HOST ${String(Date.now())}`)
+    await page.getByRole('button', { name: 'احفظ' }).first().click()
+    await page.waitForTimeout(2_000)
+
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const swatch = page.locator('.studio-colour-input').first()
+    await expect(swatch).toBeVisible()
+
+    /*
+     * ⚠ THE REPORTED BUG, END TO END, ON THE TAB IT WAS REPORTED ON. QRPAGER-45 shipped the
+     * preview contract on the builder page alone: a colour changed here moved nothing, and
+     * after Save the stale key from the builder tab kept winning — so the pane showed
+     * something that contradicted the database and only the arrangement control cleared it.
+     *
+     * The PHP cases assert the contract; only an engine runs the debounce, the Livewire
+     * round trip and the frame reload, which is what the owner actually experienced.
+     */
+    const colour = '#7d2b8f'
+    const before = await previewTheme(page)
+
+    expect(
+      before,
+      'the preview already shows the colour, so nothing below is proven',
+    ).not.toContain(colour)
+
+    await swatch.fill(colour)
+
+    // 1. No Save: the preview catches up on its own.
+    await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
+
+    // 2. After a Save on THIS page, the preview and the stored draft agree — the clause the
+    //    bug violated and the one nothing tested.
+    await page.getByRole('button', { name: 'احفظ' }).first().click()
+    await page.waitForTimeout(2_000)
+
+    await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
+
+    // And it survives a full reload, which reads the STORED draft rather than any key.
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    await expect.poll(async () => previewTheme(page), { timeout: 20_000 }).toContain(colour)
   })
 
   test('reflects an arrangement change with no Save and no refresh', async ({ page }) => {
