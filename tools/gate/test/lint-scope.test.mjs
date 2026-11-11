@@ -165,8 +165,18 @@ describe('Playwright collects the browser specs and nothing else', () => {
      * look at it anyway. The project exists because three of part B's items -- an upload that
      * happens because a file was chosen, a pane that stays in view, and a resolved colour --
      * cannot be settled without the stack.
+     *
+     * ⚠⚠ 24 SINCE `QRPAGER-46` ADDED `landing-templates`, and this is the guard working a
+     * second time. That project measures two COMPUTED values -- a heading's font size and a
+     * document's height -- which the ticket's own invariant puts out of reach of its
+     * structural tests ("assert on structure … never on pixels") and which its two shipped
+     * defects both were. It is deliberately OUTSIDE the kit: the kit must run from a fresh
+     * clone with nothing built, and these cases read pages that
+     * `tools/landing/render-arrangements.php` writes. `pnpm run gate:templates` runs both
+     * halves, `bin/gate` and CI both carry it, and every kit project now ignores the spec by
+     * name.
      */
-    expect(resolved.projects).toHaveLength(23)
+    expect(resolved.projects).toHaveLength(24)
 
     for (const project of resolved.projects) {
       const selects = project.testMatch !== undefined
