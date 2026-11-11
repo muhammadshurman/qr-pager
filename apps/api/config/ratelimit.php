@@ -98,6 +98,29 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Routes that count against a bucket other than their stack's
+    |--------------------------------------------------------------------------
+    |
+    | ⚠ HERE AND NOT AT THE ROUTE, AND THE `§11` ROUND OF 2026-11-11 IS WHY. Laravel
+    | APPENDS route middleware and then sorts it, and `App\Platform\Http\Middleware\RateLimit`
+    | is not in the priority list — so `withoutMiddleware(RateLimit:panel)` plus
+    | `->middleware(RateLimit:studio-preview)` on a panel route puts the limiter LAST,
+    | behind `StartSession` and `Authenticate`. An anonymous flood is then refused by
+    | `Authenticate` before the limiter runs (unmetered) while `StartSession` has already
+    | minted a 7200s Redis session key for it. That is Task 6's security H-2 / `R-027`
+    | exactly, and it was measured on these two routes.
+    |
+    | Keyed by ROUTE NAME, so the middleware stays "which bucket is this request's" and
+    | never "which routes exist", and the panel stack keeps `RateLimit:panel` in the first
+    | position its own comment requires.
+    */
+    'route_buckets' => [
+        'filament.studio.preview' => 'studio-preview',
+        'filament.studio.preview.asset' => 'studio-preview-asset',
+    ],
+
     'buckets' => [
 
         'api' => [
@@ -362,43 +385,56 @@ return [
         ],
 
         /*
-        | THE LIVE PREVIEW — `QRPAGER-45`, and the number is DERIVED FROM A MEASUREMENT
-        | RATHER THAN FITTED TO A SYMPTOM.
+        | THE LIVE PREVIEW — `QRPAGER-45`. THREE BUCKETS, AND EACH SPLIT IS A FINDING.
         |
-        | ⚠ THE FIRST VERSION OF THIS BUCKET WAS 1200/3000 AND THAT WAS THE WRONG FIX.
-        | The `§11` QA round's H-2 is *"a keystroke costs 2 + N metered requests"*; raising
-        | the ceiling removed the 429 and left the cost — and the ceiling was sized to an
-        | operation the same round's M-7 showed was UNBOUNDED. **A limit sized to an
-        | unbounded operation is not a limit.** Muhammad, 2026-11-11: bound the cost first,
-        | then re-derive and say what it is.
+        | ⚠ SPLIT 1: THE DOCUMENT FROM ITS IMAGES — `§11` security round, M-2. One bucket
+        | covered both `/studio/preview` and `/studio/preview/asset/{id}`, whose costs differ
+        | by orders of magnitude: the document is 19 Postgres statements, the asset is 12
+        | **plus up to 5 MiB read whole into a PHP string** (`MediaLibrary::bytes()` does not
+        | stream, and `InspectedImage::MAX_BYTES` is 5 MiB). A bucket sized for both is sized
+        | for neither, and the old number counted requests only. Now the arithmetic can carry
+        | bytes: at 900/min the asset route's ceiling is ~4.5 GB/min of object-store egress
+        | per IP, which is the term `R-289` removes — once an asset may be cached, a reload
+        | stops refetching every image and this bucket drops to the document's size.
         |
-        | WHAT WAS BOUNDED, AND MEASURED AFTERWARDS. `TenantMediaReferences` read the
-        | tenant's media one row per reference, twice per call, behind every keystroke. It
-        | now reads the id set ONCE per instance. Measured with `DB::listen` around
-        | `previewChanged()`: **32 queries at one media reference and 32 at six** — flat.
-        | `UnsavedPreviewTest` asserts that SHAPE, which a threshold cannot express.
+        | ⚠ SPLIT 2: PER-IP FROM PER-TENANT — Muhammad, 2026-11-11. `§4 › Edge & ops`
+        | requires per IP AND per tenant, and ONE middleware instance cannot deliver both:
+        | the limiter must run BEFORE `StartSession` so an anonymous 401 mints no session key
+        | (`R-027`), and at that position `$request->user()` has not resolved, so the
+        | per-tenant half has nothing to key on and is silently skipped (`keysFor()` adds the
+        | tenant key only when the resolver answers). That is already true of every panel page
+        | route and is what `R-143` records.
         |
-        | WHAT IS STILL N, AND WHY IT IS NOT FIXED HERE. Every preview response is
-        | `no-store` — not by this feature's choice but because `HardenResponse` applies
-        | `private, no-store` to everything outside a named allowlist — so a reload refetches
-        | each image: 1 + N metered requests per fire, N <= `MAX_MEDIA_REFERENCES` = 24.
-        | Making an asset cacheable is an entry in that allowlist and a security ruling, not
-        | a line in this ticket: `R-289`.
+        | So the preview carries TWO limiters: the panel stack's own, early, keyed by IP
+        | (bucket chosen by `route_buckets` below), and a second appended at the ROUTE, which
+        | sorts late and therefore runs after `Authenticate` where the tenant resolves. The
+        | `-tenant` buckets below are that second instance; they carry no `per_ip` because
+        | the early one already counted it, and counting twice would halve the real ceiling.
         |
-        | SO THE ARITHMETIC THIS NUMBER COMES FROM. A fire needs a 400ms quiet window, so a
-        | brisk editing session is on the order of 30 fires a minute; at the document cap of
-        | 24 images that is 30 x 25 = 750 metered requests. 900 per IP carries that with
-        | headroom, and 2,400 per tenant carries three such sessions at once. Both are far
-        | below what a script needs to make this expensive, which is the property every
-        | other bucket here is chosen for — and both will come DOWN when `R-289` lands,
-        | because the N term disappears.
+        | ⚠ AND THE SUITE CANNOT TELL YOU THIS. `actingAs()` binds the user directly, so in
+        | tests a tenant resolves even at index 1 — measured: a per-tenant limit of 2 refuses
+        | the third request on BOTH routes in-suite, which is the harness and not production.
+        | Only the late instance meters per tenant on a real request.
         |
-        | ⚠ THE PER-TENANT HALF IS KEPT — `§4 › Edge & ops`' "per IP AND per tenant", and
-        | the reason this is a bucket and not an exemption: every request here runs the
-        | publish path's own renderer over a whole document.
+        | THE COUNTS. A debounce fire is one document request plus one per image, all
+        | `no-store` until `R-289`. A fire needs a 400ms quiet window, so sustained editing
+        | is on the order of 30 fires a minute: 30 documents, and up to 30 × 24 = 720 images.
+        | 120/IP on the document is that with headroom; 900/IP on the assets likewise. The
+        | tenant halves are three such sessions at once.
         */
         'studio-preview' => [
+            'per_ip' => $limit(120, 60),
+        ],
+
+        'studio-preview-tenant' => [
+            'per_tenant' => $limit(360, 60),
+        ],
+
+        'studio-preview-asset' => [
             'per_ip' => $limit(900, 60),
+        ],
+
+        'studio-preview-asset-tenant' => [
             'per_tenant' => $limit(2400, 60),
         ],
 

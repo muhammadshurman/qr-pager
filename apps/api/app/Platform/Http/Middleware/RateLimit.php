@@ -35,6 +35,13 @@ use Throwable;
  */
 final class RateLimit
 {
+    /**
+     * The bucket a PANEL STACK declares, and the only one `route_buckets` may replace.
+     *
+     * A route-level limiter passes its own bucket deliberately and must be left alone.
+     */
+    private const STACK_BUCKET = 'panel';
+
     public function __construct(
         private readonly RequestLimiter $limiter,
         private readonly TenantResolver $resolver,
@@ -42,7 +49,7 @@ final class RateLimit
 
     public function handle(Request $request, Closure $next, string $bucket = 'api'): Response
     {
-        foreach ($this->keysFor($request, $bucket) as [$key, $attempts, $seconds]) {
+        foreach ($this->keysFor($request, $this->bucketFor($request, $bucket)) as [$key, $attempts, $seconds]) {
             if ($this->limiter->tooManyAttempts($key, $attempts, $seconds)) {
                 // QA M-3: the 429 keeps Retry-After, which is what §3 row 4 asks of
                 // it, and gains the body pacing where the route publishes one.
@@ -56,6 +63,67 @@ final class RateLimit
         }
 
         return $next($request);
+    }
+
+    /**
+     * The bucket this request counts against, which is the argument unless a ROUTE asks
+     * for a different one.
+     *
+     * ================================================================================
+     * ⚠ WHY THIS EXISTS, AND WHY A ROUTE-LEVEL `->middleware()` DOES NOT WORK
+     * ================================================================================
+     *
+     * `QRPAGER-45` needed the two `/studio/preview` routes on their own bucket: the live
+     * preview re-requests the document and its images on every debounce fire, which is not
+     * the "human clicking through an admin panel" the `panel` bucket is sized for.
+     *
+     * The first attempt did it at the route — `withoutMiddleware(RateLimit:panel)` plus
+     * `->middleware(RateLimit:studio-preview)` — and the `§11` security round of
+     * 2026-11-11 (H-1) measured what that actually produced. **Route middleware is
+     * APPENDED and then sorted, and this class is not in Laravel's priority list, so the
+     * limiter ran LAST**: after `StartSession` and after `Authenticate`. Measured with
+     * `route:list`, on `/studio` the order is `SetUpPanel → RateLimit:panel → … →
+     * StartSession → … → Authenticate`; on `/studio/preview` it was
+     * `… StartSession → … → Authenticate → … → RateLimit:studio-preview`.
+     *
+     * The consequences were both of the ones the panel's own stack comment exists to
+     * prevent, and they are Task 6's security H-2 / `R-027` arriving again:
+     *
+     *   1. an anonymous flood was **completely unmetered** — `Authenticate` refused it
+     *      with a 401 before the limiter ever ran, so no counter was even created;
+     *   2. every one of those requests still **minted a 7200 s Redis session key**,
+     *      because `StartSession` had already run — filling the instance that is also the
+     *      cache and queue store the customer pager path depends on.
+     *
+     * So the bucket is chosen HERE instead, and `RateLimit:panel` keeps the first position
+     * its own comment says it must have. The map lives in config beside the buckets rather
+     * than in this class, so this stays "which bucket is this request's" and never "which
+     * routes exist".
+     */
+    private function bucketFor(Request $request, string $bucket): string
+    {
+        /*
+         * ⚠ ONLY THE STACK'S OWN BUCKET IS OVERRIDDEN, AND THAT QUALIFIER IS LOAD-BEARING.
+         * The preview routes carry TWO instances of this middleware: the panel stack's, at
+         * index 1, and a route-level one appended after `Authenticate` to meter per tenant.
+         * Without this check the map rewrote BOTH — the late instance was invoked with
+         * `studio-preview-tenant` and silently counted against `studio-preview` instead, so
+         * the per-tenant half never metered and a test driving it saw four 200s.
+         */
+        if ($bucket !== self::STACK_BUCKET) {
+            return $bucket;
+        }
+
+        $name = $request->route()?->getName();
+
+        if ($name === null) {
+            return $bucket;
+        }
+
+        /** @var array<string, string> $overrides */
+        $overrides = (array) config('ratelimit.route_buckets', []);
+
+        return is_string($overrides[$name] ?? null) ? $overrides[$name] : $bucket;
     }
 
     /**

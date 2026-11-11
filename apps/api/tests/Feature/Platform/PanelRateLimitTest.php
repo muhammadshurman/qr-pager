@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Platform\Http\Middleware\RateLimit;
+use Filament\Http\Middleware\SetUpPanel;
+use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Route;
@@ -167,4 +170,84 @@ it('issues no Postgres statement on an anonymous panel refusal', function (): vo
     $this->get('/platform');
 
     expect($statements)->toBe([], 'an anonymous panel refusal reached Postgres: '.implode(' | ', $statements));
+});
+
+/*
+ * ================================================================================
+ * EVERY METERED ROUTE, NOT TWO NAMED ONES — `§11` security round of 2026-11-11, H-1
+ * ================================================================================
+ *
+ * `R-027` (Task 6's security H-2) says the limiter must run BEFORE `StartSession`, because
+ * `StartSession` persists a session to carry a CSRF token before `Authenticate` refuses:
+ * each anonymous 401 would otherwise mint a 7200s Redis key in the instance that is also
+ * the cache and queue store.
+ *
+ * ⚠ IT RECURRED ON 2026-11-11 BECAUSE ITS GUARD WAS ROUTE-SPECIFIC. `QRPAGER-45` gave the
+ * two `/studio/preview` routes their own bucket with `withoutMiddleware()` plus
+ * `->middleware()`, and route middleware is APPENDED and then sorted — this limiter is not
+ * in Laravel's priority list — so it ran LAST, behind `Authenticate`. Anonymous traffic was
+ * unmetered AND still minting session keys. The cases in this file enumerate `/platform`
+ * URIs, so none of them could see it.
+ *
+ * Muhammad's ruling of 2026-11-11: *"Replace it with a meta-test over the route list. §4
+ * already sets that precedent — a meta-test fails the build if any table lacks RLS. Two
+ * per-route cases are the thing that just failed."*
+ *
+ * So this walks EVERY registered route and holds the ordering invariant on all of them. A
+ * route added next year, by anybody, is covered on the day it is registered.
+ */
+it('runs the limiter before the session and the guard on every metered route', function (): void {
+    $router = app('router');
+    $offenders = [];
+    $metered = 0;
+
+    foreach ($router->getRoutes()->getRoutes() as $route) {
+        $middleware = array_values(array_map(
+            static fn (string $m): string => explode(':', $m)[0],
+            $router->gatherRouteMiddleware($route)
+        ));
+
+        /*
+         * ⚠ PANEL ROUTES, AND THE SCOPE IS A DECISION RATHER THAN A CONVENIENCE. The
+         * invariant belongs to stacks that DECLARE the limiter first and then refuse an
+         * anonymous caller — which is every Filament panel route, identified by
+         * `SetUpPanel`. It is NOT true of the `web` group, where `RateLimit:panel` is
+         * deliberately APPENDED (`bootstrap/app.php`) so the per-tenant half can see a
+         * resolved user on `POST /livewire-<hash>/update`; nor of the `v1` surface, which
+         * authenticates by token rather than by session.
+         *
+         * Asserting it everywhere would have flagged fourteen pre-existing routes that are
+         * arranged that way on purpose — measured when this case was first written — and a
+         * meta-test that fails on correct code is `R-290`'s shape, which this repo filed
+         * the same night.
+         */
+        if (! in_array(SetUpPanel::class, $middleware, true)) {
+            continue;
+        }
+
+        $limiter = array_search(RateLimit::class, $middleware, true);
+
+        if ($limiter === false) {
+            $offenders[] = ($route->uri() ?: '/').' is a panel route with no rate limiter at all';
+
+            continue;
+        }
+
+        $metered++;
+
+        foreach ([StartSession::class, 'Filament\Http\Middleware\Authenticate', Authenticate::class] as $after) {
+            $at = array_search($after, $middleware, true);
+
+            if ($at !== false && $at < $limiter) {
+                $offenders[] = ($route->uri() ?: '/').' runs '.class_basename($after).' before the limiter';
+            }
+        }
+    }
+
+    // A bound first, so a walk that found nothing cannot pass by vacancy — the shape this
+    // file's own derivation cases already use.
+    expect($metered)->toBeGreaterThan(5, 'almost no panel route was walked, so this proves nothing');
+
+    expect($offenders, 'these routes refuse or start a session before the rate limiter runs, '
+        .'so an anonymous flood on them is unmetered and mints a Redis session key each time')->toBe([]);
 });

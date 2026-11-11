@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Features\Landing;
 
 use App\Domain\Landing\MediaReferences;
+use App\Platform\Database\DatabaseRoles;
+use App\Platform\Database\TenantContext;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -53,7 +55,66 @@ final class TenantMediaReferences implements MediaReferences
 
     public function has(string $mediaId): bool
     {
+        $this->assertStillInOwnScope();
+
         return array_key_exists(strtolower($mediaId), $this->owned ??= $this->load());
+    }
+
+    /**
+     * Refuse to answer from memory outside the scope this instance belongs to.
+     *
+     * ================================================================================
+     * ⚠ THE MEMO'S HAZARD, CLOSED AT THE CLASS RATHER THAN BY AN AUDIT
+     * ================================================================================
+     *
+     * Before `QRPAGER-45` every `has()` was a live query, so RLS refused a foreign id on
+     * every call no matter who held the object — which is what `MediaIsolationTest`'s
+     * *"neither half is load-bearing alone"* rests on. A memo takes the policy out of the
+     * per-call path: the `§11` security round of 2026-11-11 (M-1) measured a WARM instance
+     * answering **true** for tenant alpha's asset while running inside tenant beta's scope.
+     *
+     * Every construction site today is `new TenantMediaReferences($id)` inside the matching
+     * `withTenant($id, …)`, and nothing binds the class in the container — but
+     * `laravel/octane` is a dependency, so the application can be RESIDENT between requests,
+     * and an instance that outlived its scope would be state leaking across tenants through
+     * memory. That is `§4`'s pooled-connection hazard one layer up.
+     *
+     * Muhammad's ruling of 2026-11-11: *"A lifetime audit goes stale the first time someone
+     * binds it in the container; a self-check cannot."* So the instance carries its tenant
+     * id already, and now compares it to the LIVE scope on every call and throws otherwise.
+     * It costs no query — `TenantContext::current()` is the scope the process itself opened
+     * — so the batching this guard protects is unaffected.
+     *
+     * Fail CLOSED: a mismatch is a programming error, not an input, so it raises rather than
+     * answering false. Answering false would be a silent refusal of a tenant's own media.
+     */
+    private function assertStillInOwnScope(): void
+    {
+        /*
+         * ⚠ FREE, AND THE EXACT CHECK HAD TO MOVE — SEE `load()`. `TenantContext::current()`
+         * is NOT free: it calls `readState()`, which reads `app.tenant_id` from the database.
+         * Calling it per `has()` put a round trip back on every media reference and the cost
+         * grew with the page again — measured, 36 queries at one image and 56 at six, which
+         * is exactly the unboundedness `R-291` and the `§11` QA round's M-7 had just closed.
+         * A guard that reopens the High it stands next to is not a guard.
+         *
+         * `hasOpenScope()` reads a PHP array and costs nothing. It closes the case Muhammad
+         * named as the one that matters most — a queued job or a boot-time call reaching this
+         * class with NO tenant context at all — and the exact identity is asserted once, in
+         * `load()`, where a query is being made anyway.
+         *
+         * WHAT IS LEFT, STATED RATHER THAN IMPLIED: a warm instance reused inside a
+         * DIFFERENT open scope is not detected. Closing that per call needs the tenant id
+         * available in PHP, and that mirror was deliberately REMOVED — `R-017` carries
+         * reintroducing it, and `TenantContext::current()`'s own comment explains why the
+         * shape check cannot stand in for it. `R-293` records the residual with that
+         * dependency named.
+         */
+        if (! app(TenantContext::class)->hasOpenScope(DatabaseRoles::connection('app'))) {
+            throw new \LogicException(
+                'a media reference check ran with no tenant scope open'
+            );
+        }
     }
 
     /**
@@ -82,6 +143,21 @@ final class TenantMediaReferences implements MediaReferences
      */
     private function load(): array
     {
+        /*
+         * ⚠ THE EXACT IDENTITY CHECK LIVES HERE, WHERE A QUERY IS ALREADY HAPPENING.
+         * One round trip per INSTANCE rather than one per reference, so the batching the
+         * `§11` rounds asked for survives. It refuses to populate a memo from a scope that
+         * is not this instance's — which is the state that would make every later answer
+         * wrong, and the one an Octane-resident object could otherwise reach.
+         */
+        $scope = app(TenantContext::class)->current();
+
+        if ($scope !== $this->tenantId) {
+            throw new \LogicException(
+                'a media reference set was loaded outside the tenant scope it was built for'
+            );
+        }
+
         $ids = DB::table('media_assets')
             ->where('tenant_id', $this->tenantId)
             ->pluck('id');

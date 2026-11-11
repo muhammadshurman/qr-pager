@@ -1,5 +1,5 @@
 $ node tools/gate/bin/gate.mjs
-gate: full output -> /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261110T221136Z.log
+gate: full output -> /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261110T235513Z.log
 
 === pnpm run lint:es
 $ eslint .
@@ -23,13 +23,13 @@ $ prettier --check '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs
 
 === pnpm run typecheck
 Scope: 7 of 8 workspace projects
-packages/tokens typecheck$ tsc --noEmit -p tsconfig.json
-packages/contracts typecheck$ tsc --noEmit -p tsconfig.json
 tools/design-tokens typecheck$ echo 'no TypeScript in this package (ESLint plugins are .mjs)' && exit 0
+packages/tokens typecheck$ tsc --noEmit -p tsconfig.json
 tools/gate typecheck$ echo 'no TypeScript in this package' && exit 0
+packages/contracts typecheck$ tsc --noEmit -p tsconfig.json
 tools/design-tokens typecheck: no TypeScript in this package (ESLint plugins are .mjs)
-tools/gate typecheck: no TypeScript in this package
 tools/design-tokens typecheck: Done
+tools/gate typecheck: no TypeScript in this package
 tools/gate typecheck: Done
 packages/contracts typecheck: Done
 apps/site typecheck$ tsc --noEmit -p tsconfig.json
@@ -65,7 +65,7 @@ $ pnpm audit --audit-level low
    ▲ Next.js 15.5.28
 
    Creating an optimized production build ...
- ✓ Compiled successfully in 1587ms
+ ✓ Compiled successfully in 1623ms
    Linting and checking validity of types ...
    Collecting page data ...
    Generating static pages (0/12) ...
@@ -140,10 +140,10 @@ $ next build
 
  Test Files  65 passed (65)
       Tests  1210 passed (1210)
-   Start at  01:12:36
-   Duration  34.06s (tests 61%, environment 28%, setup 5%, import 2%, worker 2%, transform 1%)
+   Start at  02:56:12
+   Duration  33.87s (tests 61%, environment 28%, setup 5%, import 2%, transform 2%, worker 2%)
 
-Environment  |web| jsdom was created 35 times · 33.47s total, 35% of tracked time
+Environment  |web| jsdom was created 35 times · 31.99s total, 34% of tracked time
              create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
              learn more: https://vitest.dev/guide/improving-performance#test-environments
 
@@ -200,114 +200,114 @@ Lines        : 95.31% ( 2381/2498 )
 
 Running 105 tests using 1 worker
 
-  ✓    1 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (158ms)
-  ✓    2 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (94ms)
-  ✓    3 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (90ms)
-  ✓    4 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (88ms)
-  ✓    5 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (90ms)
-  ✓    6 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (83ms)
-  ✓    7 [chromium] › browser/a11y.spec.ts:343:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (80ms)
-  ✓    8 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (69ms)
-  ✓    9 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (70ms)
-  ✓   10 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (68ms)
-  ✓   11 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (65ms)
-  ✓   12 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (71ms)
-  ✓   13 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (68ms)
-  ✓   14 [chromium] › browser/a11y.spec.ts:405:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (43ms)
-  ✓   15 [chromium] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (72ms)
-  ✓   16 [chromium] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (83ms)
-  ✓   17 [chromium] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (70ms)
-  ✓   18 [chromium] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (71ms)
-  ✓   19 [chromium] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (76ms)
-  ✓   20 [chromium] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (71ms)
-  ✓   21 [chromium] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (66ms)
-  ✓   22 [chromium] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (67ms)
-  ✓   23 [chromium] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (66ms)
-  ✓   24 [chromium] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (69ms)
+  ✓    1 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (146ms)
+  ✓    2 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (86ms)
+  ✓    3 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (84ms)
+  ✓    4 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (81ms)
+  ✓    5 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (83ms)
+  ✓    6 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (81ms)
+  ✓    7 [chromium] › browser/a11y.spec.ts:343:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (81ms)
+  ✓    8 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (65ms)
+  ✓    9 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (67ms)
+  ✓   10 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (64ms)
+  ✓   11 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (63ms)
+  ✓   12 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (64ms)
+  ✓   13 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (62ms)
+  ✓   14 [chromium] › browser/a11y.spec.ts:405:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (40ms)
+  ✓   15 [chromium] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (66ms)
+  ✓   16 [chromium] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (66ms)
+  ✓   17 [chromium] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (65ms)
+  ✓   18 [chromium] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (65ms)
+  ✓   19 [chromium] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (70ms)
+  ✓   20 [chromium] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (80ms)
+  ✓   21 [chromium] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (73ms)
+  ✓   22 [chromium] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (64ms)
+  ✓   23 [chromium] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (65ms)
+  ✓   24 [chromium] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (65ms)
   ✓   25 [chromium] › browser/a11y.spec.ts:528:3 › R-118 clause 3 — the engine resolves the tokens the table was computed from › every barred pair in the generated table passes, in both themes (1ms)
-  ✓   26 [chromium] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (45ms)
-  ✓   27 [chromium] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (43ms)
-  ✓   28 [chromium] › browser/a11y.spec.ts:577:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (51ms)
-  ✓   29 [chromium] › browser/a11y.spec.ts:631:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (37ms)
-  ✓   30 [chromium] › browser/a11y.spec.ts:644:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (37ms)
-  ✓   31 [chromium] › browser/a11y.spec.ts:652:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (76ms)
-  ✓   32 [chromium] › browser/a11y.spec.ts:692:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 120ms (80ms)
+  ✓   26 [chromium] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (42ms)
+  ✓   27 [chromium] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (46ms)
+  ✓   28 [chromium] › browser/a11y.spec.ts:577:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (50ms)
+  ✓   29 [chromium] › browser/a11y.spec.ts:631:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (36ms)
+  ✓   30 [chromium] › browser/a11y.spec.ts:644:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (39ms)
+  ✓   31 [chromium] › browser/a11y.spec.ts:652:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (79ms)
+  ✓   32 [chromium] › browser/a11y.spec.ts:692:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 120ms (90ms)
   -   33 [chromium] › browser/a11y.spec.ts:731:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter
-  ✓   34 [chromium] › browser/panel.spec.ts:236:3 › R-118 clause 1 — a visible focus ring on the panel › draws a ring the engine reports as non-zero (104ms)
-  ✓   35 [chromium] › browser/panel.spec.ts:278:3 › R-118 clause 2 — a measured 44px minimum touch target › gives every interactive element at least 44px in both directions (126ms)
-  ✓   36 [chromium] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › platform: every class resolves to the px its number names (86ms)
-  ✓   37 [chromium] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › studio: every class resolves to the px its number names (90ms)
-  ✓   38 [chromium] › browser/panel.spec.ts:459:3 › the restyle mirrors under RTL — §3 › renders every floored control the same size at dir=rtl (129ms)
+  ✓   34 [chromium] › browser/panel.spec.ts:236:3 › R-118 clause 1 — a visible focus ring on the panel › draws a ring the engine reports as non-zero (103ms)
+  ✓   35 [chromium] › browser/panel.spec.ts:278:3 › R-118 clause 2 — a measured 44px minimum touch target › gives every interactive element at least 44px in both directions (125ms)
+  ✓   36 [chromium] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › platform: every class resolves to the px its number names (85ms)
+  ✓   37 [chromium] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › studio: every class resolves to the px its number names (89ms)
+  ✓   38 [chromium] › browser/panel.spec.ts:459:3 › the restyle mirrors under RTL — §3 › renders every floored control the same size at dir=rtl (128ms)
   ✓   39 [chromium] › browser/panel.spec.ts:502:3 › the restyle mirrors under RTL — §3 › adds no physical-direction property in any CSS this task authored (1ms)
   ✓   40 [chromium] › browser/panel.spec.ts:549:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › publishes every ratio floored, on the three figures that caught the convention (1ms)
-  ✓   41 [chromium] › browser/panel.spec.ts:571:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › puts the primary button’s own colours at 4.5 or better (95ms)
-  ✓   42 [chromium] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › platform: every text utility clears 4.5 in both themes (123ms)
+  ✓   41 [chromium] › browser/panel.spec.ts:571:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › puts the primary button’s own colours at 4.5 or better (83ms)
+  ✓   42 [chromium] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › platform: every text utility clears 4.5 in both themes (129ms)
   ✓   43 [chromium] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › studio: every text utility clears 4.5 in both themes (125ms)
-  ✓   44 [chromium] › browser/panel.spec.ts:727:3 › R-118 clause 4 — prefers-reduced-motion on the panel › carries a reduced-motion rule in the compiled theme at all (4ms)
+  ✓   44 [chromium] › browser/panel.spec.ts:727:3 › R-118 clause 4 — prefers-reduced-motion on the panel › carries a reduced-motion rule in the compiled theme at all (1ms)
   ✓   45 [chromium] › browser/panel.spec.ts:736:3 › R-118 clause 4 — prefers-reduced-motion on the panel › suppresses the button’s transition when the user asks for less motion (80ms)
-  ✓   46 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (123ms)
-  ✓   47 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (107ms)
-  ✓   48 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (95ms)
-  ✓   49 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (85ms)
-  ✓   50 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (91ms)
-  ✓   51 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (86ms)
-  ✓   52 [chromium-reduced-motion] › browser/a11y.spec.ts:343:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (78ms)
-  ✓   53 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (66ms)
-  ✓   54 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (67ms)
-  ✓   55 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (63ms)
-  ✓   56 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (66ms)
-  ✓   57 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (66ms)
-  ✓   58 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (63ms)
-  ✓   59 [chromium-reduced-motion] › browser/a11y.spec.ts:405:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (38ms)
-  ✓   60 [chromium-reduced-motion] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (70ms)
-  ✓   61 [chromium-reduced-motion] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (62ms)
-  ✓   62 [chromium-reduced-motion] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (67ms)
-  ✓   63 [chromium-reduced-motion] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (71ms)
-  ✓   64 [chromium-reduced-motion] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (66ms)
-  ✓   65 [chromium-reduced-motion] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (67ms)
-  ✓   66 [chromium-reduced-motion] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (72ms)
-  ✓   67 [chromium-reduced-motion] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (75ms)
-  ✓   68 [chromium-reduced-motion] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (75ms)
-  ✓   69 [chromium-reduced-motion] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (73ms)
+  ✓   46 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (117ms)
+  ✓   47 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (87ms)
+  ✓   48 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (90ms)
+  ✓   49 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (80ms)
+  ✓   50 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (79ms)
+  ✓   51 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (77ms)
+  ✓   52 [chromium-reduced-motion] › browser/a11y.spec.ts:343:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (79ms)
+  ✓   53 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (68ms)
+  ✓   54 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (68ms)
+  ✓   55 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (69ms)
+  ✓   56 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (64ms)
+  ✓   57 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (71ms)
+  ✓   58 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (65ms)
+  ✓   59 [chromium-reduced-motion] › browser/a11y.spec.ts:405:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (39ms)
+  ✓   60 [chromium-reduced-motion] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (66ms)
+  ✓   61 [chromium-reduced-motion] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (65ms)
+  ✓   62 [chromium-reduced-motion] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (64ms)
+  ✓   63 [chromium-reduced-motion] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (65ms)
+  ✓   64 [chromium-reduced-motion] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (70ms)
+  ✓   65 [chromium-reduced-motion] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (68ms)
+  ✓   66 [chromium-reduced-motion] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (65ms)
+  ✓   67 [chromium-reduced-motion] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (67ms)
+  ✓   68 [chromium-reduced-motion] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (67ms)
+  ✓   69 [chromium-reduced-motion] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (70ms)
   ✓   70 [chromium-reduced-motion] › browser/a11y.spec.ts:528:3 › R-118 clause 3 — the engine resolves the tokens the table was computed from › every barred pair in the generated table passes, in both themes (1ms)
-  ✓   71 [chromium-reduced-motion] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (46ms)
-  ✓   72 [chromium-reduced-motion] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (47ms)
-  ✓   73 [chromium-reduced-motion] › browser/a11y.spec.ts:577:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (52ms)
-  ✓   74 [chromium-reduced-motion] › browser/a11y.spec.ts:631:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (38ms)
+  ✓   71 [chromium-reduced-motion] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (42ms)
+  ✓   72 [chromium-reduced-motion] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (43ms)
+  ✓   73 [chromium-reduced-motion] › browser/a11y.spec.ts:577:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (56ms)
+  ✓   74 [chromium-reduced-motion] › browser/a11y.spec.ts:631:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (35ms)
   ✓   75 [chromium-reduced-motion] › browser/a11y.spec.ts:644:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (40ms)
-  ✓   76 [chromium-reduced-motion] › browser/a11y.spec.ts:652:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (116ms)
+  ✓   76 [chromium-reduced-motion] › browser/a11y.spec.ts:652:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (79ms)
   -   77 [chromium-reduced-motion] › browser/a11y.spec.ts:692:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 120ms
-  ✓   78 [chromium-reduced-motion] › browser/a11y.spec.ts:731:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter (99ms)
-  ✓   79 [chromium-reduced-motion] › browser/panel.spec.ts:236:3 › R-118 clause 1 — a visible focus ring on the panel › draws a ring the engine reports as non-zero (112ms)
-  ✓   80 [chromium-reduced-motion] › browser/panel.spec.ts:278:3 › R-118 clause 2 — a measured 44px minimum touch target › gives every interactive element at least 44px in both directions (136ms)
-  ✓   81 [chromium-reduced-motion] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › platform: every class resolves to the px its number names (87ms)
-  ✓   82 [chromium-reduced-motion] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › studio: every class resolves to the px its number names (95ms)
-  ✓   83 [chromium-reduced-motion] › browser/panel.spec.ts:459:3 › the restyle mirrors under RTL — §3 › renders every floored control the same size at dir=rtl (138ms)
+  ✓   78 [chromium-reduced-motion] › browser/a11y.spec.ts:731:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter (75ms)
+  ✓   79 [chromium-reduced-motion] › browser/panel.spec.ts:236:3 › R-118 clause 1 — a visible focus ring on the panel › draws a ring the engine reports as non-zero (102ms)
+  ✓   80 [chromium-reduced-motion] › browser/panel.spec.ts:278:3 › R-118 clause 2 — a measured 44px minimum touch target › gives every interactive element at least 44px in both directions (164ms)
+  ✓   81 [chromium-reduced-motion] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › platform: every class resolves to the px its number names (91ms)
+  ✓   82 [chromium-reduced-motion] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › studio: every class resolves to the px its number names (96ms)
+  ✓   83 [chromium-reduced-motion] › browser/panel.spec.ts:459:3 › the restyle mirrors under RTL — §3 › renders every floored control the same size at dir=rtl (125ms)
   ✓   84 [chromium-reduced-motion] › browser/panel.spec.ts:502:3 › the restyle mirrors under RTL — §3 › adds no physical-direction property in any CSS this task authored (2ms)
   ✓   85 [chromium-reduced-motion] › browser/panel.spec.ts:549:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › publishes every ratio floored, on the three figures that caught the convention (1ms)
-  ✓   86 [chromium-reduced-motion] › browser/panel.spec.ts:571:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › puts the primary button’s own colours at 4.5 or better (86ms)
-  ✓   87 [chromium-reduced-motion] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › platform: every text utility clears 4.5 in both themes (132ms)
-  ✓   88 [chromium-reduced-motion] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › studio: every text utility clears 4.5 in both themes (143ms)
+  ✓   86 [chromium-reduced-motion] › browser/panel.spec.ts:571:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › puts the primary button’s own colours at 4.5 or better (84ms)
+  ✓   87 [chromium-reduced-motion] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › platform: every text utility clears 4.5 in both themes (131ms)
+  ✓   88 [chromium-reduced-motion] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › studio: every text utility clears 4.5 in both themes (127ms)
   ✓   89 [chromium-reduced-motion] › browser/panel.spec.ts:727:3 › R-118 clause 4 — prefers-reduced-motion on the panel › carries a reduced-motion rule in the compiled theme at all (1ms)
   ✓   90 [chromium-reduced-motion] › browser/panel.spec.ts:736:3 › R-118 clause 4 — prefers-reduced-motion on the panel › suppresses the button’s transition when the user asks for less motion (84ms)
-  ✓   91 [engines-chromium] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (80ms)
-  ✓   92 [engines-chromium] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (57ms)
-  ✓   93 [engines-chromium] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (43ms)
-  ✓   94 [engines-chromium] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (42ms)
+  ✓   91 [engines-chromium] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (75ms)
+  ✓   92 [engines-chromium] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (50ms)
+  ✓   93 [engines-chromium] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (38ms)
+  ✓   94 [engines-chromium] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (37ms)
   ✓   95 [engines-chromium] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (41ms)
-  ✓   96 [engines-firefox] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (851ms)
-  ✓   97 [engines-firefox] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (220ms)
-  ✓   98 [engines-firefox] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (174ms)
-  ✓   99 [engines-firefox] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (173ms)
-  ✓  100 [engines-firefox] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (219ms)
-  ✓  101 [engines-webkit] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (640ms)
-  ✓  102 [engines-webkit] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (633ms)
-  ✓  103 [engines-webkit] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (607ms)
-  ✓  104 [engines-webkit] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (608ms)
-  ✓  105 [engines-webkit] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (608ms)
+  ✓   96 [engines-firefox] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (829ms)
+  ✓   97 [engines-firefox] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (224ms)
+  ✓   98 [engines-firefox] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (184ms)
+  ✓   99 [engines-firefox] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (198ms)
+  ✓  100 [engines-firefox] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (165ms)
+  ✓  101 [engines-webkit] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (688ms)
+  ✓  102 [engines-webkit] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (648ms)
+  ✓  103 [engines-webkit] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (617ms)
+  ✓  104 [engines-webkit] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (620ms)
+  ✓  105 [engines-webkit] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (609ms)
 
   2 skipped
-  103 passed (15.1s)
+  103 passed (14.6s)
 $ tools/browsers/bin/browsers node_modules/.bin/playwright test --project=chromium --project=chromium-reduced-motion --project=engines-chromium --project=engines-firefox --project=engines-webkit
 browsers: this host cannot launch all three engines; using the container.
 
@@ -315,5 +315,5 @@ browsers: this host cannot launch all three engines; using the container.
 check-records: §0 agrees with the tags, the ledger, its own measured sha and every total it states; every committed transcript is current and green.
 $ node tools/gate/bin/check-records
 
-gate: all 13 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261110T221136Z.log
+gate: all 13 steps green. Full output: /home/pixels/code/qr-pager/storage/logs/gate-frontend-20261110T235513Z.log
 EXIT=0

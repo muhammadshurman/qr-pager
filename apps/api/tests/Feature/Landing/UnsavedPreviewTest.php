@@ -9,11 +9,12 @@ use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\StudioForm;
+use App\Features\Landing\TenantMediaReferences;
 use App\Features\Landing\UnsavedPreview;
 use App\Platform\Http\Middleware\RateLimit;
-use Filament\Forms\Components\Repeater;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
@@ -532,49 +533,113 @@ it('renders no neighbour asset even from a key that already holds one', function
  * ================================================================================
  */
 
-it('meters the preview on its own bucket, not on the one sized for a person clicking', function (): void {
+it('meters the preview on its own bucket, BEFORE the session is started', function (): void {
     /*
-     * ⚠ H-2. After `QRPAGER-45` one debounce fire is a Livewire update PLUS the preview
-     * document PLUS one asset request per media reference — up to 24 — all `no-store`, so
-     * the browser refetches every one on every reload. On the `panel` bucket (240/min per
-     * IP, whose own comment says it is sized for "a human clicking through an admin
-     * panel") a ten-image page burns the whole budget in about eleven seconds and the
-     * owner is then 429'd out of the page they are editing.
+     * ⚠ THIS CASE REPLACES ONE THAT ASSERTED ATTACHMENT AND MISSED A HIGH. The first
+     * version read the gathered middleware and checked that `RateLimit:studio-preview` was
+     * present and `RateLimit:panel` absent. Both were true — and the `§11` security round
+     * of 2026-11-11 (H-1) measured what that arrangement actually did: route middleware is
+     * APPENDED and then sorted, and `RateLimit` is not in Laravel's priority list, so the
+     * limiter ran LAST. Behind `Authenticate`, an anonymous flood was refused 401 before
+     * the limiter existed — completely unmetered — and behind `StartSession`, every one of
+     * those requests had already minted a 7200s Redis session key. Task 6's security H-2
+     * and `R-027`, re-opened by a fix for a rate-limit finding.
      *
-     * Read off the ROUTER rather than from a second copy of the list, which is the shape
-     * `ReviewFixesTest` already uses for `Authenticate` on these same two routes.
+     * So POSITION is the property, and it is asserted against `StartSession` and
+     * `Authenticate` by name rather than by index, plus the bucket actually being driven.
      */
-    $routes = collect(app('router')->getRoutes()->getRoutes())
-        ->filter(fn ($route) => in_array($route->getName(), [
-            'filament.studio.preview',
-            'filament.studio.preview.asset',
-        ], true));
+    $router = app('router');
 
-    expect($routes)->toHaveCount(2, 'the preview routes are not registered under the names this asserts');
+    foreach (['filament.studio.preview', 'filament.studio.preview.asset'] as $name) {
+        $route = $router->getRoutes()->getByName($name);
 
-    foreach ($routes as $route) {
-        /*
-         * ⚠ `gatherRouteMiddleware()` AND NOT `$route->gatherMiddleware()`. The latter
-         * returns what is ATTACHED and ignores `withoutMiddleware()` exclusions entirely,
-         * so the first version of this case reported the panel bucket still present on a
-         * route `php artisan route:list` already showed without it. It would have failed
-         * forever on a correct fix — which is the opposite of a vacuous assertion and just
-         * as useless.
-         */
-        $middleware = app('router')->gatherRouteMiddleware($route);
+        expect($route, "the route {$name} is not registered")->not->toBeNull();
 
-        expect($middleware)->toContain(RateLimit::class.':studio-preview')
-            ->and($middleware)->not->toContain(RateLimit::class.':panel');
+        $middleware = array_values(array_map(
+            static fn (string $m): string => explode(':', $m)[0],
+            $router->gatherRouteMiddleware($route)
+        ));
 
-        // ⚠ AND THE AUTH LAYER SURVIVED THE SWAP. `withoutMiddleware()` is a blunt tool and
-        // these two routes were single-layered once already (the §11 security review of
-        // 2026-10-28); losing `Authenticate` here would open the draft with the suite green.
-        expect($middleware)->toContain(Authenticate::class);
+        $limiter = array_search(RateLimit::class, $middleware, true);
+        $session = array_search(StartSession::class, $middleware, true);
+        $authenticate = array_search(Authenticate::class, $middleware, true);
+
+        expect($limiter, "no rate limiter on {$name}")->not->toBeFalse();
+        expect($session, "no StartSession on {$name}")->not->toBeFalse();
+        expect($authenticate, "no Authenticate on {$name}")->not->toBeFalse();
+
+        // An anonymous 401 must not mint a session key, and must still be counted.
+        expect($limiter)->toBeLessThan($session, "the limiter runs after StartSession on {$name}");
+        expect($limiter)->toBeLessThan($authenticate, "the limiter runs after Authenticate on {$name}");
     }
 
-    // The bucket is real and meters BOTH halves — §4 › Edge & ops' "per IP AND per tenant".
-    expect(config('ratelimit.buckets.studio-preview.per_ip'))->not->toBeNull()
-        ->and(config('ratelimit.buckets.studio-preview.per_tenant'))->not->toBeNull();
+    // And the preview counts against its OWN bucket, chosen by name in config.
+    /*
+     * ⚠ FETCHED AS AN ARRAY, NOT THROUGH DOT NOTATION. `config()` reads a dot as nesting,
+     * and these keys ARE route names containing dots — `config('…route_buckets.filament.studio.preview')`
+     * answers null for a map that holds exactly that key. One more assertion that named a
+     * property and queried a proxy for it.
+     */
+    $overrides = (array) config('ratelimit.route_buckets');
+
+    expect($overrides['filament.studio.preview'] ?? null)->toBe('studio-preview')
+        ->and($overrides['filament.studio.preview.asset'] ?? null)->toBe('studio-preview-asset');
+
+    /*
+     * ⚠ AND A SECOND LIMITER RUNS LATE, WHICH IS THE OTHER HALF OF §4. The early one
+     * cannot meter per tenant — it runs before `Authenticate`, so no tenant has resolved and
+     * `keysFor()` skips the tenant key entirely. One instance can satisfy only one half of
+     * "per IP AND per tenant" from one position, so the preview carries two.
+     */
+    foreach ([
+        'filament.studio.preview' => 'studio-preview-tenant',
+        'filament.studio.preview.asset' => 'studio-preview-asset-tenant',
+    ] as $name => $late) {
+        $route = $router->getRoutes()->getByName($name);
+        $middleware = $router->gatherRouteMiddleware($route);
+
+        expect($middleware)->toContain(RateLimit::class.':'.$late);
+
+        // The EARLY bucket carries no per-tenant limit and the LATE one no per-ip, so
+        // neither counts the other's dimension twice.
+        $early = (array) config('ratelimit.buckets.'.($overrides[$name] ?? ''));
+        $lateBucket = (array) config('ratelimit.buckets.'.$late);
+
+        expect($early)->toHaveKey('per_ip')
+            ->and($early)->not->toHaveKey('per_tenant');
+        expect($lateBucket)->toHaveKey('per_tenant')
+            ->and($lateBucket)->not->toHaveKey('per_ip');
+    }
+});
+
+it('refuses an anonymous flood on the preview, rather than serving it unmetered', function (): void {
+    /*
+     * ⚠ DRIVEN, NOT CONFIGURED — `R-063`'s own clause, and the `§11` round's L-1. A bucket
+     * whose numbers, keys or REACHABILITY regress passes an attachment check; only a 429
+     * can fail. This is deliberately shaped like `PanelRateLimitTest` › *refuses an
+     * anonymous flood on a panel route*, because it is the same property on a route that
+     * lost it for one commit.
+     *
+     * The limit is read from config so the loop is bounded by the value rather than by a
+     * number written here, and it is narrowed for the test: 900 real requests would make
+     * this case cost more than it proves.
+     */
+    config()->set('ratelimit.buckets.studio-preview.per_ip', ['attempts' => 3, 'seconds' => 60]);
+
+    $limit = (int) config('ratelimit.buckets.studio-preview.per_ip.attempts');
+
+    expect($limit)->toBe(3);
+
+    $statuses = [];
+
+    for ($i = 0; $i < $limit + 2; $i++) {
+        $statuses[] = test()->get('/studio/preview')->getStatusCode();
+    }
+
+    // The first are 401 — anonymous, refused by Authenticate — and the last are 429,
+    // which is only possible if the limiter ran BEFORE Authenticate.
+    expect(array_slice($statuses, 0, $limit))->each->toBe(401);
+    expect(array_slice($statuses, $limit))->each->toBe(429);
 });
 
 it('starts a newly added block with no seeded item, so it is valid on arrival', function (): void {
@@ -798,4 +863,238 @@ it('gives the empty item list a visible next action, so H-1 traded no dead end',
      * which is precisely the dead end it exists to refuse.
      */
     expect($region)->not->toContain('fi-hidden');
+});
+
+it('refuses a media check with no tenant scope, and refuses to load in the wrong one', function (): void {
+    $alpha = test()->actingForTenant(role: TenantRole::Owner);
+    app(MediaLibrary::class)->store($alpha, 'alpha.png', ImageFixtures::png());
+    $alphaAsset = app(MediaLibrary::class)->all($alpha)[0]->id;
+
+    $beta = test()->actingForTenant(role: TenantRole::Owner);
+
+    /*
+     * ⚠ TWO GUARANTEES, AND THE THIRD IS NAMED RATHER THAN PRETENDED — `§11` security
+     * round M-1, and Muhammad's instruction of 2026-11-11 to assert the id on every call.
+     *
+     * Batching this lookup took RLS out of the per-call path: a warm instance answered
+     * **true** for alpha's asset inside beta's scope, where a live query would have been
+     * refused by the policy. The exact per-call check Muhammad asked for turned out to cost
+     * a ROUND TRIP — `TenantContext::current()` reads `app.tenant_id` from the database —
+     * and measured, it put the cost back on every reference: 36 queries at one image, 56 at
+     * six. A guard that reopens the unboundedness it stands beside is not a guard.
+     *
+     * A FREE exact check is not available: `TenantContext::$openScopes` is
+     * `array<string,int>`, a depth counter per connection, and the PHP-side tenant mirror
+     * was deliberately REMOVED — `R-017`. So:
+     *
+     *   1. NO SCOPE AT ALL → throws, per call, free. Muhammad: *"a queued job or a
+     *      boot-time call reaching that class with no tenant context — the one that
+     *      matters most."*
+     *   2. LOADED IN THE WRONG SCOPE → throws, exactly, once per instance, in `load()`
+     *      where a query is happening anyway.
+     *   3. WARM INSTANCE REUSED INSIDE A DIFFERENT OPEN SCOPE → not detected. `R-293`
+     *      carries it, with `R-017` named as what closing it depends on.
+     */
+    $warm = withTenant($alpha, function () use ($alpha, $alphaAsset): TenantMediaReferences {
+        $references = new TenantMediaReferences($alpha);
+
+        expect($references->has($alphaAsset))->toBeTrue();
+
+        return $references;
+    });
+
+    // 1. No scope open at all.
+    expect(fn () => $warm->has($alphaAsset))->toThrow(LogicException::class);
+
+    // 2. A cold instance that would populate its memo from the wrong scope.
+    withTenant($beta, function () use ($alpha, $alphaAsset): void {
+        $wrong = new TenantMediaReferences($alpha);
+
+        expect(fn () => $wrong->has($alphaAsset))->toThrow(LogicException::class);
+    });
+
+    // 3. The residual, asserted as the CURRENT behaviour so a future fix reddens here and
+    //    the fixer finds R-293 rather than wondering whether this was ever considered.
+    withTenant($beta, function () use ($warm, $alphaAsset): void {
+        expect($warm->has($alphaAsset))->toBeTrue();
+    });
+});
+
+it('meters the preview per tenant as well as per ip, from the late limiter', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
+
+    /*
+     * ⚠ PER-TENANT, AND ONLY THE LATE LIMITER CAN PRODUCE IT. The early instance's bucket
+     * (`studio-preview`) carries no `per_tenant` at all, so a tenant-keyed refusal proves
+     * the second limiter ran — after `Authenticate`, where a tenant exists.
+     *
+     * ⚠ AND THIS CASE CANNOT PROVE THE EARLY ONE METERS PER TENANT, WHICH IS WHY IT DOES
+     * NOT TRY. `actingAs()` binds the user directly, so in the SUITE a tenant resolves even
+     * at index 1 — measured: a per-tenant limit of 2 refuses the third request on a panel
+     * page route in-suite, which is the harness, not production. `R-143` records the real
+     * behaviour.
+     */
+    config()->set('ratelimit.buckets.studio-preview.per_ip', ['attempts' => 999, 'seconds' => 60]);
+    config()->set('ratelimit.buckets.studio-preview-tenant.per_tenant', ['attempts' => 2, 'seconds' => 60]);
+
+    $statuses = [];
+
+    for ($i = 0; $i < 4; $i++) {
+        $statuses[] = test()->get('/studio/preview')->getStatusCode();
+    }
+
+    expect(array_slice($statuses, 0, 2))->each->toBe(200);
+    expect(array_slice($statuses, 2))->each->toBe(429);
+});
+
+/**
+ * Every way a class can become resident, as patterns over source.
+ *
+ * ⚠ ONE MATCHER, USED BY BOTH THE REAL SCAN AND THE NEGATIVE FIXTURE BELOW. A scanner
+ * proven on a different code path from the one it ships with proves the other path —
+ * `QRPAGER-42`'s own bar, and the reason `fixtures/panel-theme-literals.css` exists.
+ *
+ * @return list<string>
+ */
+function residentHolds(string $source, string $class): array
+{
+    $found = [];
+    $code = (string) preg_replace('#/\*[\s\S]*?\*/|//[^\n]*#', ' ', $source);
+
+    // Container bindings of any lifetime, by class constant or by string.
+    foreach (['bind', 'singleton', 'scoped', 'instance', 'bindIf', 'singletonIf'] as $method) {
+        if (preg_match('/->'.$method.'\s*\(\s*'.preg_quote($class, '/').'::class/', $code) === 1) {
+            $found[] = "container {$method}()";
+        }
+    }
+
+    /*
+     * A static PROPERTY that could hold one between requests.
+     *
+     * ⚠ THE TYPE MUST SIT IMMEDIATELY BEFORE THE VARIABLE. The first version allowed
+     * anything between `static` and the class name, and matched
+     * `static fn (): LandingDocument => … new TenantMediaReferences($tenantId)` — a
+     * CLOSURE, in two files that are doing exactly the right thing. A scanner that reddens
+     * on correct code is `R-290`'s shape and invites someone to delete the scanner.
+     */
+    if (preg_match('/static\s+(?:readonly\s+)?\??'.preg_quote($class, '/').'\s+\$\w+/', $code) === 1) {
+        $found[] = 'static property';
+    }
+
+    // Assignment into any static, which covers `self::$x = new TenantMediaReferences(...)`.
+    if (preg_match('/(?:self|static)::\$\w+\s*=\s*new\s+'.preg_quote($class, '/').'/', $code) === 1) {
+        $found[] = 'assigned to a static';
+    }
+
+    return $found;
+}
+
+it('never lets the tenant media gate become resident, which is what makes the memo safe', function (): void {
+    /*
+     * ⚠ THE RESIDUAL FROM `§11`'s M-1, CLOSED AT BUILD TIME RATHER THAN PINNED AS A RUNTIME
+     * GAP — Muhammad's ruling of 2026-11-11.
+     *
+     * Batching `has()` took RLS out of the per-call path, so a WARM instance used inside
+     * another tenant's scope answers from memory. Detecting that per call needs the tenant
+     * id in PHP, which costs a round trip (`TenantContext::current()` reads the GUC) or a
+     * second source of truth that can disagree with it — `R-017`, deliberately not reopened:
+     * a cap restated at the read is exactly the failure `R-292` records from the other side.
+     *
+     * But the hazard is only REACHABLE if an instance becomes resident. Today every one is
+     * `new TenantMediaReferences($id)` at a call site inside the matching scope, so it does
+     * not exist — it is created the day somebody binds it, holds it statically, or captures
+     * it in something that outlives the request. That is a source property, and a source
+     * property can fail the BUILD instead of leaking at runtime.
+     */
+    $class = 'TenantMediaReferences';
+    $offenders = [];
+    $scanned = 0;
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path()));
+
+    foreach ($files as $file) {
+        if (! $file->isFile() || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        $source = (string) file_get_contents($file->getPathname());
+
+        if (! str_contains($source, $class)) {
+            continue;
+        }
+
+        $scanned++;
+
+        foreach (residentHolds($source, $class) as $how) {
+            $offenders[] = str_replace(app_path().'/', '', $file->getPathname()).": {$how}";
+        }
+    }
+
+    // A bound, so a walk that matched nothing cannot pass by vacancy.
+    expect($scanned)->toBeGreaterThan(3, 'the scan found almost no file naming the class');
+
+    expect($offenders, 'the tenant media gate is held somewhere that can outlive a request: '
+        .'its memo answers from memory, so a resident instance returns one tenant\'s media '
+        .'ids inside another tenant\'s scope')->toBe([]);
+});
+
+it('catches a resident hold when one is planted, so the scan above is not vacuous', function (): void {
+    // The same matcher the real scan uses, against each way the hazard arrives.
+    expect(residentHolds('$this->app->singleton(TenantMediaReferences::class, fn () => new TenantMediaReferences($id));', 'TenantMediaReferences'))
+        ->toContain('container singleton()');
+
+    expect(residentHolds('$this->app->scoped(TenantMediaReferences::class, $f);', 'TenantMediaReferences'))
+        ->toContain('container scoped()');
+
+    expect(residentHolds('private static ?TenantMediaReferences $cached = null;', 'TenantMediaReferences'))
+        ->toContain('static property');
+
+    expect(residentHolds('self::$gate = new TenantMediaReferences($tenantId);', 'TenantMediaReferences'))
+        ->toContain('assigned to a static');
+
+    // And it does not fire on the shapes the codebase actually uses — including the
+    // static CLOSURE that the first version of the property pattern mistook for a
+    // property, in two files that were doing the right thing.
+    expect(residentHolds('new TenantMediaReferences($tenantId)', 'TenantMediaReferences'))->toBe([]);
+
+    expect(residentHolds(
+        'withTenant($id, static fn (): LandingDocument => LandingDocument::fromStored($u, new TenantMediaReferences($id)));',
+        'TenantMediaReferences'
+    ))->toBe([]);
+
+    // ...nor on a comment that merely discusses binding it.
+    expect(residentHolds('// do not ->singleton(TenantMediaReferences::class) here', 'TenantMediaReferences'))->toBe([]);
+});
+
+it('issues no Postgres statement on a refused preview request', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
+
+    config()->set('ratelimit.buckets.studio-preview.per_ip', ['attempts' => 1, 'seconds' => 60]);
+
+    // Consume the one allowed attempt.
+    test()->get('/studio/preview');
+
+    /*
+     * ⚠ THE `§11` SECURITY ROUND'S M-3, AND IT IS CLOSED BY H-1's FIX RATHER THAN SEPARATELY.
+     * While the limiter sat at the END of the stack it ran after `StudioLocale`, so a 429 on
+     * this route still cost FOUR statements — a `set_config`, the tenant's language, and two
+     * `current_setting` reads — and an attacker past the cap kept making us do that work per
+     * request. Measured now, with the limiter back at index 1: **zero**.
+     *
+     * This is the property `§4 › Edge & ops` asks of load shedding, and the shape
+     * `PanelRateLimitTest` › *issues no Postgres statement on an anonymous panel refusal*
+     * already holds for `/platform`.
+     */
+    $statements = 0;
+
+    DB::listen(function () use (&$statements): void {
+        $statements++;
+    });
+
+    $response = test()->get('/studio/preview');
+
+    expect($response->getStatusCode())->toBe(429)
+        ->and($statements)->toBe(0, 'a refused preview still touches the database');
 });
