@@ -230,6 +230,24 @@ done
     # Named rather than assumed: the browser checks resolve the theme THROUGH the manifest,
     # so a build that wrote no manifest entry would fail them later and further away.
     node -e "const m=require('./public/build/manifest.json');for(const p of ['platform','studio']){const k='resources/css/filament/'+p+'/theme.css';if(!m[k])throw new Error(k+' is not in the manifest');console.log('  manifest: '+k+' -> '+m[k].file)}"
+    # ⚠ AND AN ENVIRONMENT FILE, BECAUSE `pnpm gate` NOW BOOTS THE APPLICATION.
+    #
+    # QRPAGER-46's `gate:templates` step runs `tools/landing/render-arrangements.php`, which
+    # boots apps/api to render one document under three arrangements. A clone has no `.env`,
+    # and Laravel's default for an unset APP_ENV is `production` -- so the instrument's own
+    # fail-closed guard refused it: "render-arrangements is a development instrument and
+    # refuses to run as production." Measured in CI at 0d02d25, in THIS script's clone, after
+    # the same step had passed in CI's own `gate:templates` step on the same runner: that step
+    # already carried these two lines and this script did not, which is the whole defect.
+    #
+    # They are the two lines CLAUDE.md gives a fresh clone and the two apps/api/bin/
+    # fresh-clone-proof already runs. The guard is left alone deliberately -- a gate that
+    # exports APP_ENV=local to get past it would be a guard any caller can switch off.
+    cp .env.example .env \
+        || { echo "  apps/api/.env.example is not in the repository" >&2; exit 1; }
+    php artisan key:generate --quiet >"$logs/key.log" 2>&1 \
+        || { tail -20 "$logs/key.log" >&2; echo "  key:generate failed in the clone" >&2; exit 1; }
+    echo "  .env + key:generate: ok (the gate's landing instrument boots the application)"
 ) || exit 1
 
 echo

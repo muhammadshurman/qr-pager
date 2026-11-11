@@ -319,6 +319,51 @@ describe('the workspace gate and CI run the same steps', () => {
     ).toContain('tools/gate/bin/fresh-clone-proof')
   })
 
+  it('gives the fresh clone the environment every application-booting gate step needs', () => {
+    /*
+     * ⚠ CI RED AT `0d02d25`, IN THE CLONE AND NOT ON THE RUNNER — the third defect
+     * `QRPAGER-46`'s instrument shipped, and the same shape as its first two: a step that is
+     * only correct on a machine somebody already configured.
+     *
+     * `gate:templates` boots apps/api to render one document under three arrangements. A
+     * clone has no `.env`, and Laravel's default for an unset `APP_ENV` is `production`, so
+     * the instrument's own fail-closed guard refused it: *"render-arrangements is a
+     * development instrument and refuses to run as production."* CI's own `gate:templates`
+     * step carried the two lines that fix it and `tools/gate/bin/fresh-clone-proof` did not,
+     * so the same gate passed twice on one runner and failed in the clone beside it.
+     *
+     * The step list is read rather than named: any FUTURE gate step whose package.json
+     * script shells to `php` or `artisan` is covered by this the day it is added.
+     */
+    const scripts = JSON.parse(read('package.json')).scripts
+    const booting = gateSteps().filter((step) => {
+      const name = /pnpm run ([\w:-]+)/.exec(step)?.[1]
+
+      return name !== undefined && /(^|[\s&|])php\s|artisan/.test(scripts[name] ?? '')
+    })
+
+    expect(
+      booting,
+      'no `pnpm gate` step boots the application any more, so this check covers nothing — ' +
+        'delete it deliberately rather than leaving a vacuous assertion behind',
+    ).not.toHaveLength(0)
+
+    const proof = read('tools/gate/bin/fresh-clone-proof')
+
+    for (const line of ['cp .env.example .env', 'artisan key:generate']) {
+      expect(
+        proof,
+        `tools/gate/bin/fresh-clone-proof does not run \`${line}\`, so the clone boots ` +
+          `${booting.join(', ')} with no environment file and APP_ENV defaults to production`,
+      ).toContain(line)
+    }
+
+    expect(
+      frontendJob,
+      "CI's own frontend job does not write apps/api/.env before the gate steps that boot the application",
+    ).toContain('cp apps/api/.env.example apps/api/.env')
+  })
+
   it('checks the repositorys own record in both halves, and proves each check bites', () => {
     // §11 round one rulings (b) and (c). The step existing is half the assertion: a checker
     // that cannot fail is the vacuous-assertion shape this project has paid for, so the
