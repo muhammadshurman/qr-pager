@@ -8,6 +8,7 @@ use App\Features\Landing\LandingPages;
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
+use App\Features\Landing\Panel\Pages\ThemePage;
 use App\Features\Landing\Panel\StudioForm;
 use App\Features\Landing\TenantMediaReferences;
 use App\Features\Landing\UnsavedPreview;
@@ -1097,4 +1098,77 @@ it('issues no Postgres statement on a refused preview request', function (): voi
 
     expect($response->getStatusCode())->toBe(429)
         ->and($statements)->toBe(0, 'a refused preview still touches the database');
+});
+
+it('makes the preview agree with the draft after a save on the THEME tab', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
+
+    $pages = app(LandingPages::class);
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+
+    /*
+     * ⚠ THE REPORTED SYMPTOM, REPRODUCED BEFORE IT WAS FIXED. Muhammad: *"a colour change in
+     * the theme tab does not reach the preview even after Save. It only appears when he
+     * clicks «بسيط» or «مميّز» on the builder page."*
+     *
+     * The owner has been editing on the BUILDER tab, so a key exists for this session. Then
+     * they switch to `الثيم`, change a colour and press Save. `ThemePage::save()` wrote the
+     * draft and never forgot the key, so the stale key kept winning and the pane showed
+     * something that CONTRADICTED the database — clearable only by waiting out the TTL or
+     * by touching the arrangement control, whose write rebuilds the whole document from one
+     * flat state and carried the new theme in by accident.
+     *
+     * ⚠ ASSERTED AT THE STORE RATHER THAN THROUGH THE PANE, and that is the harness and not
+     * a weaker claim: `Livewire::test()` runs in the test process, whose session is not the
+     * one `test()->get()` carries — see `studioSession()`. In a browser they are one
+     * session, which is what `browser/studio.spec.ts` drives. Here the contract itself is
+     * the thing to assert: after a save, no unsaved state survives to contradict the draft.
+     */
+    app(UnsavedPreview::class)->put($tenant, $sid, $pages->draft($tenant)->toArray());
+
+    $document = $pages->draft($tenant)->toArray();
+    $document['theme']['color.accent'] = '#abcdef';
+
+    Livewire::test(ThemePage::class)
+        ->fillForm(StudioForm::fromDocument($document))
+        ->call('save')
+        ->assertDispatched('studio-preview-updated');
+
+    // The database took the colour...
+    expect($pages->draft($tenant)->toArray()['theme']['color.accent'])->toBe('#abcdef');
+
+    // ...and nothing is left to disagree with it.
+    expect(app(UnsavedPreview::class)->get($tenant, $sid))->toBeNull();
+});
+
+it('writes the preview key from the THEME tab too, not only from the builder', function (): void {
+    $tenant = test()->actingForTenant(role: TenantRole::Owner);
+    $sid = session()->getId();
+
+    $pages = app(LandingPages::class);
+    $pages->saveDraft($tenant, LandingFixtures::fullPage());
+
+    /*
+     * The first clause of the amended invariant: *"on EVERY studio page, a settled change is
+     * reflected in the preview with no Save click."* `previewChanged()` lived on the builder
+     * page alone, so editing a colour moved nothing until it was saved.
+     */
+    $document = $pages->draft($tenant)->toArray();
+    $document['theme']['color.accent'] = '#123456';
+
+    Livewire::test(ThemePage::class)
+        ->fillForm(StudioForm::fromDocument($document))
+        ->call('previewChanged')
+        ->assertDispatched('studio-preview-updated');
+
+    $held = app(UnsavedPreview::class)->get($tenant, $sid);
+
+    expect($held)->not->toBeNull()
+        ->and($held['theme']['color.accent'] ?? null)->toBe('#123456');
+
+    // ⚠ AND THE OTHER TAB'S WORK SURVIVED IT — `merged()`, not `getState()`. A theme write
+    // that carried an empty `blocks` is the trap `StudioDraftMergeTest` exists for, one
+    // route further on: the owner would watch their page empty as they picked a colour.
+    expect($held['blocks'])->not->toBeEmpty();
 });

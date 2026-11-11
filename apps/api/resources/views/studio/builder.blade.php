@@ -14,55 +14,8 @@
 <x-filament-panels::page>
     @include('studio.partials.tabs')
 
-    {{--
-        ================================================================================
-        THE PREVIEW FOLLOWS THE FORM — QRPAGER-45, and both halves live HERE
-        ================================================================================
-
-        Muhammad's ruling of 2026-11-10: *"the iframe stays a GET and the pane stays JS-free;
-        the debounce and the reload live in the parent."* So `partials/preview.blade.php` is
-        untouched — its own docblock's claim that *"the pane needs no JavaScript of its own"*
-        is still true — and this wrapper carries the whole mechanism.
-
-        ⚠ `input` AND `change`, ON THE WRAPPER, BECAUSE BOTH BUBBLE. One listener covers
-        every field the schema renders now and every one it renders later; per-field
-        `->live()` would have meant editing fifty components and would still have missed the
-        block picker. `change` is not redundant with `input`: a `<select>` and a radio fire
-        `change` and some engines do not fire `input` for them — and the ARRANGEMENT RADIO is
-        half of this ticket's stated invariant.
-
-        ⚠ ONE RELOAD FOR TWO RAPID CHANGES, which is the ticket's guard and is what
-        `clearTimeout` buys: each change cancels the pending call, so a burst of typing
-        produces exactly one request after it stops. 400ms is the ruling's number.
-
-        ⚠ AND NO RELOAD MID-KEYSTROKE: nothing is sent until the form has been quiet for the
-        whole window, and `reloading` holds a short cooldown so a server event arriving while
-        a frame is still loading cannot stack a second load on it.
-    --}}
     <div class="studio-layout"
-         x-data="{
-            timer: null,
-            reloading: false,
-            schedule() {
-                clearTimeout(this.timer);
-                this.timer = setTimeout(() => $wire.previewChanged(), 400);
-            },
-            reload() {
-                if (this.reloading) return;
-                const frame = this.$root.querySelector('[data-studio-preview]');
-                if (! frame) return;
-                this.reloading = true;
-                try {
-                    frame.contentWindow.location.reload();
-                } catch (e) {
-                    frame.src = frame.src;
-                }
-                setTimeout(() => this.reloading = false, 250);
-            }
-         }"
-         x-on:input="schedule()"
-         x-on:change="schedule()"
-         x-on:studio-preview-updated.window="reload()">
+         @include('studio.partials.preview-sync')>
         <div class="studio-layout__form">
         @php($state = $this->state())
 
