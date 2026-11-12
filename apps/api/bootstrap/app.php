@@ -9,6 +9,7 @@ use App\Features\Notifications\Console\WorkOutboxCommand;
 use App\Features\Pager\Console\ExpirePagerSessionsCommand;
 use App\Features\Provisioning\Console\AggregateTenantStatisticsCommand;
 use App\Features\Provisioning\Console\ProvisionTenantsCommand;
+use App\Features\Landing\Console\SeedDemoTenantCommand;
 use App\Features\Support\Console\SweepSupportAccessCommand;
 use App\Platform\Console\BootstrapDatabaseCommand;
 use App\Platform\Console\CheckBootCommand;
@@ -234,6 +235,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // because an index predicate cannot reference `now()`. That is why it runs every
         // five minutes rather than every minute.
         SweepSupportAccessCommand::class,
+        // `QRPAGER-48` item 1: the demo restaurant a design can be judged from. NOT
+        // scheduled and NOT a fixture -- it is deliberately kept out of the population
+        // `apps/api/bin` seeds, because the thing that made the last studio review
+        // impossible was being handed an e2e tenant full of this suite's own timestamps.
+        // It refuses outside local/testing, like every sibling that writes as the owner.
+        SeedDemoTenantCommand::class,
         // Task 7's generator for the shared block contract. NOT scheduled, and that is
         // not R-058's shape repeating: it enforces nothing on a timer, it WRITES a
         // committed artifact. What keeps it honest is `--check`, which bin/gate and CI
