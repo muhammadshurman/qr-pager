@@ -165,6 +165,17 @@ const STAFF_PASSKEY_SPECS = ['**/staff-passkey.spec.ts'] as const
 const STUDIO_SPECS = ['**/studio.spec.ts'] as const
 
 /**
+ * `QRPAGER-48` item 3 — crossing between the staff app and the studio, by clicking.
+ *
+ * ⚠ IT RUNS IN `studio-chromium` RATHER THAN A PROJECT OF ITS OWN, because it needs exactly
+ * what that project already has: the STAFF app as `baseURL` (it starts by signing in there)
+ * and one engine. The claim is a session surviving a navigation between two origins, and
+ * that is not engine-specific — six configurations would spend six times the wall clock to
+ * assert one fact six ways, which is the same reasoning `STUDIO_SPECS` records above.
+ */
+const CROSS_APP_SPECS = ['**/cross-app.spec.ts'] as const
+
+/**
  * `QRPAGER-46`'s computed-value gate — the two properties its structural tests could not see:
  * a section heading computing at the page title's size, and a document rendering 6,618px tall
  * with the right structure. Both were found by a human looking at a render, which is the
@@ -242,6 +253,7 @@ export default defineConfig({
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
         ...STUDIO_SPECS,
+        ...CROSS_APP_SPECS,
         ...LANDING_TEMPLATE_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
@@ -261,6 +273,7 @@ export default defineConfig({
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
         ...STUDIO_SPECS,
+        ...CROSS_APP_SPECS,
         ...LANDING_TEMPLATE_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
@@ -365,7 +378,7 @@ export default defineConfig({
 
     {
       name: 'studio-chromium',
-      testMatch: [...STUDIO_SPECS],
+      testMatch: [...STUDIO_SPECS, ...CROSS_APP_SPECS],
       use: {
         ...devices['Desktop Chrome'],
         baseURL: process.env.QRPAGER_E2E_BASE,

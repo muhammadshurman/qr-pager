@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { StaffShell } from '../src/staff/StaffShell.tsx'
 
@@ -20,7 +20,7 @@ const base = {
   roleWord: 'Owner',
   signedInLabel: 'Signed in as Salma Haddad',
   signOutLabel: 'Sign out',
-  onSignOut: () => {},
+  onSignOut: vi.fn(),
 }
 
 describe('the way into the studio, from the staff shell', () => {

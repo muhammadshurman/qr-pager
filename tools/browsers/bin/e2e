@@ -354,9 +354,17 @@ say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
 # `X-Forwarded-For` attacker-controlled and the per-IP limit bypassable. `127.0.0.1` is where
 # `tls-proxy.mjs` runs, on both the native and container paths, because the proxy and the API
 # are always the same machine; only the BROWSER is ever elsewhere.
-setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" TRUSTED_PROXIES="$6" exec php artisan serve --host=0.0.0.0 --port="$2"' \
+# ⚠ `STAFF_SIGNIN_URL` IS SET FOR THIS RUN, AND WITHOUT IT THE STUDIO'S WAY BACK POINTS AT A
+# SERVER THE BROWSER CANNOT SEE. `config/surfaces.php` ships `http://localhost:3000/staff`,
+# which is right for `pnpm --filter web dev` on the host and wrong here: the browser reaches
+# the staff app through the TLS front, and in the container path `localhost` is the container.
+# It is the same key `PanelSignInRedirect` sends signed-OUT visitors to, so one value serves
+# both directions -- `PLAN.md §4a` records why that key is the staff app's ENTRY POINT and why
+# its name predates this second use.
+setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" TRUSTED_PROXIES="$6" STAFF_SIGNIN_URL="$7" exec php artisan serve --host=0.0.0.0 --port="$2"' \
   e2e-api "${REPO}/apps/api" "${API_PORT}" "https://${BROWSER_HOST}:${TLS_API_PORT}" \
   "https://${BROWSER_HOST}:${TLS_PORT}" "20" "127.0.0.1" \
+  "https://${BROWSER_HOST}:${TLS_PORT}/staff" \
   >"${API_LOG}" 2>&1 &
 api_pid=$!
 
@@ -441,10 +449,23 @@ say "issued 5 sessions -> ${fixture} (git-ignored, mode 600)"
 
 # ------------------------------------------- the production build, one origin, on the host
 say "building apps/web for production with the one-origin rewrite"
+#
+# ⚠ `NEXT_PUBLIC_QRPAGER_STUDIO_URL` IS SET HERE AND IS UNSET IN PRODUCTION, WHICH IS THE
+# RIGHT WAY ROUND. The studio is a Filament panel on the API's TLS front, so LOCALLY the two
+# surfaces are one HOST on two PORTS; in production they share an origin (`PLAN.md §1`,
+# 2026-11-13) and `studioUrl()` falls back to the same-origin path `/studio`. A default that
+# matched dev would make production depend on a value someone remembered to set.
+#
+# ⚠⚠ AND THE COMMENT IS HERE RATHER THAN INSIDE THE COMMAND, BECAUSE IT WAS ONCE INSIDE IT.
+# Written as `` `# …` `` between the assignments, each backtick pair is COMMAND SUBSTITUTION
+# whose empty result breaks the assignment-prefix chain: bash then read the next assignment as
+# a COMMAND NAME and the build died with
+# `NEXT_PUBLIC_QRPAGER_STUDIO_URL=https://…/studio: No such file or directory`.
 (
   cd "$REPO"
   QRPAGER_HARNESS_API_ORIGIN="${API_ORIGIN}" \
   NEXT_PUBLIC_QRPAGER_API_BASE="" \
+  NEXT_PUBLIC_QRPAGER_STUDIO_URL="https://${BROWSER_HOST}:${TLS_API_PORT}/studio" \
   NEXT_PUBLIC_VAPID_PUBLIC_KEY="${QRPAGER_E2E_VAPID_PUBLIC_KEY:-BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM}" \
     pnpm --filter @qrpager/web run build
 ) >>"${WEB_LOG}" 2>&1 || {

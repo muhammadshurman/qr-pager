@@ -38,9 +38,29 @@
  */
 const SAME_ORIGIN_STUDIO_PATH = '/studio'
 
-export function studioUrl(env: Record<string, string | undefined> = process.env): string {
-  const configured = env.NEXT_PUBLIC_QRPAGER_STUDIO_URL
-
+/**
+ * ⚠⚠ THE DEFAULT ARGUMENT IS THE LITERAL `process.env.NEXT_PUBLIC_…` EXPRESSION, AND IT HAS TO
+ * BE — THIS WAS A REAL DEFECT, CAUGHT BY A BROWSER AND BY NOTHING ELSE.
+ *
+ * The first version took an ENVIRONMENT (`env: Record<string, string | undefined> =
+ * process.env`) and read `env.NEXT_PUBLIC_QRPAGER_STUDIO_URL` off it, which is tidier and
+ * testable and **silently broken in production**. Next.js inlines `NEXT_PUBLIC_*` by
+ * replacing that exact expression TEXTUALLY at build time; a property read off a variable is
+ * not that expression, so nothing was inlined, `process.env` was `{}` in the browser, and the
+ * function returned its default for everybody.
+ *
+ * The unit tests all passed — they injected the environment, which is precisely the path the
+ * browser never takes. What caught it was the `e2e` case clicking the link and landing on a
+ * **Next.js 404**: the staff app asked for `/studio` on its OWN origin, where no such route
+ * exists. A testability choice had defeated the mechanism it was testing.
+ *
+ * Taking the VALUE rather than the environment keeps both properties: the call site is the
+ * literal expression Next can inline, and a test still passes a value with no environment at
+ * all.
+ */
+export function studioUrl(
+  configured: string | undefined = process.env.NEXT_PUBLIC_QRPAGER_STUDIO_URL,
+): string {
   if (configured === undefined || configured.trim() === '') {
     return SAME_ORIGIN_STUDIO_PATH
   }

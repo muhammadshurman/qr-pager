@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { studioUrl } from '../src/staff/studio'
@@ -12,19 +15,17 @@ describe('where the staff app thinks the studio is', () => {
     // ⚠ THE WHOLE POINT OF THIS CASE. Local development sets the override, so without this
     // the production shape -- one origin, routed by path, which `§1` decided on 2026-11-13 --
     // would never be exercised anywhere but production.
-    expect(studioUrl({})).toBe('/studio')
-    expect(studioUrl({ NEXT_PUBLIC_QRPAGER_STUDIO_URL: undefined })).toBe('/studio')
-    expect(studioUrl({ NEXT_PUBLIC_QRPAGER_STUDIO_URL: '   ' })).toBe('/studio')
+    expect(studioUrl(undefined)).toBe('/studio')
+    expect(studioUrl('')).toBe('/studio')
+    expect(studioUrl('   ')).toBe('/studio')
   })
 
   it('honours an absolute override, which is how dev reaches the other port', () => {
-    expect(studioUrl({ NEXT_PUBLIC_QRPAGER_STUDIO_URL: 'http://localhost:8000/studio' })).toBe(
-      'http://localhost:8000/studio',
-    )
+    expect(studioUrl('http://localhost:8000/studio')).toBe('http://localhost:8000/studio')
   })
 
   it('honours a different same-origin path', () => {
-    expect(studioUrl({ NEXT_PUBLIC_QRPAGER_STUDIO_URL: '/panel/studio' })).toBe('/panel/studio')
+    expect(studioUrl('/panel/studio')).toBe('/panel/studio')
   })
 
   it('refuses anything that is not a path or an absolute http(s) URL', () => {
@@ -39,7 +40,48 @@ describe('where the staff app thinks the studio is', () => {
       'ftp://example.test/studio',
       'studio',
     ]) {
-      expect(studioUrl({ NEXT_PUBLIC_QRPAGER_STUDIO_URL: hostile })).toBe('/studio')
+      expect(studioUrl(hostile)).toBe('/studio')
     }
+  })
+})
+
+/**
+ * ⚠⚠ THE GUARD FOR A DEFECT NO UNIT TEST IN THIS FILE COULD CATCH.
+ *
+ * The first version of `studioUrl()` took an ENVIRONMENT and read the key off it. Every case
+ * above passed, and the feature was broken for every real user: Next.js inlines
+ * `NEXT_PUBLIC_*` by replacing **that exact expression** textually at build time, so a
+ * property read off a variable is never substituted, `process.env` is `{}` in the browser,
+ * and the default is returned always. It was caught by an `e2e` case clicking the link and
+ * landing on a Next.js 404.
+ *
+ * The cases above cannot catch it, because they pass the value in — which is the one path a
+ * browser never takes. So this reads the SOURCE and requires the literal expression to be
+ * there. It is a weaker control than a browser, and it is aimed at the specific thing that
+ * happened: somebody tidying the signature back into "take an env, it's more testable".
+ */
+describe('the build-time contract this file depends on', () => {
+  it('reads the env key as the literal expression Next.js can inline', () => {
+    const raw = readFileSync(join(import.meta.dirname, '../src/staff/studio.ts'), 'utf8')
+
+    /*
+     * ⚠ COMMENTS ARE STRIPPED FIRST, AND THE FIRST VERSION OF THIS CASE DID NOT — it failed
+     * on its own docblock, which explains the defect and therefore CONTAINS the forbidden
+     * spelling. That is `R-260`'s family (*the scanner reads prose too*), which `QRPAGER-47`
+     * hit with two hex colours in a comment. The check is about CODE.
+     */
+    const source = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+
+    expect(source).toContain('process.env.NEXT_PUBLIC_QRPAGER_STUDIO_URL')
+
+    /*
+     * And NOT off a variable, which is the shape that silently stopped being inlined.
+     *
+     * ⚠ THE LOOKBEHIND IS LOAD-BEARING. Without it this pattern matches the LEGITIMATE
+     * expression: `\b` finds a word boundary at the `.` in `process.env.`, so `env.NEXT_…`
+     * is a substring of the very spelling the line above requires, and the case failed
+     * against correct code.
+     */
+    expect(source).not.toMatch(/(?<!process\.)\benv\.NEXT_PUBLIC_QRPAGER_STUDIO_URL\b/)
   })
 })
