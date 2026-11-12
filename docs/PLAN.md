@@ -9048,10 +9048,30 @@ which is the argument for the rule being about the FILE rather than about the ap
 
 | # | severity | finding | disposition |
 | --- | --- | --- | --- |
-| **H-1** | **High** | the `adviceLighten` arm the fix documents is reached by **no test**. The only advice case drives `#c9c48f` against a near-white default, so `mine < theirs` and the DARKEN arm runs; inverting the ternary at `StudioPanelProvider.php:498` leaves every suite green | ⚠ **OPEN — AWAITING MUHAMMAD'S RULING.** `§11`'s merge rule says a High is fixed with a regression test before `task-N`; his ruling of the same day says the round has closed and small fixes taken after it are how a round stops meaning anything. It falsifies **neither clause** of this ticket's stated invariant. Not tagged, so nothing is blocked while it is open |
+| **H-1** | **High** | the `adviceLighten` arm the fix documents is reached by **no test**. The only advice case drives `#c9c48f` against a near-white default, so `mine < theirs` and the DARKEN arm runs; inverting the ternary at `StudioPanelProvider.php:498` leaves every suite green | ✅ **FIXED, with a regression test shown to redden.** Muhammad's ruling of 2026-11-12: *“A High blocks the tag — `§11`, and the fix-diff cap has not been reached. `R-315`'s line was written for a Low and does not reach up.”* And on the substance: `adviceLighten` *“is what an owner reads at the moment their colour is unreadable, and `§12` requires that message say what to do … dark text on a dark ground is the most common mistake there is”* |
 | **M-1** | Medium | the `1.75:1` measurement is no longer re-derivable — `#444444` survives nowhere, and `R-260`'s accepted remedy was to REPRODUCE with a command, not to describe | **`R-316`**, owner `QRPAGER-34` |
 | **L-1** | Low | `§4a` said *“FOUR THINGS this ticket's own proofs found”* and the scanner refusal is a fifth, unrecorded | **FIXED in the record** — the enumeration now reads FIVE and carries the fifth. An enumeration short by one is `R-300`'s shape |
 | **L-2** | Low | *“`R-260` for the third time”* is loose: that row is *“a source commit was pushed without running the gate”*, and nothing was pushed red — `886e532` was never a remote tip | **`R-317`**, owner `QRPAGER-34` |
+
+✅ **H-1 IS CLOSED, AND THE CASE ASSERTS THE ADVICE RATHER THAN THE BRANCH.** Muhammad's bar:
+*“A case that reaches the branch and asserts nothing is the vacuous assertion this project has
+caught four times.”* `browser/studio.spec.ts` — *tells the owner which WAY to move a colour, on
+both arms*:
+
+| what it does | why that shape |
+| --- | --- |
+| drives **both arms on ONE row and ONE pair** — `color.background` against `color.text` | nothing but the DIRECTION differs between the two halves, so a failure can only mean the direction |
+| `#2b2b2b` for lighten — a dark ground just **lighter** than the default ink | the mistake an owner actually makes, named in the ruling: *dark text on a dark ground* |
+| `#000000` for darken — the same ground dropped **below** the ink | the other side of the same pair, so the pairing itself is held fixed |
+| reads **both sentences off `x-data="studioColour({…})"`** | never hard-codes copy: a REWORDED line cannot redden it, and a SWAPPED line cannot green it — the only property that matters, because the defect is two correct sentences on the wrong branches |
+| asserts the **premise** first — `mine >= theirs`, then `mine < theirs`, through the panel's own `studioLuminance` | if the default ink ever moved, the case would otherwise measure one arm twice and still pass |
+| asserts `adviceLighten !== adviceDarken` | one sentence under both keys would satisfy every assertion while the owner was told the same thing both ways |
+
+⚠⚠ **AND IT WAS SHOWN TO REDDEN, WHICH IS THE WHOLE POINT OF THE ROW IT CLOSES.** Measured
+2026-11-12: green alone in **2.4 s**; then with the ternary at `StudioPanelProvider.php:498`
+**INVERTED** — the exact defect the round could not see — it failed at
+`studio.spec.ts:2226`, `expect(advice).toHaveText(config.adviceLighten)`, the lighten-arm
+advice assertion. The product file was restored from a byte copy and `git diff` on it is empty.
 
 ⚠ **THE HIGH WAS VERIFIED RATHER THAN RELAYED.** `grep` over `apps/api/tests`, `browser/` and
 `packages/` for `hard_to_read_lighten` or `adviceLighten` returns **nothing**: the only references

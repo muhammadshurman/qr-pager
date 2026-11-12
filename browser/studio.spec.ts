@@ -2120,6 +2120,135 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     await expect(row.locator('.studio-colour__default')).toBeVisible()
   })
 
+  /**
+   * ================================================================================
+   * WHICH WAY TO MOVE IT — BOTH ARMS, `§11` QA H-1 ON `0e72316`
+   * ================================================================================
+   *
+   * ⚠⚠ **THE ARM THE `§11` ROUND ADDED WAS REACHED BY NOTHING.** The round replaced one
+   * fixed *"darken it"* with a computed choice between two sentences, and the only case that
+   * touched the advice drove `#c9c48f` against a near-white partner — `mine < theirs`, so the
+   * **darken** arm, every time. Measured by the scoped pass and confirmed by search: no file
+   * under `apps/api/tests`, `browser/` or `packages/` named `adviceLighten` or
+   * `hard_to_read_lighten`. **Inverting the ternary at `StudioPanelProvider.php:498` left every
+   * suite green**, which is the state the round was run to prevent.
+   *
+   * ⚠ **AND THE CASE ASSERTS THE ADVICE, NOT THAT THE ARM WAS ENTERED.** A case that reaches a
+   * branch and asserts nothing about what it produced is the vacuous assertion this repository
+   * has now caught four times (`R-290` is the row). What an owner reads is the sentence, so the
+   * sentence is what is pinned.
+   *
+   * ⚠ **THE TWO SENTENCES ARE READ OFF THE COMPONENT'S OWN CONFIG, NEVER HARD-CODED.**
+   * `ColourField::toEmbeddedHtml()` emits them into `x-data="studioColour({…})"`, so this case
+   * compares against the exact strings the panel would show. A reworded line therefore cannot
+   * redden it, and a SWAPPED line cannot green it — which is the only property that matters
+   * here, because the defect being closed is two correct sentences on the wrong branches.
+   */
+  test('tells the owner which WAY to move a colour, on both arms', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.setViewportSize({ width: 1280, height: 1100 })
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const ground = page.locator('[data-token="color.background"]')
+    const row = page.locator('.studio-colour', { has: ground })
+    const advice = row.locator('.studio-colour__advice')
+
+    await expect(ground).toHaveCount(1)
+
+    /*
+     * The row's own config: the pair it is judged against, the floor it must clear, and the
+     * two sentences. Parsed out of `studioColour({…})` rather than reconstructed.
+     */
+    const xData = (await row.getAttribute('x-data')) ?? ''
+    const config = JSON.parse(xData.slice(xData.indexOf('(') + 1, xData.lastIndexOf(')'))) as {
+      pairedWith: string
+      floor: number
+      adviceLighten: string
+      adviceDarken: string
+    }
+
+    // ⚠ THE CONTROL THAT MAKES THE TWO ASSERTIONS BELOW MEAN ANYTHING. If the panel ever
+    // shipped one sentence under both keys, every assertion here would pass while the owner
+    // was told the same thing in both directions.
+    expect(
+      config.adviceLighten,
+      'both arms carry the same sentence, so no case could tell them apart',
+    ).not.toBe(config.adviceDarken)
+    expect(config.adviceLighten.length).toBeGreaterThan(20)
+    expect(config.adviceDarken.length).toBeGreaterThan(20)
+    expect(config.pairedWith).toBe('color.text')
+
+    /** The two luminances the component itself compares, read the way it reads them. */
+    const judged = async (): Promise<{ mine: number; theirs: number }> =>
+      page.evaluate((pairedWith: string) => {
+        const luminance = (
+          window as unknown as { studioLuminance?: (hex: string) => number | null }
+        ).studioLuminance
+
+        const me = document.querySelector<HTMLInputElement>('[data-token="color.background"]')
+        const partner = document.querySelector<HTMLInputElement>(`[data-token="${pairedWith}"]`)
+
+        return {
+          mine:
+            luminance === undefined || me === null
+              ? Number.NaN
+              : (luminance(me.value) ?? Number.NaN),
+          theirs:
+            luminance === undefined || partner === null
+              ? Number.NaN
+              : (luminance(partner.value) ?? Number.NaN),
+        }
+      }, config.pairedWith)
+
+    // The default pair clears the floor, so the row opens quiet — asserted first, because an
+    // advice element that was always visible would satisfy everything below without judging.
+    await expect(advice).toBeHidden()
+
+    /*
+     * ─── THE LIGHTEN ARM: A DARK GROUND UNDER THE DEFAULT DARK TEXT ───
+     *
+     * Dark text on a dark ground, which is the mistake an owner actually makes. The ground is
+     * set just LIGHTER than the ink it is read against, so `mine >= theirs` and the honest
+     * advice is to move it further away by lightening it.
+     */
+    await ground.fill('#2b2b2b')
+
+    const lighten = await judged()
+
+    // ⚠ THE PREMISE, ASSERTED RATHER THAN ASSUMED. If the default ink ever moved past this
+    // value the case would silently start measuring the other arm twice.
+    expect(
+      lighten.mine,
+      'the ground is not the lighter of the pair, so this is not the lighten arm',
+    ).toBeGreaterThanOrEqual(lighten.theirs)
+
+    await expect(advice).toBeVisible()
+    await expect(advice).toHaveText(config.adviceLighten)
+
+    /*
+     * ─── THE DARKEN ARM: THE SAME ROW, THE SAME PAIR, THE OTHER SIDE ───
+     *
+     * Now the ground goes BELOW the ink, so `mine < theirs` and moving away means darker. One
+     * row and one pair for both arms, so nothing but the direction differs between them.
+     */
+    await ground.fill('#000000')
+
+    const darken = await judged()
+
+    expect(
+      darken.mine,
+      'the ground is not the darker of the pair, so this is not the darken arm',
+    ).toBeLessThan(darken.theirs)
+
+    await expect(advice).toBeVisible()
+    await expect(advice).toHaveText(config.adviceDarken)
+
+    // And the way back, so this case leaves the row as it found it.
+    await row.locator('.studio-colour__clear').click()
+
+    await expect(advice).toBeHidden()
+  })
+
   test('computes the ratios the generated table publishes, to its own convention', async ({
     page,
   }) => {
