@@ -188,6 +188,21 @@ final class MediaLibrary
                         __('landing.media.in_use_by_block', ['block' => __('studio.blocks.'.$block->value)])
                     );
                 }
+
+                /*
+                 * ⚠ AND THE LOGO, WHICH IS A REFERENCE NO BLOCK HOLDS — `QRPAGER-47` Part B
+                 * item 2. `blockUsing()` answers *"which block"* and the logo is not in one,
+                 * so without this line the panel would let an owner delete the image their
+                 * published page serves as its mark: the next publish would be refused (a
+                 * document referencing a deleted asset cannot publish) and the live page
+                 * would keep serving an object the library no longer lists.
+                 *
+                 * The refusal names WHERE, like the block one above, because *"this image is
+                 * in use"* leaves the owner hunting for it (`§12.2`).
+                 */
+                if (is_string($document->logo) && strtolower($document->logo) === strtolower($assetId)) {
+                    throw new MediaRejected(__('landing.media.in_use_as_logo'));
+                }
             }
 
             DB::table('media_assets')->where('id', $assetId)->delete();

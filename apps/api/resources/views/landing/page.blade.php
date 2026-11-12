@@ -91,7 +91,7 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--color-background,#ffffff);color:var(--color-text,#111111);
 font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}
-main{max-width:64rem;margin:0 auto;padding:0 1rem}
+main,.mark{max-width:64rem;margin:0 auto;padding:0 1rem}
 section{padding:var(--space-section,3rem) 0;border-bottom:1px solid var(--color-muted,#dddddd)}
 section:last-child{border-bottom:0}
 h1,h2,h3{font-family:var(--font-heading,system-ui,sans-serif);line-height:1.2;margin:0 0 .5rem}
@@ -108,6 +108,8 @@ border-radius:var(--radius-small,.25rem);text-decoration:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .row{display:flex;gap:1rem;justify-content:space-between}
 footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
+.mark{padding-block-start:var(--space-section)}
+.mark img{max-block-size:var(--size-heading);inline-size:auto}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 {{-- QRPAGER-33: the arrangement's OWN rules, and only the chosen arrangement's.
 
@@ -295,6 +297,29 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
     a sighted reader sees as the title -- and that heading is now an h2, so the outline
     is h1 → h2 for every possible document rather than for one of them.
 --}}
+{{--
+    THE LOGO — `QRPAGER-47` Part B item 2.
+
+    ⚠ ABOVE THE PAGE'S OWN h1 AND OUTSIDE `<main>`, which is where the approved artboard puts
+    it: the mark identifies the restaurant for the whole document, so it belongs to the page
+    rather than to any arrangement. Outside `<main>` also means NO arrangement has to place it
+    and none can hide it -- `TemplateStructureTest`'s fingerprints are of `main`'s own regions,
+    and a logo inside one of them would have had to be re-placed by all three.
+
+    ⚠ `alt` IS THE RESTAURANT'S NAME, NOT THE WORD "logo". A screen-reader user reaching the
+    top of the page needs to know whose page it is; "logo" tells them the category of the
+    image and nothing else (`§12`).
+
+    ⚠ AND THE ELEMENT IS ABSENT, NOT EMPTY, WHEN THERE IS NO LOGO. `LandingRenderer` resolves
+    the id to a published path or to null, so an unset logo and an id the publisher did not
+    copy both render nothing rather than `src=""` -- which browsers resolve to the page itself.
+
+    `width`/`height` are deliberately NOT set: the asset's own dimensions are not in the
+    document, and a guessed box would letterbox somebody's mark. The CSS bounds the height.
+--}}
+@if ($logoUrl !== null)
+<header class="mark"><img src="{{ $logoUrl }}" alt="{{ $tenantName }}"></header>
+@endif
 <h1 @class(['sr' => $heroFirst])>{{ $title }}</h1>
 <main>
 @include('landing.templates.'.$template->value)

@@ -146,13 +146,20 @@ return [
      * about -- the enumeration probe printed all twelve of them.
      */
     'tokens' => [
+        /*
+         * ⚠ THE SIX COLOUR NAMES ARE MUHAMMAD'S OWN, GIVEN WITH HIS RULING OF 2026-11-12, and
+         * `muted` is the one worth reading twice: *"muted is named honestly, coupling included
+         * — §12 says tell the owner what they are changing, not hide it behind a tidier
+         * word."* That colour paints secondary text AND every hairline on the page, so the
+         * name says both. The row that would split them is a `§5` row, not a rename here.
+         */
         'color' => [
-            'background' => 'لون الخلفية',
-            'surface' => 'لون السطح',
-            'text' => 'لون النص',
-            'muted' => 'لون النص الثانوي',
-            'accent' => 'اللون المميّز',
-            'accent_text' => 'لون النص على اللون المميّز',
+            'background' => 'خلفية الصفحة',
+            'surface' => 'خلفية البطاقات',
+            'text' => 'لون الكتابة',
+            'muted' => 'لون الكتابة الثانوية والخطوط الفاصلة',
+            'accent' => 'لون الأزرار والروابط',
+            'accent_text' => 'لون الكتابة فوق الأزرار',
         ],
         'font' => [
             'heading' => 'خط العناوين',
@@ -168,6 +175,48 @@ return [
         'size' => [
             'heading' => 'حجم العناوين',
         ],
+    ],
+
+    /*
+     * The sentence under each colour's name — `QRPAGER-47` Part B item 3. The artboard puts
+     * one on every row, and `§12`'s bar is why: a name tells an owner WHICH colour, a sentence
+     * tells them WHERE they will see it change.
+     */
+    'tokens_help' => [
+        'color' => [
+            'background' => 'اللون اللي ورا كل شي',
+            'surface' => 'خلفية الكروت والأقسام المرفوعة',
+            'text' => 'العناوين والنصوص',
+            'muted' => 'الشرح الصغير والأسعار والخطوط الرقيقة',
+            'accent' => 'الأزرار والروابط',
+            'accent_text' => 'الكتابة اللي بتظهر فوق لون الأزرار',
+        ],
+    ],
+
+    'arrangements' => [
+        'section' => 'الثيمات الجاهزة',
+        'section_help' => 'اختار واحد، وبعدها عدّل عليه تحت.',
+        'in_use' => 'مستخدم الآن',
+        'note' => 'تبديل الثيم ما بيمسح نصوصك ولا صورك — بس يغيّر الشكل. فيك ترجع للسِجِل في أي وقت.',
+    ],
+
+    'logo' => [
+        'section' => 'الشعار',
+        'section_help' => 'بيظهر فوق صفحتك العامة.',
+        'none' => 'ما في شعار بعد.',
+        'upload' => 'ارفع شعار جديد',
+        'drag' => 'اسحب الملف لهون، أو اضغط لتختار',
+        'file_meta' => ':type · :size ك.ب',
+        'remove' => 'احذفه',
+        'reference_only' => 'حذف الشعار بيشيله من صفحتك بس — الصورة تبقى في مكتبة الوسائط.',
+    ],
+
+    'colours' => [
+        'section' => 'الألوان',
+        'section_help' => 'اضغط على المربّع لتختار لون. منفحص التباين لحالنا — إذا اللون صعب القراءة، منقلك.',
+        'reset' => 'رجّع الافتراضي',
+        'at_default' => 'الافتراضي',
+        'hard_to_read' => 'الكتابة على هاد اللون صعبة القراءة. غمّق اللون شوي، أو ارجع للافتراضي.',
     ],
 
     'fonts' => [

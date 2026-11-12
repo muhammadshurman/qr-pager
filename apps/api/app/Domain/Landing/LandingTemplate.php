@@ -166,22 +166,64 @@ enum LandingTemplate: string
      *
      * `§12`'s zero-technical-background bar: the case names are the words a designer uses,
      * not the words a restaurant owner uses, so none of them is shown.
+     *
+     * ⚠⚠ `QRPAGER-47` SPLIT THIS INTO `name()` + `description()` AND KEPT `label()` AS THE
+     * COMPOSITION OF THE TWO. The theme tab's cards need them APART — the approved artboard
+     * sets the name at card-title weight with the sentence under it in the muted colour —
+     * and anything that needs one line still has one. Composed rather than duplicated, so
+     * there is no third place a name can drift.
      */
     public function label(string $locale): string
+    {
+        return $this->name($locale).' — '.$this->description($locale);
+    }
+
+    /**
+     * The arrangement's own name, and nothing else: the card's title.
+     *
+     * The Arabic forms are the approved artboard's, which is also what Muhammad's ticket
+     * writes — *"السِجِل (default), جَمر, بَلاط"*. They carry the short vowels because the
+     * three words are read as names here rather than as ordinary nouns, and a restaurant
+     * owner should not have to guess which reading is meant.
+     */
+    public function name(string $locale): string
     {
         // Two plain matches rather than one over a tuple: `match` on an array compares
         // element-wise and would work, and PHPStan cannot read exhaustiveness through it --
         // which is the half that matters here, because exhaustiveness is the mechanism.
         return $locale === 'ar'
             ? match ($this) {
-                self::Rail => 'السِجِل — عمود واحد، وخط رقيق يفصل كل قسم',
-                self::Ember => 'الجَمْر — صدر الصفحة داكن ومتوسّط، ثم نص مُركّز',
-                self::Tile => 'البلاط — شبكة صور متساوية للمعرض والأطباق',
+                self::Rail => 'السِجِل',
+                self::Ember => 'جَمر',
+                self::Tile => 'بَلاط',
             }
         : match ($this) {
-            self::Rail => 'Ledger — one column, a thin rule between every section',
-            self::Ember => 'Ember — a dark, centred opening, then a narrow column',
-            self::Tile => 'Tile — an even photo grid for the gallery and the dishes',
+            self::Rail => 'Ledger',
+            self::Ember => 'Ember',
+            self::Tile => 'Tile',
+        };
+    }
+
+    /**
+     * What the arrangement is FOR, in a restaurant's own terms — the artboard's own copy.
+     *
+     * ⚠ IT DESCRIBES THE PAGE AND THE KIND OF PLACE, NEVER THE MECHANISM. *"A single column
+     * whose every region is separated by one hairline rule"* is this file's docblock talking
+     * to a programmer; *"quiet and clear, for a restaurant that wants to look organised"* is
+     * the sentence an owner can choose from. `§12`: no system vocabulary on a screen.
+     */
+    public function description(string $locale): string
+    {
+        return $locale === 'ar'
+            ? match ($this) {
+                self::Rail => 'هادي وواضح. خطوط فاصلة رقيقة، وأسعار مرتبة بعمود. للمطاعم يلي بدها تبيّن نظام.',
+                self::Ember => 'واجهة غامقة وخط كبير بالوسط. للمشاوي والمطاعم المسائية.',
+                self::Tile => 'مربعات صور بشبكة. للكافيهات والحلويات يلي الصورة عندها هي البيع.',
+            }
+        : match ($this) {
+            self::Rail => 'Quiet and clear: thin rules between sections, prices in a column. For a place that wants to look organised.',
+            self::Ember => 'A dark opening with large centred type. For grills and places that fill up in the evening.',
+            self::Tile => 'A grid of photographs. For cafés and bakeries where the picture is the sale.',
         };
     }
 }

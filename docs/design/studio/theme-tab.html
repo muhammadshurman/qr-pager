@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>الاستوديو — تاب الثيم (مرجع تصميم)</title>
+<!--
+  REFERENCE ONLY. Approved visual direction for QRPAGER-47, Part B.
+  Do not copy a literal from this file. Every colour, size, radius and
+  duration here stands for a token: translate it, never paste it.
+  Fonts are linked here for the reference render only; the product
+  self-hosts them.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&family=Cairo:wght@400;600;700&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; background: #FCFCFA; }
+    * { box-sizing: border-box; }
+    .ltr { direction: ltr; unicode-bidi: isolate; font-family: 'Archivo', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+    .micro { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; }
+    .lift { transition: background-color 120ms linear, border-color 120ms linear; }
+    .lift:hover { background: #F7F7F3; }
+  </style>
+</head>
+<body>
+<div style="min-height:100%; background:#FCFCFA; color:#191C22; font-family:'Tajawal',system-ui,sans-serif; font-size:14px; line-height:1.5;">
+
+  <!-- ░░ TOPBAR ░░ -->
+  <div style="display:flex; align-items:center; gap:28px; height:56px; padding:0 28px; background:#FFFFFF; border-bottom:1px solid #DFDFD7;">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="width:24px; height:24px; background:#191C22; border-radius:2px; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; padding:5px;">
+        <i style="background:#FCFCFA"></i><i style="background:#FCFCFA"></i><i style="background:#FCFCFA"></i><i style="background:transparent"></i>
+      </div>
+      <span class="ltr micro" style="font-weight:600;">QR PAGER</span>
+      <span style="width:1px; height:18px; background:#DFDFD7;"></span>
+      <span style="font-weight:500;">مطعم السَّرو</span>
+      <span style="color:#6B6F7A; border:1px solid #DFDFD7; border-radius:4px; padding:2px 6px; font-size:12px;">الاستوديو</span>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <a class="lift" style="display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid #DFDFD7; border-radius:4px; color:#191C22; font-size:12px; cursor:pointer;"><span style="line-height:1;">↗</span><span>لوحة الطلبات</span></a>
+      <div style="display:flex; border:1px solid #DFDFD7; border-radius:4px; overflow:hidden; font-size:12px;">
+        <span style="padding:5px 10px; background:#191C22; color:#FCFCFA; font-weight:500;">ع</span>
+        <span class="ltr" style="padding:5px 10px; color:#6B6F7A;">EN</span>
+      </div>
+      <div style="width:28px; height:28px; border-radius:4px; background:#F7F7F3; border:1px solid #DFDFD7; display:grid; place-items:center; font-size:12px; font-weight:600;">م</div>
+    </div>
+  </div>
+
+  <!-- ░░ PAGE HEADER + TABS ░░ -->
+  <div style="padding:26px 28px 0;">
+    <div style="display:flex; flex-wrap:wrap; align-items:flex-end; gap:20px;">
+      <div style="flex:999 1 420px; min-width:0;">
+        <div class="micro" style="color:#6B6F7A; margin-bottom:8px;">الصفحة العامة</div>
+        <h1 style="margin:0; font-size:32px; font-weight:700; letter-spacing:-.01em; line-height:1.15;">الثيم والهوية</h1>
+        <p style="margin:8px 0 0; color:#6B6F7A; max-width:52ch;">اختار ثيم جاهز، وبعدها عدّل عليه زي ما بدك. كل تغيير بينزل على المعاينة فورًا.</p>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; background:#0A1F17; color:#FCFCFA; border-radius:2px; padding:9px 14px;">
+          <span style="width:7px; height:7px; border-radius:50%; background:#18C880;"></span>
+          <span style="font-weight:500;">منشورة</span>
+          <span style="width:1px; height:14px; background:rgba(252,252,250,.22);"></span>
+          <span style="font-size:12px; color:rgba(252,252,250,.72);">الثيم معدّل، غير منشور</span>
+        </div>
+        <a class="lift" style="padding:10px 16px; border:1px solid #DFDFD7; border-radius:4px; background:#FFFFFF; font-weight:500; cursor:pointer;">فتح المعاينة</a>
+        <a style="padding:10px 18px; border:1px solid #191C22; border-radius:4px; background:#191C22; color:#FCFCFA; font-weight:600; cursor:pointer;">نشر التعديلات</a>
+      </div>
+    </div>
+    <div style="display:flex; gap:28px; margin-top:24px; border-bottom:1px solid #DFDFD7;">
+      <span style="padding:0 2px 12px; color:#6B6F7A; cursor:pointer;">الصفحة</span>
+      <span style="padding:0 2px 12px; font-weight:600; box-shadow:inset 0 -2px 0 0 #191C22;">الثيم والهوية</span>
+      <span style="padding:0 2px 12px; color:#6B6F7A; cursor:pointer;">الوسائط</span>
+      <span style="padding:0 2px 12px; color:#6B6F7A; cursor:pointer;">البحث والمشاركة</span>
+    </div>
+  </div>
+
+  <!-- ░░ BODY ░░ -->
+  <div style="display:flex; flex-wrap:wrap; gap:28px; padding:24px 28px 96px; align-items:flex-start;">
+
+    <!-- ── FORM COLUMN ── -->
+    <div style="flex:999 1 560px; min-width:0; display:flex; flex-direction:column; gap:20px;">
+
+      <!-- ===== PRESETS ===== -->
+      <section>
+        <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:12px;">
+          <h2 style="margin:0; font-size:20px; font-weight:700;">الثيمات الجاهزة</h2>
+          <span style="color:#6B6F7A; font-size:12px;">اختار واحد، وبعدها عدّل عليه تحت</span>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px;">
+
+          <!-- RAIL (selected) -->
+          <label style="display:block; cursor:pointer; background:#FFFFFF; border:1px solid #191C22; border-radius:2px; overflow:hidden; box-shadow:inset 0 0 0 1px #191C22;">
+            <div style="background:#FCFCFA; padding:14px; border-bottom:1px solid #DFDFD7;">
+              <!-- structural thumb: ruled ledger, flush-start stack -->
+              <div style="background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; padding:11px; height:104px; display:flex; flex-direction:column; gap:7px;">
+                <i style="height:7px; width:52%; background:#191C22; border-radius:1px; display:block;"></i>
+                <i style="height:3px; width:76%; background:#DFDFD7; border-radius:1px; display:block;"></i>
+                <i style="height:1px; background:#DFDFD7; display:block; margin:2px 0;"></i>
+                <div style="display:flex; justify-content:space-between;"><i style="height:3px; width:40%; background:#DFDFD7; display:block;"></i><i style="height:3px; width:16%; background:#DFDFD7; display:block;"></i></div>
+                <div style="display:flex; justify-content:space-between;"><i style="height:3px; width:34%; background:#DFDFD7; display:block;"></i><i style="height:3px; width:16%; background:#DFDFD7; display:block;"></i></div>
+                <div style="flex:1"></div>
+                <i style="height:14px; background:#0A1F17; border-radius:1px; display:block;"></i>
+              </div>
+            </div>
+            <div style="padding:12px 14px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-weight:700; font-size:16px;">السِجِل</span>
+                <span style="font-size:12px; background:#191C22; color:#FCFCFA; border-radius:4px; padding:2px 7px;">مستخدم الآن</span>
+              </div>
+              <div style="color:#6B6F7A; font-size:12px; margin-top:4px; line-height:1.55;">هادي وواضح. خطوط فاصلة رقيقة، أسعار مرتبة بعمود. للمطاعم يلي بدها تبيّن نظام.</div>
+            </div>
+          </label>
+
+          <!-- EMBER -->
+          <label class="lift" style="display:block; cursor:pointer; background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; overflow:hidden;">
+            <div style="background:#FCFCFA; padding:14px; border-bottom:1px solid #DFDFD7;">
+              <!-- structural thumb: dark full-bleed hero, centered display type -->
+              <div style="border:1px solid #DFDFD7; border-radius:2px; height:104px; overflow:hidden; display:flex; flex-direction:column;">
+                <div style="flex:1; background:#191C22; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px;">
+                  <i style="height:11px; width:62%; background:#FCFCFA; border-radius:1px; display:block;"></i>
+                  <i style="height:3px; width:40%; background:#6B6F7A; border-radius:1px; display:block;"></i>
+                </div>
+                <div style="height:34px; background:#FFFFFF; display:flex; align-items:center; justify-content:center; gap:5px;">
+                  <i style="height:3px; width:22%; background:#DFDFD7; display:block;"></i>
+                  <i style="height:3px; width:22%; background:#DFDFD7; display:block;"></i>
+                  <i style="height:3px; width:22%; background:#DFDFD7; display:block;"></i>
+                </div>
+              </div>
+            </div>
+            <div style="padding:12px 14px;">
+              <div style="font-weight:700; font-size:16px;">جَمر</div>
+              <div style="color:#6B6F7A; font-size:12px; margin-top:4px; line-height:1.55;">واجهة غامقة وخط كبير بالوسط. للمشاوي والمطاعم المسائية.</div>
+            </div>
+          </label>
+
+          <!-- TILE -->
+          <label class="lift" style="display:block; cursor:pointer; background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; overflow:hidden;">
+            <div style="background:#FCFCFA; padding:14px; border-bottom:1px solid #DFDFD7;">
+              <!-- structural thumb: 2x2 photo grid -->
+              <div style="background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; padding:10px; height:104px; display:flex; flex-direction:column; gap:8px;">
+                <i style="height:5px; width:38%; background:#191C22; border-radius:1px; display:block;"></i>
+                <div style="flex:1; display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); grid-template-rows:repeat(2, minmax(0,1fr)); gap:6px;">
+                  <i style="background:#DFDFD7; border-radius:1px; display:block;"></i>
+                  <i style="background:#F7F7F3; border-radius:1px; display:block; border:1px solid #DFDFD7;"></i>
+                  <i style="background:#F7F7F3; border-radius:1px; display:block; border:1px solid #DFDFD7;"></i>
+                  <i style="background:#DFDFD7; border-radius:1px; display:block;"></i>
+                </div>
+              </div>
+            </div>
+            <div style="padding:12px 14px;">
+              <div style="font-weight:700; font-size:16px;">بَلاط</div>
+              <div style="color:#6B6F7A; font-size:12px; margin-top:4px; line-height:1.55;">مربعات صور بشبكة. للكافيهات والحلويات يلي الصورة عندها هي البيع.</div>
+            </div>
+          </label>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin-top:12px; padding:11px 14px; background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px;">
+          <span style="color:#6B6F7A; font-size:12px;">تبديل الثيم ما بيمسح نصوصك ولا صورك — بس يغيّر الشكل. فيك ترجع للسِجِل في أي وقت.</span>
+        </div>
+      </section>
+
+      <!-- ===== LOGO ===== -->
+      <section style="background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; padding:18px;">
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:600; font-size:16px;">الشعار</div>
+          <div style="color:#6B6F7A; font-size:12px; margin-top:4px;">بيظهر فوق صفحتك، وجوّا إشعار «طلبك جاهز» على موبايل الزبون.</div>
+        </div>
+
+        <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:stretch;">
+          <!-- current -->
+          <div style="flex:1 1 180px; min-width:0; border:1px solid #DFDFD7; border-radius:4px; padding:14px; display:flex; align-items:center; gap:14px;">
+            <div style="width:56px; height:56px; flex:none; border:1px solid #DFDFD7; border-radius:2px; background:#F7F7F3; display:grid; place-items:center; font-size:24px; color:#191C22;">⌾</div>
+            <div style="min-width:0;">
+              <div style="font-weight:500; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">sarw-mark.svg</div>
+              <div class="ltr" style="font-size:12px; color:#6B6F7A; margin-top:2px;">SVG · 18 KB</div>
+              <div style="display:flex; gap:12px; margin-top:7px;">
+                <span style="font-size:12px; text-decoration:underline; cursor:pointer;">بدّله</span>
+                <span style="font-size:12px; color:#8C2F27; cursor:pointer;">احذفه</span>
+              </div>
+            </div>
+          </div>
+          <!-- drop -->
+          <div class="lift" style="flex:1 1 220px; min-width:0; border:1px dashed #DFDFD7; border-radius:4px; padding:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; text-align:center; cursor:pointer;">
+            <span style="font-size:20px; line-height:1; color:#6B6F7A;">↑</span>
+            <span style="font-weight:500;">ارفع شعار جديد</span>
+            <span style="color:#6B6F7A; font-size:12px;">اسحب الملف لهون، أو اضغط لتختار</span>
+            <span class="ltr" style="color:#6B6F7A; font-size:12px;">PNG · SVG · 2 MB</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== COLOURS ===== -->
+      <section style="background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px;">
+        <div style="padding:18px 18px 0;">
+          <div style="font-weight:600; font-size:16px;">الألوان</div>
+          <div style="color:#6B6F7A; font-size:12px; margin-top:4px;">اضغط على المربّع لتختار لون. منفحص التباين لحالنا — إذا اللون صعب القراءة، منقلك.</div>
+        </div>
+
+        <div style="margin-top:14px;">
+
+          <!-- row: page background -->
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:13px 18px; border-top:1px solid #DFDFD7;">
+            <div style="width:34px; height:34px; flex:none; border:1px solid #DFDFD7; border-radius:4px; background:#FCFCFA; cursor:pointer;"></div>
+            <div style="flex:999 1 200px; min-width:0;">
+              <div style="font-weight:500;">خلفية الصفحة</div>
+              <div style="color:#6B6F7A; font-size:12px;">اللون اللي ورا كل شي</div>
+            </div>
+            <span class="ltr" style="font-size:14px; color:#6B6F7A; border:1px solid #DFDFD7; border-radius:4px; padding:5px 9px; background:#FFFFFF;">#FCFCFA</span>
+            <span style="font-size:12px; color:#6B6F7A;">الافتراضي</span>
+          </div>
+
+          <!-- row: text colour + OPEN PICKER -->
+          <div style="padding:13px 18px; border-top:1px solid #DFDFD7; background:#F7F7F3;">
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px;">
+              <div style="width:34px; height:34px; flex:none; border:1px solid #191C22; border-radius:4px; background:#191C22; cursor:pointer; box-shadow:0 0 0 2px #FFFFFF, 0 0 0 3px #191C22;"></div>
+              <div style="flex:999 1 200px; min-width:0;">
+                <div style="font-weight:500;">لون الكتابة</div>
+                <div style="color:#6B6F7A; font-size:12px;">العناوين والنصوص</div>
+              </div>
+              <span class="ltr" style="font-size:14px; border:1px solid #191C22; border-radius:4px; padding:5px 9px; background:#FFFFFF;">#191C22</span>
+              <span style="font-size:12px; text-decoration:underline; cursor:pointer;">رجّع الافتراضي</span>
+            </div>
+
+            <!-- the picker, open -->
+            <div style="margin-top:12px; background:#FFFFFF; border:1px solid #191C22; border-radius:4px; padding:14px; display:flex; flex-wrap:wrap; gap:16px; max-width:520px;">
+              <div style="flex:1 1 180px; min-width:150px; display:flex; flex-direction:column; gap:10px;">
+                <!-- saturation / value field -->
+                <div style="position:relative; height:112px; border:1px solid #DFDFD7; border-radius:2px; background:linear-gradient(to top, #000000, transparent), linear-gradient(to left, #2B3A55, #FFFFFF);">
+                  <i style="position:absolute; inset-inline-start:22%; top:16%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; border:2px solid #FFFFFF; box-shadow:0 0 0 1px #191C22; display:block;"></i>
+                </div>
+                <!-- hue rail -->
+                <div style="position:relative; height:12px; border:1px solid #DFDFD7; border-radius:2px; background:linear-gradient(to left, #8C2F27, #C9A227, #18C880, #2B6CB0, #6B46C1, #8C2F27);">
+                  <i style="position:absolute; inset-inline-start:58%; top:-3px; bottom:-3px; width:4px; background:#FFFFFF; box-shadow:0 0 0 1px #191C22; display:block;"></i>
+                </div>
+              </div>
+
+              <div style="flex:1 1 160px; min-width:150px; display:flex; flex-direction:column; gap:12px;">
+                <label style="display:block;">
+                  <span style="display:block; font-size:12px; color:#6B6F7A; margin-bottom:5px;">الكود</span>
+                  <!-- the fix: LTR isolation, so the # stays on the left -->
+                  <input class="ltr" value="#191C22" style="width:100%; padding:8px 10px; border:1px solid #DFDFD7; border-radius:4px; font-size:14px; color:#191C22; background:#FFFFFF;">
+                </label>
+                <div>
+                  <div style="font-size:12px; color:#6B6F7A; margin-bottom:6px;">ألوان جاهزة</div>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <i style="width:22px; height:22px; border-radius:4px; background:#191C22; border:1px solid #191C22; display:block; cursor:pointer;"></i>
+                    <i style="width:22px; height:22px; border-radius:4px; background:#2B3A55; border:1px solid #DFDFD7; display:block; cursor:pointer;"></i>
+                    <i style="width:22px; height:22px; border-radius:4px; background:#3F2D23; border:1px solid #DFDFD7; display:block; cursor:pointer;"></i>
+                    <i style="width:22px; height:22px; border-radius:4px; background:#0A1F17; border:1px solid #DFDFD7; display:block; cursor:pointer;"></i>
+                    <i style="width:22px; height:22px; border-radius:4px; background:#8C2F27; border:1px solid #DFDFD7; display:block; cursor:pointer;"></i>
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#F7F7F3; border-radius:4px;">
+                  <span style="width:7px; height:7px; border-radius:50%; background:#0A1F17; flex:none;"></span>
+                  <span style="font-size:12px;">التباين ممتاز — <span class="ltr">16.4:1</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- row: secondary text -->
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:13px 18px; border-top:1px solid #DFDFD7;">
+            <div style="width:34px; height:34px; flex:none; border:1px solid #DFDFD7; border-radius:4px; background:#6B6F7A; cursor:pointer;"></div>
+            <div style="flex:999 1 200px; min-width:0;">
+              <div style="font-weight:500;">لون الكتابة الثانوية</div>
+              <div style="color:#6B6F7A; font-size:12px;">الشرح الصغير والأسعار</div>
+            </div>
+            <span class="ltr" style="font-size:14px; color:#6B6F7A; border:1px solid #DFDFD7; border-radius:4px; padding:5px 9px; background:#FFFFFF;">#6B6F7A</span>
+            <span style="font-size:12px; color:#6B6F7A;">الافتراضي</span>
+          </div>
+
+          <!-- row: lines -->
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:13px 18px; border-top:1px solid #DFDFD7;">
+            <div style="width:34px; height:34px; flex:none; border:1px solid #DFDFD7; border-radius:4px; background:#DFDFD7; cursor:pointer;"></div>
+            <div style="flex:999 1 200px; min-width:0;">
+              <div style="font-weight:500;">لون الخطوط الفاصلة</div>
+              <div style="color:#6B6F7A; font-size:12px;">الخطوط الرقيقة بين الأقسام</div>
+            </div>
+            <span class="ltr" style="font-size:14px; color:#6B6F7A; border:1px solid #DFDFD7; border-radius:4px; padding:5px 9px; background:#FFFFFF;">#DFDFD7</span>
+            <span style="font-size:12px; color:#6B6F7A;">الافتراضي</span>
+          </div>
+
+          <!-- row: FAILING contrast — the teaching case -->
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:13px 18px; border-top:1px solid #DFDFD7;">
+            <div style="width:34px; height:34px; flex:none; border:1px solid #DFDFD7; border-radius:4px; background:#C9A227; cursor:pointer;"></div>
+            <div style="flex:999 1 200px; min-width:0;">
+              <div style="font-weight:500;">لون الأزرار</div>
+              <div style="display:flex; align-items:center; gap:7px; margin-top:3px;">
+                <span style="width:7px; height:7px; border-radius:50%; background:#8C2F27; flex:none;"></span>
+                <span style="color:#8C2F27; font-size:12px;">الكتابة على هاد اللون صعبة القراءة. غمّق اللون شوي، أو ارجع للافتراضي.</span>
+              </div>
+            </div>
+            <span class="ltr" style="font-size:14px; border:1px solid #8C2F27; border-radius:4px; padding:5px 9px; background:#FFFFFF; color:#8C2F27;">#C9A227</span>
+            <span style="font-size:12px; text-decoration:underline; cursor:pointer;">رجّع الافتراضي</span>
+          </div>
+
+          <!-- row: ready field -->
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:13px 18px; border-top:1px solid #DFDFD7;">
+            <div style="width:34px; height:34px; flex:none; border:1px solid #DFDFD7; border-radius:4px; background:#0A1F17; cursor:pointer;"></div>
+            <div style="flex:999 1 200px; min-width:0;">
+              <div style="font-weight:500;">لون شاشة «طلبك جاهز»</div>
+              <div style="color:#6B6F7A; font-size:12px;">أهم شاشة بالمنتج. التباين عليها مرفوع لأعلى درجة.</div>
+            </div>
+            <span class="ltr" style="font-size:14px; color:#6B6F7A; border:1px solid #DFDFD7; border-radius:4px; padding:5px 9px; background:#FFFFFF;">#0A1F17</span>
+            <span style="font-size:12px; color:#6B6F7A;">الافتراضي</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== TYPE ===== -->
+      <section style="background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; padding:18px;">
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:600; font-size:16px;">الخط العربي</div>
+          <div style="color:#6B6F7A; font-size:12px; margin-top:4px;">النص الإنجليزي بيستعمل خط واحد ثابت لكل الثيمات، لتبقى الأرقام والأسعار مرتبة.</div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px;">
+          <label style="display:block; cursor:pointer; border:1px solid #191C22; border-radius:4px; padding:14px; background:#F7F7F3;">
+            <div style="font-family:'Tajawal',sans-serif; font-size:24px; font-weight:700; line-height:1.3;">مشاوي على الفحم</div>
+            <div style="font-family:'Tajawal',sans-serif; color:#6B6F7A; font-size:12px; margin-top:4px;">اقعد وامسح الكود ومنبلّغك</div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid #DFDFD7;">
+              <span style="font-weight:600;">تجوّل</span>
+              <span style="font-size:12px; background:#191C22; color:#FCFCFA; border-radius:4px; padding:2px 7px;">مستخدم الآن</span>
+            </div>
+          </label>
+          <label class="lift" style="display:block; cursor:pointer; border:1px solid #DFDFD7; border-radius:4px; padding:14px; background:#FFFFFF;">
+            <div style="font-family:'Cairo',sans-serif; font-size:24px; font-weight:700; line-height:1.3;">مشاوي على الفحم</div>
+            <div style="font-family:'Cairo',sans-serif; color:#6B6F7A; font-size:12px; margin-top:4px;">اقعد وامسح الكود ومنبلّغك</div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid #DFDFD7;">
+              <span style="font-weight:600;">القاهرة</span>
+              <span style="font-size:12px; color:#6B6F7A;">أعرض شوي، أوضح على الشاشات الصغيرة</span>
+            </div>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── PREVIEW COLUMN ── -->
+    <div style="flex:1 1 400px; min-width:340px; position:sticky; top:24px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="micro" style="color:#6B6F7A;">معاينة مباشرة</span>
+        <span style="color:#6B6F7A; font-size:12px;">— بلا حفظ وبلا تحديث</span>
+        <div style="flex:1"></div>
+        <div style="display:flex; border:1px solid #DFDFD7; border-radius:4px; overflow:hidden; font-size:12px; background:#FFFFFF;">
+          <span style="padding:5px 11px; background:#191C22; color:#FCFCFA; font-weight:500;">الصفحة</span>
+          <span class="lift" style="padding:5px 11px; color:#6B6F7A; cursor:pointer;">شاشة الجهوزية</span>
+        </div>
+      </div>
+
+      <div style="background:#F7F7F3; border:1px solid #DFDFD7; border-radius:2px; padding:20px; display:flex; justify-content:center;">
+        <div style="width:300px; background:#FFFFFF; border:1px solid #DFDFD7; border-radius:4px; overflow:hidden;">
+          <div style="height:26px; background:#F7F7F3; border-bottom:1px solid #DFDFD7; display:flex; align-items:center; gap:6px; padding:0 10px;">
+            <i style="width:5px;height:5px;border-radius:50%;background:#DFDFD7;display:block"></i>
+            <i style="width:5px;height:5px;border-radius:50%;background:#DFDFD7;display:block"></i>
+            <div style="flex:1"></div>
+            <span class="ltr" style="font-size:12px; color:#6B6F7A;">sarw.qrpager.app</span>
+          </div>
+          <div style="padding:22px 18px 18px;">
+            <div style="display:flex; align-items:center; gap:9px; margin-bottom:22px;">
+              <div style="width:28px; height:28px; border:1px solid #DFDFD7; border-radius:2px; display:grid; place-items:center; font-size:12px; color:#191C22; background:#F7F7F3;">⌾</div>
+              <div style="font-weight:700; font-size:14px;">مطعم السَّرو</div>
+            </div>
+            <div style="font-size:24px; font-weight:700; line-height:1.2; letter-spacing:-.01em;">أهلاً فيك بمطعم السَّرو</div>
+            <div style="color:#6B6F7A; font-size:12px; margin-top:8px; line-height:1.6;">مشويات على الفحم من ١٩٨٧</div>
+            <div style="height:1px; background:#DFDFD7; margin:18px 0;"></div>
+            <div class="micro" style="color:#6B6F7A; margin-bottom:10px;">المنيو</div>
+            <div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #F7F7F3; font-size:12px;"><span>مشاوي مشكّل</span><span class="ltr" style="color:#6B6F7A;">9.50 JD</span></div>
+            <div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #F7F7F3; font-size:12px;"><span>شيش طاووق</span><span class="ltr" style="color:#6B6F7A;">6.00 JD</span></div>
+            <div style="display:flex; justify-content:space-between; padding:7px 0; font-size:12px;"><span>كبدة دجاج</span><span class="ltr" style="color:#6B6F7A;">4.25 JD</span></div>
+            <div style="margin-top:20px; background:#0A1F17; border-radius:2px; padding:16px; text-align:center;">
+              <div style="display:inline-flex; align-items:center; gap:8px;">
+                <span style="width:7px; height:7px; border-radius:50%; background:#18C880;"></span>
+                <span style="color:#FCFCFA; font-size:14px; font-weight:600;">منبلّغك لمّا تجهز</span>
+              </div>
+              <div style="color:rgba(252,252,250,.68); font-size:12px; margin-top:6px;">ما بدك تقعد تراقب الشاشة</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- what changed, live -->
+      <div style="margin-top:12px; background:#FFFFFF; border:1px solid #DFDFD7; border-radius:2px; padding:14px;">
+        <div class="micro" style="color:#6B6F7A; margin-bottom:10px;">تعديلاتك على الثيم</div>
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 0;">
+          <i style="width:14px; height:14px; border-radius:2px; background:#C9A227; border:1px solid #DFDFD7; flex:none; display:block;"></i>
+          <span style="font-size:12px; flex:1;">لون الأزرار</span>
+          <span style="font-size:12px; color:#8C2F27;">تباين ضعيف</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:6px 0;">
+          <i style="width:14px; height:14px; border-radius:2px; background:#F7F7F3; border:1px solid #DFDFD7; flex:none; display:block;"></i>
+          <span style="font-size:12px; flex:1;">الشعار</span>
+          <span style="font-size:12px; color:#6B6F7A;">جديد</span>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid #DFDFD7;">
+          <span style="font-size:12px; text-decoration:underline; cursor:pointer;">رجّع كل شي للسِجِل</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ░░ FOOTER BAR ░░ -->
+  <div style="position:sticky; bottom:0; background:#FFFFFF; border-top:1px solid #DFDFD7; padding:14px 28px; display:flex; flex-wrap:wrap; align-items:center; gap:14px;">
+    <span style="width:7px; height:7px; border-radius:50%; background:#6B6F7A;"></span>
+    <span style="color:#6B6F7A; font-size:12px;">محفوظة كمسودة قبل ثانية</span>
+    <div style="flex:1"></div>
+    <a class="lift" style="padding:10px 16px; border:1px solid #DFDFD7; border-radius:4px; font-weight:500; cursor:pointer;">رجّع آخر نسخة منشورة</a>
+    <a style="padding:10px 18px; border:1px solid #191C22; border-radius:4px; background:#191C22; color:#FCFCFA; font-weight:600; cursor:pointer;">نشر التعديلات</a>
+  </div>
+
+</div>
+</body>
+</html>

@@ -583,6 +583,14 @@
             ],
             "default": "rail",
             "description": "How the blocks are arranged. Absent means rail, which is the arrangement every page published before this member existed already used."
+        },
+        "logo": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "uuid",
+            "description": "A media id from this tenant's own library, rendered at the head of the published page. Absent or null means no logo."
         }
     },
     "x-bounds": {

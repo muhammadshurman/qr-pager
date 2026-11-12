@@ -168,13 +168,16 @@ return [
      * about -- the enumeration probe printed all twelve of them.
      */
     'tokens' => [
+        // The six names are Muhammad's own, from his ruling of 2026-11-12. `muted` names its
+        // coupling — one value paints secondary text and every hairline — because `§12` says
+        // tell the owner what they are changing rather than hide it behind a tidier word.
         'color' => [
-            'background' => 'Background colour',
-            'surface' => 'Surface colour',
+            'background' => 'Page background',
+            'surface' => 'Card background',
             'text' => 'Text colour',
-            'muted' => 'Secondary text colour',
-            'accent' => 'Accent colour',
-            'accent_text' => 'Text on the accent colour',
+            'muted' => 'Secondary text and dividing lines',
+            'accent' => 'Buttons and links',
+            'accent_text' => 'Text on buttons',
         ],
         'font' => [
             'heading' => 'Heading font',
@@ -190,6 +193,45 @@ return [
         'size' => [
             'heading' => 'Heading size',
         ],
+    ],
+
+    // The sentence under each colour's name: a name says WHICH colour, a sentence says where
+    // the owner will see it change.
+    'tokens_help' => [
+        'color' => [
+            'background' => 'The colour behind everything',
+            'surface' => 'The ground behind cards and raised sections',
+            'text' => 'Headings and body text',
+            'muted' => 'Small print, prices and the thin rules between sections',
+            'accent' => 'Buttons and links',
+            'accent_text' => 'The writing that sits on top of your button colour',
+        ],
+    ],
+
+    'arrangements' => [
+        'section' => 'Ready-made themes',
+        'section_help' => 'Pick one, then adjust it below.',
+        'in_use' => 'In use now',
+        'note' => 'Switching a theme never removes your text or your images — it only changes the look. You can go back to Ledger at any time.',
+    ],
+
+    'logo' => [
+        'section' => 'Logo',
+        'section_help' => 'It appears at the top of your public page.',
+        'none' => 'No logo yet.',
+        'upload' => 'Upload a new logo',
+        'drag' => 'Drop the file here, or click to choose one',
+        'file_meta' => ':type · :size KB',
+        'remove' => 'Remove',
+        'reference_only' => 'Removing the logo takes it off your page only — the image stays in your media library.',
+    ],
+
+    'colours' => [
+        'section' => 'Colours',
+        'section_help' => 'Tap a square to choose a colour. We check the contrast for you — if a colour is hard to read, we say so.',
+        'reset' => 'Back to the default',
+        'at_default' => 'Default',
+        'hard_to_read' => 'Writing on this colour is hard to read. Darken it a little, or go back to the default.',
     ],
 
     'fonts' => [

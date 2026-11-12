@@ -6,6 +6,8 @@ namespace App\Features\Landing\Panel\Pages;
 
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\MediaLibrary;
+use App\Features\Landing\MediaRejected;
 use App\Features\Landing\Panel\HasStudioLocale;
 use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\MediaOptions;
@@ -14,6 +16,8 @@ use App\Platform\Http\TenantPanelAccess;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Livewire\WithFileUploads;
 
 /**
  * `/studio/theme` — the `الثيم` tab: the theme, and search-and-sharing with it.
@@ -50,6 +54,7 @@ class ThemePage extends Page
 {
     use HasStudioLocale;
     use KeepsPreviewInStep;
+    use WithFileUploads;
 
     protected string $view = 'studio.theme';
 
@@ -74,6 +79,19 @@ class ThemePage extends Page
     /** @var array<string, mixed> */
     public ?array $data = [];
 
+    /**
+     * The Livewire temporary upload for the logo, before anything has looked at it.
+     *
+     * ⚠ THE SAME SHAPE AS `MediaLibraryPage::$upload`, AND FOR THE SAME REASON: Filament's
+     * `FileUpload` would write bytes to the object store itself, with nothing passing
+     * `InspectedImage` — content sniffing, the size bound and the SVG policy all skipped.
+     * Muhammad's brief names that explicitly, and his ruling of 2026-11-12 names the
+     * resolution: *"the artboard specifies the affordance, the brief specifies the pipe."*
+     *
+     * @var mixed
+     */
+    public $logoUpload = null;
+
     public static function canAccess(): bool
     {
         return TenantPanelAccess::allows();
@@ -90,9 +108,99 @@ class ThemePage extends Page
 
     public function form(Schema $schema): Schema
     {
+        $tenantId = TenantPanelAccess::tenantId();
+
+        /*
+         * ⚠ THE **STORED** ARRANGEMENT, READ HERE AND NOT TAKEN FROM THE FORM STATE. The
+         * badge on the cards says `مستخدم الآن` — *in use now* — and the honest answer to
+         * that is what the saved draft names, not what the owner has just clicked. The
+         * preview follows a click immediately; the document does not until Save, and the
+         * badge staying put is the only thing on the screen that says so.
+         */
+        $stored = app(LandingPages::class)->draft($tenantId)->template->value;
+
         return $schema
-            ->components(StudioForm::themeSchema(new MediaOptions(TenantPanelAccess::tenantId())))
+            ->components(StudioForm::themeSchema(new MediaOptions($tenantId), $stored))
             ->statePath('data');
+    }
+
+    /**
+     * A logo arrived — `QRPAGER-47` Part B item 2.
+     *
+     * ⚠ A LIVEWIRE HOOK, NOT A `wire:change`, WHICH IS `MediaLibraryPage`'s FINDING RATHER
+     * THAN A PREFERENCE: an event handler on the element fires when the BROWSER has the file,
+     * which is before Livewire has finished transferring it, so the handler would find the
+     * property still null. The hook fires after the transfer by construction.
+     *
+     * ⚠ AND THE ASSET IS STORED IMMEDIATELY WHILE THE REFERENCE IS NOT. Bytes have to exist
+     * to be referenced, so the upload lands in the tenant's library at once — where it is an
+     * ordinary asset like any other. The document's `logo` member is FORM STATE until Save,
+     * exactly as a block's image is, which is why the preview updates and the published page
+     * does not.
+     */
+    public function updatedLogoUpload(): void
+    {
+        $tenantId = TenantPanelAccess::tenantId();
+
+        if (! $this->logoUpload instanceof TemporaryUploadedFile) {
+            Notification::make()->title(__('studio.notifications.choose_file_first'))->danger()->send();
+
+            return;
+        }
+
+        // The same reduction the stored name gets, for the reason `MediaLibraryPage` records:
+        // Filament renders a notification title through an allow-list sanitiser rather than
+        // `e()`, so the displayed name and the stored name must be one value.
+        $name = MediaLibrary::safeName((string) $this->logoUpload->getClientOriginalName());
+
+        try {
+            $assetId = app(MediaLibrary::class)->store($tenantId, $name, (string) $this->logoUpload->get());
+        } catch (MediaRejected $e) {
+            Notification::make()
+                ->title(__('studio.notifications.image_refused', ['name' => $name]))
+                ->body($e->reason)
+                ->danger()
+                ->persistent()
+                ->send();
+
+            $this->reset('logoUpload');
+
+            return;
+        }
+
+        $this->reset('logoUpload');
+
+        $this->data['logo'] = $assetId;
+
+        /*
+         * ⚠ THE PREVIEW IS TOLD, BECAUSE NOTHING ELSE WILL TELL IT. The debounce in
+         * `preview-sync.blade.php` listens for `input` and `change` on the form wrapper; this
+         * change came from a Livewire round trip and fires neither. The stated invariant's
+         * second clause — *"reflected in the preview with no Save click and no page refresh"*
+         * — covers the logo as much as the arrangement, and this is the line that makes it
+         * true for an upload.
+         */
+        $this->previewChanged();
+
+        Notification::make()->title(__('studio.notifications.image_added', ['name' => $name]))->success()->send();
+    }
+
+    /**
+     * Remove the logo — the REFERENCE, never the image.
+     *
+     * Muhammad's ruling of 2026-11-12: *"deleting the logo removes the REFERENCE, not the
+     * asset underneath."* So this clears one document member and the upload stays in the
+     * media library, where deleting it is a deliberate act with its own confirmation. The
+     * field's help line says so, because a word like *remove* on a screen has to say what it
+     * actually removes (`§12`).
+     */
+    public function removeLogo(): void
+    {
+        abort_unless(static::canAccess(), 403);
+
+        $this->data['logo'] = null;
+
+        $this->previewChanged();
     }
 
     public function save(): void

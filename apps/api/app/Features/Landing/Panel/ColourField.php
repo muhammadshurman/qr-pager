@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Landing\Panel;
 
+use App\Domain\Landing\ThemeTokens;
 use Filament\Forms\Components\Field;
 use Filament\Support\Components\Contracts\HasEmbeddedView;
 use Filament\Support\View\ComponentAttributeBag as FilamentComponentAttributeBag;
@@ -63,12 +64,78 @@ class ColourField extends Field implements HasEmbeddedView
      * PHP is also a design decision made outside the token layer, which is the thing `§12`'s
      * single-source rule exists to stop -- so the scanner was right twice over.
      *
-     * So the NAME travels and the browser resolves it. `border-strong` is the right role: it
-     * is the neutral that already has a value in both modes, so the picker opens on
-     * something that reads as "nothing chosen" in light and in dark without this field
-     * knowing which mode it is in.
+     * So the NAME travels and the browser resolves it. `border-strong` is the DEFAULT for a
+     * field nobody has given a token to; a row built with `token()` replaces it with that
+     * token's own default property, so the swatch shows the colour the page is using rather
+     * than a neutral standing in for one.
      */
     protected string $fallbackToken = '--color-border-strong';
+
+    /**
+     * The contract token this row edits — `color.text`, and so on.
+     *
+     * ⚠ IT IS ALSO THE ROW'S OWN ADDRESS IN THE DOM, as `data-token`, which is how the
+     * CONTRAST check finds the other colour of its pair without either field knowing the
+     * other's Livewire path. Filament derives an element id from the state path and this file
+     * must not re-derive it: a second copy of that rule would break silently the day Filament
+     * changes it.
+     */
+    protected string $token = '';
+
+    /**
+     * The token this one is READ AGAINST — `QRPAGER-47` Part B item 3.
+     *
+     * Muhammad's ruling of 2026-11-12: *"accent / accent_text are a PAIR: the contrast check
+     * on those two runs between them, not against the page background."* So the pairing is
+     * declared per row rather than assumed, and the row says which colour it is judged with.
+     */
+    protected string $pairedWith = '';
+
+    public function token(string $name): static
+    {
+        $this->token = $name;
+
+        /*
+         * ⚠ AND THE PICKER NOW OPENS ON **THIS TOKEN'S OWN DEFAULT** rather than on a neutral.
+         * `QRPAGER-41` opened every swatch on `--color-border-strong` because the field knew
+         * no better: the point was *"something that reads as nothing chosen"*. The artboard
+         * answers the question properly — each row's swatch shows the colour the page is
+         * ACTUALLY using, which for an unset token is its default — and `ThemeTokens` can now
+         * say which property holds it. Still a NAME resolved in the browser, so no hex enters
+         * panel PHP.
+         */
+        $this->fallbackToken = ThemeTokens::defaultProperty($name);
+
+        return $this;
+    }
+
+    public function pairedWith(string $name): static
+    {
+        $this->pairedWith = $name;
+
+        return $this;
+    }
+
+    /**
+     * ⚠ NO DERIVED LABEL, AND THE EMPTY STRING IS THE WHOLE POINT.
+     *
+     * `Filament\Forms\Components\Field::getLabel()` falls back to `getDefaultLabel()`
+     * whenever the label is not `filled()`, and that default is the FIELD NAME turned into
+     * words — so `theme_color_background` became the sr-only, screen-reader-only English
+     * sentence *"Theme color background"* inside an Arabic panel. `->label('')` does not stop
+     * it, because `''` is not `filled()` either.
+     *
+     * Returning `''` here makes the wrapper render no label element at all
+     * (`@if (filled($label) && $labelSrOnly)`), which is correct for a field that renders its
+     * own: a second `<label for>` on the same control would give it two accessible names.
+     *
+     * Found by `StudioLocalizationTest`, which renders every tab under `ar` and reads the
+     * text nodes — the only way a hidden English label is visible at all.
+     */
+    public function getDefaultLabel(): string
+    {
+        return '';
+    }
 
     public function toEmbeddedHtml(): string
     {
@@ -108,6 +175,8 @@ class ColourField extends Field implements HasEmbeddedView
                  * that is this panel's rather than Filament's.
                  */
                 'aria-invalid' => $hasError ? 'true' : null,
+                // The row's address for the contrast check — see `$token`.
+                'data-token' => $this->token === '' ? null : $this->token,
             ], escape: false)
             ->merge($this->getExtraAttributes(), escape: false)
             ->merge($this->getAccessibilityAttributes(), escape: false)
@@ -118,13 +187,40 @@ class ColourField extends Field implements HasEmbeddedView
          * separate for the reason the docblock gives: seeding `chosen` from `picked` on load
          * would write an override nobody asked for.
          */
+        /*
+         * `chosen` is the Livewire state and `picked` is what the input displays. They are
+         * separate for the reason the docblock gives: seeding `chosen` from `picked` on load
+         * would write an override nobody asked for.
+         *
+         * ⚠ `advice` IS A TRANSLATED SENTENCE HANDED IN, NOT BUILT IN JAVASCRIPT. The
+         * component decides WHETHER to say something; what it says comes from `lang/`, because
+         * a string assembled in a render hook is a string no translator can reach.
+         */
         $alpine = e(json_encode([
             'statePath' => $statePath,
             'fallbackToken' => $this->fallbackToken,
+            'token' => $this->token,
+            'pairedWith' => $this->pairedWith,
+            // ⚠ 4.5, AND IT IS `§12`'s NUMBER RATHER THAN THIS FILE'S OPINION: *"WCAG AA
+            // contrast (AAA on the order ready screen)"*. The ready screen is not settable
+            // here at all — Muhammad closed that row on 2026-11-12 — so AA is the whole of
+            // what this control has to judge.
+            'floor' => 4.5,
+            'advice' => __('studio.colours.hard_to_read'),
         ], JSON_THROW_ON_ERROR));
 
-        $clearLabel = e(__('studio.theme.clear_colour'));
-        $defaultLabel = e(__('studio.theme.using_default'));
+        $clearLabel = e(__('studio.colours.reset'));
+        $defaultLabel = e(__('studio.colours.at_default'));
+        /*
+         * ⚠ THE ROW'S NAME COMES FROM THE TOKEN AND FROM NOTHING ELSE. An earlier version
+         * fell back to `getLabel()`, which PHPStan refused outright — that method returns
+         * `Htmlable|string|null` — and the refusal was right for a second reason: this field
+         * now reports NO default label (see `getDefaultLabel()`), so the fallback could only
+         * ever have produced an empty name while looking like it had one. A `ColourField`
+         * built without `->token()` renders no name, which is visible immediately.
+         */
+        $name = $this->token === '' ? '' : e(__('studio.tokens.'.$this->token));
+        $hint = $this->token === '' ? '' : e(__('studio.tokens_help.'.$this->token));
 
         /*
          * The caption's own first paint. Alpine replaces it with `x-text` the moment it
@@ -133,14 +229,41 @@ class ColourField extends Field implements HasEmbeddedView
          */
         $caption = $state === '' ? $defaultLabel : e($state);
 
+        /*
+         * ⚠⚠ THE WHOLE ROW IS RENDERED HERE, AND THAT IS THE ARTBOARD'S SHAPE RATHER THAN
+         * FILAMENT'S. `docs/design/studio/theme-tab.html` draws each colour as one line —
+         * swatch, then the name with a sentence under it, then the code, then the way back to
+         * the default — and Filament's field wrapper puts a label ABOVE its control. So the
+         * name is a `<label for>` inside this markup (which is also what makes the swatch
+         * announce its own name), every field is built with `hiddenLabel()`, and the wrapper
+         * is left to do what only it can: show a validation error against this path.
+         *
+         * ⚠ AND THE PICKER IS STILL `<input type="color">`. The artboard draws a picker panel
+         * OPEN — a saturation field, a hue rail, a code box, five presets — because a static
+         * HTML mock cannot show the operating system's own picker. `QRPAGER-41` chose the
+         * native element deliberately (*"a JavaScript widget with a text field in it is a
+         * different control that still shows the owner a hex"*) and this ticket's brief
+         * reaffirms it: *"a swatch that opens a real picker"*. What the mock puts inside that
+         * panel — the code, the way back, the contrast reading — is on the row instead, where
+         * it is visible without opening anything.
+         */
         return $this->wrapEmbeddedHtml(<<<HTML
-            <div class="studio-colour" x-data="studioColour({$alpine})">
+            <div class="studio-colour" x-data="studioColour({$alpine})" x-on:input.window="judge()">
                 <input type="color" {$attributes->toHtml()} />
 
-                <output for="{$id}" class="studio-colour__value" x-text="chosen || '{$defaultLabel}'">{$caption}</output>
+                <span class="studio-colour__text">
+                    <label class="studio-colour__name" for="{$id}">{$name}</label>
+                    <span class="studio-colour__hint">{$hint}</span>
+                    <span class="studio-colour__advice" role="status" x-show="advice" x-cloak
+                          x-text="advice"></span>
+                </span>
+
+                <output for="{$id}" class="studio-colour__value studio-ltr" x-text="chosen || '{$defaultLabel}'">{$caption}</output>
 
                 <button type="button" class="studio-colour__clear" x-show="chosen" x-cloak
                         x-on:click="clear()">{$clearLabel}</button>
+
+                <span class="studio-colour__default" x-show="! chosen">{$defaultLabel}</span>
             </div>
             HTML);
     }

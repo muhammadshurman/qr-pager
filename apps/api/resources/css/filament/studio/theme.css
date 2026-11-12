@@ -897,3 +897,443 @@ html:not(.dark):has(body.fi-panel-studio),
   unicode-bidi: isolate;
   text-align: start;
 }
+
+/*
+ * ================================================================================
+ * THE THEME TAB — `QRPAGER-47` PART B, from `docs/design/studio/theme-tab.html`
+ * ================================================================================
+ *
+ * ⚠ THE ARTBOARD IS A REFERENCE AND EVERY VALUE IN IT STANDS FOR A TOKEN. Its own header
+ * says so — *"Do not copy a literal from this file. Every colour, size, radius and duration
+ * here stands for a token: translate it, never paste it."* So `#FCFCFA` is
+ * `--color-paper`, `#DFDFD7` is `--color-hairline`, `#6B6F7A` is `--color-ink-mid`,
+ * `#8C2F27` is `--color-alert-ink`, its 2px radius is `--radius-surface` and its 4px is
+ * `--radius-control`. Where the artboard's number is between two steps of the scale the
+ * nearer step wins, which is what a scale is for.
+ *
+ * ⚠ AND `scan-css.mjs` IS WHAT MAKES THAT TRUE RATHER THAN INTENDED: a hex, a raw length in
+ * a spacing declaration or a `var()` with a fallback anywhere below this line is a build
+ * failure, with no baseline entry to hide behind.
+ */
+
+/*
+ * ░░ THE THREE THEMES, AS CARDS ░░
+ *
+ * `minmax(0, 1fr)` three times, not `1fr` three times: a grid track sized `1fr` has an
+ * automatic MINIMUM of `min-content`, so one long Arabic word in a description would push
+ * its own column wider than its share and the three cards would stop being equal. Measured
+ * elsewhere in this panel before; stated here because the cards are the one place on this
+ * tab where equality is the point.
+ */
+.studio-arrangements__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+@media (max-width: 60rem) {
+  .studio-arrangements__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * The card. `cursor: pointer` on the label and nothing else clickable inside it, so the
+ * whole card is one target -- far above `§12`'s 44px floor, which is why no explicit
+ * minimum is declared here.
+ */
+.studio-arrangement {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color var(--motion-state) linear, background-color var(--motion-state) linear;
+}
+
+.studio-arrangement:hover {
+  background: var(--color-surface-2);
+}
+
+/*
+ * ⚠ THE CHOSEN CARD IS MARKED TWICE AND NEITHER MARK IS COLOUR ALONE. The border goes to
+ * `--color-ink` AND an inset ring doubles its weight, which is the artboard's own treatment
+ * — and the badge below says `مستخدم الآن` in words. `§12`'s bar is not only about contrast
+ * ratios: a state a colour-blind owner cannot read is a state that is not communicated.
+ */
+.studio-arrangement--chosen {
+  border-color: var(--color-ink);
+  box-shadow: inset 0 0 0 1px var(--color-ink);
+}
+
+/*
+ * The radio itself: clipped to a pixel, NEVER `display: none`, so it keeps focus, keyboard
+ * semantics and the group a screen reader announces. The ring is then drawn on the card,
+ * where the eye is -- the same arrangement the media drop zone already uses.
+ */
+.studio-arrangement__input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.studio-arrangement:has(.studio-arrangement__input:focus-visible) {
+  outline: var(--focus-width) solid var(--color-ink);
+  outline-offset: var(--focus-offset);
+}
+
+/* ░░ THE STRUCTURAL THUMBNAIL ░░ */
+.studio-arrangement__thumb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  block-size: var(--size-96);
+  padding: var(--space-12);
+  border-block-end: 1px solid var(--color-hairline);
+  background: var(--color-paper);
+}
+
+/* Ember's hero is full-bleed, so that thumbnail carries no padding of its own. */
+.studio-arrangement__thumb:has(.studio-thumb__hero) {
+  gap: 0;
+  padding: 0;
+}
+
+/*
+ * ⚠ `block-size: 3px` AND `1fr` BELOW ARE THE PICTURE'S OWN GEOMETRY, NOT THE LAYOUT'S
+ * SPACING, and the distinction is the scanner's own: it judges spacing DECLARATIONS —
+ * padding, margin, gap — and leaves the dimensions of a drawing alone. A bar inside a 96px
+ * thumbnail is a mark in an illustration; rounding it up to the 4px step would make the
+ * picture heavier than the page it is a picture OF. Every colour and every radius here is
+ * still a token.
+ */
+.studio-thumb__bar {
+  display: block;
+  border-radius: var(--radius-surface);
+  background: var(--color-hairline);
+}
+
+.studio-thumb__bar--title {
+  block-size: var(--space-8);
+  inline-size: 52%;
+  background: var(--color-ink);
+}
+
+.studio-thumb__bar--sub {
+  block-size: 3px;
+  inline-size: 76%;
+}
+
+.studio-thumb__rule {
+  display: block;
+  block-size: 1px;
+  background: var(--color-hairline);
+}
+
+.studio-thumb__row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.studio-thumb__row > i {
+  display: block;
+  block-size: 3px;
+  background: var(--color-hairline);
+}
+
+.studio-thumb__row > i:first-child {
+  inline-size: 38%;
+}
+
+.studio-thumb__row > i:last-child {
+  inline-size: 16%;
+}
+
+/* The ledger's call to action, at the foot of the column where `rail.blade.php` puts it. */
+.studio-thumb__cta {
+  display: block;
+  margin-block-start: auto;
+  block-size: var(--space-12);
+  border-radius: var(--radius-surface);
+  background: var(--ready-field);
+}
+
+.studio-thumb__hero {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  background: var(--color-ink);
+}
+
+/* Inverted inside the hero, which is the one thing ember does to the palette. */
+.studio-thumb__hero .studio-thumb__bar--title {
+  block-size: var(--space-12);
+  inline-size: 62%;
+  background: var(--color-paper);
+}
+
+.studio-thumb__hero .studio-thumb__bar--sub {
+  inline-size: 40%;
+  background: var(--color-ink-mid);
+}
+
+.studio-thumb__strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  block-size: var(--space-32);
+  background: var(--color-surface);
+}
+
+.studio-thumb__strip > i {
+  display: block;
+  block-size: 3px;
+  inline-size: 22%;
+  background: var(--color-hairline);
+}
+
+.studio-thumb__grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.studio-thumb__grid > i {
+  display: block;
+  border-radius: var(--radius-surface);
+  background: var(--color-hairline);
+}
+
+.studio-thumb__grid > i:nth-child(2),
+.studio-thumb__grid > i:nth-child(3) {
+  border: 1px solid var(--color-hairline);
+  background: var(--color-surface-2);
+}
+
+/* ░░ THE CARD'S WORDS ░░ */
+.studio-arrangement__body {
+  display: block;
+  padding: var(--space-12) var(--space-16);
+}
+
+.studio-arrangement__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.studio-arrangement__name {
+  font-size: var(--size-16);
+  font-weight: 700;
+}
+
+.studio-arrangement__badge {
+  border-radius: var(--radius-control);
+  padding: var(--space-4) var(--space-8);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-size: var(--size-13);
+}
+
+.studio-arrangement__summary {
+  display: block;
+  margin-block-start: var(--space-4);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+  line-height: 1.55;
+}
+
+/*
+ * The sentence under the cards. It is the control's own reassurance — *"switching a theme
+ * never removes your text or your images"* — so it sits with the cards rather than in the
+ * section's description above them, where an owner would have read it before they had a
+ * reason to care.
+ */
+.studio-arrangements__note {
+  margin-block-start: var(--space-12);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-surface);
+  padding: var(--space-12) var(--space-16);
+  background: var(--color-surface);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+/* ░░ THE LOGO ░░ */
+.studio-logo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16);
+  align-items: stretch;
+}
+
+.studio-logo__current,
+.studio-logo__drop {
+  flex: 1 1 15rem;
+  min-inline-size: 0;
+}
+
+.studio-logo__card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+  padding: var(--space-16);
+}
+
+/*
+ * ⚠ THE MARK IS A BOX AND NOT AN `<img>`, DELIBERATELY. Rendering the asset itself would
+ * mean a signed object-store URL per form build — a read the panel does not otherwise need
+ * and a second way for a media id to become a URL. The card's job is *"which file is this"*,
+ * and the ruling says what answers that: the file's own name and its real size.
+ */
+.studio-logo__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: var(--size-44);
+  block-size: var(--size-44);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface-2);
+}
+
+.studio-logo__meta {
+  min-inline-size: 0;
+}
+
+.studio-logo__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--size-13);
+  font-weight: 500;
+}
+
+.studio-logo__file {
+  display: block;
+  margin-block-start: var(--space-4);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+.studio-logo__remove {
+  margin-block-start: var(--space-8);
+  color: var(--color-alert-ink);
+  font-size: var(--size-13);
+  text-decoration: underline;
+}
+
+.studio-logo__empty {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+/*
+ * The drop zone: a `<label>`, so a click and a keyboard Enter both open the picker with no
+ * handler of this panel's own — the arrangement `studio/media.blade.php` already carries,
+ * reused rather than re-derived.
+ */
+.studio-logo__zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  min-block-size: var(--size-96);
+  border: 1px dashed var(--color-hairline);
+  border-radius: var(--radius-control);
+  padding: var(--space-16);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color var(--motion-state) linear, border-color var(--motion-state) linear;
+}
+
+.studio-logo__zone:hover,
+.studio-logo__zone[data-over='true'] {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-2);
+}
+
+.studio-logo__drop:has(.sr-only:focus-visible) .studio-logo__zone {
+  outline: var(--focus-width) solid var(--color-ink);
+  outline-offset: var(--focus-offset);
+}
+
+.studio-logo__zone-title {
+  font-weight: 500;
+}
+
+.studio-logo__zone-help,
+.studio-logo__zone-formats {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+.studio-logo__help {
+  margin-block-start: var(--space-8);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+/*
+ * ░░ A COLOUR, AS ONE ROW ░░
+ *
+ * The artboard's row: swatch, then the name with its sentence under it, then the code, then
+ * the way back to the default. `999 1 12rem` on the middle column is the same trick the
+ * studio's own header row uses — it takes every spare pixel, so the code and the reset stay
+ * where the eye expects them while the name wraps.
+ */
+.studio-colour {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.studio-colour__text {
+  flex: 999 1 12rem;
+  min-inline-size: 0;
+}
+
+.studio-colour__name {
+  display: block;
+  font-weight: 500;
+}
+
+.studio-colour__hint {
+  display: block;
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+/*
+ * ⚠ THE ADVICE SAYS WHAT TO DO, AND THE TICKET ASKED FOR EXACTLY THAT: *"when a chosen
+ * colour is hard to read, the message says what to do, not what failed."* So it is one
+ * sentence in the alert colour with no ratio, no token name and no WCAG level in it — the
+ * number is the control's reason, not the owner's problem.
+ */
+.studio-colour__advice {
+  display: block;
+  margin-block-start: var(--space-4);
+  color: var(--color-alert-ink);
+  font-size: var(--size-13);
+}
+
+.studio-colour__default {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}

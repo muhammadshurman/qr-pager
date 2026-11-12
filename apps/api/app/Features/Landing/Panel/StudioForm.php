@@ -14,7 +14,6 @@ use App\Domain\Landing\ThemeTokens;
 use App\Features\Landing\LandingPages;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
-use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -63,39 +62,25 @@ final class StudioForm
         return [
             /*
              * ================================================================================
-             * THE ARRANGEMENT, FIRST, AND IT IS A DOCUMENT MEMBER — QRPAGER-33
+             * ⚠ THE ARRANGEMENT CONTROL IS NOT HERE ANY MORE — `QRPAGER-47` PART B ITEM 1
              * ================================================================================
              *
-             * ⚠ IN THIS FORM AND NOT BESIDE IT, WHICH IS THE OPPOSITE OF `tenants.language`
-             * (`QRPAGER-30`), AND THE TWO ARE NOT INCONSISTENT. That one is a COLUMN, so a
-             * field inside this schema would have ridden into `toDocument()` as a member
-             * nothing validates. `template` IS a member of the landing document, so this form
-             * is exactly where it belongs: `toDocument()` carries it, `BlockSchema` validates
-             * it, and the publisher reads it off the document with no extra database read.
+             * `QRPAGER-33` put `Radio::make('template')` first in this schema, with the
+             * reasoning *"FIRST, because it changes what every block below it does"*, and
+             * `QRPAGER-44` predicted where it would end up: *"the structural fix belongs with
+             * the preset ticket, which rebuilds that region anyway."* This is that ticket.
              *
-             * ⚠ FIRST, because it changes what every block below it does. A control that
-             * reorders the whole page, placed under the blocks it reorders, reads as a detail.
+             * It now lives on the THEME tab as three cards (`ArrangementField`), because the
+             * choice an owner is making is *"which theme"* and not *"which field of my page"*
+             * — and a card can show the structure a sentence could only describe. `template`
+             * is still a member of this document and still validated by `LandingDocument`;
+             * what moved is the control, not the contract.
              *
-             * `Radio` and not `Select`: there are two options with sentence-long labels, and
-             * `§12`'s zero-technical-background bar is about the LABELS rather than the widget
-             * -- a reader has to see what the choice means without opening a menu. The options
-             * come from the enum's own `cases()`, and the label from `LandingTemplate::label()`
-             * in the panel's locale, so a third arrangement adds a button here with no edit.
+             * ⚠ AND THE PAGE TAB'S SAVE STILL CARRIES IT, which is `StudioForm::merged()`'s
+             * whole job: this form no longer has a `template` key, so the stored value
+             * survives a save from here because it is still in the array `merged()` lays this
+             * state over. `StudioDraftMergeTest` drives exactly that, in both directions.
              */
-            Radio::make('template')
-                ->label(__('studio.form.template_label'))
-                ->helperText(__('studio.form.template_help'))
-                ->options(collect(LandingTemplate::cases())
-                    ->mapWithKeys(static fn (LandingTemplate $t): array => [
-                        $t->value => $t->label(app()->getLocale()),
-                    ])
-                    ->all())
-                // ⚠ NOT `->required()`. A document stored before this feature has no
-                // `template`, and `fromDocument()` fills the DEFAULT for it rather than
-                // leaving the control empty -- so `required` would be unreachable, and an
-                // unreachable validation rule reads as protection that is not there.
-                ->default(LandingTemplate::DEFAULT->value),
-
             Builder::make('blocks')
                 ->label(__('studio.form.blocks_label'))
                 /*
@@ -175,9 +160,58 @@ final class StudioForm
      *
      * @return list<Component>
      */
-    public static function themeSchema(MediaOptions $media): array
+    public static function themeSchema(MediaOptions $media, ?string $storedTemplate = null): array
     {
         return [
+            /*
+             * ⚠⚠ THE ORDER IS THE APPROVED ARTBOARD'S AND IT IS AN ARGUMENT, NOT A LAYOUT.
+             * `docs/design/studio/theme-tab.html` puts the three themes first, the logo
+             * second, the colours third: a preset is a whole look chosen in one click, and
+             * every control under it is an adjustment TO that choice. Muhammad's own copy on
+             * the artboard says so — *"اختار واحد، وبعدها عدّل عليه تحت"*, pick one and then
+             * adjust it below.
+             */
+            Section::make(__('studio.arrangements.section'))
+                ->description(__('studio.arrangements.section_help'))
+                ->schema([
+                    ArrangementField::make('template')
+                        /*
+                         * ⚠ AN EXPLICIT LABEL, THEN HIDDEN — AND AN EMPTY ONE WOULD BE A
+                         * DIFFERENT DECISION. Filament DERIVES a label from the field name
+                         * when none is given, so `->hiddenLabel()` alone rendered the word
+                         * *Template* inside an Arabic panel: `fi-sr-only`, invisible, and
+                         * read aloud. `StudioLocalizationTest` caught it by rendering the
+                         * page under `ar` and reading the text, which is the only way that
+                         * defect is visible at all.
+                         *
+                         * The group keeps a NAME rather than losing one: a radio group with
+                         * no accessible name is announced as a bare list of options.
+                         */
+                        ->hiddenLabel()
+                        ->stored($storedTemplate),
+                ]),
+
+            Section::make(__('studio.logo.section'))
+                ->description(__('studio.logo.section_help'))
+                ->schema([
+                    LogoField::make('logo')
+                        ->hiddenLabel()
+                        ->library($media),
+                ]),
+
+            Section::make(__('studio.colours.section'))
+                ->description(__('studio.colours.section_help'))
+                ->schema(self::colours()),
+
+            /*
+             * What is left of the old `الثيم` section: the two font choices and the four
+             * lengths. ⚠ THE ARTBOARD DRAWS A FONT SECTION AND THIS IS NOT IT — Part B item 4
+             * is DEFERRED by Muhammad's ruling of 2026-11-12 (`§5`), because the published
+             * page serves no font file at all, so a control offering a self-hosted face would
+             * promise the owner something their customers would not receive. These fields are
+             * the ones that were already here, untouched: deferring the new section is not a
+             * reason to take away a control that works.
+             */
             Section::make(__('studio.form.theme_section'))
                 ->description(__('studio.form.theme_section_help'))
                 ->schema(self::theme()),
@@ -459,20 +493,33 @@ final class StudioForm
         $components = [];
 
         foreach (ThemeTokens::NAMES as $name => $kind) {
+            /*
+             * ⚠ THE COLOURS ARE NOT IN THIS LOOP ANY MORE — `QRPAGER-47` Part B item 3. They
+             * are a section of their own (`self::colours()`), because the artboard gives each
+             * one a row with a name, a sentence, its code and a way back to the default, and
+             * because the contrast advice needs to know which colour each is READ AGAINST.
+             * This loop keeps the two fonts and the four lengths, unchanged.
+             */
+            if ($kind === ThemeTokenKind::Colour) {
+                continue;
+            }
+
             // The dots are the contract's; Filament reads a dot as a nested path, so the
             // form holds the token under a flat key and toDocument() puts the dots back.
             $key = self::themeKey($name);
 
+            /*
+             * ⚠ NO `Colour` ARM, AND NO `default` EITHER — PHPStan IS WHAT DECIDED THAT. The
+             * first version kept an unreachable `Colour` arm *"so a new kind would fail to
+             * compile here"*, and `match.alwaysFalse` refused it: after the `continue` above,
+             * `$kind` is narrowed to `FontChoice|Length` and the arm can never be taken.
+             *
+             * The safety it was reaching for survives anyway, and that is the part worth
+             * knowing: a NEW kind added to `ThemeTokenKind` widens the narrowed type, the
+             * match stops being exhaustive over it, and PHPStan fails this line — which is
+             * exactly the outcome the dead arm was there to produce.
+             */
             $components[] = match ($kind) {
-                /*
-                 * ⚠ A PICKER, NOT A HEX FIELD — `QRPAGER-41` part B item 5, and the helper
-                 * line went WITH the field rather than being reworded. It read *"A hex
-                 * colour, for example …"*, which only ever existed to teach the owner the
-                 * format the control demanded; a control that demands no format needs no
-                 * line explaining one. `ColourField` carries the rest of the reasoning.
-                 */
-                ThemeTokenKind::Colour => ColourField::make($key)
-                    ->label(__('studio.tokens.'.$name)),
                 ThemeTokenKind::Length => TextInput::make($key)
                     ->label(__('studio.tokens.'.$name))
                     ->extraInputAttributes(self::tokenHoldsLiteralValue($kind) ? ['class' => 'studio-ltr'] : [])
@@ -492,6 +539,64 @@ final class StudioForm
         }
 
         return $components;
+    }
+
+    /**
+     * The six colours, one row each — `QRPAGER-47` Part B item 3.
+     *
+     * ================================================================================
+     * ⚠⚠ SIX ROWS FOR THE SIX TOKENS THAT EXIST, AND THE ARTBOARD DREW SOMETHING ELSE
+     * ================================================================================
+     *
+     * `docs/design/studio/theme-tab.html` draws six rows too, and two of them are not these:
+     * a DIVIDER colour, and the ground of the «order ready» screen. Muhammad ruled on both on
+     * 2026-11-12 when the mismatch was reported rather than resolved here:
+     *
+     *   the ready screen  **CLOSED, not deferred.** *"The order ready screen is product
+     *                     chrome, never tenant theme … the one screen a customer must
+     *                     recognise as the product's promise rather than the restaurant's
+     *                     brand. Not settable, now or later. My artboard was wrong to draw
+     *                     it."* It also renders in `apps/web` and carries `§12`'s AAA floor.
+     *   the divider       A `§5` row. A hairline and secondary TEXT are not one value and
+     *                     should not share `--color-muted` — but splitting them is a contract
+     *                     change with its own invariant, and `muted` is NAMED honestly here
+     *                     meanwhile, coupling included, because `§12` says tell the owner what
+     *                     they are changing rather than hide it behind a tidier word.
+     *
+     * So: no contract change, and `surface` and `accent_text` — which the artboard omits —
+     * get rows, because a token an owner cannot reach is a token they cannot fix.
+     *
+     * @return list<Component>
+     */
+    private static function colours(): array
+    {
+        $rows = [];
+
+        /*
+         * ⚠ DRIVEN BY `CONTRAST_PAIRS` AND NOT BY A LIST HERE, which is `composer guard` rule
+         * 11c: the token names live in `ThemeTokens` and nowhere else. That also makes the
+         * pairing total by construction — a colour with no pair cannot get a row, and
+         * `ThemeTokenPairTest` asserts the keys of that map are exactly the colour tokens.
+         */
+        foreach (ThemeTokens::CONTRAST_PAIRS as $name => $pair) {
+            $rows[] = ColourField::make(self::themeKey($name))
+                /*
+                 * The name and the sentence are rendered INSIDE the row, where the artboard
+                 * puts them, and the name is the `<label for>` of the swatch itself.
+                 *
+                 * ⚠ SO THIS FIELD HAS **NO** WRAPPER LABEL, and `ColourField::getDefaultLabel()`
+                 * is where that is said — `->label('')` does NOT achieve it, because Filament
+                 * falls back to the derived field name whenever the label is not `filled()`,
+                 * which put the English words *color*, *background*, *surface*, *text*,
+                 * *muted* and *accent* into an Arabic panel as sr-only text.
+                 * `StudioLocalizationTest` found them.
+                 */
+                ->hiddenLabel()
+                ->token($name)
+                ->pairedWith($pair);
+        }
+
+        return $rows;
     }
 
     /** @return list<Component> */
@@ -563,6 +668,10 @@ final class StudioForm
                 'description' => self::blankToNull($state['seo_description'] ?? null),
                 'og_image' => self::blankToNull($state['seo_og_image'] ?? null),
             ],
+            // `QRPAGER-47` Part B item 2. `blankToNull()` for the reason the theme loop
+            // above gives: Livewire sends `''` for a control the owner has cleared, and an
+            // empty string is not a media id — it is the absence of one.
+            'logo' => self::blankToNull($state['logo'] ?? null),
         ];
     }
 
@@ -615,6 +724,10 @@ final class StudioForm
         $state['seo_title'] = $seo['title'] ?? null;
         $state['seo_description'] = $seo['description'] ?? null;
         $state['seo_og_image'] = $seo['og_image'] ?? null;
+
+        // `QRPAGER-47` Part B item 2. No default: a document with no logo has none, and the
+        // field renders its empty state rather than opening on somebody else's image.
+        $state['logo'] = is_string($document['logo'] ?? null) ? $document['logo'] : null;
 
         return $state;
     }
