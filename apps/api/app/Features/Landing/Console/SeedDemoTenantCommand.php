@@ -6,6 +6,7 @@ namespace App\Features\Landing\Console;
 
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\MediaLibrary;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -83,7 +84,8 @@ final class SeedDemoTenantCommand extends Command
         try {
             $this->seedTenant();
             $this->seedOwner();
-            $this->seedPage();
+            $media = $this->seedMedia();
+            $this->seedPage($media);
         } catch (Throwable $e) {
             $this->components->error('refused: '.$e::class.': '.$e->getMessage());
 
@@ -145,6 +147,82 @@ final class SeedDemoTenantCommand extends Command
     }
 
     /**
+     * The imagery, through the SAME `InspectedImage` path as any upload an owner makes.
+     *
+     * ⚠⚠ THE FILES COME FROM A DIRECTORY AND THIS METHOD KNOWS NOTHING ELSE ABOUT THEM.
+     * Muhammad's ruling of 2026-11-13: *"replacing them with real photographs later is a file
+     * drop, not a code change."* `DemoMedia` is that seam — the role is the filename, so a
+     * photograph dropped over `hero.jpg` becomes the hero with nothing here to edit.
+     *
+     * ⚠ **IDEMPOTENT BY (name, checksum), WHICH IS WHAT KEEPS A RE-RUN FROM PILING UP.** An
+     * asset is re-used when BOTH its stored name and the sha256 of its bytes match, because
+     * either alone is wrong: the name alone would keep a stale asset after a file is
+     * replaced, and the checksum alone would collapse two roles that happen to hold identical
+     * bytes. `MediaLibrary::store()` is the only writer either way, so `InspectedImage`
+     * inspects these exactly as it inspects an upload — a generated file that drifted from
+     * what the inspector accepts would fail HERE rather than reach the library.
+     *
+     * @return array{logo: ?string, hero: ?string, dishes: list<string>, gallery: list<string>}
+     */
+    private function seedMedia(): array
+    {
+        $files = DemoMedia::files();
+        $library = app(MediaLibrary::class);
+
+        $existing = withTenant(self::TENANT_ID, static fn (): array => DB::connection('pgsql_owner')
+            ->table('media_assets')
+            ->where('tenant_id', self::TENANT_ID)
+            ->get(['id', 'original_name', 'checksum'])
+            ->all(), 'pgsql_owner');
+
+        $byKey = [];
+
+        foreach ($existing as $row) {
+            $byKey[$row->original_name.'/'.$row->checksum] = $row->id;
+        }
+
+        $reused = 0;
+        $stored = 0;
+
+        $put = function (string $path) use ($library, $byKey, &$reused, &$stored): string {
+            $bytes = (string) file_get_contents($path);
+            $key = MediaLibrary::safeName(basename($path)).'/'.hash('sha256', $bytes);
+
+            if (isset($byKey[$key])) {
+                $reused++;
+
+                return (string) $byKey[$key];
+            }
+
+            $stored++;
+
+            return $library->store(self::TENANT_ID, basename($path), $bytes);
+        };
+
+        $ids = ['logo' => null, 'hero' => null, 'dishes' => [], 'gallery' => []];
+
+        if ($files['logo'] !== null) {
+            $ids['logo'] = $put($files['logo']);
+        }
+
+        if ($files['hero'] !== null) {
+            $ids['hero'] = $put($files['hero']);
+        }
+
+        foreach ($files['dishes'] as $path) {
+            $ids['dishes'][] = $put($path);
+        }
+
+        foreach ($files['gallery'] as $path) {
+            $ids['gallery'][] = $put($path);
+        }
+
+        $this->line('  media: '.$stored.' stored, '.$reused.' re-used');
+
+        return $ids;
+    }
+
+    /**
      * The page, through `LandingPages` so every value is validated by `LandingDocument`
      * rather than written past it — a demo that drifted from the schema would fail HERE
      * rather than produce a draft the studio cannot open.
@@ -157,12 +235,15 @@ final class SeedDemoTenantCommand extends Command
      * It is PUBLISHED as well as saved, so the status plate this ticket builds has a real
      * published state to show rather than only the draft one.
      */
-    private function seedPage(): void
+    /** @param array{logo: ?string, hero: ?string, dishes: list<string>, gallery: list<string>} $media */
+    private function seedPage(array $media): void
     {
         $pages = app(LandingPages::class);
 
         $pages->saveDraft(self::TENANT_ID, [
             'template' => 'rail',
+            // The theme tab's logo slot, so it is not empty when the design is judged.
+            'logo' => $media['logo'],
             'blocks' => [
                 [
                     'type' => 'hero',
@@ -171,6 +252,7 @@ final class SeedDemoTenantCommand extends Command
                         'subheading' => 'مشاوي ومازات على الفحم، من سنة ١٩٨٧.',
                         // ⚠ A COMPLETE web address: `Field::url()` refuses a fragment, and
                         // `#menu` is what the first run of this command was refused for.
+                        'image' => $media['hero'],
                         'cta_label' => 'احجز طاولة',
                         'cta_url' => 'https://bookings.al-sarw.demo',
                     ],
@@ -191,12 +273,31 @@ final class SeedDemoTenantCommand extends Command
                     'fields' => [
                         'heading' => 'أطباق بنفتخر فيها',
                         'items' => [
-                            ['name' => 'مسخّن رول', 'description' => 'دجاج بلدي وسمّاق وبصل، ملفوف بخبز الصاج.', 'price' => '٤٫٥٠ د.أ'],
-                            ['name' => 'مقلوبة دجاج', 'description' => 'رز وزهرة وباذنجان، بتنعمل كل يوم الجمعة.', 'price' => '٧٫٠٠ د.أ'],
-                            ['name' => 'شيش طاووق', 'description' => 'عالفحم، مع ثوم وخبز وسلطة.', 'price' => '٦٫٢٥ د.أ'],
-                            ['name' => 'فتّة حمص', 'description' => 'حمص وخبز محمّر وصنوبر وسمنة بلدية.', 'price' => '٣٫٧٥ د.أ'],
-                            ['name' => 'كنافة نابلسية', 'description' => 'بتتعمل على الطلب، بتاخد عشر دقايق.', 'price' => '٣٫٠٠ د.أ'],
+                            // ⚠ PAIRED BY POSITION with `dish-N.*`, which is why `DemoMedia`
+                            // sorts naturally: a dish that silently lost its picture would
+                            // be a demo that cannot show a dish card doing its job.
+                            ['name' => 'مسخّن رول', 'description' => 'دجاج بلدي وسمّاق وبصل، ملفوف بخبز الصاج.', 'price' => '٤٫٥٠ د.أ', 'image' => $media['dishes'][0] ?? null],
+                            ['name' => 'مقلوبة دجاج', 'description' => 'رز وزهرة وباذنجان، بتنعمل كل يوم الجمعة.', 'price' => '٧٫٠٠ د.أ', 'image' => $media['dishes'][1] ?? null],
+                            ['name' => 'شيش طاووق', 'description' => 'عالفحم، مع ثوم وخبز وسلطة.', 'price' => '٦٫٢٥ د.أ', 'image' => $media['dishes'][2] ?? null],
+                            ['name' => 'فتّة حمص', 'description' => 'حمص وخبز محمّر وصنوبر وسمنة بلدية.', 'price' => '٣٫٧٥ د.أ', 'image' => $media['dishes'][3] ?? null],
+                            ['name' => 'كنافة نابلسية', 'description' => 'بتتعمل على الطلب، بتاخد عشر دقايق.', 'price' => '٣٫٠٠ د.أ', 'image' => $media['dishes'][4] ?? null],
                         ],
+                    ],
+                ],
+                /*
+                 * ⚠ THE GALLERY EXISTS FOR THE ARRANGEMENTS, NOT FOR THE CONTENT. It is the
+                 * block where `tile` lays a grid and `rail` runs full-measure crops, so a
+                 * demo without one cannot show the difference the picker is FOR.
+                 */
+                [
+                    'type' => 'gallery',
+                    'fields' => [
+                        'heading' => 'من المحل',
+                        'images' => array_values(array_filter([
+                            isset($media['gallery'][0]) ? ['image' => $media['gallery'][0], 'caption' => 'الصالة الداخلية'] : null,
+                            isset($media['gallery'][1]) ? ['image' => $media['gallery'][1], 'caption' => 'الكنافة وهي بتتحمّر'] : null,
+                            isset($media['gallery'][2]) ? ['image' => $media['gallery'][2], 'caption' => 'قهوة الصباح'] : null,
+                        ])),
                     ],
                 ],
                 [
