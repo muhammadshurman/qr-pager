@@ -1768,18 +1768,28 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
 
     /*
-     * ⚠ THE INPUT IS LOCATED BY ITS OWN CLASS AND DRIVEN WITH `check()`, NOT CLICKED. It is
-     * clipped to a pixel inside the `<label>` that is the card, so `toBeVisible()` would be
-     * asserting the wrong thing — `§12` wants it FOCUSABLE, which the case above measures.
+     * ⚠⚠ THE **CARD** IS CLICKED AND THE INPUT IS ONLY READ, WHICH IS WHAT MADE THIS CASE
+     * FINISH. The first version called `check()` on the radio — and that radio is clipped to
+     * one pixel behind the card, so Playwright's actionability wait (visible, stable, RECEIVES
+     * EVENTS) could never pass: the hit test lands on the label every time. The case spent its
+     * whole 90-second budget inside one `check()` and reported a timeout with no assertion
+     * error, twice.
+     *
+     * Clicking the card is also the real user action: the `<label>` IS the control's target,
+     * which is the property the `QRPAGER-44` density case now measures. The input is still the
+     * oracle for *which* arrangement is selected, read with `isChecked()` — a state read needs
+     * no actionability.
      */
-    const cards = page.locator('.studio-arrangement__input')
+    const cards = page.locator('.studio-arrangement')
+    const inputs = page.locator('.studio-arrangement__input')
 
     await expect(cards).toHaveCount(3)
+    await expect(inputs).toHaveCount(3)
     await expect(page.locator('.studio-arrangements__note')).toBeVisible()
 
-    const stored = await cards.first().getAttribute('value')
+    const stored = await inputs.first().getAttribute('value')
 
-    expect(await cards.first().isChecked(), 'the tab did not open on the stored arrangement').toBe(
+    expect(await inputs.first().isChecked(), 'the tab did not open on the stored arrangement').toBe(
       true,
     )
 
@@ -1801,15 +1811,16 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
       tile: '.tile-grid{',
     }
 
-    await cards.nth(1).check()
-
-    const chosen = (await cards.nth(1).getAttribute('value')) ?? ''
+    const chosen = (await inputs.nth(1).getAttribute('value')) ?? ''
 
     expect(
       Object.keys(markers),
       'an arrangement was added and this case does not know it',
     ).toContain(chosen)
-    expect(await cards.nth(1).isChecked(), 'the arrangement did not actually change').toBe(true)
+
+    await cards.nth(1).click()
+
+    expect(await inputs.nth(1).isChecked(), 'the arrangement did not actually change').toBe(true)
 
     // ⚠ WITH NO SAVE: the pane carries the chosen arrangement's own rules, written by the
     // 400ms debounce and the preview key behind it.
