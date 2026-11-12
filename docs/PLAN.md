@@ -1114,7 +1114,7 @@ table from quietly escaping tenant isolation.
 | Table                   | Columns                                                                                                                                                                                                                                                            | Grants                                     |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | `migrations`            | framework                                                                                                                                                                                                                                                          | `owner` only                               |
-| `users`                 | `id` uuid PK · `name` varchar(120) · `email` varchar(255) **unique**, stored lower-cased · `email_verified_at` timestamptz NULL · `password` varchar(255) NULL _(passkey-only users have none)_ · `remember_token` varchar(100) NULL · `created_at` · `updated_at` · **`is_platform_admin` boolean NOT NULL DEFAULT false** _(Task 5)_ · **`two_factor_secret` text NULL** _(Task 5)_ · **`two_factor_recovery_codes` text NULL** _(Task 5)_ · **`two_factor_confirmed_at` timestamptz NULL** _(Task 5)_ | app: SELECT/INSERT/UPDATE, **minus the four credential columns on SELECT — `§2.7`, R-006** · worker: SELECT |
+| `users`                 | `id` uuid PK · `name` varchar(120) · `email` varchar(255) **unique**, stored lower-cased · `email_verified_at` timestamptz NULL · `password` varchar(255) NULL _(passkey-only users have none)_ · `remember_token` varchar(100) NULL · `created_at` · `updated_at` · **`is_platform_admin` boolean NOT NULL DEFAULT false** _(Task 5)_ · **`two_factor_secret` text NULL** _(Task 5)_ · **`two_factor_recovery_codes` text NULL** _(Task 5)_ · **`two_factor_confirmed_at` timestamptz NULL** _(Task 5)_ · **`panel_language` tenant_language NULL** _(`QRPAGER-48`)_ — **the language the PERSON reads the PANEL in, NULL meaning “not chosen”** | app: SELECT/INSERT/UPDATE, **minus the four credential columns on SELECT — `§2.7`, R-006** · worker: SELECT |
 | `passkeys` _(Task 5)_ | `id` uuid PK · `user_id` uuid → `users.id` **CASCADE** · `name` varchar(120) · `credential_id` text **unique** · `credential` jsonb default `{}` · `last_used_at` timestamptz NULL · `created_at` · `updated_at` · INDEX `(user_id)` | app: SELECT/INSERT/UPDATE `(name, last_used_at, updated_at)`/DELETE · worker: none |
 | `personal_access_tokens` _(Task 5)_ | `id` uuid PK · `tokenable_type` varchar(255) · `tokenable_id` uuid · `name` text · `token` varchar(64) **unique** _(the sha256 OF the plaintext)_ · `abilities` text NULL · `last_used_at` timestamptz NULL · `expires_at` timestamptz NULL · `created_at` · `updated_at` · INDEX `(tokenable_type, tokenable_id)` · INDEX `(expires_at)` | app: SELECT/INSERT/UPDATE `(last_used_at, updated_at)`/DELETE · worker: none |
 | `password_reset_tokens` | `email` varchar(255) PK · `token` varchar(255) · `created_at`                                                                                                                                                                                                      | app: SELECT/INSERT/DELETE                  |
@@ -1124,6 +1124,42 @@ table from quietly escaping tenant isolation.
 | `platform_audit_log` _(Task 6)_ | `id` bigint `GENERATED ALWAYS AS IDENTITY` PK · `actor_user_id` uuid NULL, **no FK** · `action` varchar(64) · `subject_type` varchar(64) NULL · `subject_id` uuid NULL · `context` jsonb default `{}` · `ip_address` inet NULL · `created_at` default `now()` · INDEX `(created_at DESC)` · INDEX `(action, created_at DESC)` | app: SELECT · INSERT `(actor_user_id, action, subject_type, subject_id, context, ip_address)` · worker: INSERT (same columns). **No UPDATE or DELETE to any role.** |
 
 `users` is global because a user may hold memberships in several tenants and platform staff belong to none.
+
+⚠⚠ **`panel_language` IS A SECOND LANGUAGE COLUMN AND IT IS NOT A DUPLICATE OF `tenants.language` —
+`QRPAGER-48`, MUHAMMAD'S RULING OF 2026-11-13, STATED HERE SO IT IS NOT RE-DERIVED.** His model:
+
+> The PANEL's language is a property of the PERSON signed in. Two staff at the same restaurant
+> can want different ones. It belongs on the user.
+>
+> `tenants.language` keeps exactly its current meaning: the language of the PUBLISHED page. That
+> is a property of the restaurant, not of whoever is looking at the panel.
+>
+> Conflating them is the defect.
+
+**The defect this closes, measured before the code:** `StudioLocale.php:86` READ `tenants.language`
+to set the panel's locale, while `LandingBuilderPage::setPageLanguage()` WRITES the same column
+under copy calling it *“the language and the reading direction of your published page”*. One column,
+two meanings — so a topbar toggle over it would have had an owner change their **customers'** page
+language by choosing what **they** read. The alternative shape (a topbar control writing
+`tenants.language`) was refused by name: *“(b) would ship it on purpose.”*
+
+**NULL is the whole of the migration's safety.** `panel_language` is nullable with no default, and
+the resolution order is **`users.panel_language` ?? `tenants.language`** — so every existing person
+keeps exactly today's behaviour until they choose, and nothing is backfilled. ⚠ **IT IS A SCHEMA
+ADDITION, NOT A DATA REWRITE**, which his ruling says in as many words: *“`§4`'s FORCE-RLS migration
+trap does not apply here. Do not over-engineer it into one.”* `users` is a GLOBAL table with no
+`tenant_id` and no RLS at all, so `§2.10`'s keyed-per-tenant pattern — required of
+`QRPAGER-47`'s document migration — has nothing to bite on here.
+
+**The type is the existing `tenant_language` enum**, not a new one: `§2.3`'s single-source rule, and
+the two columns must offer the same set or a person could choose a panel language the product
+cannot render.
+
+⚠ **AND `§12` ATTACHES A REQUIREMENT TO THIS, NOT JUST A COLUMN.** The studio will now carry **two**
+language controls — the topbar's and the page tab's — and his bar for them: *“Label them so an owner
+cannot confuse them. The topbar one is about what THEY read; the page one is about what their
+CUSTOMERS read. If the wording does not make that obvious at a glance, the control is not done.”*
+That is an acceptance condition on the COPY, so it is a `§12` clause rather than a preference.
 `failed_jobs` is granted to the worker **only**: a serialized job payload can contain tenant data, and a
 global table has no RLS behind it.
 
