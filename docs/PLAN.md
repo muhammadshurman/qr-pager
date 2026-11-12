@@ -348,6 +348,39 @@ cause and the fixing commit.
 
 ---
 
+### 0.0g ⚠⚠⚠ WHERE A GATE FIGURE MAY COME FROM — MUHAMMAD, 2026-11-13, STANDING FROM NOW ON
+
+**The rule, in his words:**
+
+> A gate figure is only ever read from the committed transcript that the script wrote, never
+> from an ad-hoc command's output.
+
+**THE INSTANCE IT CAME FROM, 2026-11-13.** A session ran `composer pint 2>&1 | tail -3 && git
+commit …`. `pint` **failed**; the pipeline's exit status is `tail`'s, so it was **0**, the `&&`
+proceeded, and an out-of-order import was committed under a check that had reported a pass.
+
+⚠ **AND THE OBVIOUS FIX IS THE WRONG ONE, WHICH IS WHY THIS IS A RULE AND NOT A GUARD.** The
+repository ALREADY guards the pipe where it can: `tools/gate/bin/check-shell-evidence` requires
+`set -o pipefail` of every executable script, with `bad-pipefail-assignment.sh.fixture` proving it
+bites, and an audit on 2026-11-13 found **every** executable script in `apps/api/bin`,
+`tools/gate/bin` and `tools/browsers/bin` compliant — the one exception, `_revert-proof.sh`, is
+*"sourced, never run"* and inherits `pipefail` from all seven scripts that source it. **So no
+committed script has the defect.** The failing command was typed at a shell, where no guard
+reaches, and adding one there is not possible.
+
+**His reframing, which is what makes the rule work:** *"the exposure is not the pipe, it is what
+reaches me: a gate figure I act on."* A guard can only cover scripts; the rule covers the
+REPORTING, which is the surface that actually carries a false number into a decision. Under it, an
+ad-hoc pipe may still lie — and the number it produces is simply **not reportable**, because it did
+not come from a transcript a gate script wrote.
+
+**This is already the shape `§4a` rows take** — every gate row cites a file and an `EXIT=` trailer
+rather than a remembered figure — so the rule names existing practice rather than adding a step,
+and `records(c)` and `records(e)` already refuse a transcript that is red or disagrees with the row
+that cites it.
+
+---
+
 ### 0.1 Waiting on Muhammad — the standing list
 
 Written 2026-10-26 because these were being carried **verbally**, surfacing only when somebody remembered
