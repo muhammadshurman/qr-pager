@@ -134,6 +134,7 @@ export const AR: Record<CopyKey, string> = {
   // ---------------------------------------------------------------------- the shell
   'staff.shell.signedIn': 'مسجّل الدخول بصفة {name}',
   'staff.shell.signOut': 'تسجيل الخروج',
+  'staff.shell.studio': 'عدّل صفحتك',
   'staff.shell.loading': 'جارٍ التحميل',
   'staff.shell.error.title': 'حدث خطأ من جهتنا.',
   'staff.shell.error.body': 'لم يكن ذلك بسببك.',

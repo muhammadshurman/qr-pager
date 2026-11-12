@@ -192,6 +192,19 @@ export interface StaffMembership {
    * than everything — the safe direction, and the one a staff member reads as *ask a manager*.
    */
   readonly grantableRoles: readonly string[]
+  /**
+   * Whether this person can reach the studio in THIS restaurant. `QRPAGER-48` item 3.
+   *
+   * ⚠⚠ PUBLISHED BY THE SERVER, NEVER DERIVED FROM `role` HERE. `/studio` is gated by
+   * `TenantPanelAccess::allows()`, and deriving the same rule from `role` in TypeScript
+   * would be a second implementation free to drift from the gate it predicts — a button
+   * that lands on a 401. It is the identical argument `grantableRoles` above records, and
+   * the API computes both from one predicate.
+   *
+   * Defaults to FALSE when the field is missing, which is the safe direction: an older API
+   * that does not publish it draws no door rather than drawing one that may not open.
+   */
+  readonly canAccessStudio: boolean
 }
 
 export interface StaffIdentity {
@@ -458,6 +471,9 @@ export function fetchIdentity(apiBase: string): Promise<StaffResult<StaffIdentit
           grantableRoles: Array.isArray(grantable)
             ? grantable.filter((value): value is string => typeof value === 'string')
             : [],
+          // `=== true` rather than a cast: anything but the published boolean means "no
+          // door", which is the direction that cannot show a control the server refuses.
+          canAccessStudio: row.can_access_studio === true,
         })
       }
     }
