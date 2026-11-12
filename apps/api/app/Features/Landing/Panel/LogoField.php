@@ -99,6 +99,14 @@ class LogoField extends Field implements HasEmbeddedView
          * disabled, puts the dropped file on the input and fires `change` so Livewire's own
          * upload begins. One affordance, one pipe.
          */
+        /*
+         * ⚠ `disabled` IS RENDERED RATHER THAN ASSUMED ABSENT — `§11` QA round, Low 6. The
+         * first version's drop handler guarded on `$refs.input.disabled`, a condition nothing
+         * in the code could ever set, while `ColourField` and `ArrangementField` both honour
+         * `isDisabled()`. A guard that cannot fire reads as protection that is not there.
+         */
+        $disabled = $this->isDisabled() ? ' disabled' : '';
+
         $zone = <<<'HTML'
             <div class="studio-logo__drop" x-data="{ over: false }"
                  x-on:dragover.prevent="over = true"
@@ -112,7 +120,7 @@ class LogoField extends Field implements HasEmbeddedView
                  ">
                 <input x-ref="input" id="studio-logo-upload" type="file" wire:model="logoUpload"
                        accept="image/png,image/jpeg,image/webp,image/avif,image/svg+xml"
-                       aria-describedby="studio-logo-help" class="sr-only" />
+                       aria-describedby="studio-logo-help" class="sr-only"__DISABLED__ />
 
                 <label for="studio-logo-upload" class="studio-logo__zone"
                        x-bind:data-over="over ? 'true' : 'false'">
@@ -125,8 +133,15 @@ class LogoField extends Field implements HasEmbeddedView
             </div>
             HTML;
 
+        /*
+         * ⚠⚠ A NOWDOC, AND SWITCHING IT TO A HEREDOC BROKE THE PAGE. The drop handler is
+         * Alpine, so it contains `$refs`, `$event` and `$el` — PHP interpolates every one of
+         * those in a heredoc, which is why the attribute below arrives through `str_replace`
+         * like every other value in this block. Measured as a `ViewException` on two logo
+         * cases the moment the quotes came off the opening token.
+         */
         $zone = str_replace(
-            ['__ZONE_TITLE__', '__ZONE_HELP__', '__ZONE_FORMATS__', '__HELP__'],
+            ['__ZONE_TITLE__', '__ZONE_HELP__', '__ZONE_FORMATS__', '__HELP__', '__DISABLED__'],
             [
                 e(__('studio.logo.upload')),
                 e(__('studio.logo.drag')),
@@ -139,6 +154,7 @@ class LogoField extends Field implements HasEmbeddedView
                  */
                 e(__('studio.media.formats')),
                 e(__('studio.logo.reference_only')),
+                $disabled,
             ],
             $zone,
         );
@@ -155,10 +171,18 @@ class LogoField extends Field implements HasEmbeddedView
     private function card(MediaAssetRow $asset): string
     {
         $name = e($asset->originalName);
-        $meta = e(__('studio.logo.file_meta', [
-            'type' => $this->shortType($asset->contentType),
-            'size' => $this->kilobytes($asset->byteSize),
-        ]));
+        /*
+         * ⚠ COMPOSED HERE RATHER THAN FROM A TEMPLATE STRING, because the template had nothing
+         * left to translate. It was `:type · :size:pixels` in both language files, which
+         * `StudioLocalizationTest` correctly reports as an untranslated line — the only
+         * translatable part is the UNIT, and that now has its own key per language. The
+         * separator is punctuation.
+         */
+        $meta = e(implode(' · ', array_filter([
+            $this->shortType($asset->contentType),
+            $this->size($asset->byteSize),
+            $this->pixels($asset),
+        ])));
         $remove = e(__('studio.logo.remove'));
 
         return <<<HTML
@@ -189,13 +213,41 @@ class LogoField extends Field implements HasEmbeddedView
     }
 
     /**
-     * Bytes as whole kilobytes, never zero.
+     * The file's size in the unit the owner would use for it.
      *
      * A 400-byte SVG logo is legitimate — it is the shape a hand-written mark takes — and
-     * `0 KB` beside a file that exists reads as a broken row rather than as a small file.
+     * `0 KB` beside a file that exists reads as a broken row rather than as a small file, so
+     * the floor is one.
+     *
+     * ⚠ AND IT SWITCHES TO MEGABYTES ABOVE 1024 — `§11` QA round, Low 10. Kilobytes alone
+     * rendered a 2.5 MB upload as *2560 ك.ب* on a screen that states its own bound in MB
+     * (`studio.media.formats`: *"حتى ٥ ميغابايت"*), so the owner had to convert between two
+     * units to know whether their file was near the limit.
      */
-    private function kilobytes(int $bytes): string
+    private function size(int $bytes): string
     {
-        return (string) max(1, (int) round($bytes / 1024));
+        $kb = max(1, (int) round($bytes / 1024));
+
+        return $kb >= 1024
+            ? (string) __('studio.logo.megabytes', ['size' => number_format($kb / 1024, 1)])
+            : (string) __('studio.logo.kilobytes', ['size' => $kb]);
+    }
+
+    /**
+     * `1024 × 1024`, or an empty string for a file whose dimensions are not recorded.
+     *
+     * ⚠ `§11` QA round, Low 7: the card showed type and size, so TWO RE-EXPORTS OF
+     * `logo.png` were indistinguishable — which is the case Muhammad's ruling is about
+     * (*"someone who uploaded the wrong file can see that they did"*). `MediaAssetRow::label()`
+     * already disambiguates by dimensions elsewhere in this panel, so the data is there.
+     *
+     * An SVG has no raster dimensions and `MediaLibrary` stores none, so the line is omitted
+     * rather than rendered as `0 × 0`.
+     */
+    private function pixels(MediaAssetRow $asset): string
+    {
+        return $asset->width === null || $asset->height === null
+            ? ''
+            : $asset->width.'×'.$asset->height;
     }
 }

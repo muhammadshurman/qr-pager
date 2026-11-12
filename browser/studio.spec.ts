@@ -878,66 +878,103 @@ test.describe('the studio under an OS that prefers dark — QRPAGER-42', () => {
  * nothing, and was green the whole time.
  */
 test.describe('the studio — QRPAGER-44', () => {
-  test('gives the radio a 44px target on its label and a 24px painted circle — item A', async ({
+  test('gives the arrangement card a 44px target and a focusable, unfloored input — item A', async ({
     page,
   }) => {
+    /*
+     * ================================================================================
+     * ⚠⚠ THE SUBJECT MOVED IN `QRPAGER-47` AND THE CLAUSE DID NOT
+     * ================================================================================
+     *
+     * This case measured `Radio::make('template')` on the page tab: a 44px target on
+     * `.fi-fo-radio-label` with a 24px painted circle nested inside it, which was
+     * `QRPAGER-44` item A's separation of the TOUCH TARGET from the PAINTED SIZE — Muhammad's
+     * ruling of 2026-11-10: *"§12 requires a 44px TOUCH TARGET. It says nothing about the
+     * painted size."*
+     *
+     * `QRPAGER-47` Part B item 1 replaced that control with three cards on the theme tab, and
+     * **there is now no Filament radio anywhere in the studio** — the page language control is
+     * buttons (`builder.blade.php`), and nothing else offers a choice. So this case pointed at
+     * `.fi-fo-radio-label` and found nothing, which is how the e2e run reported the move.
+     *
+     * `targets.css`'s `.fi-fo-radio-label` floor is deliberately LEFT IN PLACE: it governs any
+     * Filament radio a later ticket adds, and `PanelTargetTest` still holds it to the file.
+     * What is asserted here is the same clause against the control that now exists.
+     */
     await signInAsStaff(page)
-    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
 
-    const label = page.locator('.fi-fo-radio-label').first()
-    const input = page.locator('.fi-radio-input').first()
+    const card = page.locator('.studio-arrangement').first()
+    const input = page.locator('.studio-arrangement__input').first()
 
-    await expect(label).toBeVisible()
+    await expect(card).toBeVisible()
 
-    const labelBox = await label.boundingBox()
+    const cardBox = await card.boundingBox()
     const inputBox = await input.boundingBox()
 
-    expect(
-      labelBox,
-      'the radio label is not in the layout, so nothing below measures it',
-    ).not.toBeNull()
+    expect(cardBox, 'the card is not in the layout, so nothing below measures it').not.toBeNull()
     expect(
       inputBox,
-      'the radio input is not in the layout, so nothing below measures it',
+      'the radio is not in the layout at all, so it cannot be focused',
     ).not.toBeNull()
 
     /*
-     * ⚠ THE TARGET IS THE LABEL, AND THE LABEL IS WHAT §12's 44px APPLIES TO. Muhammad's
-     * ruling of 2026-11-10: *"§12 requires a 44px TOUCH TARGET. It says nothing about the
-     * painted size."* A pointer anywhere on this row selects the option, because Filament
-     * renders the input INSIDE the label — which is the fact the old comment in
-     * `targets.css` denied.
+     * ⚠ THE TARGET IS THE CARD, because the input is inside the `<label>`: a pointer anywhere
+     * on the card selects that arrangement. Both axes, because `§12` says both.
      */
     expect(
-      Math.round(labelBox!.height),
-      'the radio row is under §12’s 44px minimum target',
+      Math.round(cardBox!.height),
+      'the arrangement card is under §12’s 44px minimum target',
     ).toBeGreaterThanOrEqual(44)
+    expect(Math.round(cardBox!.width)).toBeGreaterThanOrEqual(44)
 
     /*
-     * ⚠ AND THE CIRCLE IS SMALLER THAN THE TARGET, which is the half that would silently
-     * not happen. With the floor still on `.fi-radio-input` this measures 44 and the whole
-     * ticket is inert — so this is an UPPER bound, deliberately, and it is the assertion
-     * that fails if the separation is undone.
+     * ⚠ AND THE INPUT IS **NOT** FLOORED, which is this clause's other half in its new form.
+     * The radio is clipped to a pixel so the card can be the whole control; if somebody put
+     * `targets.css`'s 44px floor on `.studio-arrangement__input`, that clipped box would
+     * become a 44px invisible square sitting over the card's corner — a target that selects
+     * the right option by accident and swallows clicks meant for the thumbnail. An UPPER
+     * bound, deliberately, exactly as the 24px assertion it replaces was.
      */
     expect(
       Math.round(inputBox!.width),
-      'the painted circle is still carrying the touch-target floor',
-    ).toBe(24)
-    expect(Math.round(inputBox!.height)).toBe(24)
+      'the clipped radio is carrying the touch-target floor, so it covers part of the card',
+    ).toBeLessThan(44)
+
+    // ⚠ AND IT IS INSIDE THE CARD. Everything above is true of a 1px input sitting NEXT TO a
+    // card, which would make the card a label for nothing and the radio unreachable by
+    // pointer — the nesting is what makes one element the control and the other its target.
+    expect(
+      await card.locator('.studio-arrangement__input').count(),
+      'the radio is not inside its card, so the card labels nothing',
+    ).toBeGreaterThan(0)
 
     /*
-     * ⚠ AND THE INPUT IS INSIDE THE FLOORED LABEL — `§11` QA round, Medium 5. Everything
-     * above is true of a 24px input sitting NEXT TO a 44px label, which would be a 24px
-     * target with two green assertions over it. The floor only reaches this control because
-     * Filament nests them, and nothing asserted the nesting: `targets.css` names the label,
-     * `PanelTargetTest` maps the input to it by STRING, and neither can see the DOM.
+     * ⚠ FOCUSABLE, AND THE RING IS ON THE CARD — `§12`'s keyboard clause, which `display:none`
+     * would have broken silently. The input is clipped, so the indicator has to be drawn
+     * somewhere the eye is: `:has(:focus-visible)` puts it on the card.
      */
-    const nested = await label.locator('.fi-radio-input').count()
+    await input.focus()
 
-    expect(
-      nested,
-      'the radio input is not inside its floored label, so its target is its own 24px box',
-    ).toBeGreaterThan(0)
+    const focus = await page.evaluate(() => {
+      const el = document.querySelector('.studio-arrangement')
+      const active = document.activeElement
+
+      if (el === null) return null
+
+      const style = getComputedStyle(el)
+
+      return {
+        focused: active !== null && el.contains(active),
+        outline: style.outlineStyle,
+        width: parseFloat(style.outlineWidth),
+      }
+    })
+
+    expect(focus, 'no card is in the layout').not.toBeNull()
+    expect(focus!.focused, 'the radio did not take focus, so it is out of the tab order').toBe(true)
+    expect(focus!.outline, 'the focused card draws no outline').not.toBe('none')
+    expect(focus!.width, 'the focused card’s outline has no width').toBeGreaterThan(0)
   })
 
   /*
@@ -989,12 +1026,39 @@ test.describe('the studio — QRPAGER-44', () => {
       expect(m!.weight, `${key} is not at the heavy weight`).toBe('700')
     }
 
-    // And the set is DISCRIMINATING: a control's own name stays regular, or "the heading set"
-    // would just mean "every label on the page" and the assertions above would be empty.
-    expect(measured.fieldLabel, 'no ordinary field label is rendered').not.toBeNull()
-    expect(measured.fieldLabel!.weight, 'an ordinary field label took the heading weight').toBe(
-      '400',
-    )
+    /*
+     * And the set is DISCRIMINATING: a control's own name stays regular, or "the heading set"
+     * would just mean "every label on the page" and the assertions above would be empty.
+     *
+     * ⚠⚠ THE DISCRIMINATOR IS READ FROM THE **THEME** TAB SINCE `QRPAGER-47`, and it has to be.
+     * The ordinary field label on the page tab was `Radio::make('template')`'s — the
+     * arrangement control, which Part B item 1 moved — and with it gone this read returned
+     * `null` and the case failed with *"no ordinary field label is rendered"*, which is the
+     * e2e run reporting the move rather than a defect in the layout.
+     *
+     * The theme tab's font and length fields are ordinary labelled fields and the stylesheet
+     * is panel-wide, so the clause is unchanged: these two reads together say *the heading set
+     * is one step and one weight AND an ordinary field label is not in it*. The three new
+     * fields on that tab carry no wrapper label at all by design (`getDefaultLabel()` returns
+     * `''`, because each renders its own), which is why the selector takes the FIRST label it
+     * finds rather than assuming which field it belongs to.
+     */
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const ordinary = await page.evaluate(() => {
+      const el = document.querySelector(
+        '.fi-fo-field:not(.studio-section-field) .fi-fo-field-label',
+      )
+
+      if (el === null) return null
+
+      const c = getComputedStyle(el)
+
+      return { size: c.fontSize, weight: c.fontWeight, text: el.textContent.trim().slice(0, 24) }
+    })
+
+    expect(ordinary, 'no ordinary field label is rendered on either tab').not.toBeNull()
+    expect(ordinary!.weight, 'an ordinary field label took the heading weight').toBe('400')
   })
 
   test('keeps the block row at the shrunk height with its 44px cluster intact — item A', async ({
@@ -1083,7 +1147,20 @@ test.describe('the studio — QRPAGER-44', () => {
      * above the 56rem breakpoint so the two columns are still side by side.
      */
     await page.setViewportSize({ width: 1280, height: 600 })
-    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    /*
+     * ⚠⚠ THE **THEME** TAB SINCE `QRPAGER-47`, AND THE REASON IS THE PRECONDITION ABOVE. This
+     * read `/studio`, whose form lost its tallest control when Part B item 1 moved the
+     * arrangement choice off it — three sentence-long radio options — and this fixture's
+     * tenant has no blocks, so the page tab at 600px high stopped scrolling at all:
+     * `window.scrollY` stayed 0 and the case failed on its own precondition, which is exactly
+     * the dead-control shape the comment above is about.
+     *
+     * The theme tab now carries four sections and is the studio's longest form, so the state
+     * this case is about is reachable there. The clause is the tab row against the sticky
+     * topbar — the panel's own chrome, identical on every tab.
+     */
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
 
     const tab = page.locator('.studio-tab[aria-current="page"]')
     await expect(tab).toBeVisible()
@@ -1253,9 +1330,9 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
    *
    * ⚠ `ThemeStylesheet` puts the tenant's tokens in ONE ATTRIBUTE of the rendered page's
    * root element and nowhere else — `ThemeTokenTest` asserts exactly that. So `previewText`
-   * and `previewHtml` above, which read `body`, cannot see a colour at all: the first
-   * version of the theme case polled `previewHtml` for twenty seconds against markup that
-   * could never contain it. Third oracle in this suite to name a property and read a proxy.
+   * above, which reads `body`, cannot see a colour at all: the first version of the theme case
+   * polled body markup for twenty seconds against something that could never contain it.
+   * Third oracle in this suite to name a property and read a proxy.
    */
   async function previewTheme(page: Page): Promise<string> {
     return (
@@ -1263,13 +1340,13 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     )
   }
 
-  /** The same render as markup, for a change that reorders rather than retypes. */
-  async function previewHtml(page: Page): Promise<string> {
-    return page.frameLocator('[data-studio-preview]').locator('body').innerHTML()
-  }
-
   /**
    * The WHOLE previewed document, `<head>` included — `QRPAGER-47`.
+   *
+   * ⚠ IT REPLACED A `previewHtml()` THAT READ `body.innerHTML`, and the replacement is the
+   * reason the old one is gone rather than kept beside it: nothing in this suite reads body
+   * markup any more, and eslint refuses an unused helper — which is the right refusal, because
+   * a second oracle nobody drives is a second oracle nobody notices is wrong.
    *
    * ⚠ `previewHtml()` CANNOT SEE AN ARRANGEMENT'S RULES. Every arrangement's CSS is one
    * `@elseif` branch inside `page.blade.php`'s single `<style>` element, which is in the
@@ -1643,223 +1720,99 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
   })
 
   test('reflects an arrangement change with no Save and no refresh', async ({ page }) => {
+    /*
+     * ================================================================================
+     * `QRPAGER-47`'s STATED INVARIANT, SECOND CLAUSE — AND `R-303`'s BROWSER HALF
+     * ================================================================================
+     *
+     * *"Choosing a theme in the picker is reflected in the preview with no Save click and no
+     * page refresh."* The server half — what `previewChanged()` writes and what the stored
+     * draft still says — is `ArrangementPickerTest`. What only an engine can add is that a
+     * real click on a real card produces the chosen arrangement's own RULES in the pane, and
+     * that the database does not move while it happens.
+     *
+     * `R-303` is the row `QRPAGER-46` filed and recorded against this ticket *so it is
+     * inherited rather than rediscovered*: the journey fixture named no template, so every
+     * preview this suite had rendered was the default arrangement and `rail`, `ember` and
+     * `tile` had never been in a browser against a real stack. A picker is what makes them
+     * reachable.
+     *
+     * ⚠ THE ORACLE IS A RULE HEAD FROM `page.blade.php`'s `@elseif` CHAIN, not a class name in
+     * the markup. A page can be arranged and unstyled — that is the `§11` QA round's M-3 on
+     * the previous ticket — so only the CSS proves the bytes went through the chosen branch.
+     * `previewDocument()` exists because those rules are in the `<head>`.
+     *
+     * ⚠⚠ AND IT NO LONGER ADDS TWO BLOCKS THROUGH THE UI, WHICH IS WHY IT USED TO TIME OUT.
+     * The earlier shape was written for `classic` vs `editorial`, where only the ORDER of the
+     * blocks differed — so it needed two blocks before a comparison meant anything, and the
+     * whole preamble plus two 20-second preview polls exceeded the 90-second budget once the
+     * case grew a published-bytes assertion. Each of the three arrangements now has a root
+     * class and rules of its own, so ONE block is enough for the page to be non-empty and the
+     * oracle is the CSS rather than a diff of two renders.
+     */
     const noise: string[] = []
 
     page.on('pageerror', (e) => noise.push(`pageerror: ${e.message.slice(0, 200)}`))
     page.on('console', (m) => {
       if (m.type() === 'error') noise.push(`console: ${m.text().slice(0, 200)}`)
     })
-    page.on('requestfailed', (r) => noise.push(`requestfailed: ${r.url().slice(0, 120)}`))
-    page.on('response', (r) => {
-      if (r.status() >= 400) noise.push(`http ${String(r.status())}: ${r.url().slice(0, 120)}`)
-    })
 
     await signInAsStaff(page)
     await page.setViewportSize({ width: 1280, height: 1100 })
 
-    /*
-     * ⚠ THE BLOCKS ARE ADDED ON THE **PAGE** TAB AND THE ARRANGEMENT IS CHOSEN ON THE
-     * **THEME** TAB — `QRPAGER-47` Part B item 1 moved the control, and this case now spans
-     * both tabs because the property does: what the owner types on one tab must survive what
-     * they click on the other. That is `StudioForm::merged()`, from the outside.
-     */
+    // One block, saved, so the previewed page is a page rather than §12.1's empty state.
     await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await addBlock(page, 0, `HERO ${String(Date.now())}`)
+    await saveAndWait(page)
 
-    /*
-     * ⚠ TWO BLOCKS, AND THAT IS THE CASE'S PRECONDITION RATHER THAN SETUP DRESSING. The
-     * arrangements decide *"order, grouping and emphasis and nothing else"* — the second
-     * arrangement promotes `how_it_works` out of the builder's order — so on a ONE-block page
-     * the two render the same thing and a comparison proves nothing. The first version of
-     * this case had one block and failed for exactly that reason: the oracle was wrong, not
-     * the feature.
-     *
-     * ⚠ THE TWO ARE TAKEN BY INDEX AND NOT BY NAME, which is why `QRPAGER-47` retiring
-     * `classic` and `editorial` left this case standing: first is the DEFAULT arrangement and
-     * second is whatever sits beside it. What it asserts is that changing the control moves
-     * the preview and not the database.
-     */
-    const hero = `HERO ${String(Date.now())}`
-    const how = `HOW ${String(Date.now())}`
-
-    await addBlock(page, 0, hero)
-    await addBlock(page, 1, how)
-
-    /*
-     * ⚠ THE LIVE PREVIEW IS LET TO SETTLE BEFORE SAVING, AND NOT AS POLITENESS. Clicking
-     * Save within the 400ms debounce means no `previewChanged` ever ran for the final
-     * state, so the pane is still on the render it loaded with. That is what made this case
-     * fail five times on a precondition — and chasing it is what found the real gap, which
-     * is that `save()` dispatched no reload at all. Waiting for the markers here asserts
-     * the live path works for BLOCKS before the case goes on to arrangements.
-     */
-    const settled = await expect
-      .poll(async () => previewText(page), { timeout: 20_000 })
-      .toContain(hero)
-      .then(() => true)
-      .catch(() => false)
-
-    if (!settled) {
-      /*
-       * Splits the two remaining explanations: the KEY was never written (so a direct fetch
-       * of the route is also empty) versus the FRAME never reloaded (so the route has the
-       * hero and the pane does not).
-       */
-      const probe = await page.context().newPage()
-      let direct: string
-
-      try {
-        await probe.goto(`${apiOrigin()}/studio/preview`, { waitUntil: 'domcontentloaded' })
-        direct = (await probe.locator('body').innerText()).trim().slice(0, 200)
-      } catch (e) {
-        direct = `could not fetch: ${String(e)}`
-      } finally {
-        await probe.close()
-      }
-
-      expect(
-        settled,
-        `the live preview never showed the hero.\n  FRAME: ${(await previewText(page)).slice(0, 200)}\n  DIRECT: ${direct}\n  NOISE: ${noise.join(' || ')}`,
-      ).toBe(true)
-    }
-
-    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(how)
-
-    await page.getByRole('button', { name: 'احفظ' }).first().click()
-    await page.waitForTimeout(2_000)
-
-    /*
-     * ⚠ AND THE REFUSAL IS READ BEFORE THE PREVIEW IS. A save refused for a field this case
-     * did not fill looks, from the preview, exactly like a preview that never updated — and
-     * that ambiguity cost four runs. Any validation message on the page is reported here,
-     * with its text, rather than being left to infer.
-     */
-    /*
-     * ⚠ FIELD ERRORS ONLY. This matched `.fi-no-notification` too and caught the SUCCESS
-     * toast — *“حُفظت المسودة”*, draft saved — reporting a refusal on a save that had just
-     * worked. A check that fires on success is worse than no check: it hides the state it
-     * was added to reveal.
-     */
-    const refusals = await page.locator('.fi-fo-field-error-message').allInnerTexts()
-
-    expect(
-      refusals.join(' | '),
-      'the save was refused, so the preview below was never going to change',
-    ).toBe('')
-
-    /*
-     * ⚠ THE SAVE IS ASSERTED, NOT ASSUMED, AND THE FIRST VERSION OF THIS CASE ONLY CHECKED
-     * THAT THE PREVIEW WAS "BIG ENOUGH" — which failed at 148 characters and then at 94 and
-     * said nothing about why either time. A refused save looks exactly like a slow one from
-     * outside. Polling for the two markers names the failure if validation refused a block.
-     */
-    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(hero)
-    await expect.poll(async () => previewText(page), { timeout: 20_000 }).toContain(how)
-
-    /*
-     * ⚠ THE CARDS, ON THE THEME TAB. The control is `ArrangementField`'s three radios, each
-     * clipped to a pixel inside a `<label>` that IS the card — so the input is located by its
-     * own class and driven with `check()`, which focuses and activates it exactly as a
-     * keyboard user would. `toBeVisible()` would fail on a one-pixel input and asserting it
-     * would be asserting the wrong thing: `§12` wants the input FOCUSABLE, not visible.
-     */
     await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
 
+    /*
+     * ⚠ THE INPUT IS LOCATED BY ITS OWN CLASS AND DRIVEN WITH `check()`, NOT CLICKED. It is
+     * clipped to a pixel inside the `<label>` that is the card, so `toBeVisible()` would be
+     * asserting the wrong thing — `§12` wants it FOCUSABLE, which the case above measures.
+     */
     const cards = page.locator('.studio-arrangement__input')
 
     await expect(cards).toHaveCount(3)
     await expect(page.locator('.studio-arrangements__note')).toBeVisible()
 
-    const previewBefore = await previewHtml(page)
     const stored = await cards.first().getAttribute('value')
 
     expect(await cards.first().isChecked(), 'the tab did not open on the stored arrangement').toBe(
       true,
     )
 
-    // The badge marks what is STORED, and it is on the first card because that is the one
-    // the draft names. It must not move when another card is clicked.
+    // The badge marks what is STORED. It must not move when another card is chosen, because
+    // nothing has been saved — it is the only thing on the tab that distinguishes looking
+    // from having changed.
     const badge = page.locator('.studio-arrangement__badge')
-
-    await expect(badge).toHaveCount(1)
-
     const badgeCard = page.locator('.studio-arrangement', { has: badge })
 
-    await expect(badgeCard.locator('.studio-arrangement__input')).toHaveAttribute(
-      'value',
-      stored ?? '',
-    )
-
-    await cards.nth(1).check()
-    expect(await cards.nth(1).isChecked(), 'the arrangement did not actually change').toBe(true)
-
-    /*
-     * ⚠ MARKUP AND NOT TEXT. These arrangements reorder and regroup the same blocks, so
-     * `innerText` can be identical across them while the page is visibly different. Text is
-     * the right oracle for a retyped field and the wrong one for a reordered page.
-     */
-    await expect.poll(async () => previewHtml(page), { timeout: 20_000 }).not.toBe(previewBefore)
-
-    // ⚠ AND THE BADGE HAS NOT MOVED, because nothing has been saved. It is the only thing on
-    // the tab that distinguishes looking from having changed.
     await expect(badge).toHaveCount(1)
     await expect(badgeCard.locator('.studio-arrangement__input')).toHaveAttribute(
       'value',
       stored ?? '',
     )
 
-    /*
-     * ...and the DATABASE does not move. `template` is a member of the landing document, so
-     * an autosave would show up on a fresh navigation as the SECOND card being the checked
-     * one.
-     */
-    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
-
-    const afterReload = page.locator('.studio-arrangement__input')
-
-    await expect(afterReload).toHaveCount(3)
-
-    expect(
-      await afterReload.first().isChecked(),
-      'the stored draft changed, so the arrangement was saved rather than previewed',
-    ).toBe(true)
-
-    /*
-     * ================================================================================
-     * ⚠⚠ AND THE RENDERED BYTES CARRY THE CHOSEN ARRANGEMENT'S OWN RULES — `R-303`
-     * ================================================================================
-     *
-     * That row was filed by `QRPAGER-46` and recorded against this ticket *so it is inherited
-     * rather than rediscovered*: the journey fixture named no template, so every preview this
-     * suite had ever rendered was the default arrangement, and `rail`, `ember` and `tile` had
-     * never been in a browser against a real stack at all. A picker is what makes them
-     * reachable, and this is the assertion that uses it.
-     *
-     * The oracle is a RULE HEAD from `page.blade.php`'s `@elseif` chain — the same one
-     * `TemplateArrangementTest` uses — because it proves the bytes went through the chosen
-     * arrangement's BRANCH. A class name in the markup proves only that the Blade was
-     * included; a page can be arranged and unstyled, which is the `§11` QA round's M-3 on the
-     * previous ticket.
-     *
-     * ⚠ THE PUBLISHED half of `R-303` STAYS IN PHP, where the published bytes are reachable:
-     * `TemplateArrangementTest` publishes and reads the pointer object. What only a browser
-     * can add is that a real click on a real card produces those rules in a real engine, and
-     * that is what this does.
-     */
     const markers: Record<string, string> = {
       rail: '.rail-find{',
       ember: '.ember-hero{',
       tile: '.tile-grid{',
     }
 
-    await afterReload.nth(1).check()
+    await cards.nth(1).check()
 
-    const chosen = (await afterReload.nth(1).getAttribute('value')) ?? ''
+    const chosen = (await cards.nth(1).getAttribute('value')) ?? ''
 
     expect(
       Object.keys(markers),
       'an arrangement was added and this case does not know it',
     ).toContain(chosen)
+    expect(await cards.nth(1).isChecked(), 'the arrangement did not actually change').toBe(true)
 
+    // ⚠ WITH NO SAVE: the pane carries the chosen arrangement's own rules, written by the
+    // 400ms debounce and the preview key behind it.
     await expect
       .poll(async () => previewDocument(page), { timeout: 20_000 })
       .toContain(markers[chosen])
@@ -1876,6 +1829,29 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
         ).not.toContain(marker)
       }
     }
+
+    await expect(badge).toHaveCount(1)
+    await expect(badgeCard.locator('.studio-arrangement__input')).toHaveAttribute(
+      'value',
+      stored ?? '',
+    )
+
+    /*
+     * ...and the DATABASE does not move. `template` is a member of the landing document, so
+     * an autosave would show up on a fresh navigation as the SECOND card being the checked
+     * one — and the checked state is server-rendered, so this read is of the stored value and
+     * not of Alpine's memory.
+     */
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const afterReload = page.locator('.studio-arrangement__input')
+
+    await expect(afterReload).toHaveCount(3)
+
+    expect(
+      await afterReload.first().isChecked(),
+      'the stored draft changed, so the arrangement was saved rather than previewed',
+    ).toBe(true)
 
     expect(noise, 'the arrangement change logged an error').toEqual([])
   })

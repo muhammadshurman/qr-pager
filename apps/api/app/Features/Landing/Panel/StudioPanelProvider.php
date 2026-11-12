@@ -384,7 +384,26 @@ class StudioPanelProvider extends PanelProvider
                                 return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
                             }
 
+                            /*
+                             * ⚠ BOTH ARE ON `window` DELIBERATELY, AND THE REASON IS NAMED
+                             * RATHER THAN LEFT AS A SIDE EFFECT — `§11` security round, Low 4.
+                             * `studioContrast` is the duplication control's subject:
+                             * `browser/studio.spec.ts` evaluates it against every pair
+                             * `packages/tokens/generated/contrast.json` publishes, which is the
+                             * only thing holding this implementation and the build-time one
+                             * together. `studioLuminance` is what the advice's DIRECTION is
+                             * computed from, and the same case can hold it to the same table.
+                             *
+                             * Both are pure functions of two strings with no DOM and no state,
+                             * so neither grants a capability an attacker on this page does not
+                             * already have — the panel's CSP carries `unsafe-eval` either way
+                             * (`R-242`). The alternative was for the spec to drive the Alpine
+                             * component's `judge()` through the UI, which would test the
+                             * wiring and NOT the formula, and the formula is the thing that can
+                             * silently disagree with the generated table.
+                             */
                             window.studioContrast = studioContrast
+                            window.studioLuminance = studioLuminance
 
                             window.Alpine.data('studioColour', function (config) {
                                 return {
@@ -455,14 +474,29 @@ class StudioPanelProvider extends PanelProvider
                                             '[data-token="' + config.pairedWith + '"]'
                                         )
 
-                                        var ratio = window.studioContrast(
-                                            this.picked,
-                                            partner === null ? '' : partner.value
-                                        )
+                                        var against = partner === null ? '' : partner.value
+                                        var ratio = window.studioContrast(this.picked, against)
 
-                                        this.advice = ratio !== null && ratio < config.floor
-                                            ? config.advice
-                                            : ''
+                                        if (ratio === null || ratio >= config.floor) {
+                                            this.advice = ''
+
+                                            return
+                                        }
+
+                                        /*
+                                         * ⚠ THE DIRECTION IS COMPUTED, NOT GUESSED. A colour
+                                         * becomes more readable against its pair by moving
+                                         * AWAY from it, so the lighter of the two must get
+                                         * lighter and the darker darker. One fixed *"darken
+                                         * it"* advised the opposite for every light surface,
+                                         * which the `§11` QA round measured at 1.75:1.
+                                         */
+                                        var mine = window.studioLuminance(this.picked)
+                                        var theirs = window.studioLuminance(against)
+
+                                        this.advice = mine !== null && theirs !== null && mine >= theirs
+                                            ? config.adviceLighten
+                                            : config.adviceDarken
                                     },
                                     clear: function () {
                                         this.chosen = ''

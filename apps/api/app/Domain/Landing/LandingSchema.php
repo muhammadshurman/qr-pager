@@ -85,9 +85,16 @@ final class LandingSchema
                     'type' => 'string',
                     'enum' => LandingTemplate::values(),
                     'default' => LandingTemplate::DEFAULT->value,
+                    // ⚠ THE SECOND SENTENCE USED TO READ *"which is the arrangement every page
+                    // published before this member existed already used"*, and `QRPAGER-47`
+                    // MADE THAT FALSE: those pages used `classic`, which is retired, and the
+                    // default moved to `rail`. A generated contract that states a falsehood is
+                    // worse than one that states less — a consumer reads it as the authority.
+                    // `R-304` carries what the change means for a page already published.
                     'description' => 'How the blocks are arranged. Absent means '
-                        .LandingTemplate::DEFAULT->value.', which is the arrangement every '
-                        .'page published before this member existed already used.',
+                        .LandingTemplate::DEFAULT->value.'. Documents stored before this member '
+                        .'existed carry no value and are rendered with that default; the '
+                        .'arrangement they were published with has been retired.',
                 ],
                 // ⚠ NULLABLE, AND THE `null` IS THE POINT — `QRPAGER-47` Part B item 2. A
                 // page with no logo is the normal state of a page nobody has set one on, and

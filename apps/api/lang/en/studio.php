@@ -221,7 +221,8 @@ return [
         'none' => 'No logo yet.',
         'upload' => 'Upload a new logo',
         'drag' => 'Drop the file here, or click to choose one',
-        'file_meta' => ':type · :size KB',
+        'kilobytes' => ':size KB',
+        'megabytes' => ':size MB',
         'remove' => 'Remove',
         'reference_only' => 'Removing the logo takes it off your page only — the image stays in your media library.',
     ],
@@ -231,7 +232,8 @@ return [
         'section_help' => 'Tap a square to choose a colour. We check the contrast for you — if a colour is hard to read, we say so.',
         'reset' => 'Back to the default',
         'at_default' => 'Default',
-        'hard_to_read' => 'Writing on this colour is hard to read. Darken it a little, or go back to the default.',
+        'hard_to_read_darken' => 'Hard to read against the colour beside it. Darken this one a little, or go back to the default.',
+        'hard_to_read_lighten' => 'Hard to read against the colour beside it. Lighten this one a little, or go back to the default.',
     ],
 
     'fonts' => [

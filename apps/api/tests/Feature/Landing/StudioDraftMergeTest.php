@@ -49,7 +49,10 @@ it('keeps the theme when the page tab saves — the الصفحة direction', fun
     $tenant = mergeTenant();
     $asset = (new MediaLibrary)->store($tenant, 'logo.png', ImageFixtures::png());
 
-    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage($asset));
+    app(LandingPages::class)->saveDraft($tenant, array_replace(
+        LandingFixtures::fullPage($asset),
+        ['logo' => $asset],
+    ));
 
     $before = storedState($tenant);
     $themeKey = StudioForm::themeKey('color.background');
@@ -59,11 +62,17 @@ it('keeps the theme when the page tab saves — the الصفحة direction', fun
     // most at risk of.
     expect($before[$themeKey] ?? null)->toBeString()->not->toBe('');
 
-    // What the page tab's form actually holds: blocks and the arrangement, no theme keys.
-    $pageTabState = [
-        'blocks' => $before['blocks'],
-        'template' => $before['template'],
-    ];
+    /*
+     * What the page tab's form actually holds — and `QRPAGER-47` CHANGED IT: the arrangement
+     * moved to the theme tab (Part B item 1), so `template` is no longer in this state. The
+     * `§11` QA round caught this shape still carrying it, which would have made the case
+     * describe a form that does not exist.
+     *
+     * ⚠ AND THAT MAKES THE DIRECTION BELOW STRONGER RATHER THAN WEAKER: the page tab now has
+     * to leave the arrangement, the theme AND the logo alone, none of which it carries, and
+     * all three survive for one reason — `merged()` lays this state over the stored document.
+     */
+    $pageTabState = ['blocks' => $before['blocks']];
 
     app(LandingPages::class)->saveDraft($tenant, StudioForm::merged($tenant, $pageTabState));
 
@@ -71,26 +80,50 @@ it('keeps the theme when the page tab saves — the الصفحة direction', fun
 
     expect($after[$themeKey])->toBe($before[$themeKey], 'saving a block deleted the theme');
     expect($after['blocks'])->toEqual($before['blocks']);
+
+    // ⚠ AND THE TWO MEMBERS `QRPAGER-47` ADDED OR MOVED, which is the `§11` QA round's Medium
+    // 2: this file is the project's only guard against one tab's save deleting another tab's
+    // members, and `logo` is the member this ticket added.
+    expect($after['template'])->toBe($before['template'], 'saving a block reset the arrangement')
+        ->and($after['logo'])->toBe($before['logo'], 'saving a block deleted the logo');
 });
 
 it('keeps the blocks when the theme tab saves — the الثيم direction', function (): void {
     $tenant = mergeTenant();
     $asset = (new MediaLibrary)->store($tenant, 'logo.png', ImageFixtures::png());
 
-    app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage($asset));
+    // ⚠ THE LOGO IS SET DELIBERATELY, because `LandingFixtures::fullPage()` carries none and
+    // the premise assertion below refuses to run this direction without one. The same asset
+    // serves as a block image and as the mark, which is legitimate — `mediaReferences()`
+    // de-duplicates.
+    app(LandingPages::class)->saveDraft($tenant, array_replace(
+        LandingFixtures::fullPage($asset),
+        ['logo' => $asset],
+    ));
 
     $before = storedState($tenant);
 
     expect($before['blocks'])->not->toBe([], 'the fixture stored no blocks, so this proves nothing');
 
-    // What the theme tab's form holds: every theme key and the seo fields, no blocks.
-    $themeTabState = [];
+    /*
+     * What the theme tab's form holds: every theme key, the seo fields, and — since
+     * `QRPAGER-47` — the arrangement and the logo. No blocks.
+     */
+    $themeTabState = [
+        'template' => $before['template'],
+        'logo' => $before['logo'],
+    ];
 
     foreach ($before as $key => $value) {
         if (str_starts_with((string) $key, 'theme_') || str_starts_with((string) $key, 'seo_')) {
             $themeTabState[$key] = $value;
         }
     }
+
+    expect($before['logo'])->toBeString()->not->toBe(
+        '',
+        'the fixture stored no logo, so the logo half of this direction proves nothing'
+    );
 
     expect($themeTabState)->not->toBe([], 'no theme or seo keys were found, so the shape changed');
 

@@ -135,6 +135,21 @@ class ArrangementField extends Field implements HasEmbeddedView
         $title = e($case->name($locale));
         $summary = e($case->description($locale));
 
+        /*
+         * ⚠⚠ `checked` IS SERVER-RENDERED, AND LEAVING IT TO ALPINE WAS A DEFECT THE E2E RUN
+         * FOUND. The first version carried `x-model` alone, so the checked state existed only
+         * in Alpine — and every Livewire round trip morphs this markup, which arrives with no
+         * `checked` attribute at all. The journey case *"reflects an arrangement change with
+         * no Save and no refresh"* timed out with the page showing the STORED arrangement
+         * still checked after a click, because the preview's own 400ms write re-rendered the
+         * cards out from under the selection.
+         *
+         * Now the attribute is the form state's and `x-model` only follows it, so the control
+         * is correct before Alpine runs, correct after a morph, and correct in a
+         * server-rendered reading of the page.
+         */
+        $checked = $this->getState() === $case->value ? ' checked' : '';
+
         $badge = $this->stored === $case->value
             ? '<span class="studio-arrangement__badge">'.e(__('studio.arrangements.in_use')).'</span>'
             : '';
@@ -144,7 +159,7 @@ class ArrangementField extends Field implements HasEmbeddedView
         return <<<HTML
             <label class="studio-arrangement" :class="chosen === '{$value}' && 'studio-arrangement--chosen'">
                 <input type="radio" class="studio-arrangement__input" name="{$name}"
-                       value="{$value}" x-model="chosen"{$disabled} />
+                       value="{$value}" x-model="chosen"{$checked}{$disabled} />
                 <span class="studio-arrangement__thumb" aria-hidden="true">{$this->thumb($case)}</span>
                 <span class="studio-arrangement__body">
                     <span class="studio-arrangement__head">

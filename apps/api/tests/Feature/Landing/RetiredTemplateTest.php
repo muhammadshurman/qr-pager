@@ -256,6 +256,19 @@ it('writes nothing on a second run, and nothing to a tenant that named no retire
     $once = withTenant($migrated, static fn (): string => (string) DB::table('landing_pages')
         ->value('draft_document'));
 
+    /*
+     * ⚠⚠ THE FIRST RUN'S WORK IS ASSERTED BEFORE THE SECOND RUN IS COMPARED TO IT — `§11` QA
+     * ROUND, MEDIUM 1, AND IT WAS MEASURED: with `up()` replaced by an immediate `return`,
+     * this case stayed GREEN. It read `$once`, ran `up()` again, and compared the two strings
+     * — which is equally true of a migration that writes nothing at all, so "idempotent" and
+     * "inert" were indistinguishable here. Two of the six cases in this file reddened under
+     * that mutation; this one has to be the third.
+     */
+    expect(json_decode($once, true, 32, JSON_THROW_ON_ERROR)['template'] ?? null)->toBe(
+        'ember',
+        'the first run did not migrate the planted document, so comparing a second run to it proves nothing'
+    );
+
     // ⚠ THE SECOND RUN IS THE ASSERTION, NOT A WARM-UP. `migrateColumn()` throws when a keyed
     // statement reports a row count other than 1, so a re-run that matched its own output
     // would raise rather than pass quietly — the guard and the idempotency are the same

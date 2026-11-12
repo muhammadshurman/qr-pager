@@ -157,8 +157,19 @@ class ColourField extends Field implements HasEmbeddedView
                  * the swatch paints black for one frame on every field -- a colour input
                  * with no value has no other choice -- and an owner whose background is
                  * already set would watch six black squares become his colours.
+                 *
+                 * ⚠⚠ AND `e()`d, WHICH THE `§11` SECURITY ROUND MEASURED RATHER THAN ARGUED.
+                 * This bag is merged with `escape: false`, and Laravel's
+                 * `ComponentAttributeBag::__toString()` does only
+                 * `str_replace('"', '\\"', ...)` — a backslash does NOT neutralise a quote
+                 * inside a quoted attribute, so a state of `" x-on:focus=alert(1) z="` closed
+                 * this attribute and opened an Alpine one, in a panel whose CSP already
+                 * carries `unsafe-inline` (`R-242`). Self-XSS only — the value is the
+                 * authenticated owner's own form state and `ThemeTokens::accepts()` stops it
+                 * ever being stored — and `QRPAGER-47` multiplied the rows carrying it from
+                 * one to six, which is why it is fixed here rather than carried.
                  */
-                'value' => $state === '' ? null : $state,
+                'value' => $state === '' ? null : e($state),
                 /*
                  * ⚠ `aria-invalid` AND NOT `fi-valid`/`fi-invalid`. The first version copied
                  * those two classes from Filament's `Checkbox`, and `PanelTargetTest` refused
@@ -206,7 +217,17 @@ class ColourField extends Field implements HasEmbeddedView
             // here at all — Muhammad closed that row on 2026-11-12 — so AA is the whole of
             // what this control has to judge.
             'floor' => 4.5,
-            'advice' => __('studio.colours.hard_to_read'),
+            /*
+             * ⚠⚠ TWO SENTENCES, ONE PER DIRECTION — `§11` QA ROUND, MEDIUM 3, AND IT WAS A
+             * MEASUREMENT: one fixed sentence saying *"darken it a little"* was handed to every
+             * row, and for a light `background` against the default dark text (#444444 on
+             * #191C22, **1.75:1**) darkening it LOWERS the ratio further. The ticket asks for a
+             * message that *"says what to do"*, so the component picks by comparing the two
+             * luminances — a colour is made more readable by moving it AWAY from the one it is
+             * read against, which is lighter when it is already the lighter of the pair.
+             */
+            'adviceLighten' => __('studio.colours.hard_to_read_lighten'),
+            'adviceDarken' => __('studio.colours.hard_to_read_darken'),
         ], JSON_THROW_ON_ERROR));
 
         $clearLabel = e(__('studio.colours.reset'));
@@ -238,6 +259,21 @@ class ColourField extends Field implements HasEmbeddedView
          * announce its own name), every field is built with `hiddenLabel()`, and the wrapper
          * is left to do what only it can: show a validation error against this path.
          *
+         * ⚠⚠ AND THE TICKET'S *"it currently reads reversed"* DOES NOT REPRODUCE ON THIS
+         * ELEMENT — MEASURED, NOT ASSUMED, AND THE `§11` QA ROUND IS RIGHT THAT IT HAD TO BE.
+         * Item 3 ends *"the code renders LTR-isolated — direction: ltr AND unicode-bidi:
+         * isolate, both halves, per QRPAGER-42. It currently reads reversed."* Both halves are
+         * already on `.studio-colour__value` (`theme.css`, untouched by this ticket), and
+         * `browser/studio.spec.ts`'s *"renders a colour value with the hash first — A3"* holds
+         * them there by PER-CHARACTER GEOMETRY in a real RTL engine — `#` must sit left of the
+         * first digit, which on the build that was broken sat 42px to its right. That case
+         * passes at this head.
+         *
+         * The first attempt here added a redundant `studio-ltr` class to this element, which
+         * changed nothing and claimed to change something; it is removed. If the reversal is
+         * real on another screen, the element has to be named before it can be fixed —
+         * `§0`'s stop-and-report rather than a second no-op.
+         *
          * ⚠ AND THE PICKER IS STILL `<input type="color">`. The artboard draws a picker panel
          * OPEN — a saturation field, a hue rail, a code box, five presets — because a static
          * HTML mock cannot show the operating system's own picker. `QRPAGER-41` chose the
@@ -258,7 +294,7 @@ class ColourField extends Field implements HasEmbeddedView
                           x-text="advice"></span>
                 </span>
 
-                <output for="{$id}" class="studio-colour__value studio-ltr" x-text="chosen || '{$defaultLabel}'">{$caption}</output>
+                <output for="{$id}" class="studio-colour__value" x-text="chosen || '{$defaultLabel}'">{$caption}</output>
 
                 <button type="button" class="studio-colour__clear" x-show="chosen" x-cloak
                         x-on:click="clear()">{$clearLabel}</button>

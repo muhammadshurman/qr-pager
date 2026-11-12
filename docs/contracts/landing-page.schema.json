@@ -582,7 +582,7 @@
                 "tile"
             ],
             "default": "rail",
-            "description": "How the blocks are arranged. Absent means rail, which is the arrangement every page published before this member existed already used."
+            "description": "How the blocks are arranged. Absent means rail. Documents stored before this member existed carry no value and are rendered with that default; the arrangement they were published with has been retired."
         },
         "logo": {
             "type": [

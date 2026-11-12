@@ -1053,13 +1053,29 @@ html:not(.dark):has(body.fi-panel-studio),
   inline-size: 16%;
 }
 
-/* The ledger's call to action, at the foot of the column where `rail.blade.php` puts it. */
+/*
+ * The ledger's call to action, at the foot of the column where `rail.blade.php` puts it.
+ *
+ * ⚠⚠ `--color-brand` AND NOT `--ready-field`, WHICH IS A FINDING THE SUITE MADE RATHER THAN A
+ * PREFERENCE. The artboard paints this bar `#0A1F17`, and the token holding that value is
+ * `--ready-field` — the order-ready screen's ground. Painting a STUDIO surface with it put a
+ * colour on screen that is not in the panel's own palette, and
+ * `browser/studio.spec.ts`'s *"paints every surface from a token, in both modes"* measured it
+ * immediately: *"these are painted by a studio screen and are not a token value, so two
+ * palettes are on screen at once."*
+ *
+ * The palette that case enforces is eleven `--color-*` roles, and `brand` is the right one by
+ * meaning as well as by availability: this bar is a picture of a CALL TO ACTION, and
+ * `--color-brand` is the role a call to action takes. The artboard's own header says every
+ * value in it stands for a token — this is what that costs when the nearest value belongs to
+ * another surface's palette.
+ */
 .studio-thumb__cta {
   display: block;
   margin-block-start: auto;
   block-size: var(--space-12);
   border-radius: var(--radius-surface);
-  background: var(--ready-field);
+  background: var(--color-brand);
 }
 
 .studio-thumb__hero {
