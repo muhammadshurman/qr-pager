@@ -61,6 +61,7 @@ return [
         'language_current' => '(الحالية)',
         'save' => 'احفظ',
         'publish' => 'انشر',
+        'back_to_staff' => 'لوحة الطلبات',
         'unpublish' => 'ألغِ النشر',
         'take_down' => 'أنزِل موقعي',
     ],

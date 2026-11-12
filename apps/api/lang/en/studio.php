@@ -67,6 +67,9 @@ return [
         'language_current' => '(Current)',
         'save' => 'Save',
         'publish' => 'Publish',
+        // QRPAGER-48 item 3. Names where it goes, not what it is: a person reading this
+        // has a board of live orders in mind, not a product noun (§12).
+        'back_to_staff' => 'Orders board',
         'unpublish' => 'Unpublish',
         'take_down' => 'Take my site down',
     ],

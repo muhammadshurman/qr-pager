@@ -9205,6 +9205,79 @@ standing practice for a superseded decision.
 | **6. failure** | **The seeder is idempotent or it refuses — it must never silently create a second demo tenant.** A re-run finds its own slug and either updates in place or exits non-zero saying so; which of the two is an implementation choice this row does not pre-empt, but *“ran twice and made two restaurants”* is ruled out by name. **The chrome's failure paths:** a tenant with no published page must render the plate's *unpublished* state rather than a blank region (the artboard draws only the published case), and the footer's save state must have a resting value before any save has happened. |
 | **7. version-specific research** | **Filament 5.11**, and the extension points were read from the installed package rather than assumed: `PanelsRenderHook` exposes `TOPBAR_START`, `TOPBAR_END`, `TOPBAR_LOGO_BEFORE/AFTER` and `USER_MENU_BEFORE/AFTER`, and this panel **already** uses `->renderHook(PanelsRenderHook::HEAD_END, …)`, so the mechanism is in use rather than new. |
 
+#### ⚠⚠⚠ THE TWO CROSS-APP LINKS DECLARE OPPOSITE POSTURES, AND THEY MUST NOT BE ALIGNED
+
+**This section exists to stop a future tidy-up.** The staff app's link into the studio and the
+studio's link back are mirror images, and they validate their configuration **differently on
+purpose**. That is not drift and it is not debt — it is `PROJECT_INSTRUCTIONS.md §4 › Edge & ops`
+applied twice and answered twice: *“every dependency has a declared **fail-open or fail-closed**
+posture, chosen deliberately.”*
+
+| | **staff → studio** — `studioUrl()` (TS) | **studio → staff** — `surfaces.staff_signin_url` (PHP) |
+| --- | --- | --- |
+| who is it for | somebody **already signed in** | somebody **signed OUT** |
+| what it is | a convenience button | the only way to sign in at all |
+| if it is wrong | a button points somewhere odd | **nobody can sign in — the panel is unusable** |
+| posture | **fail-open**: fall back to a safe same-origin path | **fail-closed**: `BootChecks` refuses to boot |
+| accepts | a same-origin path **or** absolute `http(s)` | absolute **https** with a host, only |
+| default | `/studio` — the production shape | `http://localhost:3000/staff` — the dev value |
+
+**Muhammad's ruling of 2026-11-13, which reverses his own earlier instruction to make them match:**
+
+> I was wrong to ask for one shape in both directions — the asymmetry is correct, not drift …
+> `staff_signin_url` is where a SIGNED-OUT visitor is sent. If it is wrong, nobody can sign in at
+> all. Refusing to boot is right: **a total lockout should surface at deploy, not when the first
+> owner tries to sign in.** `studioUrl()` is a convenience button for someone ALREADY signed in.
+> If it is wrong, a button points somewhere odd. Falling back to a safe default is right: **no one
+> is locked out.**
+
+⚠⚠ **WHAT ALIGNING THEM WOULD BREAK, WHICH IS THE WHOLE REASON THIS IS WRITTEN DOWN.** Making the
+PHP side fall back like the TS one *“would be consistency bought by turning a lockout into a silent
+fallback”*: a misconfigured `STAFF_SIGNIN_URL` would stop refusing at deploy and start sending
+signed-out visitors somewhere wrong at request time, which is the dead-end `PanelSignInRedirect`
+exists to prevent. Making the TS side refuse like the PHP one would turn a cosmetic
+misconfiguration into a blank page for every member of staff. **Each posture matches its own
+failure, and swapping either makes that surface worse.**
+
+**Two apparent defects that were examined and are NOT defects**, so they are not re-opened:
+
+1. **The PHP default is the DEV value** — `http://localhost:3000/staff` — which is exactly the
+   shape ruled against for `studioUrl()` (*“production depends on a value someone remembered to
+   set”*). **Defused by the boot check:** with something that refuses to boot, nobody can forget
+   silently. *“Loud is the acceptable version.”*
+2. **It demands an absolute URL and rejects a bare path**, even though `§1`'s one-origin decision
+   makes a path sufficient. **The redirect-loop guard needs an explicit host to reason about** —
+   `staffSignInUrlIsSound()` refuses a URL that is itself a panel path on this host — and a bare
+   path would weaken it. Under one origin you write the absolute URL of your own host.
+
+⚠ **AND THE KEY'S NAME IS THE ONE REAL LIE, LEFT IN PLACE DELIBERATELY.** `surfaces.staff_signin_url`
+now carries a **signed-IN** person's link as well. It is **not renamed**, because other code depends
+on it — `PanelSignInRedirect` above all. **The key is the staff app's ENTRY POINT and serves both
+uses; the name predates the second.** A reader meeting it in the signed-in path should find this
+sentence rather than a puzzle.
+
+#### ⚠ `vitest` STANDALONE SHOWS 19 FAILURES THAT ARE NOT FAILURES — READ THIS BEFORE CHASING THEM
+
+Running `pnpm exec vitest run` directly on this branch reports **19 failed / 1,214 passed**, and
+**none of them is a defect**. They are the `build-surface` family — `apps/web/test/build-surface.test.ts`
+and `staff-build-surface.test.ts` — which read **`.next` production artefacts**:
+
+> the built scan landing is absent at `.next/server/app/s.html`. Run `pnpm --filter @qrpager/web
+> run build` first. **This assertion is not skipped when the build is missing**: a skip would make
+> the three load-invariant clauses of the Lighthouse method pass without being evaluated.
+
+That refusal is deliberate and correct — it is the same *“no reasoned skip”* posture the rest of
+this repository takes. **`pnpm gate` BUILDS FIRST**, which is why the same suite was **14/14 green
+with 1,226 passing at `9561d38`**, and why the gate is the measurement that counts. `vitest`
+standalone is a developer's inner loop, not a gate, and `§0.0g` says a gate figure comes from the
+committed transcript rather than from an ad-hoc run — this is exactly the shape that rule is about.
+
+⚠ One member of that 19 is a different thing and is NOT build-related: `api.test.ts`'s request
+deadline, which reported *“expected -80869 to be greater than or equal to 8500”* — a **negative**
+elapsed time, on a host that had a dev server, a Next build and two gates running on it. That is
+`R-228`'s family (*a wall-clock-bounded assertion on a loaded host*), and the negative figure is
+worth keeping because it is not a slow measurement, it is an incoherent one.
+
 #### ⚠ ONE RULING OPEN, AND IT BLOCKS ONE BULLET OF SIX — THE AR/EN TOGGLE
 
 **`tenants.language` is ONE column doing TWO jobs, and a topbar toggle over it would be a second

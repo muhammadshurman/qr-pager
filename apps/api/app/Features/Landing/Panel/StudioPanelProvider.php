@@ -293,6 +293,41 @@ class StudioPanelProvider extends PanelProvider
              * allowlist) and which no other mechanism can replace: the class is written by
              * Filament's own boot script before any stylesheet can respond to it.
              */
+            /*
+             * ⚠⚠ THE WAY BACK TO THE ORDERS BOARD — `QRPAGER-48` item 3, AND IT REUSES THE
+             * KEY THE SIGNED-OUT REDIRECT ALREADY USES RATHER THAN ADDING ONE.
+             *
+             * `surfaces.staff_signin_url` is the staff app's ENTRY POINT and serves BOTH uses:
+             * `PanelSignInRedirect` sends a signed-OUT visitor there, and this sends a
+             * signed-IN one. **The name predates the second use** and is deliberately not
+             * changed, because other code depends on it — `PLAN.md §4a` carries that sentence
+             * so a reader meeting it here finds an explanation rather than a puzzle.
+             *
+             * ⚠ **AND NO SECOND VALIDATOR IS WRITTEN HERE, DELIBERATELY.** The value is already
+             * validated at boot by `BootChecks::staffSignInUrlIsSound()` — absolute, https, a
+             * real host, and refused outright if it is itself a panel path on this host (the
+             * redirect loop). That posture is **fail-CLOSED** and is the opposite of the staff
+             * app's `studioUrl()`, which falls back. `§4a` records why those two must NOT be
+             * aligned: this one, wrong, locks everybody out; that one, wrong, points a button
+             * somewhere odd.
+             */
+            ->renderHook(
+                PanelsRenderHook::TOPBAR_END,
+                function (): string {
+                    $target = config('surfaces.staff_signin_url');
+
+                    if (! is_string($target) || trim($target) === '') {
+                        // Nothing to link to. Rendering no control is right: a dead link in
+                        // the chrome is worse than an absent one, and in production this
+                        // state cannot be reached at all -- the boot check refuses it.
+                        return '';
+                    }
+
+                    return '<a class="studio-topbar__back" href="'.e($target).'" data-back-to-staff="true">'
+                        .e(__('studio.page.back_to_staff'))
+                        .'</a>';
+                },
+            )
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
                 fn (): string => <<<'HTML'
