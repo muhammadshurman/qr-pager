@@ -2200,8 +2200,36 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
         }
       }, config.pairedWith)
 
-    // The default pair clears the floor, so the row opens quiet — asserted first, because an
-    // advice element that was always visible would satisfy everything below without judging.
+    /*
+     * ⚠⚠ BOTH HALVES OF THE PAIR GO BACK TO THEIR DEFAULTS FIRST, AND THAT IS THIS CASE'S
+     * OWN DOING RATHER THAN AN INHERITED PREMISE.
+     *
+     * Measured: alone this case passed in 2.4 s, and in the full suite it failed on its very
+     * FIRST assertion — the advice was already **visible** on load — because a sibling case
+     * saves a theme colour and the draft it leaves behind makes this pair fail the floor
+     * before this case has touched anything. An opening assertion that depends on test
+     * ordering is exactly the defect `R-303`'s own case was repaired for one round earlier
+     * in this ticket, and it is the same fix: own the premise.
+     *
+     * `.studio-colour__clear` carries `x-show="chosen"`, so it exists only while the row is
+     * overridden — which makes its visibility the honest test of whether there is anything
+     * to put back.
+     */
+    for (const token of ['color.background', config.pairedWith]) {
+      const other = page.locator('.studio-colour', {
+        has: page.locator(`[data-token="${token}"]`),
+      })
+      const clear = other.locator('.studio-colour__clear')
+
+      if (await clear.isVisible()) {
+        await clear.click()
+        await expect(other.locator('.studio-colour__default')).toBeVisible()
+      }
+    }
+
+    // NOW the default pair clears the floor, so the row is quiet — asserted before anything
+    // else, because an advice element that was always visible would satisfy everything below
+    // without judging a thing.
     await expect(advice).toBeHidden()
 
     /*
