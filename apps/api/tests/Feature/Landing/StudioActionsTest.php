@@ -192,7 +192,7 @@ it('sets the page arrangement through the builder, and only on the signed-in res
 
     app(LandingPages::class)->saveDraft($other, array_replace(
         LandingFixtures::fullPage(),
-        ['template' => 'editorial'],
+        ['template' => 'ember'],
     ));
 
     $tenant = $this->actingForTenant(role: TenantRole::Owner);
@@ -201,30 +201,30 @@ it('sets the page arrangement through the builder, and only on the signed-in res
     app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
 
     expect(app(LandingPages::class)->draft($tenant)->template)
-        ->toBe(LandingTemplate::Classic, 'a document with no template member did not default to classic');
+        ->toBe(LandingTemplate::DEFAULT, 'a document with no template member did not take the default');
 
     $blocksBefore = count(app(LandingPages::class)->draft($tenant)->toArray()['blocks']);
 
     Livewire::test(LandingBuilderPage::class)
-        ->set('data.template', 'editorial')
+        ->set('data.template', 'tile')
         ->call('save');
 
     $saved = app(LandingPages::class)->draft($tenant);
 
-    expect($saved->template)->toBe(LandingTemplate::Editorial)
+    expect($saved->template)->toBe(LandingTemplate::Tile)
         // The blocks are untouched, which is what makes this a change of ARRANGEMENT and not
         // a round trip that happened to end with the right enum.
         ->and(count($saved->toArray()['blocks']))->toBe($blocksBefore)
         // The other restaurant is where it was, which is the half the clause is about.
-        ->and(app(LandingPages::class)->draft($other)->template)->toBe(LandingTemplate::Editorial);
+        ->and(app(LandingPages::class)->draft($other)->template)->toBe(LandingTemplate::Ember);
 
     // And back, because `§2.7`'s reasoning for an updatable value applies here too: a
     // restaurant may change its mind, and a one-way test would not notice if it could not.
     Livewire::test(LandingBuilderPage::class)
-        ->set('data.template', 'classic')
+        ->set('data.template', 'rail')
         ->call('save');
 
-    expect(app(LandingPages::class)->draft($tenant)->template)->toBe(LandingTemplate::Classic);
+    expect(app(LandingPages::class)->draft($tenant)->template)->toBe(LandingTemplate::Rail);
 });
 
 it('refuses an arrangement that is not one, from the panel, leaving the document alone', function (): void {
@@ -236,7 +236,7 @@ it('refuses an arrangement that is not one, from the panel, leaving the document
 
     app(LandingPages::class)->saveDraft($tenant, array_replace(
         LandingFixtures::fullPage(),
-        ['template' => 'editorial'],
+        ['template' => 'ember'],
     ));
 
     Livewire::test(LandingBuilderPage::class)
@@ -244,7 +244,7 @@ it('refuses an arrangement that is not one, from the panel, leaving the document
         ->call('save');
 
     expect(app(LandingPages::class)->draft($tenant)->template)
-        ->toBe(LandingTemplate::Editorial, 'a non-arrangement reached the stored document');
+        ->toBe(LandingTemplate::Ember, 'a non-arrangement reached the stored document');
 });
 
 it('names the side of the commit a publish failed on, and never 500s on a take-down', function (): void {

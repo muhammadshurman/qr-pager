@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Landing;
 
 /**
- * Which ARRANGEMENT a tenant's published page uses. `QRPAGER-33`.
+ * Which ARRANGEMENT a tenant's published page uses. `QRPAGER-33`, narrowed to three by `QRPAGER-47`.
  *
  * ================================================================================
  * IT ARRANGES; IT DOES NOT RENDER. THAT SPLIT IS THE WHOLE MECHANISM.
@@ -23,6 +23,34 @@ namespace App\Domain\Landing;
  * placed is absent"* a mechanical fact rather than a habit.
  *
  * ================================================================================
+ * ⚠⚠ THREE CASES, AND `classic` / `editorial` ARE RETIRED — `QRPAGER-47`, PART A
+ * ================================================================================
+ *
+ * Muhammad's ticket, in his words: *"Those two were the «بسيط / مميّز» pair the user
+ * complained were indistinguishable. rail, ember and tile replace them as the single axis."*
+ * So the choice a restaurant makes is now between three arrangements that differ
+ * STRUCTURALLY — a ruled column, a dark centred hero, a photo grid — rather than between two
+ * that differed by emphasis and read as the same page.
+ *
+ * ⚠ **THE STORED DOCUMENTS WERE MIGRATED, NOT LEFT TO FAIL VALIDATION.**
+ * `2026_11_12_120000_retire_classic_and_editorial` maps `classic → rail` and
+ * `editorial → ember` in BOTH `landing_pages.draft_document` and
+ * `landing_pages.published_document`, per tenant, keyed, under `§2.10`'s settled pattern. A
+ * document that still named a retired case would be refused by `LandingDocument::fromInput()`
+ * the next time anything read it — the studio, a republish, the media reference sweep — so
+ * the migration is what keeps every tenant's page loadable, and
+ * `RetiredTemplateTest` is the test that fails if any document anywhere still names one.
+ *
+ * ⚠ **AND WHAT RETIRING `classic` COST, NAMED RATHER THAN QUIETLY DROPPED.** `classic` was
+ * the arrangement that reproduced `tests/Fixtures/landing/pre-template-page.html` BYTE FOR
+ * BYTE, and that fixture was `QRPAGER-33`'s guarantee that *"a tenant who published yesterday
+ * and republishes today gets the same page."* Retiring the case retires the guarantee with
+ * it: a tenant who was on `classic` now republishes as `rail` and their page CHANGES. That is
+ * the ticket's intent — the complaint being answered is that the old pair was
+ * indistinguishable — and it is written down here because it is the one thing this change
+ * takes away that nothing else gives back.
+ *
+ * ================================================================================
  * ⚠ NOT A POSTGRES ENUM, AND THAT IS NOT AN EXCEPTION TO `§2.3`
  * ================================================================================
  *
@@ -32,69 +60,21 @@ namespace App\Domain\Landing;
  * is validated by `BlockSchema`/`LandingSchema`, not by a column type. `tenant_language` went
  * the other way on 2026-11-03 (`QRPAGER-30`) precisely because it IS a column.
  *
+ * ⚠ AND THAT IS ALSO WHY `QRPAGER-47`'s MIGRATION IS A **DATA** MIGRATION AND NOT A TYPE
+ * CHANGE: there is no `ALTER TYPE … DROP VALUE` to write, because there is no type. What
+ * exists is rows, which is exactly the case `PROJECT_INSTRUCTIONS.md §4 › Postgres traps`
+ * says blocks whoever writes the first one.
+ *
  * The one-source question still has to be answered, and it is: this enum is the source, and
  * `docs/contracts/landing-page.schema.json`'s `enum` for `template` is GENERATED from
  * `values()` by `php artisan landing:schema-export`, with `bin/landing-schema-check`
- * byte-diffing the committed file against it. The studio's buttons are built from `cases()`.
+ * byte-diffing the committed file against it. The studio's cards are built from `cases()`.
  * There is no second list to keep in step.
- *
- * ================================================================================
- * FIVE CASES: TWO FROM `QRPAGER-33`, AND THREE THAT COST WHAT IT SAID THEY WOULD
- * ================================================================================
- *
- * ⚠ THE SCOPE CUT'S PRICE, MEASURED RATHER THAN RE-ARGUED. `QRPAGER-33` left two cases and
- * predicted a third as *"a template file and an enum value"*, with this file's own note
- * adding *"AND one `@if` in `page.blade.php` if it needs rules of its own"*. `QRPAGER-46`
- * added three and that prediction held for the ARRANGEMENT half: three cases here, three
- * Blade files, three `@if` blocks. What it did not cover is the half `§4b` B1 found later —
- * a preset with no fallback literal needs a DEFAULT for every token it references, which no
- * part of the contract carried — so the third arrangement also cost `ThemeDefaults` and the
- * scanner that keeps the count of nought true (`R-267`).
- *
- * Muhammad's scope cut of 2026-11-03, rank 1, in his words: *"the mechanism is the value, the
- * arrangements are content ... A third is then a template file and an enum value, not a run."*
- * Recorded in `PLAN.md §1` and on `QRPAGER-33` so a later reader sees a decision rather than
- * an omission.
- *
- * `compact` is the named next one -- the retired kit's version put the hours, the address and
- * the phone number above the hero, on the reasoning that *"a customer standing outside the
- * restaurant wants the hours, the address and the phone number, not the hero"*. Adding it is
- * one case here plus one file beside `editorial.blade.php`; every proof in this feature is
- * total over `cases()`, so none of them needs a new assertion for it.
  */
 enum LandingTemplate: string
 {
     /**
-     * The builder's own order, one column.
-     *
-     * ⚠ **IT IS WHAT `landing.page` ALREADY RENDERED, BYTE FOR BYTE, AND THAT IS ASSERTED.**
-     * The template this page had before this feature existed was an unnamed `@foreach` over
-     * the blocks in stored order; `classic` is that loop, moved into a file and given a name.
-     * `tests/Fixtures/landing/pre-template-page.html` was captured BEFORE the first change
-     * and `TemplateArrangementTest` requires this arrangement to reproduce it exactly -- so a
-     * tenant who published yesterday and republishes today gets the same page.
-     */
-    case Classic = 'classic';
-
-    /**
-     * The hero leads, then the story, with the gallery given the full measure.
-     *
-     * `how_it_works` is promoted to sit directly under the hero, because on a pager product
-     * the question a first-time visitor has is *"what happens when I scan this"*. The gallery
-     * runs wide and the menu follows. Anything the arrangement does not name still renders,
-     * before the footer, which is the `rest()` safety net the retired kit described and the
-     * totality proof enforces.
-     *
-     * ⚠ **WHY THIS ONE AND NOT `compact` AS THE SECOND:** the ticket's product need is *"a
-     * client gets a DESIGNED page instead of a blank one"*, and `classic` is already the plain
-     * one. `editorial` is the arrangement that most changes the page's character, so the pair
-     * spans the choice a restaurant is actually making. `compact` is a phone-first utility
-     * layout and is a better third than a second.
-     */
-    case Editorial = 'editorial';
-
-    /**
-     * RAIL — one ruled column, and the first of `QRPAGER-46`'s three.
+     * RAIL — one ruled column, and the arrangement a document gets when it names none.
      *
      * The approved visual direction (`§1`, 2026-11-08: *"the approved visual direction is
      * RAIL (السِجِل)"*) read as an ARRANGEMENT rather than as a palette: a single column
@@ -103,7 +83,7 @@ enum LandingTemplate: string
      * each row by a leader rule. `docs/design/public/rail.html` is the reference.
      *
      * ⚠ WHAT MAKES IT DIFFERENT IS STRUCTURE, NOT COLOUR — the ticket's own words. The
-     * three new arrangements share one palette (the defaults `ThemeDefaults` resolves) and
+     * three arrangements share one palette (the defaults `ThemeDefaults` resolves) and
      * differ in regions, grouping and order, which is what `TemplateStructureTest` asserts
      * and why it asserts element counts rather than pixels.
      */
@@ -137,12 +117,17 @@ enum LandingTemplate: string
     /**
      * The arrangement a document gets when it names none.
      *
-     * ⚠ EVERY DOCUMENT STORED BEFORE THIS FEATURE CARRIES NO `template` MEMBER, and there are
-     * live ones. So this is not a convenience: it is the clause that keeps `§6.6`'s published
-     * bytes stable for a tenant who does nothing, and it is why `template` is NOT on
-     * `LandingDocument::REQUIRED` even though it is on `KEYS`.
+     * ⚠ EVERY DOCUMENT STORED BEFORE `QRPAGER-33` CARRIES NO `template` MEMBER, and there are
+     * live ones, which is why `template` is on `KEYS` and NOT on `LandingDocument::REQUIRED`.
+     *
+     * ⚠⚠ **IT MOVED FROM `Classic` TO `Rail` IN `QRPAGER-47`, AND THAT MOVE IS WHAT MAKES THE
+     * MIGRATION SMALL.** A document with no `template` member needs no write at all: it
+     * inherits this constant, and this constant is now the arrangement `classic` was mapped
+     * to. So the migration touches only the rows that name a retired case EXPLICITLY —
+     * `jsonb_set(…, create_missing => false)` — and every other document is left byte-for-byte
+     * as it was stored.
      */
-    public const DEFAULT = self::Classic;
+    public const DEFAULT = self::Rail;
 
     /*
      * ⚠ THERE IS NO `styleRules()` METHOD HERE, AND ITS ABSENCE IS A LOCKED INVARIANT RATHER
@@ -160,36 +145,11 @@ enum LandingTemplate: string
      * CSS already does -- inside `resources/views/landing/page.blade.php`'s `<style>`, behind
      * one `@if` on this enum.
      *
-     * THE COST OF THAT, NAMED HONESTLY: a third arrangement is one case here, one Blade file
-     * under `templates/`, AND one `@if` in `page.blade.php` if it needs rules of its own --
-     * which is one line more than the scope cut's *"a template file and an enum value"*.
+     * THE COST OF THAT, NAMED HONESTLY: a fourth arrangement is one case here, one Blade file
+     * under `templates/`, AND one `@elseif` in `page.blade.php` if it needs rules of its own.
      * `TemplateArrangementTest` asserts the rendered page rather than a method, which is the
      * stronger subject anyway: it reads what a visitor receives.
      */
-
-    /**
-     * Does this arrangement expect a value for EVERY token, or only the tenant's overrides?
-     *
-     * ⚠ THIS IS THE HALF `QRPAGER-33`'s SCOPE CUT DID NOT FORESEE, and it is a property of
-     * the arrangement rather than of the theme. `QRPAGER-46`'s three carry **no `var()`
-     * fallback literal** — the stated invariant is a set EQUALITY between the tokens a
-     * template references and the tokens the resolver emits — so a token the tenant has not
-     * set must still arrive with a value or the rule reading it paints nothing.
-     *
-     * `classic` and `editorial` answer false, and that is measured rather than chosen:
-     * `classic` reproduces `pre-template-page.html` byte for byte, and twelve properties
-     * where that capture carries two would change every page published before this feature
-     * existed. Their fallback literals stay, frozen by a dated baseline (`R-250`, `R-268`).
-     *
-     * `match` with no `default`, so a sixth arrangement does not compile until it answers.
-     */
-    public function resolvesEveryToken(): bool
-    {
-        return match ($this) {
-            self::Classic, self::Editorial => false,
-            self::Rail, self::Ember, self::Tile => true,
-        };
-    }
 
     /** @return list<string> */
     public static function values(): array
@@ -198,14 +158,14 @@ enum LandingTemplate: string
     }
 
     /**
-     * The name a restaurant reads in the builder, in English and in Arabic.
+     * The name a restaurant reads in the studio, in English and in Arabic.
      *
-     * ⚠ ON THE ENUM AND NOT IN THE VIEW, so a third case cannot ship with a button labelled
-     * `editorial`. `match` is exhaustive, so adding a case without a label does not compile
+     * ⚠ ON THE ENUM AND NOT IN THE VIEW, so a fourth case cannot ship with a card labelled
+     * `tile`. `match` is exhaustive, so adding a case without a label does not compile
      * under PHPStan and fails at runtime if it somehow does.
      *
-     * `§12`'s zero-technical-background bar: `classic` and `editorial` are the words a
-     * designer uses, not the words a restaurant owner uses, so neither is shown.
+     * `§12`'s zero-technical-background bar: the case names are the words a designer uses,
+     * not the words a restaurant owner uses, so none of them is shown.
      */
     public function label(string $locale): string
     {
@@ -214,15 +174,11 @@ enum LandingTemplate: string
         // which is the half that matters here, because exhaustiveness is the mechanism.
         return $locale === 'ar'
             ? match ($this) {
-                self::Classic => 'بسيط — أقسامك بالترتيب الذي رتّبته',
-                self::Editorial => 'مميّز — صورة افتتاحية كبيرة، ثم كيف يعمل',
                 self::Rail => 'السِجِل — عمود واحد، وخط رقيق يفصل كل قسم',
                 self::Ember => 'الجَمْر — صدر الصفحة داكن ومتوسّط، ثم نص مُركّز',
                 self::Tile => 'البلاط — شبكة صور متساوية للمعرض والأطباق',
             }
         : match ($this) {
-            self::Classic => 'Simple — your blocks in the order you arranged them',
-            self::Editorial => 'Feature — a large opening image, then how it works',
             self::Rail => 'Ledger — one column, a thin rule between every section',
             self::Ember => 'Ember — a dark, centred opening, then a narrow column',
             self::Tile => 'Tile — an even photo grid for the gallery and the dishes',

@@ -23,6 +23,12 @@ use Tests\Support\StubMediaReferences;
  * that names none is arranged as `classic`; and no block the tenant placed is absent from any
  * arrangement."*
  *
+ * ⚠ **CLAUSE 2 NOW READS `rail` RATHER THAN `classic`, AND `QRPAGER-47` IS WHY.** The case that
+ * held the pre-feature bytes to the byte is retired with the arrangement it was about; what
+ * replaces it asserts the half that is still true — a document naming no arrangement takes
+ * `LandingTemplate::DEFAULT`, and the default renders identically to naming it. The quotation
+ * above is left as it was written so the change is visible rather than tidied away.
+ *
  * Clause 3 (totality over the block schema) is in `TemplateTotalityTest`, because it reads the
  * committed JSON contract rather than a published page. Clause 5 (tenant isolation over the
  * panel path) is in `StudioActionsTest`, beside the other Livewire cases, for the reason that
@@ -52,22 +58,28 @@ function renderWithFixedArguments(LandingDocument $document): string
     );
 }
 
-it('reproduces the pre-feature page EXACTLY for a document that names no arrangement', function (): void {
+it('renders a document that names no arrangement as the DEFAULT, which is now rail', function (): void {
     /*
-     * ⚠ **INVARIANT CLAUSE 2, AND THE ONLY ONE THAT COULD NOT HAVE BEEN WRITTEN AFTER THE
-     * FACT.** `QRPAGER-33 §4` flagged it as the one thing that could make the ticket bigger:
-     * *"proof (2) requires a captured snapshot of today's published bytes BEFORE anything
-     * changes. If that is not taken first, the claim becomes unprovable after the fact."*
+     * ⚠⚠ **THIS CASE REPLACES `QRPAGER-33`'s INVARIANT CLAUSE 2, AND THE REPLACEMENT IS A
+     * LOSS THAT IS NAMED RATHER THAN HIDDEN.**
      *
-     * `tests/Fixtures/landing/pre-template-page.html` is that capture -- 4,625 bytes, sha256
-     * fe5e5995…, taken on 2026-11-03 from the renderer as it then stood, from
-     * `LandingFixtures::fullPage()` with the same fixed arguments this case uses. Every
-     * document stored before this feature carries no `template` member, so this is the page a
-     * live tenant republishing today must get.
+     * What stood here asserted that a document naming no arrangement reproduced
+     * `tests/Fixtures/landing/pre-template-page.html` BYTE FOR BYTE — 4,625 bytes, sha256
+     * `fe5e5995…`, captured on 2026-11-03 before anything changed, because `QRPAGER-33 §4`
+     * flagged that *"if that is not taken first, the claim becomes unprovable after the
+     * fact."* It earned its keep twice: one attempt measured 4,941 (arrangement CSS in the
+     * shared block) and another 4,626 (a Blade comment on its own line).
      *
-     * It found a real byte: the first attempt put the arrangement's CSS in the shared
-     * `<style>` block and measured **4,941**, and a later one left a Blade comment on its own
-     * line and measured **4,626**. Both would have changed every existing tenant's page.
+     * `QRPAGER-47` retires `classic`, and with it that guarantee: a tenant who published
+     * yesterday republishes today as `rail` and their page CHANGES. That is the ticket's
+     * intent — *"those two were the «بسيط / مميّز» pair the user complained were
+     * indistinguishable"* — so the fixture is retired with the case rather than kept as a
+     * capture nothing can be held to.
+     *
+     * What survives is the half that is still true and still load-bearing: **a document with
+     * no `template` member is not written by the migration and must render as the default**,
+     * and the default is now `rail`. If those two ever disagree, every pre-`QRPAGER-33`
+     * document silently renders as something nobody chose.
      */
     $stored = LandingFixtures::fullPage();
 
@@ -76,13 +88,15 @@ it('reproduces the pre-feature page EXACTLY for a document that names no arrange
     $document = templateDocument();
 
     expect($document->template)
-        ->toBe(LandingTemplate::Classic, 'a document naming no arrangement did not default to classic');
+        ->toBe(LandingTemplate::DEFAULT, 'a document naming no arrangement did not take the default')
+        ->and(LandingTemplate::DEFAULT)->toBe(LandingTemplate::Rail);
 
-    $expected = (string) file_get_contents(base_path('tests/Fixtures/landing/pre-template-page.html'));
-
+    // And the bytes are the bytes of that arrangement named explicitly: the default costs
+    // nothing and resolves to the same page, which is what makes the migration's
+    // `create_missing => false` safe for every document that carries no member.
     expect(renderWithFixedArguments($document))->toBe(
-        $expected,
-        'the classic arrangement no longer reproduces the page this feature inherited',
+        renderWithFixedArguments(templateDocument(['template' => 'rail'])),
+        'the default arrangement and an explicit `rail` produced different pages',
     );
 });
 
@@ -100,7 +114,7 @@ it('arranges a published page by the value its own document carries, and differe
      */
     $tenants = [];
 
-    foreach ([LandingTemplate::Classic, LandingTemplate::Editorial] as $template) {
+    foreach ([LandingTemplate::Rail, LandingTemplate::Ember] as $template) {
         $tenantId = $this->makeTenant(slug: 'arranged-'.$template->value);
 
         (new LandingPages)->saveDraft($tenantId, array_replace(
@@ -114,29 +128,29 @@ it('arranges a published page by the value its own document carries, and differe
         $tenants[$template->value] = $bytes;
     }
 
-    // `menu_highlights` sits AFTER the gallery in the fixture's own order, and `editorial`
-    // promotes `how_it_works` above both. Positions, not presence.
+    // Both arrangements place the same blocks; what differs is the region each sits in.
+    // Positions and wrappers together, so neither alone can carry the case.
     $positions = static fn (string $bytes): array => [
         'how_it_works' => strpos($bytes, 'How the pager works'),
         'gallery' => strpos($bytes, 'The room'),
     ];
 
-    $classic = $positions($tenants['classic']);
-    $editorial = $positions($tenants['editorial']);
+    $rail = $positions($tenants['rail']);
+    $ember = $positions($tenants['ember']);
 
-    expect($classic['how_it_works'])->toBeInt()
-        ->and($classic['gallery'])->toBeInt()
-        ->and($editorial['how_it_works'])->toBeInt()
-        ->and($editorial['gallery'])->toBeInt();
+    expect($rail['how_it_works'])->toBeInt()
+        ->and($rail['gallery'])->toBeInt()
+        ->and($ember['how_it_works'])->toBeInt()
+        ->and($ember['gallery'])->toBeInt();
 
-    // The fixture's order has the gallery after how_it_works in BOTH, so the distinguishing
-    // fact is the wrapper the editorial arrangement groups them in -- asserted together with
-    // the order so neither alone can carry the case.
-    expect($tenants['editorial'])->toContain('<div class="band">')
-        ->and($tenants['editorial'])->toContain('<div class="wide">')
-        ->and($tenants['classic'])->not->toContain('<div class="band">')
-        ->and($tenants['classic'])->not->toContain('<div class="wide">')
-        ->and($tenants['editorial'])->not->toBe($tenants['classic'], 'the two arrangements produced identical bytes');
+    // `ember` lifts the hero into its own band and puts everything after it in a narrow
+    // column; `rail` has neither wrapper and carries its own ruled regions instead.
+    expect($tenants['ember'])->toContain('class="ember-hero"')
+        ->and($tenants['ember'])->toContain('class="ember-column"')
+        ->and($tenants['rail'])->not->toContain('class="ember-hero"')
+        ->and($tenants['rail'])->not->toContain('class="ember-column"')
+        ->and($tenants['rail'])->toContain('class="rail"')
+        ->and($tenants['ember'])->not->toBe($tenants['rail'], 'the two arrangements produced identical bytes');
 });
 
 it('ships each arrangement its OWN rules and none of the other four’s', function (): void {
@@ -153,12 +167,11 @@ it('ships each arrangement its OWN rules and none of the other four’s', functi
      * a value can change without touching this case; what cannot change silently is which
      * branch of `page.blade.php`'s `@if`/`@elseif` chain a page received.
      *
-     * The byte-level half — `classic` gains NOTHING — is the case below this one, which is
-     * `QRPAGER-33`'s invariant clause 2 and is older than these three arrangements.
+     * The byte-level half is the case below this one: each arrangement's page differs from the
+     * next by its OWN rules and by nothing else. It used to be `classic` gains NOTHING, which
+     * `QRPAGER-47` retired along with that arrangement.
      */
     $markers = [
-        'classic' => [],
-        'editorial' => ['.band{', '.wide{'],
         'rail' => ['.rail>section+section', '.rail-find{'],
         'ember' => ['.ember-hero{', '.ember-column{'],
         'tile' => ['.tile-grid{'],
@@ -198,31 +211,39 @@ it('ships each arrangement its OWN rules and none of the other four’s', functi
         }
     }
 
-    // And `classic` carries none of the four marker sets — asserted by the loop above, which
-    // is why its own list is empty rather than absent.
-    expect($markers['classic'])->toBe([]);
+    // ⚠ AND EVERY ARRANGEMENT NOW HAS RULES OF ITS OWN, which was not true while `classic`
+    // existed: its entry here was an EMPTY list, and the exclusivity loop above was the only
+    // thing asserting it carried none of the others'. A future arrangement that needs no
+    // rules would bring the empty list back, and the loop still covers it.
+    expect($markers)->not->toContain([]);
 });
 
-it('ships each arrangement only the CSS it uses, so an existing page gains no byte', function (): void {
+it('ships each arrangement only the CSS it uses, measured by the bytes it adds', function (): void {
     /*
-     * The mechanism behind clause 2, asserted on the RENDERED PAGE rather than on a method --
-     * which is both the stronger subject and the only one available. The first version read
-     * `LandingTemplate::styleRules()`, and `composer guard` refused that method under rule 11
-     * (*"a theme overrides TOKENS ONLY -- no <style, no CSS rule"*, locked in
+     * The mechanism behind the exclusivity claim, asserted on the RENDERED PAGE rather than
+     * on a method -- which is both the stronger subject and the only one available. The first
+     * version read `LandingTemplate::styleRules()`, and `composer guard` refused that method
+     * under rule 11 (*"a theme overrides TOKENS ONLY -- no <style, no CSS rule"*, locked in
      * `PROJECT_INSTRUCTIONS.md §3`). The rules live in `page.blade.php` now, so what a
-     * visitor receives is the only thing there is to assert, and it is what the clause is
-     * about anyway.
+     * visitor receives is the only thing there is to assert.
+     *
+     * ⚠ THE SUBJECT CHANGED WITH `QRPAGER-47` AND THE PROPERTY DID NOT. It used to compare
+     * `classic` (which emitted NOTHING) against `editorial`; with `classic` retired there is
+     * no empty arrangement left, so the comparison is between two arrangements that each
+     * carry their own branch and nothing of the other's.
      */
-    $classic = renderWithFixedArguments(templateDocument());
-    $editorial = renderWithFixedArguments(templateDocument(['template' => 'editorial']));
+    $rail = renderWithFixedArguments(templateDocument(['template' => 'rail']));
+    $ember = renderWithFixedArguments(templateDocument(['template' => 'ember']));
 
-    expect($classic)->not->toContain('.band{')
-        ->and($classic)->not->toContain('.wide{')
-        ->and($editorial)->toContain('.band{')
-        ->and($editorial)->toContain('.wide{')
-        // And the editorial page is LONGER by exactly its own rules, so the two differ by the
-        // CSS and not by something else that happens to correlate with it.
-        ->and(strlen($editorial) - strlen($classic))->toBeGreaterThan(100);
+    expect($rail)->not->toContain('.ember-hero{')
+        ->and($rail)->not->toContain('.ember-column{')
+        ->and($ember)->toContain('.ember-hero{')
+        ->and($ember)->toContain('.ember-column{')
+        ->and($ember)->not->toContain('.rail-find{')
+        ->and($rail)->toContain('.rail-find{')
+        // And each page is longer than the other by its own rules alone, so the two differ by
+        // the CSS rather than by something that happens to correlate with it.
+        ->and(abs(strlen($ember) - strlen($rail)))->toBeGreaterThan(100);
 });
 
 it('refuses a value that is not an arrangement, at the schema boundary and by name', function (): void {
@@ -236,14 +257,14 @@ it('refuses a value that is not an arrangement, at the schema boundary and by na
      * The message names the SET and never the value that was sent: `§4.2`'s rule that a
      * refusal may say what to do, never what exists.
      */
-    foreach (['brutalist', '', 'CLASSIC', 'classic ', 1] as $bad) {
+    foreach (['brutalist', '', 'RAIL', 'rail ', 'classic', 'editorial', 1] as $bad) {
         try {
             templateDocument(['template' => $bad]);
 
             throw new RuntimeException('a non-arrangement was accepted: '.var_export($bad, true));
         } catch (LandingDocumentInvalid $e) {
             expect($e->field)->toBe('template')
-                ->and($e->reason)->toContain('classic, editorial');
+                ->and($e->reason)->toContain('rail, ember, tile');
 
             /*
              * ⚠ THE NO-ECHO CHECK IS SKIPPED FOR THE EMPTY STRING, AND SAYING WHY IS THE
@@ -274,14 +295,14 @@ it('keeps the arrangement through a save and a reload, which is what the builder
 
     (new LandingPages)->saveDraft($tenantId, array_replace(
         LandingFixtures::fullPage(),
-        ['template' => 'editorial'],
+        ['template' => 'ember'],
     ));
 
     $reloaded = (new LandingPages)->draft($tenantId);
 
-    expect($reloaded->template)->toBe(LandingTemplate::Editorial)
+    expect($reloaded->template)->toBe(LandingTemplate::Ember)
         ->and($reloaded->toArray())->toHaveKey('template')
-        ->and($reloaded->toArray()['template'])->toBe('editorial');
+        ->and($reloaded->toArray()['template'])->toBe('ember');
 
     // And a block type still renders in it, so the round trip did not cost the page content.
     expect(array_column($reloaded->toArray()['blocks'], 'type'))

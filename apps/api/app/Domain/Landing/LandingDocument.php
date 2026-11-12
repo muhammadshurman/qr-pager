@@ -563,12 +563,19 @@ final class LandingDocument
     /**
      * Validate the arrangement, or refuse it by name. `QRPAGER-33`.
      *
-     * ⚠ **ABSENT IS VALID AND MEANS `classic`; PRESENT-AND-UNKNOWN IS A REFUSAL.** Those are
-     * two different answers to two different questions and the distinction is the whole of
-     * invariant clause 2 and clause 4. A document written before this feature has no
-     * `template` member and must keep publishing exactly as it did; a document naming
+     * ⚠ **ABSENT IS VALID AND MEANS `LandingTemplate::DEFAULT`; PRESENT-AND-UNKNOWN IS A
+     * REFUSAL.** Those are two different answers to two different questions and the
+     * distinction is the whole of invariant clause 2 and clause 4. A document written before
+     * this feature has no `template` member and takes the default; a document naming
      * `brutalist` is a tenant (or a client) asking for something that does not exist, and
      * `§12.1` says a refusal names the field.
+     *
+     * ⚠ **AND `QRPAGER-47` MADE *PRESENT-AND-RETIRED* THE SAME ANSWER AS *PRESENT-AND-UNKNOWN*,
+     * WHICH IS WHY PART A IS A MIGRATION AND NOT A CODE CHANGE.** `classic` and `editorial`
+     * are gone from the enum, so a stored document still naming one is refused HERE — on
+     * every read, not only on save, because `fromStored()` routes through `fromInput()`. That
+     * is the mechanism that would have broken those tenants' pages, and
+     * `2026_11_12_120000_retire_classic_and_editorial` is what keeps it from firing.
      *
      * ⚠ **AND IT IS REFUSED HERE, BEFORE ANY WRITE, NOT BY THE STUDIO'S FIELD BEING A FIELD.**
      * `fromStored()` routes through `fromInput()`, so this runs on every read as well as every

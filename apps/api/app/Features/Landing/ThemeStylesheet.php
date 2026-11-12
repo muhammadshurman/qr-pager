@@ -45,34 +45,38 @@ final class ThemeStylesheet
     /**
      * The declaration list for a validated theme map.
      *
-     * Only tokens the tenant actually set are emitted — unless the ARRANGEMENT resolves
-     * every token, in which case the absent ones are filled from the generated token layer
+     * Only tokens the tenant actually set are emitted — unless the page is being rendered in
+     * an ARRANGEMENT, in which case the absent ones are filled from the generated token layer
      * before anything is emitted. See `$template` below.
      *
      * @param  array<string, string>  $theme
      * @param  LandingTemplate|null  $template  the arrangement this page is rendered in, or
-     *                                          null for a caller that has no document —
-     *                                          which behaves exactly as before `QRPAGER-46`
+     *                                          null for a caller that has no document — which
+     *                                          emits the tenant's own values and nothing else
      *
      * ⚠ THE ARRANGEMENT DECIDES WHETHER DEFAULTS ARE EMITTED, AND IT IS NOT A STYLE CHOICE.
      *
-     * `QRPAGER-46`'s invariant requires the three new arrangements to reference no token the
+     * `QRPAGER-46`'s invariant requires the three arrangements to reference no token the
      * resolver does not emit, because their rules carry **no `var()` fallback literal** —
-     * `R-268` is what a fallback literal costs (one token, two greys, live). So for those
+     * `R-268` is what a fallback literal costs (one token, two greys, live). So for all
      * three, every token gets a value: the tenant's if they set one, otherwise
      * `ThemeDefaults`'.
      *
-     * `classic` and `editorial` must NOT gain that, and the reason is measured rather than
-     * aesthetic: `classic` reproduces `tests/Fixtures/landing/pre-template-page.html` BYTE
-     * FOR BYTE (`QRPAGER-33` invariant clause 2 — a tenant who published yesterday and
-     * republishes today gets the same page), and a twelve-property `style` attribute where
-     * that capture has two changes every page published before 2026-11-03. Their rules keep
-     * the fallbacks they already have, frozen by `tools/design-tokens/landing-baseline.json`
-     * rather than rewritten, because `QRPAGER-46` forbids rewriting delivered work (`R-250`).
+     * ⚠⚠ **IT USED TO ASK THE ARRANGEMENT, AND `QRPAGER-47` MADE THAT QUESTION VACUOUS.**
+     * `LandingTemplate::resolvesEveryToken()` answered false for exactly `classic` and
+     * `editorial` — the two whose rules carry `var()` fallback literals, and whose published
+     * bytes `QRPAGER-33` held stable to the byte. Part A retires both cases, so every
+     * remaining arrangement answers true and the method is GONE rather than left returning a
+     * constant: a predicate with one possible answer is a branch a reader has to check and a
+     * test has to cover for nothing.
+     *
+     * So the condition is now *"is there an arrangement at all"*, and the `null` arm is not
+     * dead code — `ThemeTokenTest` drives this function with a bare theme and no arrangement
+     * precisely to assert what a tenant's own values become without any defaults underneath.
      */
     public static function declarations(array $theme, ?LandingTemplate $template = null): string
     {
-        if ($template !== null && $template->resolvesEveryToken()) {
+        if ($template !== null) {
             $theme = ThemeDefaults::fill($theme);
         }
 

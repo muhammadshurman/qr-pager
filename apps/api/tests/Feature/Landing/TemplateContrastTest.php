@@ -142,11 +142,17 @@ it('draws a focus ring that clears 3:1 against every region it can land on', fun
 
         /*
          * ⚠ THE DEFAULTS ARE THE SUBJECT, so a tenant theme is deliberately NOT set: M-1 is
-         * about the colours the product ships, and a theme would have hidden it. For `classic`
-         * and `editorial` the resolver emits nothing, so their tokens come from the frozen
-         * fallbacks — read out of the CSS rather than assumed.
+         * about the colours the product ships, and a theme would have hidden it.
+         *
+         * ⚠ THE `$fallback` READER BELOW IS KEPT THOUGH NOTHING NEEDS IT TODAY. It existed
+         * for `classic` and `editorial`, whose resolver emitted nothing so their tokens came
+         * from the frozen `var()` fallbacks in the shared rules; `QRPAGER-47` retires both, so
+         * every arrangement now resolves every token. The shared rules those fallbacks live in
+         * are untouched and still render on every page, so a token that stopped being emitted
+         * would silently fall back to one of them — and this reader is what would report the
+         * colour actually painted rather than the one the contract intended.
          */
-        $tokens = $template->resolvesEveryToken() ? resolvedTokens($html) : [];
+        $tokens = resolvedTokens($html);
         $fallback = static function (string $token) use ($css): string {
             preg_match('/var\(\s*'.preg_quote($token, '/').'\s*,\s*([^)]+)\)/i', $css, $found);
 

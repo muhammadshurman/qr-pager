@@ -10,6 +10,7 @@ use App\Domain\Landing\ThemeTokens;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\PublishedSite;
+use App\Features\Landing\ThemeDefaults;
 use App\Features\Landing\ThemeStylesheet;
 use Tests\Support\LandingFixtures;
 use Tests\Support\StubMediaReferences;
@@ -160,15 +161,36 @@ it('puts the theme in one attribute of the published page and nowhere else', fun
     // correct encoder for where it lands -- and the font stacks are chosen to need no
     // quotes, so the escaped output is byte-identical to the declaration list. That is
     // the design in ThemeTokens::STACKS arriving as an observable fact.
-    expect($html)->toContain('style="--color-accent:#aa0000;--color-background:#fffff0;--font-heading:ui-monospace, SFMono-Regular, Menlo, monospace"')
+    //
+    // ⚠⚠ IT USED TO ASSERT THE ATTRIBUTE CARRIED **ONLY THESE THREE**, AND `QRPAGER-47`
+    // CHANGED THE SUBJECT RATHER THAN THE PROPERTY. This document names no arrangement, so
+    // it took `LandingTemplate::DEFAULT` — which was `classic`, an arrangement that emitted
+    // the tenant's overrides and nothing else. The default is now `rail`, and every
+    // remaining arrangement resolves EVERY token (`QRPAGER-46`'s invariant: no `var()`
+    // fallback literal in their rules, so a token with no value paints nothing). So the
+    // attribute now carries twelve properties: the tenant's three, each winning over the
+    // default, and nine filled from the generated token layer.
+    expect($html)->toContain('--color-accent:#aa0000')
+        ->and($html)->toContain('--color-background:#fffff0')
+        ->and($html)->toContain('--font-heading:ui-monospace, SFMono-Regular, Menlo, monospace')
         ->and($html)->not->toContain('&quot;');
+
+    // The tenant's three WIN: the default for each is absent from the attribute, which is
+    // the half that would break silently if the resolver filled over an override.
+    $style = (string) (preg_match('/<html[^>]*style="([^"]*)"/', $html, $found) ? $found[1] : '');
+
+    expect($style)->not->toContain('--color-accent:'.ThemeDefaults::values()['color.accent'])
+        ->and($style)->not->toContain('--color-background:'.ThemeDefaults::values()['color.background'])
+        ->and(substr_count($style, '--color-accent:'))->toBe(1)
+        ->and(explode(';', $style))->toHaveCount(count(ThemeTokens::NAMES));
 
     // And exactly one <style> element -- the template's own rules, which no tenant value
     // reaches. A theme that could add a second one would be adding a component rule.
     expect(substr_count($html, '<style'))->toBe(1);
 
-    // The page's rules read the properties through var() with a default, so a token the
-    // tenant did not set falls through rather than rendering as empty.
+    // The page's SHARED rules still read some properties through `var()` with a fallback --
+    // `R-268`, frozen by `tools/design-tokens/landing-baseline.json` rather than rewritten --
+    // and with every token now emitted, nothing reaches those fallbacks on a rendered page.
     expect($html)->toContain('var(--color-surface,')
         ->and($html)->toContain('var(--radius-large,');
 });

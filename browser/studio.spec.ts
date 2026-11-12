@@ -1643,11 +1643,16 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
 
     /*
      * ⚠ TWO BLOCKS, AND THAT IS THE CASE'S PRECONDITION RATHER THAN SETUP DRESSING. The
-     * arrangements decide *"order, grouping and emphasis and nothing else"* — `editorial`
-     * promotes `how_it_works` to sit directly under the hero — so on a ONE-block page the
-     * two render the same thing and a comparison proves nothing. The first version of this
-     * case had one block and failed for exactly that reason: the oracle was wrong, not the
-     * feature.
+     * arrangements decide *"order, grouping and emphasis and nothing else"* — the second
+     * arrangement promotes `how_it_works` out of the builder's order — so on a ONE-block page
+     * the two render the same thing and a comparison proves nothing. The first version of
+     * this case had one block and failed for exactly that reason: the oracle was wrong, not
+     * the feature.
+     *
+     * ⚠ THE TWO ARE TAKEN BY INDEX AND NOT BY NAME, which is why `QRPAGER-47` retiring
+     * `classic` and `editorial` left this case standing: first is the DEFAULT arrangement and
+     * second is whatever sits beside it. What it asserts is that changing the control moves
+     * the preview and not the database.
      */
     const hero = `HERO ${String(Date.now())}`
     const how = `HOW ${String(Date.now())}`
