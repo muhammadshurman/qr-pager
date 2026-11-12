@@ -138,6 +138,111 @@ export function checkRowCount(plan) {
 }
 
 /**
+ * (b5) EVERY `§5` ROW HAS THE SEVEN CELLS ITS OWN HEADER DECLARES.
+ *
+ * `§5`'s header is `# | Risk | Severity | Why accepted | Compensating control | Owner | Review
+ * by`. A row with fewer cells still RENDERS -- Markdown pads the missing ones -- so its owner
+ * and its date land in the wrong columns and the last two render EMPTY. That is not a
+ * presentation nit: `PROJECT_INSTRUCTIONS.md §11`'s merge rule is that a Medium or a Low is
+ * *"written into `PLAN.md §5` with an owner and a date"*, and a row whose *Owner* and *Review
+ * by* columns are blank does not satisfy it. Nothing read this table's SHAPE until 2026-11-12,
+ * which is how `QRPAGER-47` shipped ten such rows without noticing.
+ *
+ * ⚠ **THE COUNT IS BACKTICK-AWARE, BECAUSE A NAIVE SPLIT IS WRONG HERE.** Several rows quote a
+ * shell pipeline inside a code span -- `§0`'s own prescribed command has two pipes -- and
+ * splitting on every `|` reported 78 malformed rows where there are 58. A pipe inside backticks
+ * is content; only a bare one is a cell boundary.
+ *
+ * ⚠⚠ **THE BASELINE IS THE 58 ROWS THAT WERE ALREADY MALFORMED, AND IT SHRINKS ONLY.** They
+ * span `R-108` to `R-296` and belong to other tasks, so repairing them is not `QRPAGER-47`'s to
+ * do -- but neither is inheriting a check that cannot be switched on. The list is explicit and
+ * inline so that any diff WIDENING it is visible, which is `R-002`'s argument for the PHPStan
+ * globs. **A baselined row that has since been repaired is itself a failure**, so the list
+ * cannot rot into a permanent exemption: fix a row, drop its id, or the check says so.
+ */
+const SHAPE_BASELINE = new Set([
+  'R-108', 'R-172', 'R-173', 'R-174', 'R-175', 'R-176',
+  'R-177', 'R-178', 'R-179', 'R-180', 'R-181', 'R-182',
+  'R-183', 'R-184', 'R-185', 'R-186', 'R-187', 'R-188',
+  'R-189', 'R-190', 'R-191', 'R-192', 'R-193', 'R-194',
+  'R-195', 'R-196', 'R-197', 'R-198', 'R-199', 'R-200',
+  'R-205', 'R-206', 'R-207', 'R-208', 'R-209', 'R-210',
+  'R-211', 'R-212', 'R-213', 'R-214', 'R-215', 'R-216',
+  'R-262', 'R-282', 'R-283', 'R-284', 'R-285', 'R-286',
+  'R-287', 'R-288', 'R-289', 'R-290', 'R-291', 'R-292',
+  'R-293', 'R-294', 'R-295', 'R-296',
+])
+
+export function checkRowShape(plan) {
+  const repaired = new Set(SHAPE_BASELINE)
+
+  for (const line of plan.split('\n')) {
+    const named = /^\| \*\*(R-\d+)\*\* \|/.exec(line)
+
+    if (named === null) continue
+
+    const id = named[1]
+    const width = rowCells(line).length
+
+    if (width === 7) continue
+
+    repaired.delete(id)
+
+    if (SHAPE_BASELINE.has(id)) continue
+
+    fail(
+      'records(b5)',
+      `§5's ${id} has ${width} cells; the table's header declares 7 ` +
+        '(# | Risk | Severity | Why accepted | Compensating control | Owner | Review by), ' +
+        'so its owner and date render in the wrong columns',
+    )
+  }
+
+  for (const id of repaired) {
+    fail(
+      'records(b5)',
+      `SHAPE_BASELINE names ${id}, and §5 no longer has a malformed row by that id ` +
+        '(repaired, or gone) — drop it from the baseline so the list keeps shrinking',
+    )
+  }
+}
+
+/**
+ * The cells of one Markdown table row, with pipes inside code spans left alone.
+ *
+ * A backslash-escaped pipe is content too. The leading and trailing empties either side of the
+ * row's outer pipes are dropped.
+ */
+function rowCells(line) {
+  const out = []
+  let cur = ''
+  let code = false
+
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i]
+
+    if (c === '\\' && line[i + 1] === '|') {
+      cur += '|'
+      i += 1
+      continue
+    }
+
+    if (c === '`') code = !code
+
+    if (c === '|' && !code) {
+      out.push(cur)
+      cur = ''
+    } else {
+      cur += c
+    }
+  }
+
+  out.push(cur)
+
+  return out.slice(1, -1)
+}
+
+/**
  * (b2) `§0`'s *Last completed* NAMES A TAG THAT EXISTS, AND NAMES THE LATEST ONE.
  *
  * The failure this catches is `§0` describing a delivery record that the tags contradict --
@@ -859,6 +964,43 @@ export function checkEveryEvidenceRow(plan, dir = join(REPO, 'docs', 'tickets'))
 
 const SELF_TESTS = [
   {
+    /**
+     * ⚠ THE FIXTURE IS A ROW THE TABLE REALLY HAS, WITH ONE CELL BOUNDARY REMOVED -- which is
+     * the exact shape the ten `QRPAGER-47` rows shipped in: the text is all present and the row
+     * still renders, so nothing but a cell COUNT can see it. Planting a brand-new id instead
+     * would have tested the regex and not the check.
+     */
+    what: 'a §5 row with six cells where the header declares seven',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^(\| \*\*R-314\*\* \| [^\n]*?) \| /m,
+        '$1 ',
+      )
+      const before = failures.length
+      checkRowShape(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * AND THE OTHER DIRECTION: a baselined row that someone has since repaired must be dropped
+     * from the list, or the baseline rots into a permanent exemption. `R-296` is the narrowest
+     * row in the table (2 cells), so padding it to 7 is unambiguous.
+     */
+    what: 'a baselined §5 row that has been repaired but left in SHAPE_BASELINE',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*R-296\*\* \|[^\n]*$/m,
+        '| **R-296** | a | b | c | d | e | f |',
+      )
+      const before = failures.length
+      checkRowShape(plan)
+
+      return failures.length > before
+    },
+  },
+  {
     what: 'a §5 row count that disagrees with the table',
     run: () => {
       /*
@@ -1336,6 +1478,7 @@ if (process.argv.includes('--self-test')) {
 const plan = readFileSync(PLAN, 'utf8')
 
 checkRowCount(plan)
+checkRowShape(plan)
 checkTagReality(plan)
 checkStatedHead(plan)
 checkStatedCounts(plan)

@@ -53,6 +53,29 @@ function apiOrigin(): string {
 }
 
 /**
+ * The origin apps/site is served on, which is the PUBLIC page's own serving layer.
+ *
+ * ⚠ A DIFFERENT PROCESS FROM EVERY OTHER ORIGIN IN THIS SUITE, and that is the point. The
+ * studio is a Filament panel on the API; the published page is static bytes in the object
+ * store, read back by a Next.js process that knows nothing about the panel. `R-303` is about
+ * the seam between them, so a case that asserted the panel's own preview -- as the case above
+ * does, correctly, for what it measures -- could never have reached it.
+ */
+function siteOrigin(): string {
+  const base = process.env.QRPAGER_E2E_SITE_BASE
+
+  if (base === undefined || base === '') {
+    throw new Error(
+      'QRPAGER_E2E_SITE_BASE is unset. This case needs apps/site serving the object store -- ' +
+        'run it through `tools/browsers/bin/e2e`, which builds and starts it. It does not ' +
+        'skip: `R-303` is open precisely because nothing has ever exercised this seam.',
+    )
+  }
+
+  return base.replace(/\/$/, '')
+}
+
+/**
  * A one-pixel PNG, as bytes.
  *
  * ⚠ IT HAS TO BE A REAL IMAGE, not a renamed text file. `InspectedImage` reads the CONTENTS
@@ -1865,6 +1888,171 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     ).toBe(true)
 
     expect(noise, 'the arrangement change logged an error').toEqual([])
+  })
+
+  /**
+   * ⚠⚠ `R-303`, AND IT IS A SIBLING RATHER THAN A GROWTH OF THE CASE ABOVE — DELIBERATELY.
+   *
+   * That case's whole subject is *with no Save*: it asserts the stored draft does NOT move,
+   * and a publish is a save followed by a render. Adding one would have falsified its own
+   * premise. `§4a` also records that an earlier shape of it *"grew a published-bytes
+   * assertion"* and then exceeded the 90-second budget, which is the second reason to put the
+   * published half in a case with its own.
+   *
+   * ⚠ **WHAT THIS REACHES THAT NOTHING ELSE DOES.** `TemplateArrangementTest` drives
+   * `LandingRenderer::render()` directly — the renderer's output, not a served page.
+   * `landing-templates.spec.ts` renders from the FILESYSTEM. The case above asserts the panel's
+   * PREVIEW pane. All three stop short of the one thing a customer actually gets: bytes out of
+   * the object store, served by apps/site, addressed by `Host`. `R-303` has been open across
+   * two tickets because that seam had no subject at all.
+   */
+  test('serves the arrangement the picker chose, and no other, on the PUBLISHED page', async ({
+    page,
+    request,
+  }) => {
+    const markers: Record<string, string> = {
+      rail: '.rail-find{',
+      ember: '.ember-hero{',
+      tile: '.tile-grid{',
+    }
+
+    await signInAsStaff(page)
+
+    /*
+     * ⚠⚠ THIS CASE MAKES ITS OWN PAGE PUBLISHABLE, AND THE FIRST VERSION DID NOT — WHICH IS
+     * THE DEFECT THE REDDEN PROOF FOUND RATHER THAN THE ONE IT WENT LOOKING FOR.
+     *
+     * Run in isolation (`-g`), it timed out on the publish response: the status plate read
+     * `studio.page.empty` -- *“لا توجد كتل في صفحتك بعد”* -- so Publish was DISABLED and the click
+     * did nothing. It had been passing in the full suite only because earlier cases had left
+     * blocks behind. An ordering dependency is exactly what `R-303`'s proof must not have: the
+     * whole point of the row is that the published page has no subject of its own.
+     */
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+    await addBlock(page, 0, `R-303 ${String(Date.now())}`)
+    await saveAndWait(page)
+
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const cards = page.locator('.studio-arrangement')
+    const inputs = page.locator('.studio-arrangement__input')
+
+    await expect(cards).toHaveCount(3)
+
+    const values = await inputs.evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLInputElement).value),
+    )
+
+    expect(
+      [...values].sort((a, b) => a.localeCompare(b)),
+      'an arrangement was added or renamed and this case does not know it',
+    ).toEqual(Object.keys(markers).sort((a, b) => a.localeCompare(b)))
+
+    /*
+     * ⚠ PICK THE ONE THAT IS **NOT** STORED. Publishing the arrangement the tenant already had
+     * would assert the marker of a page that was already being served, and would pass against
+     * a picker that wrote nothing at all.
+     */
+    const stored = await inputs.evaluateAll((nodes) =>
+      nodes.findIndex((node) => (node as HTMLInputElement).checked),
+    )
+
+    /*
+     * ⚠ `-1` MEANS THE DOCUMENT NAMES NO ARRANGEMENT, AND THAT IS NOT THE SAME AS "NONE IS IN
+     * EFFECT". A document with no `template` member renders as `LandingTemplate::DEFAULT`,
+     * which `QRPAGER-47` Part A moved to `rail` -- `RetiredTemplateTest` asserts exactly that,
+     * and the migration's `create_missing => false` depends on it. So "the one that is not
+     * stored" has to mean "not the one in EFFECT", or on a tenant that has never chosen, this
+     * case could publish `rail` over a page already rendering as `rail` and prove nothing.
+     */
+    const effective = stored === -1 ? values.indexOf('rail') : stored
+
+    expect(
+      effective,
+      'neither a stored arrangement nor the default could be located',
+    ).toBeGreaterThan(-1)
+
+    const target = (effective + 1) % values.length
+    // `?? ''` for the index check only: the equality above already pins the three values, and
+    // an empty string would fail the `toContain` on the next line rather than slip through.
+    const chosen = values[target] ?? ''
+
+    expect(Object.keys(markers), 'the picker offered an arrangement with no marker').toContain(
+      chosen,
+    )
+    expect(chosen, 'the arrangement to publish is the one already in effect').not.toBe(
+      values[effective],
+    )
+
+    // ⚠ THE CARD, NOT THE RADIO: the input is clipped to one pixel behind it, so Playwright's
+    // actionability wait can never pass on the radio. Measured — see the case above.
+    await cards.nth(target).click()
+    expect(await inputs.nth(target).isChecked(), 'the arrangement did not change').toBe(true)
+
+    await saveAndWait(page)
+
+    /*
+     * The publish action lives on the BUILDER page, not the theme tab: `ThemePage` has
+     * `save()` and no `publish()`, because publishing is a whole-document act and the theme is
+     * one tab of that document.
+     */
+    await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
+
+    /*
+     * ⚠ THE HOSTNAME COMES OFF THE STATUS PLATE, NOT OUT OF A FIXTURE. `builder.blade.php`
+     * renders `$state['hostname']` -- `hostnameInScope()`, which prefers an active custom
+     * domain over the platform one -- inside `studio.partials.emphasised`, which emits the
+     * value in a `<strong>` because `{!! !!}` is refused in this application. So the one
+     * `<strong>` in the status plate IS the host this page will be served on, stated by the
+     * product rather than derived here.
+     *
+     * The first version of this case read it from a file the harness published to get it, and
+     * that publish overwrote the restaurant's draft and reddened three sibling cases.
+     */
+    const hostname = (
+      await page.locator('[role="status"] p.text-sm strong').first().innerText()
+    ).trim()
+
+    expect(hostname, 'the studio states no hostname, so nothing could be fetched').not.toBe('')
+
+    const landed = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        (response.request().postData() ?? '').includes('"publish"'),
+      { timeout: 30_000 },
+    )
+
+    await page.getByRole('button', { name: 'انشر' }).first().click()
+    await landed
+
+    /*
+     * ⚠ POLLED, BECAUSE A PUBLISH IS NOT ONE WRITE. `LandingPages::publish()` copies the
+     * assets, writes `{checksum}.html`, moves the pointer and then writes `manifest.json` —
+     * the pointer is what this reads, and asserting once on the first fetch would be racing
+     * the publisher rather than measuring it.
+     */
+    const servedHtml = async (): Promise<string> => {
+      const response = await request.get(`${siteOrigin()}/`, { headers: { host: hostname } })
+
+      return response.status() === 200
+        ? await response.text()
+        : `status ${String(response.status())}`
+    }
+
+    await expect.poll(servedHtml, { timeout: 30_000 }).toContain(markers[chosen])
+
+    // And none of the others', because `page.blade.php`'s `@elseif` chain is meant to be
+    // exclusive: two arrangements served at once is a defect no screenshot would show.
+    const document_ = await servedHtml()
+
+    for (const [name, marker] of Object.entries(markers)) {
+      if (name !== chosen) {
+        expect(
+          document_,
+          `the published page carries ${name}'s rules as well as ${chosen}'s`,
+        ).not.toContain(marker)
+      }
+    }
   })
 
   test('advises on a colour nobody can read on, and stops when it is put back', async ({
