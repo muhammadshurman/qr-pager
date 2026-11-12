@@ -83,10 +83,18 @@ it('names, in the committed contract, exactly the block types the PHP enum has',
 it('renders every block type in every arrangement, derived from the contract', function (): void {
     $types = schemaBlockTypes();
 
-    // Not vacuous: the contract names a real set, and more than one.
+    /*
+     * Not vacuous: the contract names a real set, and more than one.
+     *
+     * ⚠ FIVE, AND THE NUMBER IS DELIBERATELY EXACT RATHER THAN A FLOOR. `QRPAGER-46` added
+     * `rail`, `ember` and `tile` to `QRPAGER-33`'s two, and this line is the one place the
+     * suite states how many arrangements there are — so a case added without a thought about
+     * totality fails HERE, with this file's own header explaining why, rather than passing a
+     * `>= 2` and being swept silently. Updating it is the thought.
+     */
     expect($types)->toHaveCount(count(BlockType::cases()))
         ->and(count($types))->toBeGreaterThan(3)
-        ->and(LandingTemplate::cases())->toHaveCount(2);
+        ->and(LandingTemplate::cases())->toHaveCount(5);
 
     /*
      * ONE DOCUMENT CARRYING EVERY TYPE, so an arrangement cannot pass by placing the types it

@@ -25,6 +25,7 @@
     "audit": "pnpm audit --audit-level low",
     "gate": "node tools/gate/bin/gate.mjs",
     "gate:e2e": "tools/browsers/bin/e2e",
+    "gate:templates": "php tools/landing/render-arrangements.php && QRPAGER_TEMPLATE_GATE=1 tools/browsers/bin/browsers node_modules/.bin/playwright test --project=landing-templates",
     "gate:site-isolation": "tools/gate/bin/site-isolation-proof",
     "gate:domain-move": "tools/gate/bin/domain-move-proof",
     "gate:lighthouse": "QRPAGER_E2E_SUITE=0 QRPAGER_E2E_LIGHTHOUSE=1 tools/browsers/bin/e2e",

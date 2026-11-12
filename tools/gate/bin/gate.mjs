@@ -145,6 +145,23 @@ const steps = [
    */
   ['pnpm', ['run', 'test:browser']],
   /**
+   * ⚠ THE ONE CONTROL THAT CAUGHT `QRPAGER-46`'s TWO SHIPPED DEFECTS WAS A HUMAN LOOKING AT A
+   * RENDER, AND THIS IS THAT CONTROL MADE REPEATABLE. A section heading computing at the page
+   * title's size in all three new arrangements, and one of them rendering 6,618px tall — both
+   * COMPUTED values, with the structure correct in both cases, so the ticket's structural
+   * tests were right and blind at the same time (*"assert on structure … never on pixels"*).
+   * The `e2e` suite is no help: its fixture document names no template, so every preview it
+   * renders is `classic` (`R-303`).
+   *
+   * Two halves in one script because the first cannot run in the browsers container (PHP 8.4
+   * against its 8.2) and the second cannot run outside one on this host: `php artisan
+   * landing:render-arrangements` writes one document under every arrangement, and the
+   * `landing-templates` project measures the two properties and captures the twelve
+   * photographs. Muhammad's instruction of 2026-11-11: *"keep the capture step as a command,
+   * not a one-off."*
+   */
+  ['pnpm', ['run', 'gate:templates']],
+  /**
    * ⚠ THE REPOSITORY'S ACCOUNT OF ITSELF, CHECKED RATHER THAN TRUSTED. `§11` round one's
    * rulings (b) and (c), and both were real at `a6f9a47`: `§0` said `§5` held 171 rows while
    * the table held 205 and still said Task 9 must not start, and a committed `gate:e2e`

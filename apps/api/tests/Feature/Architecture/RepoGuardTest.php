@@ -773,6 +773,34 @@ it('names no test class that does not exist, outside two historical records', fu
      */
     $historical = ['MatrixCoverageTest', 'MembershipScopeTest'];
 
+    /*
+     * ⚠ THE CITATIONS `tests/` ALREADY CARRIED ON 2026-11-11, FROZEN RATHER THAN REWRITTEN.
+     *
+     * Extending the walk to `tests/` (see the note above) surfaced nine names in files
+     * delivered by earlier tickets, plus three that are ILLUSTRATIVE NAMES inside this very
+     * file's own prose. Rewriting other tickets' delivered work to land `QRPAGER-46` is `R-250`
+     * — Muhammad's instruction for the landing literals is the same instruction here — so they
+     * are enumerated by name, dated, and left to their owners, exactly as
+     * `tools/design-tokens/landing-baseline.json` freezes the fallbacks it found.
+     *
+     * The list is CLOSED and spelled out: a tenth cannot join by resembling one, and every
+     * citation added after 2026-11-11 is red. `§5` carries the row with the owner.
+     */
+    $frozen = [
+        // Cited by tests delivered before this walk could see them.
+        'AuthLoginTest',        // tests/Feature/Staff/StaffSurfaceIsolationTest.php
+        'PasskeyCeremonyTest',  // tests/Feature/Staff/StaffSurfaceIsolationTest.php
+        'ExampleTest',          // tests/Feature/Http/RouteSurfaceTest.php
+        'GuardBootTest',        // tests/Feature/Auth/FixtureScriptGuardTest.php
+        'PublishTest',          // tests/Feature/Gate/KnownFlakeListTest.php
+        'WorkQueueTest',        // tests/Feature/Gate/KnownFlakeListTest.php
+        // Illustrative names in THIS file's own prose: the two round-two records above, and
+        // the example a later note uses to describe the shape.
+        'UserColumnGrantTest',
+        'ProvisioningRoleTest',
+        'SomeOtherTest',
+    ];
+
     $referenced = [];
 
     $walk = function (string $dir) use (&$walk, &$referenced): void {
@@ -801,7 +829,20 @@ it('names no test class that does not exist, outside two historical records', fu
         }
     };
 
-    foreach ([app_path(), config_path(), resource_path()] as $root) {
+    /*
+     * ⚠ `tests/` JOINED THIS WALK AT `QRPAGER-46`, AND A CITATION INSIDE A TEST IS WHY. The
+     * `§11` QA round's M-6 found a test file citing a baseline test class that does not exist
+     * — the `R-136` shape this case is named for, in the one directory it could not see. The
+     * walk read `app/`, `config/` and `resources/`, so the same ticket tripped this case once
+     * (a docblock in `app/Features/Landing/ThemeDefaults.php`) and then shipped the identical
+     * defect one directory over, where nothing looked. The name is DESCRIBED and not spelled,
+     * because this detector matches any `…Test` token in a file's own text — quoting the wrong
+     * name to explain it is indistinguishable from citing it, which was measured twice.
+     *
+     * A test's docblock claims coverage exactly as loudly as a class's, and the citation M-6
+     * found claimed it for the property that round's H-1 showed was unchecked.
+     */
+    foreach ([app_path(), config_path(), resource_path(), base_path('tests')] as $root) {
         $walk($root);
     }
 
@@ -812,7 +853,7 @@ it('names no test class that does not exist, outside two historical records', fu
     $missing = [];
 
     foreach ($referenced as $name => $sites) {
-        if (in_array($name, $historical, true)) {
+        if (in_array($name, $historical, true) || in_array($name, $frozen, true)) {
             continue;
         }
 

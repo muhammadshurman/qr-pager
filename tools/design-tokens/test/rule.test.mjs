@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,17 @@ import {
   patternsFor,
   valueIsAcceptable,
 } from '../patterns.mjs'
-import { cssFiles, isExempt, main, scanSource } from '../bin/scan-css.mjs'
+import {
+  applyBaseline,
+  bladeFiles,
+  cssFiles,
+  isExempt,
+  main,
+  missingBaselineFiles,
+  readBaseline,
+  scanSource,
+} from '../bin/scan-css.mjs'
+import { hasStyleBlock, maskBladeCss, styleBodyCount } from '../blade-css.mjs'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const REPO = join(HERE, '..', '..', '..')
@@ -266,8 +276,24 @@ describe('the exit-code hazard checker', () => {
 })
 
 describe('the rule exists in one place and both readers see all of it', () => {
-  it('defines exactly the three rules the gate clause names', () => {
-    expect(RULE_IDS).toEqual(['no-raw-color', 'no-raw-spacing', 'no-raw-font-size'])
+  it('defines the three rules the gate clause names, plus the one QRPAGER-46 added', () => {
+    /*
+     * ⚠ FOUR RULE NAMES, THREE ESLINT RULES, AND THE DIFFERENCE IS THE POINT. The gate clause
+     * names three (`no-raw-color`, `no-raw-spacing`, `no-raw-font-size`) and the ESLint plugin
+     * still exposes exactly those: a `var()` fallback is a CSS form that TypeScript cannot
+     * carry, so `no-var-fallback` is `where: 'css'` and has no plugin rule.
+     *
+     * It exists because of the `§11` QA round's H-1 on `QRPAGER-46`: the three above judge the
+     * VALUE of a declaration whose PROPERTY they name, so a fallback on `border-radius`,
+     * `grid-template-columns` or `outline` was read by nothing, and a fallback is where one
+     * token comes to carry two values (`R-268`, live on every published page).
+     */
+    expect(RULE_IDS).toEqual([
+      'no-raw-color',
+      'no-raw-spacing',
+      'no-raw-font-size',
+      'no-var-fallback',
+    ])
     expect(Object.keys(plugin.rules).sort()).toEqual([
       'no-raw-color',
       'no-raw-font-size',
@@ -284,9 +310,11 @@ describe('the rule exists in one place and both readers see all of it', () => {
     // name. The union below GAINED the third reader rather than loosening: without it the
     // two panel patterns would be in the list and applied by nobody, which is exactly the
     // orphan this case exists to refuse.
-    expect(PATTERNS).toHaveLength(13)
+    expect(PATTERNS).toHaveLength(14)
     expect(patternsFor('js')).toHaveLength(8)
-    expect(patternsFor('css')).toHaveLength(8)
+    // ⚠ NINE FOR THE CSS READER AT `QRPAGER-46`: `no-var-fallback` is CSS-only, for the reason
+    // the rule-name case above gives.
+    expect(patternsFor('css')).toHaveLength(9)
     expect(patternsFor('panel')).toHaveLength(7)
 
     const applied = new Set([
@@ -473,6 +501,10 @@ describe('the CSS half', () => {
       mkdirSync(bin, { recursive: true })
       copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
       copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      // `QRPAGER-46`: the scanner now imports the Blade extractor, so the copy needs it too.
+      // Without it the child dies on module resolution and the floor message never prints —
+      // which failed this case with a stack trace rather than with its own assertion.
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
 
       const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
         encoding: 'utf8',
@@ -497,9 +529,15 @@ describe('the CSS half', () => {
       shell: false,
     })
     expect(result.status, result.stdout + result.stderr).toBe(0)
-    const scanned = /(\d+) CSS file\(s\) scanned/.exec(result.stdout)
+    const scanned = /(\d+) file\(s\) scanned/.exec(result.stdout)
     expect(scanned, result.stdout).not.toBeNull()
     expect(Number(scanned[1])).toBeGreaterThanOrEqual(4)
+
+    // `QRPAGER-46`: and the Blade half ran too. A total that grew while the Blade walk found
+    // nothing would satisfy the floor above and restore `R-267` in silence.
+    const blades = /\((\d+) Blade template\(s\)/.exec(result.stdout)
+    expect(blades, result.stdout).not.toBeNull()
+    expect(Number(blades[1])).toBeGreaterThanOrEqual(1)
   }, 30_000)
 })
 
@@ -691,7 +729,12 @@ describe('the scanner’s CLI', () => {
   it('returns 0 and reports the count on the real tree', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     expect(main([])).toBe(0)
-    expect(log.mock.calls.flat().join('\n')).toMatch(/\d+ CSS file\(s\) scanned/)
+    /*
+     * ⚠ `file(s)` AND NOT `CSS file(s)`: `QRPAGER-46` made this scanner read Blade templates
+     * too (`R-267`), so the count is no longer a count of stylesheets. The Blade half's own
+     * floor is asserted in the `R-267` block below.
+     */
+    expect(log.mock.calls.flat().join('\n')).toMatch(/\d+ file\(s\) scanned/)
     vi.restoreAllMocks()
   }, 30_000)
 
@@ -718,8 +761,645 @@ describe('the scanner’s CLI', () => {
     // The floor is about a WALK that found nothing. A caller naming one file means it.
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     expect(main([join(REPO, 'packages/ui/src/styles/kit.css')])).toBe(0)
-    expect(log.mock.calls.flat().join('\n')).toContain('1 CSS file(s) scanned')
+    expect(log.mock.calls.flat().join('\n')).toContain('1 file(s) scanned')
     vi.restoreAllMocks()
+  })
+})
+
+/**
+ * ================================================================================
+ * CSS OUT OF A BLADE TEMPLATE — `R-267`, CLOSED BY `QRPAGER-46`
+ * ================================================================================
+ *
+ * `R-267`: *"THE PUBLIC LANDING PAGE — THE ONLY SURFACE A CUSTOMER SEES — HAS NEVER BEEN
+ * SCANNED BY ANYTHING."* The row proved it by INJECTION: `.landing-gap-proof{color:#ff00ff;
+ * padding:13px;font-size:17px}` placed in that template's `<style>` block was reported clean
+ * by `scan-css` (10 files), `scan-panel` (28 files) and `composer guard` (463 files).
+ *
+ * The row also forbids the cheap reading of the fix — *"⚠⚠ THE FIX IS A PARSER, NOT A GLOB"*
+ * — so these cases are about a PARSER: what it reads, what it refuses to read, and that the
+ * same injection is now reported with the template's own line number.
+ */
+describe('CSS out of a Blade template — R-267', () => {
+  const landing = join(REPO, 'apps/api/resources/views/landing/page.blade.php')
+
+  it('reads every literal inside a <style> body and nothing outside one', () => {
+    /*
+     * ⚠ EXACT COUNTS, NEVER `> 0` — the bar `panel-theme-literals.css.fixture` set at
+     * `QRPAGER-42`: *"a `toBeGreaterThan(0)` here would pass while two of the three rules had
+     * silently stopped matching"*, and the hole this closes was itself three scanners each
+     * reporting clean.
+     */
+    const findings = scanSource(
+      maskBladeCss(fixture('landing-blade-literals.blade.php.fixture')),
+      'landing-blade-literals.blade.php',
+    )
+
+    expect(findings.length).toBe(9)
+
+    const perRule = {}
+    for (const f of findings) perRule[f.rule] = (perRule[f.rule] ?? 0) + 1
+
+    expect(perRule).toEqual({
+      // `#ff00ff`, `teal;`, `rgba(…)` — a hex, a named colour, a colour function — and the
+      // `#ff00ff` on the same line as a directive, which the §11 security round's M-2 showed
+      // the first blanker swallowing whole.
+      'no-raw-color': 4,
+      // `13px` in the plain block, `11px` inside an `@if` branch, `19px` inside `@media`.
+      'no-raw-spacing': 3,
+      'no-raw-font-size': 1,
+      // `border-radius:var(--radius-large,2px)` — the §11 QA round's H-1: a fallback on a
+      // property no value guard judges.
+      'no-var-fallback': 1,
+    })
+
+    expect([...new Set(findings.map((f) => f.id))].sort()).toEqual([
+      'color-function',
+      'css-font-size-declaration',
+      'css-spacing-declaration',
+      'hex',
+      'named-color',
+      'var-fallback',
+    ])
+
+    /*
+     * ⚠ AND THE SHAPES THAT MUST NOT FIRE, EACH NAMED. The fixture carries the same `#ff00ff`
+     * four more times — in a Blade comment, in an echo, in a `@php` block and in an inline
+     * `style` attribute — and `3` above is the proof that none of them was counted. These
+     * assertions say WHICH, so a future change that starts reporting one of them fails with a
+     * message rather than with an arithmetic difference.
+     */
+    const lines = findings.map((f) => f.line)
+    const source = fixture('landing-blade-literals.blade.php.fixture').split('\n')
+    const lineOf = (needle) => source.findIndex((line) => line.includes(needle)) + 1
+
+    expect(lines).not.toContain(lineOf("color:{{ '#ff00ff' }}"))
+    expect(lines).not.toContain(lineOf("$colour = '#ff00ff';"))
+    expect(lines).not.toContain(lineOf('<p style="color:#ff00ff'))
+    expect(lines).not.toContain(lineOf('And one in prose'))
+
+    // The `@media` rule's own padding IS reported, which is the half a blanket `@word`
+    // blanker would have lost.
+    expect(lines).toContain(lineOf('.in-media{padding:19px}'))
+
+    /*
+     * ⚠ AND THE TWO SHAPES THE `§11` ROUND FOUND INVISIBLE, EACH BY LINE. H-1: a `var()`
+     * fallback on `border-radius`, which no value guard judges, because those guards read the
+     * VALUE of a spacing, colour or font-size declaration. M-2: a real rule sharing its line
+     * with `@if (…)`, which the first blanker masked away entirely because its argument group
+     * was greedy to the last `)` on the line.
+     */
+    expect(lines).toContain(lineOf('.bad-fallback{border-radius:var(--radius-large,2px)}'))
+    expect(lines).toContain(lineOf('.same-line{color:#ff00ff}'))
+
+    const sameLine = findings.find((f) => f.line === lineOf('.same-line{color:#ff00ff}'))
+
+    expect(sameLine?.match).toBe('#ff00ff')
+  })
+
+  it('blanks a directive’s argument to the MATCHING paren, not to the line’s last one', () => {
+    /*
+     * The `§11` security round's M-2, as a property rather than as one fixture line: whether
+     * CSS is read must not depend on whether a `)` appears later on the same line. The three
+     * inputs below are the reviewer's own, measured against the first blanker.
+     */
+    const read = (css) => scanSource(maskBladeCss(`<style>\n${css}\n</style>`), 'x.blade.php')
+
+    expect(
+      read('@if ($t) .x{color:#ff00ff;background:var(--color-text)}').map((f) => f.id),
+    ).toEqual(['hex'])
+    expect(read('@if ($t) .x{color:#ff00ff}').map((f) => f.id)).toEqual(['hex'])
+    expect(read('@elseif ($t) .y{padding:13px;gap:var(--a)}').map((f) => f.id)).toEqual([
+      'css-spacing-declaration',
+    ])
+
+    // And the ordinary multi-line form still blanks the directive itself: the condition's own
+    // text is PHP and must not be read as CSS.
+    expect(read('@if ($t === 13) .z{padding:var(--space-section)}')).toEqual([])
+  })
+
+  it('reports the stale baseline entry through the CLI, and names what to do', () => {
+    /*
+     * The report a reader actually sees, driven through `main()` rather than through
+     * `applyBaseline()` — `§6` asks for coverage on the code a task adds, and the branch that
+     * PRINTS a stale entry is the half of it a unit call on the splitter never reaches. A
+     * literal that has been fixed must leave the list, or the baseline becomes a record of
+     * debt that no longer exists.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-stale-'))
+
+    try {
+      const bin = join(tree, 'tools', 'design-tokens', 'bin')
+      mkdirSync(bin, { recursive: true })
+      copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
+      copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
+
+      // A clean stylesheet, and a baseline claiming a literal in it that is not there.
+      const styles = join(tree, 'app.css')
+      writeFileSync(styles, '.a{color:var(--color-text)}\n', 'utf8')
+      writeFileSync(
+        join(bin, '..', 'landing-baseline.json'),
+        JSON.stringify({
+          generated: '2026-11-11',
+          entries: [
+            {
+              file: 'app.css',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#c0ffee',
+              count: 1,
+              lines: [1],
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      // The floor fires first in a tree with one CSS file, which is itself the point: the
+      // report below is what a REAL tree gets, so it is driven with an explicit target.
+      const explicit = spawnSync('node', [join(bin, 'scan-css.mjs'), styles], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      expect(result.status).toBe(1)
+      expect(explicit.status).toBe(1)
+      expect(explicit.stderr).toContain('BASELINE')
+      expect(explicit.stderr).toContain('#c0ffee')
+      expect(explicit.stderr).toContain('remove the entry')
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a walk that misses a baselined file, through the CLI', () => {
+    /*
+     * `missingBaselineFiles()` is asserted as a function above; this drives the branch that
+     * REPORTS it, which is the one a developer sees when a directory is renamed. An empty tree
+     * with a baseline naming a file is the same condition as a walk that lost one.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-missing-'))
+
+    try {
+      const bin = join(tree, 'tools', 'design-tokens', 'bin')
+      mkdirSync(bin, { recursive: true })
+      copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
+      copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
+
+      // Four CSS files clear the FLOOR, and a Blade template with a <style> clears the Blade
+      // floor — so the only thing left to fail on is the baselined file nobody scanned.
+      for (const name of ['a.css', 'b.css', 'c.css', 'd.css']) {
+        writeFileSync(join(tree, name), '.x{color:var(--color-text)}\n', 'utf8')
+      }
+
+      writeFileSync(
+        join(tree, 'page.blade.php'),
+        '<style>\n.y{padding:var(--space-section)}\n</style>\n',
+        'utf8',
+      )
+
+      writeFileSync(
+        join(bin, '..', 'landing-baseline.json'),
+        JSON.stringify({
+          generated: '2026-11-11',
+          entries: [
+            {
+              file: 'apps/api/resources/views/landing/page.blade.php',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#f5f5f5',
+              count: 1,
+              lines: [196],
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('the walk did not reach')
+      expect(result.stderr).toContain('landing/page.blade.php')
+      expect(result.stderr).toContain('R-267')
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  it('treats an absent baseline as no debt, which is what every other repository state is', () => {
+    /*
+     * `readBaseline()` is the one part of this scanner that has to work in a tree that has
+     * never had frozen debt — which is every repository but this one, and this one before
+     * `QRPAGER-46`. An absent file is not an error: it means nothing is excused.
+     */
+    const empty = readBaseline(join(tmpdir(), 'no-such-baseline-file.json'))
+
+    expect(empty.entries).toEqual([])
+    expect(empty.budget.size).toBe(0)
+
+    // And a malformed-but-parseable document — a baseline with no `entries` key — is the same
+    // thing rather than a crash: `?? []` is the branch, and a scanner that threw here would
+    // fail a run over a file it only reads for leniency.
+    const bare = mkdtempSync(join(tmpdir(), 'scan-css-bare-'))
+
+    try {
+      const path = join(bare, 'baseline.json')
+      writeFileSync(path, JSON.stringify({ generated: '2026-11-11' }), 'utf8')
+
+      const loaded = readBaseline(path)
+
+      expect(loaded.entries).toEqual([])
+      expect(missingBaselineFiles(new Set(), loaded)).toEqual([])
+
+      // With nothing excused, every finding is reported — the inverse of the freeze.
+      const findings = scanSource('.a{color:#ff00ff}', 'a.css')
+      const { reported, stale, excused } = applyBaseline(findings, loaded)
+
+      expect(reported).toEqual(findings)
+      expect(stale).toEqual([])
+      expect(excused).toBe(0)
+    } finally {
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses, IN PROCESS, a walk with no Blade template carrying a style element', () => {
+    /*
+     * `R-267`'s own condition, driven in-process for the same coverage reason as the case
+     * below: the Blade half of this scanner exists because the customer-facing page was read
+     * by nothing, and a walk that silently stopped finding it would restore exactly that while
+     * the CSS count kept the other floor green. The CLI case proves the exit code; this proves
+     * the branch and its message.
+     *
+     * ⚠ THE WALK IS PASSED AS AN EXPLICIT LIST OF CSS FILES ONLY, which is the shape of the
+     * failure — four stylesheets clear the CSS floor and no template clears the Blade one — and
+     * `main()` skips both floors for an explicit list by design (a caller naming one file means
+     * it), so the branch is reached through a baseline-less run of a tree with no templates.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-noblade-'))
+
+    try {
+      const bin = join(tree, 'tools', 'design-tokens', 'bin')
+      mkdirSync(bin, { recursive: true })
+
+      for (const name of ['a.css', 'b.css', 'c.css', 'd.css', 'e.css']) {
+        writeFileSync(join(tree, name), '.x{color:var(--color-text)}\n', 'utf8')
+      }
+
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+      // A scanner rooted in that tree: the module computes ROOT from its own location, so a
+      // copy three directories deep walks the temporary tree exactly as the empty-tree proof
+      // does — and this one finds five stylesheets and no Blade template.
+      copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
+      copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
+
+      const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
+        encoding: 'utf8',
+        shell: false,
+      })
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('NO Blade template carrying a <style> element')
+
+      /*
+       * And the same two floors IN PROCESS, over the same tree: five stylesheets clear the CSS
+       * floor of four, and no template clears the Blade floor of one — which is the condition
+       * `R-267` describes, with the gate otherwise looking healthy.
+       */
+      expect(main([], join(bin, '..', 'absent-baseline.json'), tree)).toBe(1)
+      expect(error.mock.calls.flat().join('\n')).toContain(
+        'NO Blade template carrying a <style> element',
+      )
+
+      error.mockClear()
+
+      // And the CSS floor below it, on a tree with too few stylesheets to be this workspace.
+      const thin = mkdtempSync(join(tmpdir(), 'scan-css-thin-'))
+
+      try {
+        writeFileSync(join(thin, 'only.css'), '.x{color:var(--color-text)}\n', 'utf8')
+
+        expect(main([], join(bin, '..', 'absent-baseline.json'), thin)).toBe(1)
+        expect(error.mock.calls.flat().join('\n')).toContain('fewer than the 4')
+      } finally {
+        rmSync(thin, { recursive: true, force: true })
+      }
+
+      vi.restoreAllMocks()
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('refuses, IN PROCESS, a walk that misses a baselined file and a frozen literal that is gone', () => {
+    /*
+     * The same two refusals as the CLI cases above, called directly — because a child process
+     * is instrumented by nothing and `§6` asks for coverage on the code this task adds. CI
+     * measured these exact lines as the ones holding the branch total under its threshold.
+     */
+    const tree = mkdtempSync(join(tmpdir(), 'scan-css-inproc-'))
+
+    try {
+      // 1. a baseline naming a file this run cannot have scanned.
+      const missingPath = join(tree, 'missing.json')
+      writeFileSync(
+        missingPath,
+        JSON.stringify({
+          entries: [
+            {
+              file: 'no/such/file.css',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#c0ffee',
+              count: 1,
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+      expect(main([], missingPath)).toBe(1)
+      expect(error.mock.calls.flat().join('\n')).toContain('the walk did not reach')
+
+      error.mockClear()
+
+      // 2. a baseline whose frozen literal is not in the file it names.
+      const stalePath = join(tree, 'stale.json')
+      writeFileSync(
+        stalePath,
+        JSON.stringify({
+          entries: [
+            {
+              file: 'apps/api/resources/views/landing/page.blade.php',
+              rule: 'no-raw-color',
+              id: 'hex',
+              match: '#c0ffee',
+              count: 1,
+              lines: [1],
+            },
+          ],
+        }),
+        'utf8',
+      )
+
+      expect(main([], stalePath)).toBe(1)
+
+      const said = error.mock.calls.flat().join('\n')
+
+      expect(said).toContain('BASELINE')
+      expect(said).toContain('#c0ffee')
+      expect(said).toContain('remove the entry')
+
+      // 3. and the ordinary green path still returns 0 with the real baseline, so the two
+      //    refusals above are not the only thing this function can do.
+      error.mockClear()
+      expect(main([])).toBe(0)
+      expect(log.mock.calls.flat().join('\n')).toContain('frozen by the dated baseline')
+
+      vi.restoreAllMocks()
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('stops a directive’s argument at a newline rather than running into the stylesheet', () => {
+    /*
+     * The two branches of the balanced scan a well-formed template never reaches: an
+     * unterminated `(` and a `)` that closes a nested pair rather than the directive's own.
+     * Both are one malformed line away, and the consequence of getting them wrong is a
+     * SILENTLY unscanned stylesheet — which is `R-267`'s whole shape.
+     */
+    const read = (css) => scanSource(maskBladeCss(`<style>\n${css}\n</style>`), 'x.blade.php')
+
+    // Unterminated: the blanker must stop at the line break, so the rule BELOW is still read.
+    expect(read('@if ($t\n.after{padding:13px}').map((f) => f.id)).toEqual([
+      'css-spacing-declaration',
+    ])
+
+    // Nested parens in the condition: the inner `)` must not end the argument early.
+    expect(read('@if (str_contains($t, (string) 1)) .z{color:#ff00ff}').map((f) => f.id)).toEqual([
+      'hex',
+    ])
+  })
+
+  it('refuses a run that never reached a file the baseline has debt for', () => {
+    /*
+     * The `§11` security round's M-4. The Blade floor counts to ONE and two templates qualify,
+     * so a scanned set that kept `errors/panel-problem.blade.php` and lost the landing page
+     * reported `0 findings, 0 stale, 0 excused` with no message — `R-267`'s own condition, with
+     * the gate printing a reassuring count. The floor is derived from the record now.
+     */
+    const baseline = readBaseline()
+    const landing = 'apps/api/resources/views/landing/page.blade.php'
+
+    expect(missingBaselineFiles(new Set(baseline.entries.map((e) => e.file)), baseline)).toEqual([])
+    expect(
+      missingBaselineFiles(
+        new Set(['apps/api/resources/views/errors/panel-problem.blade.php']),
+        baseline,
+      ),
+    ).toEqual([landing])
+
+    // And the silence it used to produce, named: with that file unscanned, every frozen
+    // finding and every entry evaporates — which is why a count cannot be the floor.
+    const { reported, stale, excused } = applyBaseline([], baseline, new Set())
+
+    expect({ reported, stale, excused }).toEqual({ reported: [], stale: [], excused: 0 })
+  })
+
+  it('is not fooled by a style tag quoted inside a Blade comment', () => {
+    /*
+     * ⚠ THE MEASURED DEFECT, AND IT WAS RIGHT BY ACCIDENT. `page.blade.php`'s own comment
+     * quotes `</style>` and `<style`, and with comments left in place the masker found TWO
+     * style elements in that one file: the first ended at the quoted closing tag, the second
+     * opened at the quoted opening tag with `[^>]*>` running to the next `>` in the CSS
+     * (`.rail>section`). The union covered almost all the real rules, so the finding list
+     * looked correct while the parse was nonsense — and five findings inside the `editorial`
+     * branch fell in the gap between the two.
+     */
+    expect(styleBodyCount(fixture('landing-blade-literals.blade.php.fixture'))).toBe(1)
+    expect(styleBodyCount(readFileSync(landing, 'utf8'))).toBe(1)
+
+    // And a hex in that comment is not a finding, which the count above cannot show.
+    const masked = maskBladeCss(fixture('landing-blade-literals.blade.php.fixture'))
+    expect(masked).not.toContain('#f5f5f5')
+  })
+
+  it('keeps the template’s geometry, so a finding names a line that exists', () => {
+    const source = readFileSync(landing, 'utf8')
+    const masked = maskBladeCss(source)
+
+    // Same length and the same newline positions: the line and column `scanSource` computes
+    // are the template's own, which is `R-267`'s prescription for the fix.
+    expect(masked.length).toBe(source.length)
+    expect([...masked].filter((c) => c === '\n').length).toBe(
+      [...source].filter((c) => c === '\n').length,
+    )
+
+    const findings = scanSource(masked, 'page.blade.php')
+    const lines = source.split('\n')
+
+    expect(findings.length).toBeGreaterThan(0)
+
+    for (const finding of findings) {
+      const line = lines[finding.line - 1] ?? ''
+
+      // The matched text is ON the line the finding names. A masker that moved a byte would
+      // pass every other assertion in this file and fail this one.
+      expect(
+        line.includes(finding.match) || line.includes(finding.match.replace(/\s+/g, ' ')),
+      ).toBe(true)
+    }
+  })
+
+  it('reports R-267’s own injection, which three scanners once called clean', () => {
+    /*
+     * The row's proof string, run against the row's own file. Injected in memory rather than
+     * on disk — the row says it was *"Reverted"*, and a test that writes to a served template
+     * is a test that can leave one behind.
+     */
+    const source = readFileSync(landing, 'utf8')
+    const injected = source.replace(
+      ':root{color-scheme:light dark}',
+      ':root{color-scheme:light dark}\n.landing-gap-proof{color:#ff00ff;padding:13px;font-size:17px}',
+    )
+
+    expect(injected).not.toBe(source)
+
+    const before = scanSource(maskBladeCss(source), 'page.blade.php')
+    const after = scanSource(maskBladeCss(injected), 'page.blade.php')
+
+    expect(after.length - before.length).toBe(3)
+
+    /*
+     * ⚠ THE DIFF IS BY (id, match) AND NOT BY LINE, because the injected line SHIFTS every
+     * finding below it by one — so a line-keyed diff reported all 23 pre-existing literals as
+     * new and this case failed with a 23-element array. The shift is the whole reason the
+     * masker keeps the template's geometry, and it is also why the baseline is not keyed on
+     * line numbers.
+     */
+    const signature = (f) => `${f.id}\u0000${f.match}`
+    const remaining = before.map(signature)
+    const added = after.filter((f) => {
+      const at = remaining.indexOf(signature(f))
+
+      if (at === -1) return true
+
+      remaining.splice(at, 1)
+
+      return false
+    })
+
+    expect(added.map((f) => f.id).sort()).toEqual([
+      'css-font-size-declaration',
+      'css-spacing-declaration',
+      'hex',
+    ])
+  })
+
+  it('walks the templates that carry CSS, and not the hundreds that do not', () => {
+    const found = bladeFiles(REPO).map((path) => path.replace(`${REPO}/`, ''))
+
+    // The landing page is the file `R-267` is about, and it is in the walk.
+    expect(found).toContain('apps/api/resources/views/landing/page.blade.php')
+
+    /*
+     * ⚠ AND A SECOND FILE NOBODY HAD NAMED: `errors/panel-problem.blade.php` inlines its own
+     * stylesheet *"because a stylesheet is one more thing that can be unavailable on the page
+     * that exists for things being unavailable"*. It was in the same blind spot and is clean —
+     * its token values arrive through `{{ }}` from `config('design-tokens')`.
+     */
+    expect(found).toContain('apps/api/resources/views/errors/panel-problem.blade.php')
+
+    // Not a glob over `resources/views`: a template with no `<style>` is not a subject.
+    expect(found).not.toContain('apps/api/resources/views/landing/block.blade.php')
+    expect(
+      hasStyleBlock(
+        readFileSync(join(REPO, 'apps/api/resources/views/landing/block.blade.php'), 'utf8'),
+      ),
+    ).toBe(false)
+
+    // And the deliberately-wrong fixture is unreachable by the walk, twice over: the
+    // exemption covers the directory, and its name is not a `.blade.php`.
+    expect(found.some((path) => path.includes('landing-blade-literals'))).toBe(false)
+    expect(
+      isExempt(join(REPO, 'tools/design-tokens/fixtures/landing-blade-literals.blade.php.fixture')),
+    ).toBe(true)
+  })
+
+  it('freezes the dated baseline’s literals and refuses one more of the same', () => {
+    const baseline = readBaseline()
+
+    expect(baseline.entries.length).toBeGreaterThan(0)
+
+    const findings = scanSource(
+      maskBladeCss(readFileSync(landing, 'utf8')),
+      'apps/api/resources/views/landing/page.blade.php',
+    )
+    const { reported, stale, excused } = applyBaseline(findings, baseline)
+
+    // Every pre-existing literal is excused, none is reported, and the baseline is current.
+    expect(reported).toEqual([])
+    expect(stale).toEqual([])
+    expect(excused).toBe(findings.length)
+
+    /*
+     * ⚠ AND ONE MORE OF AN ALREADY-FROZEN LITERAL IS A FINDING, which is the difference
+     * between a freeze and an exemption. The baseline records a COUNT per `(file, id, match)`,
+     * so a seventeenth `#0b5fff` in that file is reported while the three that were there on
+     * 2026-11-11 are not. Matching on the text alone — the obvious shape — would have let it
+     * through, and matching on the line number would redden on every edit above it.
+     */
+    const seventeenth = { ...findings[0] }
+    const { reported: afterOneMore } = applyBaseline([...findings, seventeenth], baseline)
+
+    expect(afterOneMore).toEqual([seventeenth])
+  })
+
+  it('reports a baseline entry that no longer matches anything, rather than keeping it', () => {
+    /*
+     * A literal that has been FIXED must leave the list. Left in, the baseline becomes a
+     * record of debt that no longer exists — and the next reader cannot tell which entries
+     * are real. `R-268` is the live one; a stale entry would make it look like two.
+     */
+    const baseline = readBaseline()
+    const invented = {
+      file: 'apps/api/resources/views/landing/page.blade.php',
+      rule: 'no-raw-color',
+      id: 'hex',
+      match: '#c0ffee',
+      count: 1,
+      lines: [1],
+    }
+
+    const withInvented = {
+      entries: [...baseline.entries, invented],
+      budget: new Map([
+        ...baseline.budget,
+        [[invented.file, invented.id, invented.match].join('\u0000'), 1],
+      ]),
+    }
+
+    const findings = scanSource(maskBladeCss(readFileSync(landing, 'utf8')), invented.file)
+    const { stale } = applyBaseline(findings, withInvented)
+
+    expect(stale).toEqual([invented])
   })
 })
 

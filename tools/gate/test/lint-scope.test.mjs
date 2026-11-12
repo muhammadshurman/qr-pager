@@ -165,8 +165,42 @@ describe('Playwright collects the browser specs and nothing else', () => {
      * look at it anyway. The project exists because three of part B's items -- an upload that
      * happens because a file was chosen, a pane that stays in view, and a resolved colour --
      * cannot be settled without the stack.
+     *
+     * ⚠⚠ 23 AGAIN, AND THAT IS THE POINT RATHER THAN A REVERSION. `QRPAGER-46` added
+     * `landing-templates` and CI refused it: `tools/browsers/bin/e2e` runs `playwright test`
+     * with NO project filter — the journey suite is *everything that is not the kit* — so the
+     * e2e step collected thirteen cases whose pages only `pnpm run gate:templates` renders and
+     * the `Pint, PHPStan, Pest` job went red on a suite that had nothing to do with it. The
+     * project is declared only when `QRPAGER_TEMPLATE_GATE=1`, so the default list is 23 and
+     * the case below asserts the other state explicitly.
+     *
+     * ⚠ THE OLD NOTE, KEPT because it is the argument for the exact count: That project measures two COMPUTED values -- a heading's font size and a
+     * document's height -- which the ticket's own invariant puts out of reach of its
+     * structural tests ("assert on structure … never on pixels") and which its two shipped
+     * defects both were. It is deliberately OUTSIDE the kit: the kit must run from a fresh
+     * clone with nothing built, and these cases read pages that
+     * `tools/landing/render-arrangements.php` writes. `pnpm run gate:templates` runs both
+     * halves, `bin/gate` and CI both carry it, and every kit project now ignores the spec by
+     * name.
      */
     expect(resolved.projects).toHaveLength(23)
+
+    /*
+     * ⚠ AND THE GATED PROJECT EXISTS WHEN ITS OWN RUNNER ASKS, which is the half CI had to
+     * teach this file. A re-import under the flag is the only way to observe it: the config is
+     * a module, and its project list is decided at import time.
+     */
+    process.env.QRPAGER_TEMPLATE_GATE = '1'
+
+    try {
+      const gated = (await import(`${join(REPO, 'playwright.config.ts')}?templateGate`)).default
+
+      expect(gated.projects).toHaveLength(24)
+      expect(gated.projects.map((p) => p.name)).toContain('landing-templates')
+      expect(resolved.projects.map((p) => p.name)).not.toContain('landing-templates')
+    } finally {
+      delete process.env.QRPAGER_TEMPLATE_GATE
+    }
 
     for (const project of resolved.projects) {
       const selects = project.testMatch !== undefined

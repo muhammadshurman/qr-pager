@@ -39,8 +39,17 @@ namespace App\Domain\Landing;
  * There is no second list to keep in step.
  *
  * ================================================================================
- * TWO CASES, DELIBERATELY, AND THE THIRD IS A FILE AND A LINE
+ * FIVE CASES: TWO FROM `QRPAGER-33`, AND THREE THAT COST WHAT IT SAID THEY WOULD
  * ================================================================================
+ *
+ * ⚠ THE SCOPE CUT'S PRICE, MEASURED RATHER THAN RE-ARGUED. `QRPAGER-33` left two cases and
+ * predicted a third as *"a template file and an enum value"*, with this file's own note
+ * adding *"AND one `@if` in `page.blade.php` if it needs rules of its own"*. `QRPAGER-46`
+ * added three and that prediction held for the ARRANGEMENT half: three cases here, three
+ * Blade files, three `@if` blocks. What it did not cover is the half `§4b` B1 found later —
+ * a preset with no fallback literal needs a DEFAULT for every token it references, which no
+ * part of the contract carried — so the third arrangement also cost `ThemeDefaults` and the
+ * scanner that keeps the count of nought true (`R-267`).
  *
  * Muhammad's scope cut of 2026-11-03, rank 1, in his words: *"the mechanism is the value, the
  * arrangements are content ... A third is then a template file and an enum value, not a run."*
@@ -85,6 +94,47 @@ enum LandingTemplate: string
     case Editorial = 'editorial';
 
     /**
+     * RAIL — one ruled column, and the first of `QRPAGER-46`'s three.
+     *
+     * The approved visual direction (`§1`, 2026-11-08: *"the approved visual direction is
+     * RAIL (السِجِل)"*) read as an ARRANGEMENT rather than as a palette: a single column
+     * whose every region is separated from the next by one hairline rule, the steps of
+     * `how_it_works` numbered down the side, and the menu's prices carried to the end of
+     * each row by a leader rule. `docs/design/public/rail.html` is the reference.
+     *
+     * ⚠ WHAT MAKES IT DIFFERENT IS STRUCTURE, NOT COLOUR — the ticket's own words. The
+     * three new arrangements share one palette (the defaults `ThemeDefaults` resolves) and
+     * differ in regions, grouping and order, which is what `TemplateStructureTest` asserts
+     * and why it asserts element counts rather than pixels.
+     */
+    case Rail = 'rail';
+
+    /**
+     * EMBER — a dark centred hero, then everything narrow and centred.
+     *
+     * The hero is lifted out of the column into a full-measure band that inverts the
+     * palette, which is the one arrangement where `color.text` and `color.background`
+     * change places. Everything after it sits in a narrower measure than any other
+     * arrangement uses, so a page with few blocks still reads as designed.
+     * `docs/design/public/ember.html` is the reference.
+     */
+    case Ember = 'ember';
+
+    /**
+     * TILE — a photo grid, with the gallery and the menu as equal tiles.
+     *
+     * `gallery` and `menu_highlights` are promoted into one grid region of equal cells, so
+     * a restaurant whose page is mostly photographs gets a page that is mostly
+     * photographs. `docs/design/public/tile.html` is the reference.
+     *
+     * ⚠ IT RENDERS NO BLOCK OF ITS OWN, like every arrangement: the cells are
+     * `landing.block`'s own `<article class="card">` and `<figure>`, re-laid out by rules
+     * scoped under this arrangement's root. An arrangement that re-rendered a block would
+     * be the twenty-one-places defect `block.blade.php`'s docblock describes.
+     */
+    case Tile = 'tile';
+
+    /**
      * The arrangement a document gets when it names none.
      *
      * ⚠ EVERY DOCUMENT STORED BEFORE THIS FEATURE CARRIES NO `template` MEMBER, and there are
@@ -117,6 +167,30 @@ enum LandingTemplate: string
      * stronger subject anyway: it reads what a visitor receives.
      */
 
+    /**
+     * Does this arrangement expect a value for EVERY token, or only the tenant's overrides?
+     *
+     * ⚠ THIS IS THE HALF `QRPAGER-33`'s SCOPE CUT DID NOT FORESEE, and it is a property of
+     * the arrangement rather than of the theme. `QRPAGER-46`'s three carry **no `var()`
+     * fallback literal** — the stated invariant is a set EQUALITY between the tokens a
+     * template references and the tokens the resolver emits — so a token the tenant has not
+     * set must still arrive with a value or the rule reading it paints nothing.
+     *
+     * `classic` and `editorial` answer false, and that is measured rather than chosen:
+     * `classic` reproduces `pre-template-page.html` byte for byte, and twelve properties
+     * where that capture carries two would change every page published before this feature
+     * existed. Their fallback literals stay, frozen by a dated baseline (`R-250`, `R-268`).
+     *
+     * `match` with no `default`, so a sixth arrangement does not compile until it answers.
+     */
+    public function resolvesEveryToken(): bool
+    {
+        return match ($this) {
+            self::Classic, self::Editorial => false,
+            self::Rail, self::Ember, self::Tile => true,
+        };
+    }
+
     /** @return list<string> */
     public static function values(): array
     {
@@ -142,10 +216,16 @@ enum LandingTemplate: string
             ? match ($this) {
                 self::Classic => 'بسيط — أقسامك بالترتيب الذي رتّبته',
                 self::Editorial => 'مميّز — صورة افتتاحية كبيرة، ثم كيف يعمل',
+                self::Rail => 'السِجِل — عمود واحد، وخط رقيق يفصل كل قسم',
+                self::Ember => 'الجَمْر — صدر الصفحة داكن ومتوسّط، ثم نص مُركّز',
+                self::Tile => 'البلاط — شبكة صور متساوية للمعرض والأطباق',
             }
         : match ($this) {
             self::Classic => 'Simple — your blocks in the order you arranged them',
             self::Editorial => 'Feature — a large opening image, then how it works',
+            self::Rail => 'Ledger — one column, a thin rule between every section',
+            self::Ember => 'Ember — a dark, centred opening, then a narrow column',
+            self::Tile => 'Tile — an even photo grid for the gallery and the dishes',
         };
     }
 }

@@ -54,6 +54,7 @@ clone="$work/clone"
 cleanup() {
     if [ "$keep" = "1" ]; then
         echo "fresh-clone-proof: clone left at $clone"
+        echo "fresh-clone-proof: its gate log is at $work/gate.log and the suite's own at $clone/apps/api/storage/logs/"
         return
     fi
     rm -rf "$work"
@@ -64,6 +65,18 @@ step() { printf '\n=== %s\n' "$1"; }
 
 fail() {
     printf '\nfresh-clone-proof: FAILED — %s\n' "$1" >&2
+
+    # ⚠ A FAILED RUN KEEPS ITS CLONE, AND `R-302` IS WHY. Three different reds came out of this
+    # proof on 2026-11-11 and each one's evidence was deleted by the trap below a second later:
+    # the gate log named a file and a line, and the state that produced it — the clone's
+    # database, its Redis keys, its `storage/logs` — was gone before anyone could look. `R-302`
+    # had to be filed as a HYPOTHESIS for exactly that reason, and a row that cannot be measured
+    # next time is a row that gets re-filed as a hypothesis a second time.
+    #
+    # Keeping only on FAILURE costs nothing on a green run and leaves the one artefact a
+    # diagnosis needs. The path is printed, and `cleanup` says so rather than removing it.
+    keep=1
+
     exit 1
 }
 

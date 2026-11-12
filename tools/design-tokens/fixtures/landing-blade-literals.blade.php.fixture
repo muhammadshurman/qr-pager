@@ -1,0 +1,86 @@
+{{--
+    A DELIBERATELY WRONG BLADE TEMPLATE. `QRPAGER-46`, for `R-267`.
+
+    This file is the negative proof that `maskBladeCss()` + `scanSource()` actually read CSS
+    out of a Blade template. `R-267` was open for a day with THREE scanners reporting clean on
+    the real file, and the row's own instruction is that the fix is *"a reader, with its own
+    tests and its own negative fixture"* — so every shape below is here on purpose, and
+    `rule.test.mjs` asserts the EXACT count and the EXACT rule names rather than `> 0`.
+
+    It is never rendered and never served. `isExempt()` covers
+    `tools/design-tokens/fixtures`, and the name ends in `.fixture` so the Blade walk cannot
+    reach it either — both halves are asserted, because an exemption is also how a fixture
+    stops being proof of anything.
+
+    ⚠ A HEX IN THIS COMMENT IS NOT A FINDING: #f5f5f5, and that is itself under test.
+--}}
+<!doctype html>
+<html lang="en">
+<head>
+<style>
+/* ---- what MUST be reported: every shape, inside the style element ---- */
+.bad-colour{color:#ff00ff}
+/* ⚠ `teal;` AND NOT `rebeccapurple}`. The first version of this line wrote the latter and
+   fired NOTHING: the named-colour pattern carries a closed list of the colours that actually
+   get typed by hand, and it requires the value to END the declaration (`;`, `!`, `)` or a
+   line break) so that prose and identifiers are untouched. A fixture that exercises a pattern
+   has to be written to the pattern's own shape, or it proves the pattern is absent. */
+.bad-named{background:teal;}
+.bad-function{border-color:rgba(16,35,27,0.06)}
+.bad-spacing{padding:13px}
+.bad-size{font-size:17px}
+/* ⚠ A `var()` FALLBACK ON A PROPERTY NO OTHER RULE JUDGES — the §11 QA round's H-1. The
+   value guard reads the VALUE of a spacing, colour or font-size declaration, so it never
+   saw this one: `border-radius` is none of the three. The fallback form is the finding. */
+.bad-fallback{border-radius:var(--radius-large,2px)}
+/* ⚠ A REAL RULE ON THE SAME LINE AS A DIRECTIVE — the §11 security round's M-2. The first
+   blanker's argument group was greedy to the last `)` on the line, so this whole rule was
+   masked away and its literal reported by nothing. */
+@if ($template === 'rail') .same-line{color:#ff00ff}
+
+/* ---- what MUST NOT be reported, each for its own reason ---- */
+
+{{--
+    ⚠ A BLADE COMMENT INSIDE THE STYLE ELEMENT, QUOTING BOTH TAGS — which is the measured
+    defect this fixture exists to keep closed. `page.blade.php`'s own comment says
+    *"NO NEWLINE BEFORE `</style>`"* and *"no `<style`, no CSS rule"*, and with comments left
+    in place the first version of the masker found TWO style elements in that one file: one
+    ending at the `</style>` above, one opening at the `<style` above, with `[^>]*>` running
+    to the next `>` in the CSS. Its finding list looked right by accident.
+
+    The prose here also names literals — #f5f5f5, padding:13px, font-size:17px — and none of
+    them is a finding, because an explanation of a literal is not a literal.
+--}}
+
+/* An echoed value is PHP, not CSS: the hex inside the braces never reaches the page as
+   typed, and reporting it would be reporting the template's source. */
+.echoed{color:{{ '#ff00ff' }}}
+
+@php
+    // A PHP block inside a style element. Wrong, but if it ever happens its contents are
+    // PHP and the hex below is a PHP string rather than a declaration.
+    $colour = '#ff00ff';
+@endphp
+
+/* Blade control flow around real rules. The DIRECTIVES are blanked and the rules between
+   them are still read -- `.in-branch` below is a finding and is counted. */
+@if ($template === 'rail')
+.in-branch{padding:11px}
+@elseif ($template === 'ember')
+.in-other-branch{color:var(--color-text)}
+@endif
+
+/* ⚠ `@media` IS CSS AND MUST SURVIVE THE BLANKER. A blanker that removed every `@word`
+   would hide every declaration inside an at-rule, which is where a responsive literal
+   hides. The padding below is a finding. */
+@media (min-width:48rem){.in-media{padding:19px}}
+</style>
+</head>
+<body>
+{{-- Outside the style element: this scanner's subject is a `<style>` body, and an inline
+     attribute is `scan-panel.mjs`'s. Neither of the two below is a finding HERE, and the
+     test says so rather than leaving it to be assumed. --}}
+<p style="color:#ff00ff;padding:13px">A literal in an attribute.</p>
+<p>And one in prose: #abcdef, padding:13px.</p>
+</body>
+</html>

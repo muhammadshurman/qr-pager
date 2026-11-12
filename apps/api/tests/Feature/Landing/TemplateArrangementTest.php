@@ -139,6 +139,70 @@ it('arranges a published page by the value its own document carries, and differe
         ->and($tenants['editorial'])->not->toBe($tenants['classic'], 'the two arrangements produced identical bytes');
 });
 
+it('ships each arrangement its OWN rules and none of the other four’s', function (): void {
+    /*
+     * ⚠ THE `§11` QA ROUND'S M-3, AND IT IS A HOLE IN THE INVARIANT'S FIRST CLAUSE. The round
+     * measured it: with the ENTIRE rail branch replaced by `.rail{display:block}` — zero
+     * `var()`, none of its own rules — `TemplateTokenSetTest` and `TemplateStructureTest` were
+     * 7/7 green. A rail page that paints as an unstyled column was invisible to the suite,
+     * which is defect #1 of this ticket's record (*"resolved to nothing … paints nothing"*)
+     * wearing a different disguise.
+     *
+     * So each arrangement's own marker rules are asserted PRESENT in its page and ABSENT from
+     * every other arrangement's. The markers are rule heads rather than whole declarations, so
+     * a value can change without touching this case; what cannot change silently is which
+     * branch of `page.blade.php`'s `@if`/`@elseif` chain a page received.
+     *
+     * The byte-level half — `classic` gains NOTHING — is the case below this one, which is
+     * `QRPAGER-33`'s invariant clause 2 and is older than these three arrangements.
+     */
+    $markers = [
+        'classic' => [],
+        'editorial' => ['.band{', '.wide{'],
+        'rail' => ['.rail>section+section', '.rail-find{'],
+        'ember' => ['.ember-hero{', '.ember-column{'],
+        'tile' => ['.tile-grid{'],
+    ];
+
+    expect(array_keys($markers))->toBe(
+        LandingTemplate::values(),
+        'an arrangement was added or renamed and this case does not know about it'
+    );
+
+    $pages = [];
+
+    foreach ($markers as $template => $own) {
+        $pages[$template] = renderWithFixedArguments(templateDocument(['template' => $template]));
+
+        foreach ($own as $marker) {
+            expect(str_contains($pages[$template], $marker))->toBeTrue(
+                "the {$template} page does not carry its own rule {$marker}, so it is arranged "
+                .'but unstyled — the markup moved and the CSS did not'
+            );
+        }
+    }
+
+    foreach ($markers as $template => $own) {
+        foreach ($markers as $other => $theirs) {
+            if ($other === $template) {
+                continue;
+            }
+
+            foreach ($theirs as $marker) {
+                expect(str_contains($pages[$template], $marker))->toBeFalse(
+                    "the {$template} page carries {$other}'s rule {$marker}: the chain in "
+                    .'page.blade.php is meant to be exclusive, so two arrangements are being '
+                    .'served at once'
+                );
+            }
+        }
+    }
+
+    // And `classic` carries none of the four marker sets — asserted by the loop above, which
+    // is why its own list is empty rather than absent.
+    expect($markers['classic'])->toBe([]);
+});
+
 it('ships each arrangement only the CSS it uses, so an existing page gains no byte', function (): void {
     /*
      * The mechanism behind clause 2, asserted on the RENDERED PAGE rather than on a method --

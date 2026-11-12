@@ -744,6 +744,29 @@ jobs:
       - name: The browser checks — R-118's four clauses
         run: pnpm run test:browser
 
+      # `QRPAGER-46`'s COMPUTED-VALUE gate, and it is here because this job is the one that
+      # can run it: PHP 8.4 and apps/api's composer tree are already set up above for the
+      # panel theme, and the engines are installed.
+      #
+      # ⚠ IT EXISTS BECAUSE TWO DEFECTS SHIPPED THAT EVERY STRUCTURAL TEST WAS BLIND TO, and
+      # the only control that caught either was a human looking at a render: a section heading
+      # computing at the page title's size in all three arrangements, and one of them
+      # rendering 6,618px tall with the structure entirely correct. Both are computed values,
+      # which the ticket's own invariant puts out of reach of its tests ("assert on structure
+      # … never on pixels"), and the e2e fixture names no template, so the three arrangements
+      # have no end-to-end subject either (R-303).
+      #
+      # `php artisan` needs an environment file; this is the same two lines bin/fresh-clone-proof
+      # runs, and the command refuses outright outside local/testing.
+      - name: The arrangements' computed values — a heading's size and a document's height
+        run: |
+          cp apps/api/.env.example apps/api/.env
+          php apps/api/artisan key:generate
+          pnpm run gate:templates
+        # The two lines before the gate are the ones bin/fresh-clone-proof runs: the renderer
+        # boots the application, and an application without an APP_KEY does not boot. The
+        # instrument itself refuses to run outside local/testing.
+
       # §11 round one rulings (b) and (c): §0's stated state against the tags and the ledger,
       # and every committed gate transcript against its own exit code. Both failures were real
       # at a6f9a47 and both were found by a reviewer rather than by a gate.

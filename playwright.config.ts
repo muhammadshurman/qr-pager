@@ -165,6 +165,19 @@ const STAFF_PASSKEY_SPECS = ['**/staff-passkey.spec.ts'] as const
 const STUDIO_SPECS = ['**/studio.spec.ts'] as const
 
 /**
+ * `QRPAGER-46`'s computed-value gate — the two properties its structural tests could not see:
+ * a section heading computing at the page title's size, and a document rendering 6,618px tall
+ * with the right structure. Both were found by a human looking at a render, which is the
+ * control this project makes repeatable.
+ *
+ * ⚠ EXCLUDED FROM THE KIT'S LISTS BELOW, for the reason the kit's own header gives: those
+ * projects must run from a fresh clone with nothing built, and these cases read pages that
+ * `php artisan landing:render-arrangements` writes — a PHP 8.4 application the browsers
+ * container cannot host. `pnpm run gate:templates` runs both halves in order.
+ */
+const LANDING_TEMPLATE_SPECS = ['**/landing-templates.spec.ts'] as const
+
+/**
  * A WALL TABLET, NOT A PHONE, and that is `§12`'s own reasoning rather than a preference: a
  * kitchen screen is *"greasy, bright and viewed from two metres"*. Measuring staff chrome at
  * 390x844 would measure a layout no kitchen has. 1024x768 at DPR 2 is the commonest mounted
@@ -229,6 +242,7 @@ export default defineConfig({
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
         ...STUDIO_SPECS,
+        ...LANDING_TEMPLATE_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'] },
@@ -247,6 +261,7 @@ export default defineConfig({
         ...STAFF_PASSKEY_SPECS,
         ...KDS_SPECS,
         ...STUDIO_SPECS,
+        ...LANDING_TEMPLATE_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
@@ -317,6 +332,36 @@ export default defineConfig({
         ignoreHTTPSErrors: true,
       },
     },
+
+    /**
+     * `QRPAGER-46`'s two computed values — a heading that must not match the page title's
+     * size, and a document height bounded for one fixture.
+     *
+     * ⚠⚠ DECLARED ONLY WHEN ITS OWN RUNNER ASKS FOR IT, AND CI IS WHY. `tools/browsers/bin/e2e`
+     * runs `playwright test` with NO project filter — the journey suite is *everything that is
+     * not the kit* — so the moment this project existed unconditionally, the e2e step collected
+     * thirteen cases whose pages only `pnpm run gate:templates` renders, and the `Pint, PHPStan,
+     * Pest` job went red on a suite that had nothing to do with it. Playwright has no
+     * exclude-a-project flag, and listing the journey's fourteen projects in that script would
+     * be a second list to keep in step.
+     *
+     * So the gate sets `QRPAGER_TEMPLATE_GATE=1` and nothing else sees the project at all.
+     * `tools/browsers/bin/browsers` forwards every `QRPAGER_*` variable by pattern, so this
+     * works natively and in the container. `lint-scope.test.mjs` asserts BOTH states: absent by
+     * default, present when the gate asks — which is the defect CI found, as a test.
+     *
+     * The viewports are the spec's, not the project's: the same case runs at 1280 and at 390,
+     * and a project-level viewport would make one of the two a lie.
+     */
+    ...(process.env.QRPAGER_TEMPLATE_GATE === '1'
+      ? [
+          {
+            name: 'landing-templates',
+            testMatch: [...LANDING_TEMPLATE_SPECS],
+            use: { ...devices['Desktop Chrome'] },
+          },
+        ]
+      : []),
 
     {
       name: 'studio-chromium',
