@@ -270,16 +270,15 @@ it('arranges a document that repeats a type, which the schema allows and the fix
 
 it('keeps the footer last in every arrangement that takes the order into its own hands', function (): void {
     /*
-     * The clause `editorial.blade.php` states in words and `TemplateTotalityTest` asserts for
-     * `editorial` alone. Every arrangement `QRPAGER-46` adds reorders, so every one of them
-     * owes it — and `$rest` is exactly where a forgotten block type would land AFTER the
-     * footer rather than before it.
+     * Every arrangement reorders, so every one of them owes this — and `$rest` is exactly
+     * where a forgotten block type would land AFTER the footer rather than before it.
+     *
+     * ⚠ THE LOOP USED TO SKIP `classic`, because that arrangement was the builder's own order
+     * and a footer in the middle was the tenant's word. `QRPAGER-47` retires it, so the
+     * exemption is gone and the clause is total over `cases()` — which is the stronger form
+     * and was only ever weakened by the arrangement that has now been removed.
      */
     foreach (LandingTemplate::cases() as $template) {
-        if ($template === LandingTemplate::Classic) {
-            continue; // the builder's own order: a footer in the middle is the tenant's word
-        }
-
         $print = structuralFingerprint(LandingPages::render($template->value));
         $last = $print[count($print) - 1] ?? '';
 
@@ -296,25 +295,35 @@ it('keeps the footer last in every arrangement that takes the order into its own
     }
 });
 
-it('gives the three new arrangements a root element of their own, and the old two none', function (): void {
+it('gives every arrangement a root element of its own, and never another’s', function (): void {
     /*
-     * ⚠ THE CONTROL THAT KEEPS THE FINGERPRINT HONEST. Every rule the three new arrangements
-     * add is scoped under that root class — `.rail`, `.ember-hero`, `.tile-grid` — so a
-     * missing root means the markup is arranged and the rules are not applied to anything, a
-     * failure that LOOKS like a styling bug and is invisible to every assertion above.
+     * ⚠ THE CONTROL THAT KEEPS THE FINGERPRINT HONEST. Every rule an arrangement adds is
+     * scoped under that root class — `.rail`, `.ember-hero`, `.tile-grid` — so a missing root
+     * means the markup is arranged and the rules are not applied to anything, a failure that
+     * LOOKS like a styling bug and is invisible to every assertion above.
      *
-     * `classic` and `editorial` must have no root: `classic` reproduces the pre-feature page
-     * byte for byte, and `editorial`'s own wrappers are `.band` and `.wide` INSIDE the flow.
+     * ⚠ THE SECOND HALF USED TO BE *"and the old two none"*: `classic` reproduced the
+     * pre-feature page byte for byte and `editorial`'s wrappers were `.band` and `.wide`
+     * INSIDE the flow. `QRPAGER-47` retires both, so the half that remains is EXCLUSIVITY —
+     * no arrangement may carry another's root, which is what would happen if the include and
+     * the rule chain ever disagreed about which page is being rendered.
      */
-    foreach (['rail' => 'class="rail"', 'ember' => 'class="ember"', 'tile' => 'class="tile"'] as $template => $root) {
-        expect(LandingPages::render($template))->toContain($root);
-    }
+    $roots = ['rail' => 'class="rail"', 'ember' => 'class="ember"', 'tile' => 'class="tile"'];
 
-    foreach (['classic', 'editorial'] as $template) {
+    expect(array_keys($roots))->toBe(
+        LandingTemplate::values(),
+        'an arrangement was added or renamed and this case does not know about it'
+    );
+
+    foreach ($roots as $template => $root) {
         $html = LandingPages::render($template);
 
-        expect($html)->not->toContain('class="rail"')
-            ->and($html)->not->toContain('class="ember"')
-            ->and($html)->not->toContain('class="tile"');
+        expect($html)->toContain($root);
+
+        foreach ($roots as $other => $theirs) {
+            if ($other !== $template) {
+                expect($html)->not->toContain($theirs);
+            }
+        }
     }
 });

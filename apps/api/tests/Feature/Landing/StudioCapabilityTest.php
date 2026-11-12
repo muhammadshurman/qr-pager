@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Landing\BlockSchema;
 use App\Domain\Landing\BlockType;
+use App\Domain\Landing\LandingTemplate;
 use App\Domain\Landing\ThemeTokens;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\Panel\Pages\DomainsPage;
@@ -136,9 +137,51 @@ it('keeps the page-content controls on the page tab', function (): void {
      * cannot make this case red, and a DELETED control still can -- which is the whole
      * point of a capability test.
      */
-    expect(str_contains($page, __('studio.form.template_label', [], 'ar')))->toBeTrue('Page arrangement is gone from the page tab');
     expect(str_contains($page, __('studio.form.add_block', [], 'ar')))->toBeTrue('the block builder is gone from the page tab');
     expect(str_contains($page, __('studio.page.language_legend', [], 'ar')))->toBeTrue('the page language control is gone');
+
+    /*
+     * ⚠⚠ AND THE ARRANGEMENT CONTROL IS **NOT** ON THIS TAB ANY MORE — `QRPAGER-47` Part B
+     * item 1, and this is the half that makes the move a move rather than a duplication. It
+     * was asserted PRESENT here until 2026-11-12, with the words *"Page arrangement is gone
+     * from the page tab"* as its failure message; the three themes are now cards on the theme
+     * tab and the case below asserts them there.
+     *
+     * `studio.form.template_label` is still a key and still Arabic — nothing renders it — so
+     * the absence is asserted on the control's own copy exactly as the presence was.
+     */
+    expect(str_contains($page, __('studio.form.template_label', [], 'ar')))
+        ->toBeFalse('the arrangement control is still on the page tab, so it was copied rather than moved');
+});
+
+it('puts the three themes on the theme tab, as cards with a structural thumbnail each', function (): void {
+    /*
+     * The other half of the move — `QRPAGER-47` Part B item 1. A capability test, so it reads
+     * what the tab OFFERS rather than how it looks: three radio inputs whose values are the
+     * three arrangements, each with the enum's own name beside it, and the thumbnail markup
+     * that makes a card a picture rather than a label.
+     */
+    $theme = studioTabs()['theme'];
+
+    expect($theme)->toContain(__('studio.arrangements.section', [], 'ar'))
+        ->and($theme)->toContain(__('studio.arrangements.note', [], 'ar'));
+
+    foreach (LandingTemplate::cases() as $case) {
+        expect($theme)->toContain('value="'.$case->value.'"')
+            ->and($theme)->toContain(e($case->name('ar')))
+            ->and($theme)->toContain(e($case->description('ar')));
+    }
+
+    // The badge marks the STORED arrangement, and the tenant this test acts for is on the
+    // default — so exactly one card carries it.
+    expect(substr_count($theme, __('studio.arrangements.in_use', [], 'ar')))->toBe(1);
+
+    // Each thumbnail is the arrangement's own structure: the ledger's rule and call to
+    // action, ember's dark hero, tile's grid. One marker each is enough — `ArrangementField`
+    // builds them in a `match` with no `default`, so a fourth case cannot ship without one.
+    expect($theme)->toContain('studio-thumb__rule')
+        ->and($theme)->toContain('studio-thumb__hero')
+        ->and($theme)->toContain('studio-thumb__grid');
 });
 
 it('puts theme and search-and-sharing on the theme tab and NOT on the page tab', function (): void {

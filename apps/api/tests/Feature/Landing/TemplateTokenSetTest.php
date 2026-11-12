@@ -28,11 +28,12 @@ use Tests\Support\LandingPages;
  * not emit paints NOTHING. Not a wrong colour: no colour. That failure is invisible to every
  * test that reads markup, and it is one typo away at any time.
  *
- * ⚠ AND THE CLAUSE IS SCOPED TO THE THREE, WHICH THE LAST CASE PROVES RATHER THAN ASSERTS.
- * `classic` must reproduce `pre-template-page.html` byte for byte, so it emits only what the
- * tenant set and relies on the fallbacks `tools/design-tokens/landing-baseline.json` freezes.
- * A test that demanded equality of all five would be demanding the opposite of
- * `QRPAGER-33`'s invariant clause 2.
+ * ⚠ AND THE CLAUSE USED TO BE SCOPED TO THREE OF FIVE, WHICH `QRPAGER-47` MADE ALL OF THEM.
+ * `classic` and `editorial` emitted only what the tenant set, because `classic` had to
+ * reproduce `pre-template-page.html` byte for byte and relied on the fallbacks
+ * `tools/design-tokens/landing-baseline.json` freezes. Both are retired, so the equality now
+ * holds over `cases()` with no exclusion — and the case that proved the scope was real is
+ * retired with them rather than left asserting a set that cannot be built.
  */
 
 /*
@@ -175,14 +176,10 @@ it('puts no Blade echo and no PHP inside the page’s style element, which is wh
     }
 });
 
-it('emits exactly the tokens it references, for each of the three new arrangements', function (): void {
+it('emits exactly the tokens it references, for every arrangement there is', function (): void {
     $driven = 0;
 
     foreach (LandingTemplate::cases() as $template) {
-        if (! $template->resolvesEveryToken()) {
-            continue;
-        }
-
         $html = LandingPages::render($template->value);
 
         $referenced = referencedTokens($html);
@@ -208,7 +205,10 @@ it('emits exactly the tokens it references, for each of the three new arrangemen
         $driven++;
     }
 
-    expect($driven)->toBe(3, 'fewer than three arrangements resolve every token, so this proves nothing');
+    expect($driven)->toBe(
+        count(LandingTemplate::cases()),
+        'an arrangement was skipped, so this case proves less than its name claims'
+    )->and($driven)->toBeGreaterThan(2, 'the enum has shrunk below the three arrangements the product offers');
 });
 
 it('lets the tenant win every token they set, and fills only the rest', function (): void {
@@ -225,31 +225,6 @@ it('lets the tenant win every token they set, and fills only the rest', function
     expect($root[1] ?? '')->toContain('--color-accent:#7d2b8f')
         ->and($root[1])->toContain('--color-background:'.ThemeDefaults::values()['color.background'])
         ->and(emittedProperties($html))->toHaveCount(count(ThemeTokens::NAMES));
-});
-
-it('leaves classic and editorial emitting only what the tenant set, which is the clause’s scope', function (): void {
-    /*
-     * ⚠ THE CONTROL FOR THE SCOPE, AND IT IS A REAL ASSERTION RATHER THAN A COMMENT. If the
-     * resolver filled defaults for every arrangement, `classic` would carry twelve properties
-     * where `tests/Fixtures/landing/pre-template-page.html` carries none — so this case fails
-     * the moment `resolvesEveryToken()` stops being the thing that decides, and it fails
-     * BEFORE the byte-for-byte fixture does, with a message that says why.
-     */
-    foreach ([LandingTemplate::Classic, LandingTemplate::Editorial] as $template) {
-        expect($template->resolvesEveryToken())->toBeFalse();
-
-        expect(emittedProperties(LandingPages::render($template->value)))->toBe(
-            [],
-            $template->value.' now emits theme properties for a document with no theme, which '
-            .'changes every page published before QRPAGER-33 — the invariant the pre-feature '
-            .'capture holds to the byte'
-        );
-
-        // And it still READS the twelve, through the fallbacks the baseline freezes: the
-        // inequality is the point, not a gap.
-        expect(referencedTokens(LandingPages::render($template->value)))
-            ->toHaveCount(count(ThemeTokens::NAMES));
-    }
 });
 
 it('gives every default a value the contract itself accepts, from the generated token layer', function (): void {

@@ -336,11 +336,81 @@ class StudioPanelProvider extends PanelProvider
                 fn (): string => <<<'HTML'
                     <script>
                         document.addEventListener('alpine:init', function () {
+                            /*
+                             * ⚠ WCAG's OWN FORMULA, AND IT IS HERE BECAUSE NOTHING ELSE ON THIS
+                             * PAGE CAN DO IT — `QRPAGER-47` Part B item 3. The product's
+                             * contrast figures are computed at BUILD time by
+                             * `packages/tokens/src/source.ts` and published as a generated
+                             * table; a colour the owner is choosing right now is in neither.
+                             *
+                             * Two implementations of one formula is a duplication worth
+                             * naming: this one judges a LIVE value in the browser, that one
+                             * judges the product's own palette at build time. They are tested
+                             * against each other rather than trusted —
+                             * `browser/studio.spec.ts` evaluates this function in a served
+                             * panel against the pairs `contrast.json` publishes, floored to
+                             * that file's own stated convention.
+                             *
+                             * 0.03928 is WCAG 2.x's threshold as written in the specification,
+                             * not the mathematically exact 0.04045: the point is to agree with
+                             * the standard every other tool implements.
+                             */
+                            function studioChannel(value) {
+                                value = value / 255
+
+                                return value <= 0.03928
+                                    ? value / 12.92
+                                    : Math.pow((value + 0.055) / 1.055, 2.4)
+                            }
+
+                            function studioLuminance(hex) {
+                                var match = /^#([0-9a-fA-F]{6})$/.exec(hex || '')
+
+                                if (match === null) return null
+
+                                var n = parseInt(match[1], 16)
+
+                                return 0.2126 * studioChannel((n >> 16) & 255)
+                                    + 0.7152 * studioChannel((n >> 8) & 255)
+                                    + 0.0722 * studioChannel(n & 255)
+                            }
+
+                            function studioContrast(a, b) {
+                                var la = studioLuminance(a)
+                                var lb = studioLuminance(b)
+
+                                if (la === null || lb === null) return null
+
+                                return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+                            }
+
+                            /*
+                             * ⚠ BOTH ARE ON `window` DELIBERATELY, AND THE REASON IS NAMED
+                             * RATHER THAN LEFT AS A SIDE EFFECT — `§11` security round, Low 4.
+                             * `studioContrast` is the duplication control's subject:
+                             * `browser/studio.spec.ts` evaluates it against every pair
+                             * `packages/tokens/generated/contrast.json` publishes, which is the
+                             * only thing holding this implementation and the build-time one
+                             * together. `studioLuminance` is what the advice's DIRECTION is
+                             * computed from, and the same case can hold it to the same table.
+                             *
+                             * Both are pure functions of two strings with no DOM and no state,
+                             * so neither grants a capability an attacker on this page does not
+                             * already have — the panel's CSP carries `unsafe-eval` either way
+                             * (`R-242`). The alternative was for the spec to drive the Alpine
+                             * component's `judge()` through the UI, which would test the
+                             * wiring and NOT the formula, and the formula is the thing that can
+                             * silently disagree with the generated table.
+                             */
+                            window.studioContrast = studioContrast
+                            window.studioLuminance = studioLuminance
+
                             window.Alpine.data('studioColour', function (config) {
                                 return {
                                     chosen: this.$wire.$entangle(config.statePath),
                                     picked: '',
                                     fallback: '',
+                                    advice: '',
                                     init: function () {
                                         var raw = getComputedStyle(this.$el)
                                             .getPropertyValue(config.fallbackToken)
@@ -360,6 +430,73 @@ class StudioPanelProvider extends PanelProvider
                                         // decision made outside the token source.
                                         this.fallback = /^#[0-9a-f]{6}$/.test(raw) ? raw : ''
                                         this.picked = this.chosen || this.fallback
+
+                                        /*
+                                         * ⚠ `$nextTick` AND NOT HERE: the other half of the
+                                         * pair is a SIBLING COMPONENT, and on the first pass
+                                         * it may not have resolved its own fallback yet — its
+                                         * input would still be empty and the ratio would be
+                                         * null. Alpine initialises every component before the
+                                         * next tick, so by then both inputs carry a value.
+                                         */
+                                        var self = this
+
+                                        this.$nextTick(function () {
+                                            self.judge()
+                                        })
+
+                                        this.$watch('picked', function () {
+                                            self.judge()
+                                        })
+                                    },
+                                    /*
+                                     * Is this colour readable against the one it is PAIRED
+                                     * with? `ThemeTokens::CONTRAST_PAIRS` decides which that
+                                     * is, which is why a button's label is judged on the
+                                     * button and not against the page.
+                                     *
+                                     * ⚠ THE PARTNER IS READ FROM ITS `data-token` INPUT, whose
+                                     * value is the EFFECTIVE colour — the owner's override, or
+                                     * the default the picker opened on. So the advice is about
+                                     * what a visitor would see, not about what has been
+                                     * overridden.
+                                     *
+                                     * ⚠ AND SILENCE IS THE ANSWER WHEN THERE IS NOTHING TO
+                                     * SAY: no pair, no partner on the page, or a value that is
+                                     * not a six-digit hex all leave the message empty. A
+                                     * warning drawn from a value nobody can see would be worse
+                                     * than none.
+                                     */
+                                    judge: function () {
+                                        if (! config.pairedWith) return
+
+                                        var partner = document.querySelector(
+                                            '[data-token="' + config.pairedWith + '"]'
+                                        )
+
+                                        var against = partner === null ? '' : partner.value
+                                        var ratio = window.studioContrast(this.picked, against)
+
+                                        if (ratio === null || ratio >= config.floor) {
+                                            this.advice = ''
+
+                                            return
+                                        }
+
+                                        /*
+                                         * ⚠ THE DIRECTION IS COMPUTED, NOT GUESSED. A colour
+                                         * becomes more readable against its pair by moving
+                                         * AWAY from it, so the lighter of the two must get
+                                         * lighter and the darker darker. One fixed *"darken
+                                         * it"* advised the opposite for every light surface,
+                                         * which the `§11` QA round measured at 1.75:1.
+                                         */
+                                        var mine = window.studioLuminance(this.picked)
+                                        var theirs = window.studioLuminance(against)
+
+                                        this.advice = mine !== null && theirs !== null && mine >= theirs
+                                            ? config.adviceLighten
+                                            : config.adviceDarken
                                     },
                                     clear: function () {
                                         this.chosen = ''

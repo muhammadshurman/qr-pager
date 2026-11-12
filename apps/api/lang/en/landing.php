@@ -42,6 +42,7 @@ return [
         'not_in_library' => 'that image is not in your library',
         'page_unreadable' => 'your page cannot be read right now, so images cannot be deleted; fix the page first',
         'in_use_by_block' => 'it is used by the :block block; remove it there first',
+        'in_use_as_logo' => 'This image is your page logo. Remove it on the theme tab first.',
         'empty' => 'it is empty',
         'too_large' => 'it is :size MB, and the limit is :max MB',
         'wrong_type' => 'it is a :detected file, not one of the five image types this builder accepts',

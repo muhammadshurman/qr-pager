@@ -577,14 +577,20 @@
         "template": {
             "type": "string",
             "enum": [
-                "classic",
-                "editorial",
                 "rail",
                 "ember",
                 "tile"
             ],
-            "default": "classic",
-            "description": "How the blocks are arranged. Absent means classic, which is the arrangement every page published before this member existed already used."
+            "default": "rail",
+            "description": "How the blocks are arranged. Absent means rail. Documents stored before this member existed carry no value and are rendered with that default; the arrangement they were published with has been retired."
+        },
+        "logo": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "format": "uuid",
+            "description": "A media id from this tenant's own library, rendered at the head of the published page. Absent or null means no logo."
         }
     },
     "x-bounds": {

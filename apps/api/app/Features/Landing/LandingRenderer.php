@@ -68,6 +68,18 @@ final class LandingRenderer
             'canonical' => 'https://'.$hostname.'/',
             'ogImage' => $seo['og_image'] === null ? null : ($assetUrls[$seo['og_image']] ?? null),
 
+            /*
+             * The logo — `QRPAGER-47` Part B item 2, resolved exactly as `ogImage` is: a
+             * media id becomes the published path of its own copy, or NULL.
+             *
+             * ⚠ `?? null` IS THE LOAD-BEARING HALF. An id with no entry in `$assetUrls` is a
+             * reference to an asset the publisher did not copy, and rendering `src=""` would
+             * ask every visitor's browser to re-request the page itself. Null renders no
+             * element at all, which is also the correct page for a tenant who has set no
+             * logo — one branch for two states that look the same to a reader.
+             */
+            'logoUrl' => $document->logo === null ? null : ($assetUrls[$document->logo] ?? null),
+
             // R-131, closed. An `Htmlable` rather than `{!! !!}`: see `StructuredData`'s
             // docblock, and the template's own note on why `{{ }}` is the wrong encoder for
             // JSON and why D5's rule is not carved out to get this feature.

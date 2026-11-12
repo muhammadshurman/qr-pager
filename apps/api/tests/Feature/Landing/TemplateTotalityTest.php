@@ -91,10 +91,15 @@ it('renders every block type in every arrangement, derived from the contract', f
      * suite states how many arrangements there are — so a case added without a thought about
      * totality fails HERE, with this file's own header explaining why, rather than passing a
      * `>= 2` and being swept silently. Updating it is the thought.
+     *
+     * ⚠ IT READ **5** UNTIL `QRPAGER-47`, WHICH IS THE SAME MECHANISM WORKING IN THE OTHER
+     * DIRECTION: retiring `classic` and `editorial` failed this line, which is where the
+     * question *"is every block type still placed by every remaining arrangement"* had to be
+     * answered rather than assumed.
      */
     expect($types)->toHaveCount(count(BlockType::cases()))
         ->and(count($types))->toBeGreaterThan(3)
-        ->and(LandingTemplate::cases())->toHaveCount(5);
+        ->and(LandingTemplate::cases())->toHaveCount(3);
 
     /*
      * ONE DOCUMENT CARRYING EVERY TYPE, so an arrangement cannot pass by placing the types it
@@ -158,11 +163,12 @@ it('renders every block type in every arrangement, derived from the contract', f
 });
 
 it('places the footer last in an arrangement that takes the order into its own hands', function (): void {
-    // `editorial.blade.php` says so in words; this is the assertion behind the sentence. An
-    // arrangement that has already reordered the page cannot leave a footer stranded
-    // mid-document, and `$rest` is exactly where that would happen.
+    // An arrangement that has already reordered the page cannot leave a footer stranded
+    // mid-document, and `$rest` is exactly where that would happen. It was written against
+    // `editorial`, which `QRPAGER-47` retires; `ember` is the arrangement that now promotes
+    // the hero and reorders what follows, so it is the one that owes the clause.
     $document = LandingDocument::fromInput(
-        array_replace(LandingFixtures::fullPage(), ['template' => 'editorial']),
+        array_replace(LandingFixtures::fullPage(), ['template' => 'ember']),
         new StubMediaReferences,
     );
 

@@ -110,6 +110,42 @@ final class ThemeTokens
     ];
 
     /**
+     * Which colour each colour is READ AGAINST, for the studio's live contrast check —
+     * `QRPAGER-47` Part B item 3.
+     *
+     * ⚠ IT IS IN THIS FILE FOR `DEFAULT_SOURCES`'s REASON, WHICH IS `composer guard` RULE
+     * 11c: *"one token list, one emitter."* A map of these names written in
+     * `App\Features\Landing\Panel\StudioForm` would be refused by the guard with
+     * `[theme-token-copied]`, and the guard would be right — it is the second list that
+     * drifts, not the first.
+     *
+     * ⚠ AND THE PAIRING IS A RULING RATHER THAN AN ARRANGEMENT OF CONVENIENCE. Muhammad,
+     * 2026-11-12: *"accent / accent_text are a PAIR: the contrast check on those two runs
+     * between them, not against the page background."* A button's label is read on the
+     * button, so judging `accent_text` against the page would pass a combination no visitor
+     * ever sees and fail one they do.
+     *
+     * The other four follow the same question — *what is this colour actually read on?*
+     * Body and secondary text are read on the page's ground; the page's ground and a card's
+     * ground are read UNDER text. So the four form two pairs stated from both ends, which is
+     * what lets every row carry its own advice instead of one summary somewhere else.
+     *
+     * ⚠ EVERY COLOUR TOKEN APPEARS AS A KEY, and `ThemeTokenPairTest` asserts exactly that:
+     * a colour with no pair is a row whose contrast nothing checks, which is the silent half
+     * of the defect this control exists to remove.
+     *
+     * @var array<string, string>
+     */
+    public const CONTRAST_PAIRS = [
+        'color.background' => 'color.text',
+        'color.surface' => 'color.text',
+        'color.text' => 'color.background',
+        'color.muted' => 'color.background',
+        'color.accent' => 'color.accent_text',
+        'color.accent_text' => 'color.accent',
+    ];
+
+    /**
      * The four font choices, and the only stacks that can ever be emitted.
      *
      * No family here needs quoting, deliberately: a quoted family would put a `"` into a
@@ -129,6 +165,34 @@ final class ThemeTokens
     public static function property(string $name): string
     {
         return '--'.str_replace(['.', '_'], '-', $name);
+    }
+
+    /**
+     * The PANEL's own custom property that holds this token's DEFAULT value —
+     * `color.background` → `--color-paper`.
+     *
+     * ⚠ WHY A PROPERTY NAME AND NOT THE VALUE: `ColourField` opens the operating system's
+     * picker on *something* when a token is unset, and `<input type="color">` has no empty
+     * state. Resolving the name in the browser means the swatch shows what the token layer
+     * says in the mode on screen, and it means **no hex is written in panel PHP** — which
+     * `scan-panel.mjs` enforces and `R-260` is the record of what happens when one is.
+     *
+     * ⚠ AND IT IS DERIVED FROM `DEFAULT_SOURCES`, NOT A SECOND MAP. The source path for a
+     * colour is always `colours.light.<role>` and the generated property for that role is
+     * always `--color-<role>` — `packages/tokens` emits both from one definition — so the
+     * derivation is a rename rather than a lookup. A token whose default does not come from
+     * the colour layer has no picker and no business here, and says so by throwing rather
+     * than by returning something a caller would paint.
+     */
+    public static function defaultProperty(string $name): string
+    {
+        $source = self::DEFAULT_SOURCES[$name] ?? null;
+
+        if ($source === null || ! str_starts_with($source, 'colours.light.')) {
+            throw new \InvalidArgumentException("{$name} has no colour default to open a picker on");
+        }
+
+        return '--color-'.substr($source, strlen('colours.light.'));
     }
 
     /** Whether $name is a token at all. */

@@ -138,6 +138,121 @@ export function checkRowCount(plan) {
 }
 
 /**
+ * (b5) EVERY `§5` ROW HAS THE SEVEN CELLS ITS OWN HEADER DECLARES.
+ *
+ * `§5`'s header is `# | Risk | Severity | Why accepted | Compensating control | Owner | Review
+ * by`. A row with fewer cells still RENDERS -- Markdown pads the missing ones -- so its owner
+ * and its date land in the wrong columns and the last two render EMPTY. That is not a
+ * presentation nit: `PROJECT_INSTRUCTIONS.md §11`'s merge rule is that a Medium or a Low is
+ * *"written into `PLAN.md §5` with an owner and a date"*, and a row whose *Owner* and *Review
+ * by* columns are blank does not satisfy it. Nothing read this table's SHAPE until 2026-11-12,
+ * which is how `QRPAGER-47` shipped ten such rows without noticing.
+ *
+ * ⚠ **THE COUNT IS BACKTICK-AWARE, BECAUSE A NAIVE SPLIT IS WRONG HERE.** Several rows quote a
+ * shell pipeline inside a code span -- `§0`'s own prescribed command has two pipes -- and
+ * splitting on every `|` reported 78 malformed rows where there are 68. A pipe inside backticks
+ * is content; only a bare one is a cell boundary.
+ *
+ * ⚠⚠ **THE 58 INHERITED ROWS ARE FROZEN IN A DATED BASELINE, NOT REPAIRED**, on Muhammad's
+ * ruling of 2026-11-12: *"They belong to delivered tickets, and rewriting delivered work from
+ * inside another ticket is `R-250`, which has already recurred twice … a dated baseline that
+ * ENUMERATES all 58 by row id -- never a count, which silently absorbs the next one."* The file
+ * is `tools/gate/row-shape-baseline.json`, the same shape as `QRPAGER-46`'s CSS baseline, and
+ * it carries its own reasons. Three ways to be red, so the list can only shrink:
+ *
+ *   1. a row that is not seven cells wide and is NOT in the baseline  -- the 59th;
+ *   2. a baselined row whose width has CHANGED                        -- frozen debt got worse;
+ *   3. a baselined row that now has seven cells, or is gone           -- a stale claim of debt.
+ */
+const SHAPE_BASELINE_PATH = join(REPO, 'tools', 'gate', 'row-shape-baseline.json')
+
+export function checkRowShape(plan, baselinePath = SHAPE_BASELINE_PATH) {
+  /** @type {{entries: {row: string, cells: number}[]}} */
+  const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'))
+  const frozen = new Map(baseline.entries.map((e) => [e.row, e.cells]))
+  const unseen = new Set(frozen.keys())
+
+  for (const line of plan.split('\n')) {
+    const named = /^\| \*\*(R-\d+)\*\* \|/.exec(line)
+
+    if (named === null) continue
+
+    const id = named[1]
+    const width = rowCells(line).length
+
+    if (width === 7) continue
+
+    unseen.delete(id)
+
+    if (!frozen.has(id)) {
+      fail(
+        'records(b5)',
+        `§5's ${id} has ${width} cells; the table's header declares 7 ` +
+          '(# | Risk | Severity | Why accepted | Compensating control | Owner | Review by), ' +
+          'so its owner and date render in the wrong columns. Repair it — the baseline in ' +
+          'tools/gate/row-shape-baseline.json is frozen debt and takes no new entries',
+      )
+
+      continue
+    }
+
+    const was = frozen.get(id)
+
+    if (was !== width) {
+      fail(
+        'records(b5)',
+        `§5's ${id} is frozen at ${String(was)} cells and now has ${width} — ` +
+          'frozen debt that changed shape is not frozen; repair the row to 7 or re-record it',
+      )
+    }
+  }
+
+  for (const id of unseen) {
+    fail(
+      'records(b5)',
+      `tools/gate/row-shape-baseline.json freezes ${id}, and §5 no longer has a malformed ` +
+        'row by that id (repaired, or gone) — drop it, because a baseline claiming debt the ' +
+        'repository no longer carries is a false record in the direction nobody checks',
+    )
+  }
+}
+
+/**
+ * The cells of one Markdown table row, with pipes inside code spans left alone.
+ *
+ * A backslash-escaped pipe is content too. The leading and trailing empties either side of the
+ * row's outer pipes are dropped.
+ */
+function rowCells(line) {
+  const out = []
+  let cur = ''
+  let code = false
+
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i]
+
+    if (c === '\\' && line[i + 1] === '|') {
+      cur += '|'
+      i += 1
+      continue
+    }
+
+    if (c === '`') code = !code
+
+    if (c === '|' && !code) {
+      out.push(cur)
+      cur = ''
+    } else {
+      cur += c
+    }
+  }
+
+  out.push(cur)
+
+  return out.slice(1, -1)
+}
+
+/**
  * (b2) `§0`'s *Last completed* NAMES A TAG THAT EXISTS, AND NAMES THE LATEST ONE.
  *
  * The failure this catches is `§0` describing a delivery record that the tags contradict --
@@ -886,6 +1001,76 @@ const SELF_TESTS = [
   },
   {
     /**
+     * ⚠ THE FIXTURE IS A ROW THE TABLE REALLY HAS, WITH ONE CELL BOUNDARY REMOVED -- which is
+     * the exact shape the ten `QRPAGER-47` rows shipped in: the text is all present and the row
+     * still renders, so nothing but a cell COUNT can see it. Planting a brand-new id instead
+     * would have tested the regex and not the check. `R-314` is used because it is NOT in the
+     * baseline, so this exercises the 59th-row path rather than the frozen one.
+     */
+    what: 'a §5 row with six cells that is not in the baseline (the 59th row)',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^(\| \*\*R-314\*\* \| [^\n]*?) \| /m,
+        '$1 ',
+      )
+      const before = failures.length
+      checkRowShape(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * FROZEN DEBT THAT GOT WORSE. `R-296` is baselined at 2 cells; this makes it 3, which is
+     * still malformed and still baselined -- so only the recorded WIDTH can refuse it. Without
+     * that comparison a frozen row could decay quietly, which is the failure QRPAGER-46's
+     * baseline records a count to prevent one layer over.
+     */
+    what: "a baselined §5 row whose width CHANGED and is still malformed",
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*R-296\*\* \|[^\n]*$/m,
+        '| **R-296** | a | b |',
+      )
+      const before = failures.length
+      checkRowShape(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * AND THE OTHER DIRECTION: a baselined row that someone has since repaired must leave the
+     * list, or the baseline rots into a permanent exemption. `R-296` is the narrowest row in
+     * the table, so padding it to 7 is unambiguous.
+     */
+    what: 'a baselined §5 row that has been repaired but left in the baseline',
+    run: () => {
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^\| \*\*R-296\*\* \|[^\n]*$/m,
+        '| **R-296** | a | b | c | d | e | f |',
+      )
+      const before = failures.length
+      checkRowShape(plan)
+
+      return failures.length > before
+    },
+  },
+  {
+    /**
+     * THE POSITIVE CONTROL, because the three above would all pass against a check that simply
+     * always failed. The table as it stands is green.
+     */
+    what: '§5 as it actually stands is NOT flagged (the positive control)',
+    run: () => {
+      const before = failures.length
+      checkRowShape(readFileSync(PLAN, 'utf8'))
+
+      return failures.length === before
+    },
+  },
+  {
+    /**
      * ⚠ THE EXACT INSTANCE, AS THE BAD INPUT. `§0` at `c6f5fc0` said *"Head on
      * `task-9-customer-pwa` is `8027ad9`"* with `HEAD` one commit further on, and this script
      * reported agreement. The fixture is that sentence, against a `HEAD` that is not it.
@@ -1336,6 +1521,7 @@ if (process.argv.includes('--self-test')) {
 const plan = readFileSync(PLAN, 'utf8')
 
 checkRowCount(plan)
+checkRowShape(plan)
 checkTagReality(plan)
 checkStatedHead(plan)
 checkStatedCounts(plan)

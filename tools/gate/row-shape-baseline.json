@@ -1,0 +1,247 @@
+{
+  "generated": "2026-11-12",
+  "ticket": "QRPAGER-47",
+  "rows": ["R-250"],
+  "why": [
+    "§5's header declares SEVEN columns -- # | Risk | Severity | Why accepted | Compensating control | Owner | Review by. A row with fewer still RENDERS, because Markdown pads the missing cells, so its owner and its date land in the wrong columns and the last two render EMPTY. PROJECT_INSTRUCTIONS.md §11's merge rule is that a Medium or a Low is \"written into PLAN.md §5 with an owner and a date\", and a row whose Owner and Review by columns are blank does not satisfy it. Nothing read this table's SHAPE until 2026-11-12.",
+    "Muhammad's ruling of 2026-11-12: \"The 58 inherited rows: do NOT fix them here. They belong to delivered tickets, and rewriting delivered work from inside another ticket is R-250, which has already recurred twice. Land the shape check with a dated baseline that ENUMERATES all 58 by row id -- never a count, which silently absorbs the next one -- and fail the build on any row not in that list. Same shape as QRPAGER-46's CSS baseline. The ten you repaired are this ticket's own and stay repaired; the 58 become visible debt with a guard behind them.\"",
+    "So this file is a FREEZE, not a fix. The ten rows QRPAGER-47 itself malformed -- R-304...R-313 -- are REPAIRED and are deliberately absent from this list. The 58 below span R-108 to R-296 and belong to other tickets.",
+    "ENUMERATED BY ROW ID AND NEVER BY A COUNT, which is the ruling's own reason: a count silently absorbs the next malformed row, and the whole point of the guard is that the 59th is red.",
+    "THE OBSERVED WIDTH IS RECORDED BESIDE EACH ROW, for the reason QRPAGER-46's baseline records a count: keying on the id alone would let a frozen row get WORSE -- six cells to four -- without a word. A width that no longer matches is red, and so is a row in this list that now has seven cells, because a baseline claiming debt the repository no longer carries is a false record in the direction nobody checks.",
+    "MATCHING IS BACKTICK-AWARE. Several §5 rows quote a shell pipeline inside a code span -- §0's own prescribed command has two pipes -- so splitting on every | reported 78 malformed rows where there are 68. A pipe inside backticks is content; only a bare one is a cell boundary."
+  ],
+  "entries": [
+    {
+      "row": "R-108",
+      "cells": 6
+    },
+    {
+      "row": "R-172",
+      "cells": 4
+    },
+    {
+      "row": "R-173",
+      "cells": 4
+    },
+    {
+      "row": "R-174",
+      "cells": 4
+    },
+    {
+      "row": "R-175",
+      "cells": 4
+    },
+    {
+      "row": "R-176",
+      "cells": 4
+    },
+    {
+      "row": "R-177",
+      "cells": 4
+    },
+    {
+      "row": "R-178",
+      "cells": 4
+    },
+    {
+      "row": "R-179",
+      "cells": 4
+    },
+    {
+      "row": "R-180",
+      "cells": 4
+    },
+    {
+      "row": "R-181",
+      "cells": 4
+    },
+    {
+      "row": "R-182",
+      "cells": 4
+    },
+    {
+      "row": "R-183",
+      "cells": 4
+    },
+    {
+      "row": "R-184",
+      "cells": 4
+    },
+    {
+      "row": "R-185",
+      "cells": 4
+    },
+    {
+      "row": "R-186",
+      "cells": 4
+    },
+    {
+      "row": "R-187",
+      "cells": 4
+    },
+    {
+      "row": "R-188",
+      "cells": 4
+    },
+    {
+      "row": "R-189",
+      "cells": 4
+    },
+    {
+      "row": "R-190",
+      "cells": 4
+    },
+    {
+      "row": "R-191",
+      "cells": 4
+    },
+    {
+      "row": "R-192",
+      "cells": 4
+    },
+    {
+      "row": "R-193",
+      "cells": 4
+    },
+    {
+      "row": "R-194",
+      "cells": 4
+    },
+    {
+      "row": "R-195",
+      "cells": 4
+    },
+    {
+      "row": "R-196",
+      "cells": 4
+    },
+    {
+      "row": "R-197",
+      "cells": 4
+    },
+    {
+      "row": "R-198",
+      "cells": 4
+    },
+    {
+      "row": "R-199",
+      "cells": 4
+    },
+    {
+      "row": "R-200",
+      "cells": 4
+    },
+    {
+      "row": "R-205",
+      "cells": 4
+    },
+    {
+      "row": "R-206",
+      "cells": 4
+    },
+    {
+      "row": "R-207",
+      "cells": 4
+    },
+    {
+      "row": "R-208",
+      "cells": 4
+    },
+    {
+      "row": "R-209",
+      "cells": 4
+    },
+    {
+      "row": "R-210",
+      "cells": 4
+    },
+    {
+      "row": "R-211",
+      "cells": 4
+    },
+    {
+      "row": "R-212",
+      "cells": 6
+    },
+    {
+      "row": "R-213",
+      "cells": 6
+    },
+    {
+      "row": "R-214",
+      "cells": 6
+    },
+    {
+      "row": "R-215",
+      "cells": 6
+    },
+    {
+      "row": "R-216",
+      "cells": 6
+    },
+    {
+      "row": "R-262",
+      "cells": 8
+    },
+    {
+      "row": "R-282",
+      "cells": 4
+    },
+    {
+      "row": "R-283",
+      "cells": 5
+    },
+    {
+      "row": "R-284",
+      "cells": 5
+    },
+    {
+      "row": "R-285",
+      "cells": 5
+    },
+    {
+      "row": "R-286",
+      "cells": 5
+    },
+    {
+      "row": "R-287",
+      "cells": 5
+    },
+    {
+      "row": "R-288",
+      "cells": 5
+    },
+    {
+      "row": "R-289",
+      "cells": 5
+    },
+    {
+      "row": "R-290",
+      "cells": 5
+    },
+    {
+      "row": "R-291",
+      "cells": 5
+    },
+    {
+      "row": "R-292",
+      "cells": 5
+    },
+    {
+      "row": "R-293",
+      "cells": 5
+    },
+    {
+      "row": "R-294",
+      "cells": 5
+    },
+    {
+      "row": "R-295",
+      "cells": 5
+    },
+    {
+      "row": "R-296",
+      "cells": 2
+    }
+  ]
+}

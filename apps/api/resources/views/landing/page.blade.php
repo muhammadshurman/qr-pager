@@ -91,7 +91,7 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--color-background,#ffffff);color:var(--color-text,#111111);
 font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}
-main{max-width:64rem;margin:0 auto;padding:0 1rem}
+main,.mark{max-width:64rem;margin:0 auto;padding:0 1rem}
 section{padding:var(--space-section,3rem) 0;border-bottom:1px solid var(--color-muted,#dddddd)}
 section:last-child{border-bottom:0}
 h1,h2,h3{font-family:var(--font-heading,system-ui,sans-serif);line-height:1.2;margin:0 0 .5rem}
@@ -108,6 +108,8 @@ border-radius:var(--radius-small,.25rem);text-decoration:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .row{display:flex;gap:1rem;justify-content:space-between}
 footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
+.mark{padding-block-start:var(--space-section)}
+.mark img{max-block-size:var(--size-heading);inline-size:auto}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 {{-- QRPAGER-33: the arrangement's OWN rules, and only the chosen arrangement's.
 
@@ -116,11 +118,14 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
      `<style>` element from anywhere. An earlier shape echoed a string from the enum and this
      comment argued about escaping it; both are gone.
 
-     ⚠ NO NEWLINE BEFORE `</style>`, WHICH IS LOAD-BEARING RATHER THAN FUSSY. For `classic`
-     the `@if` is false, so this must emit NOTHING -- a newline here would put one byte into
-     every page published before this feature existed and break `QRPAGER-33`'s invariant
-     clause 2 by exactly that byte. Measured at 4,626 against 4,625 on the attempt that left
-     a Blade comment on a line of its own, which is why the comment closes on the `@if`.
+     ⚠ NO NEWLINE BEFORE `</style>`, AND THE REASON IT WAS LOAD-BEARING IS NOW HISTORY. While
+     `classic` existed the chain had a FALSE-for-every-branch state and had to emit nothing at
+     all: a newline here put one byte into every page published before `QRPAGER-33`, measured
+     at 4,626 against 4,625 on the attempt that left a Blade comment on a line of its own.
+     `QRPAGER-47` retires `classic`, so every document now matches a branch and that byte can
+     no longer land anywhere. The form is kept rather than relaxed — it costs nothing, it is
+     the reason the comment closes ON the `@if` below, and a future arrangement that needs no
+     rules of its own would bring the empty state straight back.
 
      ⚠ AND THE COMMENT CLOSES ON THIS LINE rather than the one above, for the same reason:
      a Blade comment on a line of its own leaves that line's newline in the output, which
@@ -143,17 +148,16 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
      the start of a line has a newline before it, and the arrangements are mutually exclusive
      anyway — which is what the chain now says.
 
-     ⚠ AND FOR `classic` THE WHOLE CHAIN EMITS NOTHING, including every newline inside it,
-     which is the property `tests/Fixtures/landing/pre-template-page.html` holds to the byte.
-
-     ⚠ NOT ONE `var()` FALLBACK IN THE THREE NEW BRANCHES, which is `QRPAGER-46`'s stated
+     ⚠ NOT ONE `var()` FALLBACK IN THE THREE BRANCHES, which is `QRPAGER-46`'s stated
      invariant rather than a house style. A fallback literal is a SECOND default competing with
      the token layer, and `R-268` is what that costs: `--color-surface` falls back to `#f5f5f5`
      in `.band` below and to `#f6f6f6` in `.card` above, live on every published page, and
      NEITHER is a Rail value. The three branches reference tokens only, and
-     `LandingTemplate::resolvesEveryToken()` is true for exactly those three, so `ThemeDefaults`
-     has already put every one of those tokens in the `style` attribute — there is nothing for a
-     fallback to do. `TemplateTokenSetTest` asserts the two sets are EQUAL in both directions.
+     `ThemeStylesheet::declarations()` has already put every one of those tokens in the `style`
+     attribute — there is nothing for a fallback to do. It used to ask
+     `LandingTemplate::resolvesEveryToken()` first; `QRPAGER-47` retired the two cases that
+     answered false, so the question had one answer left and the method is gone.
+     `TemplateTokenSetTest` asserts the two sets are EQUAL in both directions.
 
      ⚠⚠ AND EVERY VALUE IN THE THREE BRANCHES COMES FROM THE **TWELVE LANDING TOKENS**, NOT
      FROM THE PRODUCT'S SCALE — WHICH `TemplateTokenSetTest` CAUGHT ON THE FIRST RUN. The
@@ -202,7 +206,8 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
      ⚠ `revert` RATHER THAN A SIZE, because the correct value is *"whatever the other `h2`s
      get"* — the UA default, since no other rule sets one — and naming a size here would be a
      fourth magnitude. `revert` is in the value guard's own safe list, so it needs no token and
-     no exemption. The shared rule is untouched, which keeps `classic` byte-for-byte.
+     no exemption. The shared rule is untouched: when this was written that kept `classic`
+     byte-for-byte, and now it keeps the page's own title the one heading at the display size.
 
      ⚠⚠ THE TWO `.ember-hero` LINES THAT RE-COLOUR A LINK AND ITS FOCUS RING ARE THE `§11`
      SECURITY ROUND'S M-1, AND THE DEFECT WAS INVISIBLE BY ARITHMETIC. `colours.light.ink` and
@@ -245,10 +250,7 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
 
      ⚠ THE SIXTEEN FALLBACKS ABOVE ARE FROZEN, NOT FIXED — `tools/design-tokens/landing-baseline.json`,
      dated, by file and line. Muhammad's instruction for this ticket: *"Do NOT fix the pre-existing
-     literals in the old templates … Forcing a rewrite of delivered work is R-250."* --}}@if ($template === \App\Domain\Landing\LandingTemplate::Editorial)
-.band{background:var(--color-surface,#f5f5f5);padding-block:var(--space-section,3rem);padding-inline:1rem;margin-inline:-1rem}
-.wide{margin-inline:-1rem}
-@elseif ($template === \App\Domain\Landing\LandingTemplate::Rail)
+     literals in the old templates … Forcing a rewrite of delivered work is R-250."* --}}@if ($template === \App\Domain\Landing\LandingTemplate::Rail)
 .rail>section+section,.rail>.rail-find{border-top:1px solid var(--color-muted)}
 .rail>section,.rail-find>section{border-bottom:0}
 .rail .card{background:none;border-radius:0;padding-inline:0}
@@ -295,6 +297,29 @@ footer{padding:2rem 1rem;text-align:center;color:var(--color-muted,#666666)}
     a sighted reader sees as the title -- and that heading is now an h2, so the outline
     is h1 → h2 for every possible document rather than for one of them.
 --}}
+{{--
+    THE LOGO — `QRPAGER-47` Part B item 2.
+
+    ⚠ ABOVE THE PAGE'S OWN h1 AND OUTSIDE `<main>`, which is where the approved artboard puts
+    it: the mark identifies the restaurant for the whole document, so it belongs to the page
+    rather than to any arrangement. Outside `<main>` also means NO arrangement has to place it
+    and none can hide it -- `TemplateStructureTest`'s fingerprints are of `main`'s own regions,
+    and a logo inside one of them would have had to be re-placed by all three.
+
+    ⚠ `alt` IS THE RESTAURANT'S NAME, NOT THE WORD "logo". A screen-reader user reaching the
+    top of the page needs to know whose page it is; "logo" tells them the category of the
+    image and nothing else (`§12`).
+
+    ⚠ AND THE ELEMENT IS ABSENT, NOT EMPTY, WHEN THERE IS NO LOGO. `LandingRenderer` resolves
+    the id to a published path or to null, so an unset logo and an id the publisher did not
+    copy both render nothing rather than `src=""` -- which browsers resolve to the page itself.
+
+    `width`/`height` are deliberately NOT set: the asset's own dimensions are not in the
+    document, and a guessed box would letterbox somebody's mark. The CSS bounds the height.
+--}}
+@if ($logoUrl !== null)
+<header class="mark"><img src="{{ $logoUrl }}" alt="{{ $tenantName }}"></header>
+@endif
 <h1 @class(['sr' => $heroFirst])>{{ $title }}</h1>
 <main>
 @include('landing.templates.'.$template->value)

@@ -53,7 +53,7 @@ final class LandingDocument
      * failure the split prevents, and `TemplateArrangementTest`'s byte-identity case is what
      * proves it did.
      */
-    public const KEYS = ['blocks', 'theme', 'seo', 'template'];
+    public const KEYS = ['blocks', 'theme', 'seo', 'template', 'logo'];
 
     /**
      * The top-level keys a document MUST carry, which is what the JSON schema's `required`
@@ -71,6 +71,16 @@ final class LandingDocument
         public readonly array $theme,
         public readonly array $seo,
         public readonly LandingTemplate $template = LandingTemplate::DEFAULT,
+        /**
+         * The tenant's logo: a media id from their own library, or null — `QRPAGER-47` Part B
+         * item 2.
+         *
+         * ⚠ ON `KEYS` AND NOT ON `REQUIRED`, for `template`'s reason exactly: every document
+         * stored before 2026-11-12 carries no `logo` member, and a required one would make
+         * all of them invalid on their next read — which `fromStored()` performs on every
+         * read by design.
+         */
+        public readonly ?string $logo = null,
     ) {}
 
     /** The document a tenant starts with: no blocks, no theme overrides, no SEO. */
@@ -94,8 +104,9 @@ final class LandingDocument
         $theme = self::theme($input['theme'] ?? []);
         $seo = self::seo($input['seo'] ?? [], $media);
         $template = self::template($input['template'] ?? null);
+        $logo = self::logo($input['logo'] ?? null, $media);
 
-        $document = new self($blocks, $theme, $seo, $template);
+        $document = new self($blocks, $theme, $seo, $template, $logo);
 
         // ⚠ THE 256 KB BOUND IS CHECKED HERE, AND IT WAS NOT. §6.5 says "every bound is
         // a validator rule with a test, not a comment", and this one was a column CHECK
@@ -175,6 +186,7 @@ final class LandingDocument
             'theme' => $this->theme,
             'seo' => $this->seo,
             'template' => $this->template->value,
+            'logo' => $this->logo,
         ];
     }
 
@@ -216,6 +228,16 @@ final class LandingDocument
 
         if (is_string($this->seo['og_image'])) {
             $found[] = $this->seo['og_image'];
+        }
+
+        /*
+         * ⚠ THE LOGO IS A REFERENCE LIKE ANY OTHER, AND LEAVING IT OUT HERE WOULD BE THE
+         * WHOLE DEFECT. This list is what the publisher copies into the site prefix and what
+         * `MediaLibrary::delete()` checks before letting an asset go — so a logo missing from
+         * it would be a published page whose mark 404s, caused by a delete the panel allowed.
+         */
+        if (is_string($this->logo)) {
+            $found[] = $this->logo;
         }
 
         return array_values(array_unique($found));
@@ -563,12 +585,19 @@ final class LandingDocument
     /**
      * Validate the arrangement, or refuse it by name. `QRPAGER-33`.
      *
-     * ⚠ **ABSENT IS VALID AND MEANS `classic`; PRESENT-AND-UNKNOWN IS A REFUSAL.** Those are
-     * two different answers to two different questions and the distinction is the whole of
-     * invariant clause 2 and clause 4. A document written before this feature has no
-     * `template` member and must keep publishing exactly as it did; a document naming
+     * ⚠ **ABSENT IS VALID AND MEANS `LandingTemplate::DEFAULT`; PRESENT-AND-UNKNOWN IS A
+     * REFUSAL.** Those are two different answers to two different questions and the
+     * distinction is the whole of invariant clause 2 and clause 4. A document written before
+     * this feature has no `template` member and takes the default; a document naming
      * `brutalist` is a tenant (or a client) asking for something that does not exist, and
      * `§12.1` says a refusal names the field.
+     *
+     * ⚠ **AND `QRPAGER-47` MADE *PRESENT-AND-RETIRED* THE SAME ANSWER AS *PRESENT-AND-UNKNOWN*,
+     * WHICH IS WHY PART A IS A MIGRATION AND NOT A CODE CHANGE.** `classic` and `editorial`
+     * are gone from the enum, so a stored document still naming one is refused HERE — on
+     * every read, not only on save, because `fromStored()` routes through `fromInput()`. That
+     * is the mechanism that would have broken those tenants' pages, and
+     * `2026_11_12_120000_retire_classic_and_editorial` is what keeps it from firing.
      *
      * ⚠ **AND IT IS REFUSED HERE, BEFORE ANY WRITE, NOT BY THE STUDIO'S FIELD BEING A FIELD.**
      * `fromStored()` routes through `fromInput()`, so this runs on every read as well as every
@@ -597,6 +626,28 @@ final class LandingDocument
         }
 
         return $template;
+    }
+
+    /**
+     * Validate the logo reference, or refuse it by name — `QRPAGER-47` Part B item 2.
+     *
+     * ⚠ THROUGH `self::media()`, THE SAME GATE EVERY BLOCK'S IMAGE PASSES. Two checks, and
+     * the second is the one that matters: the value must LOOK like a media id, and it must be
+     * one `MediaReferences` says this tenant owns. The panel never sends a path or bytes — a
+     * logo is an id — so there is no second shape to validate and no way to name another
+     * tenant's asset, which is the IDOR a media reference would otherwise be.
+     *
+     * An empty string is NULL and not a refusal: clearing the logo is a legitimate act and
+     * Livewire sends `''` for a cleared control, so refusing it would make *"remove my logo"*
+     * an error message.
+     */
+    private static function logo(mixed $input, MediaReferences $media): ?string
+    {
+        if ($input === null || $input === '') {
+            return null;
+        }
+
+        return self::media('logo', $input, $media);
     }
 
     /**

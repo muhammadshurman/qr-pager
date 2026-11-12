@@ -168,16 +168,21 @@ it('sets the page arrangement through the builder, and only on the signed-in res
      * arrives over `POST /livewire-<hash>/update` -- the endpoint Task 6's security M-1 was
      * about, which runs neither `SetUpPanel` nor Filament's `Authenticate`.
      *
-     * The control takes no tenant id: `LandingBuilderPage` re-resolves the tenant from the
-     * authenticated session on every call, which is why there is none to aim elsewhere. So
-     * the property is that a second restaurant's document is untouched by the first pressing
-     * it.
+     * The control takes no tenant id: the page re-resolves the tenant from the authenticated
+     * session on every call, which is why there is none to aim elsewhere. So the property is
+     * that a second restaurant's document is untouched by the first pressing it.
+     *
+     * ⚠⚠ **IT DRIVES `ThemePage` AND IT USED TO DRIVE `LandingBuilderPage` — `QRPAGER-47`
+     * PART B ITEM 1.** The arrangement is chosen on the theme tab now, as one of three cards,
+     * and the clause is unchanged: whichever page carries the control, pressing it writes one
+     * tenant's document and no other's. The state path is the same `data.template`, because
+     * what moved is the control and not the contract.
      *
      * ================================================================================
      * ⚠ NO `fillForm()` HERE, AND THAT IS A MEASUREMENT RATHER THAN A STYLE CHOICE
      * ================================================================================
      *
-     * `Livewire::test()` MOUNTS the page, and `LandingBuilderPage::mount()` already fills the
+     * `Livewire::test()` MOUNTS the page, and every studio page's `mount()` already fills its
      * form from the stored draft. Calling `fillForm()` after it fills a SECOND time, and the
      * Builder merges rather than replaces: measured on this fixture, 7 blocks became **14**
      * after `fillForm()` alone, and **28** once a save had persisted the doubled set -- at
@@ -186,13 +191,16 @@ it('sets the page arrangement through the builder, and only on the signed-in res
      * arrangement at all, but on `"data.blocks" => ["must not have more than 24 items"]`.
      *
      * Mount alone is the real path and gives 7. `R-239` carries the consequence for the
-     * cases above, which do call `fillForm()`.
+     * cases above, which do call `fillForm()`. ⚠ AND IT MATTERS MORE SINCE `QRPAGER-47`, not
+     * less: the theme page's form carries no `blocks` at all, so the blocks that must survive
+     * this save survive because `StudioForm::merged()` lays this page's state over the stored
+     * document — which is exactly what the assertion on the block count below proves.
      */
     $other = $this->makeTenant(slug: 'other-arrangement');
 
     app(LandingPages::class)->saveDraft($other, array_replace(
         LandingFixtures::fullPage(),
-        ['template' => 'editorial'],
+        ['template' => 'ember'],
     ));
 
     $tenant = $this->actingForTenant(role: TenantRole::Owner);
@@ -201,30 +209,30 @@ it('sets the page arrangement through the builder, and only on the signed-in res
     app(LandingPages::class)->saveDraft($tenant, LandingFixtures::fullPage());
 
     expect(app(LandingPages::class)->draft($tenant)->template)
-        ->toBe(LandingTemplate::Classic, 'a document with no template member did not default to classic');
+        ->toBe(LandingTemplate::DEFAULT, 'a document with no template member did not take the default');
 
     $blocksBefore = count(app(LandingPages::class)->draft($tenant)->toArray()['blocks']);
 
-    Livewire::test(LandingBuilderPage::class)
-        ->set('data.template', 'editorial')
+    Livewire::test(ThemePage::class)
+        ->set('data.template', 'tile')
         ->call('save');
 
     $saved = app(LandingPages::class)->draft($tenant);
 
-    expect($saved->template)->toBe(LandingTemplate::Editorial)
+    expect($saved->template)->toBe(LandingTemplate::Tile)
         // The blocks are untouched, which is what makes this a change of ARRANGEMENT and not
         // a round trip that happened to end with the right enum.
         ->and(count($saved->toArray()['blocks']))->toBe($blocksBefore)
         // The other restaurant is where it was, which is the half the clause is about.
-        ->and(app(LandingPages::class)->draft($other)->template)->toBe(LandingTemplate::Editorial);
+        ->and(app(LandingPages::class)->draft($other)->template)->toBe(LandingTemplate::Ember);
 
     // And back, because `§2.7`'s reasoning for an updatable value applies here too: a
     // restaurant may change its mind, and a one-way test would not notice if it could not.
-    Livewire::test(LandingBuilderPage::class)
-        ->set('data.template', 'classic')
+    Livewire::test(ThemePage::class)
+        ->set('data.template', 'rail')
         ->call('save');
 
-    expect(app(LandingPages::class)->draft($tenant)->template)->toBe(LandingTemplate::Classic);
+    expect(app(LandingPages::class)->draft($tenant)->template)->toBe(LandingTemplate::Rail);
 });
 
 it('refuses an arrangement that is not one, from the panel, leaving the document alone', function (): void {
@@ -236,15 +244,15 @@ it('refuses an arrangement that is not one, from the panel, leaving the document
 
     app(LandingPages::class)->saveDraft($tenant, array_replace(
         LandingFixtures::fullPage(),
-        ['template' => 'editorial'],
+        ['template' => 'ember'],
     ));
 
-    Livewire::test(LandingBuilderPage::class)
+    Livewire::test(ThemePage::class)
         ->set('data.template', 'brutalist')
         ->call('save');
 
     expect(app(LandingPages::class)->draft($tenant)->template)
-        ->toBe(LandingTemplate::Editorial, 'a non-arrangement reached the stored document');
+        ->toBe(LandingTemplate::Ember, 'a non-arrangement reached the stored document');
 });
 
 it('names the side of the commit a publish failed on, and never 500s on a take-down', function (): void {

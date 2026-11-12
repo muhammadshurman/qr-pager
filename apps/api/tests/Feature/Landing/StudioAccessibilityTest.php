@@ -52,10 +52,33 @@ function dom(string $html): DOMXPath
     return new DOMXPath($document);
 }
 
+/**
+ * Every studio page this sweep walks.
+ *
+ * ⚠⚠ `/studio/theme` WAS MISSING FROM ALL THREE LISTS UNTIL `QRPAGER-47` — `§11` QA ROUND,
+ * MEDIUM 6. The three lists were written when the theme tab was two collapsed sections at the
+ * bottom of the page form, and nobody added it when `QRPAGER-40` gave it a page. So the tab
+ * that now carries NINE hand-built controls — three of which deliberately suppress Filament's
+ * own label element, because each renders its own — was outside the clause about labelling
+ * every control, outside the one h1 / no-skipped-level clause, and outside the positive-tabindex
+ * clause.
+ *
+ * One list, derived nowhere: a studio page that is not in it is invisible to three `§12`
+ * clauses at once, and the only thing that makes it visible is somebody adding it here.
+ * `StudioCapabilityTest` derives its own list from the PANEL, which is the stronger shape — but
+ * these cases read a rendered response per path, and `/studio/preview` is not a page.
+ *
+ * @return list<string>
+ */
+function studioAccessibilityPaths(): array
+{
+    return ['/studio', '/studio/theme', '/studio/media', '/studio/domains'];
+}
+
 it('gives every studio page exactly one h1 and headings that do not skip a level', function (): void {
     $this->actingForTenant(role: TenantRole::Owner);
 
-    foreach (['/studio', '/studio/media', '/studio/domains'] as $path) {
+    foreach (studioAccessibilityPaths() as $path) {
         $xpath = dom(studioHtml($path));
 
         $h1 = $xpath->query('//h1');
@@ -83,7 +106,7 @@ it('labels every form control on every studio page', function (): void {
     // server-rendered response settles completely.
     $this->actingForTenant(role: TenantRole::Owner);
 
-    foreach (['/studio', '/studio/media', '/studio/domains'] as $path) {
+    foreach (studioAccessibilityPaths() as $path) {
         $xpath = dom(studioHtml($path));
 
         $unlabelled = [];
@@ -194,7 +217,7 @@ it('disables Publish rather than hiding it when there is nothing to publish', fu
 it('uses no positive tabindex anywhere, which would reorder the whole page', function (): void {
     $this->actingForTenant(role: TenantRole::Owner);
 
-    foreach (['/studio', '/studio/media', '/studio/domains'] as $path) {
+    foreach (studioAccessibilityPaths() as $path) {
         $xpath = dom(studioHtml($path));
 
         foreach ($xpath->query('//*[@tabindex]') ?: [] as $element) {

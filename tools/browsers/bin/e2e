@@ -106,6 +106,11 @@ TLS_PORT="${QRPAGER_E2E_TLS_PORT:-3098}"
 TLS_API_PORT="${QRPAGER_E2E_TLS_API_PORT:-3097}"
 API_ORIGIN="http://127.0.0.1:${API_PORT}"
 WEB_ORIGIN="http://127.0.0.1:${WEB_PORT}"
+# The PUBLISHED landing page, served by apps/site out of the object store. `R-303`: until
+# 2026-11-12 no e2e project served a public page at all, so the three arrangements had
+# never been seen end to end on served bytes.
+SITE_PORT="${QRPAGER_E2E_SITE_PORT:-3095}"
+SITE_ORIGIN="http://127.0.0.1:${SITE_PORT}"
 # ⚠ THE SUITE IS SERVED OVER https, AND THAT IS NOT POLISH. `navigator.serviceWorker` is
 # undefined outside a secure context, and the browsers reach the host as
 # `host.docker.internal`, which is on no engine's secure-origin allow-list. Measured both
@@ -127,6 +132,7 @@ api_pid=""
 web_pid=""
 tls_pid=""
 tls_api_pid=""
+site_pid=""
 
 # ⚠ THE WHOLE PROCESS GROUP, AND THEN THE PORTS. BOTH HALVES WERE LEARNED THE HARD WAY.
 #
@@ -187,6 +193,7 @@ cleanup() {
   stop_group "$web_pid"
   stop_group "$tls_pid"
   stop_group "$tls_api_pid"
+  stop_group "$site_pid"
 
   for port in "$API_PORT" "$WEB_PORT" "$TLS_PORT" "$TLS_API_PORT"; do
     free_port "$port"
@@ -591,6 +598,87 @@ fi
 chmod 600 "$kds_token"
 say "minted a kitchen-screen code -> ${kds_token} (git-ignored, mode 600)"
 
+# ------------------------------------------- the PUBLISHED landing page (R-303, QRPAGER-47)
+#
+# `R-303` was raised by `QRPAGER-46` and owned by `QRPAGER-47`: the three arrangements had no
+# end-to-end subject, because `browser/studio.spec.ts` asserted the PREVIEW pane and nothing in
+# this harness ever served a public page. The preview is a panel surface and a customer never
+# sees it, so "the picker works" was proven on the one surface that does not matter.
+#
+# Closing it needs the real serving layer -- apps/site, reading the real object store by `Host`
+# -- which `tools/gate/bin/site-isolation-proof` already stands up for Task 11. The recipe
+# below is that script's, including the parts it learned the hard way: the PRODUCTION build
+# rather than the dev server, `PORT` rather than `-- --port`, and `setsid` so the process group
+# reaches `next-server` and not only the pnpm wrapper.
+#
+# ⚠⚠ NOTHING IS PUBLISHED HERE, AND THE FIRST VERSION OF THIS BLOCK WAS WRONG TO.
+# It ran `bin/publish-landing-fixture` for alpha so the suite could learn the hostname -- and
+# that call goes through `saveDraft()`, which OVERWRITES the restaurant's draft document. The
+# studio specs drive that same draft, and three of them went red on the first run for it:
+# `studio.spec.ts:1047` (a label locator that resolved to 16 elements), `:1590` (a block that
+# would not add) and `:2045`. Measured, not guessed -- 546 passed, 3 failed, and the new case
+# itself passed.
+#
+# A harness that seeds shared fixture state to learn ONE string is paying for it in every case
+# that reads that state. The hostname is on the studio's own status plate -- `$state['hostname']`
+# through `studio.partials.emphasised` -- so the case reads it from the product instead, which
+# is also the better provenance: `hostnameInScope()` branches on custom domains, and
+# `apps/site`'s docblock says that rule is imported and never restated.
+
+# The store's own credentials, read from the api's env so this script holds no copy of them --
+# `site-isolation-proof`'s approach, for its reason.
+mapfile -t SITE_STORE < <(cd "${REPO}/apps/api" && php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach (["bucket", "endpoint", "key", "secret", "region"] as $name) {
+    echo config("filesystems.disks.s3.".$name), "\n";
+}
+')
+
+site_bucket="${SITE_STORE[0]:-}"
+site_endpoint="${SITE_STORE[1]:-}"
+
+if [ -z "$site_bucket" ] || [ -z "$site_endpoint" ]; then
+  say 'FAILED: apps/api has no object store configured, so there is nothing for apps/site to read'
+  exit 1
+fi
+
+say "building apps/site for production"
+(cd "$REPO" && pnpm --filter @qrpager/site run build) >>"${WEB_LOG}" 2>&1 || {
+  say "FAILED: apps/site did not build. Log: ${WEB_LOG}"
+  exit 1
+}
+
+# ⚠ THE CATCH-ALL MUST BE DYNAMIC, CHECKED AND NOT ASSUMED. A prerendered answer here is one
+# host's page served to every host -- Task 11's whole invariant -- and the build log is where
+# that is visible. `site-isolation-proof` checks the same line for the same reason.
+grep -q 'ƒ /\[\[\.\.\.path\]\]' "${WEB_LOG}" \
+  || { say "FAILED: apps/site's catch-all route is not reported as dynamic by the build"; exit 1; }
+
+require_free_port "${SITE_PORT}" "the published site"
+say "starting apps/site on ${SITE_ORIGIN}"
+setsid env PORT="${SITE_PORT}" \
+  AWS_BUCKET="$site_bucket" AWS_ENDPOINT="$site_endpoint" \
+  AWS_ACCESS_KEY_ID="${SITE_STORE[2]:-}" AWS_SECRET_ACCESS_KEY="${SITE_STORE[3]:-}" \
+  AWS_DEFAULT_REGION="${SITE_STORE[4]:-us-east-1}" \
+  pnpm --filter @qrpager/site run start >>"${WEB_LOG}" 2>&1 &
+site_pid=$!
+
+# ⚠ NO `-f`. A bare origin carries no tenant host, so `apps/site` answers 404 by design -- which
+# is still an HTTP answer and still proves the process is serving. `-f` would read that as a
+# failure and spin until the timeout against a perfectly healthy server.
+tries=0
+until curl -sS -o /dev/null "${SITE_ORIGIN}/" 2>/dev/null; do
+  tries=$((tries + 1))
+  if [ "$tries" -gt 60 ]; then
+    say "FAILED: apps/site did not answer at ${SITE_ORIGIN} within 60s. Log: ${WEB_LOG}"
+    exit 1
+  fi
+  sleep 1
+done
+say "apps/site is answering at ${SITE_ORIGIN}"
+
 # ------------------------------------------------------------------- the three engines
 #
 # ⚠ ONE STACK FOR BOTH MEASUREMENTS. `QRPAGER_E2E_LIGHTHOUSE=1` adds the Lighthouse proof
@@ -605,6 +693,7 @@ export QRPAGER_E2E_API_BASE="${TLS_API_ORIGIN}"
 export QRPAGER_E2E_HARNESS_USER="storage/logs/e2e-harness-user.json"
 export QRPAGER_E2E_STAFF_FIXTURE="storage/logs/e2e-staff-fixture.json"
 export QRPAGER_E2E_KDS_TOKEN="storage/logs/e2e-kds-token.json"
+export QRPAGER_E2E_SITE_BASE="${SITE_ORIGIN}"
 
 if [ "${QRPAGER_E2E_SUITE:-1}" = "1" ]; then
   say "running the journey suite"
