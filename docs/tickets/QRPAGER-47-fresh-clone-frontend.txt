@@ -1,0 +1,458 @@
+fresh-clone-proof: cloning 812b55f1db4ada70d56431323c03e460573f85ea into /tmp/qrpager-frontend-fresh-clone.sVcEYB
+
+== the clone is a clone, not a copy ==
+  absent, as it must be: node_modules
+  absent, as it must be: apps/web/node_modules
+  absent, as it must be: packages/ui/node_modules
+  absent, as it must be: apps/web/.next
+  absent, as it must be: apps/site/.next
+  absent, as it must be: storage/logs
+
+== every file the gate needs is TRACKED ==
+  tracked: package.json
+  tracked: pnpm-lock.yaml
+  tracked: pnpm-workspace.yaml
+  tracked: .nvmrc
+  tracked: .npmrc
+  tracked: tsconfig.base.json
+  tracked: tsconfig.json
+  tracked: eslint.config.mjs
+  tracked: prettier.config.mjs
+  tracked: vitest.config.ts
+  tracked: playwright.config.ts
+  tracked: packages/tokens/generated/tokens.css
+  tracked: packages/tokens/generated/tokens.ts
+  tracked: apps/api/config/design-tokens.php
+  tracked: packages/tokens/generated/contrast.json
+  tracked: packages/tokens/generated/contrast.md
+  tracked: packages/contracts/src/generated/status.ts
+  tracked: packages/tokens/fonts/fonts.css
+  tracked: packages/tokens/fonts/archivo-latin.woff2
+  tracked: packages/tokens/fonts/tajawal-arabic-400.woff2
+  tracked: packages/tokens/fonts/tajawal-arabic-700.woff2
+  tracked: tools/design-tokens/patterns.mjs
+  tracked: tools/design-tokens/fixtures/bad-component.tsx.fixture
+  tracked: tools/design-tokens/fixtures/good-component.tsx.fixture
+  tracked: tools/design-tokens/fixtures/bad-styles.css.fixture
+  tracked: tools/design-tokens/fixtures/good-styles.css.fixture
+  tracked: browser/fixtures/kit.html
+  tracked: docs/contracts/landing-page.schema.json
+  tracked: packages/tokens/generated/panel-theme.css
+  tracked: packages/tokens/scripts/panel-theme.mjs
+  tracked: browser/fixtures/panel.html
+  tracked: browser/fixtures/panel-palette.css
+  tracked: tools/design-tokens/fixtures/bad-panel.blade.php.fixture
+  tracked: tools/design-tokens/fixtures/good-panel.blade.php.fixture
+  tracked: apps/api/package.json
+  tracked: apps/api/package-lock.json
+  tracked: apps/api/vite.config.js
+  tracked: apps/api/composer.json
+  tracked: apps/api/composer.lock
+  tracked: apps/api/resources/css/filament/targets.css
+  tracked: apps/api/resources/css/filament/platform/theme.css
+  tracked: apps/api/resources/css/filament/studio/theme.css
+  tracked: tools/browsers/Dockerfile
+  tracked: tools/browsers/bin/browsers
+  tracked: tools/browsers/bin/e2e
+  tracked: tools/browsers/bin/tls-proxy.mjs
+  tracked: tools/browsers/probe/engines.mjs
+  tracked: tools/gate/bin/lighthouse-proof
+  tracked: docs/contracts/journey-states.json
+  tracked: docs/contracts/web-csp-surface.json
+  tracked: apps/web/public/sw.js
+  tracked: apps/web/public/pager.webmanifest
+  tracked: apps/web/public/pager-icon.svg
+  tracked: apps/api/bin/issue-pager-session
+  tracked: apps/api/bin/issue-harness-user
+
+== the toolchain the repo pins, not the one the shell happens to have ==
+  .nvmrc                 22
+  packageManager         pnpm@12.16.1
+  engines.node           >=22.12.0
+  node in PATH           v22.23.4
+  playwright pinned at   1.64.1
+
+  pnpm store: WARM (a cache, not a source -- a cold one costs time, not correctness)
+  playwright browsers: present in the host cache (a cache, not a source)
+
+== pnpm install --frozen-lockfile ==
+Scope: all 8 workspace projects
+✓ Lockfile passes supply-chain policies (verified 9d ago)
+Lockfile is up to date, resolution step is skipped
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: /home/pixels/.local/share/pnpm/store/v11
+  Virtual store is at:             node_modules/.pnpm
+Packages: +328
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 328, reused 328, downloaded 0, added 328, done
+
+devDependencies:
++ @eslint/js 10.0.1
++ @playwright/test 1.64.1
++ @qrpager/eslint-plugin-design-tokens <- tools/design-tokens
++ @types/node 22.20.5
++ @vitest/coverage-v8 5.0.5
++ eslint 10.13.0
++ lighthouse 13.5.0
++ playwright 1.64.1
++ prettier 3.9.10
++ typescript 6.0.3
++ typescript-eslint 8.72.1
++ vite 8.3.5
++ vitest 5.0.5
+
+Done in 361ms using pnpm v12.16.1
+
+== apps/api's composer tree, npm tree and asset build, which the workspace gate reads ==
+  composer install: ok
+  npm ci: ok
+  npm run build: ok
+  manifest: resources/css/filament/platform/theme.css -> assets/theme-DwYc_noE.css
+  manifest: resources/css/filament/studio/theme.css -> assets/theme-D3YBvofJ.css
+  .env + key:generate: ok (the gate's landing instrument boots the application)
+
+== the gate, in the clone ==
+$ node tools/gate/bin/gate.mjs
+gate: full output -> /tmp/qrpager-frontend-fresh-clone.sVcEYB/qr-pager/storage/logs/gate-frontend-20261112T160610Z.log
+
+=== pnpm run lint:es
+$ eslint .
+
+=== pnpm run lint:tokens
+design tokens: 12 file(s) scanned (2 Blade template(s) with a <style> element), no hard-coded values; 34 pre-existing literal(s) frozen by the dated baseline.
+$ node tools/design-tokens/bin/scan-css.mjs
+
+=== pnpm run lint:panel
+design tokens (panel): 32 panel file(s) scanned, no hard-coded values.
+$ node tools/design-tokens/bin/scan-panel.mjs
+
+=== pnpm run lint:shell
+shell evidence: 37 script(s) scanned, no exit-code hazard.
+$ tools/gate/bin/check-shell-evidence
+
+=== pnpm run format:check
+Checking formatting...
+All matched files use Prettier code style!
+$ prettier --check '{apps/web,apps/site,packages,tools,browser}/**/*.{ts,tsx,mjs,js,css,json}' '*.{ts,mjs,json}'
+
+=== pnpm run typecheck
+Scope: 7 of 8 workspace projects
+packages/tokens typecheck$ tsc --noEmit -p tsconfig.json
+tools/design-tokens typecheck$ echo 'no TypeScript in this package (ESLint plugins are .mjs)' && exit 0
+tools/gate typecheck$ echo 'no TypeScript in this package' && exit 0
+packages/contracts typecheck$ tsc --noEmit -p tsconfig.json
+tools/design-tokens typecheck: no TypeScript in this package (ESLint plugins are .mjs)
+tools/design-tokens typecheck: Done
+tools/gate typecheck: no TypeScript in this package
+tools/gate typecheck: Done
+packages/contracts typecheck: Done
+apps/site typecheck$ tsc --noEmit -p tsconfig.json
+packages/tokens typecheck: Done
+packages/ui typecheck$ tsc --noEmit -p tsconfig.json
+apps/site typecheck: Done
+packages/ui typecheck: Done
+apps/web typecheck$ tsc --noEmit -p tsconfig.json
+apps/web typecheck: Done
+$ pnpm run typecheck:root && pnpm -r --no-bail run typecheck
+$ tsc -p tsconfig.json
+
+=== pnpm run tokens:check
+tokens: packages/tokens/generated/tokens.css is current
+tokens: packages/tokens/generated/theme.css is current
+tokens: packages/tokens/generated/tokens.ts is current
+tokens: apps/api/config/design-tokens.php is current
+tokens: packages/tokens/generated/contrast.json is current
+tokens: packages/tokens/generated/contrast.md is current
+tokens: docs/tickets/QRPAGER-15-contrast-table.md is current
+tokens: browser/fixtures/panel-palette.css is current
+tokens: packages/tokens/generated/panel-theme.css is current
+tokens: apps/web/public/pager-icon.svg is current
+tokens: all 10 generated artefacts are current.
+$ pnpm --filter @qrpager/tokens run check
+$ node --experimental-strip-types scripts/generate.mjs --check
+
+=== pnpm run audit
+No known vulnerabilities found
+$ pnpm audit --audit-level low
+
+=== pnpm --filter @qrpager/web run build
+   ▲ Next.js 15.5.28
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 4.2s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/12) ...
+   Generating static pages (3/12) 
+   Generating static pages (6/12) 
+   Generating static pages (9/12) 
+ ✓ Generating static pages (12/12)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      136 B         102 kB
+├ ○ /_not-found                            993 B         103 kB
+├ ○ /harness/push                        3.09 kB         105 kB
+├ ○ /kds                                 3.09 kB         118 kB
+├ ○ /s                                   7.65 kB         123 kB
+├ ○ /staff                                 127 B         127 kB
+├ ○ /staff/devices                         127 B         127 kB
+├ ○ /staff/history                         127 B         127 kB
+├ ○ /staff/issue                           127 B         127 kB
+└ ○ /staff/team                            127 B         127 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/470-e0920f3c37ec5f0c.js       45.7 kB
+  ├ chunks/c56b66c8-44f0d71e692c6b89.js  54.2 kB
+  └ other shared chunks (total)          1.93 kB
+
+
+○  (Static)  prerendered as static content
+
+$ next build
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+
+=== pnpm --filter @qrpager/site run build
+   ▲ Next.js 15.5.28
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 2.4s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/2) ...
+ ✓ Generating static pages (2/2)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                  Size  First Load JS
+─ ƒ /[[...path]]                              0 B         101 kB
++ First Load JS shared by all              101 kB
+  ├ chunks/556-fa19357f6372832c.js        44.8 kB
+  ├ chunks/c56b66c8-44f0d71e692c6b89.js   54.2 kB
+  └ other shared chunks (total)           1.71 kB
+
+Route (pages)                                Size  First Load JS
+─ ○ /404                                    180 B         107 kB
++ First Load JS shared by all              107 kB
+  ├ chunks/framework-49ad8ceca8b3155f.js  68.4 kB
+  ├ chunks/main-720286e71cd75b75.js       37.2 kB
+  └ other shared chunks (total)           1.66 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+$ next build
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+
+=== pnpm exec vitest run --coverage
+
+ RUN  v5.0.5 /tmp/qrpager-frontend-fresh-clone.sVcEYB/qr-pager
+      Coverage enabled with v8
+
+
+ Test Files  65 passed (65)
+      Tests  1226 passed (1226)
+   Start at  19:07:16
+   Duration  35.57s (tests 60%, environment 27%, setup 5%, transform 4%, import 2%, worker 2%)
+
+Environment  |web| jsdom was created 35 times · 31.76s total, 34% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   93.75 |    90.49 |   97.03 |   95.63 |                   
+ apps/site/src     |   94.87 |    87.75 |    92.3 |   95.71 |                   
+  serve.ts         |     100 |    91.17 |     100 |     100 | 98,104-107        
+  store.ts         |   90.69 |       80 |      90 |    92.5 | 189,225-227       
+ apps/web/src      |   90.04 |    83.62 |   93.37 |   92.87 |                   
+  KdsApp.tsx       |   95.48 |    85.93 |     100 |     100 | ...31-276,316,336 
+  PagerJourney.tsx |   89.51 |    83.43 |   93.33 |    94.6 | ...07-609,644-648 
+  StaffApp.tsx     |      89 |    83.21 |   91.66 |   90.48 | ...1670-1672,1687 
+ .../web/src/pager |   98.28 |    95.98 |     100 |    98.7 |                   
+  alert.ts         |   96.96 |    93.75 |     100 |   96.87 | 126               
+  api.ts           |   98.55 |    98.55 |     100 |   98.36 | 323               
+  journey.ts       |   98.57 |    95.55 |     100 |   98.43 | 283               
+  locale.ts        |     100 |    83.33 |     100 |     100 | 28                
+  notify.ts        |    96.1 |    94.82 |     100 |   98.46 | 233               
+  storage.ts       |     100 |    92.85 |     100 |     100 | 77                
+  token.ts         |     100 |    94.11 |     100 |     100 | 77                
+ .../screens/staff |   98.86 |    99.14 |   96.55 |   98.76 |                   
+  StaffBoard.tsx   |   93.93 |      100 |   77.77 |   92.59 | 297,340           
+  StaffHistory.tsx |     100 |    97.77 |     100 |     100 | 206               
+  StaffTeam.tsx    |     100 |    97.56 |     100 |     100 | 312               
+ .../web/src/staff |   93.92 |    85.88 |     100 |   98.17 |                   
+  api.ts           |   95.69 |    87.86 |     100 |     100 | ...9,742-744,1027 
+  passkey.ts       |   86.25 |    77.94 |     100 |   92.42 | 135,143,154-157   
+ ...tokens/scripts |   86.83 |    80.68 |   97.61 |   86.53 |                   
+  fetch-fonts.mjs  |   46.26 |       56 |      80 |   46.03 | 190-267,279       
+  generate.mjs     |   99.39 |    89.47 |     100 |   99.34 | 1006              
+ packages/ui/src   |   99.16 |    96.89 |     100 |     100 |                   
+  Icon.tsx         |     100 |    81.81 |     100 |     100 | 85-86             
+  a11y.tsx         |     100 |    97.82 |     100 |     100 | 108               
+  theme.tsx        |    92.3 |       80 |     100 |     100 | 102               
+ .../design-tokens |   97.04 |    87.03 |   96.87 |     100 |                   
+  index.mjs        |   94.11 |     73.8 |     100 |     100 | ...6,36,82,92-100 
+  patterns.mjs     |   97.29 |    94.11 |   93.33 |     100 | 427-435,477       
+ ...ign-tokens/bin |   94.58 |    88.81 |     100 |   98.83 |                   
+  scan-css.mjs     |    94.3 |    90.32 |     100 |      99 | 412               
+  scan-panel.mjs   |      95 |       86 |     100 |   98.59 | 249               
+-------------------|---------|----------|---------|---------|-------------------
+
+=============================== Coverage summary ===============================
+Statements   : 93.75% ( 2745/2928 )
+Branches     : 90.49% ( 1829/2021 )
+Functions    : 97.03% ( 589/607 )
+Lines        : 95.63% ( 2474/2587 )
+================================================================================
+
+=== pnpm run test:browser
+
+Running 105 tests using 1 worker
+
+  ✓    1 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (137ms)
+  ✓    2 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (93ms)
+  ✓    3 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (90ms)
+  ✓    4 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (85ms)
+  ✓    5 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (85ms)
+  ✓    6 [chromium] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (86ms)
+  ✓    7 [chromium] › browser/a11y.spec.ts:343:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (81ms)
+  ✓    8 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (71ms)
+  ✓    9 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (84ms)
+  ✓   10 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (72ms)
+  ✓   11 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (68ms)
+  ✓   12 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (65ms)
+  ✓   13 [chromium] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (67ms)
+  ✓   14 [chromium] › browser/a11y.spec.ts:405:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (48ms)
+  ✓   15 [chromium] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (72ms)
+  ✓   16 [chromium] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (70ms)
+  ✓   17 [chromium] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (69ms)
+  ✓   18 [chromium] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (70ms)
+  ✓   19 [chromium] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (68ms)
+  ✓   20 [chromium] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (70ms)
+  ✓   21 [chromium] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (68ms)
+  ✓   22 [chromium] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (73ms)
+  ✓   23 [chromium] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (71ms)
+  ✓   24 [chromium] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (70ms)
+  ✓   25 [chromium] › browser/a11y.spec.ts:528:3 › R-118 clause 3 — the engine resolves the tokens the table was computed from › every barred pair in the generated table passes, in both themes (1ms)
+  ✓   26 [chromium] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (43ms)
+  ✓   27 [chromium] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (45ms)
+  ✓   28 [chromium] › browser/a11y.spec.ts:577:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (55ms)
+  ✓   29 [chromium] › browser/a11y.spec.ts:631:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (40ms)
+  ✓   30 [chromium] › browser/a11y.spec.ts:644:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (41ms)
+  ✓   31 [chromium] › browser/a11y.spec.ts:652:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (83ms)
+  ✓   32 [chromium] › browser/a11y.spec.ts:692:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 120ms (79ms)
+  -   33 [chromium] › browser/a11y.spec.ts:731:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter
+  ✓   34 [chromium] › browser/panel.spec.ts:236:3 › R-118 clause 1 — a visible focus ring on the panel › draws a ring the engine reports as non-zero (112ms)
+  ✓   35 [chromium] › browser/panel.spec.ts:278:3 › R-118 clause 2 — a measured 44px minimum touch target › gives every interactive element at least 44px in both directions (138ms)
+  ✓   36 [chromium] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › platform: every class resolves to the px its number names (91ms)
+  ✓   37 [chromium] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › studio: every class resolves to the px its number names (100ms)
+  ✓   38 [chromium] › browser/panel.spec.ts:459:3 › the restyle mirrors under RTL — §3 › renders every floored control the same size at dir=rtl (137ms)
+  ✓   39 [chromium] › browser/panel.spec.ts:502:3 › the restyle mirrors under RTL — §3 › adds no physical-direction property in any CSS this task authored (1ms)
+  ✓   40 [chromium] › browser/panel.spec.ts:549:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › publishes every ratio floored, on the three figures that caught the convention (1ms)
+  ✓   41 [chromium] › browser/panel.spec.ts:571:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › puts the primary button’s own colours at 4.5 or better (90ms)
+  ✓   42 [chromium] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › platform: every text utility clears 4.5 in both themes (133ms)
+  ✓   43 [chromium] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › studio: every text utility clears 4.5 in both themes (141ms)
+  ✓   44 [chromium] › browser/panel.spec.ts:727:3 › R-118 clause 4 — prefers-reduced-motion on the panel › carries a reduced-motion rule in the compiled theme at all (1ms)
+  ✓   45 [chromium] › browser/panel.spec.ts:736:3 › R-118 clause 4 — prefers-reduced-motion on the panel › suppresses the button’s transition when the user asks for less motion (87ms)
+  ✓   46 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #primary has a non-zero computed outline when focused (118ms)
+  ✓   47 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #secondary has a non-zero computed outline when focused (97ms)
+  ✓   48 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #quiet has a non-zero computed outline when focused (99ms)
+  ✓   49 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #danger has a non-zero computed outline when focused (82ms)
+  ✓   50 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #name has a non-zero computed outline when focused (85ms)
+  ✓   51 [chromium-reduced-motion] › browser/a11y.spec.ts:313:5 › R-118 clause 1 -- a visible focus ring › #ready-ack has a non-zero computed outline when focused (86ms)
+  ✓   52 [chromium-reduced-motion] › browser/a11y.spec.ts:343:3 › R-118 clause 1 -- a visible focus ring › the ring is actually VISIBLE -- its colour differs from what it sits on (80ms)
+  ✓   53 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #primary measures at least 44px on BOTH axes (69ms)
+  ✓   54 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #secondary measures at least 44px on BOTH axes (71ms)
+  ✓   55 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #quiet measures at least 44px on BOTH axes (69ms)
+  ✓   56 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #danger measures at least 44px on BOTH axes (72ms)
+  ✓   57 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #name measures at least 44px on BOTH axes (69ms)
+  ✓   58 [chromium-reduced-motion] › browser/a11y.spec.ts:393:5 › R-118 clause 2 -- a measured 44px minimum touch target › #ready-ack measures at least 44px on BOTH axes (70ms)
+  ✓   59 [chromium-reduced-motion] › browser/a11y.spec.ts:405:3 › R-118 clause 2 -- a measured 44px minimum touch target › the token itself resolves to 44px, so the floor has one source (43ms)
+  ✓   60 [chromium-reduced-motion] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the light theme (67ms)
+  ✓   61 [chromium-reduced-motion] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the light theme (73ms)
+  ✓   62 [chromium-reduced-motion] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the light theme (73ms)
+  ✓   63 [chromium-reduced-motion] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the light theme (71ms)
+  ✓   64 [chromium-reduced-motion] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the light theme (74ms)
+  ✓   65 [chromium-reduced-motion] › browser/a11y.spec.ts:418:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › body text on a card resolves to the table's pair in the dark theme (76ms)
+  ✓   66 [chromium-reduced-motion] › browser/a11y.spec.ts:437:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › secondary text resolves to the table's pair in the dark theme (68ms)
+  ✓   67 [chromium-reduced-motion] › browser/a11y.spec.ts:451:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the control border resolves to border-strong in the dark theme (69ms)
+  ✓   68 [chromium-reduced-motion] › browser/a11y.spec.ts:467:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the DANGER button's label clears AA on its fill in the dark theme (71ms)
+  ✓   69 [chromium-reduced-motion] › browser/a11y.spec.ts:488:5 › R-118 clause 3 — the engine resolves the tokens the table was computed from › the order-ready pair is IDENTICAL under the dark theme (75ms)
+  ✓   70 [chromium-reduced-motion] › browser/a11y.spec.ts:528:3 › R-118 clause 3 — the engine resolves the tokens the table was computed from › every barred pair in the generated table passes, in both themes (1ms)
+  ✓   71 [chromium-reduced-motion] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the light theme renders no pair the table does not cover (50ms)
+  ✓   72 [chromium-reduced-motion] › browser/a11y.spec.ts:538:5 › every pairing the kit RENDERS is in the generated table › the dark theme renders no pair the table does not cover (45ms)
+  ✓   73 [chromium-reduced-motion] › browser/a11y.spec.ts:577:3 › every pairing the kit RENDERS is in the generated table › the two themes together render the number of pairs this task measured (54ms)
+  ✓   74 [chromium-reduced-motion] › browser/a11y.spec.ts:631:3 › the vacuity guard is proven to fail › throws when the component stylesheet is withheld (39ms)
+  ✓   75 [chromium-reduced-motion] › browser/a11y.spec.ts:644:3 › the vacuity guard is proven to fail › throws when the page is in the WRONG theme (44ms)
+  ✓   76 [chromium-reduced-motion] › browser/a11y.spec.ts:652:3 › the vacuity guard is proven to fail › agrees with reality under the historical goto + addStyleTag sequence (83ms)
+  -   77 [chromium-reduced-motion] › browser/a11y.spec.ts:692:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › without the preference, the state token is the approved 120ms
+  ✓   78 [chromium-reduced-motion] › browser/a11y.spec.ts:731:3 › R-118 clause 4 -- prefers-reduced-motion suppresses motion › with the preference, motion is ZERO -- not merely shorter (85ms)
+  ✓   79 [chromium-reduced-motion] › browser/panel.spec.ts:236:3 › R-118 clause 1 — a visible focus ring on the panel › draws a ring the engine reports as non-zero (168ms)
+  ✓   80 [chromium-reduced-motion] › browser/panel.spec.ts:278:3 › R-118 clause 2 — a measured 44px minimum touch target › gives every interactive element at least 44px in both directions (155ms)
+  ✓   81 [chromium-reduced-motion] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › platform: every class resolves to the px its number names (100ms)
+  ✓   82 [chromium-reduced-motion] › browser/panel.spec.ts:390:5 › every spacing class the panel blades use renders the px it names › studio: every class resolves to the px its number names (108ms)
+  ✓   83 [chromium-reduced-motion] › browser/panel.spec.ts:459:3 › the restyle mirrors under RTL — §3 › renders every floored control the same size at dir=rtl (140ms)
+  ✓   84 [chromium-reduced-motion] › browser/panel.spec.ts:502:3 › the restyle mirrors under RTL — §3 › adds no physical-direction property in any CSS this task authored (3ms)
+  ✓   85 [chromium-reduced-motion] › browser/panel.spec.ts:549:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › publishes every ratio floored, on the three figures that caught the convention (1ms)
+  ✓   86 [chromium-reduced-motion] › browser/panel.spec.ts:571:3 › R-118 clause 3 — the engine resolves an AA pair on the panel › puts the primary button’s own colours at 4.5 or better (92ms)
+  ✓   87 [chromium-reduced-motion] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › platform: every text utility clears 4.5 in both themes (137ms)
+  ✓   88 [chromium-reduced-motion] › browser/panel.spec.ts:647:5 › every colour-family text utility the blades use clears AA › studio: every text utility clears 4.5 in both themes (138ms)
+  ✓   89 [chromium-reduced-motion] › browser/panel.spec.ts:727:3 › R-118 clause 4 — prefers-reduced-motion on the panel › carries a reduced-motion rule in the compiled theme at all (1ms)
+  ✓   90 [chromium-reduced-motion] › browser/panel.spec.ts:736:3 › R-118 clause 4 — prefers-reduced-motion on the panel › suppresses the button’s transition when the user asks for less motion (88ms)
+  ✓   91 [engines-chromium] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (79ms)
+  ✓   92 [engines-chromium] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (54ms)
+  ✓   93 [engines-chromium] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (40ms)
+  ✓   94 [engines-chromium] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (36ms)
+  ✓   95 [engines-chromium] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (37ms)
+  ✓   96 [engines-firefox] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (854ms)
+  ✓   97 [engines-firefox] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (255ms)
+  ✓   98 [engines-firefox] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (189ms)
+  ✓   99 [engines-firefox] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (204ms)
+  ✓  100 [engines-firefox] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (184ms)
+  ✓  101 [engines-webkit] › browser/engines.spec.ts:67:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › is sent as `document`, with `Sec-Fetch-Mode: navigate` (651ms)
+  ✓  102 [engines-webkit] › browser/engines.spec.ts:84:3 › R-194 — Sec-Fetch-Dest on a genuine top-level navigation › sends an Accept that `S-2` measured is NOT sufficient on its own (639ms)
+  ✓  103 [engines-webkit] › browser/engines.spec.ts:107:3 › the PWA capabilities each engine reports › has a service worker, a PushManager and a Notification constructor (622ms)
+  ✓  104 [engines-webkit] › browser/engines.spec.ts:132:3 › the PWA capabilities each engine reports › does NOT have navigator.vibrate in firefox or webkit -- why the alert only attempts it (605ms)
+  ✓  105 [engines-webkit] › browser/engines.spec.ts:152:3 › the PWA capabilities each engine reports › reports navigator.wakeLock as PRESENT, which the compat data says is not capability (610ms)
+
+  2 skipped
+  103 passed (16.0s)
+$ tools/browsers/bin/browsers node_modules/.bin/playwright test --project=chromium --project=chromium-reduced-motion --project=engines-chromium --project=engines-firefox --project=engines-webkit
+browsers: this host cannot launch all three engines; using the container.
+
+=== pnpm run gate:templates
+landing: 6 page(s) and 6 photograph(s) in /tmp/qrpager-frontend-fresh-clone.sVcEYB/qr-pager/storage/landing-preview
+
+Running 13 tests using 1 worker
+
+  ✓   1 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › rail at 1280, default theme: one display heading, bounded height (220ms)
+  ✓   2 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › ember at 1280, default theme: one display heading, bounded height (169ms)
+  ✓   3 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › tile at 1280, default theme: one display heading, bounded height (149ms)
+  ✓   4 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › rail at 1280, tenant theme: one display heading, bounded height (175ms)
+  ✓   5 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › ember at 1280, tenant theme: one display heading, bounded height (141ms)
+  ✓   6 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › tile at 1280, tenant theme: one display heading, bounded height (136ms)
+  ✓   7 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › rail at 390, default theme: one display heading, bounded height (113ms)
+  ✓   8 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › ember at 390, default theme: one display heading, bounded height (117ms)
+  ✓   9 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › tile at 390, default theme: one display heading, bounded height (113ms)
+  ✓  10 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › rail at 390, tenant theme: one display heading, bounded height (121ms)
+  ✓  11 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › ember at 390, tenant theme: one display heading, bounded height (113ms)
+  ✓  12 [landing-templates] › browser/landing-templates.spec.ts:102:9 › the arrangements, measured as a browser computes them — QRPAGER-46 › tile at 390, tenant theme: one display heading, bounded height (127ms)
+  ✓  13 [landing-templates] › browser/landing-templates.spec.ts:174:3 › the arrangements, measured as a browser computes them — QRPAGER-46 › the three arrangements differ in height, which is what makes them three (96ms)
+
+  13 passed (2.4s)
+$ php tools/landing/render-arrangements.php && QRPAGER_TEMPLATE_GATE=1 tools/browsers/bin/browsers node_modules/.bin/playwright test --project=landing-templates
+browsers: this host cannot launch all three engines; using the container.
+
+=== pnpm run records:check
+check-records: §0 agrees with the tags, the ledger, its own measured sha and every total it states; every committed transcript is current and green.
+$ node tools/gate/bin/check-records
+
+gate: all 14 steps green. Full output: /tmp/qrpager-frontend-fresh-clone.sVcEYB/qr-pager/storage/logs/gate-frontend-20261112T160610Z.log
+
+fresh-clone-proof: GREEN at 812b55f1db4ada70d56431323c03e460573f85ea, in a clone that shares nothing with the working tree.
+EXIT=0
