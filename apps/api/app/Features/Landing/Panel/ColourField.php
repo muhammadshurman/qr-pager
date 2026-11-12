@@ -220,11 +220,18 @@ class ColourField extends Field implements HasEmbeddedView
             /*
              * ⚠⚠ TWO SENTENCES, ONE PER DIRECTION — `§11` QA ROUND, MEDIUM 3, AND IT WAS A
              * MEASUREMENT: one fixed sentence saying *"darken it a little"* was handed to every
-             * row, and for a light `background` against the default dark text (#444444 on
-             * #191C22, **1.75:1**) darkening it LOWERS the ratio further. The ticket asks for a
-             * message that *"says what to do"*, so the component picks by comparing the two
-             * luminances — a colour is made more readable by moving it AWAY from the one it is
-             * read against, which is lighter when it is already the lighter of the pair.
+             * row, and for a mid-grey page background against the default ink text the round
+             * measured **1.75:1** — where darkening the background LOWERS the ratio further.
+             * The ticket asks for a message that *"says what to do"*, so the component picks by
+             * comparing the two luminances: a colour becomes more readable by moving AWAY from
+             * the one it is read against, which means lighter when it is already the lighter of
+             * the pair.
+             *
+             * ⚠ AND THE TWO VALUES THE ROUND MEASURED ARE DESCRIBED RATHER THAN QUOTED, because
+             * `scan-panel.mjs` refused this comment with two `no-raw-color` findings when they
+             * were written as hexes — `R-260` happening to a COMMENT for the third time in this
+             * repository, and the scanner being right each time: a hex in panel PHP is a design
+             * decision made outside the token layer, whether or not anything paints with it.
              */
             'adviceLighten' => __('studio.colours.hard_to_read_lighten'),
             'adviceDarken' => __('studio.colours.hard_to_read_darken'),
