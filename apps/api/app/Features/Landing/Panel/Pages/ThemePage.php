@@ -9,6 +9,7 @@ use App\Features\Landing\LandingPages;
 use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\MediaRejected;
 use App\Features\Landing\Panel\HasStudioLocale;
+use App\Features\Landing\Panel\InvalidField;
 use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
@@ -272,10 +273,17 @@ class ThemePage extends Page
         try {
             app(LandingPages::class)->saveDraft($tenantId, StudioForm::merged($tenantId, $this->themeForm()->getState()));
         } catch (LandingDocumentInvalid $e) {
-            // §12.1's invalid state: the field is named and the VALUE is not.
-            Notification::make()
-                ->title(__('studio.notifications.cannot_publish_field', ['field' => $e->field]))
-                ->body($e->reason)
+            /*
+             * §12.1's invalid state: the field is named and the VALUE is not — and since
+             * `R-262` the field is named in the OWNER'S words rather than as a dotted path,
+             * with the English reason no longer rendered at all.
+             *
+             * A fixed id, so a second failed save replaces the first instead of stacking a
+             * second undismissable toast on it (PR #22's walkthrough, `§12`).
+             */
+            Notification::make('studio-cannot-save-field')
+                ->title(__('studio.notifications.cannot_publish'))
+                ->body(InvalidField::sentence($e))
                 ->danger()
                 ->persistent()
                 ->send();

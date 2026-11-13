@@ -10,6 +10,7 @@ use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\LanguageNotChanged;
 use App\Features\Landing\Panel\HasStudioLocale;
+use App\Features\Landing\Panel\InvalidField;
 use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
@@ -70,9 +71,38 @@ class LandingBuilderPage extends Page
     {
         abort_unless(static::canAccess(), 403);
 
-        $this->landingForm()->fill(StudioForm::fromDocument(
-            app(LandingPages::class)->draft(TenantPanelAccess::tenantId())->toArray(),
-        ));
+        $tenantId = TenantPanelAccess::tenantId();
+        $pages = app(LandingPages::class);
+
+        /*
+         * ⚠⚠ THE FORM FILLS FROM THE STORED DRAFT EVEN WHEN IT NO LONGER VALIDATES, AND IT
+         * USED TO 500 INSTEAD.
+         *
+         * `draft()` validates, and this called it bare — so a single unusable value made
+         * this whole tab answer 500 and the owner could not reach the field to fix it. Every
+         * remedy the panel offers begins *"open the tab"*, so that was the deepest bar of the
+         * trap Muhammad described in PR #22: not just *"cannot delete, cannot preview"* but
+         * cannot EDIT either.
+         *
+         * The refusal is still SHOWN — the status plate names the field, and the notification
+         * below says it in the owner's words — but it no longer stands between them and the
+         * form. Editing asks what is stored; publishing asks what is valid. They are
+         * different questions and this one now gets its own answer.
+         */
+        try {
+            $document = $pages->draft($tenantId)->toArray();
+        } catch (LandingDocumentInvalid $e) {
+            $document = $pages->rawDraft($tenantId);
+
+            Notification::make('studio-page-needs-fixing')
+                ->title(__('studio.notifications.cannot_publish'))
+                ->body(InvalidField::sentence($e))
+                ->danger()
+                ->persistent()
+                ->send();
+        }
+
+        $this->landingForm()->fill(StudioForm::fromDocument($document));
     }
 
     public function form(Schema $schema): Schema
@@ -202,11 +232,19 @@ class LandingBuilderPage extends Page
         try {
             app(LandingPages::class)->saveDraft($tenantId, StudioForm::merged($tenantId, $this->landingForm()->getState()));
         } catch (LandingDocumentInvalid $e) {
-            // §12.1's "invalid" state: "{Field} can't be published: {reason}". The field
-            // is named and the VALUE is not -- see LandingDocumentInvalid for why.
-            Notification::make()
-                ->title(__('studio.notifications.cannot_publish_field', ['field' => $e->field]))
-                ->body($e->reason)
+            /*
+             * §12.1's "invalid" state: the field is named and the VALUE is not — and since
+             * `R-262` the field is named in the OWNER'S words. This passed `$e->field` and
+             * `$e->reason` straight through, so a restaurant owner read a dotted path and an
+             * English sentence: «seo.og_image لا يمكن نشره: names an image that is not in
+             * your library». `InvalidField` names the tab, the field and the next action.
+             *
+             * A fixed id, so a second failed save replaces the first rather than stacking
+             * another undismissable toast (PR #22's walkthrough, `§12`).
+             */
+            Notification::make('studio-cannot-save-field')
+                ->title(__('studio.notifications.cannot_publish'))
+                ->body(InvalidField::sentence($e))
                 ->danger()
                 ->persistent()
                 ->send();
@@ -229,9 +267,10 @@ class LandingBuilderPage extends Page
         try {
             app(LandingPages::class)->saveDraft($tenantId, StudioForm::merged($tenantId, $this->landingForm()->getState()));
         } catch (LandingDocumentInvalid $e) {
-            Notification::make()
-                ->title(__('studio.notifications.cannot_publish_field', ['field' => $e->field]))
-                ->body($e->reason)
+            // The same sentence and the same id as the save above — one message per action.
+            Notification::make('studio-cannot-save-field')
+                ->title(__('studio.notifications.cannot_publish'))
+                ->body(InvalidField::sentence($e))
                 ->danger()
                 ->persistent()
                 ->send();

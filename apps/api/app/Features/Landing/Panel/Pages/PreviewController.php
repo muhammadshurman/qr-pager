@@ -10,6 +10,7 @@ use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\LandingRenderer;
 use App\Features\Landing\MediaLibrary;
+use App\Features\Landing\Panel\InvalidField;
 use App\Features\Landing\TenantMediaReferences;
 use App\Features\Landing\UnsavedPreview;
 use App\Platform\Http\TenantPanelAccess;
@@ -119,7 +120,7 @@ class PreviewController
             // render: §12.1's invalid state names the field, and rendering "as much as
             // we can" would show the tenant a page that cannot be published.
             return response(
-                view('studio.preview-refused', ['field' => $e->field, 'reason' => $e->reason])->render(),
+                view('studio.preview-refused', ['explanation' => InvalidField::sentence($e)])->render(),
                 422,
             )->withHeaders(self::headers());
         }

@@ -8,6 +8,7 @@ use App\Domain\Landing\LandingDocument;
 use App\Domain\Landing\LandingDocumentInvalid;
 use App\Domain\Landing\LandingPageStatus;
 use App\Domain\Tenancy\TenantLanguage;
+use App\Features\Landing\Panel\InvalidField;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -91,6 +92,29 @@ final class LandingPages
      *
      * @throws LandingDocumentInvalid when a stored draft no longer satisfies the schema
      */
+    /**
+     * The stored draft exactly as it is, WITHOUT validating it.
+     *
+     * ⚠⚠ THIS EXISTS SO AN OWNER CAN REPAIR A PAGE THAT NO LONGER VALIDATES, and without it
+     * they could not. `LandingBuilderPage::mount()` fills its form from `draft()`, which
+     * validates — so one unusable value anywhere made the page tab answer **500**, and the
+     * owner could not reach the field they needed to correct. Muhammad met the shallow end
+     * of this in PR #22 (*"cannot delete, cannot preview"*); the page tab is the deep end,
+     * because every remedy this panel offers begins *"open the tab"*.
+     *
+     * The same principle as `MediaLibrary::delete()`'s reference check: a question about
+     * what IS STORED must not be routed through a validator. Editing is such a question.
+     *
+     * Callers get an array of the shape the form reads and must not assume it is publishable
+     * — `state()` is what answers that, and it names the offending field.
+     *
+     * @return array<mixed>
+     */
+    public function rawDraft(string $tenantId): array
+    {
+        return withTenant($tenantId, fn (): array => $this->decode($this->row($tenantId)->draftDocument));
+    }
+
     public function draft(string $tenantId): LandingDocument
     {
         return withTenant($tenantId, function () use ($tenantId): LandingDocument {
@@ -240,7 +264,15 @@ final class LandingPages
                     new TenantMediaReferences($tenantId),
                 );
             } catch (LandingDocumentInvalid $e) {
-                throw new PublishFailed(__('landing.publish.field_invalid', ['field' => $e->field, 'reason' => $e->reason]));
+                /*
+                 * ⚠ THE OWNER'S SENTENCE, NOT THE EXCEPTION'S PAIR — `R-262`. This read
+                 * `['field' => $e->field, 'reason' => $e->reason]`, so a restaurant owner was
+                 * shown a dotted path and an English sentence written for a programmer:
+                 * «seo.og_image لا يمكن نشره: names an image that is not in your library».
+                 * `InvalidField` names the TAB and the FIELD and gives the next action; the
+                 * raw pair stays on the exception for logs and tests.
+                 */
+                throw new PublishFailed(InvalidField::sentence($e));
             }
 
             if ($document->isEmpty()) {
@@ -624,9 +656,17 @@ final class LandingPages
                 );
                 $blocks = count($document->blocks);
             } catch (LandingDocumentInvalid $e) {
-                // §12.1's "invalid" state: the refusing field named, inline. The VALUE is
-                // not carried -- see LandingDocumentInvalid for why.
-                $invalid = $e->field.' can\'t be published: '.$e->reason;
+                /*
+                 * §12.1's "invalid" state: the refusing field named, inline. The VALUE is
+                 * not carried -- see LandingDocumentInvalid for why.
+                 *
+                 * ⚠ AND THE SENTENCE IS NO LONGER BUILT BY CONCATENATING ENGLISH — `R-262`.
+                 * This read `$e->field.' can\'t be published: '.$e->reason`, which is what
+                 * put «seo.og_image لا يمكن نشره: names an image that is not in your library»
+                 * on the STATUS PLATE: a dotted path and an English clause, in front of an
+                 * owner reading Arabic, assembled past the translator entirely.
+                 */
+                $invalid = InvalidField::sentence($e);
             }
 
             return [
