@@ -143,6 +143,48 @@ final class MediaLibrary
         });
     }
 
+    /** Is the object this key names still in the store? */
+    public function has(string $objectKey): bool
+    {
+        return $objectKey !== '' && self::disk()->exists($objectKey);
+    }
+
+    /**
+     * Put an asset's bytes back at the key its row already names.
+     *
+     * ⚠⚠ THIS EXISTS FOR ONE STATE AND IT IS A STATE THIS REPOSITORY CREATES ON ITSELF:
+     * a `media_assets` row whose object is gone. The suite runs against `qrpager_test`
+     * and against bucket `qrpager-local`; `.env` gives the DEVELOPMENT database the same
+     * bucket. So `php artisan test` truncates one database while
+     * `LandingFixtures::bucket()` sweeps the store BOTH databases share, and every row in
+     * the dev database is left pointing at bytes that no longer exist. `§11` QA, 2026-11-13.
+     *
+     * ⚠ THE KEY IS NOT REGENERATED. `store()` mints a CSPRNG leaf per call precisely so a
+     * key is never reused for different bytes — but here the bytes are the SAME bytes, and
+     * the row, the draft document and any published copy all name this key already.
+     * Writing a new key would orphan the old one and leave every reference stale, which is
+     * a worse state than the one being repaired.
+     *
+     * The bytes go through `InspectedImage` exactly as an upload does, because a repair
+     * that accepted what an upload would refuse would be a hole in the inspector wearing a
+     * helpful name.
+     *
+     * @throws MediaRejected
+     */
+    public function restore(string $objectKey, string $bytes): void
+    {
+        $image = InspectedImage::of($bytes);
+
+        $written = self::disk()->put($objectKey, $bytes, [
+            'ContentType' => $image->contentType,
+            'CacheControl' => (string) config('landing.cache_control'),
+        ]);
+
+        if ($written === false) {
+            throw new MediaRejected(__('landing.media.not_stored'));
+        }
+    }
+
     /**
      * Delete an asset, refusing when the page still references it (§12.2's "in use").
      *

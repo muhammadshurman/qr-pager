@@ -208,26 +208,64 @@ final class SeedDemoTenantCommand extends Command
         $existing = withTenant(self::TENANT_ID, static fn (): array => DB::connection('pgsql_owner')
             ->table('media_assets')
             ->where('tenant_id', self::TENANT_ID)
-            ->get(['id', 'original_name', 'checksum'])
+            ->get(['id', 'original_name', 'checksum', 'object_key'])
             ->all(), 'pgsql_owner');
 
         $byKey = [];
 
         foreach ($existing as $row) {
-            $byKey[$row->original_name.'/'.$row->checksum] = $row->id;
+            $byKey[$row->original_name.'/'.$row->checksum] = $row;
         }
 
         $reused = 0;
         $stored = 0;
+        $repaired = 0;
 
-        $put = function (string $path) use ($library, $byKey, &$reused, &$stored): string {
+        $put = function (string $path) use ($library, $byKey, &$reused, &$stored, &$repaired): string {
             $bytes = (string) file_get_contents($path);
             $key = MediaLibrary::safeName(basename($path)).'/'.hash('sha256', $bytes);
+            $row = $byKey[$key] ?? null;
 
-            if (isset($byKey[$key])) {
+            /*
+             * ⚠⚠ A ROW IS NOT EVIDENCE THAT THE OBJECT IS STILL THERE, AND ASSUMING IT WAS
+             * MADE THIS COMMAND UNABLE TO REPAIR ITS OWN TENANT.
+             *
+             * Re-use was decided from `(original_name, checksum)` alone. That is the right
+             * IDENTITY — the docblock above argues it, and both halves are needed — but it
+             * answers "have I stored these bytes before", not "are they still in the store",
+             * and those two came apart **on every machine that follows this repo's own
+             * instructions**:
+             *
+             *   - the suite runs against `qrpager_test` (`phpunit.xml`'s `DB_DATABASE`),
+             *   - and against bucket `qrpager-local` (`phpunit.xml`'s `AWS_BUCKET`),
+             *   - which is the SAME bucket `.env` gives the development database `qrpager`.
+             *
+             * So `php artisan test` truncates a different database — leaving this tenant's
+             * `media_assets` rows untouched — and `LandingFixtures::bucket()` then calls
+             * `deleteDirectory('media')` on the shared bucket, which deletes THIS tenant's
+             * objects. Rows without objects, serially, with no concurrency involved. The next
+             * `studio:demo-tenant` reported `0 stored, 10 re-used` and then failed at publish
+             * with `image_not_copied`, and every re-run after it did the same: the command
+             * could not repair the state its own project's gate had put it in. Measured
+             * 2026-11-13 on a quiet machine.
+             *
+             * ⚠ THE FIX IS NOT A WIDER IDENTITY. Hashing the object key in would re-upload on
+             * every run and the pile-up is exactly what the ticket forbids. The row is re-used
+             * when it is COMPLETE — the object answers — and re-uploaded in place when it is
+             * not, which converges from either state and still stores nothing twice.
+             */
+            if ($row !== null && $library->has((string) $row->object_key)) {
                 $reused++;
 
-                return (string) $byKey[$key];
+                return (string) $row->id;
+            }
+
+            if ($row !== null) {
+                $repaired++;
+
+                $library->restore((string) $row->object_key, $bytes);
+
+                return (string) $row->id;
             }
 
             $stored++;
@@ -251,7 +289,11 @@ final class SeedDemoTenantCommand extends Command
             $ids['gallery'][] = $put($path);
         }
 
-        $this->line('  media: '.$stored.' stored, '.$reused.' re-used');
+        // `repaired` is named rather than folded into `stored`, because the two mean
+        // different things to whoever is reading: one is a first run, the other is this
+        // command putting back what something else deleted.
+        $this->line('  media: '.$stored.' stored, '.$reused.' re-used'
+            .($repaired > 0 ? ', '.$repaired.' re-uploaded (the row was there, the object was not)' : ''));
 
         return $ids;
     }

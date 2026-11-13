@@ -9433,15 +9433,39 @@ render hooks, and the manager is bound with `scoped()` — so Octane's
 cause is further in than the latch and was not chased. The note is in the file, and the chrome's
 controls are proven by the browser sweep instead.
 
-⚠ **AND ONE SUSPECTED DEFECT THAT WAS WITHDRAWN RATHER THAN FILED.** `studio:demo-tenant` was
-observed printing `10 re-used` and then failing with `image_not_copied`, unrecoverable without
-deleting rows by hand — the seeder decides re-use from the `media_assets` row alone
-(`original_name` + `checksum`) and never asks the store whether the object is still there. The
-state was reachable only because a reviewer's suite run was sweeping `media/` concurrently;
-`php artisan test` truncates the tables **and** sweeps the store together, and the e2e harness
-does neither, so serially the divergence cannot occur. **Recorded as a property, not a finding**,
-because the measurement that produced it was contaminated and saying so is cheaper than the next
-person re-deriving it.
+⚠⚠ **AND A TWENTY-SECOND DEFECT, WHICH I WITHDREW AS "CONCURRENCY ONLY" AND WAS WRONG ABOUT.**
+
+`studio:demo-tenant` prints `0 stored, 10 re-used` and then fails with `image_not_copied`, and
+every re-run does the same: the command cannot repair its own tenant. Re-use is decided from the
+`media_assets` row alone (`original_name` + `checksum`) and never asks the store whether the
+object is still there.
+
+I first observed this while a reviewer's suite run was sweeping `media/` concurrently, reasoned
+that *"`php artisan test` truncates the tables **and** sweeps the store together, so serially the
+divergence cannot occur"*, and recorded it as a property rather than a finding. **That reasoning
+was false, and the false version is the more persuasive one**, which is why it is quoted here
+rather than deleted. What the suite actually does:
+
+| | database | bucket |
+| --- | --- | --- |
+| `phpunit.xml` | `qrpager_test` | `qrpager-local` |
+| `.env` (development) | `qrpager` | `qrpager-local` |
+
+It truncates a **different database** from the one the seeder writes to, and sweeps the store they
+**share**. So the demo tenant's rows survive and its objects are deleted — serially, deterministic,
+no concurrency anywhere. And `§6` tells every contributor to run that suite before every commit,
+so anyone who seeds the demo restaurant and follows this repository's own instructions ends up
+with a broken one. Re-measured 2026-11-13 on a quiet machine: `0 stored, 10 re-used`, then
+`image_not_copied`.
+
+**The fix is not a wider identity.** Hashing the object key into the re-use key would re-upload on
+every run, and the pile-up is exactly what item 1 forbids. The row is re-used when it is
+COMPLETE — the object answers — and re-uploaded **in place** when it is not, through
+`MediaLibrary::restore()`, which writes back to the row's own key: the stored draft and any
+published copy already name that key, so minting a new one would "work" while orphaning every
+reference. `DemoTenantSeederTest` plants the state the suite creates — `deleteDirectory` on the
+tenant's media prefix, rows untouched — and asserts both that the objects come back and that the
+KEYS are unchanged. Verified afterwards: a second run still reports `0 stored, 10 re-used`.
 
 ---
 

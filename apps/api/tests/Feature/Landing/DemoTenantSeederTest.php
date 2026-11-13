@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Features\Landing\Console\DemoMedia;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\MediaLibrary;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -140,4 +141,85 @@ it('refuses rather than seeding a restaurant with no pictures', function (): voi
     config(['surfaces.demo_media_directory' => base_path('database/demo-media-that-is-not-there')]);
 
     $this->artisan('studio:demo-tenant')->assertFailed();
+});
+
+/*
+ * ================================================================================
+ * THE ROW OUTLIVES THE OBJECT, AND THE COMMAND REPAIRS IT — `§11` QA, 2026-11-13
+ * ================================================================================
+ *
+ * ⚠⚠ THIS REPOSITORY CREATES THIS STATE ON ITSELF, SERIALLY, WITH NO CONCURRENCY.
+ *
+ *   - `phpunit.xml` runs the suite against DB_DATABASE `qrpager_test`,
+ *   - and against AWS_BUCKET `qrpager-local`,
+ *   - and `.env` gives the DEVELOPMENT database `qrpager` that same bucket.
+ *
+ * So `php artisan test` truncates one database while `LandingFixtures::bucket()` calls
+ * `deleteDirectory('media')` on the store they SHARE. The demo tenant lives in the
+ * development database, so its rows survive and its objects do not — and this repo's own
+ * `§6` tells every contributor to run that suite before every commit.
+ *
+ * Re-use was decided from `(original_name, checksum)` alone, so the next run reported
+ * `0 stored, 10 re-used` and then failed at publish with `image_not_copied`, and so did
+ * every run after it. The command could not repair the state the project's own gate had
+ * put it in, and the only way back was deleting rows by hand.
+ *
+ * ⚠ THE FIRST VERSION OF THIS FINDING WAS WITHDRAWN AS "concurrency only", on the reasoning
+ * that the suite truncates the tables and sweeps the store together. That reasoning was
+ * wrong — it truncates a DIFFERENT DATABASE from the one the seeder writes to — and the
+ * note is here because the wrong version is the more persuasive one.
+ */
+it('repairs its own tenant when the shared bucket was swept under it', function (): void {
+    $this->artisan('studio:demo-tenant')->assertSuccessful();
+
+    $tenantId = '01999000-0000-7000-8000-000000000001';
+
+    $keys = withTenant(
+        $tenantId,
+        static fn (): array => DB::connection('pgsql_owner')
+            ->table('media_assets')
+            ->where('tenant_id', $tenantId)
+            ->pluck('object_key')
+            ->all(),
+        'pgsql_owner',
+    );
+
+    expect($keys)->not->toBeEmpty();
+
+    // Exactly what the suite does to the shared bucket, and nothing else: the ROWS stay.
+    MediaLibrary::disk()->deleteDirectory('media/'.$tenantId);
+
+    foreach ($keys as $key) {
+        expect(MediaLibrary::disk()->exists((string) $key))->toBeFalse();
+    }
+
+    // The planted state asserted before the run, so this cannot pass on a store that was
+    // never emptied.
+    $this->artisan('studio:demo-tenant')->assertSuccessful();
+
+    foreach ($keys as $key) {
+        expect(MediaLibrary::disk()->exists((string) $key))
+            ->toBeTrue('the seeder reported success and left '.$key.' missing');
+    }
+
+    /*
+     * ⚠ AND THE KEYS ARE THE SAME ONES. A repair that minted new keys would "work" and
+     * orphan every reference the stored draft and the published page already hold —
+     * which is a worse state than the one being repaired, and is why `restore()` writes
+     * back to the row's own key instead of calling `store()` again.
+     */
+    $after = withTenant(
+        $tenantId,
+        static fn (): array => DB::connection('pgsql_owner')
+            ->table('media_assets')
+            ->where('tenant_id', $tenantId)
+            ->pluck('object_key')
+            ->all(),
+        'pgsql_owner',
+    );
+
+    sort($keys);
+    sort($after);
+
+    expect($after)->toBe($keys);
 });
