@@ -348,6 +348,36 @@ cause and the fixing commit.
 
 ---
 
+### 0.0h ⚠⚠⚠ A TICKET IS NOT DONE UNTIL ITS PR'S CHECKS ARE READ — MUHAMMAD, 2026-11-13, STANDING FROM NOW ON
+
+**The rule, in his words:**
+
+> A ticket is not reportable as done until the PR's checks are read at its CURRENT head, per job,
+> and stated. Local gates are evidence about the local machine; `bin/gate` says so itself.
+
+**THE INSTANCE IT CAME FROM, 2026-11-13.** `QRPAGER-48` opened PR #22 and pushed to it **six more
+times**, reporting four green gates each round, and **never once read a check**. A job was failing
+the whole time. His verdict on the report that followed: *"The process gap you named is the most
+valuable thing in your report, so make it a rule rather than a resolution."*
+
+⚠ **THE TOOLING WAS HONEST AND THE STEP WAS MISSING, WHICH IS THE WHOLE POINT.** `bin/gate` prints
+its own disclaimer on every run — *"A green line above means `apps/api`'s own gate passed. It is
+not a prediction of CI."* Nothing was misreported: four local gates WERE green, and `§0` said so
+accurately. The failure was that a different question — *what does CI say at this head* — was never
+asked, and "all gates green" was allowed to stand in for it.
+
+⚠ **PER JOB, AND AT THE CURRENT HEAD, BECAUSE A SUMMARY HIDES BOTH.** The incident's own evidence
+shows why each half is load-bearing: at `f8665cb` the `pull_request` run FAILED and the `push` run
+PASSED **on the same commit**, so a glance at one run says the opposite of the other; and at
+`0c589ec` the split ran the other way round, on a different case. A check read at an older head, or
+read as a single roll-up, would have reported green in both cases.
+
+**It is a REPORTING rule, like `§0.0g`, and for the same reason.** No guard can reach it: CI state
+lives outside the repository and changes after every push, so there is nothing to put `pipefail` on.
+What the rule covers is the surface that carries a false conclusion into a decision — the sentence
+*"this is done"*. Under it, four green local gates remain true and are simply **not sufficient**,
+because they are evidence about this machine.
+
 ### 0.0g ⚠⚠⚠ WHERE A GATE FIGURE MAY COME FROM — MUHAMMAD, 2026-11-13, STANDING FROM NOW ON
 
 **The rule, in his words:**

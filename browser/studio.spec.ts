@@ -2103,10 +2103,43 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     await expect(accent).toHaveCount(1)
 
     /*
+     * ⚠⚠ BOTH HALVES OF THE PAIR GO BACK TO THEIR DEFAULTS FIRST — THE SAME PREMISE-OWNERSHIP
+     * THE SIBLING CASE BELOW ALREADY HAD, AND THIS CASE DID NOT.
+     *
+     * Reproduced 2026-11-13, full `studio-chromium` project, 1 run in 3 with this block
+     * absent: the assertion at `toBeVisible()` below failed with the advice **hidden**, after
+     * `toBeVisible` had retried fourteen times across five seconds — so the advice never
+     * appeared rather than appearing late. The cause is ordering, not timing: a sibling case
+     * SAVES a theme colour, the draft it leaves behind reopens this row already overridden,
+     * and `#c9c48f` judged against a different `accent_text` can legitimately CLEAR the floor
+     * — at which point the advice is correctly silent and the case is asserting a premise
+     * that is no longer true.
+     *
+     * ⚠ IT COULD NOT BE REPRODUCED BY RUNNING THIS CASE ALONE, which is why it survived: a
+     * `--grep` run excludes the very siblings whose drafts cause it. Six isolated runs were
+     * green; the third full-project run was not.
+     *
+     * `.studio-colour__clear` carries `x-show="chosen"`, so its visibility is the honest test
+     * of whether there is an override to put back.
+     */
+    for (const token of ['color.accent', 'color.accent_text']) {
+      const other = page.locator('.studio-colour', {
+        has: page.locator(`[data-token="${token}"]`),
+      })
+      const clear = other.locator('.studio-colour__clear')
+
+      if (await clear.isVisible()) {
+        await clear.click()
+        await expect(other.locator('.studio-colour__default')).toBeVisible()
+      }
+    }
+
+    /*
      * The pair is `accent` / `accent_text`, which is Muhammad's ruling: a button's label is
      * read ON the button. The default pair clears AA, so the row opens quiet — and that is
      * asserted first, because an advice element that was ALWAYS visible would satisfy the
-     * next assertion without judging anything.
+     * next assertion without judging anything. NOW it is this case's own doing rather than an
+     * inherited premise.
      */
     await expect(advice).toBeHidden()
 
@@ -2198,6 +2231,26 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     expect(config.adviceDarken.length).toBeGreaterThan(20)
     expect(config.pairedWith).toBe('color.text')
 
+    /**
+     * Put a colour in the ground row and WAIT FOR THE DOM TO HOLD IT.
+     *
+     * ⚠⚠ `fill()` ALONE IS NOT ENOUGH HERE, AND THAT IS WHAT MADE THIS CASE FLAKY. It failed
+     * in CI on the darken arm's premise — `the ground is not the darker of the pair` — with
+     * `#000000` filled, whose luminance is 0 and cannot fail that comparison against any
+     * partner. The only way the assertion can see otherwise is by reading a DOM that still
+     * holds the PREVIOUS arm's `#2b2b2b`: this row lives inside a Livewire-managed panel that
+     * morphs on its own schedule, so a read taken immediately after `fill()` can land on the
+     * pre-morph value.
+     *
+     * `toHaveValue` retries, so judging happens against the value this case actually set
+     * rather than against whichever render won the race. A flaky regression test is worse
+     * than no test — it teaches everyone to scroll past a red.
+     */
+    const setGround = async (hex: string): Promise<void> => {
+      await ground.fill(hex)
+      await expect(ground).toHaveValue(hex)
+    }
+
     /** The two luminances the component itself compares, read the way it reads them. */
     const judged = async (): Promise<{ mine: number; theirs: number }> =>
       page.evaluate((pairedWith: string) => {
@@ -2259,7 +2312,7 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * set just LIGHTER than the ink it is read against, so `mine >= theirs` and the honest
      * advice is to move it further away by lightening it.
      */
-    await ground.fill('#2b2b2b')
+    await setGround('#2b2b2b')
 
     const lighten = await judged()
 
@@ -2279,7 +2332,7 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * Now the ground goes BELOW the ink, so `mine < theirs` and moving away means darker. One
      * row and one pair for both arms, so nothing but the direction differs between them.
      */
-    await ground.fill('#000000')
+    await setGround('#000000')
 
     const darken = await judged()
 

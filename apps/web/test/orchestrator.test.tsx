@@ -845,6 +845,35 @@ describe('the service worker wiring', () => {
     })
     expect(subscribed).toBe(1)
     expect(session.calls('/v1/pager/subscription')[0]?.body).toContain('https://push.example/fresh')
+
+    /*
+     * ⚠⚠ AND THE WRITE-BACK HAS LANDED BEFORE THIS CASE ENDS. Without this line the case
+     * finishes with an async continuation still running, and that continuation writes SHARED
+     * STATE — which made the NEXT case fail roughly one run in ten, in CI and locally.
+     *
+     * `reconcileSubscription()` writes `localStorage['qrpager.pager.endpoint']` AFTER the
+     * POST (`notify.ts`, `env.storage?.setItem(LAST_ENDPOINT_KEY, fields.endpoint)` is the
+     * line after the `result !== 'registered'` guard). The assertions above wait for the
+     * POST, so the `setItem` is still pending when this case returns. The next case seeds
+     * that key with `https://push.example/known` and mounts — and this case's late
+     * `setItem('…/fresh')` lands on top of it. The reconcile then compares the browser's
+     * `/known` against a remembered `/fresh`, finds a difference, and re-registers.
+     *
+     * ⚠ THE CODE WAS RIGHT IN THAT RUN AND THE TEST WAS WRONG, which is the distinction worth
+     * keeping: a browser endpoint that differs from the last registered one IS a rotation,
+     * and re-registering is precisely what `SR-5` exists to do. There is no spurious POST on
+     * the customer surface; there was a test ending mid-operation.
+     *
+     * `beforeEach`'s `localStorage.clear()` cannot close this — the late write lands after
+     * the clear AND after the next case's seed. Waiting for the write is the only fix at the
+     * cause rather than at the symptom.
+     */
+    await vi.waitFor(() => {
+      expect(window.localStorage.getItem('qrpager.pager.endpoint')).toBe(
+        'https://push.example/fresh',
+      )
+    })
+
     withoutPushPath()
   })
 
