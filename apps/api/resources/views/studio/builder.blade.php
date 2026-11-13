@@ -24,7 +24,7 @@
              announcing as well gave a screen reader the same change twice, in two different
              wordings. The plate stays VISIBLE: it carries a heading and the full explanation,
              which the chrome's one-line version deliberately does not. --}}
-        <div class="studio-plate studio-field">
+        <div class="studio-plate studio-field" data-page-status-plate="true">
             <h2>{{ __('studio.page.status_heading') }}</h2>
 
             @if ($state['invalid'] !== null)

@@ -2016,8 +2016,21 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * The first version of this case read it from a file the harness published to get it, and
      * that publish overwrote the restaurant's draft and reddened three sibling cases.
      */
+    /*
+     * ⚠ SELECTED BY ITS OWN MARKER, AND IT WAS `[role="status"]` UNTIL `§11` QA M-2. That
+     * finding is about this page having FOUR live regions for one fact, so the builder's
+     * plate stopped being one -- the chrome's plate is the single `role="status"` now, and
+     * it renders on every tab. This case then timed out at 90s on an `innerText` for a
+     * locator that matched nothing, which is the e2e gate catching a regression the whole
+     * PHP suite was happy with.
+     *
+     * `data-page-status-plate` exists FOR this: the plate is still the thing that states the
+     * hostname, and a case that needs it should not be asking which ARIA role it happens to
+     * carry. Reinstating the role to keep this selector working would have undone M-2 to
+     * satisfy a test, which is the wrong direction.
+     */
     const hostname = (
-      await page.locator('[role="status"] p.text-sm strong').first().innerText()
+      await page.locator('[data-page-status-plate="true"] p.text-sm strong').first().innerText()
     ).trim()
 
     expect(hostname, 'the studio states no hostname, so nothing could be fetched').not.toBe('')
