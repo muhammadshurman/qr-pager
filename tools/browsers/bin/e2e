@@ -361,7 +361,55 @@ say "  database ready -> ${LOG_DIR}/e2e-db-migrate.log"
 # It is the same key `PanelSignInRedirect` sends signed-OUT visitors to, so one value serves
 # both directions -- `PLAN.md §4a` records why that key is the staff app's ENTRY POINT and why
 # its name predates this second use.
-setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" TRUSTED_PROXIES="$6" STAFF_SIGNIN_URL="$7" exec php artisan serve --host=0.0.0.0 --port="$2"' \
+# ⚠⚠ `PHP_CLI_SERVER_WORKERS` IS SET, AND WITHOUT IT THIS SERVER SERVES ONE REQUEST AT A TIME.
+#
+# `php artisan serve` is PHP's built-in server, which is SINGLE-WORKER unless this variable says
+# otherwise — it is commented out in `.env.example` and was never passed here. One studio page
+# asks for its document, its Vite CSS bundle, its JS, its fonts AND an `<iframe>` that fetches
+# its own document plus a `/studio/preview/asset/{id}` image per picture on the page. Against one
+# worker those queue, the TLS proxy in front retries, and Chromium eventually answers
+# `net::ERR_TOO_MANY_RETRIES`.
+#
+# Measured 2026-11-13, diagnosing `studio.spec.ts:1745`: the request that failed was
+# `/build/assets/theme-*.css` — the panel's OWN STYLESHEET, not a preview asset and not the
+# preview document, which navigated fine throughout. 2 failures in 6 full `studio-chromium` runs
+# before this line. The case had been dismissed once as host load on a single isolated pass,
+# which `R-290` now carries as its sixth instance.
+#
+# ⚠ IT IS A HARNESS DEFECT AND NOT A PRODUCT ONE. Production serves this panel from
+# Octane/FrankenPHP (`§1`), which is concurrent by construction; nothing here changes what ships.
+#
+# ⚠⚠ THE NUMBER IS MEASURED, AND THE FIRST ONE TRIED WAS WRONG. Six full `studio-chromium` runs
+# at each setting, on a 12-core host:
+#
+#   workers  failures/6  ERR_TOO_MANY_RETRIES
+#   1          2           2                    <- as shipped
+#   8          2           0                    <- the retries went; CONTENTION replaced them,
+#                                                  with chrome cases at 19.9s and 1.2m against
+#                                                  their usual ~500ms, and two preview timeouts
+#   4          0           0                    <- this
+#
+# So a bigger number is not a better one: eight PHP workers beside Postgres, two TLS proxies and
+# a browser container is contention, not headroom.
+#
+# ⚠⚠⚠ AND THE DEFAULT IS 1 — THE SHIPPED BEHAVIOUR — BECAUSE THE REMEDY IS UNPROVEN AT THE SCALE
+# IT WOULD SHIP INTO. The table above is ONE project. The full `gate:e2e` runs every project with
+# far more browser-side parallelism, and measured on the same tree it went the other way:
+#
+#   workers  full-suite result
+#   4          561 passed, 3 failed   (a 401 on the passkey screen, a studio chrome marker
+#                                      absent, the team screen never visible)
+#   1          563 passed, 1 failed   (one staff contrast case)
+#
+# Four PHP workers can compile Blade views and write caches CONCURRENTLY, which one worker never
+# does, and a partial read there would produce exactly that spread. One run each is thin, and that
+# is the point: the burden is on the CHANGE to show it helps, and at full-suite scale it has not.
+# So this is a knob an operator may turn for the studio project (`QRPAGER_E2E_SERVER_WORKERS=4`)
+# and not a default anyone inherits.
+#
+# The flake it was aimed at is therefore DIAGNOSED AND NOT FIXED, which `PLAN.md §4a` says in
+# those words rather than leaving a reader to infer it from a knob.
+setsid bash -c 'cd "$1" && APP_URL="$3" PASSKEY_EXTRA_ORIGINS="$4" RATELIMIT_SCALE="$5" TRUSTED_PROXIES="$6" STAFF_SIGNIN_URL="$7" PHP_CLI_SERVER_WORKERS="${QRPAGER_E2E_SERVER_WORKERS:-1}" exec php artisan serve --host=0.0.0.0 --port="$2"' \
   e2e-api "${REPO}/apps/api" "${API_PORT}" "https://${BROWSER_HOST}:${TLS_API_PORT}" \
   "https://${BROWSER_HOST}:${TLS_PORT}" "20" "127.0.0.1" \
   "https://${BROWSER_HOST}:${TLS_PORT}/staff" \
