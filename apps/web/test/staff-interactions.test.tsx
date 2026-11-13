@@ -263,6 +263,7 @@ describe('signing in', () => {
           name: 'Al Baik Jeddah',
           slug: 'al-baik',
           grantableRoles: [],
+          canAccessStudio: false,
         },
         {
           tenantId: 'tenant-b',
@@ -270,6 +271,7 @@ describe('signing in', () => {
           name: 'Shawarma House',
           slug: 'shawarma-house',
           grantableRoles: [],
+          canAccessStudio: false,
         },
       ],
     })

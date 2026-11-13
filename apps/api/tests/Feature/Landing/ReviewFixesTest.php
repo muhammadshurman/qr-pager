@@ -21,6 +21,7 @@ use App\Features\Landing\PublishFailed;
 use App\Features\Landing\TenantDomains;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -228,6 +229,53 @@ it('puts Filaments Authenticate on every studio route, including the preview', f
     }
 
     expect($missing)->toBe([], 'studio routes without Filament\Http\Middleware\Authenticate: '.implode(', ', $missing));
+});
+
+it('puts CSRF protection on every studio route that accepts a POST', function (): void {
+    /*
+     * `QRPAGER-48` `§11` SECURITY L-6, and the gap it names is EVIDENTIARY rather than real.
+     * `PreventRequestForgery` IS on `POST /studio/panel-language` — read off the router, not
+     * off the source — but nothing asserted it, and nothing could: Laravel's test client
+     * disables CSRF, so `$this->post(...)` in `StudioChromeTest` and the `302` row in
+     * `StudioPanelInvariantTest` prove exactly nothing about that middleware. A refactor that
+     * reordered or dropped it would leave the whole suite green.
+     *
+     * The case above is the shape this copies, for the same reason it exists: reading the
+     * middleware off the router is the only way to ask the question the panel's stack
+     * actually answers. The loop is over every POST-accepting `/studio` route rather than
+     * over the one this ticket added, so the NEXT state-changing route is covered the moment
+     * it is registered.
+     *
+     * ⚠ GET IS DELIBERATELY NOT INCLUDED. `PreventRequestForgery` exempts read methods by
+     * design, so demanding it on `/studio/preview` would be asserting something false about
+     * how the middleware works and would have to be loosened later.
+     */
+    $missing = [];
+    $checked = 0;
+
+    foreach (Route::getRoutes() as $route) {
+        if (! str_starts_with('/'.ltrim($route->uri(), '/'), '/studio')) {
+            continue;
+        }
+
+        $writes = array_intersect($route->methods(), ['POST', 'PUT', 'PATCH', 'DELETE']);
+
+        if ($writes === []) {
+            continue;
+        }
+
+        $checked++;
+
+        if (! in_array(PreventRequestForgery::class, $route->gatherMiddleware(), true)) {
+            $missing[] = implode('|', $route->methods()).' /'.ltrim($route->uri(), '/');
+        }
+    }
+
+    // Not vacuous: the panel registers a logout POST and this ticket's language POST, so a
+    // loop that found nothing to check has stopped measuring the panel.
+    expect($checked)->toBeGreaterThan(1, 'no state-changing studio route was examined');
+
+    expect($missing)->toBe([], 'studio routes that change state without PreventRequestForgery: '.implode(', ', $missing));
 });
 
 it('serves a content security policy on the preview document, not only on its assets', function (): void {

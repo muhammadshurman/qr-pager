@@ -13,7 +13,13 @@
 <title>{{ __('studio.preview.refused_title') }}</title><meta name="robots" content="noindex,nofollow"></head>
 <body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem">
 <h1>{{ __('studio.preview.refused_heading') }}</h1>
-<p>{{ __('studio.preview.refused_body', ['field' => $field, 'reason' => $reason]) }}</p>
+{{--
+    ⚠ ONE SENTENCE, COMPOSED BY `InvalidField`, AND IT WAS A PATH PLUS AN ENGLISH REASON.
+    `R-262`: an Arabic-speaking owner met «seo.og_image لا يمكن نشره: names an image that is
+    not in your library» here. The sentence now names the TAB and the FIELD in their own
+    language and ends with what to do about it.
+--}}
+<p>{{ $explanation }}</p>
 <p>{{ __('studio.preview.refused_hint') }}</p>
 </body>
 </html>

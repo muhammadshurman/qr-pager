@@ -137,6 +137,10 @@ function studioExpectations(string $principal): array
         // takes the same answer as the rest for every principal -- which is the whole
         // point of enumerating them uniformly.
         'GET /studio/theme' => $status,
+        // `QRPAGER-48`'s language control. A POST inside `authenticatedRoutes`, so it takes
+        // the same refusal as every other route here -- the panel's stack refuses before the
+        // handler runs, which is what makes it safe to write a user row from it at all.
+        'POST /studio/panel-language' => $status,
         'POST /studio/logout' => $status,
     ];
 
@@ -159,6 +163,9 @@ function studioExpectations(string $principal): array
             'GET /studio/preview' => 200,
             'GET /studio/preview/asset/{asset}' => 404,
             'GET /studio/theme' => 200,
+            // Redirects BACK, which is what 302 is: the control changes a preference and
+            // returns the person to the page they were reading.
+            'POST /studio/panel-language' => 302,
             'POST /studio/logout' => 302,
         ],
         default => [],
@@ -202,6 +209,10 @@ it('enumerates the studio routes, so every case below has a subject', function (
         'GET /studio/theme',
         'POST /livewire-<hash>/update',
         'POST /studio/logout',
+        // ⚠ THE EIGHTH, AT `QRPAGER-48`: the studio's own language control. Sorted here
+        // rather than appended, because this list is compared EXACTLY -- which is what makes
+        // a ninth route arrive in a diff somebody reads instead of a table nobody does.
+        'POST /studio/panel-language',
     ]);
 });
 

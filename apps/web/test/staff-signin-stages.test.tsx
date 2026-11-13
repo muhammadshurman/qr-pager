@@ -38,8 +38,16 @@ const MEMBERSHIPS = [
     name: 'Al Baik Jeddah',
     slug: 'al-baik',
     grantableRoles: [],
+    canAccessStudio: false,
   },
-  { tenantId: 'tenant-b', role: 'owner', name: 'Kudu Riyadh', slug: 'kudu', grantableRoles: [] },
+  {
+    tenantId: 'tenant-b',
+    role: 'owner',
+    name: 'Kudu Riyadh',
+    slug: 'kudu',
+    grantableRoles: [],
+    canAccessStudio: false,
+  },
 ] as const
 
 function mount(stage: SignInStage) {

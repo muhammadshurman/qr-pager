@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Features\Landing\Panel;
 
+use App\Domain\Tenancy\TenantLanguage;
+use App\Features\Landing\LanguageNotChanged;
 use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
 use App\Features\Landing\Panel\Pages\ThemePage;
+use App\Features\Landing\PanelLanguage;
 use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\TenantPanelAccess;
 use App\Platform\Panel\ApprovedPalette;
 use Filament\Enums\ThemeMode;
 use Filament\FontProviders\LocalFontProvider;
@@ -23,6 +27,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
@@ -293,6 +298,203 @@ class StudioPanelProvider extends PanelProvider
              * allowlist) and which no other mechanism can replace: the class is written by
              * Filament's own boot script before any stylesheet can respond to it.
              */
+            /*
+             * THE FOOTER'S SAVE STATE — `QRPAGER-48` item 2.
+             *
+             * ⚠ IT SHARES THE PLATE'S READ RATHER THAN MAKING ITS OWN. Two chrome regions want
+             * the same fact, and a second `state()` call would have turned the corrected figure
+             * of TWO scoped reads per render into three. `StudioChromeState` memoises per
+             * request, so the chrome costs one read however many regions ask.
+             */
+            ->renderHook(
+                PanelsRenderHook::FOOTER,
+                function (): string {
+                    if (! TenantPanelAccess::allows()) {
+                        return '';
+                    }
+
+                    return view('studio.partials.footer-bar', [
+                        'footer' => StudioChromeState::of(TenantPanelAccess::tenantId()),
+                    ])->render();
+                },
+            )
+            /*
+             * THE PUBLISH STATE, ON EVERY TAB — `QRPAGER-48` item 2.
+             *
+             * ⚠ IT IS THE FRAME, NOT THE PAGE. An owner editing colours needs to know their
+             * customers are still seeing last week's page just as much as one editing blocks
+             * does, so it renders above every studio page rather than on the builder alone.
+             *
+             * ⚠⚠ AND IT COSTS A SECOND SCOPED READ PER RENDER. `§6` question 5 claimed this
+             * would reuse the form's read; the build falsified that — `state()` and `draft()`
+             * each open their own `withTenant` — and `PLAN.md` carries the corrected figure.
+             * Accepted rather than optimised: memoising `row()` per request would change
+             * shared code four pages and the publish path depend on, to save one read on a
+             * page an owner opens deliberately.
+             */
+            ->renderHook(
+                PanelsRenderHook::PAGE_HEADER_ACTIONS_BEFORE,
+                function (): string {
+                    if (! TenantPanelAccess::allows()) {
+                        return '';
+                    }
+
+                    return view('studio.partials.status-plate', [
+                        'plate' => StudioChromeState::of(TenantPanelAccess::tenantId()),
+                    ])->render();
+                },
+            )
+            /*
+             * ⚠ THE TOPBAR'S LEFT HALF — `QRPAGER-48` item 2: the mark, the RESTAURANT'S name
+             * and a chip saying which screen this is.
+             *
+             * `§12` forbids an unexplained identifier, and before this the topbar carried the
+             * product's name and nothing about whose page was being edited. On a shared
+             * device the restaurant is the one fact a person glances up to confirm.
+             */
+            ->renderHook(
+                PanelsRenderHook::TOPBAR_START,
+                fn (): string => view('studio.partials.topbar-identity', [
+                    'restaurant' => TenantPanelAccess::membership()->tenantName ?? '',
+                ])->render(),
+            )
+            /*
+             * THE STUDIO'S OWN LANGUAGE, BESIDE THE PERSON IT BELONGS TO — `QRPAGER-48`.
+             *
+             * ⚠ IT SITS IN THE TOPBAR AND NOT ON THE PAGE TAB, which is the whole point: the
+             * page tab's control sets what a restaurant's CUSTOMERS read, and this sets what
+             * the person signed in reads. One column answered both until 2026-11-13; they are
+             * now `tenants.language` and `users.panel_language`, and each control names its
+             * own audience so an owner meeting them a minute apart cannot confuse them.
+             */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                fn (): string => TenantPanelAccess::allows()
+                    ? view('studio.partials.panel-language')->render()
+                    : '',
+            )
+            /*
+             * ⚠⚠ THE SIGNED-IN PERSON'S FIRST NAME, READABLE WITHOUT A CLICK.
+             *
+             * Muhammad's ruling of 2026-11-13, which treats the artboard itself as the defect:
+             * *"The artboard's bare initial is itself the defect — `§12` forbids an unexplained
+             * identifier, and a single letter is exactly that."* So the name is TEXT beside the
+             * avatar, and the avatar alone is what remains on a narrow screen — the collapse is
+             * CSS, because the name is not information the small screen needs less, it is
+             * information the small screen has no room for.
+             */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                function (): string {
+                    $name = trim((string) (auth()->user()?->getAttribute('name') ?? ''));
+
+                    if ($name === '') {
+                        return '';
+                    }
+
+                    $first = explode(' ', $name)[0];
+
+                    return '<span class="studio-topbar__person" data-topbar-person="true">'
+                        .e($first)
+                        .'</span>';
+                },
+            )
+            /*
+             * AND THE MENU ITSELF CARRIES THE WHOLE NAME AND THE ADDRESS — *"the full name, the
+             * email, and «تسجيل الخروج». Nothing else."* The address is what distinguishes two
+             * people with one first name, which is the case the abbreviation above cannot serve.
+             */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_PROFILE_BEFORE,
+                function (): string {
+                    $user = auth()->user();
+                    $name = trim((string) ($user?->getAttribute('name') ?? ''));
+                    $email = trim((string) ($user?->getAttribute('email') ?? ''));
+
+                    if ($name === '' && $email === '') {
+                        return '';
+                    }
+
+                    /*
+                     * ⚠ `studio.chrome.signed_in_as` IS THE GROUP'S ACCESSIBLE NAME, AND IT
+                     * WAS IN BOTH CATALOGUES WITH NO CALL SITE AT ALL (`§11` QA L-1).
+                     *
+                     * It is not rendered as visible text, and that is the ticket's own
+                     * instruction rather than an oversight: item 2 says the menu shows *"the
+                     * full name, the email, and «تسجيل الخروج». Nothing else."* So the
+                     * sentence the key exists for becomes what the block is CALLED rather
+                     * than another line in it -- which is also the thing the block was
+                     * missing, two bare spans having no accessible description of their own.
+                     *
+                     * `role="group"` because a bare `<div>` takes no accessible name: an
+                     * `aria-label` on a generic element is dropped by assistive technology,
+                     * so the attribute without the role would have been the same defect in a
+                     * new shape -- a key that is present and does nothing.
+                     */
+                    return '<div class="studio-usermenu__identity" data-usermenu-identity="true"'
+                        .' role="group" aria-label="'.e(__('studio.chrome.signed_in_as', ['name' => $name !== '' ? $name : $email])).'">'
+                        .'<span class="studio-usermenu__name">'.e($name).'</span>'
+                        .'<span class="studio-usermenu__email">'.e($email).'</span>'
+                        .'</div>';
+                },
+            )
+            /*
+             * ⚠⚠ THE WAY BACK TO THE ORDERS BOARD — `QRPAGER-48` item 3, AND IT REUSES THE
+             * KEY THE SIGNED-OUT REDIRECT ALREADY USES RATHER THAN ADDING ONE.
+             *
+             * `surfaces.staff_signin_url` is the staff app's ENTRY POINT and serves BOTH uses:
+             * `PanelSignInRedirect` sends a signed-OUT visitor there, and this sends a
+             * signed-IN one. **The name predates the second use** and is deliberately not
+             * changed, because other code depends on it — `PLAN.md §4a` carries that sentence
+             * so a reader meeting it here finds an explanation rather than a puzzle.
+             *
+             * ⚠ **AND NO SECOND VALIDATOR IS WRITTEN HERE, DELIBERATELY.** The value is already
+             * validated at boot by `BootChecks::staffSignInUrlIsSound()` — absolute, https, a
+             * real host, and refused outright if it is itself a panel path on this host (the
+             * redirect loop). That posture is **fail-CLOSED** and is the opposite of the staff
+             * app's `studioUrl()`, which falls back. `§4a` records why those two must NOT be
+             * aligned: this one, wrong, locks everybody out; that one, wrong, points a button
+             * somewhere odd.
+             */
+            ->renderHook(
+                PanelsRenderHook::TOPBAR_END,
+                function (): string {
+                    $target = config('surfaces.staff_signin_url');
+
+                    if (! is_string($target) || trim($target) === '') {
+                        // Nothing to link to. Rendering no control is right: a dead link in
+                        // the chrome is worse than an absent one, and in production this
+                        // state cannot be reached at all -- the boot check refuses it.
+                        return '';
+                    }
+
+                    /*
+                     * ⚠ AND THE SCHEME IS CHECKED HERE AFTER ALL (`§11` SECURITY L-3). The
+                     * paragraph above said no second validator was needed because
+                     * `BootChecks::staffSignInUrlIsSound()` covers it — and that method's
+                     * FIRST statement is `if ($this->isDevelopment()) { return []; }`, with
+                     * `DEVELOPMENT_ENVIRONMENTS = ['local', 'testing']`. So it is skipped in
+                     * exactly the two environments where this value is set by hand and by
+                     * `tools/browsers/bin/e2e`. The claim was true of production and the
+                     * comment stated it without that qualification.
+                     *
+                     * `e()` is not the answer to this one: it prevents attribute breakout —
+                     * `StudioBackToStaffTest`'s third case proves that, correctly — and
+                     * leaves the SCHEME untouched, so `javascript:alert(1)` survives it
+                     * unchanged and becomes a live anchor in the topbar.
+                     *
+                     * Fail-closed, like the boot check it backs up: an unusable value renders
+                     * no control rather than a control that does something else.
+                     */
+                    if (! str_starts_with($target, 'https://') && ! str_starts_with($target, 'http://')) {
+                        return '';
+                    }
+
+                    return '<a class="studio-topbar__back" href="'.e($target).'" data-back-to-staff="true">'
+                        .e(__('studio.page.back_to_staff'))
+                        .'</a>';
+                },
+            )
             ->renderHook(
                 PanelsRenderHook::HEAD_END,
                 fn (): string => <<<'HTML'
@@ -563,6 +765,102 @@ class StudioPanelProvider extends PanelProvider
             // $request->user() resolved through config('auth.defaults.guard') rather
             // than this panel's declared authGuard('web'). They coincide today.
             ->authenticatedRoutes(function (): void {
+                /*
+                 * WHICH LANGUAGE THIS PERSON READS THE STUDIO IN — `QRPAGER-48` item 2.
+                 *
+                 * ⚠ POST, AND INSIDE `authenticatedRoutes` SO IT CARRIES THE PANEL'S OWN
+                 * STACK. It changes stored state, so a GET would be a preference any page
+                 * could flip by embedding an image. The write is the signed-in person's OWN
+                 * row and nobody else's — the id comes from the guard, never from input.
+                 *
+                 * ⚠⚠ AND IT WRITES `users.panel_language`, NOT `tenants.language`. Those are
+                 * different facts and `PLAN.md §2.4` records why: this is what the PERSON
+                 * reads; the restaurant's published page language is a property of the
+                 * restaurant and is set on the page tab. Writing the tenant column here is
+                 * precisely the defect this ticket's column exists to prevent.
+                 */
+                Route::post('panel-language', function (Request $request) {
+                    $chosen = $request->input('language');
+                    $language = is_string($chosen) ? TenantLanguage::tryFrom($chosen) : null;
+
+                    if ($language === null) {
+                        // An unrecognised value clears the preference rather than guessing:
+                        // "follow the restaurant" is the honest reading of "not a language".
+                        $language = null;
+                    }
+
+                    $userId = auth()->id();
+
+                    if (is_string($userId)) {
+                        try {
+                            app(PanelLanguage::class)->set($userId, $language);
+                        } catch (LanguageNotChanged) {
+                            /*
+                             * ⚠ CAUGHT, AND IT ESCAPED AS A 500 (`§11` QA L-2). `set()`
+                             * raises this when the UPDATE matched no row — which, as its own
+                             * docblock says, can only mean the signed-in person's row was
+                             * deleted mid-session. That is a real state and it is not an
+                             * error in the request: the next page load will meet the
+                             * authentication guard and send them to sign in again, which is
+                             * the honest answer. An exception page here would show a stack
+                             * trace for a toggle.
+                             *
+                             * Swallowed deliberately rather than reported: there is nothing
+                             * the person can do, nothing to retry, and the redirect below
+                             * already re-renders the panel in whatever language the row
+                             * resolution now yields.
+                             */
+                        }
+                    }
+
+                    /*
+                     * ⚠⚠ THE PAGE THEY CAME FROM, CARRIED BY THE FORM — NOT `back()`, AND NOT
+                     * `url()->previous()` EITHER.
+                     *
+                     * `back()` was the first version and `§11` QA L-6 / SECURITY L-1 are why
+                     * it went: it reflects the `Referer` header verbatim, so this answered
+                     * `302 Location: https://evil.example/…` for any request whose Referer
+                     * said so, and with no Referer at all it fell through to `/`, off the
+                     * panel entirely.
+                     *
+                     * The replacement — the previous URL, admitted when it looked like a
+                     * `/studio` path — was ALSO wrong, and Muhammad's walkthrough of PR #22
+                     * caught it: *"clicking AR/EN opens the restaurant's logo chooser."* What
+                     * it actually did was navigate the owner full-page onto a raw JPEG.
+                     * Measured: this form sends NO Referer, `url()->previous()` therefore
+                     * falls back to the session's previous URL, Laravel sets that from the
+                     * last non-AJAX GET, and the theme tab's PREVIEW IFRAME fetches
+                     * `/studio/preview/asset/{id}` for every image on the page. The prefix
+                     * test passed it because an image under `/studio/` is still under
+                     * `/studio/`. A guard that cannot tell a page from a picture is not a
+                     * guard for this question.
+                     *
+                     * ⚠ SO THE ANSWER IS NOT A TIGHTER PREFIX. Ambient "where were you" is
+                     * the wrong source: it is set by sub-resources this control knows nothing
+                     * about. The form states it, and the statement is a ROUTE NAME validated
+                     * against this panel's own PAGES — a closed set, where `preview`,
+                     * `preview.asset` and `panel-language` are absent by construction rather
+                     * than by a rule someone has to remember to extend.
+                     */
+                    $from = $request->input('from');
+
+                    $target = is_string($from) && self::isStudioPage($from)
+                        ? $from
+                        : 'filament.studio.pages.theme';
+
+                    return redirect()->route($target);
+                })
+                    ->name('panel-language')
+                    /*
+                     * ⚠ A SECOND LIMITER, FOR THE PREVIEW ROUTES' REASON (`§11` SECURITY
+                     * L-5). The panel stack's `RateLimit:panel` runs FIRST, before
+                     * `StartSession`, so it can only ever count the IP; route middleware is
+                     * appended and sorted after `Authenticate`, which is where a tenant
+                     * exists to count. `§4 › Edge & ops` asks for both halves and this route
+                     * had only one — on the panel's single non-Livewire WRITE.
+                     */
+                    ->middleware(RateLimit::class.':studio-panel-language-tenant');
+
                 // Named `preview`, not `studio.preview`: Filament prefixes a panel's
                 // routes with `filament.{panel id}.`, so the full names are
                 // `filament.studio.preview` and `filament.studio.preview.asset`.
@@ -595,5 +893,23 @@ class StudioPanelProvider extends PanelProvider
                     ->name('preview.asset')
                     ->middleware(RateLimit::class.':studio-preview-asset-tenant');
             });
+    }
+
+    /**
+     * Is this the name of a PAGE of this panel?
+     *
+     * ⚠ PAGES ONLY, WHICH IS THE WHOLE POINT. Filament names a panel's routes
+     * `filament.{panel}.pages.{page}`, and its non-page routes — the preview document, the
+     * preview's ASSETS, this very POST — do not carry that segment. So an image cannot be a
+     * redirect target here however it is spelled, which is the defect Muhammad's walkthrough
+     * found: the owner was sent full-page to `/studio/preview/asset/{id}` and read the
+     * result as a file dialog.
+     *
+     * `Route::has()` as well as the prefix, so a name that merely LOOKS like one cannot
+     * reach `route()` and raise there.
+     */
+    private static function isStudioPage(string $name): bool
+    {
+        return str_starts_with($name, 'filament.studio.pages.') && Route::has($name);
     }
 }

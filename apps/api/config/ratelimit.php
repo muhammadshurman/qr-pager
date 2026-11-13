@@ -439,6 +439,30 @@ return [
         ],
 
         /*
+         * ⚠ THE PANEL'S ONE NON-LIVEWIRE WRITE, METERED PER TENANT (`§11` SECURITY L-5).
+         *
+         * `POST /studio/panel-language` inherits the panel stack's `RateLimit:panel`, which
+         * is deliberately the FIRST middleware — before `StartSession`, so an anonymous
+         * flood is refused without minting a Redis session key (Task 6's H-2 posture). The
+         * cost of that position is that `$request->user()` cannot resolve there, so only the
+         * per-IP half counts, and `§4 › Edge & ops` asks for per IP AND per tenant.
+         *
+         * The per-request cost this bounds, read off `route:list` for this route: one Redis
+         * op, a session load, `ActiveMembership::resolve()`, `PanelLanguage::current()` (one
+         * unscoped SELECT on `users`) and the handler's UPDATE — two Postgres statements and
+         * one row write. Small, but it is a WRITE, which is what separates it from the page
+         * routes the early bucket already covers.
+         *
+         * The number is generous on purpose: this is a person pressing AR or EN, so the
+         * ceiling is about a loop rather than about a human. Same shape and same reasoning
+         * as the two preview buckets above, which is why it is registered the same way —
+         * a second limiter instance, appended so it sorts AFTER `Authenticate`.
+         */
+        'studio-panel-language-tenant' => [
+            'per_tenant' => $limit(120, 60),
+        ],
+
+        /*
         | Unknown routes get their own, much tighter bucket. A 404 costs almost nothing
         | to serve and everything to scan with, so path enumeration is the traffic this
         | one exists for -- and the gate names it: "the rate limiter covers unknown

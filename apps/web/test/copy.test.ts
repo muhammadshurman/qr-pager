@@ -130,8 +130,17 @@ describe('the copy catalogue', () => {
      * person to need that sentence finds two candidates and no way to tell which is live.
      * The count is the only thing that makes a removal deliberate, which is why it is here
      * and not merely in the diff.
+     *
+     * ⚠ **289 AT `QRPAGER-48`: ONE ADDED, `staff.shell.studio`.** The staff shell gained a
+     * way into the studio, shown only to somebody the panel will actually admit — the label
+     * names the DESTINATION rather than the product (*Edit your page*), because a person who
+     * has never opened it should know what it is from the control alone.
+     *
+     * The count caught it, which is the point of pinning it: an addition is as deliberate as
+     * a removal, and a catalogue that grew silently would be one where the Arabic half of a
+     * new sentence could go unread.
      */
-    expect(en.length).toBe(288)
+    expect(en.length).toBe(289)
   })
 
   it('has no empty value in either language', () => {

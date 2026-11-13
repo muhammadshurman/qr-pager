@@ -19,7 +19,12 @@
         <div class="studio-layout__form">
         @php($state = $this->state())
 
-        <div role="status" aria-live="polite" class="studio-plate studio-field">
+        {{-- ⚠ NOT A LIVE REGION ANY MORE — `§11` QA M-2. `QRPAGER-48`'s chrome plate is the
+             one `role="status"` for this fact and it renders on EVERY tab; leaving this one
+             announcing as well gave a screen reader the same change twice, in two different
+             wordings. The plate stays VISIBLE: it carries a heading and the full explanation,
+             which the chrome's one-line version deliberately does not. --}}
+        <div class="studio-plate studio-field" data-page-status-plate="true">
             <h2>{{ __('studio.page.status_heading') }}</h2>
 
             @if ($state['invalid'] !== null)
@@ -116,17 +121,11 @@
                  two keep theirs, because renaming an action the capability gate names is a
                  change to what the owner can DO rather than to the layout. --}}
             <div class="studio-footer">
-                <p class="studio-footer__state">
-                    @if ($state['invalid'] !== null)
-                        {{ __('studio.footer.not_publishable') }}
-                    @elseif ($state['blocks'] === 0)
-                        {{ __('studio.footer.no_blocks') }}
-                    @elseif ($state['has_unpublished_changes'])
-                        {{ __('studio.footer.unpublished_changes') }}
-                    @else
-                        {{ __('studio.footer.saved') }}
-                    @endif
-                </p>
+                {{-- ⚠ THE SAVE STATE MOVED TO THE CHROME FOOTER — `§11` QA M-2. This said the
+                     same four sentences one bar below `QRPAGER-48`'s chrome footer, which shows
+                     them on every tab; two save-state regions on one page is the defect, and the
+                     one that survives is the one that is always there. The KEYS are unchanged and
+                     the chrome footer now uses them, so no wording was lost. --}}
 
                 <div class="studio-footer__actions">
                 <button type="submit" class="fi-btn fi-btn-size-md fi-color-primary px-16 py-8 rounded-lg">

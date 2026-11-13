@@ -255,6 +255,10 @@ it('states the app grants on users as exact column sets', function (): void {
     // secret, so granting them would have re-opened the row at the moment it closed.
     expect(Schema::grantedColumns('qrpager_app', 'users', 'SELECT'))->toBe([
         'created_at', 'email', 'email_verified_at', 'id', 'is_platform_admin', 'name',
+        // `panel_language` — QRPAGER-48. The app READS it to resolve which language this
+        // person reads the panel in; it is NOT the published page's language, which lives
+        // on `tenants.language` and is granted separately.
+        'panel_language',
         'two_factor_confirmed_at', 'updated_at',
     ]);
 
@@ -282,7 +286,11 @@ it('states the app grants on users as exact column sets', function (): void {
     // single UPDATE. The absence of the grant is the control -- not a policy check that
     // could be wrong.
     expect(Schema::grantedColumns('qrpager_app', 'users', 'UPDATE'))->toBe([
-        'email', 'email_verified_at', 'name', 'password', 'remember_token',
+        'email', 'email_verified_at', 'name',
+        // ⚠ UPDATE but NOT INSERT — QRPAGER-48. A new user has no preference, which is what
+        // NULL already says, so granting INSERT would widen the surface for nothing.
+        'panel_language',
+        'password', 'remember_token',
         'two_factor_confirmed_at', 'two_factor_recovery_codes', 'two_factor_secret',
         'updated_at',
     ]);

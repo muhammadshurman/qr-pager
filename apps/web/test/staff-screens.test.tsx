@@ -251,6 +251,7 @@ describe('sign-in', () => {
             name: 'Al Baik',
             slug: 'al-baik',
             grantableRoles: [],
+            canAccessStudio: false,
           },
         ]}
         onChoose={vi.fn()}
@@ -313,6 +314,7 @@ describe('sign-in', () => {
             name: 'Al Baik Jeddah',
             slug: 'al-baik',
             grantableRoles: [],
+            canAccessStudio: false,
           },
           {
             tenantId: 'tenant-b',
@@ -320,6 +322,7 @@ describe('sign-in', () => {
             name: 'Shawarma House',
             slug: 'shawarma-house',
             grantableRoles: [],
+            canAccessStudio: false,
           },
         ]}
         onChoose={vi.fn()}
@@ -372,6 +375,7 @@ describe('sign-in', () => {
             name: '',
             slug: 'kudu-riyadh',
             grantableRoles: [],
+            canAccessStudio: false,
           },
         ]}
         onChoose={vi.fn()}
@@ -395,6 +399,7 @@ describe('sign-in', () => {
             name: '',
             slug: '',
             grantableRoles: [],
+            canAccessStudio: false,
           },
         ]}
         onChoose={vi.fn()}

@@ -1,6 +1,8 @@
 'use client'
 
 import { Button, LockScreen, StaffShell, StaffState, ThemeProvider, type Locale } from '@qrpager/ui'
+
+import { studioUrl } from './staff/studio.ts'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { translatorFor, type CopyKey } from './copy/index.ts'
@@ -1836,6 +1838,22 @@ export function StaffApp({
         roleWord={t(roleKey(role))}
         signedInLabel={t('staff.shell.signedIn', { name: identity.name })}
         signOutLabel={t('staff.shell.signOut')}
+        /*
+         * ⚠⚠ THE DOOR IS DRAWN ONLY WHERE IT OPENS — `QRPAGER-48` item 3.
+         *
+         * `/studio` is gated by `TenantPanelAccess::allows()` (Owner or Manager), so a staff
+         * member who is neither would click this and get a 401. The condition is the SERVER'S
+         * answer, published on `/v1/auth/me` from the same predicate the panel's own gate
+         * uses — not `role` re-tested here, which would be a second implementation free to
+         * drift from the gate it predicts.
+         *
+         * `undefined` rather than a disabled control: a door that is visibly locked still
+         * invites the question, and there is nothing this person can do about it.
+         */
+        studioHref={activeMembership?.canAccessStudio === true ? studioUrl() : undefined}
+        studioLabel={
+          activeMembership?.canAccessStudio === true ? t('staff.shell.studio') : undefined
+        }
         onSignOut={() => {
           lock('signed-out')
         }}

@@ -94,6 +94,35 @@
   gap: var(--space-8);
 }
 
+/*
+ * The way into the studio. `QRPAGER-48` item 3.
+ *
+ * ⚠⚠ `--target-min` IS NOT DECORATION HERE: THE FIRST VERSION HAD NO RULE AT ALL AND THE
+ * GATE REFUSED IT. An unstyled inline anchor is line-height tall, and `gate:e2e` measured it
+ * at **24px** against `§12`'s 44 — *"Edit your page is 24px tall"* — in 24 cases across all
+ * six staff projects, LTR and RTL. A control a person reaches for on a kitchen tablet with
+ * one hand is exactly what that rule is written about.
+ *
+ * `min-inline-size` as well as block: the label is short in English and shorter in Arabic
+ * («عدّل صفحتك»), and the floor has to hold on both axes rather than only the one a long
+ * word happens to fill.
+ */
+.qr-staff__studio {
+  display: inline-flex;
+  gap: var(--space-8);
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--target-min);
+  min-inline-size: var(--target-min);
+  padding-inline: var(--space-12);
+  font-size: var(--size-13);
+  color: var(--color-ink);
+  text-decoration: none;
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+}
+
 .qr-staff__main {
   flex: 1 1 auto;
   padding-block: var(--space-24);

@@ -13,6 +13,7 @@ use App\Platform\Auth\Memberships;
 use App\Platform\Auth\UserCredentials;
 use App\Platform\Http\Problem;
 use App\Platform\Http\ProblemDocument;
+use App\Platform\Http\TenantPanelAccess;
 use App\Platform\Http\ValidationProblemDocument;
 use Dedoc\Scramble\Attributes\Response as DocResponse;
 use Illuminate\Http\JsonResponse;
@@ -293,6 +294,7 @@ final class AuthController
                 // The restaurant's name.
                 'name' => $membership->tenantName,
                 'role' => $membership->role->value,
+                'can_access_studio' => TenantPanelAccess::permits($membership->role),
                 // The principal this membership makes its holder.
                 'principal' => Principal::forMembership($membership->role, $membership->expiresAt)->value,
                 // The roles this membership may grant to somebody else. Added at 10e.

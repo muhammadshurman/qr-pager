@@ -21,8 +21,90 @@ use Illuminate\Support\Facades\DB;
  * captured from `proc_close` directly and never read after a pipe.
  */
 
-/** Run a script with an overridden APP_ENV and return [status, stderr]. */
-function runFixtureScript(string $script, string $environment): array
+/**
+ * Every thing in this repository that carries the fixture guard, and how to run it.
+ *
+ * ⚠ TWO GROUNDS, WALKED THE SAME WAY, BECAUSE A DERIVED SET IS ONLY DERIVED OVER THE GROUND
+ * IT ACTUALLY WALKS. This was a glob over `bin/*` alone -- which was itself a correction of a
+ * glob over `bin/issue-*`, and the docblock below records why. `QRPAGER-48` added
+ * `studio:demo-tenant`: an ARTISAN COMMAND that writes as the database owner and creates an
+ * owner-role account whose password is a literal in this repository. It was invisible here,
+ * and so was the shape of its own refusal (a capital R against a lowercase grep).
+ *
+ * The grep is the same in both places -- the guard's own refusal string -- so a new fixture
+ * is covered the moment it opts in by carrying the guard, whichever of the two it is.
+ *
+ * ⚠ THE ARTISAN HALF GREPS THE CLASS FILE AND READS THE SIGNATURE OUT OF IT, rather than
+ * asking the console kernel for registered commands. `Artisan::all()` would answer with
+ * Laravel's own hundred-odd commands and this would become a filter over THEM; the question
+ * here is narrower and structural: which of OUR files carry the guard, and what is each one
+ * called. A command that carries the guard and no `$signature` is a malformed command, and
+ * `preg_match` returning nothing drops it -- which the exact-set assertion then catches.
+ *
+ * @return array<string, list<string>> subject name => argv to run it
+ */
+function guardedSubjects(): array
+{
+    $subjects = [];
+
+    foreach (glob(base_path('bin/*')) ?: [] as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
+        if (str_contains((string) file_get_contents($path), 'refusing to run')) {
+            $subjects['bin/'.basename($path)] = [$path];
+        }
+    }
+
+    $commands = glob(base_path('app/*/*/Console/*.php')) ?: [];
+
+    foreach ($commands as $path) {
+        $source = (string) file_get_contents($path);
+
+        /*
+         * ⚠ COMMENTS STRIPPED BEFORE THE GREP, AND WITHOUT THIS THE SET GAINED A WORKER.
+         * `WorkOutboxCommand` contains the phrase in a docblock -- *"this degrades to 'no
+         * graceful stop' rather than refusing to run"* -- so the first version of this
+         * derivation reported `outbox:work` as a guarded fixture and then tried to run it
+         * under `APP_ENV=production`. The guard has to be in CODE to be a guard; prose about
+         * one is the thing a derivation must not mistake for the thing itself.
+         */
+        $code = (string) preg_replace(['#/\*[\s\S]*?\*/#', '#//[^\n]*#'], ' ', $source);
+
+        if (! str_contains($code, 'refusing to run')) {
+            continue;
+        }
+
+        if (preg_match('/\$signature\s*=\s*\'([^\']+)\'/', $code, $name) !== 1) {
+            continue;
+        }
+
+        // The command NAME only -- a signature may carry arguments and options after it,
+        // across several lines, so the split is on whitespace rather than on a space.
+        $signature = (string) (preg_split('/\s+/', trim($name[1])) ?: [''])[0];
+
+        if ($signature === '') {
+            continue;
+        }
+
+        $subjects[$signature] = [PHP_BINARY, base_path('artisan'), $signature];
+    }
+
+    return $subjects;
+}
+
+/**
+ * Run a guarded fixture with an overridden APP_ENV and return [status, output].
+ *
+ * ⚠ IT TAKES A COMMAND LINE, NOT A PATH, SINCE `QRPAGER-48` `§11` QA M-3 / SECURITY M-1.
+ * The derivation below now finds guarded ARTISAN COMMANDS as well as `bin/*` scripts, and
+ * those are run as `php artisan <name>` rather than executed directly. `guardedSubjects()`
+ * returns the argv for each, so this function never has to know which kind it is holding.
+ *
+ * @param  list<string>  $argv
+ */
+function runFixtureCommand(array $argv, string $environment): array
 {
     $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
 
@@ -39,7 +121,7 @@ function runFixtureScript(string $script, string $environment): array
      * the development database on every suite run.
      */
     $process = proc_open(
-        [base_path($script)],
+        $argv,
         $descriptors,
         $pipes,
         base_path(),
@@ -51,7 +133,7 @@ function runFixtureScript(string $script, string $environment): array
         ]
     );
 
-    expect($process)->not->toBeFalse("could not start {$script}");
+    expect($process)->not->toBeFalse('could not start '.implode(' ', $argv));
 
     $out = (string) stream_get_contents($pipes[1]);
     $err = (string) stream_get_contents($pipes[2]);
@@ -104,17 +186,7 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
      * their own — so widening the glob adds exactly the scripts that opted in by carrying the
      * guard, which is what makes this derived rather than listed.
      */
-    $guarded = [];
-
-    foreach (glob(base_path('bin/*')) ?: [] as $path) {
-        if (! is_file($path)) {
-            continue;
-        }
-
-        if (str_contains((string) file_get_contents($path), 'refusing to run')) {
-            $guarded[] = 'bin/'.basename($path);
-        }
-    }
+    $guarded = array_keys(guardedSubjects());
 
     sort($guarded);
 
@@ -142,10 +214,24 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
         // its own layout rather than the publisher's -- so this one goes through
         // `LandingPages::saveDraft()` and `publish()`, writing to the bucket as the owner.
         'bin/publish-landing-fixture',
+        /*
+         * ⚠ TWO ARTISAN COMMANDS, AND THE DERIVATION COULD NOT SEE EITHER UNTIL NOW.
+         * `QRPAGER-48` `§11` QA M-3 / SECURITY M-1: `studio:demo-tenant` bootstraps the real
+         * kernel, writes as `pgsql_owner`, and creates a login-capable OWNER with a password
+         * literal committed in this repo -- strictly more dangerous than anything in `bin/`
+         * -- and it was outside this set on TWO independent counts. It lives in
+         * `app/Features/.../Console/` rather than `bin/`, and it spelled its refusal with a
+         * capital R, so widening the glob alone would still have missed it. Both are fixed
+         * at the source: the string matches, and `guardedSubjects()` walks commands too.
+         */
+        'studio:demo-imagery',
+        'studio:demo-tenant',
     ]);
 
+    $subjects = guardedSubjects();
+
     foreach ($guarded as $script) {
-        [$status, $output] = runFixtureScript($script, 'production');
+        [$status, $output] = runFixtureCommand($subjects[$script], 'production');
 
         expect($status)->toBe(1, "{$script} did not exit 1 under APP_ENV=production");
         expect($output)->toContain('refusing to run');
@@ -173,7 +259,7 @@ it('fails CLOSED on every environment it does not recognise, case included', fun
      * asserting that the script ignores `.env`, which is neither true nor desirable.
      */
     foreach (['staging', 'Local', 'prod', 'development'] as $environment) {
-        [$status, $output] = runFixtureScript('bin/issue-pager-session', $environment);
+        [$status, $output] = runFixtureCommand(guardedSubjects()['bin/issue-pager-session'], $environment);
 
         expect($status)->toBe(1, "APP_ENV='{$environment}' was accepted");
         expect($output)->toContain('refusing to run');
@@ -183,7 +269,7 @@ it('fails CLOSED on every environment it does not recognise, case included', fun
 it('still runs under testing, so the guard is a guard and not a lockout', function (): void {
     // The positive control. Without it the two cases above would pass on a script that
     // refused everything, which is the vacuous shape this project refuses.
-    [$status, $output] = runFixtureScript('bin/issue-pager-session', 'testing');
+    [$status, $output] = runFixtureCommand(guardedSubjects()['bin/issue-pager-session'], 'testing');
 
     /**
      * ⚠ THE OUTPUT IS NOT INTERPOLATED INTO THE MESSAGE. `§11` round two, SEC-R2 L-4 noted that

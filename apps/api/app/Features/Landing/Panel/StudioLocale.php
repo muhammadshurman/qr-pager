@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Landing\Panel;
 
-use App\Features\Landing\TenantPageLanguage;
+use App\Features\Landing\PanelLanguage;
 use App\Platform\Http\TenantPanelAccess;
 use Closure;
 use Illuminate\Http\Request;
@@ -83,6 +83,35 @@ final class StudioLocale
             return;
         }
 
-        app()->setLocale(app(TenantPageLanguage::class)->current($membership->tenantId)->value);
+        /*
+         * ⚠⚠ THE PERSON'S CHOICE FIRST, THE RESTAURANT'S LANGUAGE SECOND — `QRPAGER-48`.
+         *
+         * This read `TenantPageLanguage` directly until 2026-11-13, which made the panel's
+         * language and the PUBLISHED PAGE's language the same column. Muhammad's ruling
+         * separated them: *"two staff at the same restaurant can want different ones"*, and
+         * `tenants.language` keeps its own meaning, the language a CUSTOMER reads.
+         *
+         * `PanelLanguage::current()` resolves `users.panel_language ?? tenants.language`, so
+         * a person who has chosen nothing gets exactly the behaviour that shipped before the
+         * column existed.
+         */
+        /*
+         * ⚠ THE PERSON'S ID COMES FROM THE GUARD, NOT FROM THE MEMBERSHIP. `Membership`
+         * carries TENANT facts — id, slug, name, role, status — and deliberately no user id;
+         * it answers *which restaurant am I acting in*, not *who am I*. The panel's
+         * `authGuard('web')` is stated in `StudioPanelProvider` precisely so this is not a
+         * guess about which guard holds the person.
+         */
+        $userId = auth()->id();
+
+        if (! is_string($userId)) {
+            // No authenticated person: the panel refuses anyway, and leaving the locale
+            // alone is what this method already does for a null membership.
+            return;
+        }
+
+        app()->setLocale(
+            app(PanelLanguage::class)->current($userId, $membership->tenantId)->value,
+        );
     }
 }

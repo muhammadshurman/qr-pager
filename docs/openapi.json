@@ -95,6 +95,9 @@
                                                             "role": {
                                                                 "type": "string"
                                                             },
+                                                            "can_access_studio": {
+                                                                "type": "boolean"
+                                                            },
                                                             "principal": {
                                                                 "type": "string",
                                                                 "description": "The principal this membership makes its holder."
@@ -110,6 +113,7 @@
                                                             "slug",
                                                             "name",
                                                             "role",
+                                                            "can_access_studio",
                                                             "principal",
                                                             "grantable_roles"
                                                         ]
@@ -357,6 +361,9 @@
                                                             "role": {
                                                                 "type": "string"
                                                             },
+                                                            "can_access_studio": {
+                                                                "type": "boolean"
+                                                            },
                                                             "principal": {
                                                                 "type": "string",
                                                                 "description": "The principal this membership makes its holder."
@@ -372,6 +379,7 @@
                                                             "slug",
                                                             "name",
                                                             "role",
+                                                            "can_access_studio",
                                                             "principal",
                                                             "grantable_roles"
                                                         ]

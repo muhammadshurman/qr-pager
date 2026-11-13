@@ -84,6 +84,59 @@
 
 /*
  * ================================================================================
+ * THE STUDIO CHROME'S OWN CONTROLS — `QRPAGER-48` `§11` QA H-3
+ * ================================================================================
+ *
+ * ⚠ THESE ARE NOT FILAMENT COMPONENTS, WHICH IS EXACTLY WHY THEY ARRIVED UNDER THE BAR.
+ * Every other selector in this file is a `fi-` class, and `PanelTargetTest`'s derivation
+ * admitted a class only when `str_starts_with($class, 'fi-')` -- so the chrome's own
+ * `<a class="studio-topbar__back">` and `<button class="studio-lang__choice">` were
+ * invisible to the one check that exists to catch a control under the floor. The filter is
+ * widened in the same change; this is the other half.
+ *
+ * Measured before the fix: the back link rendered 20px tall and the language buttons were a
+ * bare glyph, both because their only padding named tokens that do not exist (QA H-2). The
+ * token names are corrected there -- but a floor is what makes the bar hold independently of
+ * whether a padding value is right, which is this file's whole argument.
+ *
+ * BOTH AXES, unlike the standalone group above. That group floors height alone because those
+ * controls are full-width by layout; these two are content-sized in the topbar, and the
+ * language control is a single glyph, so its width is the axis that fails first.
+ *
+ * This is the same defect `710a596` fixed on the staff side of this very ticket -- *"the
+ * studio link meets `§12`'s 44px floor, which the gate refused"* -- caught there by
+ * `browser/staff.spec.ts`'s sweep over every interactive box. The studio had no such sweep;
+ * `browser/studio.spec.ts` now carries one.
+ */
+.studio-topbar__back,
+.studio-lang__choice {
+  min-block-size: var(--target-min);
+  min-inline-size: var(--target-min);
+}
+
+/*
+ * ⚠ AND THREE THE SAME WIDENING FOUND, OLDER THAN THIS TICKET. Once `PanelTargetTest`
+ * admitted `studio-` classes it reported `.studio-tab`, `.studio-colour__clear` and
+ * `.studio-arrangement__input` as rendered controls with no floor anywhere -- from
+ * `QRPAGER-40` and `QRPAGER-41`, carried by every round since under a check that could not
+ * see them. They are floored here rather than filed, because the finding is "a control
+ * under the bar with nothing going red" and that is true of these three today.
+ *
+ * `.studio-tab` is a flex item of `.studio-tabs`, so a block floor applies to it;
+ * `.studio-colour__clear` is a `<button>` (`ColourField.php:306`) and not text inside a
+ * sentence, so WCAG 2.5.8's exception does not reach it. `.studio-arrangement` is the LABEL
+ * that carries the hidden radio's target -- the `labelledTargets()` pair, where the entry is
+ * a demand that this line exist rather than an exemption from it.
+ */
+.studio-tab,
+.studio-colour__clear,
+.studio-arrangement {
+  min-block-size: var(--target-min);
+  min-inline-size: var(--target-min);
+}
+
+/*
+ * ================================================================================
  * THE RADIO'S PAINTED CIRCLE — `QRPAGER-44` item A, and the other half of the ruling
  * ================================================================================
  *

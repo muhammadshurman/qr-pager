@@ -253,6 +253,22 @@ echo json_encode([
         'password' => $owner['password'],
         'name' => $owner['name'],
     ],
+    /*
+     * ALPHA'S STAFF-ROLE COLLEAGUE, PUBLISHED AT `QRPAGER-48`.
+     *
+     * The row already existed -- `tenant_users` has needed a non-owner member since 10e --
+     * but its CREDENTIAL was never emitted, so no browser case could sign in as somebody
+     * who is deliberately NOT permitted something. Item 3 needs exactly that: `/studio` is
+     * gated on Owner or Manager, and the invariant says a person without that access must
+     * not even see the control. Asserting its absence while signed in as an OWNER would
+     * prove nothing at all.
+     */
+    'colleague' => [
+        'email' => $colleague['email'],
+        'password' => $colleague['password'],
+        'name' => $colleague['name'],
+        'role' => 'staff',
+    ],
     // The platform panel's account. Fixed address, no membership -- see the comment above.
     'platform_admin' => [
         'email' => $adminEmail,

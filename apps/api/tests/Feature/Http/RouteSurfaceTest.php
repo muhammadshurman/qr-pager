@@ -123,8 +123,16 @@ it('serves exactly the two unversioned probes and nothing else outside /v1', fun
         '/studio/domains',
         '/studio/logout',
         '/studio/media',
+        '/studio/panel-language',
         '/studio/preview',
         '/studio/preview/asset/{asset}',
+        // ⚠ AN EIGHTH JOINED AT `QRPAGER-48`: `/studio/panel-language`, the POST that records
+        // which language the SIGNED-IN PERSON reads the studio in. Listed one by one like the
+        // rest, for the reason below. It is not public: it sits in `authenticatedRoutes`, so
+        // it carries the panel's own stack, and it writes `users.panel_language` for the id
+        // the GUARD holds -- never one from input. It is a POST and not a GET deliberately:
+        // it changes stored state, and a GET would be a preference any page could flip by
+        // embedding an image.
         // ⚠ A SEVENTH JOINED AT `QRPAGER-40`: the `الثيم` tab, which is the theme and
         // search-and-sharing moved out of the landing-page form onto a page of their own.
         // It is listed one by one like the rest, and the comment above says why -- a

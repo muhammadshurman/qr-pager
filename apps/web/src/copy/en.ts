@@ -162,6 +162,9 @@ export const EN = {
   // ---------------------------------------------------------------------- the shell
   'staff.shell.signedIn': 'Signed in as {name}',
   'staff.shell.signOut': 'Sign out',
+  // QRPAGER-48 item 3. Names the destination rather than the product: a person who has
+  // never opened it should know what it is from the control alone (§12).
+  'staff.shell.studio': 'Edit your page',
   'staff.shell.loading': 'Loading',
   'staff.shell.error.title': 'Something went wrong on our side.',
   'staff.shell.error.body': 'Nothing you did caused it.',

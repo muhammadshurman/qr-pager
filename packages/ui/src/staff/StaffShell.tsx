@@ -35,6 +35,18 @@ export interface StaffShellProps {
   readonly onSignOut: () => void
   /** The navigation, if this surface has any yet. */
   readonly nav?: ReactNode
+  /**
+   * A way into the studio, or nothing at all. `QRPAGER-48` item 3.
+   *
+   * ⚠⚠ ABSENT IS THE DEFAULT, AND THE SHELL NEVER DECIDES. Muhammad's ruling of 2026-11-13:
+   * `/studio` requires `TenantPanelAccess::allows()` — Owner or Manager — so *"a staff member
+   * who is neither would click a button and get a 401"*. The capability is published by the
+   * API as `memberships[].can_access_studio`, computed from the same predicate the panel's
+   * own gate uses, and the CALLER passes this prop only when it is true. A shell that decided
+   * for itself would be the second implementation that ruling exists to prevent.
+   */
+  readonly studioHref?: string | undefined
+  readonly studioLabel?: string | undefined
   readonly children: ReactNode
 }
 
@@ -46,6 +58,8 @@ export function StaffShell({
   signOutLabel,
   onSignOut,
   nav,
+  studioHref,
+  studioLabel,
   children,
 }: StaffShellProps) {
   return (
@@ -68,6 +82,17 @@ export function StaffShell({
           </span>
         </div>
         {nav !== undefined && <nav className="qr-staff__nav">{nav}</nav>}
+        {studioHref !== undefined && studioLabel !== undefined && (
+          /*
+           * A real anchor, not a button with a handler: it is a navigation to another
+           * surface, and `§12` wants every control to be the element it actually is. It also
+           * means the session rides along as it would for any link — which is the whole of
+           * how this works, because both surfaces share one origin (`§1`, 2026-11-13).
+           */
+          <a className="qr-staff__studio" href={studioHref} data-studio-link="true">
+            {studioLabel}
+          </a>
+        )}
         <Button variant="quiet" onClick={onSignOut} data-sign-out="true">
           {signOutLabel}
         </Button>

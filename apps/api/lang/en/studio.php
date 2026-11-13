@@ -53,6 +53,19 @@ return [
         'refused_hint' => 'Fix that field in the builder and preview again.',
     ],
 
+    'chrome' => [
+        // QRPAGER-48 item 2. Names the SCREEN, so the restaurant's name beside it is not
+        // read as the product's (§12: no unexplained identifier).
+        'studio' => 'Studio',
+        'signed_in_as' => 'Signed in as :name',
+        'published' => 'Live',
+        // Said as a FACT about the page, not as an instruction: the action is beside it.
+        'unpublished_changes' => 'edited since you last published',
+        // The topbar's own language control. Names ITS audience for the same reason.
+        'panel_language_legend' => 'Studio language — what you read',
+        'panel_language_switch' => 'Read the studio in :language',
+    ],
+
     'page' => [
         'title' => 'Landing page',
         'status_heading' => 'Status',
@@ -62,11 +75,18 @@ return [
         'unpublished_changes' => 'You have changes that are not published yet.',
         'published_at' => 'Published to :hostname on :date.',
         'will_publish_to' => 'Your page will be published to :hostname.',
-        'language_legend' => 'Page language',
+        // ⚠ THE TWO LANGUAGE CONTROLS MUST NOT BE CONFUSABLE — QRPAGER-48, §12. This one
+        // changes what a restaurant's CUSTOMERS read on the published page; the topbar's
+        // changes what the person signed in reads in the studio. Each label names its own
+        // audience, because an owner meeting them a minute apart has nothing else to go on.
+        'language_legend' => 'Page language — what your customers read',
         'language_help' => 'This sets the language and the reading direction of your published page. Publish again to apply a change to your live page.',
         'language_current' => '(Current)',
         'save' => 'Save',
         'publish' => 'Publish',
+        // QRPAGER-48 item 3. Names where it goes, not what it is: a person reading this
+        // has a board of live orders in mind, not a product noun (§12).
+        'back_to_staff' => 'Orders board',
         'unpublish' => 'Unpublish',
         'take_down' => 'Take my site down',
     ],
@@ -295,6 +315,9 @@ return [
         'clear_colour' => 'Use the default',
         'using_default' => 'Using the default',
         'title' => 'Theme',
+        // QRPAGER-48 item 2. One line, plain language, saying what this screen is FOR --
+        // §12's bar is a reader with zero technical background.
+        'description' => 'Pick a ready-made look, then change anything you like. Every change shows in the preview straight away.',
         'save' => 'Save',
     ],
 
@@ -309,6 +332,7 @@ return [
         'language_saved' => 'Language saved',
         'language_saved_body' => 'Publish again to apply it to your live page.',
         'cannot_publish_field' => ':field can\'t be published',
+        'cannot_publish' => 'Your changes were not saved',
         'draft_saved' => 'Draft saved',
         'published_to' => 'Published to :hostname',
         'take_down_failed' => 'Take-down failed — your page is still public',
@@ -328,4 +352,31 @@ return [
         'no_change' => 'No change',
     ],
 
+    'invalid' => [
+        'sentence' => '“:field” on the :tab tab — :why',
+        'field' => [
+            'logo' => 'the logo',
+            'theme' => 'the theme',
+            'page' => 'the page',
+            'blocks' => 'the page\'s blocks',
+            'block' => 'block :position',
+            'block_field' => ':name in block :position',
+            'seo' => [
+                'self' => 'the sharing details',
+                'title' => 'the sharing title',
+                'description' => 'the sharing description',
+                'og_image' => 'the sharing image',
+            ],
+        ],
+        'why' => [
+            'missing_image' => 'the image it names is no longer in your library; open the tab and choose another, or remove it.',
+            'required' => 'this field is required and cannot be left empty; open the tab and give it a value.',
+            'too_long' => 'the value is longer than the page allows; open the tab and shorten it.',
+            'bad_address' => 'the value is not a valid web address; open the tab and correct it.',
+            'bad_email' => 'the value is not a valid email address; open the tab and correct it.',
+            'bad_phone' => 'the value is not a valid telephone number; open the tab and correct it.',
+            'needs_item' => 'at least one item is needed; open the tab and add one.',
+            'unusable' => 'the value cannot be published; open the tab and correct it.',
+        ],
+    ],
 ];

@@ -61,6 +61,21 @@ function studioAllowList(): array
 {
     return [
         // ---- NAMES ------------------------------------------------------------------
+        /*
+         * ⚠ THE RESTAURANT'S OWN NAME, WHICH `QRPAGER-48` PUT IN THE TOPBAR AND WHICH IS NOT
+         * A TRANSLATABLE STRING AT ALL.
+         *
+         * `tenants.name` is the restaurant's, in whatever language they chose: *Al Baik* in
+         * an Arabic panel is CORRECT, and translating it would be the defect. This matched
+         * nothing before the chrome existed, because the panel never showed whose page was
+         * being edited -- which is the hole `§12` made this ticket fix.
+         *
+         * Bounded to the harness's own shape (`Tenant <8 hex>`, `TestCase::makeTenant()`)
+         * rather than allowing any capitalised word, so it cannot become a way around the
+         * test for real untranslated copy.
+         */
+        '/^Tenant$/' => "the first word of the test harness's tenant NAME (`Tenant <8 hex>`), "
+            .'which is the restaurant\'s own and never translated.',
         '/^Pager$/' => 'the second word of the brand name `QR Pager`. The enumeration splits on '
             .'whitespace, so the brand arrives here as two words and `QR` never reaches this list at '
             .'all -- it is two letters, below the three-letter floor. A brand is not translated in '

@@ -1992,9 +1992,16 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     await saveAndWait(page)
 
     /*
-     * The publish action lives on the BUILDER page, not the theme tab: `ThemePage` has
-     * `save()` and no `publish()`, because publishing is a whole-document act and the theme is
-     * one tab of that document.
+     * ⚠ THIS COMMENT SAID THE OPPOSITE UNTIL `QRPAGER-48` (`§11` QA L-4). It read *"the
+     * publish action lives on the BUILDER page, not the theme tab: `ThemePage` has `save()`
+     * and no `publish()`"*, which was true when it was written and stopped being true in
+     * this ticket: the chrome puts a publish action in the theme tab's header
+     * (`PAGE_HEADER_ACTIONS_BEFORE`), and `ThemePage::getHeaderActions()` publishes.
+     *
+     * The NAVIGATION below stays, because what this case needs from `/studio` is the
+     * hostname off the builder's status plate, which is the next paragraph's subject —
+     * not the publish control. A stale reason attached to a line that is still correct is
+     * the harder kind to notice, which is why it is corrected rather than deleted.
      */
     await page.goto(`${apiOrigin()}/studio`, { waitUntil: 'domcontentloaded' })
 
@@ -2009,8 +2016,21 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * The first version of this case read it from a file the harness published to get it, and
      * that publish overwrote the restaurant's draft and reddened three sibling cases.
      */
+    /*
+     * ⚠ SELECTED BY ITS OWN MARKER, AND IT WAS `[role="status"]` UNTIL `§11` QA M-2. That
+     * finding is about this page having FOUR live regions for one fact, so the builder's
+     * plate stopped being one -- the chrome's plate is the single `role="status"` now, and
+     * it renders on every tab. This case then timed out at 90s on an `innerText` for a
+     * locator that matched nothing, which is the e2e gate catching a regression the whole
+     * PHP suite was happy with.
+     *
+     * `data-page-status-plate` exists FOR this: the plate is still the thing that states the
+     * hostname, and a case that needs it should not be asking which ARIA role it happens to
+     * carry. Reinstating the role to keep this selector working would have undone M-2 to
+     * satisfy a test, which is the wrong direction.
+     */
     const hostname = (
-      await page.locator('[role="status"] p.text-sm strong').first().innerText()
+      await page.locator('[data-page-status-plate="true"] p.text-sm strong').first().innerText()
     ).trim()
 
     expect(hostname, 'the studio states no hostname, so nothing could be fetched').not.toBe('')
@@ -2083,10 +2103,43 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     await expect(accent).toHaveCount(1)
 
     /*
+     * ⚠⚠ BOTH HALVES OF THE PAIR GO BACK TO THEIR DEFAULTS FIRST — THE SAME PREMISE-OWNERSHIP
+     * THE SIBLING CASE BELOW ALREADY HAD, AND THIS CASE DID NOT.
+     *
+     * Reproduced 2026-11-13, full `studio-chromium` project, 1 run in 3 with this block
+     * absent: the assertion at `toBeVisible()` below failed with the advice **hidden**, after
+     * `toBeVisible` had retried fourteen times across five seconds — so the advice never
+     * appeared rather than appearing late. The cause is ordering, not timing: a sibling case
+     * SAVES a theme colour, the draft it leaves behind reopens this row already overridden,
+     * and `#c9c48f` judged against a different `accent_text` can legitimately CLEAR the floor
+     * — at which point the advice is correctly silent and the case is asserting a premise
+     * that is no longer true.
+     *
+     * ⚠ IT COULD NOT BE REPRODUCED BY RUNNING THIS CASE ALONE, which is why it survived: a
+     * `--grep` run excludes the very siblings whose drafts cause it. Six isolated runs were
+     * green; the third full-project run was not.
+     *
+     * `.studio-colour__clear` carries `x-show="chosen"`, so its visibility is the honest test
+     * of whether there is an override to put back.
+     */
+    for (const token of ['color.accent', 'color.accent_text']) {
+      const other = page.locator('.studio-colour', {
+        has: page.locator(`[data-token="${token}"]`),
+      })
+      const clear = other.locator('.studio-colour__clear')
+
+      if (await clear.isVisible()) {
+        await clear.click()
+        await expect(other.locator('.studio-colour__default')).toBeVisible()
+      }
+    }
+
+    /*
      * The pair is `accent` / `accent_text`, which is Muhammad's ruling: a button's label is
      * read ON the button. The default pair clears AA, so the row opens quiet — and that is
      * asserted first, because an advice element that was ALWAYS visible would satisfy the
-     * next assertion without judging anything.
+     * next assertion without judging anything. NOW it is this case's own doing rather than an
+     * inherited premise.
      */
     await expect(advice).toBeHidden()
 
@@ -2178,6 +2231,26 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
     expect(config.adviceDarken.length).toBeGreaterThan(20)
     expect(config.pairedWith).toBe('color.text')
 
+    /**
+     * Put a colour in the ground row and WAIT FOR THE DOM TO HOLD IT.
+     *
+     * ⚠⚠ `fill()` ALONE IS NOT ENOUGH HERE, AND THAT IS WHAT MADE THIS CASE FLAKY. It failed
+     * in CI on the darken arm's premise — `the ground is not the darker of the pair` — with
+     * `#000000` filled, whose luminance is 0 and cannot fail that comparison against any
+     * partner. The only way the assertion can see otherwise is by reading a DOM that still
+     * holds the PREVIOUS arm's `#2b2b2b`: this row lives inside a Livewire-managed panel that
+     * morphs on its own schedule, so a read taken immediately after `fill()` can land on the
+     * pre-morph value.
+     *
+     * `toHaveValue` retries, so judging happens against the value this case actually set
+     * rather than against whichever render won the race. A flaky regression test is worse
+     * than no test — it teaches everyone to scroll past a red.
+     */
+    const setGround = async (hex: string): Promise<void> => {
+      await ground.fill(hex)
+      await expect(ground).toHaveValue(hex)
+    }
+
     /** The two luminances the component itself compares, read the way it reads them. */
     const judged = async (): Promise<{ mine: number; theirs: number }> =>
       page.evaluate((pairedWith: string) => {
@@ -2239,7 +2312,7 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * set just LIGHTER than the ink it is read against, so `mine >= theirs` and the honest
      * advice is to move it further away by lightening it.
      */
-    await ground.fill('#2b2b2b')
+    await setGround('#2b2b2b')
 
     const lighten = await judged()
 
@@ -2259,7 +2332,7 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
      * Now the ground goes BELOW the ink, so `mine < theirs` and moving away means darker. One
      * row and one pair for both arms, so nothing but the direction differs between them.
      */
-    await ground.fill('#000000')
+    await setGround('#000000')
 
     const darken = await judged()
 
@@ -2336,6 +2409,268 @@ test.describe('the studio preview follows the form — QRPAGER-45', () => {
         Math.floor(live! * 100) / 100,
         `the panel computes a different ratio for ${pair.fgHex} on ${pair.bgHex} than the generated table publishes`,
       ).toBe(pair.ratio)
+    }
+  })
+})
+
+/**
+ * ================================================================================
+ * A BROWSER CASE PER CHROME REGION — `QRPAGER-48` item 2, `§11` QA H-1
+ * ================================================================================
+ *
+ * The ticket's invariant ends *"with no region missing, proven by a browser case per
+ * region"*, and what the branch shipped with was five Pest `assertSee('data-…')` cases —
+ * four markers in the per-tab sweep, and **`data-status-plate` and `data-footer-bar` in no
+ * test anywhere**. The review measured it rather than read it: with both render hooks
+ * replaced by `return '';` — the status plate and the footer deleted outright —
+ * `php artisan test tests/Feature/Landing` stayed green at 337 passed.
+ *
+ * ⚠ A MARKER IN THE HTML IS NOT A REGION ON THE SCREEN, which is why these are browser cases
+ * and not more `assertSee`. `§11` QA H-2 is the proof: every one of those Pest assertions
+ * passed while the chrome rendered with zero padding, square corners and 0×0 state dots,
+ * because the tokens its CSS named did not exist. `assertSee` cannot see a box. These assert
+ * `toBeVisible()` and, where the region's job is to say something, the words it says.
+ *
+ * The table is a LIST OF REGIONS the invariant names, so adding a sixth region without a row
+ * here is a visible omission rather than an invisible one.
+ */
+const CHROME_REGIONS = [
+  {
+    region: 'the restaurant’s name in the topbar',
+    marker: '[data-topbar-restaurant="true"]',
+    // The tenant the harness signs in as, whatever it is called, must be NAMED -- an empty
+    // span would satisfy a marker check and is the §12 defect ("no unexplained identifier")
+    // wearing the right attribute.
+    saysSomething: true,
+  },
+  {
+    region: 'the studio chip beside it',
+    marker: '[data-topbar-chip="true"]',
+    saysSomething: true,
+  },
+  {
+    region: 'the signed-in person’s first name beside the avatar',
+    marker: '[data-topbar-person="true"]',
+    saysSomething: true,
+  },
+  {
+    region: 'the status plate',
+    marker: '[data-status-plate="true"]',
+    saysSomething: true,
+  },
+  {
+    region: 'the footer bar’s save state',
+    marker: '[data-footer-bar="true"]',
+    saysSomething: true,
+  },
+  {
+    region: 'the way back to the orders board',
+    marker: '[data-back-to-staff="true"]',
+    saysSomething: true,
+  },
+  {
+    region: 'the studio language control',
+    marker: '[data-panel-language="true"]',
+    saysSomething: false,
+  },
+] as const
+
+test.describe('the studio chrome — QRPAGER-48 item 2', () => {
+  for (const { region, marker, saysSomething } of CHROME_REGIONS) {
+    test(`renders ${region}`, async ({ page }) => {
+      await signInAsStaff(page)
+      await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+      const element = page.locator(marker)
+
+      await expect(element, `${region} is not on the page`).toHaveCount(1)
+      await expect(element, `${region} is on the page but not visible`).toBeVisible()
+
+      // A region with no height is a region that is missing, whatever the DOM says -- which
+      // is exactly the state QA H-2's undefined tokens produced for the two state dots.
+      const box = await element.boundingBox()
+
+      expect(box, `${region} has no box at all`).not.toBeNull()
+      expect(
+        box?.height ?? 0,
+        `${region} rendered ${String(box?.height ?? 0)}px tall`,
+      ).toBeGreaterThan(0)
+
+      if (saysSomething) {
+        expect(((await element.textContent()) ?? '').trim(), `${region} is empty`).not.toBe('')
+      }
+    })
+  }
+
+  /**
+   * The publish action, which is a region of the artboard and also a CONTROL -- so this
+   * asserts it is enabled rather than merely present. A disabled publish button is a correct
+   * state for an empty page and would make a presence-only assertion pass on a studio nobody
+   * can publish from.
+   */
+  test('renders the publish action in the page header', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const publish = page.locator('.fi-header button', { hasText: /.+/ })
+
+    await expect(publish.first()).toBeVisible()
+  })
+
+  /**
+   * The user menu's identity block, which needs OPENING -- and that is the point of putting
+   * it in a browser rather than in `assertSee`. Filament renders the dropdown's contents in
+   * the DOM behind an Alpine `x-show`, so a server-side assertion passes on a block no one
+   * can ever see.
+   */
+  test('shows the full name and the email once the user menu is opened', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    const identity = page.locator('[data-usermenu-identity="true"]')
+
+    await expect(identity).toHaveCount(1)
+
+    await page.locator('.fi-user-menu-trigger, [data-usermenu-identity="true"]').first().click()
+
+    await expect(identity).toBeVisible()
+
+    const text = ((await identity.textContent()) ?? '').trim()
+
+    // Both lines, and the email is the one that cannot be confused with anything else.
+    expect(text).not.toBe('')
+    expect(text, 'the user menu shows no email address').toContain('@')
+  })
+
+  /**
+   * ================================================================================
+   * `§12`'s TOUCH FLOOR, OVER THE CHROME'S OWN CONTROLS — `§11` QA H-3
+   * ================================================================================
+   *
+   * The staff side of this very ticket shipped a 24px studio link and the gate caught it,
+   * because `browser/staff.spec.ts` sweeps every interactive box. The studio had no such
+   * sweep: this file's 44px cases are aimed at the arrangement card and the block-row
+   * cluster, and `browser/panel.spec.ts` measures a STATIC fixture with no server and no
+   * session. So the chrome's two new controls -- the way back and the AR/EN choices --
+   * arrived at 20px with nothing able to see them.
+   *
+   * At 390px, which is `§12`'s one-handed width and the width at which the topbar is most
+   * crowded.
+   */
+  test('gives every chrome control at least 44px on both axes at 390px', async ({ page }) => {
+    await signInAsStaff(page)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+
+    await page.waitForSelector('[data-topbar-restaurant="true"]', { timeout: 30_000 })
+
+    const boxes = await page.evaluate(() => {
+      const selectors = [
+        '[data-back-to-staff="true"]',
+        '[data-panel-language="true"] button',
+        '[data-status-plate="true"] button',
+        '[data-status-plate="true"] a[href]',
+        '[data-footer-bar="true"] button',
+        '[data-footer-bar="true"] a[href]',
+      ]
+
+      const found: { name: string; width: number; height: number }[] = []
+
+      for (const element of document.querySelectorAll(selectors.join(', '))) {
+        const box = element.getBoundingClientRect()
+
+        if (box.width === 0 && box.height === 0) continue
+
+        // `textContent` is non-null on an element, so no `??` here -- the shared helper in
+        // `support/a11y.ts` records the same reasoning for the same expression.
+        const text = element.textContent.trim()
+        const label = element.getAttribute('aria-label') ?? ''
+
+        found.push({
+          name: (text === '' ? label : text).slice(0, 40),
+          width: Math.round(box.width),
+          height: Math.round(box.height),
+        })
+      }
+
+      return found
+    })
+
+    /*
+     * Not vacuous. The chrome HAS controls at this width: the way back and two language
+     * choices is three, and a sweep that found fewer has stopped seeing the thing it exists
+     * to measure -- which is how this defect survived in the first place.
+     */
+    expect(boxes.length, 'the chrome sweep found no controls to measure').toBeGreaterThanOrEqual(3)
+
+    for (const box of boxes) {
+      expect(box.width, `"${box.name}" is ${String(box.width)}px wide`).toBeGreaterThanOrEqual(44)
+      expect(box.height, `"${box.name}" is ${String(box.height)}px tall`).toBeGreaterThanOrEqual(44)
+    }
+  })
+})
+
+/**
+ * ================================================================================
+ * THE LANGUAGE TOGGLE SWITCHES THE LANGUAGE AND OPENS NOTHING — PR #22 walkthrough
+ * ================================================================================
+ *
+ * Muhammad, reviewing PR #22: *"clicking AR/EN in the topbar opens the restaurant's logo
+ * chooser instead of switching the panel language."*
+ *
+ * It did not open a chooser. It navigated the owner FULL-PAGE ONTO A RAW JPEG, which is what
+ * an image filling the window looks like. Measured: the POST was correct and the response was
+ * `302 Location: /studio/preview/asset/01a1d2b2-…`. This form sends no `Referer`, so
+ * `url()->previous()` fell back to the session's previous URL; Laravel sets that from the last
+ * non-AJAX GET; and the theme tab's preview iframe fetches `/studio/preview/asset/{id}` for
+ * every image on the page. The redirect guard accepted it because an image under `/studio/` is
+ * still under `/studio/`.
+ *
+ * ⚠⚠ THIS ASSERTS THE CONSEQUENCE, NOT THE REQUEST, WHICH IS MUHAMMAD'S OWN INSTRUCTION:
+ * *"A case asserting only that the request fires would pass on the broken build."* And it
+ * would have — the POST was never the broken part. So this asserts the three things an owner
+ * would have noticed: the language CHANGED, they are still on a studio PAGE with its chrome,
+ * and nothing opened.
+ *
+ * Both directions, because a toggle that can only move one way is a toggle that is stuck.
+ */
+test.describe('the studio language toggle — PR #22', () => {
+  test('switches the panel language, stays on the page, and opens nothing', async ({ page }) => {
+    let fileChooserOpened = false
+
+    page.on('filechooser', () => {
+      fileChooserOpened = true
+    })
+
+    await signInAsStaff(page)
+
+    for (const [glyph, expected] of [
+      ['EN', 'en'],
+      ['ع', 'ar'],
+    ] as const) {
+      await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+      await page.waitForSelector('[data-panel-language="true"]', { timeout: 60_000 })
+
+      await page.locator('.studio-lang__choice', { hasText: glyph }).click()
+      await page.waitForLoadState('domcontentloaded')
+
+      // 1. THE LANGUAGE CHANGED. The marker is rendered on whichever choice is current, so
+      //    this reads the panel's own answer rather than our memory of what we clicked.
+      await expect(page.locator(`[data-panel-language-current="${expected}"]`)).toHaveCount(1)
+
+      // 2. STILL ON A STUDIO PAGE. The chrome only renders inside the panel, so a raw image —
+      //    which is where this used to land — has none of it. This is the assertion the
+      //    defect would have failed.
+      await expect(page).toHaveURL(/\/studio\/[a-z-]+$/)
+      await expect(page.locator('[data-topbar-restaurant="true"]')).toHaveCount(1)
+      await expect(page.locator('[data-status-plate="true"]')).toHaveCount(1)
+
+      // 3. AND NOTHING OPENED — no file chooser, no modal.
+      expect(fileChooserOpened, 'clicking the language toggle opened a file chooser').toBe(false)
+
+      const dialogs = await page.locator('[role="dialog"]:visible, .fi-modal:visible').count()
+
+      expect(dialogs, 'clicking the language toggle opened a dialog').toBe(0)
     }
   })
 })

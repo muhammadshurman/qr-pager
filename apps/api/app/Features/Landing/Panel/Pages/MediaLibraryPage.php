@@ -160,9 +160,21 @@ class MediaLibraryPage extends Page
         try {
             app(MediaLibrary::class)->delete(TenantPanelAccess::tenantId(), $assetId);
         } catch (MediaRejected $e) {
-            // §12.2's "in use" state names the block, because "this image is in use"
-            // leaves the tenant hunting for where.
-            Notification::make()
+            /*
+             * §12.2's "in use" state names WHERE, because "this image is in use" leaves the
+             * tenant hunting for it.
+             *
+             * ⚠ A FIXED ID, SO A SECOND REFUSAL REPLACES THE FIRST RATHER THAN STACKING ON
+             * IT. `Notification::make()` mints an ordered uuid per call, and this one is
+             * `persistent()` — so an owner who tried five images in a row was left with
+             * five identical, undismissable toasts, which Muhammad's walkthrough of PR #22
+             * names as its own `§12` defect: *"One message per action."* With a stable id
+             * Filament keys the toast and the newest refusal takes the place of the last.
+             *
+             * It stays `persistent()`: the owner has to act on this one, and a refusal that
+             * fades while they are reading it is the message not being delivered.
+             */
+            Notification::make('studio-image-not-deleted')
                 ->title(__('studio.notifications.image_not_deleted'))
                 ->body($e->reason)
                 ->danger()
@@ -172,6 +184,6 @@ class MediaLibraryPage extends Page
             return;
         }
 
-        Notification::make()->title(__('studio.notifications.image_deleted'))->success()->send();
+        Notification::make('studio-image-deleted')->title(__('studio.notifications.image_deleted'))->success()->send();
     }
 }

@@ -205,6 +205,20 @@ export interface StaffFixture {
   }
   readonly owner: { readonly email: string; readonly password: string; readonly name: string }
   /**
+   * Alpha's STAFF-role member. `QRPAGER-48` item 3.
+   *
+   * ⚠ A CREDENTIAL FOR SOMEBODY DELIBERATELY NOT PERMITTED SOMETHING, which this fixture had
+   * never published. `/studio` is gated on Owner or Manager, and the invariant requires that
+   * a person without that access does not even SEE the control — an absence asserted while
+   * signed in as an owner would prove nothing.
+   */
+  readonly colleague: {
+    readonly email: string
+    readonly password: string
+    readonly name: string
+    readonly role: string
+  }
+  /**
    * The seeded platform administrator. `bin/issue-staff-fixture` has always written these
    * three fields; `QRPAGER-42` is the first consumer, because its light-only ruling applies
    * to `/platform` as well and that panel's PAINT can only be asserted by a principal who
@@ -258,6 +272,9 @@ export function staffFixture(): StaffFixture {
   for (const [section, key] of [
     ['alpha', 'id'],
     ['owner', 'email'],
+    // Without this the `does not see it` case would sign in as nobody and pass for free.
+    ['colleague', 'email'],
+    ['colleague', 'password'],
     ['beta', 'id'],
     ['beta', 'session_id'],
     ['beta', 'membership_id'],

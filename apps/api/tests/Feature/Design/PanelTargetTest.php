@@ -95,6 +95,15 @@ function labelledTargets(): array
 {
     return [
         'fi-radio-input' => 'fi-fo-radio-label',
+        /*
+         * The arrangement picker's radio, visually hidden at 1px with `clip-path: inset(50%)`
+         * (`studio/theme.css` `.studio-arrangement__input`) so the whole card selects the
+         * option -- `ArrangementField.php:160` renders `<label class="studio-arrangement">`
+         * around it, which is the same shape as Filament's radio above and takes the same
+         * answer. Surfaced by `QRPAGER-48` `§11` QA H-3 widening the derivation below to the
+         * panel's own `studio-` classes; it was under no check before, not merely unfloored.
+         */
+        'studio-arrangement__input' => 'studio-arrangement',
     ];
 }
 
@@ -135,6 +144,35 @@ function flooredSelectors(): array
 
 /**
  * Every interactive element across the six chrome routes, as its list of Filament classes.
+ *
+ * ⚠⚠ THIS LOOP CANNOT SEE THE TOPBAR, THE STATUS PLATE OR THE FOOTER, AND THAT IS STATED
+ * HERE RATHER THAN DISCOVERED AGAIN. Measured 2026-11-13: with `/platform` requested first
+ * — which is this loop's own order, `PanelRoutes::chrome()` being sorted — every
+ * `QRPAGER-48` chrome marker is absent from all four `/studio` renders
+ * (`data-topbar-restaurant`, `data-topbar-chip`, `data-topbar-person`, `data-back-to-staff`,
+ * `data-panel-language`, `data-status-plate`, `data-footer-bar`). Request a studio route
+ * FIRST in the same test and all seven appear. The page body renders either way — that is
+ * how `.studio-tab` and `.studio-colour__clear` reach the set below — so this is the panel's
+ * render HOOKS not registering, not a broken request.
+ *
+ * It is a property of the TEST CLIENT and not of the runtime, which is why it is a note and
+ * not a finding: `FilamentManager::bootCurrentPanel()` latches on `$isCurrentPanelBooted`
+ * and `Panel::boot()` is what calls `registerRenderHooks()`, while the manager is bound with
+ * `$this->app->scoped('filament', …)` (`FilamentServiceProvider.php:72`) — so a real request
+ * boundary resets it, and `config/octane.php` wires Octane's
+ * `FlushTemporaryContainerInstances` (which calls `forgetScopedInstances()`) on
+ * `OperationTerminated`. Several `get()` calls inside ONE test share the first one's booted
+ * panel. `app()->forgetScopedInstances()` between iterations was tried and does NOT restore
+ * the hooks, so the cause is further in than the latch; it was not chased, because:
+ *
+ * ⚠ THE CHROME'S CONTROLS ARE FLOORED AND PROVEN ELSEWHERE, BY A BETTER INSTRUMENT.
+ * `browser/studio.spec.ts` sweeps every interactive box in the live chrome at 390px and
+ * measures the rendered geometry rather than asking whether a selector is named in a file —
+ * which is what caught the same defect on the staff side of this ticket
+ * (`browser/staff.spec.ts:128`, commit `710a596`). `targets.css` carries the floor for
+ * `.studio-topbar__back` and `.studio-lang__choice` with that reasoning beside it. What THIS
+ * file still owns is every control in the page BODY, which is where the widened prefix below
+ * found three that nothing had ever checked.
  *
  * ⚠ PER ELEMENT AND NOT A FLAT SET OF CLASSES, which is a correction. The first version
  * flattened every class it found and demanded the floor cover each one -- so it reported
@@ -181,7 +219,39 @@ function renderedControlElements(): array
 
             foreach (preg_split('/\s+/', trim($list)) as $class) {
                 // Variant classes (`hover:fi-…`, `dark:fi-…`) style a state, never a box.
-                if (! is_string($class) || ! str_starts_with($class, 'fi-') || str_contains($class, ':')) {
+                if (! is_string($class) || str_contains($class, ':')) {
+                    continue;
+                }
+
+                /*
+                 * ⚠ TWO PREFIXES SINCE `QRPAGER-48` `§11` QA H-3, AND IT USED TO BE `fi-`
+                 * ALONE. That was accurate only while every control a panel route rendered
+                 * was a Filament component. `QRPAGER-48`'s chrome renders two of its own --
+                 * `<a class="studio-topbar__back">` and `<button class="studio-lang__choice">`
+                 * -- and both arrived under `§12`'s floor with NOTHING going red, because a
+                 * class this filter drops cannot appear in `$uncovered` below. The derivation
+                 * was not one entry behind; it was structurally unable to see the control.
+                 *
+                 * That is the same shape as `FixtureScriptGuardTest`'s `bin/*` glob against
+                 * the same ticket's artisan seeder (QA M-3), found in the same round. A
+                 * derived set is only derived over the ground it actually walks.
+                 *
+                 * A LIST RATHER THAN A WIDENED PATTERN. Admitting every class would pull in
+                 * utility and state names -- the modifier problem this function's docblock
+                 * already records -- so a namespace joins by being named, and the panel has
+                 * exactly two.
+                 */
+                $owned = false;
+
+                foreach (['fi-', 'studio-'] as $prefix) {
+                    if (str_starts_with($class, $prefix)) {
+                        $owned = true;
+
+                        break;
+                    }
+                }
+
+                if (! $owned) {
                     continue;
                 }
 
