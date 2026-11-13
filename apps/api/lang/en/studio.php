@@ -61,8 +61,6 @@ return [
         'published' => 'Live',
         // Said as a FACT about the page, not as an instruction: the action is beside it.
         'unpublished_changes' => 'edited since you last published',
-        'saved_draft' => 'Saved as a draft',
-        'not_saved' => 'Not saved yet',
         // The topbar's own language control. Names ITS audience for the same reason.
         'panel_language_legend' => 'Studio language — what you read',
         'panel_language_switch' => 'Read the studio in :language',

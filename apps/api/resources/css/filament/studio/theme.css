@@ -1367,7 +1367,7 @@ html:not(.dark):has(body.fi-panel-studio),
 .studio-topbar__identity {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-12);
   min-width: 0;
 }
 
@@ -1385,7 +1385,7 @@ html:not(.dark):has(body.fi-panel-studio),
 .studio-topbar__rule {
   display: inline-block;
   inline-size: 1px;
-  block-size: var(--space-5);
+  block-size: var(--space-24);
   background: var(--color-hairline);
 }
 
@@ -1403,11 +1403,11 @@ html:not(.dark):has(body.fi-panel-studio),
 
 .studio-topbar__chip {
   flex: none;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-4) var(--space-8);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-small);
+  border-radius: var(--radius-control);
   color: var(--color-ink-mid);
-  font-size: var(--size-12);
+  font-size: var(--size-13);
 }
 
 /*
@@ -1415,7 +1415,7 @@ html:not(.dark):has(body.fi-panel-studio),
  * itself the defect, because `§12` forbids an unexplained identifier.
  */
 .studio-topbar__person {
-  margin-inline-end: var(--space-2);
+  margin-inline-end: var(--space-8);
   color: var(--color-ink);
   font-size: var(--size-13);
   font-weight: 500;
@@ -1437,8 +1437,8 @@ html:not(.dark):has(body.fi-panel-studio),
 .studio-usermenu__identity {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-4);
   border-block-end: 1px solid var(--color-hairline);
 }
 
@@ -1453,17 +1453,24 @@ html:not(.dark):has(body.fi-panel-studio),
   overflow-wrap: anywhere;
 }
 
-/* The way back to the orders board, in the topbar's right half. */
+/*
+ * The way back to the orders board, in the topbar's right half.
+ *
+ * Centred for the reason `.studio-lang__choice` is: `targets.css` floors it at
+ * `--target-min` on both axes, and a floor without centring moves the words rather than
+ * growing the box around them.
+ */
 .studio-topbar__back {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-inline-end: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  justify-content: center;
+  gap: var(--space-8);
+  margin-inline-end: var(--space-12);
+  padding: var(--space-8) var(--space-12);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-small);
+  border-radius: var(--radius-control);
   color: var(--color-ink);
-  font-size: var(--size-12);
+  font-size: var(--size-13);
   text-decoration: none;
 }
 
@@ -1475,16 +1482,16 @@ html:not(.dark):has(body.fi-panel-studio),
 .studio-plate--chrome {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-small);
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-control);
   background: var(--color-surface-2);
   font-size: var(--size-13);
 }
 
 .studio-plate__dot {
-  inline-size: var(--space-2);
-  block-size: var(--space-2);
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
   border-radius: 50%;
   background: var(--color-ink-mid);
 }
@@ -1506,7 +1513,7 @@ html:not(.dark):has(body.fi-panel-studio),
 
 .studio-plate__note {
   color: var(--color-ink-mid);
-  font-size: var(--size-12);
+  font-size: var(--size-13);
 }
 
 /*
@@ -1514,22 +1521,22 @@ html:not(.dark):has(body.fi-panel-studio),
  * is somewhere else in it -- a save state that scrolls away answers the question only when it
  * is not being asked.
  */
-.studio-footer {
+.studio-chrome-footer {
   position: sticky;
   inset-block-end: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-6);
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-32);
   border-block-start: 1px solid var(--color-hairline);
   background: var(--color-surface);
   color: var(--color-ink-mid);
   font-size: var(--size-13);
 }
 
-.studio-footer__dot {
-  inline-size: var(--space-2);
-  block-size: var(--space-2);
+.studio-chrome-footer__dot {
+  inline-size: var(--space-8);
+  block-size: var(--space-8);
   border-radius: 50%;
   background: var(--color-ink-mid);
 }
@@ -1538,22 +1545,32 @@ html:not(.dark):has(body.fi-panel-studio),
 .studio-lang {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-inline-end: var(--space-3);
+  gap: var(--space-8);
+  margin-inline-end: var(--space-12);
 }
 
 .studio-lang__legend {
   color: var(--color-ink-mid);
-  font-size: var(--size-12);
+  font-size: var(--size-13);
 }
 
+/*
+ * ⚠ CENTRED, BECAUSE `targets.css` FLOORS IT AT `--target-min` ON BOTH AXES. The label is a
+ * two-letter glyph, so without the floor the box is the glyph; with the floor and no
+ * centring the glyph sits in the corner of a box four times its width, which reads as a
+ * misdrawn control rather than a large target. The floor lives in `targets.css` with the
+ * other panel controls and the reason; the centring belongs here with the paint.
+ */
 .studio-lang__choice {
-  padding: var(--space-1) var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-8);
   border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-small);
+  border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink-mid);
-  font-size: var(--size-12);
+  font-size: var(--size-13);
   cursor: pointer;
 }
 

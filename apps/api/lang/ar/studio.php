@@ -52,8 +52,6 @@ return [
         'signed_in_as' => 'داخل باسم :name',
         'published' => 'منشورة',
         'unpublished_changes' => 'معدّلة من آخر نشر',
-        'saved_draft' => 'محفوظة كمسودة',
-        'not_saved' => 'ما انحفظت بعد',
         'panel_language_legend' => 'لغة الاستوديو — اللي بتقراه إنت',
         'panel_language_switch' => 'اقرا الاستوديو بـ:language',
     ],

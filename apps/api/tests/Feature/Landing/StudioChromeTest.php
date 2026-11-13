@@ -5,11 +5,14 @@ declare(strict_types=1);
 use App\Domain\Tenancy\TenantLanguage;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\MediaLibrary;
 use App\Features\Landing\Panel\Pages\ThemePage;
 use App\Features\Landing\Panel\StudioChromeState;
 use App\Features\Landing\PanelLanguage;
 use App\Features\Landing\TenantPageLanguage;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\ImageFixtures;
+use Tests\Support\LandingFixtures;
 
 /**
  * The studio's chrome, one case per region. `QRPAGER-48` item 2.
@@ -216,5 +219,75 @@ it('names a different audience on each of the two language controls', function (
 
         expect(__('studio.chrome.panel_language_legend'))
             ->not->toBe(__('studio.page.language_legend'));
+    }
+});
+
+/*
+ * ================================================================================
+ * ONE LIVE REGION, ONE SAVE STATE, AND ONE VOCABULARY — `§11` QA M-2
+ * ================================================================================
+ *
+ * What the review measured on `/studio` with a published page carrying unpublished changes:
+ * `role="status"` FOUR times, two elements on `.studio-footer`, and four different sentences
+ * for one fact — «منشورة» + «معدّلة من آخر نشر» (chrome plate), «لديك تغييرات لم تُنشر بعد.»
+ * (page plate), «محفوظة كمسودة» (chrome footer) and «تغييرات غير منشورة» (page footer). Two of
+ * those four disagreed about whether the page was a draft at all, because the chrome footer
+ * keyed on a BLOCK COUNT while everything else read the state machine.
+ *
+ * ⚠ THE COUNTS ARE ASSERTED ON EVERY TAB, not on `/studio`. The chrome renders on all four,
+ * and the duplication only existed where a tab drew its own plate — so a count taken on one
+ * page would pass for the wrong reason on the other three.
+ */
+it('announces the publish state exactly once per tab, in one vocabulary', function (): void {
+    $tenantId = $this->actingForTenant(role: TenantRole::Owner);
+    $asset = (new MediaLibrary)->store($tenantId, 'logo.png', ImageFixtures::png());
+
+    // The state the review measured: published, then edited. Both halves matter — an empty
+    // page takes an arm where the two wordings happened to agree.
+    (new LandingPages)->saveDraft($tenantId, LandingFixtures::fullPage($asset));
+    (new LandingPages)->publish($tenantId);
+
+    // ⚠ A DIFFERENT DOCUMENT, or there are no unpublished changes and this case takes the
+    // arm where the two wordings happened to agree -- which is the vacuous shape.
+    (new LandingPages)->saveDraft($tenantId, LandingFixtures::fullPage($asset, [
+        'blocks.0.fields.heading' => 'Edited after publishing',
+    ]));
+
+    expect((new LandingPages)->state($tenantId)['has_unpublished_changes'])
+        ->toBeTrue('the fixture did not reach the state this case is about');
+
+    foreach (['/studio', '/studio/theme', '/studio/media', '/studio/domains'] as $uri) {
+        $html = (string) $this->get($uri)->assertOk()->getContent();
+
+        /*
+         * ⚠ OUR live regions, not every one on the page. Filament renders its own
+         * `role="status"` containers for notifications and loading indicators — measured at
+         * nine on `/studio` — and demanding one in total would be asserting something about
+         * the framework that is both false and none of this ticket's business. The question
+         * the finding asks is how many regions WE author for this one fact.
+         */
+        preg_match_all('/<[^>]*role="status"[^>]*>/', $html, $regions);
+
+        $ours = array_values(array_filter(
+            $regions[0],
+            static fn (string $tag): bool => str_contains($tag, 'studio-plate'),
+        ));
+
+        expect($ours)
+            ->toHaveCount(1, "{$uri} announces one fact through ".count($ours).' regions')
+            ->and(substr_count($html, 'data-status-plate="true"'))
+            ->toBe(1, "{$uri} renders more than one status plate")
+            ->and(substr_count($html, 'data-footer-bar="true"'))
+            ->toBe(1, "{$uri} renders more than one footer bar")
+            ->and(substr_count($html, 'data-footer-state="true"'))
+            ->toBe(1, "{$uri} renders more than one save state");
+
+        /*
+         * AND THE TWO REGIONS AGREE. The footer's sentence for this state is the shared
+         * `studio.footer.*` vocabulary, and the sentence the old two-arm footer would have
+         * shown — "saved as a draft" — must be absent, because the page is published.
+         */
+        expect($html)->toContain(__('studio.footer.unpublished_changes'))
+            ->and($html)->toContain(__('studio.chrome.published'));
     }
 });
