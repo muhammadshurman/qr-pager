@@ -106,8 +106,7 @@ final class DemoImagery
 
         self::vignette($im, $width, $height);
 
-        // Grain. A C-speed scatter rather than a PHP loop over every pixel.
-        imagefilter($im, IMG_FILTER_SCATTER, 2, 4);
+        self::grain($im, $width, $height);
 
         return self::encode($im, 'jpeg');
     }
@@ -357,23 +356,103 @@ final class DemoImagery
         }
     }
 
+    /**
+     * The encoded bytes, written to a FILE rather than captured from stdout.
+     *
+     * ⚠⚠ THIS USED `ob_start()` / `ob_get_clean()`, WHICH MAKES THE IMAGE'S BYTES A FUNCTION
+     * OF WHATEVER ELSE WROTE TO THE OUTPUT BUFFER. GD's `imagejpeg($im, null)` writes to
+     * standard output, so capturing it means ANY diagnostic emitted during the same
+     * buffer — a deprecation, a warning, a stray `echo` from an unrelated shutdown handler —
+     * is spliced into the middle of a JPEG. The file is then silently corrupt, and
+     * `studio:demo-imagery` would write it to `database/demo-media` without noticing.
+     *
+     * ⚠ IT IS NOT CLAIMED AS THE CAUSE OF THE RED THAT PROMPTED IT. `DemoImageryTest`'s
+     * determinism case failed ONCE in a fresh clone's full gate run and has not reproduced:
+     * 40 consecutive pairs in the working tree, the same two calls inside that clone, the
+     * test alone there, the whole `Landing` directory there, and a second full suite run
+     * there — all identical, all green. So the mechanism below is a real way for these bytes
+     * to be corrupted that has been REMOVED; whether it is the way that fired is unknown and
+     * is recorded as unknown rather than as solved.
+     *
+     * The temp file is created with `tempnam()` and deleted in a `finally`, so a throw from
+     * GD cannot leave one behind.
+     */
+    /**
+     * Film grain, scattered with THIS class's seeded randomness.
+     *
+     * ⚠⚠ THIS WAS `imagefilter($im, IMG_FILTER_SCATTER, 2, 4)`, AND THAT FILTER IS WHY THIS
+     * FILE'S CENTRAL CLAIM — *"every image is a pure function of its seed"* — WAS FALSE.
+     *
+     * GD's scatter uses its OWN generator, seeded once per process from entropy.
+     * `mt_srand()` resets it to that PROCESS's seed rather than to a function of `$seed`, so
+     * the output is stable when you repeat it inside one process and different in the next
+     * one. Measured: identical input bytes, `mt_srand(42)` set, three processes, three
+     * different results; and three calls inside ONE process, all identical. `logo()` never
+     * scatters, which is exactly why the PNG was the one file that reproduced.
+     *
+     * What that cost, before anyone noticed: `studio:demo-imagery --force` rewrote all nine
+     * JPEGs with different bytes on every run, so the committed imagery could not be
+     * reproduced from the generator that claims to produce it — and the determinism test
+     * asserted a property the code did not have, passing only because its two calls sat in
+     * one process. A fresh clone's full gate run is what finally caught it.
+     *
+     * A PHP loop over a SAMPLE of pixels is slower than the C filter and is the price of the
+     * claim being true. It runs in a local-only fixture generator, where correctness of the
+     * artifact matters and milliseconds do not.
+     */
+    private static function grain(GdImage $im, int $width, int $height): void
+    {
+        $marks = intdiv($width * $height, 12);
+
+        for ($i = 0; $i < $marks; $i++) {
+            $x = mt_rand(0, $width - 1);
+            $y = mt_rand(0, $height - 1);
+            $rgb = imagecolorat($im, $x, $y);
+            $shift = mt_rand(-7, 7);
+
+            $colour = imagecolorallocate(
+                $im,
+                self::channel((($rgb >> 16) & 0xFF) + $shift),
+                self::channel((($rgb >> 8) & 0xFF) + $shift),
+                self::channel(($rgb & 0xFF) + $shift),
+            );
+
+            if ($colour !== false) {
+                imagesetpixel($im, $x, $y, $colour);
+            }
+        }
+    }
+
     private static function encode(GdImage $im, string $format): string
     {
-        ob_start();
+        $path = tempnam(sys_get_temp_dir(), 'qrpager-demo-');
 
-        if ($format === 'png') {
-            imagepng($im, null, 6);
-        } else {
-            imagejpeg($im, null, 82);
+        if ($path === false) {
+            imagedestroy($im);
+
+            throw new RuntimeException('could not open a temporary file for a '.$format.' frame.');
         }
 
-        $bytes = (string) ob_get_clean();
-        imagedestroy($im);
+        try {
+            $written = $format === 'png'
+                ? imagepng($im, $path, 6)
+                : imagejpeg($im, $path, 82);
 
-        if ($bytes === '') {
-            throw new RuntimeException('GD produced no bytes for a '.$format.' frame.');
+            imagedestroy($im);
+
+            if ($written === false) {
+                throw new RuntimeException('GD could not encode a '.$format.' frame.');
+            }
+
+            $bytes = (string) file_get_contents($path);
+
+            if ($bytes === '') {
+                throw new RuntimeException('GD produced no bytes for a '.$format.' frame.');
+            }
+
+            return $bytes;
+        } finally {
+            @unlink($path);
         }
-
-        return $bytes;
     }
 }
