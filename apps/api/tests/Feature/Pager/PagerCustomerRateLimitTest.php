@@ -42,15 +42,71 @@ it('refuses the token endpoint once its own bucket is spent, proven by driving i
     // about -- 22 random base64url characters are free to generate, and each one costs a
     // sha256, a plpgsql call with two set_config statements, an index probe and a round
     // trip. The limiter is what bounds that loop.
+    /*
+     * ⚠⚠ EVERY STATUS IS TALLIED, AND THE FIRST ONE IS CARRIED TO THE LAST ASSERTION.
+     *
+     * This failed once in a `fresh-clone-proof` on 2026-11-13 — `429` expected, `404`
+     * received — and cost an evening without being settled, because after the fact the two
+     * possible shapes are INDISTINGUISHABLE from the message. Muhammad named the
+     * discriminator: the FIRST response's status.
+     *
+     *   · first `404` and last `404`  -> the thirty-one requests all missed the route, so the
+     *     bucket was never the subject and this was never a rate-limit failure;
+     *   · first `200` and last not `429` -> the limiter genuinely did not refuse on
+     *     `/v1/pager/session`, which is the one PUBLIC customer endpoint. `§4 › Edge & ops`
+     *     asks what an attacker's loop costs per request, and the answer would be "nothing".
+     *     **That one is an incident, not a flake.**
+     *
+     * So the tally below exists to make the NEXT occurrence self-explaining. Five candidates
+     * were ruled out by measurement that night — window expiry (the case ran in 0.19 s),
+     * limiter fail-open (zero warnings logged), `RATELIMIT_SCALE` (unset everywhere), a key
+     * mismatch (both sides build `ratelimit:{bucket}:ip:`+`sha1(ip)`), and a missing clone
+     * fixture (it passes alone in the very clone that failed) — and the sixth could not be
+     * reached because the evidence was gone.
+     */
+    $statuses = [];
+
     for ($i = 0; $i < $allowed; $i++) {
-        $this->postJson('/v1/pager/session', ['token' => str_pad((string) $i, 22, 'a', STR_PAD_LEFT)])
-            ->assertStatus(404, "request {$i} of {$allowed} was refused before the bucket was spent");
+        $response = $this->postJson(
+            '/v1/pager/session',
+            ['token' => str_pad((string) $i, 22, 'a', STR_PAD_LEFT)],
+        );
+
+        $statuses[] = $response->status();
+
+        /*
+         * ⚠ `expect()->toBe()` AND NOT `assertStatus($code, $message)`, WHICH SILENTLY DROPS
+         * THE MESSAGE. `TestResponse::assertStatus($status)` takes ONE parameter; PHP
+         * discards the extra argument without a word, so the sentence this line carried has
+         * never once been printable. An assertion whose explanation cannot reach the reader
+         * is `R-290`'s family: it names a property and tests a proxy — here, a message that
+         * is not a message.
+         */
+        expect($response->status())->toBe(
+            404,
+            "request {$i} of {$allowed} was refused before the bucket was spent",
+        );
     }
 
     $refused = $this->postJson('/v1/pager/session', ['token' => str_repeat('z', 22)]);
 
-    $refused->assertStatus(429)
-        ->assertJsonPath('type', ProblemType::RateLimited->value)
+    $tally = array_count_values($statuses);
+    ksort($tally);
+
+    $witness = sprintf(
+        'first=%d last-of-loop=%d tally=%s limit=%d',
+        $statuses[0] ?? 0,
+        $statuses[count($statuses) - 1] ?? 0,
+        json_encode($tally, JSON_THROW_ON_ERROR),
+        $allowed,
+    );
+
+    expect($refused->status())->toBe(
+        429,
+        'the limiter did not refuse request '.($allowed + 1)." — {$witness}",
+    );
+
+    $refused->assertJsonPath('type', ProblemType::RateLimited->value)
         ->assertHeader('Retry-After');
 
     expect((int) $refused->headers->get('Retry-After'))->toBeGreaterThan(0);
