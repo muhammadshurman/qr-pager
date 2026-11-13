@@ -10,6 +10,7 @@ use App\Features\Landing\MediaLibrary;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -75,8 +76,19 @@ final class SeedDemoTenantCommand extends Command
     public function handle(): int
     {
         if (! app()->environment('local', 'testing')) {
-            $this->components->error('Refusing to run: this writes as the database owner and is for local and testing only.');
-            $this->line('  APP_ENV is '.(string) config('app.env').'.');
+            /*
+             * ⚠ LOWERCASE, AND THAT IS NOT A STYLE CHOICE (`§11` QA M-3 / SECURITY M-1).
+             * `FixtureScriptGuardTest` DERIVES the set of guarded fixtures by grepping for
+             * the literal `refusing to run`, so a capital R put this command outside the one
+             * control that proves a guard really fires -- on top of living outside the
+             * `bin/*` glob. Both halves are fixed: the string matches, and the derivation
+             * now walks artisan commands too.
+             *
+             * The environment is QUOTED because the same test asserts the refusal names what
+             * it saw: a guard that will not say why it fired is the kind somebody disables.
+             */
+            $this->components->error('refusing to run: this writes as the database owner and is for local and testing only.');
+            $this->line("  APP_ENV is '".(string) config('app.env')."'.");
 
             return self::FAILURE;
         }
@@ -167,6 +179,30 @@ final class SeedDemoTenantCommand extends Command
     private function seedMedia(): array
     {
         $files = DemoMedia::files();
+
+        /*
+         * ⚠ THE IMAGELESS PATH IS REFUSED RATHER THAN SEEDED (`§11` QA L-3).
+         *
+         * `DemoMedia::files()` answers `['logo' => null, 'hero' => null, 'dishes' => [],
+         * 'gallery' => []]` when its directory is missing — a plain `is_dir()` false — and
+         * every `?? null` downstream then produced a demo restaurant with no pictures at
+         * all, reporting success. The whole point of this tenant is that it is what a design
+         * is judged from; an imageless one is the e2e fixture again, which is the thing the
+         * ticket exists to stop being judged from.
+         *
+         * The directory is COMMITTED (`database/demo-media`), so its absence is not a
+         * configuration choice — it means the checkout is incomplete or the path moved, and
+         * both are worth saying out loud. The roles are checked rather than the directory,
+         * because a directory that exists and holds nothing this recognises is the same
+         * failure wearing a different hat.
+         */
+        if ($files['logo'] === null || $files['hero'] === null || $files['dishes'] === [] || $files['gallery'] === []) {
+            throw new RuntimeException(
+                'no demo imagery found in '.DemoMedia::directory().
+                ' — expected logo.*, hero.*, dish-*.* and gallery-*.*; run `php artisan studio:demo-imagery` to regenerate it',
+            );
+        }
+
         $library = app(MediaLibrary::class);
 
         $existing = withTenant(self::TENANT_ID, static fn (): array => DB::connection('pgsql_owner')
@@ -199,15 +235,13 @@ final class SeedDemoTenantCommand extends Command
             return $library->store(self::TENANT_ID, basename($path), $bytes);
         };
 
-        $ids = ['logo' => null, 'hero' => null, 'dishes' => [], 'gallery' => []];
-
-        if ($files['logo'] !== null) {
-            $ids['logo'] = $put($files['logo']);
-        }
-
-        if ($files['hero'] !== null) {
-            $ids['hero'] = $put($files['hero']);
-        }
+        /*
+         * ⚠ NO `!== null` GUARDS ON THE LOGO AND THE HERO ANY MORE. The refusal above proves
+         * both are strings by the time execution reaches here, and PHPStan says so --
+         * `notIdentical.alwaysTrue` on both lines. Keeping a dead check beside a real guard
+         * reads as "this might be absent", which is the state the guard exists to deny.
+         */
+        $ids = ['logo' => $put($files['logo']), 'hero' => $put($files['hero']), 'dishes' => [], 'gallery' => []];
 
         foreach ($files['dishes'] as $path) {
             $ids['dishes'][] = $put($path);
