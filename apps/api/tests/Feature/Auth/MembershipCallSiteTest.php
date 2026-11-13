@@ -239,6 +239,15 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
     //
     // That is three rounds of this guard firing on comments and imports, which is the friction
     // the note above predicted after the third time. It stays as it is for that note's reason.
+    //
+    // ⚠ A FOURTH ROUND, `QRPAGER-48`, AND THE ANSWER IS THE SAME: both sites moved by ONE
+    // line, from `:103`/`:268` to `:104`/`:269`, because of a single `use
+    // App\Platform\Http\TenantPanelAccess;` import at the top of the file. `git diff
+    // --unified=0` on that file reports exactly two hunks -- `+16` (the import) and `+297`
+    // (one array key, `can_access_studio`, inside `identity()`'s membership loop) -- so
+    // neither hunk is AT a call and no caller changed. The question this test asks, *does a
+    // caller take a tenant or a user id from request input*, still answers no: the new field
+    // is computed from `$membership->role`, a value already in hand.
     expect(membershipCallSites())->toBe([
         'app/Platform/Auth/ActiveTenant.php:111',
         'app/Platform/Auth/AuthenticatedMembership.php:53',
@@ -246,8 +255,8 @@ it('is called from exactly the nine lines, in five files, that pass a server-der
         'app/Platform/Auth/AuthenticatedTenantResolver.php:150',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:162',
         'app/Platform/Auth/AuthenticatedTenantResolver.php:167',
-        'app/Platform/Auth/Http/AuthController.php:103',
-        'app/Platform/Auth/Http/AuthController.php:268',
+        'app/Platform/Auth/Http/AuthController.php:104',
+        'app/Platform/Auth/Http/AuthController.php:269',
         'app/Platform/Auth/RequestPrincipal.php:85',
         'app/Platform/Tenancy/UserAttachment.php:131',
     ], 'the set of callers of the named cross-tenant membership path changed -- read the '
