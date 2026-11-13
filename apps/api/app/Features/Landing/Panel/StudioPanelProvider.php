@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Features\Landing\Panel;
 
+use App\Features\Landing\LandingPages;
 use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
@@ -294,6 +295,32 @@ class StudioPanelProvider extends PanelProvider
              * allowlist) and which no other mechanism can replace: the class is written by
              * Filament's own boot script before any stylesheet can respond to it.
              */
+            /*
+             * THE PUBLISH STATE, ON EVERY TAB — `QRPAGER-48` item 2.
+             *
+             * ⚠ IT IS THE FRAME, NOT THE PAGE. An owner editing colours needs to know their
+             * customers are still seeing last week's page just as much as one editing blocks
+             * does, so it renders above every studio page rather than on the builder alone.
+             *
+             * ⚠⚠ AND IT COSTS A SECOND SCOPED READ PER RENDER. `§6` question 5 claimed this
+             * would reuse the form's read; the build falsified that — `state()` and `draft()`
+             * each open their own `withTenant` — and `PLAN.md` carries the corrected figure.
+             * Accepted rather than optimised: memoising `row()` per request would change
+             * shared code four pages and the publish path depend on, to save one read on a
+             * page an owner opens deliberately.
+             */
+            ->renderHook(
+                PanelsRenderHook::PAGE_HEADER_ACTIONS_BEFORE,
+                function (): string {
+                    if (! TenantPanelAccess::allows()) {
+                        return '';
+                    }
+
+                    return view('studio.partials.status-plate', [
+                        'plate' => app(LandingPages::class)->state(TenantPanelAccess::tenantId()),
+                    ])->render();
+                },
+            )
             /*
              * ⚠ THE TOPBAR'S LEFT HALF — `QRPAGER-48` item 2: the mark, the RESTAURANT'S name
              * and a chip saying which screen this is.

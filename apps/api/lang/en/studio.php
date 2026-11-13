@@ -58,6 +58,11 @@ return [
         // read as the product's (§12: no unexplained identifier).
         'studio' => 'Studio',
         'signed_in_as' => 'Signed in as :name',
+        'published' => 'Live',
+        // Said as a FACT about the page, not as an instruction: the action is beside it.
+        'unpublished_changes' => 'edited since you last published',
+        'saved_draft' => 'Saved as a draft',
+        'not_saved' => 'Not saved yet',
     ],
 
     'page' => [
@@ -305,6 +310,9 @@ return [
         'clear_colour' => 'Use the default',
         'using_default' => 'Using the default',
         'title' => 'Theme',
+        // QRPAGER-48 item 2. One line, plain language, saying what this screen is FOR --
+        // §12's bar is a reader with zero technical background.
+        'description' => 'Pick a ready-made look, then change anything you like. Every change shows in the preview straight away.',
         'save' => 'Save',
     ],
 

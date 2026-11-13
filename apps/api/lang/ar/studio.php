@@ -50,6 +50,10 @@ return [
     'chrome' => [
         'studio' => 'الاستوديو',
         'signed_in_as' => 'داخل باسم :name',
+        'published' => 'منشورة',
+        'unpublished_changes' => 'معدّلة من آخر نشر',
+        'saved_draft' => 'محفوظة كمسودة',
+        'not_saved' => 'ما انحفظت بعد',
     ],
 
     'page' => [
@@ -286,6 +290,7 @@ return [
         'clear_colour' => 'استخدم الافتراضي',
         'using_default' => 'الافتراضي',
         'title' => 'الثيم',
+        'description' => 'اختار ثيم جاهز، وبعدها عدّل عليه زي ما بدك. كل تغيير بينزل على المعاينة فورًا.',
         'save' => 'احفظ',
     ],
 

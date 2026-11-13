@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Tenancy\TenantRole;
+use App\Features\Landing\LandingPages;
+use App\Features\Landing\Panel\Pages\ThemePage;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The studio's chrome, one case per region. `QRPAGER-48` item 2.
@@ -77,3 +80,47 @@ it('renders every region on EVERY tab, not only the theme one', function (string
         $response->assertSee($marker, false);
     }
 })->with(['/studio', '/studio/theme', '/studio/media', '/studio/domains']);
+
+/**
+ * ⚠⚠ THE PUBLISH ACTION SAVES THIS TAB FIRST, AND THAT ORDER IS THE WHOLE CASE.
+ *
+ * `LandingBuilderPage::publish()` already records why: *"a publish that used the stored draft
+ * while the form held newer values would publish something the tenant is not looking at."*
+ * The theme tab holds exactly such values, so publishing from here without saving would put
+ * the OLD theme on the live page while the screen showed the new one — a defect an owner
+ * would only discover by looking at their own published page.
+ */
+it('publishes from the theme tab, and publishes what the FORM holds', function (): void {
+    $tenantId = $this->actingForTenant(role: TenantRole::Owner);
+    $pages = app(LandingPages::class);
+
+    // A publishable page to start from, with a known arrangement.
+    $pages->saveDraft($tenantId, [
+        'template' => 'rail',
+        'blocks' => [['type' => 'hero', 'fields' => ['heading' => 'Before']]],
+    ]);
+    $pages->publish($tenantId);
+
+    expect($pages->state($tenantId)['has_unpublished_changes'])->toBeFalse();
+
+    // Now change the arrangement IN THE FORM and publish without saving first. If the action
+    // published the stored draft, the live page would keep `rail`.
+    Livewire::test(ThemePage::class)
+        ->set('data.template', 'ember')
+        ->callAction('publish');
+
+    // The PUBLISHED document's own bytes, read back rather than inferred from the draft:
+    // the whole claim is that what reached the live page is what the form held.
+    $stored = (string) withTenant(
+        $tenantId,
+        static fn (): string => (string) DB::connection('pgsql_owner')
+            ->table('landing_pages')->where('tenant_id', $tenantId)->value('published_document'),
+        'pgsql_owner',
+    );
+
+    /** @var array{template?: string} $published */
+    $published = json_decode($stored, true);
+
+    expect($published['template'] ?? null)->toBe('ember')
+        ->and($pages->state($tenantId)['has_unpublished_changes'])->toBeFalse();
+});

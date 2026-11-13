@@ -12,7 +12,9 @@ use App\Features\Landing\Panel\HasStudioLocale;
 use App\Features\Landing\Panel\KeepsPreviewInStep;
 use App\Features\Landing\Panel\MediaOptions;
 use App\Features\Landing\Panel\StudioForm;
+use App\Features\Landing\PublishFailed;
 use App\Platform\Http\TenantPanelAccess;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
@@ -67,6 +69,19 @@ class ThemePage extends Page
      * from the tenant's own row. Filament calls `getTitle()` when it renders the heading,
      * which is after `StudioLocale` has run, so this is the only form that can be correct.
      */
+    /**
+     * One line of plain language under the title. `QRPAGER-48` item 2.
+     *
+     * ⚠ IT SAYS WHAT THE SCREEN IS FOR, NOT WHAT IT CONTAINS. `§12`'s bar is a reader with
+     * zero technical background, and *"theme and identity"* alone tells such a reader nothing
+     * about why they would open it. The artboard carries the same sentence for the same
+     * reason — it is the only prose in that region.
+     */
+    public function getSubheading(): string
+    {
+        return __('studio.theme.description');
+    }
+
     public function getTitle(): string
     {
         return __('studio.theme.title');
@@ -201,6 +216,53 @@ class ThemePage extends Page
         $this->data['logo'] = null;
 
         $this->previewChanged();
+    }
+
+    /**
+     * The publish action, in the page header beside the status plate. `QRPAGER-48` item 2.
+     *
+     * ⚠⚠ IT SAVES THIS TAB FIRST, FOR THE REASON `LandingBuilderPage::publish()` ALREADY
+     * GIVES: *"a publish that used the stored draft while the form held newer values would
+     * publish something the tenant is not looking at, which is worse than refusing."* The
+     * theme tab holds exactly such values — a colour the owner changed and has not saved —
+     * so publishing from here without saving would put the OLD theme on the live page while
+     * the screen showed the new one.
+     *
+     * ⚠ AND IT IS NOT A SECOND IMPLEMENTATION OF PUBLISHING. `save()` is this page's own, and
+     * `LandingPages::publish()` is the one publisher; what is written here is the ORDER, and
+     * the order is the part that is specific to publishing from a tab that holds form state.
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('publish')
+                ->label(__('studio.page.publish'))
+                ->action(function (): void {
+                    $this->save();
+
+                    try {
+                        $published = app(LandingPages::class)->publish(TenantPanelAccess::tenantId());
+                    } catch (PublishFailed $e) {
+                        // The headline comes from the exception, not from a constant here:
+                        // `PublishFailed` carries which side of the commit its throw site
+                        // leaves, and a fixed sentence would tell the tenant their live page
+                        // was untouched when it may not be.
+                        Notification::make()
+                            ->title(__($e->headline))
+                            ->body($e->reason)
+                            ->danger()
+                            ->persistent()
+                            ->send();
+
+                        return;
+                    }
+
+                    Notification::make()
+                        ->title(__('studio.notifications.published_to', ['hostname' => $published->hostname]))
+                        ->success()
+                        ->send();
+                }),
+        ];
     }
 
     public function save(): void
