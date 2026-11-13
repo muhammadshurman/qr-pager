@@ -1,0 +1,324 @@
+theme-paint: full output -> /home/pixels/code/qr-pager/apps/api/storage/logs/theme-paint-20261113T225607Z.log
+theme-paint: seeding the demo restaurant (idempotent)
+theme-paint: arrangements from LandingTemplate::values(): rail ember tile
+theme-paint: building apps/site
+theme-paint: starting apps/site on port 3097
+theme-paint: publishing the sentinel theme under 'rail'
+theme-paint: measuring 'rail' at 390 and 1280 through http://demo-al-sarw.pages.qrpager.test:3097/
+browsers: this host cannot launch all three engines; using the container.
+
+Running 2 tests using 1 worker
+
+  ✓  1 [theme-paint] › browser/theme-paint.spec.ts:454:5 › the published page's colours, as a browser resolves them — rail › rail at 390: every colour-bearing computed value, collected (449ms)
+  ✓  2 [theme-paint] › browser/theme-paint.spec.ts:454:5 › the published page's colours, as a browser resolves them — rail › rail at 1280: every colour-bearing computed value, collected (640ms)
+
+  2 passed (1.6s)
+theme-paint: publishing the sentinel theme under 'ember'
+theme-paint: measuring 'ember' at 390 and 1280 through http://demo-al-sarw.pages.qrpager.test:3097/
+browsers: this host cannot launch all three engines; using the container.
+
+Running 2 tests using 1 worker
+
+  ✓  1 [theme-paint] › browser/theme-paint.spec.ts:454:5 › the published page's colours, as a browser resolves them — ember › ember at 390: every colour-bearing computed value, collected (587ms)
+  ✓  2 [theme-paint] › browser/theme-paint.spec.ts:454:5 › the published page's colours, as a browser resolves them — ember › ember at 1280: every colour-bearing computed value, collected (540ms)
+
+  2 passed (1.6s)
+theme-paint: publishing the sentinel theme under 'tile'
+theme-paint: measuring 'tile' at 390 and 1280 through http://demo-al-sarw.pages.qrpager.test:3097/
+browsers: this host cannot launch all three engines; using the container.
+
+Running 2 tests using 1 worker
+
+  ✓  1 [theme-paint] › browser/theme-paint.spec.ts:454:5 › the published page's colours, as a browser resolves them — tile › tile at 390: every colour-bearing computed value, collected (563ms)
+  ✓  2 [theme-paint] › browser/theme-paint.spec.ts:454:5 › the published page's colours, as a browser resolves them — tile › tile at 1280: every colour-bearing computed value, collected (508ms)
+
+  2 passed (1.6s)
+theme-paint: partitioning
+
+------------------------------------------------------------------------------
+QRPAGER-49A — does the theme reach the pixel?
+------------------------------------------------------------------------------
+templates : rail, ember, tile   (from LandingTemplate::values())
+widths    : 390, 1280
+sentinels :
+    color.background     #ff00e4
+    color.surface        #00ff95
+    color.text           #1400ff
+    color.muted          #ff7a00
+    color.accent         #00e5ff
+    color.accent_text    #7d00ff
+
+collected : 7944 colour-bearing computed values — 7262 sentinel, 616 declared non-themed, 66 other
+
+------------------------------------------------------------------------------
+(c) EVERYTHING ELSE — the finding
+------------------------------------------------------------------------------
+
+rail @ 390  — 11 distinct
+    #000000      color                    html  ×1  does not paint
+        html
+        the element carries no text node of its own
+    #000000      border-top-color         html  ×1  does not paint
+        html
+        border-top is 0px none
+    #000000      border-right-color       html  ×1  does not paint
+        html
+        border-right is 0px none
+    #000000      border-bottom-color      html  ×1  does not paint
+        html
+        border-bottom is 0px none
+    #000000      border-left-color        html  ×1  does not paint
+        html
+        border-left is 0px none
+    #000000      outline-color            html  ×1  does not paint
+        html
+        outline is 3px none in this state
+    #000000      text-decoration-color    html  ×1  does not paint
+        html
+        text-decoration-line is none
+    #000000      caret-color              html  ×1  does not paint
+        html
+        a caret needs an editable element in focus
+    #000000      column-rule-color        html  ×1  does not paint
+        html
+        there is no column rule
+    #000000      text-emphasis-color      html  ×1  does not paint
+        html
+        text-emphasis-style is none
+    #000000      -webkit-text-fill-color  html  ×1  does not paint
+        html
+        the element carries no text node of its own
+
+rail @ 1280  — 11 distinct
+    #000000      color                    html  ×1  does not paint
+        html
+        the element carries no text node of its own
+    #000000      border-top-color         html  ×1  does not paint
+        html
+        border-top is 0px none
+    #000000      border-right-color       html  ×1  does not paint
+        html
+        border-right is 0px none
+    #000000      border-bottom-color      html  ×1  does not paint
+        html
+        border-bottom is 0px none
+    #000000      border-left-color        html  ×1  does not paint
+        html
+        border-left is 0px none
+    #000000      outline-color            html  ×1  does not paint
+        html
+        outline is 3px none in this state
+    #000000      text-decoration-color    html  ×1  does not paint
+        html
+        text-decoration-line is none
+    #000000      caret-color              html  ×1  does not paint
+        html
+        a caret needs an editable element in focus
+    #000000      column-rule-color        html  ×1  does not paint
+        html
+        there is no column rule
+    #000000      text-emphasis-color      html  ×1  does not paint
+        html
+        text-emphasis-style is none
+    #000000      -webkit-text-fill-color  html  ×1  does not paint
+        html
+        the element carries no text node of its own
+
+ember @ 390  — 11 distinct
+    #000000      color                    html  ×1  does not paint
+        html
+        the element carries no text node of its own
+    #000000      border-top-color         html  ×1  does not paint
+        html
+        border-top is 0px none
+    #000000      border-right-color       html  ×1  does not paint
+        html
+        border-right is 0px none
+    #000000      border-bottom-color      html  ×1  does not paint
+        html
+        border-bottom is 0px none
+    #000000      border-left-color        html  ×1  does not paint
+        html
+        border-left is 0px none
+    #000000      outline-color            html  ×1  does not paint
+        html
+        outline is 3px none in this state
+    #000000      text-decoration-color    html  ×1  does not paint
+        html
+        text-decoration-line is none
+    #000000      caret-color              html  ×1  does not paint
+        html
+        a caret needs an editable element in focus
+    #000000      column-rule-color        html  ×1  does not paint
+        html
+        there is no column rule
+    #000000      text-emphasis-color      html  ×1  does not paint
+        html
+        text-emphasis-style is none
+    #000000      -webkit-text-fill-color  html  ×1  does not paint
+        html
+        the element carries no text node of its own
+
+ember @ 1280  — 11 distinct
+    #000000      color                    html  ×1  does not paint
+        html
+        the element carries no text node of its own
+    #000000      border-top-color         html  ×1  does not paint
+        html
+        border-top is 0px none
+    #000000      border-right-color       html  ×1  does not paint
+        html
+        border-right is 0px none
+    #000000      border-bottom-color      html  ×1  does not paint
+        html
+        border-bottom is 0px none
+    #000000      border-left-color        html  ×1  does not paint
+        html
+        border-left is 0px none
+    #000000      outline-color            html  ×1  does not paint
+        html
+        outline is 3px none in this state
+    #000000      text-decoration-color    html  ×1  does not paint
+        html
+        text-decoration-line is none
+    #000000      caret-color              html  ×1  does not paint
+        html
+        a caret needs an editable element in focus
+    #000000      column-rule-color        html  ×1  does not paint
+        html
+        there is no column rule
+    #000000      text-emphasis-color      html  ×1  does not paint
+        html
+        text-emphasis-style is none
+    #000000      -webkit-text-fill-color  html  ×1  does not paint
+        html
+        the element carries no text node of its own
+
+tile @ 390  — 11 distinct
+    #000000      color                    html  ×1  does not paint
+        html
+        the element carries no text node of its own
+    #000000      border-top-color         html  ×1  does not paint
+        html
+        border-top is 0px none
+    #000000      border-right-color       html  ×1  does not paint
+        html
+        border-right is 0px none
+    #000000      border-bottom-color      html  ×1  does not paint
+        html
+        border-bottom is 0px none
+    #000000      border-left-color        html  ×1  does not paint
+        html
+        border-left is 0px none
+    #000000      outline-color            html  ×1  does not paint
+        html
+        outline is 3px none in this state
+    #000000      text-decoration-color    html  ×1  does not paint
+        html
+        text-decoration-line is none
+    #000000      caret-color              html  ×1  does not paint
+        html
+        a caret needs an editable element in focus
+    #000000      column-rule-color        html  ×1  does not paint
+        html
+        there is no column rule
+    #000000      text-emphasis-color      html  ×1  does not paint
+        html
+        text-emphasis-style is none
+    #000000      -webkit-text-fill-color  html  ×1  does not paint
+        html
+        the element carries no text node of its own
+
+tile @ 1280  — 11 distinct
+    #000000      color                    html  ×1  does not paint
+        html
+        the element carries no text node of its own
+    #000000      border-top-color         html  ×1  does not paint
+        html
+        border-top is 0px none
+    #000000      border-right-color       html  ×1  does not paint
+        html
+        border-right is 0px none
+    #000000      border-bottom-color      html  ×1  does not paint
+        html
+        border-bottom is 0px none
+    #000000      border-left-color        html  ×1  does not paint
+        html
+        border-left is 0px none
+    #000000      outline-color            html  ×1  does not paint
+        html
+        outline is 3px none in this state
+    #000000      text-decoration-color    html  ×1  does not paint
+        html
+        text-decoration-line is none
+    #000000      caret-color              html  ×1  does not paint
+        html
+        a caret needs an editable element in focus
+    #000000      column-rule-color        html  ×1  does not paint
+        html
+        there is no column rule
+    #000000      text-emphasis-color      html  ×1  does not paint
+        html
+        text-emphasis-style is none
+    #000000      -webkit-text-fill-color  html  ×1  does not paint
+        html
+        the element carries no text node of its own
+
+------------------------------------------------------------------------------
+(3) STYLE ATTRIBUTES — what the page sets inline, across all six renders
+------------------------------------------------------------------------------
+  ×6  html
+        style="--color-background:#ff00e4;--color-surface:#00ff95;--color-text:#1400ff;--color-muted:#ff7a00;--color-accent:#00e5ff;--color-accent-text:#7d00ff;--font-heading:system-ui, sans-serif;--font-body:system-ui, sans-serif;--ra"
+  ×2  html>body>main>div.rail>section:nth-of-type(4)>div.grid>figure:nth-of-type(1)
+        style="margin:0"
+  ×2  html>body>main>div.rail>section:nth-of-type(4)>div.grid>figure:nth-of-type(2)
+        style="margin:0"
+  ×2  html>body>main>div.rail>section:nth-of-type(4)>div.grid>figure:nth-of-type(3)
+        style="margin:0"
+  ×2  html>body>main>div.ember>div.ember-column:nth-of-type(2)>section:nth-of-type(3)>div.grid>figure:nth-of-type(1)
+        style="margin:0"
+  ×2  html>body>main>div.ember>div.ember-column:nth-of-type(2)>section:nth-of-type(3)>div.grid>figure:nth-of-type(2)
+        style="margin:0"
+  ×2  html>body>main>div.ember>div.ember-column:nth-of-type(2)>section:nth-of-type(3)>div.grid>figure:nth-of-type(3)
+        style="margin:0"
+  ×2  html>body>main>div.tile>div.tile-grid>section:nth-of-type(1)>div.grid>figure:nth-of-type(1)
+        style="margin:0"
+  ×2  html>body>main>div.tile>div.tile-grid>section:nth-of-type(1)>div.grid>figure:nth-of-type(2)
+        style="margin:0"
+  ×2  html>body>main>div.tile>div.tile-grid>section:nth-of-type(1)>div.grid>figure:nth-of-type(3)
+        style="margin:0"
+
+------------------------------------------------------------------------------
+(6) DEAD CONTROL CHECK — which of the six roles each template actually paints with
+------------------------------------------------------------------------------
+
+rail
+    color.background     paints ×2 — background-color on body
+    color.surface        DEAD — emitted as #00ff95, painted nowhere
+    color.text           paints ×188 — color on h2; -webkit-text-fill-color on h2; color on p (+13 more)
+    color.muted          paints ×12 — border-top-color on section; border-top-color on div.rail-find; color on footer (+1 more)
+    color.accent         paints ×20 — background-color on a.cta; color on a; text-decoration-color on a (+1 more)
+    color.accent_text    paints ×4 — color on a.cta; -webkit-text-fill-color on a.cta
+
+ember
+    color.background     paints ×12 — background-color on body; color on h2; -webkit-text-fill-color on h2 (+3 more)
+    color.surface        paints ×16 — background-color on li.card; background-color on article.card
+    color.text           paints ×186 — background-color on div.ember-hero; color on a.cta; -webkit-text-fill-color on a.cta (+16 more)
+    color.muted          paints ×12 — border-bottom-color on section; color on footer; -webkit-text-fill-color on footer
+    color.accent         paints ×18 — color on a; text-decoration-color on a; -webkit-text-fill-color on a
+    color.accent_text    DEAD — emitted as #7d00ff, painted nowhere
+
+tile
+    color.background     paints ×2 — background-color on body
+    color.surface        paints ×16 — background-color on article.card; background-color on li.card
+    color.text           paints ×188 — color on h2; -webkit-text-fill-color on h2; color on p (+13 more)
+    color.muted          paints ×12 — border-bottom-color on section; color on footer; -webkit-text-fill-color on footer
+    color.accent         paints ×20 — background-color on a.cta; color on a; text-decoration-color on a (+1 more)
+    color.accent_text    paints ×4 — color on a.cta; -webkit-text-fill-color on a.cta
+
+------------------------------------------------------------------------------
+2 dead picker(s): rail/color.surface, ember/color.accent_text
+A role a template never paints with is a picker a restaurant owner can move with no effect — `§12`. Reported, not narrowed: the studio keeps its six rows.
+theme-paint: 66 finding(s) in category (c).
+theme-paint: restoring the demo restaurant to its own theme
+EXIT=1
