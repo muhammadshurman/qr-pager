@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Domain\Landing\LandingDocumentInvalid;
+use App\Features\Landing\LandingPages;
 use App\Features\Landing\MediaLibrary;
+use App\Features\Landing\MediaRejected;
 use App\Features\Landing\TenantMediaReferences;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\ImageFixtures;
+use Tests\Support\LandingFixtures;
 
 /*
  * ================================================================================
@@ -211,4 +215,131 @@ it('keeps the private prefix private: a published page never serves from media/'
 
     expect($key)->toStartWith(MediaLibrary::PREFIX.'/')
         ->and($key)->not->toStartWith('sites/');
+});
+
+/*
+ * ================================================================================
+ * DELETING AN IMAGE DOES NOT DEPEND ON THE REST OF THE PAGE BEING VALID
+ * ================================================================================
+ *
+ * Muhammad's walkthrough of PR #22, defect 2. The media tab answered
+ * «لم تُحذف الصورة — تعذّرت قراءة صفحتك الآن» for EVERY delete, because `delete()` built a
+ * validated `LandingDocument` to ask *"is this asset referenced?"* — so one invalid field
+ * anywhere refused every delete on the tab. In his page it was `seo.og_image` naming an
+ * image that was no longer in the library.
+ *
+ * ⚠ THE OWNER WAS TRAPPED, AND THAT IS WHAT MAKES IT MORE THAN A MESSAGE PROBLEM. The same
+ * validation gates the preview, so they could not see the page either, and the thing they
+ * needed to delete to fix it was the thing the refusal was about. His ruling: *"Answering
+ * 'is this asset referenced?' needs the stored document's raw references, not a VALID
+ * document."*
+ *
+ * The fixture plants exactly that state: a stored draft carrying an og_image that names an
+ * asset which is NOT in the library, so `LandingDocument::fromStored()` raises.
+ */
+function plantBrokenSharingImage(string $tenantId, string $keepAssetId): void
+{
+    $document = LandingFixtures::fullPage($keepAssetId);
+
+    // ⚠ THROUGH THE REAL PATH FIRST, which creates the row. Without this the UPDATE below
+    // matches nothing, the draft stays empty, and all three cases pass having planted
+    // nothing — the vacuous shape, and it is how the first version of this helper failed.
+    (new LandingPages)->saveDraft($tenantId, $document);
+
+    $document['seo']['og_image'] = (string) Str::uuid7();
+
+    // Written past `saveDraft()` on purpose: the panel cannot CREATE this state, and that is
+    // not the same as the state not existing — an asset deleted by another path, or a
+    // restore, leaves exactly this behind. The defect is about what the panel does when it
+    // MEETS it.
+    withTenant($tenantId, static function () use ($document): void {
+        DB::connection('pgsql_owner')
+            ->table('landing_pages')
+            ->update(['draft_document' => json_encode($document, JSON_THROW_ON_ERROR)]);
+    }, 'pgsql_owner');
+}
+
+it('deletes an unreferenced image even when another field of the page is invalid', function (): void {
+    $tenant = $this->makeTenant();
+    $library = new MediaLibrary;
+
+    $used = $library->store($tenant, 'used.png', ImageFixtures::png());
+    $spare = $library->store($tenant, 'spare.png', ImageFixtures::png());
+
+    plantBrokenSharingImage($tenant, $used);
+
+    // The planted state is real: the document genuinely does not validate.
+    expect(static fn () => (new LandingPages)->draft($tenant))
+        ->toThrow(LandingDocumentInvalid::class);
+
+    // ⚠ AND THE DELETE GOES THROUGH. `$spare` is referenced by nothing, which is a question
+    // about the stored bytes and not about whether the page would publish.
+    $library->delete($tenant, $spare);
+
+    expect($library->count($tenant))->toBe(1);
+});
+
+it('still refuses to delete an image the broken page references, and names where', function (): void {
+    $tenant = $this->makeTenant();
+    $library = new MediaLibrary;
+
+    $used = $library->store($tenant, 'used.png', ImageFixtures::png());
+
+    plantBrokenSharingImage($tenant, $used);
+
+    /*
+     * The safe direction is kept — this is the half the old coupling got right, and losing
+     * it while fixing the other half would be the worse trade: an asset the page points at
+     * must not vanish because the page is temporarily unreadable.
+     */
+    $message = null;
+
+    try {
+        $library->delete($tenant, $used);
+    } catch (MediaRejected $e) {
+        $message = $e->getMessage();
+    }
+
+    expect($message)->not->toBeNull()
+        ->and($library->count($tenant))->toBe(1);
+
+    // And it NAMES a place rather than reporting that the page cannot be read.
+    expect($message)->not->toBe(__('landing.media.page_unreadable'))
+        ->and($message)->toBe(__('landing.media.in_use_by_block', [
+            'block' => __('studio.blocks.hero'),
+        ]));
+});
+
+it('names the sharing image when that is what holds the reference', function (): void {
+    $tenant = $this->makeTenant();
+    $library = new MediaLibrary;
+
+    $shared = $library->store($tenant, 'shared.png', ImageFixtures::png());
+
+    // A document that is otherwise fine, whose og_image is this asset.
+    $document = LandingFixtures::fullPage(null);
+
+    (new LandingPages)->saveDraft($tenant, $document);
+
+    $document['seo']['og_image'] = $shared;
+
+    withTenant($tenant, static function () use ($document): void {
+        DB::connection('pgsql_owner')
+            ->table('landing_pages')
+            ->update(['draft_document' => json_encode($document, JSON_THROW_ON_ERROR)]);
+    }, 'pgsql_owner');
+
+    $message = null;
+
+    try {
+        $library->delete($tenant, $shared);
+    } catch (MediaRejected $e) {
+        $message = $e->getMessage();
+    }
+
+    // ⚠ THE SHARING IMAGE USED TO BE UNNAMEABLE: it is not in a block and it is not the
+    // logo, so the old path fell through both checks and let the delete happen — which is
+    // how a published page ends up sharing a 404. `§12.2` wants the field named.
+    expect($message)->toBe(__('landing.media.in_use_as_sharing_image'))
+        ->and($library->count($tenant))->toBe(1);
 });

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Features\Landing;
 
 use App\Domain\Landing\LandingDocument;
-use App\Domain\Landing\LandingDocumentInvalid;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -144,6 +144,85 @@ final class MediaLibrary
     }
 
     /**
+     * Does this stored document mention this asset at all?
+     *
+     * ⚠ OVER THE RAW BYTES, AND DELIBERATELY SO. A media id is a uuid7 — 36 characters with
+     * four hyphens — so a document either carries that string or it does not, and nothing
+     * else in a landing document is shaped like one. Asking the bytes cannot miss a
+     * reference the way a structured read of a MALFORMED document can, which is the whole
+     * reason this replaced `LandingDocument::fromStored()`: the check must not depend on the
+     * page being valid, because the owner deleting an image is often the person trying to
+     * MAKE it valid again.
+     *
+     * Case-insensitively, because the column stores what was written and a uuid may be
+     * spelled either way — `delete()` compared the logo with `strtolower()` for this reason
+     * and the comparison lives in one place now.
+     */
+    private static function mentions(string $storedJson, string $assetId): bool
+    {
+        return $assetId !== '' && str_contains(strtolower($storedJson), strtolower($assetId));
+    }
+
+    /**
+     * The owner-facing refusal, naming WHERE the image is used when that can be read.
+     *
+     * `§12.2`: *"this image is in use"* leaves the owner hunting for it. So this names the
+     * block, or the logo, or the sharing image — and when the stored structure is too
+     * damaged to say, it says so honestly rather than guessing a place.
+     *
+     * ⚠ IT READS THE RAW ARRAY. No schema, no validation, no exceptions: every lookup is
+     * guarded, because this runs precisely when the document is NOT trustworthy.
+     *
+     * @param  array<mixed>  $decoded
+     */
+    private static function inUseMessage(array $decoded, string $assetId, string $which): string
+    {
+        $is = static fn (mixed $value): bool => is_string($value) && strtolower($value) === strtolower($assetId);
+
+        if ($is($decoded['logo'] ?? null)) {
+            return __('landing.media.in_use_as_logo');
+        }
+
+        $seo = $decoded['seo'] ?? null;
+
+        if (is_array($seo) && $is($seo['og_image'] ?? null)) {
+            return __('landing.media.in_use_as_sharing_image');
+        }
+
+        $blocks = $decoded['blocks'] ?? null;
+
+        if (is_array($blocks)) {
+            foreach ($blocks as $block) {
+                if (! is_array($block)) {
+                    continue;
+                }
+
+                // The id anywhere inside this block's own bytes, which covers a field, an
+                // item in a list, and a shape this method has never heard of.
+                $carries = str_contains(
+                    strtolower((string) json_encode($block, JSON_THROW_ON_ERROR)),
+                    strtolower($assetId),
+                );
+
+                if (! $carries) {
+                    continue;
+                }
+
+                $type = $block['type'] ?? null;
+
+                return is_string($type) && Lang::has('studio.blocks.'.$type)
+                    ? __('landing.media.in_use_by_block', ['block' => __('studio.blocks.'.$type)])
+                    : __('landing.media.in_use_unplaced');
+            }
+        }
+
+        // It is in there — `mentions()` said so — but not anywhere this can name.
+        return $which === 'published'
+            ? __('landing.media.in_use_by_published')
+            : __('landing.media.in_use_unplaced');
+    }
+
+    /**
      * Is this tenant's asset COMPLETE — a row, and the object it names still in the store?
      *
      * ⚠ IT TAKES AN ASSET ID AND NOT A KEY, and the first version took a key.
@@ -219,54 +298,52 @@ final class MediaLibrary
      */
     public function delete(string $tenantId, string $assetId): void
     {
-        withTenant($tenantId, function () use ($tenantId, $assetId): void {
+        withTenant($tenantId, function () use ($assetId): void {
             $asset = DB::table('media_assets')->where('id', $assetId)->first();
 
             if ($asset === null) {
                 throw new MediaRejected(__('landing.media.not_in_library'));
             }
 
-            $references = new TenantMediaReferences($tenantId);
-
-            foreach (['draft_document', 'published_document'] as $column) {
+            /*
+             * ================================================================================
+             * ⚠⚠ THE REFERENCE CHECK READS WHAT IS STORED. IT DOES NOT VALIDATE THE PAGE.
+             * ================================================================================
+             *
+             * This built a VALIDATED `LandingDocument` and refused the delete when the
+             * document would not validate — `landing.media.page_unreadable`, with the comment
+             * *"a document that no longer validates cannot be read for references, and
+             * refusing the delete is the safe direction."*
+             *
+             * Muhammad found what that costs by using it. One invalid field anywhere in the
+             * page — in his walkthrough `seo.og_image` naming an image that is no longer in
+             * the library — made EVERY delete on the media tab refuse, with a message about
+             * the page being unreadable and no hint which field or tab was at fault. The
+             * owner could not delete the broken reference, and could not preview the page
+             * either, because the same validation gates both. Trapped, by a coupling.
+             *
+             * ⚠ THE QUESTION HERE IS *"is this asset referenced?"*, AND THAT QUESTION DOES
+             * NOT NEED A VALID DOCUMENT — it needs the stored one. A uuid either appears in
+             * those bytes or it does not. So the check is containment over the raw JSON,
+             * which cannot miss a reference however malformed the rest of the document is,
+             * and is the safe direction for the reason the old comment gave without needing
+             * validity to get there.
+             *
+             * `placeOf()` then names WHERE for the message, reading the raw structure. When
+             * it cannot tell — a `blocks` key that is not a list, say — it answers null and
+             * the owner gets the unplaced sentence rather than a wrong one.
+             */
+            foreach (['draft_document' => 'draft', 'published_document' => 'published'] as $column => $which) {
                 $stored = DB::table('landing_pages')->value($column);
 
-                if (! is_string($stored)) {
+                if (! is_string($stored) || ! self::mentions($stored, $assetId)) {
                     continue;
                 }
 
                 /** @var array<mixed> $decoded */
                 $decoded = json_decode($stored, true, 32, JSON_THROW_ON_ERROR) ?: [];
 
-                // A document that no longer validates cannot be read for references, and
-                // refusing the delete is the safe direction: the alternative is deleting
-                // an asset a repairable page still points at.
-                try {
-                    $document = LandingDocument::fromStored($decoded, $references);
-                } catch (LandingDocumentInvalid) {
-                    throw new MediaRejected(__('landing.media.page_unreadable'));
-                }
-
-                if ($block = $document->blockUsing($assetId)) {
-                    throw new MediaRejected(
-                        __('landing.media.in_use_by_block', ['block' => __('studio.blocks.'.$block->value)])
-                    );
-                }
-
-                /*
-                 * ⚠ AND THE LOGO, WHICH IS A REFERENCE NO BLOCK HOLDS — `QRPAGER-47` Part B
-                 * item 2. `blockUsing()` answers *"which block"* and the logo is not in one,
-                 * so without this line the panel would let an owner delete the image their
-                 * published page serves as its mark: the next publish would be refused (a
-                 * document referencing a deleted asset cannot publish) and the live page
-                 * would keep serving an object the library no longer lists.
-                 *
-                 * The refusal names WHERE, like the block one above, because *"this image is
-                 * in use"* leaves the owner hunting for it (`§12.2`).
-                 */
-                if (is_string($document->logo) && strtolower($document->logo) === strtolower($assetId)) {
-                    throw new MediaRejected(__('landing.media.in_use_as_logo'));
-                }
+                throw new MediaRejected(self::inUseMessage($decoded, $assetId, $which));
             }
 
             DB::table('media_assets')->where('id', $assetId)->delete();
