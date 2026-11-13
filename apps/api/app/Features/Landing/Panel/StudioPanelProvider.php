@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Features\Landing\Panel;
 
 use App\Domain\Tenancy\TenantLanguage;
+use App\Features\Landing\LanguageNotChanged;
 use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
@@ -414,7 +415,24 @@ class StudioPanelProvider extends PanelProvider
                         return '';
                     }
 
-                    return '<div class="studio-usermenu__identity" data-usermenu-identity="true">'
+                    /*
+                     * ⚠ `studio.chrome.signed_in_as` IS THE GROUP'S ACCESSIBLE NAME, AND IT
+                     * WAS IN BOTH CATALOGUES WITH NO CALL SITE AT ALL (`§11` QA L-1).
+                     *
+                     * It is not rendered as visible text, and that is the ticket's own
+                     * instruction rather than an oversight: item 2 says the menu shows *"the
+                     * full name, the email, and «تسجيل الخروج». Nothing else."* So the
+                     * sentence the key exists for becomes what the block is CALLED rather
+                     * than another line in it -- which is also the thing the block was
+                     * missing, two bare spans having no accessible description of their own.
+                     *
+                     * `role="group"` because a bare `<div>` takes no accessible name: an
+                     * `aria-label` on a generic element is dropped by assistive technology,
+                     * so the attribute without the role would have been the same defect in a
+                     * new shape -- a key that is present and does nothing.
+                     */
+                    return '<div class="studio-usermenu__identity" data-usermenu-identity="true"'
+                        .' role="group" aria-label="'.e(__('studio.chrome.signed_in_as', ['name' => $name !== '' ? $name : $email])).'">'
                         .'<span class="studio-usermenu__name">'.e($name).'</span>'
                         .'<span class="studio-usermenu__email">'.e($email).'</span>'
                         .'</div>';
@@ -447,6 +465,28 @@ class StudioPanelProvider extends PanelProvider
                         // Nothing to link to. Rendering no control is right: a dead link in
                         // the chrome is worse than an absent one, and in production this
                         // state cannot be reached at all -- the boot check refuses it.
+                        return '';
+                    }
+
+                    /*
+                     * ⚠ AND THE SCHEME IS CHECKED HERE AFTER ALL (`§11` SECURITY L-3). The
+                     * paragraph above said no second validator was needed because
+                     * `BootChecks::staffSignInUrlIsSound()` covers it — and that method's
+                     * FIRST statement is `if ($this->isDevelopment()) { return []; }`, with
+                     * `DEVELOPMENT_ENVIRONMENTS = ['local', 'testing']`. So it is skipped in
+                     * exactly the two environments where this value is set by hand and by
+                     * `tools/browsers/bin/e2e`. The claim was true of production and the
+                     * comment stated it without that qualification.
+                     *
+                     * `e()` is not the answer to this one: it prevents attribute breakout —
+                     * `StudioBackToStaffTest`'s third case proves that, correctly — and
+                     * leaves the SCHEME untouched, so `javascript:alert(1)` survives it
+                     * unchanged and becomes a live anchor in the topbar.
+                     *
+                     * Fail-closed, like the boot check it backs up: an unusable value renders
+                     * no control rather than a control that does something else.
+                     */
+                    if (! str_starts_with($target, 'https://') && ! str_starts_with($target, 'http://')) {
                         return '';
                     }
 
@@ -752,11 +792,72 @@ class StudioPanelProvider extends PanelProvider
                     $userId = auth()->id();
 
                     if (is_string($userId)) {
-                        app(PanelLanguage::class)->set($userId, $language);
+                        try {
+                            app(PanelLanguage::class)->set($userId, $language);
+                        } catch (LanguageNotChanged) {
+                            /*
+                             * ⚠ CAUGHT, AND IT ESCAPED AS A 500 (`§11` QA L-2). `set()`
+                             * raises this when the UPDATE matched no row — which, as its own
+                             * docblock says, can only mean the signed-in person's row was
+                             * deleted mid-session. That is a real state and it is not an
+                             * error in the request: the next page load will meet the
+                             * authentication guard and send them to sign in again, which is
+                             * the honest answer. An exception page here would show a stack
+                             * trace for a toggle.
+                             *
+                             * Swallowed deliberately rather than reported: there is nothing
+                             * the person can do, nothing to retry, and the redirect below
+                             * already re-renders the panel in whatever language the row
+                             * resolution now yields.
+                             */
+                        }
                     }
 
-                    return back();
-                })->name('panel-language');
+                    /*
+                     * ⚠ A NAMED PANEL ROUTE, NOT `back()` (`§11` QA L-6 and SECURITY L-1).
+                     * `back()` resolves through `UrlGenerator::previous()`, which prefers the
+                     * `Referer` HEADER over the session and passes it through `to()` — and
+                     * `to()` returns an absolute or protocol-relative URL unchanged. Measured
+                     * against this repo's own vendor tree:
+                     *
+                     *     https://evil.example/landing -> https://evil.example/landing
+                     *     //evil.example/x             -> //evil.example/x
+                     *
+                     * So this answered `302 Location: https://evil.example/…` for any request
+                     * whose Referer said so. It is not drivable today — `PreventRequestForgery`
+                     * is on the route and `config/session.php` sets `same_site` to `lax`, so a
+                     * cross-site POST carries neither session nor token — but it becomes live
+                     * the moment anyone sets `SESSION_SAME_SITE=none`, and `§1`'s one-origin
+                     * discussion makes that a plausible future edit.
+                     *
+                     * The second half is QA L-6, which the same line fixes: with NO previous
+                     * URL in the session, `back()` falls through to `/` and sends the person
+                     * off the panel entirely. A language toggle that logs you out of the
+                     * studio is the shape `§12` refuses.
+                     *
+                     * The person still returns to the TAB they were on, because a toggle that
+                     * always lands on one page is its own small defect — but the previous URL
+                     * is admitted only when it is inside this panel on this host, and
+                     * anything else falls back to a route resolved by NAME.
+                     */
+                    $previous = url()->previous();
+
+                    return redirect()->to(
+                        self::withinStudio($previous, $request->getHost())
+                            ? $previous
+                            : route('filament.studio.pages.theme'),
+                    );
+                })
+                    ->name('panel-language')
+                    /*
+                     * ⚠ A SECOND LIMITER, FOR THE PREVIEW ROUTES' REASON (`§11` SECURITY
+                     * L-5). The panel stack's `RateLimit:panel` runs FIRST, before
+                     * `StartSession`, so it can only ever count the IP; route middleware is
+                     * appended and sorted after `Authenticate`, which is where a tenant
+                     * exists to count. `§4 › Edge & ops` asks for both halves and this route
+                     * had only one — on the panel's single non-Livewire WRITE.
+                     */
+                    ->middleware(RateLimit::class.':studio-panel-language-tenant');
 
                 // Named `preview`, not `studio.preview`: Filament prefixes a panel's
                 // routes with `filament.{panel id}.`, so the full names are
@@ -790,5 +891,46 @@ class StudioPanelProvider extends PanelProvider
                     ->name('preview.asset')
                     ->middleware(RateLimit::class.':studio-preview-asset-tenant');
             });
+    }
+
+    /**
+     * Is this URL a page of THIS panel, on THIS host?
+     *
+     * ⚠ THE HOST IS CHECKED BEFORE THE PATH, AND A MISSING HOST IS NOT A PASS BY ITSELF.
+     * `parse_url('//evil.example/studio')` yields host `evil.example` with no scheme, which
+     * is the protocol-relative case; `parse_url('/\evil.example')` yields NO host and the
+     * path `/\evil.example`, which a browser still resolves to another origin because the
+     * WHATWG parser normalises `\` to `/`. So a backslash anywhere in the authority position
+     * disqualifies the value outright rather than being normalised here — this decides
+     * whether to trust a string, and a function that repaired it would be guessing at intent.
+     *
+     * The path test is the panel's own prefix with a boundary, so `/studios-elsewhere`
+     * cannot pass as `/studio`.
+     */
+    private static function withinStudio(string $url, string $host): bool
+    {
+        if (trim($url) === '' || str_contains($url, '\\')) {
+            return false;
+        }
+
+        $parts = parse_url($url);
+
+        if ($parts === false) {
+            return false;
+        }
+
+        // An absolute URL is admitted only for this host, over http(s). A relative one
+        // carries no host at all, which is the ordinary case for a Referer on this panel.
+        if (isset($parts['host']) && $parts['host'] !== $host) {
+            return false;
+        }
+
+        if (isset($parts['scheme']) && ! in_array($parts['scheme'], ['http', 'https'], true)) {
+            return false;
+        }
+
+        $path = $parts['path'] ?? '';
+
+        return $path === '/studio' || str_starts_with($path, '/studio/');
     }
 }
