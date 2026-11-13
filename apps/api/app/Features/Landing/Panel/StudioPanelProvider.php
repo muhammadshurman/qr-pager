@@ -11,6 +11,7 @@ use App\Features\Landing\Panel\Pages\PreviewController;
 use App\Features\Landing\Panel\Pages\ThemePage;
 use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
+use App\Platform\Http\TenantPanelAccess;
 use App\Platform\Panel\ApprovedPalette;
 use Filament\Enums\ThemeMode;
 use Filament\FontProviders\LocalFontProvider;
@@ -293,6 +294,68 @@ class StudioPanelProvider extends PanelProvider
              * allowlist) and which no other mechanism can replace: the class is written by
              * Filament's own boot script before any stylesheet can respond to it.
              */
+            /*
+             * ⚠ THE TOPBAR'S LEFT HALF — `QRPAGER-48` item 2: the mark, the RESTAURANT'S name
+             * and a chip saying which screen this is.
+             *
+             * `§12` forbids an unexplained identifier, and before this the topbar carried the
+             * product's name and nothing about whose page was being edited. On a shared
+             * device the restaurant is the one fact a person glances up to confirm.
+             */
+            ->renderHook(
+                PanelsRenderHook::TOPBAR_START,
+                fn (): string => view('studio.partials.topbar-identity', [
+                    'restaurant' => TenantPanelAccess::membership()->tenantName ?? '',
+                ])->render(),
+            )
+            /*
+             * ⚠⚠ THE SIGNED-IN PERSON'S FIRST NAME, READABLE WITHOUT A CLICK.
+             *
+             * Muhammad's ruling of 2026-11-13, which treats the artboard itself as the defect:
+             * *"The artboard's bare initial is itself the defect — `§12` forbids an unexplained
+             * identifier, and a single letter is exactly that."* So the name is TEXT beside the
+             * avatar, and the avatar alone is what remains on a narrow screen — the collapse is
+             * CSS, because the name is not information the small screen needs less, it is
+             * information the small screen has no room for.
+             */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                function (): string {
+                    $name = trim((string) (auth()->user()?->getAttribute('name') ?? ''));
+
+                    if ($name === '') {
+                        return '';
+                    }
+
+                    $first = explode(' ', $name)[0];
+
+                    return '<span class="studio-topbar__person" data-topbar-person="true">'
+                        .e($first)
+                        .'</span>';
+                },
+            )
+            /*
+             * AND THE MENU ITSELF CARRIES THE WHOLE NAME AND THE ADDRESS — *"the full name, the
+             * email, and «تسجيل الخروج». Nothing else."* The address is what distinguishes two
+             * people with one first name, which is the case the abbreviation above cannot serve.
+             */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_PROFILE_BEFORE,
+                function (): string {
+                    $user = auth()->user();
+                    $name = trim((string) ($user?->getAttribute('name') ?? ''));
+                    $email = trim((string) ($user?->getAttribute('email') ?? ''));
+
+                    if ($name === '' && $email === '') {
+                        return '';
+                    }
+
+                    return '<div class="studio-usermenu__identity" data-usermenu-identity="true">'
+                        .'<span class="studio-usermenu__name">'.e($name).'</span>'
+                        .'<span class="studio-usermenu__email">'.e($email).'</span>'
+                        .'</div>';
+                },
+            )
             /*
              * ⚠⚠ THE WAY BACK TO THE ORDERS BOARD — `QRPAGER-48` item 3, AND IT REUSES THE
              * KEY THE SIGNED-OUT REDIRECT ALREADY USES RATHER THAN ADDING ONE.

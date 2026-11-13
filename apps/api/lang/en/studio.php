@@ -53,6 +53,13 @@ return [
         'refused_hint' => 'Fix that field in the builder and preview again.',
     ],
 
+    'chrome' => [
+        // QRPAGER-48 item 2. Names the SCREEN, so the restaurant's name beside it is not
+        // read as the product's (§12: no unexplained identifier).
+        'studio' => 'Studio',
+        'signed_in_as' => 'Signed in as :name',
+    ],
+
     'page' => [
         'title' => 'Landing page',
         'status_heading' => 'Status',

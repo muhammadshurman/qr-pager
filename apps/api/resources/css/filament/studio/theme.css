@@ -1353,3 +1353,120 @@ html:not(.dark):has(body.fi-panel-studio),
   color: var(--color-ink-mid);
   font-size: var(--size-13);
 }
+
+/*
+ * ================================================================================
+ * THE CHROME — `QRPAGER-48` item 2
+ * ================================================================================
+ *
+ * Translated from `docs/design/studio/theme-tab.html`, which marks itself REFERENCE ONLY:
+ * *"Do not copy a literal from this file. Every colour, size, radius and duration here
+ * stands for a token: translate it, never paste it."* So every value below is a token, and
+ * `scan-panel.mjs` is what keeps that honest rather than this comment.
+ */
+.studio-topbar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/*
+ * The mark draws its squares in the PAPER colour over `currentColor`, so it inherits the
+ * topbar's ink and cannot drift from it when the panel's ground changes.
+ */
+.studio-topbar__mark {
+  --studio-topbar-mark-ink: var(--color-paper);
+
+  display: inline-flex;
+  color: var(--color-ink);
+}
+
+.studio-topbar__rule {
+  display: inline-block;
+  inline-size: 1px;
+  block-size: var(--space-5);
+  background: var(--color-hairline);
+}
+
+/*
+ * ⚠ IT TRUNCATES RATHER THAN WRAPS OR PUSHES. A long restaurant name must not shove the
+ * person's name and the way out off the end of a 390px topbar -- `§12`'s one-handed bar is
+ * about reach, and a control pushed past the edge is not reachable at all.
+ */
+.studio-topbar__restaurant {
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.studio-topbar__chip {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-small);
+  color: var(--color-ink-mid);
+  font-size: var(--size-12);
+}
+
+/*
+ * The signed-in person's first name, beside the avatar. Muhammad's ruling: a bare initial is
+ * itself the defect, because `§12` forbids an unexplained identifier.
+ */
+.studio-topbar__person {
+  margin-inline-end: var(--space-2);
+  color: var(--color-ink);
+  font-size: var(--size-13);
+  font-weight: 500;
+}
+
+/*
+ * ⚠ THE NAME COLLAPSES AND THE AVATAR REMAINS, WHICH IS THE RIGHT WAY ROUND. The name is not
+ * information a small screen needs less; it is information a small screen has no room for,
+ * and the avatar still opens the menu that carries it in full.
+ */
+@media (width < 30rem) {
+  .studio-topbar__person,
+  .studio-topbar__chip {
+    display: none;
+  }
+}
+
+/* The menu's own identity block: the whole name, and the address that disambiguates it. */
+.studio-usermenu__identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-hairline);
+}
+
+.studio-usermenu__name {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.studio-usermenu__email {
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+  overflow-wrap: anywhere;
+}
+
+/* The way back to the orders board, in the topbar's right half. */
+.studio-topbar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-end: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-small);
+  color: var(--color-ink);
+  font-size: var(--size-12);
+  text-decoration: none;
+}
+
+.studio-topbar__back:hover {
+  background: var(--color-surface-2);
+}

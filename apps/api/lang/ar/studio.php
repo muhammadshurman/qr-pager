@@ -47,6 +47,11 @@ return [
         'refused_hint' => 'صحّح هذا الحقل في المحرّر ثم عاين مرة أخرى.',
     ],
 
+    'chrome' => [
+        'studio' => 'الاستوديو',
+        'signed_in_as' => 'داخل باسم :name',
+    ],
+
     'page' => [
         'title' => 'الصفحة',
         'status_heading' => 'الحالة',
