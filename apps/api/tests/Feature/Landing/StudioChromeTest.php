@@ -291,3 +291,55 @@ it('announces the publish state exactly once per tab, in one vocabulary', functi
             ->and($html)->toContain(__('studio.chrome.published'));
     }
 });
+
+/*
+ * ================================================================================
+ * THE LANGUAGE ROUTE REDIRECTS TO A PAGE, NEVER TO A PICTURE — PR #22 walkthrough
+ * ================================================================================
+ *
+ * The defect Muhammad found by using it: clicking AR/EN navigated the owner full-page onto
+ * `/studio/preview/asset/{id}` — a raw JPEG. The form sends no `Referer`, so
+ * `url()->previous()` fell back to the session's previous URL, which Laravel sets from the
+ * last non-AJAX GET, which on the theme tab is whatever image the preview iframe fetched last.
+ *
+ * ⚠ THE HOSTILE VALUES ARE THE POINT OF THE TABLE. `from` is tenant input now, so it is
+ * driven with the names that WOULD send an owner somewhere that is not a page — the preview
+ * document, a preview asset, this route itself, another panel's page, and a name that is not
+ * a route at all. Each must land on a page of this panel instead.
+ */
+it('redirects to a page of this panel whatever `from` says', function (): void {
+    $this->actingForTenant(role: TenantRole::Owner);
+
+    $cases = [
+        // The honest case: a real page of this panel is honoured.
+        'filament.studio.pages.media' => '/studio/media',
+        'filament.studio.pages.domains' => '/studio/domains',
+        // Everything else falls back, and the fallback is a PAGE.
+        'filament.studio.preview' => '/studio/theme',
+        'filament.studio.preview.asset' => '/studio/theme',
+        'filament.studio.panel-language' => '/studio/theme',
+        'filament.platform.pages.dashboard' => '/studio/theme',
+        'not.a.route.at.all' => '/studio/theme',
+        '' => '/studio/theme',
+    ];
+
+    foreach ($cases as $from => $expected) {
+        $this->post('/studio/panel-language', ['language' => 'en', 'from' => $from])
+            ->assertRedirect($expected);
+    }
+
+    // And a missing `from` behaves like an unusable one rather than raising.
+    $this->post('/studio/panel-language', ['language' => 'en'])
+        ->assertRedirect('/studio/theme');
+
+    // ⚠ NOT A PREVIEW ROUTE, ASSERTED AS A PROPERTY over every answer above: the whole defect
+    // was a redirect to a route that serves BYTES rather than a page, so this says so
+    // directly rather than trusting the table to have listed every spelling of one.
+    foreach (array_keys($cases) as $from) {
+        $location = (string) $this->post('/studio/panel-language', ['language' => 'ar', 'from' => $from])
+            ->headers->get('Location');
+
+        expect($location)->not->toContain('/preview')
+            ->and($location)->not->toContain('/panel-language');
+    }
+});

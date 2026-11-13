@@ -13,6 +13,29 @@
 --}}
 <form method="POST" action="{{ route('filament.studio.panel-language') }}" class="studio-lang" data-panel-language="true">
     @csrf
+
+    {{--
+        ⚠⚠ WHERE TO COME BACK TO, CARRIED EXPLICITLY — AND IT WAS `url()->previous()`.
+
+        Muhammad's walkthrough of PR #22: *"clicking AR/EN opens the restaurant's logo
+        chooser."* It does not. It navigates the owner FULL-PAGE ONTO A RAW JPEG, which is
+        what an image filling the window looks like. Measured: the POST is correct and the
+        302 answers `Location: /studio/preview/asset/01a1d2b2-…`.
+
+        The chain: this form sends NO `Referer` (measured — the header is absent), so
+        `url()->previous()` falls through to the session's previous URL; Laravel records that
+        from the last non-AJAX GET; and the theme tab's PREVIEW IFRAME fetches
+        `/studio/preview/asset/{id}` for every image on the page. So "the page they were on"
+        was, in fact, the last picture the preview happened to load.
+
+        ⚠ IT IS A ROUTE NAME, NOT A URL, and it is validated against the panel's own page
+        routes on the other side. A path would be tenant input that has to be parsed and
+        host-checked; a name either is one of this panel's pages or it is not, which is a
+        closed question with a closed answer. `/studio/preview` and `/studio/panel-language`
+        are not page routes, so neither can be returned to by construction rather than by a
+        prefix test that cannot tell a page from a picture.
+    --}}
+    <input type="hidden" name="from" value="{{ request()->route()?->getName() }}">
     <span class="studio-lang__legend" data-panel-language-legend="true">
         {{ __('studio.chrome.panel_language_legend') }}
     </span>

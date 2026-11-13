@@ -2556,3 +2556,68 @@ test.describe('the studio chrome — QRPAGER-48 item 2', () => {
     }
   })
 })
+
+/**
+ * ================================================================================
+ * THE LANGUAGE TOGGLE SWITCHES THE LANGUAGE AND OPENS NOTHING — PR #22 walkthrough
+ * ================================================================================
+ *
+ * Muhammad, reviewing PR #22: *"clicking AR/EN in the topbar opens the restaurant's logo
+ * chooser instead of switching the panel language."*
+ *
+ * It did not open a chooser. It navigated the owner FULL-PAGE ONTO A RAW JPEG, which is what
+ * an image filling the window looks like. Measured: the POST was correct and the response was
+ * `302 Location: /studio/preview/asset/01a1d2b2-…`. This form sends no `Referer`, so
+ * `url()->previous()` fell back to the session's previous URL; Laravel sets that from the last
+ * non-AJAX GET; and the theme tab's preview iframe fetches `/studio/preview/asset/{id}` for
+ * every image on the page. The redirect guard accepted it because an image under `/studio/` is
+ * still under `/studio/`.
+ *
+ * ⚠⚠ THIS ASSERTS THE CONSEQUENCE, NOT THE REQUEST, WHICH IS MUHAMMAD'S OWN INSTRUCTION:
+ * *"A case asserting only that the request fires would pass on the broken build."* And it
+ * would have — the POST was never the broken part. So this asserts the three things an owner
+ * would have noticed: the language CHANGED, they are still on a studio PAGE with its chrome,
+ * and nothing opened.
+ *
+ * Both directions, because a toggle that can only move one way is a toggle that is stuck.
+ */
+test.describe('the studio language toggle — PR #22', () => {
+  test('switches the panel language, stays on the page, and opens nothing', async ({ page }) => {
+    let fileChooserOpened = false
+
+    page.on('filechooser', () => {
+      fileChooserOpened = true
+    })
+
+    await signInAsStaff(page)
+
+    for (const [glyph, expected] of [
+      ['EN', 'en'],
+      ['ع', 'ar'],
+    ] as const) {
+      await page.goto(`${apiOrigin()}/studio/theme`, { waitUntil: 'domcontentloaded' })
+      await page.waitForSelector('[data-panel-language="true"]', { timeout: 60_000 })
+
+      await page.locator('.studio-lang__choice', { hasText: glyph }).click()
+      await page.waitForLoadState('domcontentloaded')
+
+      // 1. THE LANGUAGE CHANGED. The marker is rendered on whichever choice is current, so
+      //    this reads the panel's own answer rather than our memory of what we clicked.
+      await expect(page.locator(`[data-panel-language-current="${expected}"]`)).toHaveCount(1)
+
+      // 2. STILL ON A STUDIO PAGE. The chrome only renders inside the panel, so a raw image —
+      //    which is where this used to land — has none of it. This is the assertion the
+      //    defect would have failed.
+      await expect(page).toHaveURL(/\/studio\/[a-z-]+$/)
+      await expect(page.locator('[data-topbar-restaurant="true"]')).toHaveCount(1)
+      await expect(page.locator('[data-status-plate="true"]')).toHaveCount(1)
+
+      // 3. AND NOTHING OPENED — no file chooser, no modal.
+      expect(fileChooserOpened, 'clicking the language toggle opened a file chooser').toBe(false)
+
+      const dialogs = await page.locator('[role="dialog"]:visible, .fi-modal:visible').count()
+
+      expect(dialogs, 'clicking the language toggle opened a dialog').toBe(0)
+    }
+  })
+})

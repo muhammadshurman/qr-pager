@@ -814,39 +814,41 @@ class StudioPanelProvider extends PanelProvider
                     }
 
                     /*
-                     * ⚠ A NAMED PANEL ROUTE, NOT `back()` (`§11` QA L-6 and SECURITY L-1).
-                     * `back()` resolves through `UrlGenerator::previous()`, which prefers the
-                     * `Referer` HEADER over the session and passes it through `to()` — and
-                     * `to()` returns an absolute or protocol-relative URL unchanged. Measured
-                     * against this repo's own vendor tree:
+                     * ⚠⚠ THE PAGE THEY CAME FROM, CARRIED BY THE FORM — NOT `back()`, AND NOT
+                     * `url()->previous()` EITHER.
                      *
-                     *     https://evil.example/landing -> https://evil.example/landing
-                     *     //evil.example/x             -> //evil.example/x
+                     * `back()` was the first version and `§11` QA L-6 / SECURITY L-1 are why
+                     * it went: it reflects the `Referer` header verbatim, so this answered
+                     * `302 Location: https://evil.example/…` for any request whose Referer
+                     * said so, and with no Referer at all it fell through to `/`, off the
+                     * panel entirely.
                      *
-                     * So this answered `302 Location: https://evil.example/…` for any request
-                     * whose Referer said so. It is not drivable today — `PreventRequestForgery`
-                     * is on the route and `config/session.php` sets `same_site` to `lax`, so a
-                     * cross-site POST carries neither session nor token — but it becomes live
-                     * the moment anyone sets `SESSION_SAME_SITE=none`, and `§1`'s one-origin
-                     * discussion makes that a plausible future edit.
+                     * The replacement — the previous URL, admitted when it looked like a
+                     * `/studio` path — was ALSO wrong, and Muhammad's walkthrough of PR #22
+                     * caught it: *"clicking AR/EN opens the restaurant's logo chooser."* What
+                     * it actually did was navigate the owner full-page onto a raw JPEG.
+                     * Measured: this form sends NO Referer, `url()->previous()` therefore
+                     * falls back to the session's previous URL, Laravel sets that from the
+                     * last non-AJAX GET, and the theme tab's PREVIEW IFRAME fetches
+                     * `/studio/preview/asset/{id}` for every image on the page. The prefix
+                     * test passed it because an image under `/studio/` is still under
+                     * `/studio/`. A guard that cannot tell a page from a picture is not a
+                     * guard for this question.
                      *
-                     * The second half is QA L-6, which the same line fixes: with NO previous
-                     * URL in the session, `back()` falls through to `/` and sends the person
-                     * off the panel entirely. A language toggle that logs you out of the
-                     * studio is the shape `§12` refuses.
-                     *
-                     * The person still returns to the TAB they were on, because a toggle that
-                     * always lands on one page is its own small defect — but the previous URL
-                     * is admitted only when it is inside this panel on this host, and
-                     * anything else falls back to a route resolved by NAME.
+                     * ⚠ SO THE ANSWER IS NOT A TIGHTER PREFIX. Ambient "where were you" is
+                     * the wrong source: it is set by sub-resources this control knows nothing
+                     * about. The form states it, and the statement is a ROUTE NAME validated
+                     * against this panel's own PAGES — a closed set, where `preview`,
+                     * `preview.asset` and `panel-language` are absent by construction rather
+                     * than by a rule someone has to remember to extend.
                      */
-                    $previous = url()->previous();
+                    $from = $request->input('from');
 
-                    return redirect()->to(
-                        self::withinStudio($previous, $request->getHost())
-                            ? $previous
-                            : route('filament.studio.pages.theme'),
-                    );
+                    $target = is_string($from) && self::isStudioPage($from)
+                        ? $from
+                        : 'filament.studio.pages.theme';
+
+                    return redirect()->route($target);
                 })
                     ->name('panel-language')
                     /*
@@ -894,43 +896,20 @@ class StudioPanelProvider extends PanelProvider
     }
 
     /**
-     * Is this URL a page of THIS panel, on THIS host?
+     * Is this the name of a PAGE of this panel?
      *
-     * ⚠ THE HOST IS CHECKED BEFORE THE PATH, AND A MISSING HOST IS NOT A PASS BY ITSELF.
-     * `parse_url('//evil.example/studio')` yields host `evil.example` with no scheme, which
-     * is the protocol-relative case; `parse_url('/\evil.example')` yields NO host and the
-     * path `/\evil.example`, which a browser still resolves to another origin because the
-     * WHATWG parser normalises `\` to `/`. So a backslash anywhere in the authority position
-     * disqualifies the value outright rather than being normalised here — this decides
-     * whether to trust a string, and a function that repaired it would be guessing at intent.
+     * ⚠ PAGES ONLY, WHICH IS THE WHOLE POINT. Filament names a panel's routes
+     * `filament.{panel}.pages.{page}`, and its non-page routes — the preview document, the
+     * preview's ASSETS, this very POST — do not carry that segment. So an image cannot be a
+     * redirect target here however it is spelled, which is the defect Muhammad's walkthrough
+     * found: the owner was sent full-page to `/studio/preview/asset/{id}` and read the
+     * result as a file dialog.
      *
-     * The path test is the panel's own prefix with a boundary, so `/studios-elsewhere`
-     * cannot pass as `/studio`.
+     * `Route::has()` as well as the prefix, so a name that merely LOOKS like one cannot
+     * reach `route()` and raise there.
      */
-    private static function withinStudio(string $url, string $host): bool
+    private static function isStudioPage(string $name): bool
     {
-        if (trim($url) === '' || str_contains($url, '\\')) {
-            return false;
-        }
-
-        $parts = parse_url($url);
-
-        if ($parts === false) {
-            return false;
-        }
-
-        // An absolute URL is admitted only for this host, over http(s). A relative one
-        // carries no host at all, which is the ordinary case for a Referer on this panel.
-        if (isset($parts['host']) && $parts['host'] !== $host) {
-            return false;
-        }
-
-        if (isset($parts['scheme']) && ! in_array($parts['scheme'], ['http', 'https'], true)) {
-            return false;
-        }
-
-        $path = $parts['path'] ?? '';
-
-        return $path === '/studio' || str_starts_with($path, '/studio/');
+        return str_starts_with($name, 'filament.studio.pages.') && Route::has($name);
     }
 }
