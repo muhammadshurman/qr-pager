@@ -54,6 +54,8 @@ return [
         'unpublished_changes' => 'معدّلة من آخر نشر',
         'saved_draft' => 'محفوظة كمسودة',
         'not_saved' => 'ما انحفظت بعد',
+        'panel_language_legend' => 'لغة الاستوديو — اللي بتقراه إنت',
+        'panel_language_switch' => 'اقرا الاستوديو بـ:language',
     ],
 
     'page' => [
@@ -65,7 +67,7 @@ return [
         'unpublished_changes' => 'لديك تغييرات لم تُنشر بعد.',
         'published_at' => 'نُشرت على :hostname بتاريخ :date.',
         'will_publish_to' => 'ستُنشر صفحتك على :hostname.',
-        'language_legend' => 'لغة الصفحة',
+        'language_legend' => 'لغة الصفحة — اللي بيقروه زباينك',
         'language_help' => 'يحدد هذا لغة صفحتك المنشورة واتجاه القراءة فيها. انشر مرة أخرى لتطبيق التغيير على صفحتك المباشرة.',
         'language_current' => '(الحالية)',
         'save' => 'احفظ',

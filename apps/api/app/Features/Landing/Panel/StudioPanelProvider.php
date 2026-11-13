@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Features\Landing\Panel;
 
-use App\Features\Landing\LandingPages;
+use App\Domain\Tenancy\TenantLanguage;
 use App\Features\Landing\Panel\Pages\DomainsPage;
 use App\Features\Landing\Panel\Pages\LandingBuilderPage;
 use App\Features\Landing\Panel\Pages\MediaLibraryPage;
 use App\Features\Landing\Panel\Pages\PreviewController;
 use App\Features\Landing\Panel\Pages\ThemePage;
+use App\Features\Landing\PanelLanguage;
 use App\Platform\Filament\LocalAvatarProvider;
 use App\Platform\Http\Middleware\RateLimit;
 use App\Platform\Http\TenantPanelAccess;
@@ -25,6 +26,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
@@ -296,6 +298,26 @@ class StudioPanelProvider extends PanelProvider
              * Filament's own boot script before any stylesheet can respond to it.
              */
             /*
+             * THE FOOTER'S SAVE STATE — `QRPAGER-48` item 2.
+             *
+             * ⚠ IT SHARES THE PLATE'S READ RATHER THAN MAKING ITS OWN. Two chrome regions want
+             * the same fact, and a second `state()` call would have turned the corrected figure
+             * of TWO scoped reads per render into three. `StudioChromeState` memoises per
+             * request, so the chrome costs one read however many regions ask.
+             */
+            ->renderHook(
+                PanelsRenderHook::FOOTER,
+                function (): string {
+                    if (! TenantPanelAccess::allows()) {
+                        return '';
+                    }
+
+                    return view('studio.partials.footer-bar', [
+                        'footer' => StudioChromeState::of(TenantPanelAccess::tenantId()),
+                    ])->render();
+                },
+            )
+            /*
              * THE PUBLISH STATE, ON EVERY TAB — `QRPAGER-48` item 2.
              *
              * ⚠ IT IS THE FRAME, NOT THE PAGE. An owner editing colours needs to know their
@@ -317,7 +339,7 @@ class StudioPanelProvider extends PanelProvider
                     }
 
                     return view('studio.partials.status-plate', [
-                        'plate' => app(LandingPages::class)->state(TenantPanelAccess::tenantId()),
+                        'plate' => StudioChromeState::of(TenantPanelAccess::tenantId()),
                     ])->render();
                 },
             )
@@ -334,6 +356,21 @@ class StudioPanelProvider extends PanelProvider
                 fn (): string => view('studio.partials.topbar-identity', [
                     'restaurant' => TenantPanelAccess::membership()->tenantName ?? '',
                 ])->render(),
+            )
+            /*
+             * THE STUDIO'S OWN LANGUAGE, BESIDE THE PERSON IT BELONGS TO — `QRPAGER-48`.
+             *
+             * ⚠ IT SITS IN THE TOPBAR AND NOT ON THE PAGE TAB, which is the whole point: the
+             * page tab's control sets what a restaurant's CUSTOMERS read, and this sets what
+             * the person signed in reads. One column answered both until 2026-11-13; they are
+             * now `tenants.language` and `users.panel_language`, and each control names its
+             * own audience so an owner meeting them a minute apart cannot confuse them.
+             */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                fn (): string => TenantPanelAccess::allows()
+                    ? view('studio.partials.panel-language')->render()
+                    : '',
             )
             /*
              * ⚠⚠ THE SIGNED-IN PERSON'S FIRST NAME, READABLE WITHOUT A CLICK.
@@ -688,6 +725,39 @@ class StudioPanelProvider extends PanelProvider
             // $request->user() resolved through config('auth.defaults.guard') rather
             // than this panel's declared authGuard('web'). They coincide today.
             ->authenticatedRoutes(function (): void {
+                /*
+                 * WHICH LANGUAGE THIS PERSON READS THE STUDIO IN — `QRPAGER-48` item 2.
+                 *
+                 * ⚠ POST, AND INSIDE `authenticatedRoutes` SO IT CARRIES THE PANEL'S OWN
+                 * STACK. It changes stored state, so a GET would be a preference any page
+                 * could flip by embedding an image. The write is the signed-in person's OWN
+                 * row and nobody else's — the id comes from the guard, never from input.
+                 *
+                 * ⚠⚠ AND IT WRITES `users.panel_language`, NOT `tenants.language`. Those are
+                 * different facts and `PLAN.md §2.4` records why: this is what the PERSON
+                 * reads; the restaurant's published page language is a property of the
+                 * restaurant and is set on the page tab. Writing the tenant column here is
+                 * precisely the defect this ticket's column exists to prevent.
+                 */
+                Route::post('panel-language', function (Request $request) {
+                    $chosen = $request->input('language');
+                    $language = is_string($chosen) ? TenantLanguage::tryFrom($chosen) : null;
+
+                    if ($language === null) {
+                        // An unrecognised value clears the preference rather than guessing:
+                        // "follow the restaurant" is the honest reading of "not a language".
+                        $language = null;
+                    }
+
+                    $userId = auth()->id();
+
+                    if (is_string($userId)) {
+                        app(PanelLanguage::class)->set($userId, $language);
+                    }
+
+                    return back();
+                })->name('panel-language');
+
                 // Named `preview`, not `studio.preview`: Filament prefixes a panel's
                 // routes with `filament.{panel id}.`, so the full names are
                 // `filament.studio.preview` and `filament.studio.preview.asset`.

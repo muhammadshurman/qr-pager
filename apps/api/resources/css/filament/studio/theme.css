@@ -1470,3 +1470,106 @@ html:not(.dark):has(body.fi-panel-studio),
 .studio-topbar__back:hover {
   background: var(--color-surface-2);
 }
+
+/* The status plate as chrome: the publish state, above every tab. */
+.studio-plate--chrome {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-small);
+  background: var(--color-surface-2);
+  font-size: var(--size-13);
+}
+
+.studio-plate__dot {
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: 50%;
+  background: var(--color-ink-mid);
+}
+
+.studio-plate__dot--live {
+  background: var(--color-signal);
+}
+
+.studio-plate__dot--alert {
+  background: var(--color-alert-ink);
+}
+
+.studio-plate__rule {
+  display: inline-block;
+  inline-size: 1px;
+  block-size: var(--space-4);
+  background: var(--color-hairline);
+}
+
+.studio-plate__note {
+  color: var(--color-ink-mid);
+  font-size: var(--size-12);
+}
+
+/*
+ * The footer bar. Sticky, because its whole job is to be true about the page while the person
+ * is somewhere else in it -- a save state that scrolls away answers the question only when it
+ * is not being asked.
+ */
+.studio-footer {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border-block-start: 1px solid var(--color-hairline);
+  background: var(--color-surface);
+  color: var(--color-ink-mid);
+  font-size: var(--size-13);
+}
+
+.studio-footer__dot {
+  inline-size: var(--space-2);
+  block-size: var(--space-2);
+  border-radius: 50%;
+  background: var(--color-ink-mid);
+}
+
+/* The studio's own language control, in the topbar beside the person it belongs to. */
+.studio-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-end: var(--space-3);
+}
+
+.studio-lang__legend {
+  color: var(--color-ink-mid);
+  font-size: var(--size-12);
+}
+
+.studio-lang__choice {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  color: var(--color-ink-mid);
+  font-size: var(--size-12);
+  cursor: pointer;
+}
+
+.studio-lang__choice[aria-current='true'] {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+/*
+ * ⚠ THE LEGEND COLLAPSES AND THE CHOICES DO NOT. On a narrow topbar the sentence has no
+ * room, but the control must stay reachable -- and the glyphs keep their aria-label, so the
+ * audience is still named to anyone who cannot see the legend in the first place.
+ */
+@media (width < 48rem) {
+  .studio-lang__legend {
+    display: none;
+  }
+}

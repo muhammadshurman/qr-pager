@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tenancy\TenantLanguage;
 use App\Domain\Tenancy\TenantRole;
 use App\Features\Landing\LandingPages;
 use App\Features\Landing\Panel\Pages\ThemePage;
+use App\Features\Landing\Panel\StudioChromeState;
+use App\Features\Landing\PanelLanguage;
+use App\Features\Landing\TenantPageLanguage;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -123,4 +127,94 @@ it('publishes from the theme tab, and publishes what the FORM holds', function (
 
     expect($published['template'] ?? null)->toBe('ember')
         ->and($pages->state($tenantId)['has_unpublished_changes'])->toBeFalse();
+});
+
+/**
+ * ⚠⚠ THE CHROME COSTS ONE READ, NOT ONE PER REGION — and this is measured rather than
+ * asserted, because it is the figure `§6` question 5 already got wrong once.
+ *
+ * Two regions want the page state: the status plate and the footer's save state. Without a
+ * per-request memo that is a second `state()` call, which would have turned the CORRECTED
+ * figure of two scoped reads per render into three.
+ */
+it('reads the page state ONCE however many chrome regions ask for it', function (): void {
+    $tenantId = $this->actingForTenant(role: TenantRole::Owner);
+
+    app(LandingPages::class)->saveDraft($tenantId, [
+        'blocks' => [['type' => 'hero', 'fields' => ['heading' => 'One read']]],
+    ]);
+
+    $reads = 0;
+
+    DB::listen(function ($query) use (&$reads): void {
+        if (str_contains($query->sql, 'landing_pages') && str_starts_with(ltrim($query->sql), 'select')) {
+            $reads++;
+        }
+    });
+
+    $first = StudioChromeState::of($tenantId);
+    $afterFirst = $reads;
+    $second = StudioChromeState::of($tenantId);
+
+    // The planted state is asserted first: a memo that returned nothing would also "not read
+    // twice", and would pass this case while rendering an empty plate.
+    expect($afterFirst)->toBeGreaterThan(0)
+        ->and($first['blocks'])->toBe(1)
+        ->and($second)->toBe($first)
+        ->and($reads)->toBe($afterFirst);
+});
+
+/**
+ * ⚠⚠ THE TOPBAR CONTROL CHANGES WHAT **THIS PERSON** READS AND NOTHING ELSE.
+ *
+ * This is the defect `users.panel_language` was added to prevent, driven end to end: before
+ * 2026-11-13 one column meant both things, so a control like this one would have changed a
+ * restaurant's CUSTOMER-facing page language. The negative half is the case.
+ */
+it('switches the studio language for the person, and leaves the customers\' page alone', function (): void {
+    $tenantId = $this->actingForTenant(role: TenantRole::Owner);
+    $pages = app(TenantPageLanguage::class);
+
+    $pages->set($tenantId, TenantLanguage::Arabic);
+
+    // Planted state asserted first, so this cannot pass against a tenant that was English.
+    expect($pages->current($tenantId))->toBe(TenantLanguage::Arabic);
+
+    $this->post('/studio/panel-language', ['language' => 'en'])->assertRedirect();
+
+    $userId = (string) auth()->id();
+
+    expect(app(PanelLanguage::class)->current($userId, $tenantId))
+        ->toBe(TenantLanguage::English)
+        // THE HALF THAT MATTERS: the restaurant's published page is untouched.
+        ->and($pages->current($tenantId))->toBe(TenantLanguage::Arabic);
+});
+
+it('clears the preference back to following the restaurant on an unrecognised value', function (): void {
+    $tenantId = $this->actingForTenant(role: TenantRole::Owner);
+    $userId = (string) auth()->id();
+
+    app(TenantPageLanguage::class)->set($tenantId, TenantLanguage::Arabic);
+    app(PanelLanguage::class)->set($userId, TenantLanguage::English);
+
+    // "Not a language" is not a language: clearing is the honest reading, and guessing a
+    // default would be the control silently choosing for somebody.
+    $this->post('/studio/panel-language', ['language' => 'klingon'])->assertRedirect();
+
+    expect(app(PanelLanguage::class)->current($userId, $tenantId))
+        ->toBe(TenantLanguage::Arabic);
+});
+
+it('names a different audience on each of the two language controls', function (): void {
+    // §12, ruled 2026-11-13: "if the wording does not make that obvious at a glance, the
+    // control is not done." Asserted as a DIFFERENCE rather than against fixed strings, so a
+    // reworded pair still passes and an identical pair cannot.
+    $this->actingForTenant(role: TenantRole::Owner);
+
+    foreach (['en', 'ar'] as $locale) {
+        app()->setLocale($locale);
+
+        expect(__('studio.chrome.panel_language_legend'))
+            ->not->toBe(__('studio.page.language_legend'));
+    }
 });

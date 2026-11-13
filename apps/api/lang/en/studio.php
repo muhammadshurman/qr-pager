@@ -63,6 +63,9 @@ return [
         'unpublished_changes' => 'edited since you last published',
         'saved_draft' => 'Saved as a draft',
         'not_saved' => 'Not saved yet',
+        // The topbar's own language control. Names ITS audience for the same reason.
+        'panel_language_legend' => 'Studio language — what you read',
+        'panel_language_switch' => 'Read the studio in :language',
     ],
 
     'page' => [
@@ -74,7 +77,11 @@ return [
         'unpublished_changes' => 'You have changes that are not published yet.',
         'published_at' => 'Published to :hostname on :date.',
         'will_publish_to' => 'Your page will be published to :hostname.',
-        'language_legend' => 'Page language',
+        // ⚠ THE TWO LANGUAGE CONTROLS MUST NOT BE CONFUSABLE — QRPAGER-48, §12. This one
+        // changes what a restaurant's CUSTOMERS read on the published page; the topbar's
+        // changes what the person signed in reads in the studio. Each label names its own
+        // audience, because an owner meeting them a minute apart has nothing else to go on.
+        'language_legend' => 'Page language — what your customers read',
         'language_help' => 'This sets the language and the reading direction of your published page. Publish again to apply a change to your live page.',
         'language_current' => '(Current)',
         'save' => 'Save',
