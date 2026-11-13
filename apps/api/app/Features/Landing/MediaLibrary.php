@@ -143,10 +143,23 @@ final class MediaLibrary
         });
     }
 
-    /** Is the object this key names still in the store? */
-    public function has(string $objectKey): bool
+    /**
+     * Is this tenant's asset COMPLETE — a row, and the object it names still in the store?
+     *
+     * ⚠ IT TAKES AN ASSET ID AND NOT A KEY, and the first version took a key.
+     * `MediaIsolationTest` caught that in the diff, which is what it exists for: "an object
+     * key IS a capability", so a public method that accepts one from a caller is a
+     * cross-tenant read with nothing underneath it. The key is resolved HERE, inside the
+     * tenant's own scope, so a caller cannot name another tenant's object at all —
+     * `bytes()` and `delete()` take the same shape for the same reason.
+     */
+    public function has(string $tenantId, string $assetId): bool
     {
-        return $objectKey !== '' && self::disk()->exists($objectKey);
+        $key = withTenant($tenantId, static fn (): ?string => DB::table('media_assets')
+            ->where('id', $assetId)
+            ->value('object_key'));
+
+        return is_string($key) && $key !== '' && self::disk()->exists($key);
     }
 
     /**
@@ -159,7 +172,8 @@ final class MediaLibrary
      * `LandingFixtures::bucket()` sweeps the store BOTH databases share, and every row in
      * the dev database is left pointing at bytes that no longer exist. `§11` QA, 2026-11-13.
      *
-     * ⚠ THE KEY IS NOT REGENERATED. `store()` mints a CSPRNG leaf per call precisely so a
+     * ⚠ THE KEY IS NOT REGENERATED — it is read off the row inside the tenant scope.
+     * `store()` mints a CSPRNG leaf per call precisely so a
      * key is never reused for different bytes — but here the bytes are the SAME bytes, and
      * the row, the draft document and any published copy all name this key already.
      * Writing a new key would orphan the old one and leave every reference stale, which is
@@ -171,18 +185,26 @@ final class MediaLibrary
      *
      * @throws MediaRejected
      */
-    public function restore(string $objectKey, string $bytes): void
+    public function restore(string $tenantId, string $assetId, string $bytes): void
     {
         $image = InspectedImage::of($bytes);
 
-        $written = self::disk()->put($objectKey, $bytes, [
-            'ContentType' => $image->contentType,
-            'CacheControl' => (string) config('landing.cache_control'),
-        ]);
+        withTenant($tenantId, function () use ($assetId, $bytes, $image): void {
+            $key = DB::table('media_assets')->where('id', $assetId)->value('object_key');
 
-        if ($written === false) {
-            throw new MediaRejected(__('landing.media.not_stored'));
-        }
+            if (! is_string($key) || $key === '') {
+                throw new MediaRejected(__('landing.media.not_in_library'));
+            }
+
+            $written = self::disk()->put($key, $bytes, [
+                'ContentType' => $image->contentType,
+                'CacheControl' => (string) config('landing.cache_control'),
+            ]);
+
+            if ($written === false) {
+                throw new MediaRejected(__('landing.media.not_stored'));
+            }
+        });
     }
 
     /**

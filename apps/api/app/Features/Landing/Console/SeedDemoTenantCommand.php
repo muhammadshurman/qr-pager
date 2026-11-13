@@ -254,7 +254,7 @@ final class SeedDemoTenantCommand extends Command
              * when it is COMPLETE — the object answers — and re-uploaded in place when it is
              * not, which converges from either state and still stores nothing twice.
              */
-            if ($row !== null && $library->has((string) $row->object_key)) {
+            if ($row !== null && $library->has(self::TENANT_ID, (string) $row->id)) {
                 $reused++;
 
                 return (string) $row->id;
@@ -263,7 +263,7 @@ final class SeedDemoTenantCommand extends Command
             if ($row !== null) {
                 $repaired++;
 
-                $library->restore((string) $row->object_key, $bytes);
+                $library->restore(self::TENANT_ID, (string) $row->id, $bytes);
 
                 return (string) $row->id;
             }
