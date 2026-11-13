@@ -67,8 +67,26 @@ export function studioUrl(
 
   const value = configured.trim()
 
-  // A same-origin path, and NOT a protocol-relative one.
-  if (value.startsWith('/') && !value.startsWith('//')) {
+  /*
+   * A same-origin path, and NOT one the browser will resolve to another ORIGIN.
+   *
+   * ⚠ BOTH SLASHES, AND IT USED TO BE ONE. This read `!value.startsWith('//')`, which closes
+   * the protocol-relative case the docblock above names and leaves its twin open: the WHATWG
+   * URL parser — the one that resolves every `href` — treats `\` as `/` for special schemes,
+   * so `/\evil.example` is NOT a path. Measured with Node's `URL` against
+   * `https://staff.example.test/staff`:
+   *
+   *     "//evil.example"  -> https://evil.example/
+   *     "/\evil.example"  -> https://evil.example/      <- passed the old guard
+   *     "/studio"         -> https://staff.example.test/studio
+   *
+   * `§11` SECURITY L-2. The value is a build-time `NEXT_PUBLIC_*`, so reaching it means
+   * already controlling the build — which is why it is a hardening gap rather than a live
+   * path, and why the fix is still one character: the staff shell renders this as the
+   * destination of a control labelled *"edit your page"*, and a member of staff who lands on
+   * an attacker's origin and is asked to sign in has every reason to.
+   */
+  if (value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\')) {
     return value
   }
 

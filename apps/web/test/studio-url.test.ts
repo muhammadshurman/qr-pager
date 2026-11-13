@@ -35,6 +35,12 @@ describe('where the staff app thinks the studio is', () => {
     // trusted is ignored rather than honoured.
     for (const hostile of [
       '//evil.example/studio',
+      // ⚠ AND ITS TWIN, WHICH THE FIRST VERSION OF THE GUARD LET THROUGH (`§11` SECURITY
+      // L-2). `\` is not a path separator in a URL -- the WHATWG parser normalises it to `/`
+      // for special schemes -- so this leaves the origin exactly as `//` does, while reading
+      // as a path to a guard that only looked at the second character being `/`.
+      '/\\evil.example',
+      '/\\evil.example/studio',
       'javascript:alert(1)',
       'data:text/html,<script>alert(1)</script>',
       'ftp://example.test/studio',
@@ -42,6 +48,26 @@ describe('where the staff app thinks the studio is', () => {
     ]) {
       expect(studioUrl(hostile)).toBe('/studio')
     }
+  })
+
+  /**
+   * The same two values, resolved by the parser a BROWSER uses rather than by our reading of
+   * them -- because the claim the guard rests on is about resolution, not about spelling.
+   *
+   * Without this, "`/\evil.example` leaves the origin" is an assertion in a comment. With it,
+   * the test fails if that ever stops being true of `URL`, which is the only reason the
+   * character is refused at all.
+   */
+  it('refuses exactly the values a browser would resolve to another origin', () => {
+    const base = 'https://staff.example.test/staff'
+
+    for (const hostile of ['//evil.example', '/\\evil.example']) {
+      expect(new URL(hostile, base).origin).not.toBe('https://staff.example.test')
+      expect(studioUrl(hostile)).toBe('/studio')
+    }
+
+    // And the control: a value the guard HONOURS must stay on this origin.
+    expect(new URL(studioUrl('/panel/studio'), base).origin).toBe('https://staff.example.test')
   })
 })
 

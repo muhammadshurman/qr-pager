@@ -216,6 +216,72 @@ describe('the person', () => {
     expect(result.kind === 'ok' ? result.value.memberships.length : 0).toBe(1)
   })
 
+  /**
+   * ⚠ THE `true` SIDE OF `can_access_studio`, WHICH NO VITEST CASE DROVE (`§11` QA L-5).
+   *
+   * Every membership fixture in `staff-screens`, `staff-interactions` and
+   * `staff-signin-stages` sets `canAccessStudio: false`, and nothing mounted the shell with
+   * `true` — so `api.ts`'s `row.can_access_studio === true` had one arm exercised and the
+   * published capability's only unit coverage was the arm that hides the control. A parse
+   * that returned `false` for everyone would have passed the whole frontend gate, and the
+   * staff app would simply never have offered the studio; `browser/cross-app.spec.ts` was
+   * the only thing able to tell.
+   *
+   * Both arms are asserted in one case, against one payload, because the claim is about the
+   * DIFFERENCE: owner opens the door, staff does not.
+   */
+  it('publishes the studio capability for the member who has it, and not for the one who does not', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        respond(200, {
+          user: { id: 'u1', name: 'Hiba Mansour', email: 'h@example.test' },
+          memberships: [
+            { tenant_id: 't1', role: 'owner', can_access_studio: true },
+            { tenant_id: 't2', role: 'staff', can_access_studio: false },
+          ],
+          active_tenant: 't1',
+        }),
+      ),
+    )
+
+    const result = await fetchIdentity('')
+
+    expect(result.kind).toBe('ok')
+
+    const memberships = result.kind === 'ok' ? result.value.memberships : []
+
+    expect(memberships.map((m) => m.canAccessStudio)).toEqual([true, false])
+  })
+
+  /**
+   * And the shape the `=== true` comparison exists for: anything that is not the published
+   * boolean is "no door". A string `"true"`, a `1` and a missing key are the three ways a
+   * contract drifts, and each of them must close the door rather than open it — the only
+   * direction that cannot show a control the server will refuse.
+   */
+  it('treats any non-boolean capability as closed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        respond(200, {
+          user: { id: 'u1', name: 'Hiba Mansour', email: 'h@example.test' },
+          memberships: [
+            { tenant_id: 't1', role: 'owner', can_access_studio: 'true' },
+            { tenant_id: 't2', role: 'owner', can_access_studio: 1 },
+            { tenant_id: 't3', role: 'owner' },
+          ],
+          active_tenant: 't1',
+        }),
+      ),
+    )
+
+    const result = await fetchIdentity('')
+    const memberships = result.kind === 'ok' ? result.value.memberships : []
+
+    expect(memberships.map((m) => m.canAccessStudio)).toEqual([false, false, false])
+  })
+
   it('answers server when the name is missing, rather than signing somebody in as nobody', async () => {
     // No fallback to the email and none to a placeholder: a shell that cannot say who is
     // signed in shows its error state, which is honest. "Signed in as " is not, and it is
