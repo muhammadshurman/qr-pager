@@ -215,6 +215,20 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
         // `LandingPages::saveDraft()` and `publish()`, writing to the bucket as the owner.
         'bin/publish-landing-fixture',
         /*
+         * `QRPAGER-49A`'s. It publishes the demo restaurant's own document under a theme of six
+         * sentinel colours, through the same `saveDraft()` + `publish()` pair as the row above,
+         * so that `tools/gate/bin/theme-paint-proof` can measure what a BROWSER paints rather
+         * than what the source says. It writes to the bucket and to the live pointer as the
+         * owner, which is why it carries the guard and why it is here.
+         *
+         * ⚠ AND THIS SET IS WHAT CAUGHT IT. The script was written with the guard and with the
+         * lowercase `refusing to run` string, and the first `composer gate` after it still went
+         * RED here — *"Failed asserting that two arrays are identical"* — because the exact set
+         * is the control: a fixture that writes as the owner may not be added without a reader
+         * of this list seeing it. That is the case working, not a tax on it.
+         */
+        'bin/publish-sentinel-theme',
+        /*
          * ⚠ TWO ARTISAN COMMANDS, AND THE DERIVATION COULD NOT SEE EITHER UNTIL NOW.
          * `QRPAGER-48` `§11` QA M-3 / SECURITY M-1: `studio:demo-tenant` bootstraps the real
          * kernel, writes as `pgsql_owner`, and creates a login-capable OWNER with a password

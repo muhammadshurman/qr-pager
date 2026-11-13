@@ -189,6 +189,21 @@ const CROSS_APP_SPECS = ['**/cross-app.spec.ts'] as const
 const LANDING_TEMPLATE_SPECS = ['**/landing-templates.spec.ts'] as const
 
 /**
+ * `QRPAGER-49A`'s collector — *does the theme reach the pixel?*
+ *
+ * It is the sibling of the project above and NOT part of it, because the two measure different
+ * artefacts: `landing-templates` reads pages an instrument rendered to the filesystem, and this
+ * reads a page `LandingPages::publish()` wrote to the object store and `apps/site` serves from a
+ * `Host` header. A published page's photographs live at root-relative `/assets/…` paths, so the
+ * same spec under `file://` would measure a page with no imagery in it.
+ *
+ * ⚠ IT RUNS ONE TEMPLATE PER INVOCATION, which is not a limitation of the spec but of the
+ * subject: one tenant has one live page. `tools/gate/bin/theme-paint-proof` publishes, measures,
+ * and moves on, over `LandingTemplate::values()`.
+ */
+const THEME_PAINT_SPECS = ['**/theme-paint.spec.ts'] as const
+
+/**
  * A WALL TABLET, NOT A PHONE, and that is `§12`'s own reasoning rather than a preference: a
  * kitchen screen is *"greasy, bright and viewed from two metres"*. Measuring staff chrome at
  * 390x844 would measure a layout no kitchen has. 1024x768 at DPR 2 is the commonest mounted
@@ -255,6 +270,7 @@ export default defineConfig({
         ...STUDIO_SPECS,
         ...CROSS_APP_SPECS,
         ...LANDING_TEMPLATE_SPECS,
+        ...THEME_PAINT_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'] },
@@ -275,6 +291,7 @@ export default defineConfig({
         ...STUDIO_SPECS,
         ...CROSS_APP_SPECS,
         ...LANDING_TEMPLATE_SPECS,
+        ...THEME_PAINT_SPECS,
         ...NOT_PLAYWRIGHT,
       ],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
@@ -372,6 +389,49 @@ export default defineConfig({
             name: 'landing-templates',
             testMatch: [...LANDING_TEMPLATE_SPECS],
             use: { ...devices['Desktop Chrome'] },
+          },
+        ]
+      : []),
+
+    /*
+     * `QRPAGER-49A`'s collector, gated exactly as the project above is and for the same
+     * recorded reason: a project that exists unconditionally is collected by every run,
+     * including the `e2e` step, and these cases need a published page and a running
+     * `apps/site` that no other run stands up.
+     *
+     * ⚠ **THE `Host` HEADER IS A BROWSER-LEVEL FLAG, AND THERE IS NO OTHER WAY TO SEND ONE.**
+     * A published page is addressed by host — `sites/{hostname}/index.html`, with `apps/site`
+     * mapping `Host` to that prefix and answering 404 for anything else — and `Host` is a
+     * forbidden header name, so `extraHTTPHeaders` cannot set it and no route interception
+     * reaches it. `--host-resolver-rules` makes Chromium RESOLVE the published hostname to
+     * wherever the server is listening, so the request it sends is the one a visitor's browser
+     * would send, header included. The alternative — a proxy that rewrites the header — would
+     * put a second program between the publisher and the measurement, which is the thing this
+     * ticket exists to avoid.
+     *
+     * `QRPAGER_PAINT_TARGET` is `127.0.0.1` on a host that launches its own browsers and is
+     * rewritten to `host.docker.internal` by `tools/browsers/bin/browsers` when they run in the
+     * container — one source for that fact, in the script that decides it.
+     */
+    ...(process.env.QRPAGER_PAINT_GATE === '1'
+      ? [
+          {
+            name: 'theme-paint',
+            testMatch: [...THEME_PAINT_SPECS],
+            use: {
+              ...devices['Desktop Chrome'],
+              // The sentinels are read as the page resolves them; a dark preference would
+              // change the UA's own defaults underneath the measurement and make a finding
+              // about `color-scheme` look like a finding about the theme.
+              colorScheme: 'light' as const,
+              launchOptions: {
+                args: [
+                  `--host-resolver-rules=MAP ${process.env.QRPAGER_PAINT_HOST ?? ''} ${
+                    process.env.QRPAGER_PAINT_TARGET ?? '127.0.0.1'
+                  }`,
+                ],
+              },
+            },
           },
         ]
       : []),

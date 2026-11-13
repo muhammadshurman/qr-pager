@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# =============================================================================
+# DOES THE THEME REACH THE PIXEL? — QRPAGER-49A, over the PUBLISHED path
+# =============================================================================
+#
+# `scan-css` and `QRPAGER-46`'s emitted/referenced closure are SOURCE-level guards: they prove
+# that no literal colour is written and that no token is referenced with nothing behind it.
+# **Neither proves that the colour a restaurant chose is the colour a browser paints.** Those
+# are two claims about two artefacts, and only the first one was held. This script builds the
+# second, so that it exists BEFORE `QRPAGER-49` imports three externally designed templates
+# whose every literal colour is a candidate to survive translation.
+#
+# WHAT IT DOES, in order:
+#
+#   1. seeds the demo restaurant (`php artisan studio:demo-tenant`, idempotent) so the document
+#      under measurement is the one `QRPAGER-48` ruled a design may be judged from, with its own
+#      imagery and all seven block types
+#   2. builds and starts `apps/site` — the local stand-in for the CDN's `Host` -> prefix mapping
+#      (`ADR-005`), i.e. the thing that actually serves a published page
+#   3. for EVERY case of `LandingTemplate` — read from the enum, never from a list here —
+#      publishes the demo restaurant's unchanged document under that arrangement with the six
+#      sentinel colours, through `LandingPages::publish()`
+#   4. drives a real Chromium at 390 and at 1280 against the published bytes and collects every
+#      colour-bearing COMPUTED value
+#   5. partitions what it found: a sentinel, a declared non-themed member, or a finding
+#
+# WHAT IT NEEDS RUNNING, and it FAILS rather than skipping when one is absent — `tools/browsers/
+# bin/e2e`'s clause, *a reasoned skip is not a measurement*:
+#
+#   1. the composed Postgres and the object store   `docker compose up -d`
+#   2. apps/api installed                           `composer install`
+#   3. the workspace installed                      `pnpm install`
+#
+# ⚠ **IT LEAVES THE DEMO RESTAURANT AS IT FOUND IT.** The sentinel theme is published to the
+# demo tenant's own live page, so the EXIT trap re-runs the seeder, which is the only thing that
+# knows what that restaurant's own theme is. `QRPAGER_PAINT_KEEP=1` leaves the sentinel page up
+# for somebody who wants to look at it.
+#
+# ⛔ LOCAL AND TESTING ONLY. It runs the demo seeder and a fixture script, both of which refuse
+# any other `APP_ENV`.
+set -euo pipefail
+umask 077
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+PORT="${QRPAGER_PAINT_PORT:-3097}"
+OUT="${QRPAGER_PAINT_OUT:-${REPO}/storage/theme-paint}"
+LOG_DIR="${REPO}/apps/api/storage/logs"
+
+# -----------------------------------------------------------------------------
+# THE TRANSCRIPT, WRITTEN BY THIS SCRIPT AND TRAILED BY ITS OWN EXIT STATUS
+# -----------------------------------------------------------------------------
+# `§0.0g`: *a gate figure is only ever read from the committed transcript that the script wrote,
+# never from an ad-hoc command's output.* The instance that rule came from was a figure read
+# through a pipe whose status belonged to `tail`. So the trailer is written by the EXIT trap,
+# which reads `$?` on its own first line and cannot be told a different number by a pipeline.
+if [ -z "${QRPAGER_PAINT_LOG:-}" ]; then
+    mkdir -p "$LOG_DIR"
+    QRPAGER_PAINT_LOG="${LOG_DIR}/theme-paint-$(date -u +%Y%m%dT%H%M%SZ).log"
+    export QRPAGER_PAINT_LOG
+
+    echo "theme-paint: full output -> ${QRPAGER_PAINT_LOG}"
+    "$0" "$@" 2>&1 | tee "$QRPAGER_PAINT_LOG"
+    exit "${PIPESTATUS[0]}"
+fi
+
+SITE_PID=""
+
+stop_group() {
+    [ -n "${1:-}" ] || return 0
+    kill -- "-${1}" 2>/dev/null || kill "${1}" 2>/dev/null || true
+}
+
+# ⚠ `|| true` ON THE `grep`, AND `tools/browsers/bin/e2e`'s `§11` QA H-1 IS WHY: a port with no
+# listener makes `grep` exit 1, `pipefail` propagates it, and `set -e` then aborts the EXIT trap
+# itself — which on a green run leaves the port held and exits 1.
+free_port() {
+    local port="$1" pid
+
+    pid="$(ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true)"
+
+    [ -n "$pid" ] || return 0
+    kill "$pid" 2>/dev/null || true
+    sleep 0.3
+    kill -9 "$pid" 2>/dev/null || true
+}
+
+cleanup() {
+    local status=$?
+
+    stop_group "$SITE_PID"
+    free_port "$PORT"
+
+    if [ "${QRPAGER_PAINT_KEEP:-}" = "1" ]; then
+        echo "theme-paint: QRPAGER_PAINT_KEEP=1 — the demo restaurant is LEFT carrying the sentinel theme."
+    elif [ "${SEEDED:-}" = "1" ]; then
+        echo "theme-paint: restoring the demo restaurant to its own theme"
+        (cd "$REPO/apps/api" && php artisan studio:demo-tenant >/dev/null 2>&1) \
+            || echo "theme-paint: ⚠ the restore FAILED — the demo restaurant still carries the sentinel theme. Run \`php artisan studio:demo-tenant\`."
+    fi
+
+    wait 2>/dev/null || true
+    printf 'EXIT=%d\n' "$status"
+}
+trap cleanup EXIT INT TERM
+
+fail() {
+    echo "theme-paint: FAILED -- $1" >&2
+    exit 1
+}
+
+say() { printf 'theme-paint: %s\n' "$1"; }
+
+# -----------------------------------------------------------------------------
+# 1. the demo restaurant — the document this measures, reset to its own content
+# -----------------------------------------------------------------------------
+say "seeding the demo restaurant (idempotent)"
+
+cd "$REPO/apps/api"
+php artisan studio:demo-tenant >/dev/null || fail "the demo seeder refused; is docker compose up?"
+SEEDED=1
+
+# The store's own credentials, read from the api's env so this script holds no copy of them.
+# One command, one status: see `site-isolation-proof`'s note on why this is not a pipeline.
+mapfile -t STORE < <(php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach (["bucket", "endpoint", "key", "secret", "region"] as $name) {
+    echo config("filesystems.disks.s3.".$name), "\n";
+}
+')
+
+BUCKET="${STORE[0]:-}"
+ENDPOINT="${STORE[1]:-}"
+KEY_ID="${STORE[2]:-}"
+SECRET="${STORE[3]:-}"
+REGION="${STORE[4]:-us-east-1}"
+
+[ -n "$BUCKET" ] || fail "apps/api has no AWS_BUCKET configured, so there is no store to read"
+[ -n "$ENDPOINT" ] || fail "apps/api has no AWS_ENDPOINT configured, so there is no store to read"
+
+# -----------------------------------------------------------------------------
+# ⚠ THE TEMPLATE LIST COMES FROM THE ENUM. THERE IS NO LIST IN THIS FILE.
+# -----------------------------------------------------------------------------
+# A hard-coded three is a check whose scope excludes exactly where the next damage lands:
+# `QRPAGER-49` adds three redesigns, and any fourth arrangement must be covered the day it
+# exists with no way to add one outside this guard.
+TEMPLATES_JSON="$(php bin/publish-sentinel-theme --templates)"
+mapfile -t TEMPLATES < <(python3 -c 'import json,sys; print("\n".join(json.loads(sys.argv[1])))' "$TEMPLATES_JSON")
+
+[ "${#TEMPLATES[@]}" -gt 0 ] || fail "LandingTemplate::values() produced no cases"
+
+say "arrangements from LandingTemplate::values(): ${TEMPLATES[*]}"
+
+# -----------------------------------------------------------------------------
+# 2. apps/site — the production build, never the dev server
+# -----------------------------------------------------------------------------
+cd "$REPO"
+
+# ⚠ **THE OUTPUT DIRECTORY MUST BE INSIDE THE REPOSITORY, AND THE CONTAINER IS WHY.** The
+# browsers may run in an image that mounts this repository at `/repo` and can see nothing else,
+# so the two path-bearing variables handed to the spec are REPO-RELATIVE and are resolved there
+# from the spec's own location. An absolute host path reached the first run of this script and
+# the collector died at collection with `ENOENT` — `browser/landing-templates.spec.ts` carries
+# the same note about the same mistake in the other direction.
+case "$OUT" in
+"$REPO"/*) OUT_REL="${OUT#"$REPO"/}" ;;
+*) fail "QRPAGER_PAINT_OUT must be inside the repository; the browsers container can see nothing else" ;;
+esac
+
+rm -rf "$OUT"
+mkdir -p "$OUT"
+
+say "building apps/site"
+pnpm --filter @qrpager/site run build >"$OUT/site-build.log" 2>&1 \
+    || { tail -20 "$OUT/site-build.log" >&2; fail "apps/site did not build"; }
+
+# A prerendered answer on this surface is one host's page served to every host — checked here
+# as well as in the source, which is `site-isolation-proof`'s reasoning and its line.
+grep -q 'ƒ /\[\[\.\.\.path\]\]' "$OUT/site-build.log" \
+    || fail "apps/site's catch-all route is not reported as dynamic by the build"
+
+if (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null; then
+    exec 3<&- 2>/dev/null || true
+    fail "port $PORT is already in use -- refusing to start, because talking to somebody else's server is how a sibling proof once measured a stale build. Stop it, or set QRPAGER_PAINT_PORT."
+fi
+
+say "starting apps/site on port $PORT"
+# `setsid` so `$SITE_PID` leads its own process group and `kill -- -PGID` reaches `next-server`
+# rather than only the pnpm wrapper. `HOSTNAME=0.0.0.0` because the browsers may run in a
+# container that reaches this host as `host.docker.internal` — a server bound to loopback is
+# invisible to it, which `tools/browsers/bin/browsers` measured and recorded.
+setsid env PORT="$PORT" HOSTNAME=0.0.0.0 AWS_BUCKET="$BUCKET" AWS_ENDPOINT="$ENDPOINT" \
+    AWS_ACCESS_KEY_ID="$KEY_ID" AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION="$REGION" \
+    pnpm --filter @qrpager/site run start >"$OUT/site.log" 2>&1 &
+SITE_PID=$!
+
+# -----------------------------------------------------------------------------
+# 3-4. publish, then measure. One arrangement at a time: one tenant, one live page.
+# -----------------------------------------------------------------------------
+BROWSER_HOST="$("${REPO}/tools/browsers/bin/browsers" --reachable-host)"
+[ -n "$BROWSER_HOST" ] || fail "could not resolve the host the browser reaches this machine by"
+
+# ⚠ `127.0.0.1` AND NOT `$BROWSER_HOST`, deliberately: `tools/browsers/bin/browsers` rewrites
+# exactly that literal to `host.docker.internal` when it forwards the environment into the
+# container, and `host.docker.internal` does not resolve on this host. One source for the fact,
+# in the script that decides it — `tools/browsers/bin/e2e` records the CI red that taught it.
+export QRPAGER_PAINT_TARGET="127.0.0.1"
+export QRPAGER_PAINT_GATE=1
+
+for template in "${TEMPLATES[@]}"; do
+    say "publishing the sentinel theme under '${template}'"
+
+    manifest="$OUT/manifest-${template}.json"
+    (cd "$REPO/apps/api" && php bin/publish-sentinel-theme "$template") >"$manifest" \
+        || fail "the publisher refused for '${template}'"
+
+    HOSTNAME_PUBLISHED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hostname"])' "$manifest")"
+    [ -n "$HOSTNAME_PUBLISHED" ] || fail "the publisher printed no hostname for '${template}'"
+
+    # Readiness is probed for the FIRST arrangement only; after that the server is up and a
+    # second wait would hide a server that died mid-run behind a timeout.
+    if [ -z "${READY:-}" ]; then
+        for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/" -H "Host: ${HOSTNAME_PUBLISHED}" 2>/dev/null; then
+                READY=1
+                break
+            fi
+            sleep 1
+        done
+
+        [ "${READY:-}" = "1" ] || { tail -20 "$OUT/site.log" >&2; fail "apps/site never became ready on port $PORT"; }
+    fi
+
+    status="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/" -H "Host: ${HOSTNAME_PUBLISHED}")"
+    [ "$status" = "200" ] || fail "the published page for '${template}' answers ${status}, not 200"
+
+    say "measuring '${template}' at 390 and 1280 through http://${HOSTNAME_PUBLISHED}:${PORT}/"
+
+    QRPAGER_PAINT_MANIFEST="${OUT_REL}/manifest-${template}.json" \
+    QRPAGER_PAINT_ORIGIN="http://${HOSTNAME_PUBLISHED}:${PORT}" \
+    QRPAGER_PAINT_HOST="$HOSTNAME_PUBLISHED" \
+    QRPAGER_PAINT_OUT="$OUT_REL" \
+        tools/browsers/bin/browsers node_modules/.bin/playwright test --project=theme-paint \
+        || fail "the collector failed for '${template}'"
+done
+
+# -----------------------------------------------------------------------------
+# 5. the partition
+# -----------------------------------------------------------------------------
+printf -v TEMPLATE_LIST '%s,' "${TEMPLATES[@]}"
+
+say "partitioning"
+echo ""
+
+node tools/landing/paint-report.mjs "$OUT" --templates "${TEMPLATE_LIST%,}"
