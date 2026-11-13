@@ -332,6 +332,7 @@ return [
         'language_saved' => 'Language saved',
         'language_saved_body' => 'Publish again to apply it to your live page.',
         'cannot_publish_field' => ':field can\'t be published',
+        'cannot_publish' => 'Your changes were not saved',
         'draft_saved' => 'Draft saved',
         'published_to' => 'Published to :hostname',
         'take_down_failed' => 'Take-down failed — your page is still public',
@@ -351,4 +352,31 @@ return [
         'no_change' => 'No change',
     ],
 
+    'invalid' => [
+        'sentence' => '“:field” on the :tab tab — :why',
+        'field' => [
+            'logo' => 'the logo',
+            'theme' => 'the theme',
+            'page' => 'the page',
+            'blocks' => 'the page\'s blocks',
+            'block' => 'block :position',
+            'block_field' => ':name in block :position',
+            'seo' => [
+                'self' => 'the sharing details',
+                'title' => 'the sharing title',
+                'description' => 'the sharing description',
+                'og_image' => 'the sharing image',
+            ],
+        ],
+        'why' => [
+            'missing_image' => 'the image it names is no longer in your library; open the tab and choose another, or remove it.',
+            'required' => 'this field is required and cannot be left empty; open the tab and give it a value.',
+            'too_long' => 'the value is longer than the page allows; open the tab and shorten it.',
+            'bad_address' => 'the value is not a valid web address; open the tab and correct it.',
+            'bad_email' => 'the value is not a valid email address; open the tab and correct it.',
+            'bad_phone' => 'the value is not a valid telephone number; open the tab and correct it.',
+            'needs_item' => 'at least one item is needed; open the tab and add one.',
+            'unusable' => 'the value cannot be published; open the tab and correct it.',
+        ],
+    ],
 ];
