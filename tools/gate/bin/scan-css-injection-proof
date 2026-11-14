@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+#
+# scan-css-injection-proof — QRPAGER-49B, items 1 and 2. §6: "Every new proof is shown to redden
+# once, with the output recorded beside it."
+#
+# Plants a literal in the SOURCE, runs the real `tools/design-tokens/bin/scan-css.mjs`, records
+# the exit status and the file count, reverts, and checks the revert byte for byte against HEAD.
+#
+#   R-322   an inline `style=""` attribute        — the scan used to read <style> bodies only
+#   2       a NAMED colour, in a <style> body that ends the rule with `}` (the shape the old
+#           regex passed) and in an attribute; a SYSTEM colour; and the ALLOWLIST, which must
+#           stay silent: transparent, currentcolor, inherit
+#
+# Every injection carries the exit status it must produce, so the script FAILS on a surprise in
+# either direction: a literal that is not found (a blind scanner) and a clean keyword that is
+# (a scanner that has started refusing the allowlist).
+#
+# ⚠ NOTHING IS RENDERED, so no compiled view can go stale and none is cleared: scan-css reads
+# SOURCE. (theme-paint-revert-proof, which renders, clears them after every edit and restore.)
+#
+# ⚠ THE REVERT IS NOT `cp -p`: a restore that keeps the old mtime is what let the theme-paint
+# proof serve an injected page from a byte-clean tree (49A). It is checked by `cmp` against
+# `git show HEAD:<file>` here, which is the only comparison that cannot be fooled by a stale copy.
+set -Eeuo pipefail
+umask 077
+
+trap 'echo "scan-css-injection-proof: aborted by errexit at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+
+cd "$(dirname "$0")/../../.."
+
+ATTRIBUTE_ONLY="apps/api/resources/views/landing/templates/rail.blade.php"
+STYLE_BODY="apps/api/resources/views/landing/page.blade.php"
+TOUCHED=()
+
+fail() {
+    echo "scan-css-injection-proof: FAILED -- $1" >&2
+    exit 1
+}
+
+restore() {
+    local file
+    for file in "${TOUCHED[@]:-}"; do
+        [ -n "$file" ] || continue
+        if [ -f "${file}.injection-backup" ]; then
+            cp "${file}.injection-backup" "$file"
+            rm -f "${file}.injection-backup"
+        fi
+    done
+}
+
+cleanup() {
+    local status=$?
+
+    restore
+    printf 'EXIT=%d\n' "$status"
+    exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+say() { printf '%s\n' "$1"; }
+
+if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
+    fail "a tracked file outside docs/ differs from HEAD. A proof on uncommitted code proves nothing about the committed code -- commit first."
+fi
+
+HEAD_SHA="$(git rev-parse --short HEAD)"
+TREE_BEFORE="$(git status --porcelain -- apps tools packages browser | sha256sum | cut -c1-16)"
+
+scan() {
+    # prints "<exit> <last line>" and returns 0 whatever scan-css said
+    local out status=0
+
+    if out="$(node tools/design-tokens/bin/scan-css.mjs 2>&1)"; then
+        status=0
+    else
+        status=$?
+    fi
+
+    SCAN_EXIT="$status"
+    SCAN_TAIL="$(printf '%s' "$out" | tail -1)"
+    SCAN_FIRST="$(printf '%s' "$out" | head -1)"
+    # the count is the number in "N file(s) scanned" or "in N file(s)"
+    SCAN_FILES="$(printf '%s' "$out" | grep -oE '([0-9]+ file\(s\) scanned|in [0-9]+ file\(s\))' | head -1 | grep -oE '[0-9]+')"
+}
+
+say "================================================================================"
+say "scan-css-injection-proof — QRPAGER-49B"
+say "================================================================================"
+say "tree: committed, at ${HEAD_SHA}"
+say ""
+
+scan
+BASE_FILES="$SCAN_FILES"
+say "BASELINE (unmodified tree): scan-css exit ${SCAN_EXIT}, ${BASE_FILES} file(s)"
+say "  ${SCAN_TAIL}"
+[ "$SCAN_EXIT" -eq 0 ] || fail "the baseline is red, so a red below is not evidence of anything"
+
+inject() {
+    # inject <label> <file> <where: prepend|style> <text> <expect-exit> <expect-files-delta>
+    local label="$1" file="$2" where="$3" text="$4" want_exit="$5" want_delta="$6"
+
+    say ""
+    say "--------------------------------------------------------------------------------"
+    say "INJECTION: ${label}"
+    say "  file   : ${file}"
+    say "  text   : ${text}"
+    say "  where  : ${where}"
+
+    cp "$file" "${file}.injection-backup"
+    TOUCHED+=("$file")
+
+    case "$where" in
+        prepend) { printf '%s\n' "$text"; cat "${file}.injection-backup"; } >"$file" ;;
+        style) python3 - "$file" "$text" <<'PY'
+import sys
+path, text = sys.argv[1], sys.argv[2]
+source = open(path, encoding="utf-8").read()
+at = source.index("<style>") + len("<style>")
+open(path, "w", encoding="utf-8").write(source[:at] + text + source[at:])
+PY
+            ;;
+        *) fail "unknown placement ${where}" ;;
+    esac
+
+    scan
+    say "  scan-css exit ${SCAN_EXIT}, ${SCAN_FILES} file(s) scanned (baseline ${BASE_FILES}, change $((SCAN_FILES - BASE_FILES)))"
+    if [ "$SCAN_EXIT" -ne 0 ]; then
+        say "  first finding: ${SCAN_FIRST}"
+    fi
+
+    cp "${file}.injection-backup" "$file"
+    rm -f "${file}.injection-backup"
+
+    if cmp -s "$file" <(git show "HEAD:${file}"); then
+        say "  reverted: ${file} is byte-identical to HEAD"
+    else
+        fail "${label}: the revert is NOT byte-identical to HEAD"
+    fi
+
+    [ "$SCAN_EXIT" -eq "$want_exit" ] \
+        || fail "${label}: scan-css exited ${SCAN_EXIT}, expected ${want_exit}"
+    [ "$((SCAN_FILES - BASE_FILES))" -eq "$want_delta" ] \
+        || fail "${label}: the scan covered $((SCAN_FILES - BASE_FILES)) more file(s), expected ${want_delta}"
+
+    if [ "$want_exit" -ne 0 ]; then
+        printf '%s' "$SCAN_FIRST" | grep -qF "${file}:" \
+            || fail "${label}: the finding does not name ${file}: -- ${SCAN_FIRST}"
+    fi
+
+    say "  verdict: as required (exit ${want_exit})"
+}
+
+say ""
+say "=== R-322: an inline style attribute ==============================================="
+inject "hex in an attribute, in a template that had NO CSS at all" \
+    "$ATTRIBUTE_ONLY" prepend '<p style="color:#123456">proof</p>' 1 1
+inject "hex in an attribute, in a template already scanned" \
+    "$STYLE_BODY" prepend '<p style="color:#123456">proof</p>' 1 0
+
+say ""
+say "=== 2: named colours are literals =================================================="
+inject "named colour ending a rule with } — the shape the old regex passed" \
+    "$STYLE_BODY" style '.proof{background:red}' 1 0
+inject "named colour in an attribute (rebeccapurple, which the old 26-name list never had)" \
+    "$ATTRIBUTE_ONLY" prepend '<p style="border:1px solid rebeccapurple">proof</p>' 1 1
+inject "a SYSTEM colour is a literal too" \
+    "$ATTRIBUTE_ONLY" prepend '<p style="color:CanvasText">proof</p>' 1 1
+
+say ""
+say "=== 2: the allowlist stays silent =================================================="
+inject "transparent, in a style body" \
+    "$STYLE_BODY" style '.proof{background:transparent}' 0 0
+inject "currentcolor, in an attribute" \
+    "$ATTRIBUTE_ONLY" prepend '<p style="border-color:currentColor">proof</p>' 0 1
+inject "inherit (a CSS-wide keyword), in an attribute" \
+    "$ATTRIBUTE_ONLY" prepend '<p style="color:inherit;background:transparent">proof</p>' 0 1
+
+say ""
+say "================================================================================"
+TREE_AFTER="$(git status --porcelain -- apps tools packages browser | sha256sum | cut -c1-16)"
+[ "$TREE_BEFORE" = "$TREE_AFTER" ] || fail "the working tree differs from before the proof (${TREE_BEFORE} -> ${TREE_AFTER})"
+say "tree after: byte-clean (git status fingerprint ${TREE_AFTER}, unchanged from ${TREE_BEFORE})"
+
+scan
+say "AFTER (reverted tree): scan-css exit ${SCAN_EXIT}, ${SCAN_FILES} file(s)"
+[ "$SCAN_EXIT" -eq 0 ] || fail "the reverted tree is red"
+[ "$SCAN_FILES" -eq "$BASE_FILES" ] || fail "the file count did not return to ${BASE_FILES}"
+say "scan-css-injection-proof: 8 injections, 5 refused and 3 allowed, every one reverted."

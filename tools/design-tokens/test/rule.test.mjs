@@ -26,7 +26,13 @@ import {
   readBaseline,
   scanSource,
 } from '../bin/scan-css.mjs'
-import { hasStyleBlock, maskBladeCss, styleBodyCount } from '../blade-css.mjs'
+import {
+  hasInlineCss,
+  hasStyleAttribute,
+  hasStyleBlock,
+  maskBladeCss,
+  styleBodyCount,
+} from '../blade-css.mjs'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const REPO = join(HERE, '..', '..', '..')
@@ -501,6 +507,7 @@ describe('the CSS half', () => {
       mkdirSync(bin, { recursive: true })
       copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
       copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'colour-keywords.mjs'), join(bin, '..', 'colour-keywords.mjs'))
       // `QRPAGER-46`: the scanner now imports the Blade extractor, so the copy needs it too.
       // Without it the child dies on module resolution and the floor message never prints —
       // which failed this case with a stack trace rather than with its own assertion.
@@ -795,18 +802,21 @@ describe('CSS out of a Blade template — R-267', () => {
       'landing-blade-literals.blade.php',
     )
 
-    expect(findings.length).toBe(9)
+    expect(findings.length).toBe(15)
 
     const perRule = {}
     for (const f of findings) perRule[f.rule] = (perRule[f.rule] ?? 0) + 1
 
     expect(perRule).toEqual({
-      // `#ff00ff`, `teal;`, `rgba(…)` — a hex, a named colour, a colour function — and the
-      // `#ff00ff` on the same line as a directive, which the §11 security round's M-2 showed
-      // the first blanker swallowing whole.
-      'no-raw-color': 4,
-      // `13px` in the plain block, `11px` inside an `@if` branch, `19px` inside `@media`.
-      'no-raw-spacing': 3,
+      // In the style element: `#ff00ff`, `teal;`, `red}`, `rgba(…)`, and the `#ff00ff` on the
+      // same line as a directive, which the §11 security round's M-2 showed the first blanker
+      // swallowing whole (5). In `style` ATTRIBUTES, QRPAGER-49B / R-322: a hex, a named colour
+      // after an echo that contains quotes, an hsl() in a single-quoted one, and a named colour
+      // in an unquoted one (4).
+      'no-raw-color': 9,
+      // `13px` in the plain block, `11px` inside an `@if` branch, `19px` inside `@media`, and
+      // the `13px` in the first inline attribute.
+      'no-raw-spacing': 4,
       'no-raw-font-size': 1,
       // `border-radius:var(--radius-large,2px)` — the §11 QA round's H-1: a fallback on a
       // property no value guard judges.
@@ -835,8 +845,35 @@ describe('CSS out of a Blade template — R-267', () => {
 
     expect(lines).not.toContain(lineOf("color:{{ '#ff00ff' }}"))
     expect(lines).not.toContain(lineOf("$colour = '#ff00ff';"))
-    expect(lines).not.toContain(lineOf('<p style="color:#ff00ff'))
     expect(lines).not.toContain(lineOf('And one in prose'))
+
+    /*
+     * ⚠ QRPAGER-49B / R-322: THE INLINE ATTRIBUTE WAS ON THE LIST ABOVE UNTIL THIS TICKET, as
+     * "must not fire", and that was the hole. It is now read, each form by its own line, and
+     * the shapes that must STAY silent are named beside them.
+     */
+    const at = (needle, id) =>
+      findings
+        .filter((f) => f.line === lineOf(needle))
+        .map((f) => f.id)
+        .sort()
+        .join(',') === id
+
+    expect(at('<p style="color:#ff00ff', 'css-spacing-declaration,hex')).toBe(true)
+    expect(at("{{ $theme['text'] }};background:rebeccapurple", 'named-color')).toBe(true)
+    expect(at("<i style='color:hsl", 'color-function')).toBe(true)
+    expect(at('<b style=outline-color:navy', 'named-color')).toBe(true)
+    // Silent: tokens and the allowlist in an attribute, a `data-style` attribute, the
+    // allowlisted keywords in a rule, and a colour's NAME used as a font, an animation, an area.
+    for (const quiet of [
+      'color:var(--color-text);background:transparent',
+      '<p data-style=',
+      '.ok-keywords{',
+      '.not-colour{',
+    ]) {
+      expect(lines).not.toContain(lineOf(quiet))
+    }
+    expect(at('.bad-named-last{border:1px solid red}', 'named-color')).toBe(true)
 
     // The `@media` rule's own padding IS reported, which is the half a blanket `@word`
     // blanker would have lost.
@@ -893,6 +930,7 @@ describe('CSS out of a Blade template — R-267', () => {
       mkdirSync(bin, { recursive: true })
       copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
       copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'colour-keywords.mjs'), join(bin, '..', 'colour-keywords.mjs'))
       copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
 
       // A clean stylesheet, and a baseline claiming a literal in it that is not there.
@@ -951,6 +989,7 @@ describe('CSS out of a Blade template — R-267', () => {
       mkdirSync(bin, { recursive: true })
       copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
       copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'colour-keywords.mjs'), join(bin, '..', 'colour-keywords.mjs'))
       copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
 
       // Four CSS files clear the FLOOR, and a Blade template with a <style> clears the Blade
@@ -1064,6 +1103,7 @@ describe('CSS out of a Blade template — R-267', () => {
       // does — and this one finds five stylesheets and no Blade template.
       copyFileSync(join(HERE, '..', 'bin', 'scan-css.mjs'), join(bin, 'scan-css.mjs'))
       copyFileSync(join(HERE, '..', 'patterns.mjs'), join(bin, '..', 'patterns.mjs'))
+      copyFileSync(join(HERE, '..', 'colour-keywords.mjs'), join(bin, '..', 'colour-keywords.mjs'))
       copyFileSync(join(HERE, '..', 'blade-css.mjs'), join(bin, '..', 'blade-css.mjs'))
 
       const result = spawnSync('node', [join(bin, 'scan-css.mjs')], {
@@ -1214,7 +1254,11 @@ describe('CSS out of a Blade template — R-267', () => {
         new Set(['apps/api/resources/views/errors/panel-problem.blade.php']),
         baseline,
       ),
-    ).toEqual([landing])
+    ).toEqual([
+      landing,
+      // QRPAGER-49B: the baseline names a second file now, found by reading attributes.
+      'apps/api/resources/views/studio/preview-refused.blade.php',
+    ])
 
     // And the silence it used to produce, named: with that file unscanned, every frozen
     // finding and every entry evaporates — which is why a count cannot be the floor.
@@ -1336,11 +1380,28 @@ describe('CSS out of a Blade template — R-267', () => {
      */
     expect(found).toContain('apps/api/resources/views/errors/panel-problem.blade.php')
 
-    // Not a glob over `resources/views`: a template with no `<style>` is not a subject.
-    expect(found).not.toContain('apps/api/resources/views/landing/block.blade.php')
+    /*
+     * ⚠ QRPAGER-49B / R-322: A TEMPLATE WITH A `style=""` ATTRIBUTE AND NO `<style>` ELEMENT IS
+     * A SUBJECT NOW. Two are: `landing/block.blade.php` (`<figure style="margin:0">`) and
+     * `studio/preview-refused.blade.php`. The walk went from 12 files to 14, and this is the
+     * assertion that says which two, because a count that moves without a name is a guess.
+     */
+    for (const attributeOnly of [
+      'apps/api/resources/views/landing/block.blade.php',
+      'apps/api/resources/views/studio/preview-refused.blade.php',
+    ]) {
+      expect(found).toContain(attributeOnly)
+      const source = readFileSync(join(REPO, attributeOnly), 'utf8')
+
+      expect(hasStyleBlock(source)).toBe(false)
+      expect(hasStyleAttribute(source)).toBe(true)
+    }
+
+    // Not a glob over `resources/views`: a template with neither is not a subject.
+    expect(found).not.toContain('apps/api/resources/views/landing/redirect.blade.php')
     expect(
-      hasStyleBlock(
-        readFileSync(join(REPO, 'apps/api/resources/views/landing/block.blade.php'), 'utf8'),
+      hasInlineCss(
+        readFileSync(join(REPO, 'apps/api/resources/views/landing/redirect.blade.php'), 'utf8'),
       ),
     ).toBe(false)
 
@@ -1361,7 +1422,11 @@ describe('CSS out of a Blade template — R-267', () => {
       maskBladeCss(readFileSync(landing, 'utf8')),
       'apps/api/resources/views/landing/page.blade.php',
     )
-    const { reported, stale, excused } = applyBaseline(findings, baseline)
+    const { reported, stale, excused } = applyBaseline(
+      findings,
+      baseline,
+      new Set(['apps/api/resources/views/landing/page.blade.php']),
+    )
 
     // Every pre-existing literal is excused, none is reported, and the baseline is current.
     expect(reported).toEqual([])
@@ -1376,7 +1441,11 @@ describe('CSS out of a Blade template — R-267', () => {
      * through, and matching on the line number would redden on every edit above it.
      */
     const seventeenth = { ...findings[0] }
-    const { reported: afterOneMore } = applyBaseline([...findings, seventeenth], baseline)
+    const { reported: afterOneMore } = applyBaseline(
+      [...findings, seventeenth],
+      baseline,
+      new Set(['apps/api/resources/views/landing/page.blade.php']),
+    )
 
     expect(afterOneMore).toEqual([seventeenth])
   })
@@ -1406,7 +1475,7 @@ describe('CSS out of a Blade template — R-267', () => {
     }
 
     const findings = scanSource(maskBladeCss(readFileSync(landing, 'utf8')), invented.file)
-    const { stale } = applyBaseline(findings, withInvented)
+    const { stale } = applyBaseline(findings, withInvented, new Set([invented.file]))
 
     expect(stale).toEqual([invented])
   })

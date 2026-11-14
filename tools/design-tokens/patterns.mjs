@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ALLOWED_COLOUR_KEYWORDS, literalColourKeywords } from './colour-keywords.mjs'
 
 /**
  * ================================================================================
@@ -137,13 +138,20 @@ export const PATTERNS = [
     rule: 'no-raw-color',
     id: 'named-color',
     where: 'css',
-    // Only in CSS, and only as a whole declaration value, so prose and identifiers in
-    // TypeScript are untouched. The set is the ones that actually get typed by hand.
-    regex:
-      /(?::|\s)\s*(white|black|red|green|blue|gray|grey|silver|navy|teal|olive|maroon|purple|fuchsia|lime|aqua|yellow|orange|pink|brown|beige|ivory|khaki|cyan|magenta)\s*(?:;|!|\)|$)/gi,
+    /*
+     * ⚠ REWRITTEN AT QRPAGER-49B, BECAUSE `background:red` PASSED. The first version was a regex
+     * over twenty-six names that demanded `; ! )` or end-of-text AFTER the keyword — so `red}`,
+     * `solid red}` and `color:red"` (the last declaration of a rule, and every inline style
+     * attribute) were clean, and the other hundred and twenty-two CSS colour names were never
+     * looked for at all. It is a SCAN now, not a regex: it reads declarations and judges every
+     * identifier in the value against `COLOUR_KEYWORDS`, with the allowlist in
+     * `colour-keywords.mjs` — the one definition `paint-classify.mjs` also derives from.
+     */
+    scan: literalColourKeywords,
     message:
       'named CSS colour {{match}}. Use a token: var(--color-…). A named colour is outside ' +
-      'the approved palette by definition -- it is not one of the eleven values.',
+      'the approved palette by definition -- it is not one of the eleven values. Only ' +
+      'transparent, currentcolor and the CSS-wide keywords are allowed.',
   },
   {
     rule: 'no-raw-color',
@@ -516,7 +524,14 @@ export function valueIsAcceptable(rawValue) {
 export function colourValueIsAcceptable(rawValue) {
   const value = String(rawValue).trim()
   if (value === '') return true
-  if (/^(?:currentcolor|transparent|inherit|initial|unset|revert|none)$/i.test(value)) return true
+  // The allowlist is `colour-keywords.mjs`'s, plus `none`, which is not a colour keyword at all
+  // (`box-shadow: none`, `border-color: none`) and so was never in that list.
+  if (
+    value.toLowerCase() === 'none' ||
+    Object.hasOwn(ALLOWED_COLOUR_KEYWORDS, value.toLowerCase())
+  ) {
+    return true
+  }
 
   // A shorthand like a box-shadow: every part must be acceptable, and a bare length or
   // keyword inside one is fine -- what must not appear is a colour that is not a token.

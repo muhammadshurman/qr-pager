@@ -26,6 +26,15 @@
    line break) so that prose and identifiers are untouched. A fixture that exercises a pattern
    has to be written to the pattern's own shape, or it proves the pattern is absent. */
 .bad-named{background:teal;}
+/* ⚠ QRPAGER-49B: THE NAMED COLOUR THAT ENDS ITS RULE. `teal;` above is the shape the first
+   pattern could see; `red}` is the shape it could not — the old pattern demanded `; ! )` or a
+   line break after the keyword, and a rule's last declaration ends in `}`. */
+.bad-named-last{border:1px solid red}
+/* THE ALLOWLIST, which must stay silent: transparent, currentcolor and the CSS-wide keywords
+   are the only colour keywords source may contain (colour-keywords.mjs). */
+.ok-keywords{color:transparent;background:currentColor;border-color:inherit;outline-color:revert-layer}
+/* A colour's NAME that is not a colour: a font family and an animation called after one. */
+.not-colour{font-family:Gold,serif;animation-name:red;grid-area:tan}
 .bad-function{border-color:rgba(16,35,27,0.06)}
 .bad-spacing{padding:13px}
 .bad-size{font-size:17px}
@@ -77,10 +86,14 @@
 </style>
 </head>
 <body>
-{{-- Outside the style element: this scanner's subject is a `<style>` body, and an inline
-     attribute is `scan-panel.mjs`'s. Neither of the two below is a finding HERE, and the
-     test says so rather than leaving it to be assumed. --}}
-<p style="color:#ff00ff;padding:13px">A literal in an attribute.</p>
+{{-- Outside the style element: QRPAGER-49B reads `style` ATTRIBUTES too (R-322). Every line
+     below that names a literal is a finding, and the test says which, by line. --}}
+<p style="color:#ff00ff;padding:13px">A hex and a spacing literal in an attribute.</p>
+<p style="color:{{ $theme['text'] }};background:rebeccapurple">A quote INSIDE an echo, then a named colour.</p>
+<i style='color:hsl(0 0% 0%)'>A single-quoted attribute and a colour function.</i>
+<b style=outline-color:navy>An UNQUOTED attribute and a named colour.</b>
+<p style="color:var(--color-text);background:transparent">Tokens and the allowlist: clean.</p>
+<p data-style="color:#ff00ff">Not a style attribute: clean.</p>
 <p>And one in prose: #abcdef, padding:13px.</p>
 </body>
 </html>

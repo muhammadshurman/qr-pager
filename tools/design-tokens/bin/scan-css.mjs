@@ -13,7 +13,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { patternsFor, valueIsAcceptable } from '../patterns.mjs'
-import { hasStyleBlock, maskBladeCss } from '../blade-css.mjs'
+import { hasInlineCss, maskBladeCss } from '../blade-css.mjs'
 
 const ROOT = join(fileURLToPath(new URL('../../..', import.meta.url)))
 const CSS_PATTERNS = patternsFor('css')
@@ -127,7 +127,7 @@ export function cssFiles(dir, found = []) {
  * ⚠ IT COLLECTS TEMPLATES WITH CSS IN THEM, NOT TEMPLATES. This repository has hundreds of
  * Blade files and one of them has a stylesheet; a walk that returned all of them would make
  * the count below meaningless and the FLOOR check unable to tell a broken walk from a tree
- * with no CSS in its templates. `hasStyleBlock()` reads the file, which is the same cost the
+ * with no CSS in its templates. `hasInlineCss()` reads the file, which is the same cost the
  * scan pays a line later.
  */
 export function bladeFiles(dir, found = []) {
@@ -138,7 +138,7 @@ export function bladeFiles(dir, found = []) {
     const st = lstatSync(full)
     if (st.isSymbolicLink()) continue
     if (st.isDirectory()) bladeFiles(full, found)
-    else if (/\.blade\.php$/i.test(entry) && hasStyleBlock(readFileSync(full, 'utf8'))) {
+    else if (/\.blade\.php$/i.test(entry) && hasInlineCss(readFileSync(full, 'utf8'))) {
       found.push(full)
     }
   }
@@ -241,6 +241,22 @@ export function scanSource(source, label) {
   const findings = []
   const text = stripComments(source)
   for (const pattern of CSS_PATTERNS) {
+    if (pattern.scan) {
+      // A pattern that reads declarations rather than matching a regex — `named-color`.
+      for (const hit of pattern.scan(text)) {
+        const before = text.slice(0, hit.index)
+        findings.push({
+          file: label,
+          line: before.split('\n').length,
+          column: hit.index - before.lastIndexOf('\n'),
+          rule: pattern.rule,
+          id: pattern.id,
+          match: hit.keyword,
+          message: pattern.message.replace('{{match}}', `${hit.property}: … ${hit.keyword}`),
+        })
+      }
+      continue
+    }
     if (!pattern.regex) continue
     const regex = new RegExp(pattern.regex.source, pattern.regex.flags)
     let match
@@ -390,7 +406,7 @@ export function main(explicit = [], baselinePath = BASELINE, root = ROOT) {
   if (reported.length === 0 && stale.length === 0) {
     console.log(
       `design tokens: ${targets.length} file(s) scanned (${blades.length} Blade template(s) ` +
-        `with a <style> element), no hard-coded values` +
+        `with a <style> element or a style attribute), no hard-coded values` +
         (excused > 0 ? `; ${excused} pre-existing literal(s) frozen by the dated baseline.` : '.'),
     )
     return 0

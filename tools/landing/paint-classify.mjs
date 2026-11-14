@@ -38,10 +38,18 @@
  * nothing — that is this file's job and the split is the point.
  */
 
+import { computedNonThemedMembers } from '../design-tokens/colour-keywords.mjs'
+
 /*
  * ------------------------------------------------------------------------------------------
  * THE DECLARED NON-THEMED SET
  * ------------------------------------------------------------------------------------------
+ *
+ * ⚠ DERIVED, NOT WRITTEN (QRPAGER-49B, item 2): this set and `scan-css`'s allowlist are ONE
+ * definition in `tools/design-tokens/colour-keywords.mjs`. Every allowlisted keyword that has a
+ * computed form is a member here — today that is `transparent` alone — and the others
+ * (`currentcolor` and the CSS-wide keywords) resolve to ANOTHER colour, so they have no
+ * serialisation of their own and no member. Widening the allowlist widens both guards.
  *
  * ONE MEMBER, and each member has to pass a test: it must be a value an engine can actually
  * return, and it must be something no restaurant could have chosen as a colour.
@@ -56,14 +64,23 @@
  * serialisation of the keyword `transparent` — fully transparent BLACK — and any other colour
  * at zero alpha is reported as what it is.
  */
-export const NON_THEMED = Object.freeze({
-  'rgba(0, 0, 0, 0)': Object.freeze({
-    reason:
-      'the engine’s serialisation of the keyword `transparent`: nothing is painted, so there is ' +
-      'no pixel for a theme to reach. Keyed on the computed form because that is the only form an ' +
-      'engine returns — a computed style never contains the keyword.',
-  }),
-})
+export const NON_THEMED = Object.freeze(
+  Object.fromEntries(
+    computedNonThemedMembers().map(({ keyword, computed, reason }) => [
+      computed,
+      Object.freeze({
+        keyword,
+        reason:
+          `the engine’s serialisation of the keyword \`${keyword}\`, which source is allowed to ` +
+          'contain (tools/design-tokens/colour-keywords.mjs — the ONE definition, which ' +
+          '`scan-css` reads too): ' +
+          reason +
+          ' Keyed on the computed form because that is the only form an engine returns — a ' +
+          'computed style never contains the keyword.',
+      }),
+    ]),
+  ),
+)
 
 /**
  * The properties whose INITIAL value is `currentcolor`, so that an author who sets none of them
@@ -314,8 +331,11 @@ export function classify(raw, sentinels) {
    * while `paintVerdict` said it paints — contradicting this set's own claim to be stricter than
    * "any zero-alpha colour" (QA L4). Exactly zero alpha on exactly black, or it is a finding.
    */
-  if (parsed.a === 0 && parsed.r === 0 && parsed.g === 0 && parsed.b === 0) {
-    return { kind: 'nonThemed', member: 'rgba(0, 0, 0, 0)', token: 'rgba(0, 0, 0, 0)' }
+  // The member is looked up in `NON_THEMED`, which is derived from the allowlist — never named
+  // here a second time. At exactly zero alpha `describeColour` is exact (`rgba(r, g, b, 0)`), so
+  // only fully transparent BLACK can be a key.
+  if (parsed.a === 0 && Object.hasOwn(NON_THEMED, token)) {
+    return { kind: 'nonThemed', member: token, token }
   }
 
   return {
