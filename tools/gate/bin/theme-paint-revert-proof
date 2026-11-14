@@ -80,15 +80,32 @@ fail() {
     exit 1
 }
 
+# ⚠ THE COMPILED VIEW CACHE IS PART OF THE RENDER PATH, AND THIS SCRIPT EDITS SOURCE UNDER IT.
+# Laravel recompiles a Blade view only when the SOURCE is newer than its compiled file, and this
+# script's first two runs showed what that costs: the first died mid-injection, the trap restored
+# the template with `cp -p` -- which PRESERVES the original mtime, two days older than the compile
+# made from the injected text -- and the stale compile kept serving the injected page. The second
+# run's baseline then found `#123456` on a tree that was byte-identical to HEAD, and the demo
+# restaurant's published page in the shared bucket had been re-seeded from it. A revert that
+# restores the bytes and not the render has reverted nothing.
+#
+# So invalidation is EXPLICIT, never inferred from timestamps: after every edit and every restore.
+invalidate_views() {
+    (cd "${REPO}/apps/api" && php artisan view:clear >/dev/null)
+}
+
 restore() {
     local file
     for file in "${INJECTED[@]:-}"; do
         [ -n "$file" ] || continue
         if [ -f "${file}.revert-proof-backup" ]; then
-            cp -p "${file}.revert-proof-backup" "$file"
+            # no `-p`: a restored file takes the CURRENT time, so it is newer than any compile
+            cp "${file}.revert-proof-backup" "$file"
             rm -f "${file}.revert-proof-backup"
         fi
     done
+
+    invalidate_views
 }
 
 cleanup() {
@@ -190,7 +207,10 @@ if harness baseline "${OUT_BASE}/baseline"; then
     say "theme-paint-proof exit 0 on the unmodified tree"
     say "$(grep -E '^(theme-paint: (every colour|the dead controls)|collected|totals:)' "${WORK}/baseline.txt" | sed 's/^/  /')"
 else
-    sed 's/^/  | /' "${WORK}/baseline.txt" | tail -40 >&2
+    # The (c) section and the verdict lines, not the tail of the dead-control table: the first
+    # time the baseline was red this printed forty lines that did not contain the finding.
+    sed -n '/^(c) EVERYTHING ELSE/,/^(3) STYLE ATTRIBUTES/p' "${WORK}/baseline.txt" | sed 's/^/  | /' >&2
+    grep -E '^theme-paint:' "${WORK}/baseline.txt" | sed 's/^/  | /' >&2
     fail "the BASELINE is red, so a red below would not be evidence of anything: a proof whose unmodified tree is already red is measuring something other than its revert"
 fi
 
@@ -209,10 +229,11 @@ for template in "${TEMPLATES[@]}"; do
     say "REVERT ${index} of ${#TEMPLATES[@]} — ${template}: one literal colour in ${file}"
     say "================================================================================"
 
-    cp -p "$file" "${file}.revert-proof-backup"
+    cp "$file" "${file}.revert-proof-backup"
     INJECTED+=("$file")
 
     { printf '%s\n' "$INJECTION"; cat "${file}.revert-proof-backup"; } >"$file"
+    invalidate_views
 
     say ""
     say "the injection, as a diff:"
@@ -292,8 +313,9 @@ PY
     # -------------------------------------------------------------------------
     # REVERT, and require the file to be byte-identical to the committed original
     # -------------------------------------------------------------------------
-    cp -p "${file}.revert-proof-backup" "$file"
+    cp "${file}.revert-proof-backup" "$file"
     rm -f "${file}.revert-proof-backup"
+    invalidate_views
     cmp -s "$file" <(git show "HEAD:${file}") \
         || fail "${template}: after the revert ${file} is NOT byte-identical to HEAD"
     say ""

@@ -136,6 +136,18 @@ say() { printf 'theme-paint: %s\n' "$1"; }
 # -----------------------------------------------------------------------------
 # 1. the demo restaurant — the document this measures, reset to its own content
 # -----------------------------------------------------------------------------
+# ⚠ THE COMPILED VIEW CACHE IS CLEARED BEFORE ANYTHING IS PUBLISHED, because a measurement of a
+# page rendered through a stale compile is a measurement of a template that no longer exists.
+# Laravel recompiles a Blade view only when its source is NEWER than the compile, so a source
+# restored with its original mtime (`cp -p`, `git checkout` of an older blob, a `touch -d`) keeps
+# serving the old render. `theme-paint-revert-proof` hit exactly that: its baseline found the
+# literal it had injected and reverted, on a tree byte-identical to HEAD. This is the same family
+# as `site-isolation-proof`'s stale `next build`, and the same remedy -- the harness refuses to
+# depend on whatever happened to be left on disk.
+say "clearing the compiled views"
+
+(cd "$REPO/apps/api" && php artisan view:clear >/dev/null) || fail "could not clear the compiled views"
+
 say "seeding the demo restaurant (idempotent)"
 
 cd "$REPO/apps/api"
