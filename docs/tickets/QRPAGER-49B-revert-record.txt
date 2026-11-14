@@ -1,0 +1,142 @@
+================================================================================
+theme-paint-revert-proof — THE REVERT RECORD. RED BY DESIGN, ONCE PER TEMPLATE.
+================================================================================
+
+Muhammad's standing instruction of 2026-11-03: EVERY NEW PROOF MUST BE SHOWN TO REDDEN ONCE
+BEFORE IT IS TRUSTED, with the output recorded beside it. This is ruling 3(b) of QRPAGER-49A.
+Its other half, ruling 3(a), is tools/landing/test/paint-classify.test.mjs: the classifier on
+synthetic records. Neither substitutes for the other.
+
+⚠ THE RED RUNS BELOW ARE MEANT. This file is named -revert-record, which check-records (c)
+does not iterate: a transcript of a DECLARED red is evidence; a transcript of a gate that
+failed is not, and the two must not be stored under one name.
+
+tree     : committed, at 30887b5
+injected : <p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
+           an inline style attribute on a NEW element, prepended to the template's Blade
+
+templates, from LandingTemplate::values(): rail ember tile
+
+================================================================================
+BASELINE — the unmodified tree must be GREEN
+================================================================================
+theme-paint-proof exit 0 on the unmodified tree
+    totals: 8606 colour-bearing computed values — 7990 sentinel, 616 declared non-themed, 0 other (0 of the other are currentcolor-derived consequences)
+  theme-paint: every colour-bearing computed value is a sentinel or a declared member.
+  theme-paint: the dead controls are exactly the frozen baseline (2).
+
+================================================================================
+REVERT 1 of 3 — rail: one literal colour in apps/api/resources/views/landing/templates/rail.blade.php
+================================================================================
+
+the injection, as a diff:
+  --- apps/api/resources/views/landing/templates/rail.blade.php.revert-proof-backup	2026-11-14 17:15:45.150589119 +0300
+  +++ apps/api/resources/views/landing/templates/rail.blade.php	2026-11-14 17:15:45.151659969 +0300
+  @@ -1,3 +1,4 @@
+  +<p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
+   {{--
+       RAIL — one ruled column. `QRPAGER-46`, the first of the three real templates.
+   
+
+scan-css (the SOURCE-level guard) on the injected tree: exit 1
+  design tokens: 2 finding(s) in 15 file(s). 36 pre-existing literal(s) are frozen by the dated baseline and are not among them.
+
+theme-paint-proof (the RENDERED-pixel check) on the injected tree:
+  exit 1
+  finding   : #123456  color  on  p  (html>body>main>p)  at widths [390, 1280]
+  finding   : #123456  accent-color  on  p  at widths [390, 1280]  (a property outside the ticket's own list, in the widened one)
+  paints    : True  — the element carries its own text
+  controls  : 2 other template(s), 0 findings; dead-control baseline unchanged
+
+  the report's own lines for it:
+    rail @ 390  — 2 distinct
+        #123456      color                    p  ×1  PAINTS
+            html>body>main>p
+            the element carries its own text
+            consequence — the same value as this element's own color, so inherited via currentcolor or written to match it, in: -webkit-text-fill-color, -webkit-text-stroke-color, border-bottom-color, border-left-color, border-right-color, border-top-color, caret-color, column-rule-color, outline-color, text-decoration-color, text-emphasis-color
+        #123456      accent-color             p  ×1  PAINTS
+            html>body>main>p
+            assumed to paint
+
+reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD:apps/api/resources/views/landing/templates/rail.blade.php
+
+================================================================================
+REVERT 2 of 3 — ember: one literal colour in apps/api/resources/views/landing/templates/ember.blade.php
+================================================================================
+
+the injection, as a diff:
+  --- apps/api/resources/views/landing/templates/ember.blade.php.revert-proof-backup	2026-11-14 17:16:14.349054499 +0300
+  +++ apps/api/resources/views/landing/templates/ember.blade.php	2026-11-14 17:16:14.349863274 +0300
+  @@ -1,3 +1,4 @@
+  +<p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
+   {{--
+       EMBER — a dark centred opening, then a narrow centred column. `QRPAGER-46`.
+   
+
+scan-css (the SOURCE-level guard) on the injected tree: exit 1
+  design tokens: 2 finding(s) in 15 file(s). 36 pre-existing literal(s) are frozen by the dated baseline and are not among them.
+
+theme-paint-proof (the RENDERED-pixel check) on the injected tree:
+  exit 1
+  finding   : #123456  color  on  p  (html>body>main>p)  at widths [390, 1280]
+  finding   : #123456  accent-color  on  p  at widths [390, 1280]  (a property outside the ticket's own list, in the widened one)
+  paints    : True  — the element carries its own text
+  controls  : 2 other template(s), 0 findings; dead-control baseline unchanged
+
+  the report's own lines for it:
+    ember @ 390  — 2 distinct
+        #123456      color                    p  ×1  PAINTS
+            html>body>main>p
+            the element carries its own text
+            consequence — the same value as this element's own color, so inherited via currentcolor or written to match it, in: -webkit-text-fill-color, -webkit-text-stroke-color, border-bottom-color, border-left-color, border-right-color, border-top-color, caret-color, column-rule-color, outline-color, text-decoration-color, text-emphasis-color
+        #123456      accent-color             p  ×1  PAINTS
+            html>body>main>p
+            assumed to paint
+
+reverted: apps/api/resources/views/landing/templates/ember.blade.php is byte-identical to HEAD:apps/api/resources/views/landing/templates/ember.blade.php
+
+================================================================================
+REVERT 3 of 3 — tile: one literal colour in apps/api/resources/views/landing/templates/tile.blade.php
+================================================================================
+
+the injection, as a diff:
+  --- apps/api/resources/views/landing/templates/tile.blade.php.revert-proof-backup	2026-11-14 17:16:41.745154772 +0300
+  +++ apps/api/resources/views/landing/templates/tile.blade.php	2026-11-14 17:16:41.745996272 +0300
+  @@ -1,3 +1,4 @@
+  +<p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
+   {{--
+       TILE — the photographs lead, as one even grid. `QRPAGER-46`.
+   
+
+scan-css (the SOURCE-level guard) on the injected tree: exit 1
+  design tokens: 2 finding(s) in 15 file(s). 36 pre-existing literal(s) are frozen by the dated baseline and are not among them.
+
+theme-paint-proof (the RENDERED-pixel check) on the injected tree:
+  exit 1
+  finding   : #123456  color  on  p  (html>body>main>p)  at widths [390, 1280]
+  finding   : #123456  accent-color  on  p  at widths [390, 1280]  (a property outside the ticket's own list, in the widened one)
+  paints    : True  — the element carries its own text
+  controls  : 2 other template(s), 0 findings; dead-control baseline unchanged
+
+  the report's own lines for it:
+    tile @ 390  — 2 distinct
+        #123456      color                    p  ×1  PAINTS
+            html>body>main>p
+            the element carries its own text
+            consequence — the same value as this element's own color, so inherited via currentcolor or written to match it, in: -webkit-text-fill-color, -webkit-text-stroke-color, border-bottom-color, border-left-color, border-right-color, border-top-color, caret-color, column-rule-color, outline-color, text-decoration-color, text-emphasis-color
+        #123456      accent-color             p  ×1  PAINTS
+            html>body>main>p
+            assumed to paint
+
+reverted: apps/api/resources/views/landing/templates/tile.blade.php is byte-identical to HEAD:apps/api/resources/views/landing/templates/tile.blade.php
+
+================================================================================
+AFTER ALL 3 REVERTS — green again
+================================================================================
+theme-paint-proof exit 0 on the reverted tree
+    totals: 8606 colour-bearing computed values — 7990 sentinel, 616 declared non-themed, 0 other (0 of the other are currentcolor-derived consequences)
+  theme-paint: every colour-bearing computed value is a sentinel or a declared member.
+  theme-paint: the dead controls are exactly the frozen baseline (2).
+
+theme-paint-revert-proof: 3 of 3 templates reddened the harness, attributed to the injected literal, with the controls unmoved; the tree is unchanged.
+EXIT=0

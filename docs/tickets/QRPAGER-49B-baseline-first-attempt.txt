@@ -1,0 +1,59 @@
+================================================================================
+theme-paint-baseline-proof — THE BASELINE, SHOWN WRONG IN EVERY WAY. QRPAGER-49B.
+================================================================================
+
+tree     : committed, at 1f9f57d
+baseline : tools/landing/paint-baseline.json  (rail/color.surface, ember/color.accent_text)
+
+================================================================================
+BASELINE — the unmodified tree must be GREEN
+================================================================================
+theme-paint-proof exit 0 on the unmodified tree
+  theme-paint: the dead controls are exactly the frozen baseline (2).
+
+================================================================================
+PLANT 1 of 5 — STALE: rail now paints color.surface
+================================================================================
+  the entry says  : rail / color.surface is dead because `.rail .card{background:none}`
+  the plant       : delete `background:none;` from that rule, so the card keeps its surface
+  diff:
+    -.rail .card{background:none;border-radius:0;padding-inline:0}
+    +.rail .card{border-radius:0;padding-inline:0}
+  theme-paint-proof exit 1
+  the RED line(s), verbatim:
+      RED  STALE baseline entry: rail / color.surface now paints — delete the entry
+  verdict   : theme-paint: 1 dead-control baseline violation(s).
+  reverted: apps/api/resources/views/landing/page.blade.php and tools/landing/paint-baseline.json are byte-identical to HEAD
+
+================================================================================
+PLANT 2 of 5 — STALE: ember now paints color.accent_text
+================================================================================
+  the entry says  : ember / color.accent_text is dead because `.ember-hero .cta` re-paints the call to action
+  the plant       : delete that re-paint, so the call to action carries the accent-text colour
+  diff:
+    -.ember-hero .cta{background:var(--color-background);color:var(--color-text)}
+    +.ember-hero .cta{}
+  theme-paint-proof exit 0
+  | tile
+  |     color.background     390: 1/1   1280: 1/1         paints
+  |     color.surface        390: 8/8   1280: 8/8         paints
+  |     color.text           390: 1255/94   1280: 1255/94 paints
+  |     color.muted          390: 17/6   1280: 17/6       paints
+  |     color.accent         390: 37/10   1280: 37/10     paints
+  |     color.accent_text    390: 12/2   1280: 12/2       paints
+  | 
+  | ------------------------------------------------------------------------------
+  | THE DEAD-CONTROL BASELINE — frozen, and it can only shrink
+  | ------------------------------------------------------------------------------
+  |   2 known-dead control(s), enumerated by name in tools/landing/paint-baseline.json:
+  |     rail / color.surface  — owner QRPAGER-49, dated 2026-11-14
+  |     ember / color.accent_text  — owner QRPAGER-49, dated 2026-11-14
+  | 
+  | ------------------------------------------------------------------------------
+  | theme-paint: every colour-bearing computed value is a sentinel or a declared member.
+  | theme-paint: the dead controls are exactly the frozen baseline (2).
+  | theme-paint: restoring the demo restaurant to its own theme
+  | EXIT=0
+theme-paint-baseline-proof: FAILED -- stale-ember: the gate stayed GREEN with a wrong baseline -- it is an allowlist wearing a better name
+theme-paint-baseline-proof: re-seeding the demo restaurant, which an aborted run may have left on the sentinel theme
+EXIT=1
