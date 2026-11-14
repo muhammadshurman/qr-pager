@@ -67,7 +67,7 @@ if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
 fi
 
 HEAD_SHA="$(git rev-parse --short HEAD)"
-TREE_BEFORE="$(git status --porcelain -- apps tools packages browser | sha256sum | cut -c1-16)"
+TREE_BEFORE="$(git status --porcelain -- apps tools packages browser | sha256sum | cut -c1-16 || true)"
 
 scan() {
     # prints "<exit> <last line>" and returns 0 whatever scan-css said
@@ -80,10 +80,12 @@ scan() {
     fi
 
     SCAN_EXIT="$status"
-    SCAN_TAIL="$(printf '%s' "$out" | tail -1)"
-    SCAN_FIRST="$(printf '%s' "$out" | head -1)"
+    SCAN_TAIL="$(printf '%s' "$out" | tail -1 || true)"
+    SCAN_FIRST="$(printf '%s' "$out" | head -1 || true)"
     # the count is the number in "N file(s) scanned" or "in N file(s)"
-    SCAN_FILES="$(printf '%s' "$out" | grep -oE '([0-9]+ file\(s\) scanned|in [0-9]+ file\(s\))' | head -1 | grep -oE '[0-9]+')"
+    SCAN_FILES="$(printf '%s' "$out" | grep -oE '([0-9]+ file\(s\) scanned|in [0-9]+ file\(s\))' | head -1 | grep -oE '[0-9]+' || true)"
+    # No count means scan-css did not get as far as scanning: that is not a pass in either direction.
+    [ -n "$SCAN_FILES" ] || fail "scan-css printed no file count (exit ${status}): ${SCAN_TAIL}"
 }
 
 say "================================================================================"
@@ -180,7 +182,7 @@ inject "inherit (a CSS-wide keyword), in an attribute" \
 
 say ""
 say "================================================================================"
-TREE_AFTER="$(git status --porcelain -- apps tools packages browser | sha256sum | cut -c1-16)"
+TREE_AFTER="$(git status --porcelain -- apps tools packages browser | sha256sum | cut -c1-16 || true)"
 [ "$TREE_BEFORE" = "$TREE_AFTER" ] || fail "the working tree differs from before the proof (${TREE_BEFORE} -> ${TREE_AFTER})"
 say "tree after: byte-clean (git status fingerprint ${TREE_AFTER}, unchanged from ${TREE_BEFORE})"
 
