@@ -12,10 +12,14 @@
 # (`1` = the guard went red, `0` = it stayed green), so a guard that gains or loses a blind spot
 # fails this script rather than silently changing what the gate means.
 #
-# The one case where BOTH are green and the plant is still wrong -- an undefined token -- is asked
-# of a third guard, `TemplateTokenSetTest` (QRPAGER-46's referenced-is-a-subset-of-emitted
-# closure), and the script requires that guard to go red. A blind spot with no third guard behind
-# it is the finding; a blind spot with one is a division of labour.
+# The one case where BOTH are green and the plant is still wrong -- an undefined token in an
+# inline style attribute -- was asked of a third guard, `TemplateTokenSetTest` (QRPAGER-46's
+# referenced-is-a-subset-of-emitted closure), on the expectation that it would go red. IT DID NOT:
+# `referencedTokens()` collects `var()` from the page's <style> element only, so a reference in a
+# style="" attribute is invisible to it. The first run of this script failed on exactly that
+# expectation (docs/tickets/QRPAGER-49B-disagreement-first-attempt.txt), and the case now asserts
+# what was MEASURED: all three guards are blind. That is `R-325`, proposed -- the same hole as
+# R-322 (inline style attributes), seen from the closure guard instead of the literal scanner.
 #
 # NOTHING IS KEPT: every plant is reverted and checked byte-for-byte against HEAD, the compiled
 # views are cleared after every edit and restore, and the demo restaurant is re-seeded on exit.
@@ -208,6 +212,7 @@ probe() {
     if [ "$got_scan" = 1 ] && [ "$got_harness" = 0 ]; then blind="THE HARNESS IS BLIND"; fi
     if [ "$got_scan" = 0 ] && [ "$got_harness" = 1 ]; then blind="SCAN-CSS IS BLIND"; fi
     if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ]; then blind="BOTH ARE BLIND"; fi
+    if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ] && [ "$third_status" = "0" ]; then blind="ALL THREE ARE BLIND"; fi
     if [ "$got_scan" = 1 ] && [ "$got_harness" = 1 ]; then blind="none: they agree"; fi
 
     say "  verdict    : as required — ${blind}"
@@ -254,8 +259,8 @@ probe "a literal in an SVG presentation attribute, which is not a style attribut
 
 # ---- BOTH are blind, and a third guard is what sees it -----------------------------------
 probe "a token that is referenced and never emitted" \
-    "$TILE" prepend '<p style="background-color:var(--color-nonexistent)">proof</p>' 0 0 1 \
-    "no literal exists, and an unresolved var() computes to the initial value, which is the declared non-themed member; TemplateTokenSetTest is the guard for it"
+    "$TILE" prepend '<p style="background-color:var(--color-nonexistent)">proof</p>' 0 0 0 \
+    "no literal exists, so scan-css has nothing to read; an unresolved var() computes to the initial value, which is the declared non-themed member, so the harness sees nothing; and TemplateTokenSetTest reads var() from the <style> element only (R-325, proposed)"
 
 say ""
 say "================================================================================"
