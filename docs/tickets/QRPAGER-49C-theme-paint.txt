@@ -1,0 +1,155 @@
+theme-paint: full output -> /home/pixels/code/qr-pager/apps/api/storage/logs/theme-paint-20261114T175619Z.log
+theme-paint: clearing the compiled views
+theme-paint: seeding the demo restaurant (idempotent)
+theme-paint: arrangements from LandingTemplate::values(): rail ember tile
+theme-paint: building apps/site
+theme-paint: starting apps/site on port 3097
+theme-paint: publishing the sentinel theme under 'rail'
+theme-paint: measuring 'rail' at 390 and 1280 through http://demo-al-sarw.pages.qrpager.test:3097/
+browsers: this host cannot launch all three engines; using the container.
+
+Running 2 tests using 1 worker
+
+  ✓  1 [theme-paint] › browser/theme-paint.spec.ts:509:5 › the published page's colours, as a browser resolves them — rail › rail at 390: every colour-bearing computed value, collected (622ms)
+  ✓  2 [theme-paint] › browser/theme-paint.spec.ts:509:5 › the published page's colours, as a browser resolves them — rail › rail at 1280: every colour-bearing computed value, collected (781ms)
+
+  2 passed (1.9s)
+theme-paint: publishing the sentinel theme under 'ember'
+theme-paint: measuring 'ember' at 390 and 1280 through http://demo-al-sarw.pages.qrpager.test:3097/
+browsers: this host cannot launch all three engines; using the container.
+
+Running 2 tests using 1 worker
+
+  ✓  1 [theme-paint] › browser/theme-paint.spec.ts:509:5 › the published page's colours, as a browser resolves them — ember › ember at 390: every colour-bearing computed value, collected (719ms)
+  ✓  2 [theme-paint] › browser/theme-paint.spec.ts:509:5 › the published page's colours, as a browser resolves them — ember › ember at 1280: every colour-bearing computed value, collected (676ms)
+
+  2 passed (2.0s)
+theme-paint: publishing the sentinel theme under 'tile'
+theme-paint: measuring 'tile' at 390 and 1280 through http://demo-al-sarw.pages.qrpager.test:3097/
+browsers: this host cannot launch all three engines; using the container.
+
+Running 2 tests using 1 worker
+
+  ✓  1 [theme-paint] › browser/theme-paint.spec.ts:509:5 › the published page's colours, as a browser resolves them — tile › tile at 390: every colour-bearing computed value, collected (645ms)
+  ✓  2 [theme-paint] › browser/theme-paint.spec.ts:509:5 › the published page's colours, as a browser resolves them — tile › tile at 1280: every colour-bearing computed value, collected (614ms)
+
+  2 passed (1.8s)
+theme-paint: partitioning
+
+------------------------------------------------------------------------------
+QRPAGER-49A — does the theme reach the pixel?
+------------------------------------------------------------------------------
+templates : rail, ember, tile   (from LandingTemplate::values())
+widths    : 390, 1280
+engine    : chromium 156.0.8078.4   (captured by the collector, from the browser itself)
+sentinels :
+    color.background     #ff00e4
+    color.surface        #00ff95
+    color.text           #1400ff
+    color.muted          #ff7a00
+    color.accent         #00e5ff
+    color.accent_text    #7d00ff
+
+properties read per element (this list IS the claim's scope):
+    color, background-color, border-top-color, border-right-color, border-bottom-color, border-left-color, outline-color, text-decoration-color, box-shadow, background-image, fill, stroke, caret-color, column-rule-color, text-emphasis-color, -webkit-text-fill-color, text-shadow, -webkit-text-stroke-color, accent-color, scrollbar-color, border-image-source, mask-image, list-style-image, filter, backdrop-filter, stop-color, flood-color, lighting-color
+    …and `style` attributes, listed in (3) below.
+
+------------------------------------------------------------------------------
+(1) THE MEASUREMENT — every figure the claim relies on, from the records themselves
+------------------------------------------------------------------------------
+  innerWidth is window.innerWidth READ FROM THE BROWSER, not the width that was asked for.
+  The report refuses any record where the two differ.
+
+  render        innerWidth innerHeight docHeight min-width:48rem elements values  sentinel non-themed other
+  rail @ 390    390        844         3941      false           110      1430    1322     108        0
+  rail @ 1280   1280       900         5502      true            110      1430    1322     108        0
+  ember @ 390   390        844         6159      false           111      1443    1343     100        0
+  ember @ 1280  1280       900         4164      true            111      1443    1343     100        0
+  tile @ 390    390        844         5705      false           110      1430    1330     100        0
+  tile @ 1280   1280       900         3552      true            110      1430    1330     100        0
+
+  totals: 8606 colour-bearing computed values — 7990 sentinel, 616 declared non-themed, 0 other (0 of the other are currentcolor-derived consequences)
+
+------------------------------------------------------------------------------
+(2) THE DECLARED NON-THEMED SET — keyed on what an engine actually returns
+------------------------------------------------------------------------------
+  rgba(0, 0, 0, 0)
+      the engine’s serialisation of the keyword `transparent`, which source is allowed to contain (tools/design-tokens/colour-keywords.mjs — the ONE definition, which `scan-css` reads too): fully transparent black: nothing is painted, so there is no pixel for a theme to reach, and no restaurant could have chosen it as a colour. Keyed on the computed form because that is the only form an engine returns — a computed style never contains the keyword.
+  currentcolor-derived properties, collapsed to their source `color`:
+      border-top-color, border-right-color, border-bottom-color, border-left-color, outline-color, text-decoration-color, caret-color, column-rule-color, text-emphasis-color, -webkit-text-fill-color, -webkit-text-stroke-color
+
+------------------------------------------------------------------------------
+(c) EVERYTHING ELSE — the finding
+------------------------------------------------------------------------------
+none. Every colour-bearing computed value is a sentinel or a declared member.
+
+------------------------------------------------------------------------------
+(3) STYLE ATTRIBUTES — what the page sets inline, across all renders
+------------------------------------------------------------------------------
+  ×6  html
+        style="--color-background:#ff00e4;--color-surface:#00ff95;--color-text:#1400ff;--color-muted:#ff7a00;--color-accent:#00e5ff;--color-accent-text:#7d00ff;--font-heading:system-ui, sans-serif;--font-body:system-ui, sans-serif;--ra"
+  ×2  html>body>main>div.rail>section:nth-of-type(4)>div.grid>figure:nth-of-type(1)
+        style="margin:0"
+  ×2  html>body>main>div.rail>section:nth-of-type(4)>div.grid>figure:nth-of-type(2)
+        style="margin:0"
+  ×2  html>body>main>div.rail>section:nth-of-type(4)>div.grid>figure:nth-of-type(3)
+        style="margin:0"
+  ×2  html>body>main>div.ember>div.ember-column:nth-of-type(2)>section:nth-of-type(3)>div.grid>figure:nth-of-type(1)
+        style="margin:0"
+  ×2  html>body>main>div.ember>div.ember-column:nth-of-type(2)>section:nth-of-type(3)>div.grid>figure:nth-of-type(2)
+        style="margin:0"
+  ×2  html>body>main>div.ember>div.ember-column:nth-of-type(2)>section:nth-of-type(3)>div.grid>figure:nth-of-type(3)
+        style="margin:0"
+  ×2  html>body>main>div.tile>div.tile-grid>section:nth-of-type(1)>div.grid>figure:nth-of-type(1)
+        style="margin:0"
+  ×2  html>body>main>div.tile>div.tile-grid>section:nth-of-type(1)>div.grid>figure:nth-of-type(2)
+        style="margin:0"
+  ×2  html>body>main>div.tile>div.tile-grid>section:nth-of-type(1)>div.grid>figure:nth-of-type(3)
+        style="margin:0"
+
+------------------------------------------------------------------------------
+(6) DEAD CONTROL CHECK — each of the six roles, by name, per template
+------------------------------------------------------------------------------
+  Each cell is  occurrences/painting  — how many colour-bearing values hold the sentinel,
+  and how many of those can reach a pixel. `0/0` means the role appears nowhere in the render.
+
+  ⚠ BOUNDARY: a role painted ONLY in a state this harness does not render — hover, focus,
+  active, error, empty — counts as UNPAINTED here. The harness renders one resting state at
+  two widths and nothing else.
+
+rail
+    color.background     390: 1/1   1280: 1/1         paints
+    color.surface        390: 0/0   1280: 0/0         DEAD — baselined, owner QRPAGER-49
+    color.text           390: 1256/94   1280: 1256/94 paints
+    color.muted          390: 16/6   1280: 16/6       paints
+    color.accent         390: 37/10   1280: 37/10     paints
+    color.accent_text    390: 12/2   1280: 12/2       paints
+
+ember
+    color.background     390: 62/6   1280: 62/6       paints
+    color.surface        390: 8/8   1280: 8/8         paints
+    color.text           390: 1221/93   1280: 1221/93 paints
+    color.muted          390: 16/6   1280: 16/6       paints
+    color.accent         390: 36/9   1280: 36/9       paints
+    color.accent_text    390: 0/0   1280: 0/0         DEAD — baselined, owner QRPAGER-49
+
+tile
+    color.background     390: 1/1   1280: 1/1         paints
+    color.surface        390: 8/8   1280: 8/8         paints
+    color.text           390: 1255/94   1280: 1255/94 paints
+    color.muted          390: 17/6   1280: 17/6       paints
+    color.accent         390: 37/10   1280: 37/10     paints
+    color.accent_text    390: 12/2   1280: 12/2       paints
+
+------------------------------------------------------------------------------
+THE DEAD-CONTROL BASELINE — frozen, and it can only shrink
+------------------------------------------------------------------------------
+  2 known-dead control(s), enumerated by name in tools/landing/paint-baseline.json:
+    rail / color.surface  — owner QRPAGER-49, dated 2026-11-14
+    ember / color.accent_text  — owner QRPAGER-49, dated 2026-11-14
+
+------------------------------------------------------------------------------
+theme-paint: every colour-bearing computed value is a sentinel or a declared member.
+theme-paint: the dead controls are exactly the frozen baseline (2).
+theme-paint: restoring the demo restaurant to its own theme
+EXIT=0

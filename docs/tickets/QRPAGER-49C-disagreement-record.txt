@@ -1,7 +1,7 @@
 ================================================================================
 guard-disagreement-proof — WHERE scan-css AND THE PAINT HARNESS STILL DISAGREE. QRPAGER-49B.
 ================================================================================
-tree: committed, at 8817f86
+tree: committed, at e0f2aa3
 literal planted each time: #123456   (1 = the guard went red, 0 = it stayed green)
 BASELINE: theme-paint-proof exit 0 and scan-css exit 0 on the unmodified tree
 
@@ -92,6 +92,7 @@ CASE 8 — a token that is referenced and never emitted, in a style attribute
   TemplateTokenSetTest : exit 1  (RED)
   reverted   : byte-identical to HEAD
   why        : no literal exists, so scan-css has nothing to read; an unresolved var() computes to the initial value, which is the declared non-themed member, so the harness sees nothing; TemplateTokenSetTest reads it from the attribute (R-325, closed at 49C)
+  the third guard's red names the planted token: --color-nonexistent
   verdict    : as required — both blind; THE THIRD GUARD SEES IT
 
 --------------------------------------------------------------------------------
@@ -103,6 +104,7 @@ CASE 9 — the same typo through Blade's @style directive, which renders as that
   TemplateTokenSetTest : exit 1  (RED)
   reverted   : byte-identical to HEAD
   why        : the closure reads the RENDERED html, so @style needs no second reader
+  the third guard's red names the planted token: --color-nonexistent
   verdict    : as required — both blind; THE THIRD GUARD SEES IT
 
 ================================================================================
