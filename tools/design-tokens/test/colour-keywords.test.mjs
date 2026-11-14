@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 import { hasInlineCss, maskBladeCss, styleAttributeCount } from '../blade-css.mjs'
 import { scanSource } from '../bin/scan-css.mjs'
@@ -6,6 +9,7 @@ import {
   COLOUR_KEYWORDS,
   NAMED_COLOURS,
   SYSTEM_COLOURS,
+  colourKeywordPattern,
   computedNonThemedMembers,
   isAllowedColourKeyword,
   isLiteralColourKeyword,
@@ -267,5 +271,85 @@ describe('QRPAGER-49B §11 — shapes the first version got wrong', () => {
     expect(read('<p style="/* color:red */margin:0">')).toEqual([])
     // and an unterminated one ends with its region, as a browser ends it
     expect(read('<p style="margin:0;/* color:red">')).toEqual([])
+  })
+})
+
+/*
+ * QRPAGER-49C, Muhammad's ruling 2: *"`KEYWORD_SAFE` and the regex inside `page.evaluate` stayed
+ * as two separate lists for the same semantic question — the drift I ruled out, reinstated one
+ * layer down … One definition, three consumers."* These are SOURCE assertions and say so: they
+ * cannot show behaviour, only that the second list is not written again.
+ */
+describe('one definition, three consumers — QRPAGER-49C', () => {
+  const read = (path) => readFileSync(join(import.meta.dirname, '..', '..', '..', path), 'utf8')
+
+  /*
+   * ⚠ THIS IS A SOURCE PIN AND IT IS THE ONLY REAL CHECK THE MAGNITUDE GUARD CAN HAVE. The first
+   * version looped `valueIsAcceptable(keyword)` over the allowlist and asserted true — and that
+   * passes with NO keyword list at all, because `valueIsAcceptable` ends in `!/\d/.test(value)`
+   * and so accepts every digit-free word (the `§11` QA round's M-1). The derivation changes no
+   * verdict; what it removes is a second list that could drift.
+   */
+  it('the magnitude guard builds its keyword half from the module, and writes none of its own', () => {
+    const source = read('tools/design-tokens/patterns.mjs')
+
+    expect(source).toMatch(/Object\.keys\(ALLOWED_COLOUR_KEYWORDS\)/)
+    expect(source).not.toMatch(/inherit\s*\|\s*initial/)
+  })
+
+  it('the in-page detector receives its pattern from the module and writes no keyword of its own', () => {
+    const source = read('browser/theme-paint.spec.ts')
+
+    expect(source).toMatch(/from '\.\.\/tools\/design-tokens\/colour-keywords\.mjs'/)
+    expect(source).toMatch(/keywordPattern: colourKeywordPattern\(\)/)
+    // no colour keyword of any kind is spelt in the spec: not one of the 201
+    const spelt = [...COLOUR_KEYWORDS, ...Object.keys(ALLOWED_COLOUR_KEYWORDS)].filter(
+      (keyword) => keyword.length > 4 && new RegExp(`['"|(]${keyword}['"|)]`, 'i').test(source),
+    )
+
+    expect(spelt).toEqual([])
+  })
+
+  it('the harness’s classifier and the scanner both read the same module', () => {
+    expect(read('tools/landing/paint-classify.mjs')).toMatch(/design-tokens\/colour-keywords\.mjs/)
+    expect(read('tools/design-tokens/patterns.mjs')).toMatch(/\.\/colour-keywords\.mjs/)
+    // the classifier no longer spells `transparent` to parse it
+    expect(read('tools/landing/paint-classify.mjs')).not.toMatch(/text === 'transparent'/)
+  })
+})
+
+describe('colourKeywordPattern — the in-page detector, tested where it can be', () => {
+  const pattern = () => new RegExp(colourKeywordPattern(), 'gi')
+  const hits = (text) => text.match(pattern()) ?? []
+
+  it('matches a colour keyword that survived into a computed value, whole and in any case', () => {
+    expect(hits('currentcolor')).toEqual(['currentcolor'])
+    expect(hits('rgb(0, 0, 0) CanvasText')).toEqual(['CanvasText'])
+    expect(hits('revert-layer')).toEqual(['revert-layer'])
+    expect(hits('-webkit-focus-ring-color')).toEqual(['-webkit-focus-ring-color'])
+  })
+
+  it('never matches inside a longer identifier', () => {
+    expect(hits('background-color')).toEqual([])
+    expect(hits('graytext')).toEqual(['graytext'])
+    expect(hits('grayish')).toEqual([])
+    expect(hits('-webkit-text-fill-color')).toEqual([])
+    expect(hits('linear-gradient(rgb(1, 2, 3), rgb(4, 5, 6))')).toEqual([])
+  })
+
+  it('covers every keyword the scanner knows, so the two cannot drift', () => {
+    for (const keyword of [...COLOUR_KEYWORDS, ...Object.keys(ALLOWED_COLOUR_KEYWORDS)]) {
+      expect(hits(keyword), keyword).toEqual([keyword])
+    }
+  })
+
+  it('contains no regular-expression syntax of its own beyond the alternation', () => {
+    expect(colourKeywordPattern()).toMatch(/^\(\?<!\[\\w-\]\)\(\?:[a-z|-]+\)\(\?!\[\\w-\]\)$/)
+  })
+
+  it('has a set nobody can add to at run time', () => {
+    expect(() => COLOUR_KEYWORDS.add('chartreuse-ish')).toThrow(/read-only/)
+    expect(() => COLOUR_KEYWORDS.delete('red')).toThrow(/read-only/)
+    expect(COLOUR_KEYWORDS.has('red')).toBe(true)
   })
 })

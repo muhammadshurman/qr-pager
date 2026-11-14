@@ -1,0 +1,125 @@
+================================================================================
+guard-disagreement-proof — WHERE scan-css AND THE PAINT HARNESS STILL DISAGREE. QRPAGER-49B.
+================================================================================
+tree: committed, at e0f2aa3
+literal planted each time: #123456   (1 = the guard went red, 0 = it stayed green)
+BASELINE: theme-paint-proof exit 0 and scan-css exit 0 on the unmodified tree
+
+--------------------------------------------------------------------------------
+CASE 1 — a literal in an inline style attribute — the control, which both must see
+  planted in : apps/api/resources/views/landing/templates/tile.blade.php (prepend)
+  text       : <p style="color:#123456">proof</p>
+  scan-css           : exit 1  (RED)
+    first finding    : apps/api/resources/views/landing/templates/tile.blade.php:1:17  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  theme-paint-proof  : exit 1  (RED)
+    finding          : theme-paint: 2 finding(s) in category (c).
+  reverted   : byte-identical to HEAD
+  why        : rendered AND written as a literal: nothing for either to miss
+  verdict    : as required — none: they agree
+
+--------------------------------------------------------------------------------
+CASE 2 — a literal that only a HOVERED control would show
+  planted in : apps/api/resources/views/landing/page.blade.php (style)
+  text       : .cta:hover{background:#123456}
+  scan-css           : exit 1  (RED)
+    first finding    : apps/api/resources/views/landing/page.blade.php:89:30  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  theme-paint-proof  : exit 0  (green)
+  reverted   : byte-identical to HEAD
+  why        : the harness renders no :hover, :focus or error state (stated in every run's output)
+  verdict    : as required — THE HARNESS IS BLIND
+
+--------------------------------------------------------------------------------
+CASE 3 — a literal that only a DARK-scheme user would see
+  planted in : apps/api/resources/views/landing/page.blade.php (style)
+  text       : @media (prefers-color-scheme:dark){body{background:#123456}}
+  scan-css           : exit 1  (RED)
+    first finding    : apps/api/resources/views/landing/page.blade.php:89:59  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  theme-paint-proof  : exit 0  (green)
+  reverted   : byte-identical to HEAD
+  why        : the harness measures one colour scheme
+  verdict    : as required — THE HARNESS IS BLIND
+
+--------------------------------------------------------------------------------
+CASE 4 — a literal at a width that is neither 390 nor 1280
+  planted in : apps/api/resources/views/landing/page.blade.php (style)
+  text       : @media (min-width:600px) and (max-width:1000px){body{background:#123456}}
+  scan-css           : exit 1  (RED)
+    first finding    : apps/api/resources/views/landing/page.blade.php:89:72  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  theme-paint-proof  : exit 0  (green)
+  reverted   : byte-identical to HEAD
+  why        : the harness measures two widths
+  verdict    : as required — THE HARNESS IS BLIND
+
+--------------------------------------------------------------------------------
+CASE 5 — a literal on ::selection, which no computed style of an element reports
+  planted in : apps/api/resources/views/landing/page.blade.php (style)
+  text       : ::selection{background:#123456}
+  scan-css           : exit 1  (RED)
+    first finding    : apps/api/resources/views/landing/page.blade.php:89:31  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  theme-paint-proof  : exit 0  (green)
+  reverted   : byte-identical to HEAD
+  why        : getComputedStyle(el, '::selection') is not walked; ::before, ::after and ::marker are
+  verdict    : as required — THE HARNESS IS BLIND
+
+--------------------------------------------------------------------------------
+CASE 6 — a literal that arrives through a Blade echo
+  planted in : apps/api/resources/views/landing/templates/tile.blade.php (prepend)
+  text       : <p style="color:{{ '#123456' }}">proof</p>
+  scan-css           : exit 0  (green)
+  theme-paint-proof  : exit 1  (RED)
+    finding          : theme-paint: 2 finding(s) in category (c).
+  reverted   : byte-identical to HEAD
+  why        : scan-css blanks every {{ }}: the value is PHP, and what PHP produces is not source it reads
+  verdict    : as required — SCAN-CSS IS BLIND
+
+--------------------------------------------------------------------------------
+CASE 7 — a literal in an SVG presentation attribute, which is not a style attribute
+  planted in : apps/api/resources/views/landing/templates/tile.blade.php (prepend)
+  text       : <svg width="10" height="10"><rect width="10" height="10" fill="#123456"/></svg>
+  scan-css           : exit 0  (green)
+  theme-paint-proof  : exit 1  (RED)
+    finding          : theme-paint: 16 finding(s) in category (c).
+  reverted   : byte-identical to HEAD
+  why        : scan-css reads <style> bodies and style="" values; fill= is neither
+  verdict    : as required — SCAN-CSS IS BLIND
+
+--------------------------------------------------------------------------------
+CASE 8 — a token that is referenced and never emitted, in a style attribute
+  planted in : apps/api/resources/views/landing/templates/tile.blade.php (prepend)
+  text       : <p style="background-color:var(--color-nonexistent)">proof</p>
+  scan-css           : exit 0  (green)
+  theme-paint-proof  : exit 0  (green)
+  TemplateTokenSetTest : exit 1  (RED)
+  reverted   : byte-identical to HEAD
+  why        : no literal exists, so scan-css has nothing to read; an unresolved var() computes to the initial value, which is the declared non-themed member, so the harness sees nothing; TemplateTokenSetTest reads it from the attribute (R-325, closed at 49C)
+  the third guard's red names the planted token: --color-nonexistent
+  verdict    : as required — both blind; THE THIRD GUARD SEES IT
+
+--------------------------------------------------------------------------------
+CASE 9 — the same typo through Blade's @style directive, which renders as that attribute
+  planted in : apps/api/resources/views/landing/templates/tile.blade.php (prepend)
+  text       : <p @style(['background-color:var(--color-nonexistent)'])>proof</p>
+  scan-css           : exit 0  (green)
+  theme-paint-proof  : exit 0  (green)
+  TemplateTokenSetTest : exit 1  (RED)
+  reverted   : byte-identical to HEAD
+  why        : the closure reads the RENDERED html, so @style needs no second reader
+  the third guard's red names the planted token: --color-nonexistent
+  verdict    : as required — both blind; THE THIRD GUARD SEES IT
+
+================================================================================
+THE TABLE
+================================================================================
+case scan-css  harness   third   who is blind
+1    RED       RED       -       none: they agree — a literal in an inline style attribute — the control, which both must see
+2    RED       green     -       THE HARNESS IS BLIND — a literal that only a HOVERED control would show
+3    RED       green     -       THE HARNESS IS BLIND — a literal that only a DARK-scheme user would see
+4    RED       green     -       THE HARNESS IS BLIND — a literal at a width that is neither 390 nor 1280
+5    RED       green     -       THE HARNESS IS BLIND — a literal on ::selection, which no computed style of an element reports
+6    green     RED       -       SCAN-CSS IS BLIND — a literal that arrives through a Blade echo
+7    green     RED       -       SCAN-CSS IS BLIND — a literal in an SVG presentation attribute, which is not a style attribute
+8    green     green     RED     both blind; THE THIRD GUARD SEES IT — a token that is referenced and never emitted, in a style attribute
+9    green     green     RED     both blind; THE THIRD GUARD SEES IT — the same typo through Blade's @style directive, which renders as that attribute
+
+guard-disagreement-proof: 9 plants, every verdict as stated, every plant reverted; the tree is unchanged.
+EXIT=0

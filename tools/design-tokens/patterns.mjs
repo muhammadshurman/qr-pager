@@ -101,8 +101,17 @@ function approvedSpacingSteps() {
  * that is a physical device pixel rather than a step on the spacing scale -- and the
  * approved elevation (`0 1px 2px`) is written in those units for the same reason.
  */
-const KEYWORD_SAFE =
-  /^(0|0px|0rem|0%|100%|auto|inherit|initial|unset|revert|revert-layer|none|currentcolor|transparent)$/i
+/*
+ * ⚠ THE KEYWORD HALF OF THIS LIST IS NOT WRITTEN HERE — QRPAGER-49C, Muhammad's ruling that
+ * `KEYWORD_SAFE` and the colour allowlist were "two separate lists for the same semantic
+ * question". The CSS-wide keywords, `currentcolor` and `transparent` come from
+ * `ALLOWED_COLOUR_KEYWORDS`, so narrowing that list narrows this path too. What stays literal is
+ * what is NOT a colour keyword: the magnitudes (`0`, `100%`) and `auto` and `none`.
+ */
+const KEYWORD_SAFE = new RegExp(
+  `^(?:0|0px|0rem|0%|100%|auto|none|${Object.keys(ALLOWED_COLOUR_KEYWORDS).join('|')})$`,
+  'i',
+)
 
 /**
  * Every pattern, grouped by the rule that owns it.

@@ -98,7 +98,43 @@ windowtext
   .trim()
   .split(/\s+/)
 
-export const COLOUR_KEYWORDS = Object.freeze(new Set([...NAMED_COLOURS, ...SYSTEM_COLOURS]))
+/*
+ * ⚠ `Object.freeze` DOES NOT FREEZE A `Set` — the §11 QA round's L-6 — so the mutators are removed
+ * from this instance. The type file says `ReadonlySet`, and now it is one.
+ */
+export const COLOUR_KEYWORDS = (() => {
+  const set = new Set([...NAMED_COLOURS, ...SYSTEM_COLOURS])
+
+  for (const method of ['add', 'delete', 'clear']) {
+    Object.defineProperty(set, method, {
+      value: () => {
+        throw new TypeError(`COLOUR_KEYWORDS is read-only (${method})`)
+      },
+    })
+  }
+
+  return set
+})()
+
+/**
+ * The alternation that finds a colour KEYWORD in a computed value, as a regular-expression
+ * SOURCE string: every colour keyword `scan-css` calls a literal plus the allowlist, whole words
+ * only, so `background` never matches inside `background-color` and `gray` never inside
+ * `graytext`.
+ *
+ * ⚠ IT LIVES HERE, NOT IN `browser/theme-paint.spec.ts`, BECAUSE THE SPEC'S CLOSURE IS
+ * SERIALISED INTO THE PAGE AND CANNOT BE UNIT-TESTED (QA L-2). The closure now receives this
+ * string and wraps it in `new RegExp(…, 'gi')`; the construction is tested here. Every keyword is
+ * escaped, so a future entry containing `.` or `+` cannot change the pattern (QA L-6).
+ *
+ * @returns {string}
+ */
+export function colourKeywordPattern() {
+  const escape = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const words = [...Object.keys(ALLOWED_COLOUR_KEYWORDS), ...COLOUR_KEYWORDS].map(escape)
+
+  return `(?<![\\w-])(?:${words.join('|')})(?![\\w-])`
+}
 
 /** Is this identifier a colour keyword that is NOT allowlisted — i.e. a literal? */
 export function isLiteralColourKeyword(identifier) {

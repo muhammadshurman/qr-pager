@@ -46,7 +46,8 @@ use Tests\Support\LandingPages;
  */
 
 /**
- * Every custom property the page's own rules READ, as a sorted list.
+ * Every custom property the page READS, as a sorted list — its `<style>` rules AND its `style`
+ * attributes (`R-325`, `QRPAGER-49C`), the second of which this file did not read.
  *
  * ⚠ THE NAME IS WHAT IS COLLECTED, NOT THE WHOLE CALL, so `var(--color-surface,#f6f6f6)` and
  * `var(--color-surface)` are the same reference — which they are: a fallback changes what
@@ -62,18 +63,9 @@ use Tests\Support\LandingPages;
  */
 function referencedTokens(string $html): array
 {
-    $style = LandingPages::styleBlock($html);
+    expect(LandingPages::styleBlock($html))->not->toBe('', 'the rendered page serves no <style> block at all');
 
-    expect($style)->not->toBe('', 'the rendered page serves no <style> block at all');
-
-    $found = [];
-    preg_match_all('/var\(\s*(--[a-z0-9-]+)/i', $style, $found);
-
-    /** @var list<string> $names */
-    $names = array_values(array_unique($found[1]));
-    sort($names);
-
-    return $names;
+    return LandingPages::referencedTokens($html);
 }
 
 /**
@@ -299,4 +291,56 @@ it('fills only tokens the contract knows, whoever calls it', function (): void {
 
     expect($emitted)->not->toContain('--ready-field')
         ->and($emitted)->toHaveCount(count(ThemeTokens::NAMES));
+});
+
+/*
+ * ================================================================================
+ * `R-325` — A `var()` IN A `style` ATTRIBUTE IS A REFERENCE, AND IT USED TO BE INVISIBLE
+ * ================================================================================
+ *
+ * `QRPAGER-49B`'s `guard-disagreement-proof` case 8 planted
+ * `<p style="background-color:var(--color-nonexistent)">` in a template and all three guards
+ * stayed green. Muhammad's ruling (`QRPAGER-49` addendum, item 1): the closure reads `var()` from
+ * style attributes and from `@style([...])`, and a `var(--typo)` in an attribute must redden it.
+ * The browser-level proof is `guard-disagreement-proof` cases 8 and 9 (the third guard now RED);
+ * these are its cheap siblings, on the reader and on a REAL render with a typo planted in it.
+ */
+it('reads var() wherever it is written: block, either quote, unquoted, a presentation attribute, a second style element', function (): void {
+    $html = '<style>a{color:var(--in-block)}</style>'
+        .'<style media="print">a{color:var(--in-print)}</style>'
+        .'<p style="background:var(--in-double)">x</p>'
+        ."<p style='border-color:var( --in-single , #fff)'>y</p>"
+        .'<p style=color:var(--in-unquoted)>z</p>'
+        .'<svg><path fill="var(--in-fill)"/></svg>';
+
+    expect(LandingPages::referencedTokens($html))->toBe([
+        '--in-block', '--in-double', '--in-fill', '--in-print', '--in-single', '--in-unquoted',
+    ]);
+});
+
+it('reads an entity-encoded reference, and a name with an underscore whole', function (): void {
+    expect(LandingPages::referencedTokens('<p style="font-family:&quot;x&quot;;color:var(&#45;&#45;decoded)">'))
+        ->toBe(['--decoded']);
+    // `var(--color-text_x)` must not be read as the emitted `--color-text`: that would report a typo as emitted.
+    expect(LandingPages::referencedTokens('<p style="color:var(--color-text_x)">'))->toBe(['--color-text_x']);
+});
+
+it('reads a var() the way the closure needs it: case-insensitively on the function, exactly on the name', function (): void {
+    expect(LandingPages::referencedTokens('<p style="color:VAR(--A-b)">'))->toBe(['--A-b']);
+    expect(LandingPages::referencedTokens('<p style="color:red">no references</p>'))->toBe([]);
+});
+
+it('REDDENS the closure for a typo planted in an attribute of a real render — the control', function (): void {
+    foreach (LandingTemplate::cases() as $template) {
+        $html = LandingPages::render($template->value);
+
+        // The real page is closed: every reference is emitted (the assertion above this block).
+        expect(array_diff(referencedTokens($html), emittedProperties($html)))->toBe([]);
+
+        $typo = str_replace('<body', '<p style="background-color:var(--color-typo)">x</p><body', $html);
+
+        expect($typo)->not->toBe($html, 'the plant did not land: there is no <body in the page');
+        expect(array_values(array_diff(referencedTokens($typo), emittedProperties($typo))))
+            ->toBe(['--color-typo'], "{$template->value}: the closure does not see a typo in an attribute");
+    }
 });
