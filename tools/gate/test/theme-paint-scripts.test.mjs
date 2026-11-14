@@ -151,10 +151,18 @@ describe('theme-paint-proof refuses before it touches anything', () => {
     }
   }
 
+  /*
+   * ⚠ `APP_ENV` IS PINNED, NOT INHERITED — found by CI, not locally. The frontend job's Vitest step
+   * runs BEFORE `apps/api/.env` exists, so `php artisan env` reports Laravel's own default,
+   * `production`, and the orchestrator's environment guard (correctly) refused before it reached the
+   * port and output-path checks these cases target. They passed on a machine whose `.env` says
+   * `local`. A test whose verdict depends on a developer's dotfile is not a test; the one case that
+   * WANTS `production` says so explicitly.
+   */
   const run = (env) =>
     spawnSync(script, [], {
       encoding: 'utf8',
-      env: { ...process.env, ...env },
+      env: { ...process.env, APP_ENV: 'testing', ...env },
       timeout: 60_000,
     })
 
