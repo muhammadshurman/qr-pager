@@ -17,11 +17,13 @@ import { expect, test, type Page } from '@playwright/test'
  * no box. `QRPAGER-49` imports three externally designed templates and every literal colour
  * in them is a candidate to survive translation, so the claim has to exist before they land.
  *
- * ⚠ **THIS FILE ONLY COLLECTS. IT JUDGES NOTHING**, and that split is deliberate: the
- * partition into sentinel / declared-non-themed / everything-else is `tools/landing/
- * paint-report.mjs`'s, where it can be read, diffed and argued with, rather than hidden inside
- * an `expect` that reports one line when it fails. What this file asserts is only that the
- * measurement really happened — a page that loaded, images that decoded, elements that exist.
+ * ⚠ **THIS FILE ONLY COLLECTS. IT JUDGES NOTHING.** It records what the engine returned, as the
+ * engine returned it, plus the raw facts a judgement needs (a border's width and style, whether
+ * an element owns a text node). Which values are sentinels, which are declared non-themed, which
+ * are findings and which can paint is decided in `tools/landing/paint-classify.mjs` — a pure
+ * module with unit tests, because a decision made inside a serialised `page.evaluate` closure
+ * cannot be tested at all. Phase 1 had the verdict in here, and Muhammad's review made it a
+ * blocker: *"it is the artefact that DECIDES what counts as a finding."*
  *
  * ⚠ **IT MEASURES THE PUBLISHED PATH, NOT A RENDER OF ITS OWN.** The page under the browser
  * was written by `LandingPages::publish()` into the object store and is served by `apps/site`
@@ -32,44 +34,68 @@ import { expect, test, type Page } from '@playwright/test'
  * `/assets/…` paths that only a server can answer, so a `file://` measurement would be taken
  * on a page with no photographs in it.
  *
- * ⚠ **AND THE TEMPLATE IS NOT CHOSEN HERE.** One tenant has one live page, so the three
- * arrangements are measured one publish at a time: `tools/gate/bin/theme-paint-proof` publishes
- * a template, runs this file against it, and moves on — with the list of templates read from
+ * ⚠ **AND THE ENVIRONMENT IS READ, NOT ASSUMED.** `requestedWidth` is what this file asked the
+ * viewport for; `innerWidth` is what the page's own `window` reports; the browser's build string
+ * comes from the browser. Phase 1 recorded the first and called it the second, and left the
+ * build to be inferred from the image tag: *"derived provenance is not captured provenance."*
+ *
+ * ⚠ **THE TEMPLATE IS NOT CHOSEN HERE.** One tenant has one live page, so the arrangements are
+ * measured one publish at a time: `tools/gate/bin/theme-paint-proof` publishes a template, runs
+ * this file against it, and moves on — with the list of templates read from
  * `LandingTemplate::values()` rather than from a literal anywhere. This file measures whatever
  * is live and names it from the manifest the publisher wrote.
  */
 
-/** One colour-bearing computed value, on one element, with what it would take to paint it. */
+/** The raw facts a paint verdict needs, and nothing the collector has decided. */
+interface Facts {
+  width?: number
+  style?: string
+  line?: string
+  hasText?: boolean
+}
+
+/** One colour-bearing computed value, on one element, as the engine returned it. */
 interface Sample {
+  /** The element's index in the walk, which is what a derived property collapses on. */
+  el: number
   path: string
   shape: string
   pseudo: string | null
   property: string
-  /** Whether the property is one the ticket names, or one this file adds. See `PROPERTIES`. */
+  /** Whether the property is one the ticket names, or one this file adds. */
   named: boolean
   /** The whole computed value, as the engine reports it. */
   value: string
-  /** The one colour inside it, normalised: `#rrggbb`, `transparent`, or an `rgba()` form. */
-  token: string
-  paints: boolean
-  /** Why it does or does not paint, in the engine's own numbers. */
-  reason: string
+  /** The ONE colour token cut out of `value`, exactly as the engine wrote it. */
+  colour: string
   box: { w: number; h: number }
   text: string
+  facts: Facts
 }
 
 interface Collected {
   url: string
   template: string
-  width: number
-  height: number
+  /** What this file asked the viewport for. */
+  requestedWidth: number
+  /** What the page's own `window` reports — the figure the 390/1280 clause rests on. */
+  innerWidth: number
+  innerHeight: number
+  clientWidth: number
+  htmlWidth: number
+  devicePixelRatio: number
+  /** A direct witness that the page's own breakpoint evaluated differently at the two widths. */
+  minWidth48rem: boolean
   documentHeight: number
   rootStyle: string
   customProperties: Record<string, string>
   elements: number
+  /** The list of properties read per element: this IS the scope of the claim. */
+  properties: string[]
   samples: Sample[]
   styleAttributes: { path: string; style: string }[]
   images: { src: string; complete: boolean; naturalWidth: number }[]
+  browser: { name: string; version: string; userAgent: string }
 }
 
 interface Manifest {
@@ -125,16 +151,25 @@ function env(name: string): string {
   return value
 }
 
-async function collect(page: Page, template: string, width: number): Promise<Collected> {
+async function collect(
+  page: Page,
+  template: string,
+  width: number,
+): Promise<Omit<Collected, 'browser'> & { userAgent: string }> {
   return page.evaluate(
-    ({ template: name, width: w }) => {
+    ({ template: name, width: requestedWidth }) => {
       /*
-       * ⚠ THE PROPERTY LIST, AND THE SPLIT IN IT IS THE TICKET'S OWN BOUNDARY. `named` are the
-       * properties `QRPAGER-49A` enumerates; the rest are colour-bearing properties this file
-       * adds because the stated invariant says *every* colour-bearing computed style, and a
-       * list that stopped at the ones somebody thought of is the shape of a guard whose scope
-       * excludes where the damage lands. They are tagged rather than merged so a finding can
-       * be read against the ticket that asked for it.
+       * ⚠ THE PROPERTY LIST, AND THE SPLIT IN IT IS THE TICKET'S OWN BOUNDARY. `NAMED` are the
+       * properties `QRPAGER-49A` enumerates; `ALSO` are colour-bearing properties this file adds
+       * because the stated invariant says *every* colour-bearing computed style, and a list that
+       * stopped at the ones somebody thought of is the shape of a guard whose scope excludes
+       * where the damage lands.
+       *
+       * ⚠ AND IT IS A LIST, NOT "EVERY PROPERTY", ON PURPOSE. Iterating the whole computed style
+       * would sweep in user-agent internals — `-webkit-tap-highlight-color` computes to
+       * `rgba(0, 0, 0, 0.18)` on every element — and each one would be a finding nobody can fix
+       * and only Muhammad may rule on. The list is recorded in the artefact and printed in the
+       * transcript, so what is NOT in it is visible as an absence rather than hidden in a loop.
        */
       const NAMED = [
         'color',
@@ -155,13 +190,14 @@ async function collect(page: Page, template: string, width: number): Promise<Col
         'column-rule-color',
         'text-emphasis-color',
         '-webkit-text-fill-color',
+        'text-shadow',
       ]
 
       /*
-       * ⚠ `fill` AND `stroke` ARE COLLECTED ON SVG ELEMENTS ONLY, AND THAT IS A SCOPE
-       * DECISION RATHER THAN AN EXEMPTION. Both are inherited properties that COMPUTE on every
-       * HTML element — `getComputedStyle(document.body).fill` is `rgb(0, 0, 0)` on a page with
-       * no SVG in it — and no pixel can ever take that value, because there is nothing to fill.
+       * ⚠ `fill` AND `stroke` ARE COLLECTED ON SVG ELEMENTS ONLY, AND THAT IS A SCOPE DECISION
+       * RATHER THAN AN EXEMPTION. Both are inherited properties that COMPUTE on every HTML
+       * element — `getComputedStyle(document.body).fill` is `rgb(0, 0, 0)` on a page with no SVG
+       * in it — and no pixel can ever take that value, because there is nothing to fill.
        * Collecting it would put one unpaintable black on every element in the report and bury
        * the findings under it. This page carries no SVG at all today, so the scope is vacuous
        * here; it stops being vacuous the first time a template ships an icon.
@@ -170,30 +206,6 @@ async function collect(page: Page, template: string, width: number): Promise<Col
 
       const COLOUR =
         /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*(?:\([^()]*\)[^()]*)*\)|#[0-9a-f]{3,8}\b|\b(?:transparent|currentcolor|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|selecteditem|selecteditemtext|graytext|accentcolor|accentcolortext)\b/gi
-
-      /** `rgb(255, 0, 228)` -> `#ff00e4`; a zero alpha is `transparent` whatever the channels. */
-      const normalise = (raw: string): string => {
-        const match = /^rgba?\(([^)]+)\)$/i.exec(raw.trim())
-
-        if (match === null) return raw.trim().toLowerCase()
-
-        const parts = (match[1] ?? '')
-          .split(/[\s,/]+/)
-          .filter((piece) => piece !== '')
-          .map((piece) => Number.parseFloat(piece))
-        const alpha = parts.length > 3 ? parts[3] : 1
-
-        if (!Number.isFinite(alpha) || alpha === 0) return 'transparent'
-
-        const hex =
-          '#' +
-          parts
-            .slice(0, 3)
-            .map((channel) => Math.round(channel).toString(16).padStart(2, '0'))
-            .join('')
-
-        return alpha === 1 ? hex : `rgba(${parts.slice(0, 3).join(', ')}, ${String(alpha)})`
-      }
 
       const pathOf = (element: Element): string => {
         const parts: string[] = []
@@ -242,85 +254,38 @@ async function collect(page: Page, template: string, width: number): Promise<Col
       }
 
       /**
-       * Whether a value of this property, on this element, can reach a pixel.
-       *
-       * ⚠ IT IS RECORDED RATHER THAN FILTERED ON. A computed colour that cannot paint is still
-       * reported — the report says so and the reader decides — because *"it computes but never
-       * paints"* is itself the answer to the dead-control question this ticket asks, and a
-       * collector that dropped those samples would be answering it by not asking.
+       * The raw facts a paint verdict will need for this property — numbers and keywords as the
+       * engine reports them, with no judgement applied. What a fact MEANS is the classifier's.
        */
-      const paintsFor = (
-        style: CSSStyleDeclaration,
-        property: string,
-        token: string,
-        visible: boolean,
-        hasText: boolean,
-      ): { paints: boolean; reason: string } => {
-        if (!visible) return { paints: false, reason: 'the element has no box larger than 2px' }
-        if (token === 'transparent') return { paints: false, reason: 'the value is transparent' }
-
-        if (property === 'color' || property === '-webkit-text-fill-color') {
-          return hasText
-            ? { paints: true, reason: 'the element carries its own text' }
-            : { paints: false, reason: 'the element carries no text node of its own' }
-        }
-
-        if (property === 'background-color' || property === 'background-image') {
-          return { paints: true, reason: 'the element has a box to fill' }
-        }
-
-        if (property.startsWith('border-')) {
+      const factsFor = (style: CSSStyleDeclaration, property: string, hasText: boolean): Facts => {
+        if (property.startsWith('border-') && property.endsWith('-color')) {
           const side = property.split('-')[1] ?? ''
-          const borderWidth = Number.parseFloat(style.getPropertyValue(`border-${side}-width`))
-          const borderStyle = style.getPropertyValue(`border-${side}-style`)
 
-          return borderWidth > 0 && borderStyle !== 'none' && borderStyle !== 'hidden'
-            ? { paints: true, reason: `border-${side}: ${String(borderWidth)}px ${borderStyle}` }
-            : {
-                paints: false,
-                reason: `border-${side} is ${String(borderWidth)}px ${borderStyle}`,
-              }
+          return {
+            width: Number.parseFloat(style.getPropertyValue(`border-${side}-width`)),
+            style: style.getPropertyValue(`border-${side}-style`),
+          }
         }
 
-        if (property === 'outline-color') {
-          const outlineWidth = Number.parseFloat(style.outlineWidth)
-
-          return outlineWidth > 0 && style.outlineStyle !== 'none'
-            ? { paints: true, reason: `outline: ${String(outlineWidth)}px ${style.outlineStyle}` }
-            : {
-                paints: false,
-                reason: `outline is ${String(outlineWidth)}px ${style.outlineStyle} in this state`,
-              }
+        switch (property) {
+          case 'outline-color':
+            return { width: Number.parseFloat(style.outlineWidth), style: style.outlineStyle }
+          case 'text-decoration-color':
+            return { line: style.textDecorationLine }
+          case 'column-rule-color':
+            return {
+              width: Number.parseFloat(style.columnRuleWidth),
+              style: style.columnRuleStyle,
+            }
+          case 'text-emphasis-color':
+            return { style: style.getPropertyValue('text-emphasis-style') }
+          case 'color':
+          case '-webkit-text-fill-color':
+          case 'text-shadow':
+            return { hasText }
+          default:
+            return {}
         }
-
-        if (property === 'text-decoration-color') {
-          return style.textDecorationLine !== 'none'
-            ? { paints: true, reason: `text-decoration-line: ${style.textDecorationLine}` }
-            : { paints: false, reason: 'text-decoration-line is none' }
-        }
-
-        if (property === 'column-rule-color') {
-          const ruleWidth = Number.parseFloat(style.columnRuleWidth)
-
-          return ruleWidth > 0 && style.columnRuleStyle !== 'none'
-            ? { paints: true, reason: `column-rule: ${String(ruleWidth)}px` }
-            : { paints: false, reason: 'there is no column rule' }
-        }
-
-        if (property === 'box-shadow') return { paints: true, reason: 'a shadow is drawn' }
-        if (property === 'caret-color') {
-          return { paints: false, reason: 'a caret needs an editable element in focus' }
-        }
-        if (property === 'text-emphasis-color') {
-          return style.getPropertyValue('text-emphasis-style') !== 'none'
-            ? { paints: true, reason: 'text-emphasis-style is set' }
-            : { paints: false, reason: 'text-emphasis-style is none' }
-        }
-        if (property === 'fill' || property === 'stroke') {
-          return { paints: true, reason: 'an SVG shape' }
-        }
-
-        return { paints: true, reason: 'assumed to paint' }
       }
 
       const SKIP = new Set(['SCRIPT', 'STYLE', 'TITLE', 'META', 'LINK', 'TEMPLATE', 'NOSCRIPT'])
@@ -333,7 +298,7 @@ async function collect(page: Page, template: string, width: number): Promise<Col
         ...Array.from(document.body.querySelectorAll('*')),
       ].filter((element) => !SKIP.has(element.tagName))
 
-      for (const element of elements) {
+      elements.forEach((element, index) => {
         const attribute = element.getAttribute('style')
 
         if (attribute !== null && attribute !== '') {
@@ -341,8 +306,7 @@ async function collect(page: Page, template: string, width: number): Promise<Col
         }
 
         const own = getComputedStyle(element)
-        const box = element.getBoundingClientRect()
-        const visible = box.width > 2 && box.height > 2
+        const rect = element.getBoundingClientRect()
         const text = ownText(element)
         const isSvg = element.namespaceURI === 'http://www.w3.org/2000/svg'
 
@@ -353,11 +317,13 @@ async function collect(page: Page, template: string, width: number): Promise<Col
          * really generate a box: `content: none` means there is nothing to paint.
          */
         const pseudos: (string | null)[] = [null]
+
         for (const pseudo of ['::before', '::after']) {
           const content = getComputedStyle(element, pseudo).content
 
           if (content !== 'none' && content !== 'normal') pseudos.push(pseudo)
         }
+
         if (own.display === 'list-item' && own.listStyleType !== 'none') pseudos.push('::marker')
 
         for (const pseudo of pseudos) {
@@ -370,31 +336,24 @@ async function collect(page: Page, template: string, width: number): Promise<Col
 
             if (value === '' || value === 'none' || value === 'auto') continue
 
-            const tokens = value.match(COLOUR)
-
-            if (tokens === null) continue
-
-            for (const raw of tokens) {
-              const token = normalise(raw)
-              const { paints, reason } = paintsFor(style, property, token, visible, text !== '')
-
+            for (const colour of value.match(COLOUR) ?? []) {
               samples.push({
+                el: index,
                 path: pathOf(element),
                 shape: shapeOf(element, pseudo),
                 pseudo,
                 property,
                 named: NAMED.includes(property),
                 value,
-                token,
-                paints,
-                reason,
-                box: { w: Math.round(box.width), h: Math.round(box.height) },
+                colour,
+                box: { w: Math.round(rect.width), h: Math.round(rect.height) },
                 text,
+                facts: factsFor(style, property, text !== ''),
               })
             }
           }
         }
-      }
+      })
 
       /*
        * The twelve custom properties as the ROOT resolves them, which is the first link in the
@@ -424,12 +383,18 @@ async function collect(page: Page, template: string, width: number): Promise<Col
       return {
         url: location.href,
         template: name,
-        width: w,
-        height: window.innerHeight,
+        requestedWidth,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        clientWidth: document.documentElement.clientWidth,
+        htmlWidth: Math.round(document.documentElement.getBoundingClientRect().width),
+        devicePixelRatio: window.devicePixelRatio,
+        minWidth48rem: window.matchMedia('(min-width: 48rem)').matches,
         documentHeight: document.documentElement.scrollHeight,
         rootStyle: document.documentElement.getAttribute('style') ?? '',
         customProperties,
         elements: elements.length,
+        properties: [...NAMED, ...ALSO],
         samples,
         styleAttributes,
         images: Array.from(document.images).map((image) => ({
@@ -437,6 +402,7 @@ async function collect(page: Page, template: string, width: number): Promise<Col
           complete: image.complete,
           naturalWidth: image.naturalWidth,
         })),
+        userAgent: navigator.userAgent,
       }
     },
     { template, width },
@@ -470,7 +436,18 @@ test.describe(`the published page's colours, as a browser resolves them — ${MA
         { timeout: 20_000 },
       )
 
-      const collected = await collect(page, MANIFEST.template, width)
+      const { userAgent, ...collected } = await collect(page, MANIFEST.template, width)
+
+      /*
+       * ⚠ THE WIDTH IS READ FROM THE PAGE'S OWN WINDOW AND ASSERTED HERE AS WELL AS IN THE
+       * REPORT. A viewport that did not take — a context option overriding it, a device
+       * emulation that resized — would measure a different page under the same label, and the
+       * failure should name the width rather than surface later as a strange finding.
+       */
+      expect(
+        collected.innerWidth,
+        `the page reports window.innerWidth ${String(collected.innerWidth)}, not the ${label} this case asked for`,
+      ).toBe(width)
 
       /*
        * ⚠ **THE BYTES UNDER THE BROWSER ARE THE BYTES THE PUBLISHER WROTE**, by the
@@ -512,10 +489,23 @@ test.describe(`the published page's colours, as a browser resolves them — ${MA
         'no photograph decoded, so every image-bearing element was measured empty',
       ).toBeGreaterThan(0)
 
+      /*
+       * ⚠ THE BROWSER'S OWN ACCOUNT OF ITSELF, captured rather than inferred from an image tag.
+       * `Browser.version()` is the engine build; the user agent is what the page was told. A
+       * figure whose engine build is not beside it has no provenance, which is the argument
+       * `§3.1` row 9's method makes about the Lighthouse score and applies here equally.
+       */
+      const engine = page.context().browser()
+      const browser = {
+        name: engine?.browserType().name() ?? 'unknown',
+        version: engine?.version() ?? '',
+        userAgent,
+      }
+
       mkdirSync(OUT, { recursive: true })
       writeFileSync(
         join(OUT, `paint-${MANIFEST.template}-${label}.json`),
-        JSON.stringify(collected, null, 2),
+        JSON.stringify({ ...collected, browser }, null, 2),
       )
       await page.screenshot({
         path: join(OUT, `paint-${MANIFEST.template}-${label}.png`),

@@ -498,6 +498,28 @@ jobs:
         working-directory: .
         run: pnpm run gate:domain-move
 
+      # ================================================================================
+      # QRPAGER-49A -- DOES THE THEME REACH THE PIXEL? IN THIS JOB, FOR THE SAME REASON
+      # ================================================================================
+      #
+      # `scan-css` and QRPAGER-46's emitted/referenced closure are SOURCE guards: they prove no
+      # literal colour is written. This is the other claim -- that the value a restaurant chose
+      # is the value a browser PAINTS -- and it needs PHP, Postgres AND the object store (the
+      # sentinel theme is published through the real publisher), plus the production build of
+      # apps/site and a real Chromium, which is exactly what this job has and the frontend job
+      # does not.
+      #
+      # It enumerates the arrangements FROM `LandingTemplate::values()`, so QRPAGER-49's three
+      # redesigns, and any fourth template, are covered the day they exist. Its exit status is
+      # zero only when no colour-bearing computed value is anything but a sentinel or the one
+      # declared non-themed member, AND the dead controls are exactly the frozen baseline.
+      #
+      # ⚠ `tools/gate/test/ci-parity.test.mjs` ASSERTS THIS STEP IS IN THIS JOB. A gate nobody is
+      # required to run is a gate in name only, which is `R-126`'s shape.
+      - name: The theme reaches the rendered pixel, and no colour picker is dead
+        working-directory: .
+        run: pnpm run gate:theme-paint
+
   frontend:
     name: Frontend workspace — lint, types, Vitest, Playwright, build
     runs-on: ubuntu-26.04

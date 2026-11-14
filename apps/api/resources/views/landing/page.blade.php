@@ -87,7 +87,7 @@
 --}}
 {{-- (R-131 is closed: the element is at the top of this block's note.) --}}
 <style>
-:root{color-scheme:light dark}
+:root{color-scheme:light dark;color:var(--color-text)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--color-background,#ffffff);color:var(--color-text,#111111);
 font-family:var(--font-body,system-ui,sans-serif);line-height:1.5}

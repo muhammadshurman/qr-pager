@@ -158,6 +158,13 @@ export default defineConfig({
         'tools/design-tokens/*.mjs',
         'tools/design-tokens/bin/*.mjs',
         /**
+         * `QRPAGER-49A`'s classifier and reporter -- the code that DECIDES what counts as a
+         * finding. Muhammad's blocker 2: 355 lines, no tests and not in this list, *"and it is
+         * the artefact that DECIDES"*, so a mis-partition would have made every number in the
+         * report wrong with nothing able to notice. `tools/landing/test/` drives both.
+         */
+        'tools/landing/*.mjs',
+        /**
          * Task 9's own code. `§6` asks for coverage "on code this task added", and the
          * previous comment's own lesson is that a figure measured over a SUBSET of it is not
          * that figure -- 96.73% once omitted ~990 lines of 8a's code.

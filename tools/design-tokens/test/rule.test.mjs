@@ -1275,9 +1275,18 @@ describe('CSS out of a Blade template — R-267', () => {
      * is a test that can leave one behind.
      */
     const source = readFileSync(landing, 'utf8')
+    /*
+     * ⚠ ANCHORED ON THE `:root` RULE, NOT ON ITS CURRENT TEXT. This used to replace the literal
+     * `:root{color-scheme:light dark}`, and `QRPAGER-49A` — which put `color:var(--color-text)`
+     * on that same rule so the root stops keeping the user agent's black — broke the anchor, not
+     * the scanner: `injected` came back byte-identical to `source` and the case failed on its
+     * own `not.toBe(source)` guard. A proof that fails because the product line it points at was
+     * legitimately edited is a proof that will be "fixed" by deleting it next time; matching the
+     * rule rather than its contents is what lets the rule change without this changing.
+     */
     const injected = source.replace(
-      ':root{color-scheme:light dark}',
-      ':root{color-scheme:light dark}\n.landing-gap-proof{color:#ff00ff;padding:13px;font-size:17px}',
+      /(:root\{[^}]*\})/,
+      '$1\n.landing-gap-proof{color:#ff00ff;padding:13px;font-size:17px}',
     )
 
     expect(injected).not.toBe(source)

@@ -13,36 +13,88 @@ declare(strict_types=1);
  * pixel**, which is a different claim about a different artefact — the bytes a visitor
  * receives, resolved by a browser. This script produces the subject of that claim.
  *
+ * ================================================================================
+ * ⚠⚠ WHICH DATABASE ROLE THIS RUNS AS, WHICH PHASE 1'S DOCBLOCK GOT WRONG
+ * ================================================================================
+ *
+ * Phase 1 said this script *"writes as the database owner"*. **It does not, and Muhammad's
+ * review of 2026-11-14 asked precisely the question that exposed it.** The sentence was carried
+ * over from `bin/publish-landing-fixture`'s header; the code never opens an owner connection.
+ *
+ * Every statement runs through `LandingPages`, and every `LandingPages` read and write opens
+ * `withTenant($tenantId, …)` with **no connection argument**, which
+ * `TenantContext::run()` resolves to `DatabaseRoles::connection('app')` — the APP role, the one
+ * the web process holds, under FORCE ROW LEVEL SECURITY, with `app.tenant_id` set per
+ * transaction. So:
+ *
+ *   - **It sets tenant context; it does not use a bypass.** There is no `withoutTenantScope()`
+ *     in this file and no `pgsql_owner` anywhere in it. `§4 › Tenancy` allows exactly those two
+ *     routes and this takes the first.
+ *   - **Under RLS the app role sees only this tenant's rows**, so the question *"the owner sees
+ *     no rows either"* does not arise: this is not the owner.
+ *   - **No statement it reaches is a bulk `UPDATE` or `DELETE`** (`§4 › Postgres traps`). Its
+ *     one statement of its own is `select name from tenants where id = ?`; the writes are
+ *     `LandingPages::saveDraft()`'s `UPDATE … WHERE tenant_id = ?` and `publish()`'s
+ *     `UPDATE … WHERE tenant_id = ? AND status = ? AND published_at is not distinct from ?`.
+ *     Each names a column of its own table, and there is no `DELETE` on the path.
+ *   - `SentinelThemeScriptTest` asserts the first and third of those against this file's own
+ *     source, so a later edit that opened an owner connection fails a test rather than
+ *     contradicting this paragraph.
+ *
+ * (`php artisan studio:demo-tenant`, which the orchestrator runs to seed and to restore, is a
+ * different program and DOES write as the owner — through `withTenant($id, …, 'pgsql_owner')`,
+ * per tenant, which is `§2.10`'s first pattern. It is `QRPAGER-48`'s and is unchanged.)
+ *
+ * ================================================================================
+ * WHY IT IS SAFE TO RUN, AND WHY `FixtureScriptGuardTest` ADMITS IT
+ * ================================================================================
+ *
+ * Three independent halves, because a control that is only correct while its caller is correct
+ * is not a control:
+ *
+ *   1. **Environment.** It refuses unless `APP_ENV` is `local` or `testing`, failing CLOSED on
+ *      an unset or unrecognised value, before it touches the database or the bucket.
+ *   2. **Identity.** It takes NO tenant argument. The tenant is `SeedDemoTenantCommand::
+ *      TENANT_ID`, a fixed uuid, so a caller cannot aim it at another restaurant — and it
+ *      REFUSES an extra argument rather than ignoring one, so a caller who tries learns that
+ *      it was not honoured instead of believing it was. A production database has no such
+ *      tenant unless somebody ran the demo seeder there, and that seeder carries the same
+ *      environment guard.
+ *   3. **Role.** The app role under RLS, per the section above: even a mistake here could not
+ *      read or write a second tenant's rows.
+ *
+ * `FixtureScriptGuardTest`'s exact set is a DERIVED list of the scripts that carry the guard,
+ * held exact so a writer cannot be added without a reader seeing it. Admitting this script is
+ * safe because (1) is driven under `production` and under every unrecognised environment by
+ * that file's own cases, and `SentinelThemeScriptTest` drives (2) and (3) and asserts that a
+ * refusal leaves this tenant's row and its published pointer byte-identical — which the generic
+ * case does not, since it counts `users` and `tenants` and this script writes neither.
+ *
+ * ================================================================================
+ * WHAT IT DOES
+ * ================================================================================
+ *
  * ⚠ **A REAL THEME ON A REAL TENANT, PUBLISHED BY `LandingPages::publish()`.** Not a test
  * fixture, not a stubbed resolver, not `LandingRenderer` called directly: the six values are
  * written to `landing_pages.draft_document` through `saveDraft()` — the same call
- * `ThemePage::save()` makes — and then published through the same two phases a restaurant's
- * own Publish button runs. A harness that rendered the page itself would be measuring its own
- * idea of the path, which is the defect `bin/publish-landing-fixture` records in its own
- * docblock for the same reason.
+ * `ThemePage::save()` makes — and then published through the same phases a restaurant's own
+ * Publish button runs. A harness that rendered the page itself would be measuring its own idea
+ * of the path.
  *
- * ⚠ **THE DEMO RESTAURANT, AND IT IS NAMED BY IDENTITY RATHER THAN BY A SECOND COPY OF ITS
- * SLUG.** `QRPAGER-48`'s ruling — *"an e2e fixture must never again be the thing I am asked to
- * judge a design from"* — is why this measures the demo tenant: it carries all seven block
- * types and its own imagery, so every colour-bearing element the renderer can produce is on
- * the page. `SeedDemoTenantCommand::TENANT_ID` is read from that command, so there is no
- * second place that knows which restaurant this is.
+ * ⚠ **THE DEMO RESTAURANT**, `QRPAGER-48`'s ruling — *"an e2e fixture must never again be the
+ * thing I am asked to judge a design from"* — applied to a measurement of the published page
+ * too: it carries all seven block types and its own imagery, so every colour-bearing element
+ * the renderer can produce is on the page.
  *
  * ⚠ **ONE DOCUMENT, UNCHANGED BUT FOR TWO MEMBERS.** The stored draft is read, `template` and
  * `theme` are replaced, and everything else — every block, every media reference, the SEO, the
- * logo — is written back exactly as it was. The invariant under measurement is *one unchanged
- * tenant document under every arrangement*, and a document this script composed would measure
- * this script.
+ * logo — is written back exactly as it was. The invariant is *one unchanged tenant document
+ * under every arrangement*, and a document this script composed would measure this script.
  *
  * ⚠ **IT RESTORES NOTHING, DELIBERATELY.** When it returns, the demo restaurant's live page
  * carries the sentinel theme. `tools/gate/bin/theme-paint-proof` restores it by re-running
  * `php artisan studio:demo-tenant`, which is idempotent and is the only thing that knows what
- * the demo restaurant's own theme is. A restore written here would be a second opinion about
- * that, and would run even when the caller wanted the sentinel page left up to look at.
- *
- * ⛔ LOCAL AND TESTING ONLY, failing CLOSED on an unset or unrecognised `APP_ENV` — the guard
- * every sibling here carries (`§11` round one SEC M-6): it bootstraps the real kernel, writes
- * as the database owner and publishes to the real object store.
+ * the demo restaurant's own theme is.
  *
  * USAGE:  php bin/publish-sentinel-theme --templates
  *         php bin/publish-sentinel-theme <template>
@@ -56,6 +108,7 @@ use App\Features\Landing\LandingPages;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\SentinelTheme;
 
 require __DIR__.'/../vendor/autoload.php';
 
@@ -66,44 +119,38 @@ $app->make(Kernel::class)->bootstrap();
 if (! app()->environment('local', 'testing')) {
     fwrite(
         STDERR,
-        "refusing to run: this writes to the real object store as the database owner and is for local and testing only.\n"
+        "refusing to run: this publishes to the real object store and is for local and testing only.\n"
         ."  APP_ENV is '".(string) config('app.env')."'.\n"
     );
 
     exit(1);
 }
 
+if (! class_exists(SentinelTheme::class)) {
+    fwrite(STDERR, "refusing to run: Tests\\Support\\SentinelTheme is not loadable; install dev dependencies.\n");
+
+    exit(1);
+}
+
 /*
- * ================================================================================
- * ⚠ THE SIX SENTINELS, AND THIS IS THE ONLY PLACE THEY ARE WRITTEN
- * ================================================================================
- *
- * They travel to the browser and to the reporter as DATA, on this script's own stdout, so
- * neither the spec nor the report carries a copy that could drift from what was published.
- *
- * ⚠ **"VALUES THAT APPEAR NOWHERE ELSE IN THE PRODUCT" IS A MEASURED CLAIM, NOT A STYLE.**
- * Each of the six was grepped case-insensitively over the whole repository — excluding
- * `vendor/`, `node_modules/`, `.git/`, `storage/` and `build/` — on 2026-11-14, and each
- * returned zero hits. That is what makes a sentinel found in a computed value attributable:
- * it can only have come from the theme, because nothing else in this product can emit it.
- *
- * ⚠ **AND THEY ARE FAR APART IN RGB ON PURPOSE.** Six near-neighbours would make a
- * misattribution — the accent painted where the muted was meant — read as a pass. These six
- * share no channel pair, so a swapped role is visible in the report rather than plausible.
- *
- * Only the six COLOUR roles are set. The fonts, the two radii, the section space and the
- * heading size stay absent, so `ThemeDefaults::fill()` supplies them exactly as it does for a
- * restaurant that has set no theme — this measures colour, and a page whose geometry changed
- * under it would be measuring two things at once.
+ * ⚠ THE SENTINELS COVER EVERY COLOUR ROLE, AND A GAP IS REFUSED RATHER THAN MEASURED AROUND.
+ * A colour token added to `ThemeTokens::NAMES` with no sentinel would be a studio picker this
+ * harness never exercises — a dead control it could not even report. Refused here as well as in
+ * `SentinelThemeTest`, because this is what a run actually executes.
  */
-$sentinels = [
-    'color.background' => '#ff00e4',
-    'color.surface' => '#00ff95',
-    'color.text' => '#1400ff',
-    'color.muted' => '#ff7a00',
-    'color.accent' => '#00e5ff',
-    'color.accent_text' => '#7d00ff',
-];
+$sentinels = SentinelTheme::values();
+$roles = SentinelTheme::colourRoles();
+
+if (array_keys($sentinels) !== $roles) {
+    fwrite(
+        STDERR,
+        "refusing to run: the sentinel table does not cover the contract's colour roles.\n"
+        .'  contract: '.implode(', ', $roles)."\n"
+        .'  sentinel: '.implode(', ', array_keys($sentinels))."\n"
+    );
+
+    exit(1);
+}
 
 /*
  * ⚠ THE ENUM IS THE LIST, AND THIS MODE EXISTS SO NOTHING DOWNSTREAM HOLDS A SECOND ONE.
@@ -117,12 +164,27 @@ if (($argv[1] ?? '') === '--templates') {
     exit(0);
 }
 
-$template = LandingTemplate::tryFrom((string) ($argv[1] ?? ''));
+/*
+ * ⚠ AN EXTRA ARGUMENT IS REFUSED, NOT IGNORED. The natural thing to try is a tenant uuid, and
+ * a script that silently ignored it would let the caller believe it had been honoured. It is
+ * not: the tenant is fixed below.
+ */
+if (count($argv) !== 2) {
+    fwrite(
+        STDERR,
+        "refusing to run: exactly one argument is accepted, a template; this script takes no tenant.\n"
+        .'  the templates are: '.implode(', ', LandingTemplate::values())."\n"
+    );
+
+    exit(1);
+}
+
+$template = LandingTemplate::tryFrom((string) $argv[1]);
 
 if ($template === null) {
     fwrite(
         STDERR,
-        "refusing to run: '".(string) ($argv[1] ?? '')."' is not a LandingTemplate case.\n"
+        "refusing to run: '".(string) $argv[1]."' is not a LandingTemplate case.\n"
         .'  the cases are: '.implode(', ', LandingTemplate::values())."\n"
     );
 

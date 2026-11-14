@@ -22,7 +22,28 @@
 #      sentinel colours, through `LandingPages::publish()`
 #   4. drives a real Chromium at 390 and at 1280 against the published bytes and collects every
 #      colour-bearing COMPUTED value
-#   5. partitions what it found: a sentinel, a declared non-themed member, or a finding
+#   5. partitions what it found: a sentinel, a declared non-themed member, or a finding — and
+#      reports, per template, each of the six colour roles by name and whether the rendered
+#      page PAINTS with it (the dead-control check, `tools/landing/paint-report.mjs`)
+
+# THE EXIT STATUS IS THE VERDICT, and it is zero only when BOTH hold:
+#
+#   - category (c) is empty: every colour-bearing computed value is a sentinel or the declared
+#     non-themed member, at 390 and at 1280, for every template the enum names
+#   - the dead controls are EXACTLY `tools/landing/paint-baseline.json`: no new one, no stale
+#     entry, no entry for a template that no longer exists
+#
+# ⚠ THE BASELINE IS NOT AN EXEMPTION. It lists the two controls Muhammad ruled are not to be
+# fixed (their designs are replaced by QRPAGER-49), by name, with an owner, and it can only
+# shrink. Replacing the arrangements makes every entry stale-by-absence and red, which is how
+# this becomes QRPAGER-49's acceptance criterion rather than a note somebody has to remember.
+#
+# ⚠ WHAT IT CANNOT SEE, stated in the output of every run and in the PR body: raster imagery,
+# browser-default paint, anything behind a query that is not 390 or 1280, and every state that is
+# not rendered — hover, focus, error, empty. A role painted only in one of those counts as
+# UNPAINTED here.
+#
+# `tools/gate/bin/theme-paint-revert-proof` is this script SHOWN TO REDDEN, once per template.
 #
 # WHAT IT NEEDS RUNNING, and it FAILS rather than skipping when one is absent — `tools/browsers/
 # bin/e2e`'s clause, *a reasoned skip is not a measurement*:
