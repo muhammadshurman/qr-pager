@@ -862,6 +862,63 @@ describe('compareBaseline — the three ways the frozen allowance is red', () =>
     ])
   })
 
+  /*
+   * QRPAGER-49B, item 3: *"an entry naming a template or role absent from LandingTemplate must
+   * redden, never be skipped."* The cases above name a template or a role that is absent; these
+   * are the shapes an entry can be malformed in, each of which is a way to be skipped by a check
+   * that only looks at entries it understands. The browser-level proof is
+   * `tools/gate/bin/theme-paint-baseline-proof`; these are its cheap siblings.
+   */
+  it('is RED on a malformed entry — a missing, null or differently-cased name is GONE, never skipped', () => {
+    for (const entry of [
+      { role: 'color.surface' },
+      { template: 'rail' },
+      { template: null, role: 'color.surface' },
+      { template: 'rail', role: undefined },
+      { template: 'Rail', role: 'color.surface' },
+      { template: 'rail', role: 'COLOR.SURFACE' },
+      {},
+    ]) {
+      const verdict = compareBaseline([], { dead: [entry] }, templates, roles)
+
+      expect(verdict.gone, JSON.stringify(entry)).toEqual([entry])
+      expect(verdict.stale, JSON.stringify(entry)).toEqual([])
+      expect(verdict.unexpected, JSON.stringify(entry)).toEqual([])
+    }
+  })
+
+  it('is RED on EVERY entry when the harness enumerated nothing — an empty list is not a pass', () => {
+    const wide = {
+      dead: [
+        { template: 'rail', role: 'color.surface' },
+        { template: 'ember', role: 'color.accent_text' },
+      ],
+    }
+
+    expect(compareBaseline([], wide, [], roles).gone).toEqual(wide.dead)
+    expect(compareBaseline([], wide, templates, []).gone).toEqual(wide.dead)
+  })
+
+  it('puts every entry in exactly ONE bucket, so a violation is counted once', () => {
+    const mixed = {
+      dead: [
+        { template: 'rail', role: 'color.surface' },
+        { template: 'ember', role: 'color.accent_text' },
+        { template: 'gazebo', role: 'color.surface' },
+      ],
+    }
+    const verdict = compareBaseline(
+      [{ template: 'ember', role: 'color.accent_text' }],
+      mixed,
+      templates,
+      roles,
+    )
+
+    expect(verdict.stale).toEqual([{ template: 'rail', role: 'color.surface' }])
+    expect(verdict.gone).toEqual([{ template: 'gazebo', role: 'color.surface' }])
+    expect(verdict.unexpected).toEqual([])
+  })
+
   it('treats no baseline at all as "nothing is allowed dead"', () => {
     expect(
       compareBaseline([{ template: 'rail', role: 'color.surface' }], null, templates, roles)

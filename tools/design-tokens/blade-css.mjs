@@ -104,16 +104,35 @@ const BLADE_DIRECTIVES = [
   'endenv',
 ]
 
+/**
+ * Blank every CSS comment INSIDE ONE KEPT REGION, an unterminated one to the region's end.
+ *
+ * ⚠ DONE PER REGION, BEFORE THE REGIONS ARE JOINED — the §11 security round's M-2. `scan-css`
+ * strips comments from the MASKED text, where the gaps between regions are spaces, so `/*` in
+ * one attribute and `*\/` in another bridged everything between them and hid it. A browser ends
+ * an unterminated comment at the end of its attribute or element, which is what this does.
+ */
+function blankComments(region) {
+  return region.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, blank)
+}
+
 /** Replace every non-newline character of `text` with a space, so offsets never move. */
 function blank(text) {
   return String(text).replace(/[^\n]/g, ' ')
 }
 
 /**
- * Everything in `source` that is not CSS inside a `<style>` element, blanked.
+ * Everything in `source` that is not CSS — inside a `<style>` element OR inside a `style=""`
+ * attribute — blanked.
  *
  * The result has the same length and the same newline positions as `source`, so a finding's
  * line and column are the template's own.
+ *
+ * ⚠ THE ATTRIBUTE HALF IS `QRPAGER-49B` / `R-322`. This function used to keep `<style>` BODIES
+ * only, so `<p style="color:#123456">` — a literal in the one form that reaches the DOM without
+ * passing through any stylesheet — was invisible to the scanner while `§12` forbids it. Measured
+ * before the change: injected into `page.blade.php`, `scan-css` exited 0. A `style` attribute's
+ * value is a declaration list, so it is handed to the same CSS patterns, unchanged.
  */
 export function maskBladeCss(source) {
   /*
@@ -129,10 +148,22 @@ export function maskBladeCss(source) {
    * possibility rather than the symptom, and `landing-blade-literals.blade.php.fixture`
    * carries both quoted tags so that it stays removed.
    */
-  const text = String(source).replace(/\{\{--[\s\S]*?--\}\}/g, blank)
+  const comments = String(source).replace(/\{\{--[\s\S]*?--\}\}/g, blank)
 
   /*
-   * 1. Everything outside a `<style>` BODY becomes spaces.
+   * ⚠ THE BLADE CONSTRUCTS ARE BLANKED BEFORE THE ATTRIBUTE PASS, NOT AFTER IT, so that
+   * `style="{{ $a["b"] }}"` — a quote INSIDE an echo — does not end the attribute early and
+   * leave the rest of the echo to be read as CSS. The echoes inside a `<style>` body were
+   * always blanked; doing it first changes nothing for them and is what makes the attribute
+   * reader safe to write at all.
+   */
+  const text = comments
+    .replace(/\{!![\s\S]*?!!\}/g, blank)
+    .replace(/\{\{[\s\S]*?\}\}/g, blank)
+    .replace(/@php\b[\s\S]*?@endphp\b/gi, blank)
+
+  /*
+   * 1. Everything outside a `<style>` BODY or a `style` ATTRIBUTE VALUE becomes spaces.
    *
    * ⚠ THE OPENING TAG IS CAPTURED SEPARATELY RATHER THAN SEARCHED FOR WITH `indexOf('>')`,
    * which was the first version and is wrong for `<style data-x="a>b">`: the body would have
@@ -140,33 +171,112 @@ export function maskBladeCss(source) {
    * mistake would have shown up as a finding inside an attribute rather than as an error.
    */
   const styleTag = /(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi
-  let masked = ''
-  let cursor = 0
+  const keep = []
+  const elements = []
   let match
 
   while ((match = styleTag.exec(text)) !== null) {
     const bodyStart = match.index + match[1].length
-    const bodyEnd = bodyStart + match[2].length
 
-    masked += blank(text.slice(cursor, bodyStart))
-    masked += text.slice(bodyStart, bodyEnd)
-    cursor = bodyEnd
+    keep.push([bodyStart, bodyStart + match[2].length])
+    elements.push([match.index, match.index + match[0].length])
+  }
+
+  /*
+   * 2. `style="…"`, `style='…'` and the unquoted `style=value`, anywhere OUTSIDE a `<style>`
+   * element — a `[style="x"]` attribute SELECTOR in a stylesheet is not an attribute.
+   *
+   * `(?<![\w-])` keeps `data-style=` out and lets `:style=` and `x-bind:style=` in. ⚠ THAT IS
+   * NOT "OVER-REPORTS RATHER THAN UNDER-REPORTS", WHICH IS WHAT THIS COMMENT SAID until the
+   * `§11` round measured it: a bound value is JS, and `:style="{ color: 'red' }"` reads as a
+   * string that is blanked, so a NAMED colour in object syntax is missed (the hex form is
+   * caught). It is listed in `R-326`. The character
+   * AFTER the value — the closing quote, or the delimiter of an unquoted one — is kept as a
+   * `;`, so two attributes never run together into one declaration: without it the value of
+   * `style="font-family:x"` and the next attribute's `color:red` are one string to the reader,
+   * and the font-family exemption would swallow the colour.
+   */
+  const attribute = /(?<![\w-])style\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>=`]+))/dgi
+
+  while ((match = attribute.exec(text)) !== null) {
+    if (elements.some(([from, to]) => match.index >= from && match.index < to)) continue
+
+    const [from, to] = match.indices.slice(1).find((range) => range !== undefined)
+
+    keep.push([from, to])
+    keep.push([to, to + 1, ';'])
+  }
+
+  /*
+   * 3. `@style([...])` — BLADE'S OWN INLINE-STYLE DIRECTIVE, which renders as a `style="…"`
+   * attribute and which the §11 round found invisible: it is on the blank-the-directive list
+   * below, and the attribute regex above needs `style=`. So `<p @style(['color:#ff00ff'])>`
+   * was a literal in the one form a template author is MOST likely to write. Each quoted
+   * string in its argument is a declaration list (`'color:red'`, or the key of
+   * `'font-weight:bold' => $on`), so its CONTENTS are kept and the quotes become separators;
+   * the PHP around them is blanked like any other PHP.
+   */
+  const styleDirective = /@style\s*\(/gi
+
+  while ((match = styleDirective.exec(text)) !== null) {
+    if (elements.some(([from, to]) => match.index >= from && match.index < to)) continue
+
+    const open = match.index + match[0].length - 1
+    let depth = 0
+    let quote = null
+    let close = -1
+
+    for (let at = open; at < text.length; at++) {
+      const char = text[at]
+
+      if (quote !== null) {
+        if (char === '\\') at++
+        else if (char === quote) quote = null
+      } else if (char === "'" || char === '"') quote = char
+      else if (char === '(') depth++
+      else if (char === ')' && --depth === 0) {
+        close = at
+
+        break
+      }
+    }
+
+    if (close === -1) continue
+
+    const strings = /'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/dg
+    const args = text.slice(open, close)
+    let string
+
+    while ((string = strings.exec(args)) !== null) {
+      const [from, to] = string.indices.slice(1).find((range) => range !== undefined)
+
+      keep.push([open + from, open + to])
+      keep.push([open + to, open + to + 1, ';'])
+    }
+  }
+
+  keep.sort((x, y) => x[0] - y[0])
+
+  let masked = ''
+  let cursor = 0
+
+  for (const [from, to, fill] of keep) {
+    if (from < cursor) continue
+
+    masked += blank(text.slice(cursor, from))
+    masked +=
+      fill === undefined
+        ? blankComments(text.slice(from, to))
+        : fill.padEnd(to - from, ' ').slice(0, to - from)
+    cursor = to
   }
 
   masked += blank(text.slice(cursor))
 
-  // 2. Inside what is left, blank every Blade construct.
-
-  //    Blade comments are already gone — see the note at the top of this function, which is
-  //    also why a comment's prose about `#f5f5f5` is not a finding.
-  masked = masked.replace(/\{!![\s\S]*?!!\}/g, blank)
-  masked = masked.replace(/\{\{[\s\S]*?\}\}/g, blank)
-
-  //    `@php … @endphp` as a block, so the PHP between them is not read as CSS.
-  masked = masked.replace(/@php\b[\s\S]*?@endphp\b/gi, blank)
-
-  //    Then the remaining directives, by NAME, with their parenthesised argument if present.
-  //    `@media` and the other CSS at-rules are not in the list and survive.
+  // 3. Then the remaining directives, by NAME, with their parenthesised argument if present.
+  //    `@media` and the other CSS at-rules are not in the list and survive. Blade comments,
+  //    echoes and `@php` blocks are already gone — see above, which is also why a comment's
+  //    prose about `#f5f5f5` is not a finding.
   masked = blankDirectives(masked)
 
   return masked
@@ -229,14 +339,29 @@ function blankDirectives(text) {
 /**
  * Does this template carry a `<style>` element at all?
  *
- * Used by the walk so that the hundreds of Blade templates with no CSS in them are not
- * scanned, reported on, or counted towards a floor.
+ * Kept for the tests and for the count `scan-css` prints; the WALK now asks `hasInlineCss`.
  */
 export function hasStyleBlock(source) {
   return styleBodyCount(source) > 0
 }
 
-/** The ranges of a template that `maskBladeCss` keeps, for the tests to assert on. */
+/** Does this template emit a `style` attribute — literal text, or an echo — anywhere? */
+export function hasStyleAttribute(source) {
+  return styleAttributeCount(source) > 0
+}
+
+/**
+ * Does this template carry CSS in either form? Used by the walk so that the hundreds of Blade
+ * templates with no CSS in them are not scanned, reported on, or counted towards a floor —
+ * and so that a template which gains its FIRST inline `style=""` is scanned from that commit
+ * on, which is what `R-322` asked for: the file count widens when a template starts emitting
+ * one, and a count that does not move is itself the evidence the walk went blind.
+ */
+export function hasInlineCss(source) {
+  return hasStyleBlock(source) || hasStyleAttribute(source)
+}
+
+/** The number of `<style>` elements, for the tests to assert on. */
 export function styleBodyCount(source) {
   // Comment-blanked first, for the reason `maskBladeCss` records: a tag quoted in prose is
   // not a tag, and counting it as one is how that function found two elements in one file.
@@ -244,4 +369,18 @@ export function styleBodyCount(source) {
   const found = text.match(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi)
 
   return found === null ? 0 : found.length
+}
+
+/** The number of `style` attributes and `@style(…)` directives outside any `<style>` element. */
+export function styleAttributeCount(source) {
+  const text = String(source)
+    .replace(/\{\{--[\s\S]*?--\}\}/g, blank)
+    .replace(/\{!![\s\S]*?!!\}/g, blank)
+    .replace(/\{\{[\s\S]*?\}\}/g, blank)
+    .replace(/@php\b[\s\S]*?@endphp\b/gi, blank)
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, blank)
+  const found = text.match(/(?<![\w-])style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>=`]+)/gi)
+  const directives = text.match(/@style\s*\(/gi)
+
+  return (found === null ? 0 : found.length) + (directives === null ? 0 : directives.length)
 }

@@ -1,0 +1,83 @@
+================================================================================
+theme-paint-baseline-proof — THE BASELINE, SHOWN WRONG IN EVERY WAY. QRPAGER-49B.
+================================================================================
+
+tree     : committed, at 819f508
+baseline : tools/landing/paint-baseline.json  (rail/color.surface, ember/color.accent_text)
+
+================================================================================
+BASELINE — the unmodified tree must be GREEN
+================================================================================
+theme-paint-proof exit 0 on the unmodified tree
+  theme-paint: the dead controls are exactly the frozen baseline (2).
+
+================================================================================
+PLANT 1 of 5 — STALE: rail now paints color.surface
+================================================================================
+  the entry says  : rail / color.surface is dead because `.rail .card{background:none}`
+  the plant       : delete `background:none;` from that rule, so the card keeps its surface
+  diff:
+    -.rail .card{background:none;border-radius:0;padding-inline:0}
+    +.rail .card{border-radius:0;padding-inline:0}
+  theme-paint-proof exit 1
+  the RED line(s), verbatim:
+      RED  STALE baseline entry: rail / color.surface now paints — delete the entry
+  verdict   : theme-paint: 1 dead-control baseline violation(s).
+  reverted: apps/api/resources/views/landing/page.blade.php and tools/landing/paint-baseline.json are byte-identical to HEAD
+
+================================================================================
+PLANT 2 of 5 — STALE: ember now paints color.accent_text
+================================================================================
+  the entry says  : ember / color.accent_text is dead because TWO rules re-paint the call to action, either alone enough:
+                    `.ember-hero .cta{…;color:…}` and `.ember-hero a{color:…}` (the call to action is an <a>)
+  the plant       : delete BOTH. (Deleting only the first was tried first and the gate stayed green -- that is how
+                    the entry's mechanism, which named one rule, was found to be incomplete.)
+  diff:
+    -.ember-hero .cta{background:var(--color-background);color:var(--color-text)}
+    -.ember-hero a{color:var(--color-background)}
+    +.ember-hero .cta{}
+    +.ember-hero a{}
+  theme-paint-proof exit 1
+  the RED line(s), verbatim:
+      RED  STALE baseline entry: ember / color.accent_text now paints — delete the entry
+  verdict   : theme-paint: 1 dead-control baseline violation(s).
+  reverted: apps/api/resources/views/landing/page.blade.php and tools/landing/paint-baseline.json are byte-identical to HEAD
+
+================================================================================
+PLANT 3 of 5 — GONE: an entry for a TEMPLATE that LandingTemplate does not have
+================================================================================
+  the plant       : gazebo / color.surface appended to tools/landing/paint-baseline.json
+  theme-paint-proof exit 1
+  the RED line(s), verbatim:
+      RED  baseline entry for gazebo / color.surface names a template or role that is no longer enumerated — delete the entry
+  verdict   : theme-paint: 1 dead-control baseline violation(s).
+  reverted: apps/api/resources/views/landing/page.blade.php and tools/landing/paint-baseline.json are byte-identical to HEAD
+
+================================================================================
+PLANT 4 of 5 — GONE: an entry for a ROLE the theme does not have
+================================================================================
+  the plant       : tile / color.nonexistent appended to tools/landing/paint-baseline.json
+  theme-paint-proof exit 1
+  the RED line(s), verbatim:
+      RED  baseline entry for tile / color.nonexistent names a template or role that is no longer enumerated — delete the entry
+  verdict   : theme-paint: 1 dead-control baseline violation(s).
+  reverted: apps/api/resources/views/landing/page.blade.php and tools/landing/paint-baseline.json are byte-identical to HEAD
+
+================================================================================
+PLANT 5 of 5 — NEW: a dead control the baseline does not list
+================================================================================
+  the plant       : the ember / color.accent_text entry deleted from tools/landing/paint-baseline.json
+  theme-paint-proof exit 1
+  the RED line(s), verbatim:
+      RED  a NEW dead control: ember / color.accent_text paints nowhere and is not in the baseline
+  verdict   : theme-paint: 1 dead-control baseline violation(s).
+  reverted: apps/api/resources/views/landing/page.blade.php and tools/landing/paint-baseline.json are byte-identical to HEAD
+
+================================================================================
+AFTER ALL FIVE REVERTS — green again
+================================================================================
+theme-paint-proof exit 0 on the reverted tree
+  theme-paint: the dead controls are exactly the frozen baseline (2).
+
+theme-paint-baseline-proof: 5 of 5 wrong baselines reddened the real gate, each for its own reason and no other; the tree is unchanged.
+EXIT=0

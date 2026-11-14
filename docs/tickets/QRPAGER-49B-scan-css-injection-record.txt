@@ -1,0 +1,116 @@
+================================================================================
+scan-css-injection-proof — QRPAGER-49B
+================================================================================
+tree: committed, at 819f508
+
+BASELINE (unmodified tree): scan-css exit 0, 14 file(s)
+  design tokens: 14 file(s) scanned (4 Blade template(s) with a <style> element or a style attribute), no hard-coded values; 36 pre-existing literal(s) frozen by the dated baseline.
+
+=== R-322: an inline style attribute ===============================================
+
+--------------------------------------------------------------------------------
+INJECTION: hex in an attribute, in a template that had NO CSS at all
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p style="color:#123456">proof</p>
+  where  : prepend
+  scan-css exit 1, 15 file(s) scanned (baseline 14, change 1)
+  first finding: apps/api/resources/views/landing/templates/rail.blade.php:1:17  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+--------------------------------------------------------------------------------
+INJECTION: hex in an attribute, in a template already scanned
+  file   : apps/api/resources/views/landing/page.blade.php
+  text   : <p style="color:#123456">proof</p>
+  where  : prepend
+  scan-css exit 1, 14 file(s) scanned (baseline 14, change 0)
+  first finding: apps/api/resources/views/landing/page.blade.php:1:17  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  reverted: apps/api/resources/views/landing/page.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+--------------------------------------------------------------------------------
+INJECTION: hex in Blade's own @style directive — the form a template author is most likely to write
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p @style(['color:#123456'])>proof</p>
+  where  : prepend
+  scan-css exit 1, 15 file(s) scanned (baseline 14, change 1)
+  first finding: apps/api/resources/views/landing/templates/rail.blade.php:1:19  no-raw-color  hard-coded hex colour #123456. Use a token: var(--color-…) in CSS, or a token class.
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+--------------------------------------------------------------------------------
+INJECTION: a named colour after a comment that was opened in one attribute and closed in another
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p style="/*">a</p><p style="color:red">b</p><p style="*/">c</p>
+  where  : prepend
+  scan-css exit 1, 15 file(s) scanned (baseline 14, change 1)
+  first finding: apps/api/resources/views/landing/templates/rail.blade.php:1:36  no-raw-color  named CSS colour color: … red. Use a token: var(--color-…). A named colour is outside the approved palette by definition -- it is not one of the eleven values. Only transparent, currentcolor and the CSS-wide keywords are allowed.
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+=== 2: named colours are literals ==================================================
+
+--------------------------------------------------------------------------------
+INJECTION: named colour ending a rule with } — the shape the old regex passed
+  file   : apps/api/resources/views/landing/page.blade.php
+  text   : .proof{background:red}
+  where  : style
+  scan-css exit 1, 14 file(s) scanned (baseline 14, change 0)
+  first finding: apps/api/resources/views/landing/page.blade.php:89:26  no-raw-color  named CSS colour background: … red. Use a token: var(--color-…). A named colour is outside the approved palette by definition -- it is not one of the eleven values. Only transparent, currentcolor and the CSS-wide keywords are allowed.
+  reverted: apps/api/resources/views/landing/page.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+--------------------------------------------------------------------------------
+INJECTION: named colour in an attribute (rebeccapurple, which the old 26-name list never had)
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p style="border:1px solid rebeccapurple">proof</p>
+  where  : prepend
+  scan-css exit 1, 15 file(s) scanned (baseline 14, change 1)
+  first finding: apps/api/resources/views/landing/templates/rail.blade.php:1:28  no-raw-color  named CSS colour border: … rebeccapurple. Use a token: var(--color-…). A named colour is outside the approved palette by definition -- it is not one of the eleven values. Only transparent, currentcolor and the CSS-wide keywords are allowed.
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+--------------------------------------------------------------------------------
+INJECTION: a SYSTEM colour is a literal too
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p style="color:CanvasText">proof</p>
+  where  : prepend
+  scan-css exit 1, 15 file(s) scanned (baseline 14, change 1)
+  first finding: apps/api/resources/views/landing/templates/rail.blade.php:1:17  no-raw-color  named CSS colour color: … CanvasText. Use a token: var(--color-…). A named colour is outside the approved palette by definition -- it is not one of the eleven values. Only transparent, currentcolor and the CSS-wide keywords are allowed.
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 1)
+
+=== 2: the allowlist stays silent ==================================================
+
+--------------------------------------------------------------------------------
+INJECTION: transparent, in a style body
+  file   : apps/api/resources/views/landing/page.blade.php
+  text   : .proof{background:transparent}
+  where  : style
+  scan-css exit 0, 14 file(s) scanned (baseline 14, change 0)
+  reverted: apps/api/resources/views/landing/page.blade.php is byte-identical to HEAD
+  verdict: as required (exit 0)
+
+--------------------------------------------------------------------------------
+INJECTION: currentcolor, in an attribute
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p style="border-color:currentColor">proof</p>
+  where  : prepend
+  scan-css exit 0, 15 file(s) scanned (baseline 14, change 1)
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 0)
+
+--------------------------------------------------------------------------------
+INJECTION: inherit (a CSS-wide keyword), in an attribute
+  file   : apps/api/resources/views/landing/templates/rail.blade.php
+  text   : <p style="color:inherit;background:transparent">proof</p>
+  where  : prepend
+  scan-css exit 0, 15 file(s) scanned (baseline 14, change 1)
+  reverted: apps/api/resources/views/landing/templates/rail.blade.php is byte-identical to HEAD
+  verdict: as required (exit 0)
+
+================================================================================
+tree after: byte-clean (git status fingerprint 9d53b888dff3732e, unchanged from 9d53b888dff3732e)
+AFTER (reverted tree): scan-css exit 0, 14 file(s)
+scan-css-injection-proof: 10 injections, 7 refused and 3 allowed, every one reverted.
+EXIT=0

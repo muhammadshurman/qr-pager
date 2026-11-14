@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+#
+# theme-paint-baseline-proof — QRPAGER-49B, item 3. THE BASELINE, SHOWN TO REDDEN IN EVERY WAY
+# IT CAN BE WRONG, through the REAL orchestrator (`tools/gate/bin/theme-paint-proof`), not through
+# the classifier on a synthetic record.
+#
+# Muhammad's ruling on `tools/landing/paint-baseline.json` (QRPAGER-49A): approved, because *"a
+# baseline is a temporal claim with an owner while the non-themed set is a semantic one — not the
+# same object"* — and the condition he attached: an unproven shrink-only claim is *"an allowlist
+# wearing a better name"*. `tools/landing/test/paint-classify.test.mjs` proves `compareBaseline`
+# on records somebody typed; this proves the GATE, on a real browser, with a real wrong tree.
+#
+# Five plants, each of which must turn the orchestrator red FOR ITS OWN REASON and for no other:
+#
+#   STALE  x2   a template that now PAINTS the role the baseline says it does not. Done by
+#               deleting the one declaration that kills the control (`.rail .card{background:none}`,
+#               `.ember-hero .cta{background:…;color:…}`), so the entry is wrong because the
+#               TEMPLATE changed, which is the way a baseline entry actually becomes wrong.
+#   GONE   x2   an entry naming a template, or a role, that LandingTemplate / the theme does not
+#               have. The ruling: it must redden, never be skipped.
+#   NEW         a dead control the baseline does not list: the entry deleted, which is the same
+#               claim from the other side.
+#
+# ⚠ THE REDS ARE MEANT. This transcript is named -baseline-record, which check-records (c) does not
+# iterate, for the reason theme-paint-revert-proof's is: a transcript of a DECLARED red is evidence,
+# a transcript of a gate that failed is not, and they must not share a name.
+#
+# ⚠ THE REVERT IS NOT `cp -p`, and the compiled views are cleared after every edit and every
+# restore: a restore that keeps the old mtime serves the injected page from a byte-clean tree
+# (49A found this by being fooled by it). The revert is checked with `cmp` against `git show HEAD`.
+set -Eeuo pipefail
+umask 077
+
+trap 'echo "theme-paint-baseline-proof: aborted by errexit at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+PAGE="apps/api/resources/views/landing/page.blade.php"
+BASELINE="tools/landing/paint-baseline.json"
+WORK="$(mktemp -d)"
+NEEDS_RESEED=0
+
+fail() {
+    echo "theme-paint-baseline-proof: FAILED -- $1" >&2
+    exit 1
+}
+
+invalidate_views() {
+    (cd "${REPO}/apps/api" && php artisan view:clear >/dev/null)
+}
+
+restore() {
+    local file
+    for file in "$PAGE" "$BASELINE"; do
+        if [ -f "${file}.baseline-proof-backup" ]; then
+            cp "${file}.baseline-proof-backup" "$file"
+            rm -f "${file}.baseline-proof-backup"
+        fi
+    done
+
+    invalidate_views
+}
+
+cleanup() {
+    local status=$?
+
+    restore
+
+    if [ "$NEEDS_RESEED" = "1" ]; then
+        echo "theme-paint-baseline-proof: re-seeding the demo restaurant, which an aborted run may have left on the sentinel theme" >&2
+
+        if ! (cd "$REPO/apps/api" && php artisan studio:demo-tenant >/dev/null 2>&1); then
+            echo "theme-paint-baseline-proof: ⚠ the re-seed FAILED -- run \`php artisan studio:demo-tenant\`." >&2
+
+            if [ "$status" -eq 0 ]; then
+                status=1
+            fi
+        fi
+    fi
+
+    rm -rf "$WORK"
+    printf 'EXIT=%d\n' "$status"
+    exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+say() { printf '%s\n' "$1"; }
+
+# A backup left by a killed run is NOT pristine -- it may be the planted copy -- so it is a refusal,
+# never an input (the §11 round: `git diff --quiet` ignores untracked files, and this proof's
+# backups are untracked).
+for leftover in "$PAGE" "$BASELINE"; do
+    if [ -f "${leftover}.baseline-proof-backup" ]; then
+        fail "${leftover}.baseline-proof-backup exists: a previous run was killed. Inspect it, restore from git, delete it, and re-run."
+    fi
+done
+
+if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
+    fail "a tracked file outside docs/ differs from HEAD. A proof on uncommitted code proves nothing about the committed code -- commit first."
+fi
+
+HEAD_SHA="$(git rev-parse --short HEAD)"
+OUT_BASE="${REPO}/storage/theme-paint-revert"
+rm -rf "${OUT_BASE}/baseline-proof"
+
+harness() {
+    # harness <label>  -> returns the orchestrator's own exit status
+    local label="$1" status=0
+
+    if QRPAGER_PAINT_LOG="${WORK}/${label}.log" QRPAGER_PAINT_OUT="${OUT_BASE}/baseline-proof/${label}" \
+        tools/gate/bin/theme-paint-proof >"${WORK}/${label}.txt" 2>&1; then
+        status=0
+    else
+        status=$?
+    fi
+
+    return "$status"
+}
+
+backup() {
+    # the FIRST backup is the one that matters: a second plant on the same file must not
+    # overwrite the pristine copy with an already-planted one
+    [ -f "${1}.baseline-proof-backup" ] || cp "$1" "${1}.baseline-proof-backup"
+}
+
+revert_and_check() {
+    local file
+    restore
+
+    for file in "$PAGE" "$BASELINE"; do
+        cmp -s "$file" <(git show "HEAD:${file}") \
+            || fail "after the revert ${file} is NOT byte-identical to HEAD:${file}"
+    done
+
+    say "  reverted: ${PAGE} and ${BASELINE} are byte-identical to HEAD"
+}
+
+# plant_page <old> <new>: replace exactly one occurrence in the template's Blade.
+plant_page() {
+    backup "$PAGE"
+    python3 - "$PAGE" "$1" "$2" <<'PY'
+import sys
+path, old, new = sys.argv[1:4]
+source = open(path, encoding="utf-8").read()
+if source.count(old) != 1:
+    sys.exit(f"expected exactly one occurrence of {old!r}, found {source.count(old)}")
+open(path, "w", encoding="utf-8").write(source.replace(old, new))
+PY
+    invalidate_views
+}
+
+# plant_baseline <python expression over `doc`>: edit the baseline JSON. ⚠ THE ARGUMENT IS EXECUTED AS
+# PYTHON, so it must only ever be a literal written in this script -- never a variable, never
+# anything read from a file or the environment.
+plant_baseline() {
+    backup "$BASELINE"
+    python3 - "$BASELINE" "$1" <<'PY'
+import json, sys
+path, code = sys.argv[1:3]
+doc = json.load(open(path, encoding="utf-8"))
+exec(code)
+open(path, "w", encoding="utf-8").write(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+PY
+}
+
+# expect_red <label> <the exact RED line that must appear> <n violations>
+expect_red() {
+    local label="$1" want="$2" count="$3" status=0 file="${WORK}/${1}.txt"
+
+    NEEDS_RESEED=1
+
+    if harness "$label"; then
+        status=0
+    else
+        status=$?
+    fi
+
+    say "  theme-paint-proof exit ${status}"
+
+    [ "$status" -ne 0 ] || { sed 's/^/  | /' "$file" | tail -20 >&2; fail "${label}: the gate stayed GREEN with a wrong baseline -- it is an allowlist wearing a better name"; }
+
+    for broken in 'THE MEASUREMENT IS NOT TRUSTWORTHY' 'theme-paint: FAILED --' 'is missing:'; do
+        if grep -qF "$broken" "$file"; then
+            sed 's/^/  | /' "$file" | tail -20 >&2
+            fail "${label}: the red is the HARNESS BREAKING ('${broken}'), not the baseline being wrong -- rejected as evidence"
+        fi
+    done
+
+    grep -qF "$want" "$file" \
+        || { sed 's/^/  | /' "$file" | tail -20 >&2; fail "${label}: red, but not for the reason under test -- no line says: ${want}"; }
+
+    local reds
+    reds="$(grep -c '^  RED ' "$file" || true)"
+    [ "$reds" = "$count" ] \
+        || { grep '^  RED ' "$file" >&2 || true; fail "${label}: expected exactly ${count} RED line(s), found ${reds} -- a second red is a second cause"; }
+
+    grep -qE "theme-paint: ${count} dead-control baseline violation\(s\)\." "$file" \
+        || fail "${label}: the verdict line does not say ${count} dead-control baseline violation(s)"
+
+    say "  the RED line(s), verbatim:"
+    grep '^  RED ' "$file" | sed 's/^/    /'
+    say "  verdict   : $(grep -E '^theme-paint: [0-9]+ dead-control' "$file")"
+}
+
+say "================================================================================"
+say "theme-paint-baseline-proof — THE BASELINE, SHOWN WRONG IN EVERY WAY. QRPAGER-49B."
+say "================================================================================"
+say ""
+say "tree     : committed, at ${HEAD_SHA}"
+say "baseline : ${BASELINE}  ($(python3 -c 'import json;print(", ".join(e["template"]+"/"+e["role"] for e in json.load(open("tools/landing/paint-baseline.json"))["dead"]))'))"
+say ""
+say "================================================================================"
+say "BASELINE — the unmodified tree must be GREEN"
+say "================================================================================"
+
+NEEDS_RESEED=1
+if harness green-before; then
+    say "theme-paint-proof exit 0 on the unmodified tree"
+    say "  $(grep -E '^theme-paint: the dead controls' "${WORK}/green-before.txt")"
+else
+    sed 's/^/  | /' "${WORK}/green-before.txt" | tail -30 >&2
+    fail "the BASELINE is red, so a red below would not be evidence of anything"
+fi
+
+say ""
+say "================================================================================"
+say "PLANT 1 of 5 — STALE: rail now paints color.surface"
+say "================================================================================"
+say "  the entry says  : rail / color.surface is dead because \`.rail .card{background:none}\`"
+say "  the plant       : delete \`background:none;\` from that rule, so the card keeps its surface"
+plant_page '.rail .card{background:none;' '.rail .card{'
+say "  diff:"
+diff -u "${PAGE}.baseline-proof-backup" "$PAGE" | grep -E '^[-+][^-+]' | sed 's/^/    /' || true
+expect_red stale-rail "RED  STALE baseline entry: rail / color.surface now paints — delete the entry" 1
+revert_and_check
+
+say ""
+say "================================================================================"
+say "PLANT 2 of 5 — STALE: ember now paints color.accent_text"
+say "================================================================================"
+say "  the entry says  : ember / color.accent_text is dead because TWO rules re-paint the call to action, either alone enough:"
+say "                    \`.ember-hero .cta{…;color:…}\` and \`.ember-hero a{color:…}\` (the call to action is an <a>)"
+say "  the plant       : delete BOTH. (Deleting only the first was tried first and the gate stayed green -- that is how"
+say "                    the entry's mechanism, which named one rule, was found to be incomplete.)"
+plant_page '.ember-hero .cta{background:var(--color-background);color:var(--color-text)}' '.ember-hero .cta{}'
+plant_page '.ember-hero a{color:var(--color-background)}' '.ember-hero a{}'
+say "  diff:"
+diff -u "${PAGE}.baseline-proof-backup" "$PAGE" | grep -E '^[-+][^-+]' | sed 's/^/    /' || true
+expect_red stale-ember "RED  STALE baseline entry: ember / color.accent_text now paints — delete the entry" 1
+revert_and_check
+
+say ""
+say "================================================================================"
+say "PLANT 3 of 5 — GONE: an entry for a TEMPLATE that LandingTemplate does not have"
+say "================================================================================"
+plant_baseline 'doc["dead"].append({"template": "gazebo", "role": "color.surface", "owner": "QRPAGER-49B-proof", "mechanism": "planted"})'
+say "  the plant       : gazebo / color.surface appended to ${BASELINE}"
+expect_red gone-template "RED  baseline entry for gazebo / color.surface names a template or role that is no longer enumerated — delete the entry" 1
+revert_and_check
+
+say ""
+say "================================================================================"
+say "PLANT 4 of 5 — GONE: an entry for a ROLE the theme does not have"
+say "================================================================================"
+plant_baseline 'doc["dead"].append({"template": "tile", "role": "color.nonexistent", "owner": "QRPAGER-49B-proof", "mechanism": "planted"})'
+say "  the plant       : tile / color.nonexistent appended to ${BASELINE}"
+expect_red gone-role "RED  baseline entry for tile / color.nonexistent names a template or role that is no longer enumerated — delete the entry" 1
+revert_and_check
+
+say ""
+say "================================================================================"
+say "PLANT 5 of 5 — NEW: a dead control the baseline does not list"
+say "================================================================================"
+plant_baseline 'doc["dead"] = [e for e in doc["dead"] if not (e["template"] == "ember" and e["role"] == "color.accent_text")]'
+say "  the plant       : the ember / color.accent_text entry deleted from ${BASELINE}"
+expect_red new-dead "RED  a NEW dead control: ember / color.accent_text paints nowhere and is not in the baseline" 1
+revert_and_check
+
+say ""
+say "================================================================================"
+say "AFTER ALL FIVE REVERTS — green again"
+say "================================================================================"
+
+if harness green-after; then
+    NEEDS_RESEED=0
+    say "theme-paint-proof exit 0 on the reverted tree"
+    say "  $(grep -E '^theme-paint: the dead controls' "${WORK}/green-after.txt")"
+else
+    sed 's/^/  | /' "${WORK}/green-after.txt" | tail -30 >&2
+    fail "the tree is RED after the reverts, so a revert did not restore what it changed"
+fi
+
+git diff --quiet HEAD -- . ':(exclude)docs' || fail "the working tree differs from HEAD after the proof"
+
+say ""
+say "theme-paint-baseline-proof: 5 of 5 wrong baselines reddened the real gate, each for its own reason and no other; the tree is unchanged."

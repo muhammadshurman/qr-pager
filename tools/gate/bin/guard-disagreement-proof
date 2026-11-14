@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+#
+# guard-disagreement-proof — QRPAGER-49B, item 4. WHERE THE TWO COLOUR GUARDS STILL DISAGREE, AND
+# WHICH ONE IS BLIND, measured by planting one literal per blind-spot class and asking both.
+#
+#   scan-css           reads SOURCE: every literal it is shown, and nothing it is not shown.
+#   theme-paint-proof  reads the PUBLISHED PAGE in a real browser at 390 and 1280: every colour
+#                      that is computed on a rendered element, and nothing that is not rendered.
+#
+# They are different instruments with different blind spots, and the point of this record is that
+# neither is a superset of the other. Each case below carries the pair of verdicts it MUST produce
+# (`1` = the guard went red, `0` = it stayed green), so a guard that gains or loses a blind spot
+# fails this script rather than silently changing what the gate means.
+#
+# The one case where BOTH are green and the plant is still wrong -- an undefined token in an
+# inline style attribute -- was asked of a third guard, `TemplateTokenSetTest` (QRPAGER-46's
+# referenced-is-a-subset-of-emitted closure), on the expectation that it would go red. IT DID NOT:
+# `referencedTokens()` collects `var()` from the page's <style> element only, so a reference in a
+# style="" attribute is invisible to it. The first run of this script failed on exactly that
+# expectation (docs/tickets/QRPAGER-49B-disagreement-first-attempt.txt), and the case now asserts
+# what was MEASURED: all three guards are blind. That is `R-325`, proposed -- the same hole as
+# R-322 (inline style attributes), seen from the closure guard instead of the literal scanner.
+#
+# NOTHING IS KEPT: every plant is reverted and checked byte-for-byte against HEAD, the compiled
+# views are cleared after every edit and restore, and the demo restaurant is re-seeded on exit.
+set -Eeuo pipefail
+umask 077
+
+trap 'echo "guard-disagreement-proof: aborted by errexit at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+PAGE="apps/api/resources/views/landing/page.blade.php"
+TILE="apps/api/resources/views/landing/templates/tile.blade.php"
+WORK="$(mktemp -d)"
+NEEDS_RESEED=0
+LITERAL="#123456"
+
+fail() {
+    echo "guard-disagreement-proof: FAILED -- $1" >&2
+    exit 1
+}
+
+invalidate_views() {
+    (cd "${REPO}/apps/api" && php artisan view:clear >/dev/null)
+}
+
+restore() {
+    local file
+    for file in "$PAGE" "$TILE"; do
+        if [ -f "${file}.disagreement-backup" ]; then
+            cp "${file}.disagreement-backup" "$file"
+            rm -f "${file}.disagreement-backup"
+        fi
+    done
+
+    invalidate_views
+}
+
+cleanup() {
+    local status=$?
+
+    restore
+
+    if [ "$NEEDS_RESEED" = "1" ]; then
+        echo "guard-disagreement-proof: re-seeding the demo restaurant" >&2
+
+        if ! (cd "$REPO/apps/api" && php artisan studio:demo-tenant >/dev/null 2>&1); then
+            echo "guard-disagreement-proof: ⚠ the re-seed FAILED -- run \`php artisan studio:demo-tenant\`." >&2
+
+            if [ "$status" -eq 0 ]; then
+                status=1
+            fi
+        fi
+    fi
+
+    rm -rf "$WORK"
+    printf 'EXIT=%d\n' "$status"
+    exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+say() { printf '%s\n' "$1"; }
+
+# A backup left by a killed run is NOT pristine -- it may be the planted copy -- so it is a refusal,
+# never an input (the §11 round: `git diff --quiet` ignores untracked files, and this proof's
+# backups are untracked).
+for leftover in "$PAGE" "$TILE"; do
+    if [ -f "${leftover}.disagreement-backup" ]; then
+        fail "${leftover}.disagreement-backup exists: a previous run was killed. Inspect it, restore from git, delete it, and re-run."
+    fi
+done
+
+if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
+    fail "a tracked file outside docs/ differs from HEAD. A proof on uncommitted code proves nothing about the committed code -- commit first."
+fi
+
+OUT_BASE="${REPO}/storage/theme-paint-revert"
+rm -rf "${OUT_BASE}/disagreement"
+CASE_NO=0
+RESULTS=()
+
+harness() {
+    local label="$1" status=0
+
+    if QRPAGER_PAINT_LOG="${WORK}/${label}.log" QRPAGER_PAINT_OUT="${OUT_BASE}/disagreement/${label}" \
+        tools/gate/bin/theme-paint-proof >"${WORK}/${label}.txt" 2>&1; then
+        status=0
+    else
+        status=$?
+    fi
+
+    return "$status"
+}
+
+# place <file> <where> <text>
+place() {
+    local file="$1" where="$2" text="$3"
+
+    cp "$file" "${file}.disagreement-backup"
+
+    case "$where" in
+        prepend) { printf '%s\n' "$text"; cat "${file}.disagreement-backup"; } >"$file" ;;
+        style) python3 - "$file" "$text" <<'PY'
+import sys
+path, text = sys.argv[1], sys.argv[2]
+source = open(path, encoding="utf-8").read()
+at = source.index("<style>") + len("<style>")
+open(path, "w", encoding="utf-8").write(source[:at] + text + source[at:])
+PY
+            ;;
+        *) fail "unknown placement ${where}" ;;
+    esac
+
+    invalidate_views
+}
+
+# probe <label> <file> <where> <text> <scan-css 0|1> <harness 0|1> <third: -|0|1> <why>
+probe() {
+    local label="$1" file="$2" where="$3" text="$4" want_scan="$5" want_harness="$6" want_third="$7" why="$8"
+    local scan_status=0 harness_status=0 third_status="-" first=""
+
+    CASE_NO=$((CASE_NO + 1))
+    say ""
+    say "--------------------------------------------------------------------------------"
+    say "CASE ${CASE_NO} — ${label}"
+    say "  planted in : ${file} (${where})"
+    say "  text       : ${text}"
+
+    place "$file" "$where" "$text"
+    NEEDS_RESEED=1
+
+    if node tools/design-tokens/bin/scan-css.mjs >"${WORK}/scan-${CASE_NO}.txt" 2>&1; then
+        scan_status=0
+    else
+        scan_status=$?
+    fi
+
+    if harness "case-${CASE_NO}"; then
+        harness_status=0
+    else
+        harness_status=$?
+    fi
+
+    for broken in 'THE MEASUREMENT IS NOT TRUSTWORTHY' 'theme-paint: FAILED --' 'is missing:'; do
+        if grep -qF "$broken" "${WORK}/case-${CASE_NO}.txt"; then
+            sed 's/^/  | /' "${WORK}/case-${CASE_NO}.txt" | tail -20 >&2
+            fail "case ${CASE_NO}: the harness BROKE ('${broken}'); that is not a verdict"
+        fi
+    done
+
+    if [ "$want_third" != "-" ]; then
+        if (cd apps/api && PAO_DISABLE=1 php artisan test --filter=TemplateTokenSetTest >"${WORK}/third-${CASE_NO}.txt" 2>&1); then
+            third_status=0
+        else
+            third_status=$?
+        fi
+    fi
+
+    first="$(grep -m1 -E "^[^ ]+:[0-9]+:[0-9]+ " "${WORK}/scan-${CASE_NO}.txt" || true)"
+
+    restore
+    for f in "$PAGE" "$TILE"; do
+        cmp -s "$f" <(git show "HEAD:${f}") || fail "case ${CASE_NO}: ${f} is NOT byte-identical to HEAD after the revert"
+    done
+
+    local scan_word="green" harness_word="green"
+    [ "$scan_status" -eq 0 ] || scan_word="RED"
+    [ "$harness_status" -eq 0 ] || harness_word="RED"
+
+    say "  scan-css           : exit ${scan_status}  (${scan_word})"
+    [ -z "$first" ] || say "    first finding    : $(printf '%s' "$first" | cut -c1-170)"
+    say "  theme-paint-proof  : exit ${harness_status}  (${harness_word})"
+    if [ "$harness_status" -ne 0 ]; then
+        say "    finding          : $(grep -m1 -E 'finding\(s\) in category|^  RED' "${WORK}/case-${CASE_NO}.txt" || true)"
+    fi
+    if [ "$third_status" != "-" ]; then
+        say "  TemplateTokenSetTest : exit ${third_status}  ($([ "$third_status" -eq 0 ] && echo green || echo RED))"
+    fi
+    say "  reverted   : byte-identical to HEAD"
+    say "  why        : ${why}"
+
+    local got_scan=0 got_harness=0
+    [ "$scan_status" -eq 0 ] || got_scan=1
+    [ "$harness_status" -eq 0 ] || got_harness=1
+
+    [ "$got_scan" = "$want_scan" ] || fail "case ${CASE_NO} (${label}): scan-css said ${got_scan}, this proof says it must say ${want_scan}"
+    [ "$got_harness" = "$want_harness" ] || fail "case ${CASE_NO} (${label}): the harness said ${got_harness}, this proof says it must say ${want_harness}"
+
+    if [ "$want_third" != "-" ]; then
+        local got_third=0
+        [ "$third_status" -eq 0 ] || got_third=1
+        [ "$got_third" = "$want_third" ] || fail "case ${CASE_NO} (${label}): the third guard said ${got_third}, expected ${want_third}"
+    fi
+
+    local blind="neither"
+    if [ "$got_scan" = 1 ] && [ "$got_harness" = 0 ]; then blind="THE HARNESS IS BLIND"; fi
+    if [ "$got_scan" = 0 ] && [ "$got_harness" = 1 ]; then blind="SCAN-CSS IS BLIND"; fi
+    if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ]; then blind="BOTH ARE BLIND"; fi
+    if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ] && [ "$third_status" = "0" ]; then blind="ALL THREE ARE BLIND"; fi
+    if [ "$got_scan" = 1 ] && [ "$got_harness" = 1 ]; then blind="none: they agree"; fi
+
+    say "  verdict    : as required — ${blind}"
+    RESULTS+=("${CASE_NO}|${label}|${got_scan}|${got_harness}|${third_status}|${blind}")
+}
+
+say "================================================================================"
+say "guard-disagreement-proof — WHERE scan-css AND THE PAINT HARNESS STILL DISAGREE. QRPAGER-49B."
+say "================================================================================"
+say "tree: committed, at $(git rev-parse --short HEAD)"
+say "literal planted each time: ${LITERAL}   (1 = the guard went red, 0 = it stayed green)"
+
+NEEDS_RESEED=1
+harness green-before || fail "the unmodified tree is red, so nothing below is evidence"
+say "BASELINE: theme-paint-proof exit 0 and scan-css exit 0 on the unmodified tree"
+node tools/design-tokens/bin/scan-css.mjs >/dev/null || fail "scan-css is red on the unmodified tree"
+
+# ---- they AGREE ---------------------------------------------------------------------------
+probe "a literal in an inline style attribute — the control, which both must see" \
+    "$TILE" prepend "<p style=\"color:${LITERAL}\">proof</p>" 1 1 - \
+    "rendered AND written as a literal: nothing for either to miss"
+
+# ---- the HARNESS is blind: written, but not rendered in the two states it measures --------
+probe "a literal that only a HOVERED control would show" \
+    "$PAGE" style ".cta:hover{background:${LITERAL}}" 1 0 - \
+    "the harness renders no :hover, :focus or error state (stated in every run's output)"
+probe "a literal that only a DARK-scheme user would see" \
+    "$PAGE" style "@media (prefers-color-scheme:dark){body{background:${LITERAL}}}" 1 0 - \
+    "the harness measures one colour scheme"
+probe "a literal at a width that is neither 390 nor 1280" \
+    "$PAGE" style "@media (min-width:600px) and (max-width:1000px){body{background:${LITERAL}}}" 1 0 - \
+    "the harness measures two widths"
+probe "a literal on ::selection, which no computed style of an element reports" \
+    "$PAGE" style "::selection{background:${LITERAL}}" 1 0 - \
+    "getComputedStyle(el, '::selection') is not walked; ::before, ::after and ::marker are"
+
+# ---- SCAN-CSS is blind: rendered, but not written as a literal in source it reads ---------
+probe "a literal that arrives through a Blade echo" \
+    "$TILE" prepend "<p style=\"color:{{ '${LITERAL}' }}\">proof</p>" 0 1 - \
+    "scan-css blanks every {{ }}: the value is PHP, and what PHP produces is not source it reads"
+probe "a literal in an SVG presentation attribute, which is not a style attribute" \
+    "$TILE" prepend "<svg width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\" fill=\"${LITERAL}\"/></svg>" 0 1 - \
+    "scan-css reads <style> bodies and style=\"\" values; fill= is neither"
+
+# ---- BOTH are blind, and a third guard is what sees it -----------------------------------
+probe "a token that is referenced and never emitted" \
+    "$TILE" prepend '<p style="background-color:var(--color-nonexistent)">proof</p>' 0 0 0 \
+    "no literal exists, so scan-css has nothing to read; an unresolved var() computes to the initial value, which is the declared non-themed member, so the harness sees nothing; and TemplateTokenSetTest reads var() from the <style> element only (R-325, proposed)"
+
+say ""
+say "================================================================================"
+say "THE TABLE"
+say "================================================================================"
+printf '%-4s %-9s %-9s %-7s %s\n' "case" "scan-css" "harness" "third" "who is blind"
+for row in "${RESULTS[@]}"; do
+    IFS='|' read -r no label s h t blind <<<"$row"
+    printf '%-4s %-9s %-9s %-7s %s — %s\n' "$no" "$([ "$s" = 1 ] && echo RED || echo green)" "$([ "$h" = 1 ] && echo RED || echo green)" "$([ "$t" = "-" ] && echo - || ([ "$t" = 0 ] && echo green || echo RED))" "$blind" "$label"
+done
+
+harness green-after || fail "the tree is RED after the reverts"
+NEEDS_RESEED=0
+git diff --quiet HEAD -- . ':(exclude)docs' || fail "the working tree differs from HEAD after the proof"
+say ""
+say "guard-disagreement-proof: ${CASE_NO} plants, every verdict as stated, every plant reverted; the tree is unchanged."

@@ -5,6 +5,7 @@
     "The dead-control check is a permanent gate (Muhammad, 2026-11-14, ruling 2) and it is RED on any tree where a studio colour picker changes nothing on a published page.",
     "Two pickers are dead today. He ruled they are NOT to be fixed, because rail and ember are replaced by QRPAGER-49 and a fix would be wasted work, and ALSO ruled the check permanent. A permanent check that is red on main is not a gate, so the two are enumerated here BY NAME with an owner, and this list can only shrink.",
     "This is NOT the declared non-themed set and must not be read as one. That set bounds what a COLOUR may be. This bounds which CONTROLS are known dead, and each entry names the mechanism so a reader can verify it rather than trust it.",
+    "AMENDED 2026-11-14 by QRPAGER-49B: the ember entry named ONE rule as its mechanism and there are TWO, either sufficient. The entry was right that the control is dead and wrong about why, which the baseline proof found by deleting the named rule and watching the gate stay green. A mechanism is there so a reader can verify it rather than trust it, and a mechanism that fails the verification is the same defect as a stale entry.",
     "Three ways to be red, so the list cannot rot: a dead pair that is not listed (a new dead control); a listed pair that now paints (a stale claim of debt); a listed pair whose template is no longer in LandingTemplate. The third is what makes this QRPAGER-49's acceptance criterion: replacing the three arrangements turns every entry gone, and the only way back to green is to delete them — at which point all new templates must paint with all six roles, or the author stops and reports per role."
   ],
   "dead": [
@@ -18,7 +19,7 @@
       "template": "ember",
       "role": "color.accent_text",
       "owner": "QRPAGER-49",
-      "mechanism": "`.ember-hero .cta{background:var(--color-background);color:var(--color-text)}` re-paints the only element that carries --color-accent-text (`.cta`, one reference), and ember places the only call to action inside that band."
+      "mechanism": "TWO rules re-paint the only element that carries --color-accent-text (`.cta`, one reference), and EITHER ALONE is enough: `.ember-hero .cta{background:var(--color-background);color:var(--color-text)}`, and `.ember-hero a{color:var(--color-background)}` — the call to action is an <a>, and that rule out-ranks `.cta`'s own colour. Ember places the only call to action inside that band. Measured by QRPAGER-49B's theme-paint-baseline-proof: deleting the first alone leaves the control dead; deleting both makes it paint."
     }
   ]
 }
