@@ -113,7 +113,9 @@ harness() {
 }
 
 backup() {
-    cp "$1" "${1}.baseline-proof-backup"
+    # the FIRST backup is the one that matters: a second plant on the same file must not
+    # overwrite the pristine copy with an already-planted one
+    [ -f "${1}.baseline-proof-backup" ] || cp "$1" "${1}.baseline-proof-backup"
 }
 
 revert_and_check() {
@@ -229,9 +231,12 @@ say ""
 say "================================================================================"
 say "PLANT 2 of 5 — STALE: ember now paints color.accent_text"
 say "================================================================================"
-say "  the entry says  : ember / color.accent_text is dead because \`.ember-hero .cta\` re-paints the call to action"
-say "  the plant       : delete that re-paint, so the call to action carries the accent-text colour"
+say "  the entry says  : ember / color.accent_text is dead because TWO rules re-paint the call to action, either alone enough:"
+say "                    \`.ember-hero .cta{…;color:…}\` and \`.ember-hero a{color:…}\` (the call to action is an <a>)"
+say "  the plant       : delete BOTH. (Deleting only the first was tried first and the gate stayed green -- that is how"
+say "                    the entry's mechanism, which named one rule, was found to be incomplete.)"
 plant_page '.ember-hero .cta{background:var(--color-background);color:var(--color-text)}' '.ember-hero .cta{}'
+plant_page '.ember-hero a{color:var(--color-background)}' '.ember-hero a{}'
 say "  diff:"
 diff -u "${PAGE}.baseline-proof-backup" "$PAGE" | grep -E '^[-+][^-+]' | sed 's/^/    /' || true
 expect_red stale-ember "RED  STALE baseline entry: ember / color.accent_text now paints — delete the entry" 1
