@@ -155,8 +155,14 @@ say() { printf '%s\n' "$1"; }
 # -----------------------------------------------------------------------------
 # 0. what is being proven, at which commit
 # -----------------------------------------------------------------------------
-if ! git diff --quiet HEAD; then
-    fail "a tracked file differs from HEAD. A revert proof on uncommitted code proves nothing about the committed code -- commit first."
+# ⚠ `docs/` IS EXCLUDED, AND THE REASON IS THIS SCRIPT'S OWN OUTPUT. Its transcript is a tracked file
+# under docs/tickets/, and the shell truncates a redirect target BEFORE the script starts — so the
+# first re-run, once the record had been committed, refused to run because its own output file
+# differed from HEAD. The rule exists for CODE: a revert proof on uncommitted code proves nothing
+# about the committed code. Documentation changes nothing the proof measures, and this is the
+# boundary `check-records` (b3) already draws: *"nothing outside docs/ has moved"*.
+if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
+    fail "a tracked file outside docs/ differs from HEAD. A revert proof on uncommitted code proves nothing about the committed code -- commit first."
 fi
 
 if [ -n "$(git ls-files --others --exclude-standard -- "$BLADE_DIR")" ]; then
@@ -380,7 +386,7 @@ else
     fail "the tree is RED after the reverts, so a revert did not restore what it changed"
 fi
 
-git diff --quiet HEAD || fail "the working tree differs from HEAD after the proof"
+git diff --quiet HEAD -- . ':(exclude)docs' || fail "the working tree differs from HEAD after the proof"
 
 say ""
 say "theme-paint-revert-proof: ${#TEMPLATES[@]} of ${#TEMPLATES[@]} templates reddened the harness, attributed to the injected literal, with the controls unmoved; the tree is unchanged."
