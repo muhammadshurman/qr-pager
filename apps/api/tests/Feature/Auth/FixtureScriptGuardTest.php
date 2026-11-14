@@ -215,6 +215,40 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
         // `LandingPages::saveDraft()` and `publish()`, writing to the bucket as the owner.
         'bin/publish-landing-fixture',
         /*
+         * `QRPAGER-49A`'s. It publishes the demo restaurant's own document under a theme of six
+         * sentinel colours, through the same `saveDraft()` + `publish()` pair as the row above,
+         * so that `tools/gate/bin/theme-paint-proof` can measure what a BROWSER paints rather
+         * than what the source says.
+         *
+         * ⚠ **IT RUNS AS THE APP ROLE, NOT THE OWNER** — this comment said "as the owner" in the
+         * first draft, copied from the sibling above, and Muhammad's review of 2026-11-14 asked
+         * the question that exposed it. `LandingPages` opens `withTenant($id, …)` with no
+         * connection argument, which resolves to `DatabaseRoles::connection('app')`: RLS is in
+         * force, `app.tenant_id` is set per transaction, and there is no bypass.
+         *
+         * ⚠⚠ **WHY WIDENING THIS EXACT SET TO ADMIT IT IS SAFE — written because the widening was
+         * made without it.** The set is not an allow-list of scripts somebody has approved; it is
+         * the list of scripts that CARRY THE GUARD (the literal `refusing to run`), derived from
+         * `bin/` and held exact so that (a) a grep that silently stopped matching cannot make the
+         * loop below iterate nothing, and (b) a script that writes cannot appear without a reader
+         * of this diff seeing it. Admitting this one means only that it carries the guard, and
+         * that the cases below now drive it under `production` and require exit 1.
+         *
+         * ⚠ **THIS COMMENT FIRST SAID "AND UNDER EVERY UNRECOGNISED ENVIRONMENT", AND THAT WAS
+         * FALSE** (`§11` QA M7, Security 4): the fail-closed loop below runs `staging`, `Local`,
+         * `prod` and `development` over `bin/issue-pager-session` ONLY. For this script those four
+         * are driven by `SentinelThemeScriptTest`, which also asserts the demo restaurant's row
+         * and published pointer are byte-identical after each refusal.
+         *
+         * That is sufficient because the script has three
+         * independent halves — environment, a FIXED tenant with no argument (an extra one is
+         * refused), and the app role under RLS — and `SentinelThemeScriptTest` asserts the last
+         * two and that a refusal leaves the demo restaurant's row AND published pointer
+         * byte-identical, which the generic case below cannot: it counts `users` and `tenants`,
+         * and this script writes neither.
+         */
+        'bin/publish-sentinel-theme',
+        /*
          * ⚠ TWO ARTISAN COMMANDS, AND THE DERIVATION COULD NOT SEE EITHER UNTIL NOW.
          * `QRPAGER-48` `§11` QA M-3 / SECURITY M-1: `studio:demo-tenant` bootstraps the real
          * kernel, writes as `pgsql_owner`, and creates a login-capable OWNER with a password

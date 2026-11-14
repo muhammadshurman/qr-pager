@@ -202,6 +202,25 @@ describe('Playwright collects the browser specs and nothing else', () => {
       delete process.env.QRPAGER_TEMPLATE_GATE
     }
 
+    /*
+     * ⚠ `QRPAGER-49A`'s COLLECTOR IS GATED BY ITS OWN FLAG, AND THAT IS WHY IT NEEDS ITS OWN
+     * CASE. The exact count above did NOT move when `theme-paint` was added — it is declared
+     * only under `QRPAGER_PAINT_GATE=1` — so the guard that exists to make a human look at a
+     * new project would have said nothing about this one. A second gated project is a second
+     * branch of the same config, and an unasserted branch is how the first one reached CI.
+     */
+    process.env.QRPAGER_PAINT_GATE = '1'
+
+    try {
+      const painted = (await import(`${join(REPO, 'playwright.config.ts')}?paintGate`)).default
+
+      expect(painted.projects).toHaveLength(24)
+      expect(painted.projects.map((p) => p.name)).toContain('theme-paint')
+      expect(resolved.projects.map((p) => p.name)).not.toContain('theme-paint')
+    } finally {
+      delete process.env.QRPAGER_PAINT_GATE
+    }
+
     for (const project of resolved.projects) {
       const selects = project.testMatch !== undefined
       const ignores = (project.testIgnore ?? []).includes('**/support/test/**')

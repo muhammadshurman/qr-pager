@@ -61,8 +61,16 @@ final class SeedDemoTenantCommand extends Command
 
     protected $description = 'Seed the demo restaurant a design can be judged from. Local and testing only.';
 
-    /** Fixed, so a re-run updates these rows rather than creating a second restaurant. */
-    private const TENANT_ID = '01999000-0000-7000-8000-000000000001';
+    /**
+     * Fixed, so a re-run updates these rows rather than creating a second restaurant.
+     *
+     * ⚠ PUBLIC AT `QRPAGER-49A`, AND ONLY SO THAT NOTHING ELSE SPELLS IT.
+     * `bin/publish-sentinel-theme` measures THIS restaurant — `QRPAGER-48`'s ruling that a
+     * design is never judged from an e2e fixture applies to a measurement of the published
+     * page too — and a uuid written there as well would be a second place that decides which
+     * tenant that is. Visibility is the whole change: nothing else about this command moved.
+     */
+    public const TENANT_ID = '01999000-0000-7000-8000-000000000001';
 
     private const USER_ID = '01999000-0000-7000-8000-000000000002';
 

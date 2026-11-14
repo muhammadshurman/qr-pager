@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -132,6 +132,19 @@ const INVARIANT_GATE = 'pnpm run gate:site-isolation'
  */
 const DOMAIN_MOVE_GATE = 'pnpm run gate:domain-move'
 
+/**
+ * `QRPAGER-49A`'s gate: *does the theme reach the pixel?* The FOURTH cross-half gate, required
+ * of CI for the reason the three above give. It needs PHP, Postgres and the object store (the
+ * sentinel theme is published through the real publisher) AND the production build of
+ * `apps/site` AND a real Chromium, so it is not a `pnpm gate` step and the exact comparison
+ * below stays exact.
+ *
+ * ⚠ A gate nobody must run stops being run (`R-126`) — and this one carries the dead-control
+ * check Muhammad ruled PERMANENT, so a quietly dropped step would make a picker that does
+ * nothing undetectable again, in exactly the templates `QRPAGER-49` is about to replace.
+ */
+const THEME_PAINT_GATE = 'pnpm run gate:theme-paint'
+
 /** Every `pnpm …` command line the frontend job runs, across `run:` scalars and blocks. */
 function ciSteps() {
   return [...frontendJob.matchAll(/^\s*(?:- )?(?:run: )?(pnpm [^\n|>]*)$/gm)]
@@ -204,6 +217,60 @@ describe('the workspace gate and CI run the same steps', () => {
       Object.keys(pkg.scripts),
       'gate:domain-move is required of CI and is not a script in package.json',
     ).toContain('gate:domain-move')
+  })
+
+  /**
+   * Whether a CI job text RUNS a command: a `run:` line carrying exactly that command, not a
+   * mention of it. `toContain` was the first version of this check and it is satisfied by a
+   * comment, so a step that was commented out of `ci.yml` — the likeliest way for a gate to
+   * quietly stop running — would have passed it (`§11` QA L2).
+   */
+  const jobRuns = (job, command) =>
+    job.split('\n').some((line) => new RegExp(`^\\s*(?:- )?run:\\s*${command}\\s*$`).test(line))
+
+  it('requires CI to run QRPAGER-49A’s theme-paint gate, in the job that can', () => {
+    expect(
+      jobRuns(gatesJob, THEME_PAINT_GATE),
+      `CI's gates job has no \`run: ${THEME_PAINT_GATE}\` line -- whether a tenant's theme reaches ` +
+        'the rendered pixel, and whether any studio colour picker is dead, would then be verified ' +
+        'by no runner',
+    ).toBe(true)
+
+    const pkg = JSON.parse(read('package.json'))
+
+    expect(
+      Object.keys(pkg.scripts),
+      'gate:theme-paint is required of CI and is not a script in package.json',
+    ).toContain('gate:theme-paint')
+
+    // And the script is the orchestrator, not a name that points at nothing.
+    expect(pkg.scripts['gate:theme-paint']).toBe('tools/gate/bin/theme-paint-proof')
+    expect(existsSync(join(REPO, 'tools/gate/bin/theme-paint-proof'))).toBe(true)
+  })
+
+  it('REFUSES a CI job that dropped the theme-paint step, or only commented it out — the control', () => {
+    // The SAME function the assertion above uses, run on the real job text with the step removed
+    // and with the step commented out. The first version of this control asserted that
+    // `String.replaceAll` removes a substring, which tests JavaScript and not the check.
+    const dropped = gatesJob
+      .split('\n')
+      .filter((line) => !line.includes(THEME_PAINT_GATE))
+      .join('\n')
+    const commented = gatesJob.replaceAll(`run: ${THEME_PAINT_GATE}`, `# run: ${THEME_PAINT_GATE}`)
+
+    expect(jobRuns(gatesJob, THEME_PAINT_GATE)).toBe(true)
+    expect(jobRuns(dropped, THEME_PAINT_GATE)).toBe(false)
+    expect(jobRuns(commented, THEME_PAINT_GATE)).toBe(false)
+    // …and a lookalike line is not the command
+    expect(jobRuns(`        run: ${THEME_PAINT_GATE}-extra`, THEME_PAINT_GATE)).toBe(false)
+    expect(jobRuns(`        run: echo ${THEME_PAINT_GATE}`, THEME_PAINT_GATE)).toBe(false)
+  })
+
+  it('ships the revert proof as a script, so the claim can be re-run rather than re-read', () => {
+    const pkg = JSON.parse(read('package.json'))
+
+    expect(pkg.scripts['gate:theme-paint-revert']).toBe('tools/gate/bin/theme-paint-revert-proof')
+    expect(existsSync(join(REPO, 'tools/gate/bin/theme-paint-revert-proof'))).toBe(true)
   })
 
   it('runs the cross-half gate in each of three-green-runs runs', () => {

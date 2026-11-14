@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+# =============================================================================
+# THE HARNESS SHOWN TO REDDEN, ONCE PER TEMPLATE — QRPAGER-49A, ruling 3(b)
+# =============================================================================
+#
+# *"A harness never shown to redden is not a harness."* — and Muhammad's standing instruction of
+# 2026-11-03, that EVERY NEW PROOF MUST BE SHOWN TO REDDEN ONCE BEFORE IT IS TRUSTED, with the
+# output recorded beside it. His reason: *"Your harness has produced a false green twice in two
+# days … Both failed in the reassuring direction, which is the expensive kind."*
+#
+# THIS IS HALF OF TWO PROOFS, AND THE TWO PROVE DIFFERENT THINGS. His ruling:
+#
+#   (a) `tools/landing/test/paint-classify.test.mjs` feeds the CLASSIFIER synthetic records and
+#       asserts the sorting. It can pass on a reporter wired to nothing.
+#   (b) THIS injects one literal colour into each template's Blade, runs the whole chain, and
+#       requires a finding attributed to THAT template. It proves the chain from Blade to
+#       finding is connected, and it can pass while the classifier mis-sorts everything else.
+#
+# Neither substitutes for the other.
+#
+# WHAT IT DOES, in order, for the templates in `LandingTemplate::values()` — read from the enum,
+# never from a list here, so a fourth arrangement is covered the day it exists and a template
+# with no Blade file to inject into FAILS the proof rather than being skipped:
+#
+#   0. refuse unless every tracked file is committed (a revert proof on uncommitted code proves
+#      nothing about the committed code) and the template Blades are exactly what is committed
+#   1. BASELINE: `theme-paint-proof` on the unmodified tree must be GREEN. A proof whose
+#      unmodified tree is already red is measuring something other than its revert.
+#   2. for each template: inject ONE literal into that template's Blade, run the harness, and
+#      require ALL of:
+#        - it exits non-zero                       (it reddened)
+#        - the red is an ASSERTION, not the harness breaking: the report names the injected
+#          literal, on the injected template, on the property it was written to
+#        - THE CONTROLS DID NOT MOVE: every other template has zero findings, and the dead-control
+#          baseline verdict is unchanged. A revert that reddens an unrelated template is a
+#          BROKEN REVERT, not coverage.
+#      then REVERT the file and require it to be byte-identical to the original.
+#   3. AFTER all three reverts, the harness is GREEN again.
+#
+# ⚠ THE INJECTION IS AN INLINE `style` ATTRIBUTE ON A NEW ELEMENT, deliberately. A `<style>` rule
+# would be refused by `lint:tokens` at source level and that would show the OLD claim working;
+# the point of this ticket is the NEW one — that the rendered pixel is checked. The proof
+# therefore also records what `scan-css` says about the same injected tree, as an observation:
+# if the source guard is blind to it and the harness is not, that is the two claims being
+# different, demonstrated rather than argued.
+#
+# ⚠ AND IT IS PREPENDED TO THE TEMPLATE, NOT PLACED RELATIVE TO ITS MARKUP. A new template need
+# not have a `<div class="rail">` to anchor on, and an anchor that exists only in today's three
+# is a proof that cannot cover tomorrow's fourth.
+#
+# ⚠ THE BACKUP IS BESIDE THE ORIGINAL, with a suffix `git status` shows, and is restored in a
+# `trap`. `R-018` records that every `finally` in this repository is correct and none survives a
+# `kill -9`; a visible backup is the mitigation, because an interrupted run then leaves
+# evidence rather than a silently reverted source.
+#
+# ⛔ LOCAL AND TESTING ONLY, through the scripts it runs.
+#
+# USAGE:  tools/gate/bin/theme-paint-revert-proof    # writes its own transcript to stdout
+set -Eeuo pipefail
+umask 077
+
+# ⚠ A SILENT ABORT IS THE FAILURE THIS GUARDS AGAINST. The first run of this script died with
+# `EXIT=1` and not one word of explanation after launching the harness for `rail`: errexit fired
+# on a status it had been meant to read. `-E` makes the trap below inherited by functions, so any
+# command that aborts the script says WHICH line did. (`||` contexts, which are how a status is
+# read on purpose, do not trigger it.)
+trap 'echo "theme-paint-revert-proof: aborted by errexit at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+
+cd "$(dirname "$0")/../../.."
+REPO="$(pwd)"
+
+BLADE_DIR="apps/api/resources/views/landing/templates"
+LITERAL="#123456"
+# ⚠ ONE LITERAL, IN TWO PROPERTIES. `color` is the ticket's own, and it was the only one the first
+# version used — so it could not see the class of omission both `§11` reviewers found in the
+# collector's property list (QA H1, Security 1): a colour in a property the list does not read. A
+# template author can write `accent-color:#f0f`, and a proof that injects only `color` stays green
+# against a collector that never reads it. `accent-color` is in the widened list and computes to
+# `auto` unless set, so it is a clean witness: the proof now requires a finding on BOTH.
+INJECTION="<p data-revert-proof style=\"color:${LITERAL};accent-color:${LITERAL}\">revert proof</p>"
+WORK="$(mktemp -d)"
+INJECTED=()
+
+fail() {
+    echo "theme-paint-revert-proof: FAILED -- $1" >&2
+    exit 1
+}
+
+# ⚠ THE COMPILED VIEW CACHE IS PART OF THE RENDER PATH, AND THIS SCRIPT EDITS SOURCE UNDER IT.
+# Laravel recompiles a Blade view only when the SOURCE is newer than its compiled file, and this
+# script's first two runs showed what that costs: the first died mid-injection, the trap restored
+# the template with `cp -p` -- which PRESERVES the original mtime, two days older than the compile
+# made from the injected text -- and the stale compile kept serving the injected page. The second
+# run's baseline then found `#123456` on a tree that was byte-identical to HEAD, and the demo
+# restaurant's published page in the shared bucket had been re-seeded from it. A revert that
+# restores the bytes and not the render has reverted nothing.
+#
+# So invalidation is EXPLICIT, never inferred from timestamps: after every edit and every restore.
+invalidate_views() {
+    (cd "${REPO}/apps/api" && php artisan view:clear >/dev/null)
+}
+
+restore() {
+    local file
+    for file in "${INJECTED[@]:-}"; do
+        [ -n "$file" ] || continue
+        if [ -f "${file}.revert-proof-backup" ]; then
+            # no `-p`: a restored file takes the CURRENT time, so it is newer than any compile
+            cp "${file}.revert-proof-backup" "$file"
+            rm -f "${file}.revert-proof-backup"
+        fi
+    done
+
+    invalidate_views
+}
+
+# Set while an injected template may have been published: every abort path after the first
+# injection must re-seed the shared demo restaurant, because each inner harness run re-seeds it
+# FROM THE BLADE IT STILL SEES -- the injected one -- and the revert only happens after it returns
+# (QA M3). Restoring the files and the compiled views alone leaves the injected paragraph live on
+# the demo page in the shared bucket, which is the exact outcome the stale-compile defect produced.
+NEEDS_RESEED=0
+
+cleanup() {
+    local status=$?
+
+    restore
+
+    if [ "$NEEDS_RESEED" = "1" ]; then
+        echo "theme-paint-revert-proof: re-seeding the demo restaurant, which an injected template may have published" >&2
+
+        if ! (cd "$REPO/apps/api" && php artisan studio:demo-tenant >/dev/null 2>&1); then
+            echo "theme-paint-revert-proof: ⚠ the re-seed FAILED -- the demo restaurant may still carry the injected paragraph. Run \`php artisan studio:demo-tenant\`." >&2
+
+            if [ "$status" -eq 0 ]; then
+                status=1
+            fi
+        fi
+    fi
+
+    rm -rf "$WORK"
+    printf 'EXIT=%d\n' "$status"
+    exit "$status"
+}
+
+# ⚠ THE SIGNAL TRAPS EXIT (QA M2). `trap cleanup EXIT INT TERM` ran the handler and then RESUMED the
+# script, reproduced by QA: SIGTERM printed `EXIT=0` and the loop carried on, with `$WORK` already
+# removed, and could have injected the next template. Conventional 128+n; `cleanup` runs once, on EXIT.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+say() { printf '%s\n' "$1"; }
+
+# -----------------------------------------------------------------------------
+# 0. what is being proven, at which commit
+# -----------------------------------------------------------------------------
+# ⚠ `docs/` IS EXCLUDED, AND THE REASON IS THIS SCRIPT'S OWN OUTPUT. Its transcript is a tracked file
+# under docs/tickets/, and the shell truncates a redirect target BEFORE the script starts — so the
+# first re-run, once the record had been committed, refused to run because its own output file
+# differed from HEAD. The rule exists for CODE: a revert proof on uncommitted code proves nothing
+# about the committed code. Documentation changes nothing the proof measures, and this is the
+# boundary `check-records` (b3) already draws: *"nothing outside docs/ has moved"*.
+if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
+    fail "a tracked file outside docs/ differs from HEAD. A revert proof on uncommitted code proves nothing about the committed code -- commit first."
+fi
+
+if [ -n "$(git ls-files --others --exclude-standard -- "$BLADE_DIR")" ]; then
+    fail "there are untracked files under $BLADE_DIR"
+fi
+
+HEAD_SHA="$(git rev-parse --short HEAD)"
+
+# Written to the transcript by this script, so the sha is read from git and never from an echo
+# beside a backgrounded job -- the race that put the wrong sha in QRPAGER-48's record.
+say "================================================================================"
+say "theme-paint-revert-proof — THE REVERT RECORD. RED BY DESIGN, ONCE PER TEMPLATE."
+say "================================================================================"
+say ""
+say "Muhammad's standing instruction of 2026-11-03: EVERY NEW PROOF MUST BE SHOWN TO REDDEN ONCE"
+say "BEFORE IT IS TRUSTED, with the output recorded beside it. This is ruling 3(b) of QRPAGER-49A."
+say "Its other half, ruling 3(a), is tools/landing/test/paint-classify.test.mjs: the classifier on"
+say "synthetic records. Neither substitutes for the other."
+say ""
+say "⚠ THE RED RUNS BELOW ARE MEANT. This file is named -revert-record, which check-records (c)"
+say "does not iterate: a transcript of a DECLARED red is evidence; a transcript of a gate that"
+say "failed is not, and the two must not be stored under one name."
+say ""
+say "tree     : committed, at ${HEAD_SHA}"
+say "injected : ${INJECTION}"
+say "           an inline style attribute on a NEW element, prepended to the template's Blade"
+say ""
+
+TEMPLATES_JSON="$(cd apps/api && php bin/publish-sentinel-theme --templates)"
+mapfile -t TEMPLATES < <(python3 -c 'import json,sys; print("\n".join(json.loads(sys.argv[1])))' "$TEMPLATES_JSON")
+
+[ "${#TEMPLATES[@]}" -gt 0 ] || fail "LandingTemplate::values() produced no cases"
+
+say "templates, from LandingTemplate::values(): ${TEMPLATES[*]}"
+
+# A template with no Blade to inject into is a template this proof cannot cover. That is a
+# FAILURE, never a skip: skipping it would make the proof's scope exclude exactly the template
+# most recently added.
+for template in "${TEMPLATES[@]}"; do
+    [ -f "${BLADE_DIR}/${template}.blade.php" ] \
+        || fail "no ${BLADE_DIR}/${template}.blade.php to inject into -- the arrangement exists in the enum and the proof cannot cover it"
+done
+
+# -----------------------------------------------------------------------------
+# the harness, as a subprocess whose OWN status is what is read
+# -----------------------------------------------------------------------------
+# `QRPAGER_PAINT_LOG` set means theme-paint-proof does not re-exec itself under `tee`; its
+# stdout is captured here instead, and its own EXIT= trailer is its status line.
+harness() {
+    local label="$1" out_dir="$2" status=0
+
+    # ⚠ NO `set +e` / `set -e` IN HERE, AND THE FIRST VERSION HAD BOTH. A function runs in the
+    # caller's shell, so the trailing `set -e` re-armed errexit just before `return "$status"`
+    # handed back the harness's non-zero status -- which is the status this script exists to read.
+    # The caller's own `set +e` was undone from inside, and the script aborted the moment the
+    # harness reddened, i.e. exactly when it was working. The baseline run survived only because it
+    # sat inside an `if`, where errexit is ignored. an `if … then … else status=$?` reads a status without ever
+    # disabling the safety (and is the form `check-shell-evidence` accepts: a `$?` alone on its line,
+    # directly after the command it belongs to).
+    if QRPAGER_PAINT_LOG="${WORK}/${label}.log" QRPAGER_PAINT_OUT="${out_dir}" \
+        tools/gate/bin/theme-paint-proof >"${WORK}/${label}.txt" 2>&1; then
+        status=0
+    else
+        status=$?
+    fi
+
+    return "$status"
+}
+
+OUT_BASE="${REPO}/storage/theme-paint-revert"
+rm -rf "$OUT_BASE"
+
+# -----------------------------------------------------------------------------
+# 1. the baseline
+# -----------------------------------------------------------------------------
+say ""
+say "================================================================================"
+say "BASELINE — the unmodified tree must be GREEN"
+say "================================================================================"
+
+if harness baseline "${OUT_BASE}/baseline"; then
+    say "theme-paint-proof exit 0 on the unmodified tree"
+    say "$(grep -E '^(theme-paint: (every colour|the dead controls)|[[:space:]]+totals:)' "${WORK}/baseline.txt" | sed 's/^/  /')"
+else
+    # The (c) section and the verdict lines, not the tail of the dead-control table: the first
+    # time the baseline was red this printed forty lines that did not contain the finding.
+    sed -n '/^(c) EVERYTHING ELSE/,/^(3) STYLE ATTRIBUTES/p' "${WORK}/baseline.txt" | sed 's/^/  | /' >&2
+    grep -E '^theme-paint:' "${WORK}/baseline.txt" | sed 's/^/  | /' >&2
+    fail "the BASELINE is red, so a red below would not be evidence of anything: a proof whose unmodified tree is already red is measuring something other than its revert"
+fi
+
+# -----------------------------------------------------------------------------
+# 2. one injection per template
+# -----------------------------------------------------------------------------
+index=0
+
+for template in "${TEMPLATES[@]}"; do
+    index=$((index + 1))
+    file="${BLADE_DIR}/${template}.blade.php"
+    out="${OUT_BASE}/${template}"
+
+    say ""
+    say "================================================================================"
+    say "REVERT ${index} of ${#TEMPLATES[@]} — ${template}: one literal colour in ${file}"
+    say "================================================================================"
+
+    cp "$file" "${file}.revert-proof-backup"
+    INJECTED+=("$file")
+
+    { printf '%s\n' "$INJECTION"; cat "${file}.revert-proof-backup"; } >"$file"
+    invalidate_views
+    NEEDS_RESEED=1
+
+    say ""
+    say "the injection, as a diff:"
+    diff -u "${file}.revert-proof-backup" "$file" | sed -n '1,8p' | sed 's/^/  /' || true
+
+    # The OLD claim, on the same injected tree, as an observation. Not an assertion: the point
+    # is whether a source guard sees what the rendered page shows.
+    if scan_out="$(node tools/design-tokens/bin/scan-css.mjs 2>&1)"; then
+        scan_status=0
+    else
+        scan_status=$?
+    fi
+    say ""
+    say "scan-css (the SOURCE-level guard) on the injected tree: exit ${scan_status}"
+    say "  $(printf '%s' "$scan_out" | tail -1)"
+
+    say ""
+    say "theme-paint-proof (the RENDERED-pixel check) on the injected tree:"
+
+    if harness "inject-${template}" "$out"; then
+        harness_status=0
+    else
+        harness_status=$?
+    fi
+
+    say "  exit ${harness_status}"
+
+    [ "$harness_status" -ne 0 ] \
+        || { sed 's/^/  | /' "${WORK}/inject-${template}.txt" | tail -30 >&2; fail "${template}: the harness stayed GREEN with a literal colour injected -- it is not a harness"; }
+
+    # A RED IS AN ASSERTION. A red from the harness breaking is rejected as evidence.
+    for broken in 'THE MEASUREMENT IS NOT TRUSTWORTHY' 'theme-paint: FAILED --' 'is missing:'; do
+        if grep -qF "$broken" "${WORK}/inject-${template}.txt"; then
+            sed 's/^/  | /' "${WORK}/inject-${template}.txt" | tail -30 >&2
+            fail "${template}: the red is the HARNESS BREAKING ('${broken}'), not the literal being found -- rejected as evidence"
+        fi
+    done
+
+    [ -f "${out}/theme-paint-report.json" ] || fail "${template}: no report was written, so nothing can be attributed"
+
+    # Attribution, read from the machine-readable report rather than scraped from prose.
+    python3 - "${out}/theme-paint-report.json" "$template" "$LITERAL" <<'PY' >"${WORK}/attribution-${template}.txt" || fail "${template}: the finding is not attributed to the injected literal on the injected template -- see the report above"
+import json, sys
+
+report = json.load(open(sys.argv[1]))
+template, literal = sys.argv[2], sys.argv[3]
+findings = report["findings"]
+
+ours = [f for f in findings if f["template"] == template and f["value"] == literal and f["property"] == "color"]
+# the widened collector must see the SECOND property as well (`§11` QA H1 / Security 1)
+theirs = [f for f in findings if f["template"] == template and f["value"] == literal and f["property"] == "accent-color"]
+others = [f for f in findings if f["template"] != template]
+verdict = report["baseline"]
+
+problems = []
+if not ours:
+    problems.append(f"no finding names {literal} on {template}")
+if not theirs:
+    problems.append(f"no finding names {literal} in accent-color on {template} -- the collector does not read it")
+if others:
+    problems.append("the CONTROLS MOVED -- findings on other templates: " + ", ".join(sorted({f["template"] for f in others})))
+if verdict["unexpected"] or verdict["stale"] or verdict["gone"]:
+    problems.append("the dead-control baseline verdict changed")
+
+if problems:
+    print("; ".join(problems), file=sys.stderr)
+    sys.exit(1)
+
+widths = sorted({f["width"] for f in ours})
+print(f"  finding   : {literal}  color  on  {ours[0]['shape']}  ({ours[0]['path']})  at widths {widths}")
+print(f"  finding   : {literal}  accent-color  on  {theirs[0]['shape']}  at widths {sorted({f['width'] for f in theirs})}  (a property outside the ticket's own list, in the widened one)")
+print(f"  paints    : {ours[0]['paints']}  — {ours[0]['reason']}")
+print(f"  controls  : {len(set(report['templates']) - {template})} other template(s), 0 findings; dead-control baseline unchanged")
+PY
+    cat "${WORK}/attribution-${template}.txt"
+
+    # Show the harness's own words for it, so the record carries the evidence and not only my reading.
+    say ""
+    say "  the report's own lines for it:"
+    grep -B1 -A3 "${LITERAL}" "${WORK}/inject-${template}.txt" | head -8 | sed 's/^/    /' || true
+
+    # -------------------------------------------------------------------------
+    # REVERT, and require the file to be byte-identical to the committed original
+    # -------------------------------------------------------------------------
+    cp "${file}.revert-proof-backup" "$file"
+    rm -f "${file}.revert-proof-backup"
+    invalidate_views
+    cmp -s "$file" <(git show "HEAD:${file}") \
+        || fail "${template}: after the revert ${file} is NOT byte-identical to HEAD"
+    say ""
+    say "reverted: ${file} is byte-identical to HEAD:${file}"
+done
+
+# -----------------------------------------------------------------------------
+# 3. and green again
+# -----------------------------------------------------------------------------
+say ""
+say "================================================================================"
+say "AFTER ALL ${#TEMPLATES[@]} REVERTS — green again"
+say "================================================================================"
+
+if harness after "${OUT_BASE}/after"; then
+    # the harness run itself re-seeded the demo from the REVERTED templates: nothing left to undo
+    NEEDS_RESEED=0
+    say "theme-paint-proof exit 0 on the reverted tree"
+    say "$(grep -E '^(theme-paint: (every colour|the dead controls)|[[:space:]]+totals:)' "${WORK}/after.txt" | sed 's/^/  /')"
+else
+    sed 's/^/  | /' "${WORK}/after.txt" | tail -30 >&2
+    fail "the tree is RED after the reverts, so a revert did not restore what it changed"
+fi
+
+git diff --quiet HEAD -- . ':(exclude)docs' || fail "the working tree differs from HEAD after the proof"
+
+say ""
+say "theme-paint-revert-proof: ${#TEMPLATES[@]} of ${#TEMPLATES[@]} templates reddened the harness, attributed to the injected literal, with the controls unmoved; the tree is unchanged."

@@ -1,0 +1,284 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * ================================================================================
+ * THE SENTINEL THEME, ON THE DEMO RESTAURANT, THROUGH THE REAL PUBLISHER — QRPAGER-49A
+ * ================================================================================
+ *
+ * `scan-css` and `QRPAGER-46`'s emitted/referenced closure are SOURCE-level guards: they
+ * prove **no literal colour is written**. Neither proves **the theme reaches the rendered
+ * pixel**, which is a different claim about a different artefact — the bytes a visitor
+ * receives, resolved by a browser. This script produces the subject of that claim.
+ *
+ * ================================================================================
+ * ⚠⚠ WHICH DATABASE ROLE THIS RUNS AS, WHICH PHASE 1'S DOCBLOCK GOT WRONG
+ * ================================================================================
+ *
+ * Phase 1 said this script *"writes as the database owner"*. **It does not, and Muhammad's
+ * review of 2026-11-14 asked precisely the question that exposed it.** The sentence was carried
+ * over from `bin/publish-landing-fixture`'s header; the code never opens an owner connection.
+ *
+ * Every statement runs through `LandingPages`, and every `LandingPages` read and write opens
+ * `withTenant($tenantId, …)` with **no connection argument**, which
+ * `TenantContext::run()` resolves to `DatabaseRoles::connection('app')` — the APP role, the one
+ * the web process holds, under FORCE ROW LEVEL SECURITY, with `app.tenant_id` set per
+ * transaction. So:
+ *
+ *   - **It sets tenant context; it does not use a bypass.** There is no `withoutTenantScope()`
+ *     in this file and no `pgsql_owner` anywhere in it. `§4 › Tenancy` allows exactly those two
+ *     routes and this takes the first.
+ *   - **Under RLS the app role sees only this tenant's rows**, so the question *"the owner sees
+ *     no rows either"* does not arise: this is not the owner.
+ *   - **No statement it reaches is a bulk `UPDATE` or `DELETE`** (`§4 › Postgres traps`). Its
+ *     one statement of its own is `select name from tenants where id = ?`; the writes are
+ *     `LandingPages::saveDraft()`'s `UPDATE … WHERE tenant_id = ?` and `publish()`'s
+ *     `UPDATE … WHERE tenant_id = ? AND status = ? AND published_at is not distinct from ?`.
+ *     Each names a column of its own table, and there is no `DELETE` on the path.
+ *   - `SentinelThemeScriptTest` asserts the first and third of those against this file's own
+ *     source, so a later edit that opened an owner connection fails a test rather than
+ *     contradicting this paragraph.
+ *
+ * (`php artisan studio:demo-tenant`, which the orchestrator runs to seed and to restore, is a
+ * different program and DOES write as the owner — through `withTenant($id, …, 'pgsql_owner')`,
+ * per tenant, which is `§2.10`'s first pattern. It is `QRPAGER-48`'s and is unchanged.)
+ *
+ * ================================================================================
+ * WHY IT IS SAFE TO RUN, AND WHY `FixtureScriptGuardTest` ADMITS IT
+ * ================================================================================
+ *
+ * Three independent halves, because a control that is only correct while its caller is correct
+ * is not a control:
+ *
+ *   1. **Environment.** It refuses unless `APP_ENV` is `local` or `testing`, failing CLOSED on
+ *      an unset or unrecognised value, before it touches the database or the bucket.
+ *   2. **Identity.** It takes NO tenant argument. The tenant is `SeedDemoTenantCommand::
+ *      TENANT_ID`, a fixed uuid, so a caller cannot aim it at another restaurant — and it
+ *      REFUSES an extra argument rather than ignoring one, so a caller who tries learns that
+ *      it was not honoured instead of believing it was. A production database has no such
+ *      tenant unless somebody ran the demo seeder there, and that seeder carries the same
+ *      environment guard.
+ *   3. **Role.** The app role under RLS, per the section above: even a mistake here could not
+ *      read or write a second tenant's rows.
+ *
+ * `FixtureScriptGuardTest`'s exact set is a DERIVED list of the scripts that carry the guard,
+ *  * held exact so a writer cannot be added without a reader seeing it. Admitting this script is
+ * safe because it carries the guard and the guard is real, and because of what DRIVES it:
+ * `FixtureScriptGuardTest` runs it under `production` and requires exit 1; and
+ * `SentinelThemeScriptTest` runs it under `staging`, `Local`, `prod` and `development` as well —
+ * ⚠ that second half was MISSING and a first draft of this paragraph claimed it: the generic
+ * fail-closed loop in `FixtureScriptGuardTest` runs those four over `bin/issue-pager-session`
+ * ONLY, so for this script the evidence was `production` alone (`§11` QA M7, Security 4). An
+ * UNSET `APP_ENV` is not driven by any test: a child process reads `.env`, which supplies
+ * `local`, so the case cannot be built; the code defers to `config/app.php`, whose default is
+ * `production`. It also asserts that a refusal leaves this tenant's row and its published pointer
+ * byte-identical, which the generic case does not, since it counts `users` and `tenants` and this
+ * script writes neither.
+ *
+ * ================================================================================
+ * WHAT IT DOES
+ * ================================================================================
+ *
+ * ⚠ **A REAL THEME ON A REAL TENANT, PUBLISHED BY `LandingPages::publish()`.** Not a test
+ * fixture, not a stubbed resolver, not `LandingRenderer` called directly: the six values are
+ * written to `landing_pages.draft_document` through `saveDraft()` — the same call
+ * `ThemePage::save()` makes — and then published through the same phases a restaurant's own
+ * Publish button runs. A harness that rendered the page itself would be measuring its own idea
+ * of the path.
+ *
+ * ⚠ **THE DEMO RESTAURANT**, `QRPAGER-48`'s ruling — *"an e2e fixture must never again be the
+ * thing I am asked to judge a design from"* — applied to a measurement of the published page
+ * too: it carries all seven block types and its own imagery, so every colour-bearing element
+ * the renderer can produce is on the page.
+ *
+ * ⚠ **ONE DOCUMENT, UNCHANGED BUT FOR TWO MEMBERS.** The stored draft is read, `template` and
+ * `theme` are replaced, and everything else — every block, every media reference, the SEO, the
+ * logo — is written back exactly as it was. The invariant is *one unchanged tenant document
+ * under every arrangement*, and a document this script composed would measure this script.
+ *
+ * ⚠ **IT RESTORES NOTHING, DELIBERATELY.** When it returns, the demo restaurant's live page
+ * carries the sentinel theme. `tools/gate/bin/theme-paint-proof` restores it by re-running
+ * `php artisan studio:demo-tenant`, which is idempotent and is the only thing that knows what
+ * the demo restaurant's own theme is.
+ *
+ * USAGE:  php bin/publish-sentinel-theme --templates
+ *         php bin/publish-sentinel-theme <template>
+ * PRINTS: `--templates`  one JSON line: every `LandingTemplate` case, from the enum
+ *         otherwise      one JSON line: {"template":"…","hostname":"…","checksum":"…", …}
+ */
+
+use App\Domain\Landing\LandingDocumentInvalid;
+use App\Domain\Landing\LandingTemplate;
+use App\Features\Landing\Console\SeedDemoTenantCommand;
+use App\Features\Landing\LandingPages;
+use App\Features\Landing\PublishFailed;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\DB;
+use Tests\Support\SentinelTheme;
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+if (! app()->environment('local', 'testing')) {
+    fwrite(
+        STDERR,
+        "refusing to run: this publishes to the real object store and is for local and testing only.\n"
+        ."  APP_ENV is '".(string) config('app.env')."'.\n"
+    );
+
+    exit(1);
+}
+
+if (! class_exists(SentinelTheme::class)) {
+    fwrite(STDERR, "refusing to run: Tests\\Support\\SentinelTheme is not loadable; install dev dependencies.\n");
+
+    exit(1);
+}
+
+/*
+ * ⚠ THE SENTINELS COVER EVERY COLOUR ROLE, AND A GAP IS REFUSED RATHER THAN MEASURED AROUND.
+ * A colour token added to `ThemeTokens::NAMES` with no sentinel would be a studio picker this
+ * harness never exercises — a dead control it could not even report. Refused here as well as in
+ * `SentinelThemeTest`, because this is what a run actually executes.
+ */
+$sentinels = SentinelTheme::values();
+$roles = SentinelTheme::colourRoles();
+
+if (array_keys($sentinels) !== $roles) {
+    fwrite(
+        STDERR,
+        "refusing to run: the sentinel table does not cover the contract's colour roles.\n"
+        .'  contract: '.implode(', ', $roles)."\n"
+        .'  sentinel: '.implode(', ', array_keys($sentinels))."\n"
+    );
+
+    exit(1);
+}
+
+/*
+ * ⚠ THE ENUM IS THE LIST, AND THIS MODE EXISTS SO NOTHING DOWNSTREAM HOLDS A SECOND ONE.
+ * `browser/landing-templates.spec.ts` carries `['rail', 'ember', 'tile']` as a literal, which
+ * is a check whose scope excludes exactly where the next damage lands: `QRPAGER-49` adds three
+ * redesigns. The orchestrator asks for this list rather than spelling one.
+ */
+if (($argv[1] ?? '') === '--templates') {
+    echo json_encode(LandingTemplate::values(), JSON_THROW_ON_ERROR), "\n";
+
+    exit(0);
+}
+
+/*
+ * ⚠ AN EXTRA ARGUMENT IS REFUSED, NOT IGNORED. The natural thing to try is a tenant uuid, and
+ * a script that silently ignored it would let the caller believe it had been honoured. It is
+ * not: the tenant is fixed below.
+ */
+if (count($argv) !== 2) {
+    fwrite(
+        STDERR,
+        "refusing to run: exactly one argument is accepted, a template; this script takes no tenant.\n"
+        .'  the templates are: '.implode(', ', LandingTemplate::values())."\n"
+    );
+
+    exit(1);
+}
+
+$template = LandingTemplate::tryFrom((string) $argv[1]);
+
+if ($template === null) {
+    fwrite(
+        STDERR,
+        "refusing to run: '".(string) $argv[1]."' is not a LandingTemplate case.\n"
+        .'  the cases are: '.implode(', ', LandingTemplate::values())."\n"
+    );
+
+    exit(1);
+}
+
+$tenantId = SeedDemoTenantCommand::TENANT_ID;
+
+
+/*
+ * ⚠ **A REFUSAL MUST BE A NON-ZERO EXIT.** An uncaught `PublishFailed` is rendered by
+ * Laravel's handler and the process exits 0, so a caller reading the status would treat a
+ * refused publish as a published page — `bin/publish-landing-fixture` paid for this one
+ * already and its note is why this is here rather than discovered again.
+ *
+ * ⚠⚠ AND THE MESSAGE IS PRINTED ONLY FOR THE TWO TYPES WHOSE MESSAGES ARE WRITTEN FOR A READER
+ * (`§11` Security 5). This used to print `$e->getMessage()` of ANY Throwable, and a
+ * `QueryException`'s message carries the SQL and its bound parameters — here, the draft document
+ * as JSON — into stderr, which `theme-paint-proof` tees into a transcript this ticket commits. `§4 ›
+ * Edge & ops`: *"stack traces never carry SQL or bound parameters"*. Anything else prints its class
+ * and is `report()`ed, so the log — where redaction applies — has the detail.
+ */
+$refuse = static function (Throwable $e): never {
+    $safe = $e instanceof PublishFailed || $e instanceof LandingDocumentInvalid;
+
+    fwrite(
+        STDERR,
+        'refused: '.$e::class.($safe
+            ? ': '.$e->getMessage()
+            : ' (message withheld: it can carry SQL and bound parameters; the detail is in the application log)')."\n"
+    );
+
+    if (! $safe) {
+        try {
+            report($e);
+        } catch (Throwable) {
+            // a failing logger must not turn a refusal into a different failure
+        }
+    }
+
+    exit(1);
+};
+
+try {
+    $name = withTenant($tenantId, fn (): ?string => DB::table('tenants')->where('id', $tenantId)->value('name'));
+} catch (Throwable $e) {
+    $refuse($e);
+}
+
+if (! is_string($name) || $name === '') {
+    fwrite(
+        STDERR,
+        "refusing to run: the demo restaurant is not seeded.\n"
+        ."  run `php artisan studio:demo-tenant` first — this measures that tenant and no other.\n"
+    );
+
+    exit(1);
+}
+
+$pages = $app->make(LandingPages::class);
+
+try {
+    $document = $pages->draft($tenantId)->toArray();
+} catch (Throwable $e) {
+    $refuse($e);
+}
+
+$document['template'] = $template->value;
+$document['theme'] = $sentinels;
+
+try {
+    $pages->saveDraft($tenantId, $document);
+    $published = $pages->publish($tenantId);
+} catch (Throwable $e) {
+    $refuse($e);
+}
+
+echo json_encode([
+    'tenant_id' => $tenantId,
+    'tenant_name' => $name,
+    'template' => $template->value,
+    'hostname' => $published->hostname,
+    'checksum' => $published->checksum,
+    'byte_size' => $published->byteSize,
+    'asset_count' => count($published->assetKeys),
+    'published_at' => $published->publishedAt,
+    'theme' => $sentinels,
+], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), "\n";
