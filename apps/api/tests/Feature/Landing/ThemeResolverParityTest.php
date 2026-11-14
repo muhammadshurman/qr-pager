@@ -97,18 +97,73 @@ it('puts the same resolved theme on the preview and on the published page', func
  * PHP is kept, including the executables under `bin/` that have no extension and the shebang
  * scripts under the repository's `tools/`.
  *
+ * ⚠ AFTER THE `§11` ROUND (QA L9, L10, L11) THE ROOTS ARE WIDER STILL — `bootstrap`, `public`,
+ * `artisan`, `apps/api/docker/` (it holds `drain/routes.php`), and the repository's `packages/` and `browser/` — and the scan REPORTS HOW
+ * MANY FILES EACH ROOT VISITED, so a directory that is renamed away fails a case instead of being
+ * skipped by an `is_dir` and leaving an exact-set assertion green over nothing.
+ *
  * ⚠ WHAT IT STILL CANNOT SEE, stated rather than implied: a call made through a variable class
  * name (`$class::declarations(…)`), `call_user_func([ThemeStylesheet::class, 'declarations'])`, or
  * an alias imported under another name. The tokenizer reads names, not types. A second resolver
  * written that way is the boundary of this control, and it is recorded in `§5` with an owner.
  */
 
+/** Directory names the walk never descends into. Pruned BEFORE descent, so `node_modules` is not read. */
+const RESOLVER_SCAN_SKIP = ['vendor', 'node_modules', 'storage', 'build', '.next', '.git', 'generated'];
+
 /**
- * Every call to the theme -> CSS family, outside the test suite's own subjects, by file.
+ * An iterator over every file under a root, never entering a skipped directory.
  *
- * @return array<string, list<string>> repository-relative path => `Class::method`, sorted
+ * @return Generator<int, string>
  */
-function resolverCallSites(): array
+function resolverFiles(string $root): Generator
+{
+    if (is_file($root)) {
+        yield $root;
+
+        return;
+    }
+
+    $directory = new RecursiveCallbackFilterIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        static fn (SplFileInfo $file): bool => ! ($file->isDir() && in_array($file->getFilename(), RESOLVER_SCAN_SKIP, true)),
+    );
+
+    foreach (new RecursiveIteratorIterator($directory) as $file) {
+        if ($file instanceof SplFileInfo && $file->isFile()) {
+            yield $file->getPathname();
+        }
+    }
+}
+
+/**
+ * The roots the scan reads, each of which MUST exist.
+ *
+ * `tests/Feature` is deliberately NOT here: those files are the family's SUBJECTS and call it as
+ * a unit under test. `tests/Support` is helper code a second resolver could hide in.
+ *
+ * @return list<string>
+ */
+function resolverScanRoots(): array
+{
+    $repo = dirname(base_path(), 2);
+
+    return [
+        base_path('app'), base_path('bin'), base_path('bootstrap'), base_path('config'), base_path('database'),
+        base_path('docker'), base_path('guard'), base_path('public'), base_path('resources'), base_path('routes'),
+        base_path('tests/Support'), base_path('artisan'),
+        $repo.'/tools', $repo.'/packages', $repo.'/browser',
+    ];
+}
+
+/**
+ * Every call to the theme -> CSS family, outside the test suite's own subjects.
+ *
+ * @param  list<string>  $extraRoots  roots added to the real ones — how a test plants a resolver
+ *                                    without writing into the repository
+ * @return array{sites: array<string, list<string>>, visited: array<string, int>}
+ */
+function resolverCallSites(array $extraRoots = []): array
 {
     $family = [
         'ThemeStylesheet' => ['declarations'],
@@ -117,34 +172,18 @@ function resolverCallSites(): array
     ];
 
     $repo = dirname(base_path(), 2);
-
-    // `tests/Feature` is deliberately NOT here: those files are the family's SUBJECTS and call
-    // it as a unit under test. `tests/Support` is helper code a second resolver could hide in.
-    $roots = [
-        base_path('app'), base_path('bin'), base_path('config'), base_path('database'),
-        base_path('routes'), base_path('resources'), base_path('guard'), base_path('tests/Support'),
-        $repo.'/tools',
-    ];
-
     $sites = [];
+    $visited = [];
 
-    foreach ($roots as $root) {
-        if (! is_dir($root)) {
+    foreach ([...resolverScanRoots(), ...$extraRoots] as $root) {
+        $visited[$root] = 0;
+
+        if (! file_exists($root)) {
             continue;
         }
 
-        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
-
-        foreach ($files as $file) {
-            if (! $file instanceof SplFileInfo || ! $file->isFile()) {
-                continue;
-            }
-
-            $path = $file->getPathname();
-
-            if (preg_match('#/(vendor|node_modules|storage|build)/#', $path) === 1) {
-                continue;
-            }
+        foreach (resolverFiles($root) as $path) {
+            $visited[$root]++;
 
             $source = (string) file_get_contents($path);
             $isPhp = str_ends_with($path, '.php') || str_starts_with($source, '#!/usr/bin/env php');
@@ -152,6 +191,8 @@ function resolverCallSites(): array
             if (! $isPhp) {
                 continue;
             }
+
+            $label = str_replace($repo.'/', '', $path);
 
             if (str_ends_with($path, '.blade.php')) {
                 // A template is not PHP the tokenizer can read. Its comments are stripped and
@@ -161,7 +202,7 @@ function resolverCallSites(): array
                 foreach ($family as $class => $methods) {
                     foreach ($methods as $method) {
                         if (preg_match('/\b'.$class.'::'.$method.'\s*\(/', $source) === 1) {
-                            $sites[str_replace($repo.'/', '', $path)][] = "{$class}::{$method}";
+                            $sites[$label][] = "{$class}::{$method}";
                         }
                     }
                 }
@@ -210,7 +251,7 @@ function resolverCallSites(): array
                 }
 
                 if (isset($tokens[$next]) && is_array($tokens[$next]) && in_array($tokens[$next][1], $family[$class], true)) {
-                    $sites[str_replace($repo.'/', '', $path)][] = $class.'::'.$tokens[$next][1];
+                    $sites[$label][] = $class.'::'.$tokens[$next][1];
                 }
             }
         }
@@ -218,13 +259,31 @@ function resolverCallSites(): array
 
     ksort($sites);
 
-    return array_map(static function (array $calls): array {
-        $calls = array_values(array_unique($calls));
-        sort($calls);
+    return [
+        'sites' => array_map(static function (array $calls): array {
+            $calls = array_values(array_unique($calls));
+            sort($calls);
 
-        return $calls;
-    }, $sites);
+            return $calls;
+        }, $sites),
+        'visited' => $visited,
+    ];
 }
+
+it('scans every root it names, and every one of them exists and has files in it', function (): void {
+    /*
+     * ⚠ THE VACUITY GUARD THE BY-NAME CASE LACKED (QA L11), applied to both. A root renamed away
+     * used to be skipped by an `is_dir` and `expect($hits)->toBe([])` stayed green over nothing.
+     * Here every root must EXIST and the walk must have opened at least one file in it.
+     */
+    foreach (resolverScanRoots() as $root) {
+        expect(file_exists($root))->toBeTrue("the scan names {$root} and it does not exist, so it scanned nothing there");
+    }
+
+    foreach (resolverCallSites()['visited'] as $root => $files) {
+        expect($files)->toBeGreaterThan(0, "the scan visited no file under {$root}");
+    }
+});
 
 it('keeps one emitter with one production caller, wherever PHP is kept in the repository', function (): void {
     /*
@@ -232,7 +291,7 @@ it('keeps one emitter with one production caller, wherever PHP is kept in the re
      * resolves to; a caller that VANISHED would mean this scan has stopped seeing the code it
      * exists to count, which is the vacuity this file's other cases are written to rule out.
      */
-    expect(resolverCallSites())->toBe([
+    expect(resolverCallSites()['sites'])->toBe([
         'apps/api/app/Features/Landing/LandingRenderer.php' => ['ThemeStylesheet::declarations'],
         'apps/api/app/Features/Landing/ThemeStylesheet.php' => [
             'ThemeDefaults::fill',
@@ -242,47 +301,45 @@ it('keeps one emitter with one production caller, wherever PHP is kept in the re
     ]);
 });
 
-it('would SEE a second resolver in bin/ or tools/ — the scan itself, planted and removed', function (): void {
+it('would SEE a second resolver in an extensionless bin script or a tools file — planted outside the repository', function (): void {
     /*
-     * ⚠ THE CONTROL FOR THE CASE ABOVE. A scan that returns the expected two files proves
-     * nothing about files it never opens, and Phase 1's scan never opened `bin/` at all. This
-     * plants one in each of the two places the review named and requires the scan to report it.
+     * ⚠ THE CONTROL FOR THE CASE ABOVE, AND IT NO LONGER WRITES INTO THE REPOSITORY (QA L10). It
+     * used to plant `bin/zz-planted-*` and `tools/zz-planted-*` in the real tree, where a kill
+     * between the write and the `finally` left executables behind that failed the exact-set case
+     * and were globbed by any parallel suite. The planted files now live in a temporary directory
+     * handed to the scan as an EXTRA root: the DETECTION is proven here, and that the real `bin/`
+     * and `tools/` are opened at all is proven by the visited counts above.
      */
-    $planted = [
-        base_path('bin/zz-planted-second-resolver') => "#!/usr/bin/env php\n<?php\n\\App\\Features\\Landing\\ThemeStylesheet::declarations([], null);\n",
-        dirname(base_path(), 2).'/tools/zz-planted-second-resolver.php' => "<?php\nThemeTokens::cssValue('color.text', '#000000');\n",
-    ];
+    $tmp = sys_get_temp_dir().'/resolver-plant-'.bin2hex(random_bytes(4));
+
+    mkdir($tmp.'/bin', 0o755, true);
+    mkdir($tmp.'/tools', 0o755, true);
+
+    file_put_contents($tmp.'/bin/zz-planted-second-resolver', "#!/usr/bin/env php\n<?php\n\\App\\Features\\Landing\\ThemeStylesheet::declarations([], null);\n");
+    file_put_contents($tmp.'/tools/zz-planted.php', "<?php\nThemeTokens::cssValue('color.text', '#000000');\n");
+    file_put_contents($tmp.'/tools/zz-comment.php', "<?php\n// ThemeStylesheet::declarations([]);\n/* ThemeTokens::cssValue() */\n\$s = 'ThemeStylesheet::declarations(';\n");
 
     try {
-        foreach ($planted as $path => $body) {
-            file_put_contents($path, $body);
+        $sites = resolverCallSites([$tmp])['sites'];
+
+        expect($sites[$tmp.'/bin/zz-planted-second-resolver'] ?? null)->toBe(['ThemeStylesheet::declarations']);
+        expect($sites[$tmp.'/tools/zz-planted.php'] ?? null)->toBe(['ThemeTokens::cssValue']);
+
+        // a comment and a string are not calls
+        expect(array_key_exists($tmp.'/tools/zz-comment.php', $sites))->toBeFalse();
+    } finally {
+        foreach ([$tmp.'/bin/zz-planted-second-resolver', $tmp.'/tools/zz-planted.php', $tmp.'/tools/zz-comment.php'] as $file) {
+            @unlink($file);
         }
 
-        $sites = resolverCallSites();
-
-        expect($sites)->toHaveKey('apps/api/bin/zz-planted-second-resolver');
-        expect($sites['apps/api/bin/zz-planted-second-resolver'])->toBe(['ThemeStylesheet::declarations']);
-        expect($sites)->toHaveKey('tools/zz-planted-second-resolver.php');
-        expect($sites['tools/zz-planted-second-resolver.php'])->toBe(['ThemeTokens::cssValue']);
-    } finally {
-        foreach (array_keys($planted) as $path) {
-            @unlink($path);
-        }
+        @rmdir($tmp.'/bin');
+        @rmdir($tmp.'/tools');
+        @rmdir($tmp);
     }
 
-    expect(array_keys(resolverCallSites()))->not->toContain('apps/api/bin/zz-planted-second-resolver');
-});
-
-it('does not mistake a comment or a string for a call', function (): void {
-    $path = base_path('bin/zz-planted-comment');
-
-    file_put_contents($path, "#!/usr/bin/env php\n<?php\n// ThemeStylesheet::declarations([]);\n/* ThemeTokens::cssValue() */\n\$s = 'ThemeStylesheet::declarations(';\n");
-
-    try {
-        expect(array_keys(resolverCallSites()))->not->toContain('apps/api/bin/zz-planted-comment');
-    } finally {
-        @unlink($path);
-    }
+    // and the real tree is exactly as it was: nothing planted in it
+    expect(array_keys(resolverCallSites()['sites']))->toHaveCount(2);
+    expect(glob(base_path('bin/zz-*')))->toBe([]);
 });
 
 it('finds no second implementation by NAME in PHP strings or in the TypeScript half', function (): void {
@@ -301,26 +358,17 @@ it('finds no second implementation by NAME in PHP strings or in the TypeScript h
     $names = '/--color-(background|text|muted|accent-text|accent)(?![a-z-])/';
     $repo = dirname(base_path(), 2);
     $hits = [];
-
-    $walk = static function (string $root, callable $each): void {
-        if (! is_dir($root)) {
-            return;
-        }
-
-        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)) as $file) {
-            if ($file instanceof SplFileInfo && $file->isFile()
-                && preg_match('#/(vendor|node_modules|storage|build|\.next|generated)/#', $file->getPathname()) !== 1) {
-                $each($file->getPathname());
-            }
-        }
-    };
+    $visited = 0;
 
     foreach (['app', 'bin', 'config', 'database', 'routes', 'guard', 'tests/Support'] as $dir) {
-        $walk(base_path($dir), static function (string $path) use ($names, $repo, &$hits): void {
+        expect(is_dir(base_path($dir)))->toBeTrue("{$dir} does not exist, so the by-name scan read nothing there");
+
+        foreach (resolverFiles(base_path($dir)) as $path) {
+            $visited++;
             $source = (string) file_get_contents($path);
 
             if (! (str_ends_with($path, '.php') || str_starts_with($source, '#!/usr/bin/env php'))) {
-                return;
+                continue;
             }
 
             foreach (token_get_all($source) as $token) {
@@ -330,17 +378,23 @@ it('finds no second implementation by NAME in PHP strings or in the TypeScript h
                     $hits[] = str_replace($repo.'/', '', $path).':'.$token[2];
                 }
             }
-        });
+        }
     }
 
     foreach (['apps/web/src', 'apps/web/app', 'apps/site/src', 'apps/site/app', 'packages/ui/src', 'packages/tokens/src', 'packages/contracts/src'] as $dir) {
-        $walk($repo.'/'.$dir, static function (string $path) use ($names, $repo, &$hits): void {
+        expect(is_dir($repo.'/'.$dir))->toBeTrue("{$dir} does not exist, so the by-name scan read nothing there");
+
+        foreach (resolverFiles($repo.'/'.$dir) as $path) {
+            $visited++;
+
             if (preg_match('/\.(ts|tsx|css|mjs|js)$/', $path) === 1
                 && preg_match($names, (string) file_get_contents($path)) === 1) {
                 $hits[] = str_replace($repo.'/', '', $path);
             }
-        });
+        }
     }
 
+    // Not vacuous: a scan that opened nothing would report "no hits" for any name at all.
+    expect($visited)->toBeGreaterThan(300);
     expect($hits)->toBe([], 'a second place names a landing theme role property, so a second resolver may exist: '.implode(', ', $hits));
 });

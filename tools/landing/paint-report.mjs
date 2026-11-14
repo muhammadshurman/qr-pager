@@ -394,7 +394,7 @@ function print(context) {
 
           if (finding.derived?.length > 0) {
             out(
-              `        consequence — the same value, inherited via currentcolor, in: ${finding.derived.join(', ')}`,
+              `        consequence — the same value as this element's own color, so inherited via currentcolor or written to match it, in: ${finding.derived.join(', ')}`,
             )
           }
         }

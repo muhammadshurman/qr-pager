@@ -94,6 +94,7 @@ export const CURRENTCOLOR_DERIVED = Object.freeze([
   'column-rule-color',
   'text-emphasis-color',
   '-webkit-text-fill-color',
+  '-webkit-text-stroke-color',
 ])
 
 const NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/
@@ -232,7 +233,23 @@ export function parseColour(input) {
 
   if (rgb.some((value) => !Number.isFinite(value)) || !Number.isFinite(alpha)) return null
 
-  return { r: channel(rgb[0]), g: channel(rgb[1]), b: channel(rgb[2]), a: alpha }
+  const colour = { r: channel(rgb[0]), g: channel(rgb[1]), b: channel(rgb[2]), a: alpha }
+
+  /*
+   * ⚠ EXACT TO THE 8-BIT CHANNEL, AND NOW SAID AND TESTED RATHER THAN IMPLIED. Rounding a channel
+   * to the nearest integer made `rgb(254.5, 0, 228)` and `color(srgb 1 0 0.8959)` read as the
+   * sentinel `#ff00e4` — QA's L5, found by running both — while the docblock above `classify()`
+   * said *"EXACT, NOT NEAR"*. A browser serialises a computed colour as 8-bit integers (or a
+   * `color(srgb …)` that is an integer over 255 to within its printed precision), so a channel that
+   * is NOT within 0.01 of an integer, or that had to be clamped into range, is not something an
+   * engine returned and cannot be a sentinel. It is marked and `classify()` sorts it as `other`.
+   */
+  const exact = (value) =>
+    value >= -0.01 && value <= 255.01 && Math.abs(value - Math.round(value)) <= 0.01
+
+  if (!rgb.every(exact)) colour.inexact = true
+
+  return colour
 }
 
 /** `#rrggbb` for an opaque colour, `rgba(r, g, b, a)` otherwise. */
@@ -243,7 +260,12 @@ export function describeColour(parsed) {
     return `#${hex(parsed.r)}${hex(parsed.g)}${hex(parsed.b)}`
   }
 
-  const alpha = parsed.a === 0 ? '0' : String(Number(parsed.a.toFixed(3)))
+  let alpha = parsed.a === 0 ? '0' : String(Number(parsed.a.toFixed(6)))
+
+  // ⚠ A NEAR-OPAQUE ALPHA MUST NOT PRINT AS `1`. `rgba(255,0,228,0.9996)` once reported
+  // `value: 'rgba(255, 0, 228, 1)'`, which reads as opaque, and alphas that rounded alike merged
+  // into one group (QA L6).
+  if (alpha === '1' && parsed.a !== 1) alpha = '0.999999'
 
   return `rgba(${String(parsed.r)}, ${String(parsed.g)}, ${String(parsed.b)}, ${alpha})`
 }
@@ -255,7 +277,7 @@ export function describeColour(parsed) {
  *   nonThemed  — a member of `NON_THEMED`
  *   other      — everything else, including anything this module cannot evaluate
  *
- * ⚠ EXACT, NOT NEAR. `rgb(255, 0, 229)` is one digit off the background sentinel and is `other`,
+ * ⚠ EXACT, NOT NEAR — to the 8-bit channel. `rgb(255, 0, 229)` is one digit off the background sentinel and is `other`,
  * as is the sentinel at 99% alpha: a tint of the tenant's colour is a colour the page painted
  * that the tenant did not choose, and a tolerance here would let a near-miss literal pass.
  *
@@ -270,6 +292,14 @@ export function classify(raw, sentinels) {
     return { kind: 'other', token: text, why: 'not a colour this classifier can evaluate to sRGB' }
   }
 
+  if (parsed.inexact === true) {
+    return {
+      kind: 'other',
+      token: text,
+      why: 'a channel that is not an exact 8-bit value, which no engine returns',
+    }
+  }
+
   const token = describeColour(parsed)
 
   if (parsed.a === 1) {
@@ -278,7 +308,15 @@ export function classify(raw, sentinels) {
     if (role !== undefined) return { kind: 'sentinel', role, token }
   }
 
-  if (Object.hasOwn(NON_THEMED, token)) return { kind: 'nonThemed', member: token, token }
+  /*
+   * ⚠ DECIDED ON THE PARSED VALUE, NOT ON A ROUNDED STRING. `rgba(0, 0, 0, 0.0004)` used to be
+   * printed with its alpha rounded to three places, which made it the member `rgba(0, 0, 0, 0)`
+   * while `paintVerdict` said it paints — contradicting this set's own claim to be stricter than
+   * "any zero-alpha colour" (QA L4). Exactly zero alpha on exactly black, or it is a finding.
+   */
+  if (parsed.a === 0 && parsed.r === 0 && parsed.g === 0 && parsed.b === 0) {
+    return { kind: 'nonThemed', member: 'rgba(0, 0, 0, 0)', token: 'rgba(0, 0, 0, 0)' }
+  }
 
   return {
     kind: 'other',
@@ -308,15 +346,72 @@ const NONE = new Set(['none', 'hidden'])
 export function paintVerdict(sample) {
   const { box, property } = sample
   const facts = sample.facts ?? {}
+  const render = sample.render ?? {}
 
-  if (!(box.w > 2 && box.h > 2)) {
-    return { paints: false, reason: 'the element has no box larger than 2px' }
+  /*
+   * ⚠ THIS USED TO BE `box.w > 2 && box.h > 2`, AND BOTH REVIEWERS FOUND IT WRONG IN OPPOSITE
+   * DIRECTIONS. A 1px or 2px rule painted with `--color-accent` read as UNPAINTED (QA M5) — a
+   * false dead control, which would have forced a baseline entry for a role that does paint — and
+   * nothing about visibility, opacity, clipping or text size was considered, so a role carried
+   * only by an invisible element read as painted (QA M4, Security 7). The threshold existed for
+   * ONE reason, `.sr`'s 1px clipped box, and `.sr` is now excluded by what actually hides it:
+   * its own `clip-path`.
+   *
+   * What is judged now is MEASURED on the element — its own box, its computed `visibility`, its
+   * EFFECTIVE opacity (the product up the ancestor chain), `clip-path` and `clip`, and its font
+   * size for text. ⚠ STILL NOT JUDGED, and named in `R-318` rather than implied: an element
+   * covered by another, one positioned off-screen, `overflow` clipping by an ancestor, and a
+   * `color` overridden by `-webkit-text-fill-color`.
+   */
+  if (!(box.w > 0 && box.h > 0)) {
+    return { paints: false, reason: 'the element has no box' }
+  }
+
+  /*
+   * ⚠ A GENERATED BOX IS NOT MEASURED. The collector reads a `::before`'s geometry from the
+   * element that generates it, so a `::before{content:"";background:var(--color-accent)}` with no
+   * size of its own inherited its parent's 300×40 and read as painting. Its own size is not
+   * available to `getBoundingClientRect`, so it counts as unpainted here — the conservative
+   * direction, and a boundary (`R-318`).
+   */
+  if (sample.pseudo !== null && sample.pseudo !== undefined) {
+    return {
+      paints: false,
+      reason: 'a generated box\u2019s own size is not measured, so it counts as unpainted',
+    }
+  }
+
+  if (render.visibility === 'hidden' || render.visibility === 'collapse') {
+    return { paints: false, reason: `visibility is ${render.visibility}` }
+  }
+
+  if (render.opacity === 0) {
+    return { paints: false, reason: 'the element\u2019s effective opacity is 0' }
+  }
+
+  if (render.clipPath !== undefined && render.clipPath !== 'none') {
+    return { paints: false, reason: `clipped by clip-path: ${render.clipPath}` }
+  }
+
+  if (render.clip !== undefined && render.clip !== 'auto') {
+    return { paints: false, reason: `clipped by clip: ${render.clip}` }
   }
 
   const parsed = parseColour(sample.colour)
 
   if (parsed !== null && parsed.a === 0) {
     return { paints: false, reason: 'the value is fully transparent' }
+  }
+
+  const textual = [
+    'color',
+    '-webkit-text-fill-color',
+    '-webkit-text-stroke-color',
+    'text-shadow',
+  ].includes(property)
+
+  if (textual && render.fontSize === 0) {
+    return { paints: false, reason: 'the font size is 0' }
   }
 
   const drawn = (width, style) => width > 0 && !NONE.has(style)
@@ -328,6 +423,11 @@ export function paintVerdict(sample) {
       return facts.hasText === true
         ? { paints: true, reason: 'the element carries its own text' }
         : { paints: false, reason: 'the element carries no text node of its own' }
+
+    case '-webkit-text-stroke-color':
+      return facts.hasText === true && facts.width > 0
+        ? { paints: true, reason: `the text is stroked at ${String(facts.width)}px` }
+        : { paints: false, reason: 'the text has no stroke' }
 
     case 'background-color':
     case 'background-image':

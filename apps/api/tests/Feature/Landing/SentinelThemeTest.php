@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Landing\ThemeTokenKind;
 use App\Domain\Landing\ThemeTokens;
 use Tests\Support\SentinelTheme;
 
@@ -33,16 +32,15 @@ it('has exactly one sentinel for every colour role the contract defines, in the 
 });
 
 it('catches a colour role added to the contract without a sentinel', function (): void {
-    // The control for the case above: if `colourRoles()` were computed from the sentinel table
-    // itself the two would agree forever. It is read from `ThemeTokens::NAMES`, so a seventh
-    // colour token shows up here.
-    $contract = array_keys(array_filter(
-        ThemeTokens::NAMES,
-        static fn (ThemeTokenKind $kind): bool => $kind === ThemeTokenKind::Colour,
-    ));
+    // The real contract is fully covered…
+    expect(SentinelTheme::uncovered(SentinelTheme::colourRoles()))->toBe([]);
 
-    expect(SentinelTheme::colourRoles())->toBe($contract);
-    expect(array_values(array_diff([...$contract, 'color.invented'], array_keys(SentinelTheme::values()))))->toBe(['color.invented']);
+    // …and a contract that GREW is not: handed a seventh colour role, the detection names it.
+    // (This case used to compare `colourRoles()` against a list built by the same code, which can
+    // fail only if that code is rewritten — `§11` QA L3.)
+    expect(SentinelTheme::uncovered([...SentinelTheme::colourRoles(), 'color.invented']))->toBe(['color.invented']);
+    expect(SentinelTheme::uncovered(['color.invented', 'color.other']))->toBe(['color.invented', 'color.other']);
+    expect(SentinelTheme::uncovered([]))->toBe([]);
 });
 
 it('holds six distinct values, each one the contract accepts', function (): void {

@@ -76,9 +76,10 @@ afterEach(function (): void {
  * Run the script as a real process, as `tools/gate/bin/theme-paint-proof` does.
  *
  * @param  list<string>  $arguments
+ * @param  array<string, string>  $extraEnvironment  overrides, e.g. a database port that refuses
  * @return array{int, string}
  */
-function sentinelRun(array $arguments, string $environment): array
+function sentinelRun(array $arguments, string $environment, array $extraEnvironment = []): array
 {
     $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
 
@@ -100,6 +101,7 @@ function sentinelRun(array $arguments, string $environment): array
             'AWS_SECRET_ACCESS_KEY' => (string) config('filesystems.disks.s3.secret'),
             'AWS_DEFAULT_REGION' => (string) config('filesystems.disks.s3.region'),
             'AWS_USE_PATH_STYLE_ENDPOINT' => 'true',
+            ...$extraEnvironment,
         ],
     );
 
@@ -167,6 +169,55 @@ it('refuses under production and leaves the row and the published pointer BYTE-I
     expect(str_contains($output, "'production'"))->toBeTrue($output);
 
     expect(sentinelSnapshot())->toBe($before);
+});
+
+it('fails CLOSED on every environment it does not recognise — THIS script, not a sibling', function (): void {
+    /*
+     * ⚠ THE EVIDENCE `FixtureScriptGuardTest`'S WIDENING COMMENT CLAIMED AND DID NOT HAVE
+     * (`§11` QA M7, Security 4). That file's fail-closed loop runs these four environments over
+     * `bin/issue-pager-session` alone; for this script the only environment ever driven was
+     * `production`. The allow-list is `environment('local', 'testing')`, so each of these is a
+     * refusal BY CONSTRUCTION — this makes it a refusal by measurement, with the row and the
+     * published pointer asserted byte-identical, because refusing and leaving no trace are
+     * different claims.
+     *
+     * An UNSET `APP_ENV` cannot be driven here: a child process reads `.env`, which supplies
+     * `local`. The code defers to `config/app.php`, whose default is `production`.
+     */
+    sentinelSeed();
+
+    $before = sentinelSnapshot();
+
+    foreach (['staging', 'Local', 'prod', 'development', 'Testing'] as $environment) {
+        [$status, $output] = sentinelRun(['rail'], $environment);
+
+        expect($status)->toBe(1, "APP_ENV='{$environment}' was not refused: {$output}");
+        expect(str_contains($output, 'refusing to run'))->toBeTrue("APP_ENV='{$environment}': {$output}");
+        // the refusal names what it saw, so a guard that fired can be told apart from one that crashed
+        expect(str_contains($output, "'{$environment}'"))->toBeTrue("APP_ENV='{$environment}' is not named in: {$output}");
+    }
+
+    expect(sentinelSnapshot())->toBe($before);
+});
+
+it('never prints SQL or bound parameters when the database refuses it', function (): void {
+    /*
+     * ⚠ `§11` SECURITY 5. `$refuse` used to print `$e->getMessage()` of any Throwable, and a
+     * `QueryException`'s message carries the statement and its bindings — the draft document, as
+     * JSON — into stderr, which the orchestrator tees into a transcript that is COMMITTED. Port 1
+     * refuses every connection, so the first query the script makes fails the way a real database
+     * fault would; none of the SQL, the bindings, the host or the credentials may reach the output.
+     */
+    sentinelSeed();
+
+    [$status, $output] = sentinelRun(['rail'], 'testing', ['DB_PORT' => '1']);
+
+    expect($status)->toBe(1, $output);
+    expect(str_contains($output, 'message withheld'))->toBeTrue($output);
+
+    foreach (['select ', 'SQLSTATE', 'SQL:', 'tenants', 'insert ', 'update ', 'where ', '127.0.0.1', 'qrpager_'] as $leak) {
+        expect(stripos($output, $leak))->toBeFalse("the output carries `{$leak}`: {$output}");
+    }
 });
 
 it('takes no tenant: an extra argument is refused, and nothing is written for anybody', function (): void {

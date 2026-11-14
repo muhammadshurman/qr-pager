@@ -232,8 +232,15 @@ it('refuses to run as production, on both scripts, and writes no row when it ref
          * `bin/` and held exact so that (a) a grep that silently stopped matching cannot make the
          * loop below iterate nothing, and (b) a script that writes cannot appear without a reader
          * of this diff seeing it. Admitting this one means only that it carries the guard, and
-         * that the cases below now drive it under `production` and under every unrecognised
-         * environment and require exit 1. That is sufficient because the script has three
+         * that the cases below now drive it under `production` and require exit 1.
+         *
+         * ⚠ **THIS COMMENT FIRST SAID "AND UNDER EVERY UNRECOGNISED ENVIRONMENT", AND THAT WAS
+         * FALSE** (`§11` QA M7, Security 4): the fail-closed loop below runs `staging`, `Local`,
+         * `prod` and `development` over `bin/issue-pager-session` ONLY. For this script those four
+         * are driven by `SentinelThemeScriptTest`, which also asserts the demo restaurant's row
+         * and published pointer are byte-identical after each refusal.
+         *
+         * That is sufficient because the script has three
          * independent halves — environment, a FIXED tenant with no argument (an extra one is
          * refused), and the app role under RLS — and `SentinelThemeScriptTest` asserts the last
          * two and that a refusal leaves the demo restaurant's row AND published pointer

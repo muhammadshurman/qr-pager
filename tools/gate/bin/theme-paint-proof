@@ -109,22 +109,52 @@ free_port() {
 
 cleanup() {
     local status=$?
+    local restore_failed=0
 
     stop_group "$SITE_PID"
-    free_port "$PORT"
+
+    # ⚠ ONLY A SERVER THIS RUN STARTED — Security 2 / QA M1 found the opposite here. The pre-check
+    # in section 0 refuses a held port *"because talking to somebody else's server is how a sibling
+    # proof once measured a stale build"* — and then `fail` ran this trap, which `kill -9`'d whatever
+    # owned the port. A script that refuses to talk to a listener and then SIGKILLs it has not left
+    # it alone. `SITE_PID` is set only once this run has started the server.
+    if [ -n "$SITE_PID" ]; then
+        free_port "$PORT"
+    fi
 
     if [ "${QRPAGER_PAINT_KEEP:-}" = "1" ]; then
         echo "theme-paint: QRPAGER_PAINT_KEEP=1 — the demo restaurant is LEFT carrying the sentinel theme."
     elif [ "${SEEDED:-}" = "1" ]; then
         echo "theme-paint: restoring the demo restaurant to its own theme"
-        (cd "$REPO/apps/api" && php artisan studio:demo-tenant >/dev/null 2>&1) \
-            || echo "theme-paint: ⚠ the restore FAILED — the demo restaurant still carries the sentinel theme. Run \`php artisan studio:demo-tenant\`."
+        if ! (cd "$REPO/apps/api" && php artisan studio:demo-tenant >/dev/null 2>&1); then
+            restore_failed=1
+            echo "theme-paint: ⚠ the restore FAILED — the demo restaurant still carries the sentinel theme. Run \`php artisan studio:demo-tenant\`."
+        fi
     fi
 
-    wait 2>/dev/null || true
+    # ⚠ A GREEN RUN WHOSE RESTORE FAILED IS NOT GREEN (Security 10). It used to exit 0 and leave the
+    # sentinel theme live on the demo restaurant in a shared development database.
+    if [ "$status" -eq 0 ] && [ "$restore_failed" -eq 1 ]; then
+        status=1
+    fi
+
+    # ⚠ NAMED, NOT ARGUMENT-LESS (QA L15). A bare `wait` blocks on every child of this shell and can
+    # hang if the site survives both kills; this waits for the one process it started.
+    if [ -n "$SITE_PID" ]; then
+        wait "$SITE_PID" 2>/dev/null || true
+    fi
+
     printf 'EXIT=%d\n' "$status"
+    exit "$status"
 }
-trap cleanup EXIT INT TERM
+
+# ⚠ THE SIGNAL TRAPS EXIT. `trap cleanup EXIT INT TERM` ran the handler and then RESUMED the script
+# — QA M2 reproduced it: SIGTERM printed `EXIT=0`, the script carried on to its next steps and
+# printed `EXIT=0` a second time, so a Ctrl-C or a CI cancel mid-run would have kept publishing.
+# The status is the conventional 128+n, and the EXIT trap then runs `cleanup` exactly once.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 fail() {
     echo "theme-paint: FAILED -- $1" >&2
@@ -132,6 +162,53 @@ fail() {
 }
 
 say() { printf 'theme-paint: %s\n' "$1"; }
+
+# -----------------------------------------------------------------------------
+# 0. REFUSALS — before anything is written, deleted, killed or cleared
+# -----------------------------------------------------------------------------
+# ⚠ THE ENVIRONMENT GUARD IS HERE AND NOT ONLY IN THE SEEDER (Security 6). It used to be inherited
+# from `studio:demo-tenant`, the first GUARDED call — and `view:clear` ran before it, so under
+# `APP_ENV=production` the script cleared a cache before it refused. Fail CLOSED: an unset or
+# unrecognised value reads as `production` (config/app.php's own default) and is refused.
+ENV_LINE="$(cd "$REPO/apps/api" && php artisan env --no-ansi 2>&1)" \
+    || fail "could not read APP_ENV from apps/api"
+
+if [[ "$ENV_LINE" =~ \[([A-Za-z0-9_.-]*)\] ]]; then
+    APP_ENV_SEEN="${BASH_REMATCH[1]}"
+else
+    fail "could not parse the application environment out of: ${ENV_LINE}"
+fi
+
+case "$APP_ENV_SEEN" in
+local | testing) ;;
+*) fail "refusing to run: APP_ENV is '${APP_ENV_SEEN}', and this writes to the real object store as a development instrument -- local and testing only" ;;
+esac
+
+# ⚠ A HELD PORT IS REFUSED HERE, EARLY, AND NOTHING IS TOUCHED. It used to be checked after the
+# seed and the build — by which time the script had cleared a cache, reseeded a tenant and run
+# `next build`, and the refusal then triggered a cleanup that killed the holder.
+# ⚠ NO `exec 3<&- 2>/dev/null` HERE, AND ITS PRESENCE WAS A BUG THIS SCRIPT SHIPPED WITH. An `exec` with
+# only redirections applies them to the CURRENT shell, permanently: it redirected this script's own
+# stderr to /dev/null, so the refusal below printed NOTHING and the run ended `EXIT=1` with no
+# explanation. It was copied from `site-isolation-proof`, which therefore swallows the same message
+# (`R-324`). The descriptor was opened inside the subshell and never exists here, so there is nothing
+# to close.
+if (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null; then
+    fail "port $PORT is already in use -- refusing to start, because talking to somebody else's server is how a sibling proof once measured a stale build. Stop it, or set QRPAGER_PAINT_PORT."
+fi
+
+# ⚠ THE OUTPUT DIRECTORY IS CANONICALISED AND PINNED (Security 3, QA L8). `case "$OUT" in
+# "$REPO"/*` accepted `QRPAGER_PAINT_OUT=$REPO/..`, `$REPO/docs` and `$REPO/` itself — and a few
+# lines later this script runs `rm -rf "$OUT"`. `realpath -m` resolves `..` and symlinks first, and
+# only this tooling's own two output trees are accepted.
+OUT="$(realpath -m "$OUT")"
+
+case "$OUT" in
+"$REPO"/storage/theme-paint | "$REPO"/storage/theme-paint/* | "$REPO"/storage/theme-paint-revert/*)
+    OUT_REL="${OUT#"$REPO"/}"
+    ;;
+*) fail "QRPAGER_PAINT_OUT resolves to '${OUT}', which is not storage/theme-paint or storage/theme-paint-revert/* inside the repository -- refusing, because a later step is rm -rf" ;;
+esac
 
 # -----------------------------------------------------------------------------
 # 1. the demo restaurant — the document this measures, reset to its own content
@@ -192,16 +269,10 @@ say "arrangements from LandingTemplate::values(): ${TEMPLATES[*]}"
 # -----------------------------------------------------------------------------
 cd "$REPO"
 
-# ⚠ **THE OUTPUT DIRECTORY MUST BE INSIDE THE REPOSITORY, AND THE CONTAINER IS WHY.** The
-# browsers may run in an image that mounts this repository at `/repo` and can see nothing else,
-# so the two path-bearing variables handed to the spec are REPO-RELATIVE and are resolved there
-# from the spec's own location. An absolute host path reached the first run of this script and
-# the collector died at collection with `ENOENT` — `browser/landing-templates.spec.ts` carries
-# the same note about the same mistake in the other direction.
-case "$OUT" in
-"$REPO"/*) OUT_REL="${OUT#"$REPO"/}" ;;
-*) fail "QRPAGER_PAINT_OUT must be inside the repository; the browsers container can see nothing else" ;;
-esac
+# (The output directory was canonicalised and pinned in section 0, which is why `OUT_REL` already
+# exists here. The browsers container mounts this repository at `/repo` and can see nothing else,
+# so the two path-bearing variables handed to the spec are REPO-RELATIVE and resolved from the
+# spec's own location — the `ENOENT` the first run of this script died on.)
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -215,19 +286,21 @@ pnpm --filter @qrpager/site run build >"$OUT/site-build.log" 2>&1 \
 grep -q 'ƒ /\[\[\.\.\.path\]\]' "$OUT/site-build.log" \
     || fail "apps/site's catch-all route is not reported as dynamic by the build"
 
-if (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null; then
-    exec 3<&- 2>/dev/null || true
-    fail "port $PORT is already in use -- refusing to start, because talking to somebody else's server is how a sibling proof once measured a stale build. Stop it, or set QRPAGER_PAINT_PORT."
-fi
-
 say "starting apps/site on port $PORT"
 # `setsid` so `$SITE_PID` leads its own process group and `kill -- -PGID` reaches `next-server`
 # rather than only the pnpm wrapper. `HOSTNAME=0.0.0.0` because the browsers may run in a
 # container that reaches this host as `host.docker.internal` — a server bound to loopback is
 # invisible to it, which `tools/browsers/bin/browsers` measured and recorded.
-setsid env PORT="$PORT" HOSTNAME=0.0.0.0 AWS_BUCKET="$BUCKET" AWS_ENDPOINT="$ENDPOINT" \
+#
+# ⚠ THE CREDENTIALS ARE PREFIX ASSIGNMENTS, NOT ARGUMENTS TO `env` (Security 8). `setsid env
+# AWS_SECRET_ACCESS_KEY=… pnpm …` put the secret on `env`'s argv, readable in /proc/<pid>/cmdline by
+# any same-user process until `env` execs. A prefix assignment goes straight into the child's
+# environment and never onto a command line. (The bind to `0.0.0.0` stays and is `R-324`: the browser
+# container reaches this host through `host.docker.internal`, which is not loopback, and
+# `site-isolation-proof` carries the same bind.)
+PORT="$PORT" HOSTNAME=0.0.0.0 AWS_BUCKET="$BUCKET" AWS_ENDPOINT="$ENDPOINT" \
     AWS_ACCESS_KEY_ID="$KEY_ID" AWS_SECRET_ACCESS_KEY="$SECRET" AWS_DEFAULT_REGION="$REGION" \
-    pnpm --filter @qrpager/site run start >"$OUT/site.log" 2>&1 &
+    setsid pnpm --filter @qrpager/site run start >"$OUT/site.log" 2>&1 &
 SITE_PID=$!
 
 # -----------------------------------------------------------------------------

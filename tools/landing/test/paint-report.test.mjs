@@ -327,13 +327,72 @@ describe('category (c)', () => {
     } = report({ dir, templates: ['alpha'], baselinePath: EMPTY() })
 
     expect(exitCode).toBe(1)
-    // 11 black values per render, two renders: 22 "other", but TWO findings
-    expect(result.totals.other).toBe(22)
-    expect(result.totals.derived).toBe(20)
+    // one source `color` plus every derived property per render, two renders: that many "other",
+    // but TWO findings
+    const perRender = CURRENTCOLOR_DERIVED.length + 1
+
+    expect(result.totals.other).toBe(perRender * 2)
+    expect(result.totals.derived).toBe(CURRENTCOLOR_DERIVED.length * 2)
     expect(result.findings).toHaveLength(2)
-    expect(text).toContain('(20 of the other are currentcolor-derived consequences)')
-    expect(text).toContain('consequence — the same value, inherited via currentcolor, in:')
+    expect(text).toContain(
+      `(${String(CURRENTCOLOR_DERIVED.length * 2)} of the other are currentcolor-derived consequences)`,
+    )
+    expect(text).toContain(
+      `consequence — the same value as this element's own color, so inherited via currentcolor or written to match it, in:`,
+    )
     expect(text).toContain('border-top-color')
+  })
+
+  it('L16: hsl(), named colours and color-mix() flow through run() and are sorted, not only through the classifier', () => {
+    // hsl of the TEXT sentinel #1400ff, computed here from its channels
+    const hslOfText = 'hsl(244.7058823529412, 100%, 50%)'
+    const dir = fixture({
+      templates: ['alpha'],
+      samples: () => [
+        ...paintingSamples(),
+        // the sentinel written as hsl, and as the engine's color(srgb) form of a color-mix() result
+        sample({ el: 20, shape: 'h1', property: 'color', value: hslOfText, colour: hslOfText }),
+        sample({
+          el: 21,
+          shape: 'h2',
+          property: 'color',
+          value: 'color(srgb 0.078431 0 1)',
+          colour: 'color(srgb 0.078431 0 1)',
+        }),
+        // a named colour, and an UNEVALUATED color-mix(), which no engine returns: both findings
+        sample({
+          el: 22,
+          shape: 'h3',
+          property: 'background-color',
+          value: 'red',
+          colour: 'red',
+          facts: {},
+        }),
+        sample({
+          el: 23,
+          shape: 'h4',
+          property: 'background-color',
+          value: 'color-mix(in srgb, red, blue)',
+          colour: 'color-mix(in srgb, red, blue)',
+          facts: {},
+        }),
+      ],
+    })
+    const { exitCode, report: result } = report({
+      dir,
+      templates: ['alpha'],
+      baselinePath: EMPTY(),
+    })
+
+    expect(exitCode).toBe(1)
+    // per render: 2 sentinels from the new samples (plus the 6 painting ones) and 2 findings
+    expect(result.totals.sentinel).toBe((6 + 2) * 2)
+    expect(result.findings.map((f) => f.value).sort()).toEqual([
+      'color-mix(in srgb, red, blue)',
+      'color-mix(in srgb, red, blue)',
+      'red',
+      'red',
+    ])
   })
 
   it('catches a root custom property that does not hold the published value — the first link', () => {

@@ -54,6 +54,19 @@ interface Facts {
   hasText?: boolean
 }
 
+/**
+ * Measured render state — numbers and keywords as the engine reports them, judged nowhere here.
+ * `opacity` is the EFFECTIVE value: the product up the ancestor chain, because a child of an
+ * `opacity:0` parent computes `opacity:1` and is just as invisible.
+ */
+interface Render {
+  visibility: string
+  opacity: number
+  fontSize: number
+  clipPath: string
+  clip: string
+}
+
 /** One colour-bearing computed value, on one element, as the engine returned it. */
 interface Sample {
   /** The element's index in the walk, which is what a derived property collapses on. */
@@ -71,6 +84,8 @@ interface Sample {
   box: { w: number; h: number }
   text: string
   facts: Facts
+  /** What the element's own render state says about whether anything can be seen. */
+  render: Render
 }
 
 interface Collected {
@@ -191,6 +206,28 @@ async function collect(
         'text-emphasis-color',
         '-webkit-text-fill-color',
         'text-shadow',
+        /*
+         * ⚠ ADDED AFTER THE `§11` ROUND, WHICH FOUND THE LIST TOO NARROW AGAINST THE STATED
+         * INVARIANT (*"every colour-bearing COMPUTED style"*) — QA H1, Security 1. Each is a
+         * colour a template author can write and each would have left the gate green:
+         * `accent-color:#f0f`, `scrollbar-color`, `-webkit-text-stroke`, a gradient in
+         * `border-image-source` or `mask-image`, a `drop-shadow()` in `filter`, a
+         * `list-style-image`. None has a coloured UA default — they compute to `none`, `auto` or
+         * (the stroke) `currentcolor` — so adding them cannot create findings nobody can fix.
+         * `-webkit-text-stroke-color` is in the classifier's currentcolor-derived set.
+         */
+        '-webkit-text-stroke-color',
+        'accent-color',
+        'scrollbar-color',
+        'border-image-source',
+        'mask-image',
+        'list-style-image',
+        'filter',
+        'backdrop-filter',
+        // SVG-only, below
+        'stop-color',
+        'flood-color',
+        'lighting-color',
       ]
 
       /*
@@ -202,7 +239,7 @@ async function collect(
        * the findings under it. This page carries no SVG at all today, so the scope is vacuous
        * here; it stops being vacuous the first time a template ships an icon.
        */
-      const SVG_ONLY = ['fill', 'stroke']
+      const SVG_ONLY = ['fill', 'stroke', 'stop-color', 'flood-color', 'lighting-color']
 
       const COLOUR =
         /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*(?:\([^()]*\)[^()]*)*\)|#[0-9a-f]{3,8}\b|\b(?:transparent|currentcolor|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|selecteditem|selecteditemtext|graytext|accentcolor|accentcolortext)\b/gi
@@ -279,12 +316,37 @@ async function collect(
             }
           case 'text-emphasis-color':
             return { style: style.getPropertyValue('text-emphasis-style') }
+          case '-webkit-text-stroke-color':
+            return { width: Number.parseFloat(style.webkitTextStrokeWidth), hasText }
           case 'color':
           case '-webkit-text-fill-color':
           case 'text-shadow':
             return { hasText }
           default:
             return {}
+        }
+      }
+
+      /**
+       * The element's own render state. Effective opacity is walked up the ancestors because it
+       * compounds and does not inherit; `visibility` does inherit, so the element's own computed
+       * value is already the effective one.
+       */
+      const renderOf = (element: Element, style: CSSStyleDeclaration): Render => {
+        let opacity = 1
+
+        for (let node: Element | null = element; node !== null; node = node.parentElement) {
+          opacity *= Number.parseFloat(getComputedStyle(node).opacity)
+        }
+
+        return {
+          visibility: style.visibility,
+          opacity,
+          fontSize: Number.parseFloat(style.fontSize),
+          clipPath: style.clipPath,
+          // by name: the `.clip` accessor is deprecated, the property is still what an old
+          // visually-hidden pattern uses
+          clip: style.getPropertyValue('clip'),
         }
       }
 
@@ -336,7 +398,14 @@ async function collect(
 
             if (value === '' || value === 'none' || value === 'auto') continue
 
-            for (const colour of value.match(COLOUR) ?? []) {
+            /*
+             * ⚠ `url(…)` IS REMOVED BEFORE EXTRACTION, because the keyword half of the colour
+             * pattern matches a WORD, and a background URL whose file name contains `field`,
+             * `canvas` or `highlight` would be read as a system colour (QA L7). It would have
+             * been a loud false finding, not a hidden one — and a likely one, with QRPAGER-49's
+             * asset names arriving.
+             */
+            for (const colour of value.replace(/url\([^)]*\)/gi, '').match(COLOUR) ?? []) {
               samples.push({
                 el: index,
                 path: pathOf(element),
@@ -349,6 +418,7 @@ async function collect(
                 box: { w: Math.round(rect.width), h: Math.round(rect.height) },
                 text,
                 facts: factsFor(style, property, text !== ''),
+                render: renderOf(element, style),
               })
             }
           }

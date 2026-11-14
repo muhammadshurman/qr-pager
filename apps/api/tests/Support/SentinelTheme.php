@@ -66,6 +66,21 @@ final class SentinelTheme
     }
 
     /**
+     * The roles in `$contractRoles` that this table has no sentinel for.
+     *
+     * A pure function of its argument so a test can hand it a contract that has grown — which is
+     * the only way to prove the detection works: comparing `colourRoles()` against a list built by
+     * the same code (`§11` QA L3) can fail only if that code is rewritten.
+     *
+     * @param  list<string>  $contractRoles
+     * @return list<string>
+     */
+    public static function uncovered(array $contractRoles): array
+    {
+        return array_values(array_diff($contractRoles, array_keys(self::values())));
+    }
+
+    /**
      * Every colour role the contract defines, read from the contract rather than from here.
      *
      * @return list<string>

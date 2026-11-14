@@ -64,11 +64,18 @@ declare(strict_types=1);
  *      read or write a second tenant's rows.
  *
  * `FixtureScriptGuardTest`'s exact set is a DERIVED list of the scripts that carry the guard,
- * held exact so a writer cannot be added without a reader seeing it. Admitting this script is
- * safe because (1) is driven under `production` and under every unrecognised environment by
- * that file's own cases, and `SentinelThemeScriptTest` drives (2) and (3) and asserts that a
- * refusal leaves this tenant's row and its published pointer byte-identical — which the generic
- * case does not, since it counts `users` and `tenants` and this script writes neither.
+ *  * held exact so a writer cannot be added without a reader seeing it. Admitting this script is
+ * safe because it carries the guard and the guard is real, and because of what DRIVES it:
+ * `FixtureScriptGuardTest` runs it under `production` and requires exit 1; and
+ * `SentinelThemeScriptTest` runs it under `staging`, `Local`, `prod` and `development` as well —
+ * ⚠ that second half was MISSING and a first draft of this paragraph claimed it: the generic
+ * fail-closed loop in `FixtureScriptGuardTest` runs those four over `bin/issue-pager-session`
+ * ONLY, so for this script the evidence was `production` alone (`§11` QA M7, Security 4). An
+ * UNSET `APP_ENV` is not driven by any test: a child process reads `.env`, which supplies
+ * `local`, so the case cannot be built; the code defers to `config/app.php`, whose default is
+ * `production`. It also asserts that a refusal leaves this tenant's row and its published pointer
+ * byte-identical, which the generic case does not, since it counts `users` and `tenants` and this
+ * script writes neither.
  *
  * ================================================================================
  * WHAT IT DOES
@@ -102,9 +109,11 @@ declare(strict_types=1);
  *         otherwise      one JSON line: {"template":"…","hostname":"…","checksum":"…", …}
  */
 
+use App\Domain\Landing\LandingDocumentInvalid;
 use App\Domain\Landing\LandingTemplate;
 use App\Features\Landing\Console\SeedDemoTenantCommand;
 use App\Features\Landing\LandingPages;
+use App\Features\Landing\PublishFailed;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
@@ -193,7 +202,46 @@ if ($template === null) {
 
 $tenantId = SeedDemoTenantCommand::TENANT_ID;
 
-$name = withTenant($tenantId, fn (): ?string => DB::table('tenants')->where('id', $tenantId)->value('name'));
+
+/*
+ * ⚠ **A REFUSAL MUST BE A NON-ZERO EXIT.** An uncaught `PublishFailed` is rendered by
+ * Laravel's handler and the process exits 0, so a caller reading the status would treat a
+ * refused publish as a published page — `bin/publish-landing-fixture` paid for this one
+ * already and its note is why this is here rather than discovered again.
+ *
+ * ⚠⚠ AND THE MESSAGE IS PRINTED ONLY FOR THE TWO TYPES WHOSE MESSAGES ARE WRITTEN FOR A READER
+ * (`§11` Security 5). This used to print `$e->getMessage()` of ANY Throwable, and a
+ * `QueryException`'s message carries the SQL and its bound parameters — here, the draft document
+ * as JSON — into stderr, which `theme-paint-proof` tees into a transcript this ticket commits. `§4 ›
+ * Edge & ops`: *"stack traces never carry SQL or bound parameters"*. Anything else prints its class
+ * and is `report()`ed, so the log — where redaction applies — has the detail.
+ */
+$refuse = static function (Throwable $e): never {
+    $safe = $e instanceof PublishFailed || $e instanceof LandingDocumentInvalid;
+
+    fwrite(
+        STDERR,
+        'refused: '.$e::class.($safe
+            ? ': '.$e->getMessage()
+            : ' (message withheld: it can carry SQL and bound parameters; the detail is in the application log)')."\n"
+    );
+
+    if (! $safe) {
+        try {
+            report($e);
+        } catch (Throwable) {
+            // a failing logger must not turn a refusal into a different failure
+        }
+    }
+
+    exit(1);
+};
+
+try {
+    $name = withTenant($tenantId, fn (): ?string => DB::table('tenants')->where('id', $tenantId)->value('name'));
+} catch (Throwable $e) {
+    $refuse($e);
+}
 
 if (! is_string($name) || $name === '') {
     fwrite(
@@ -204,18 +252,6 @@ if (! is_string($name) || $name === '') {
 
     exit(1);
 }
-
-/*
- * ⚠ **A REFUSAL MUST BE A NON-ZERO EXIT.** An uncaught `PublishFailed` is rendered by
- * Laravel's handler and the process exits 0, so a caller reading the status would treat a
- * refused publish as a published page — `bin/publish-landing-fixture` paid for this one
- * already and its note is why this is here rather than discovered again.
- */
-$refuse = static function (Throwable $e): never {
-    fwrite(STDERR, 'refused: '.$e::class.': '.$e->getMessage()."\n");
-
-    exit(1);
-};
 
 $pages = $app->make(LandingPages::class);
 

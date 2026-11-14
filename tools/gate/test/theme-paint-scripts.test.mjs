@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -48,8 +50,11 @@ describe('theme-paint-revert-proof', () => {
   it('restores WITHOUT preserving the old mtime, and clears the compiled views after every edit and restore', () => {
     const body = code(script)
 
-    expect(body).not.toMatch(/\bcp\s+-[a-zA-Z]*p/)
-    expect(body).not.toMatch(/\bcp\s+--preserve/)
+    // every way of keeping an old mtime, not only `cp -p` (QA L12 found `cp -a` slipped past)
+    expect(body).not.toMatch(/\bcp\s+-[a-zA-Z]*[pa]/)
+    expect(body).not.toMatch(/\bcp\s+--(preserve|archive)/)
+    expect(body).not.toMatch(/\brsync\b/)
+    expect(body).not.toMatch(/\btouch\s+-[a-zA-Z]*[rd]/)
 
     // defined once, and called after the injection, after the in-loop revert and in the trap
     expect(body).toMatch(/invalidate_views\(\) \{/)
@@ -117,5 +122,226 @@ describe('theme-paint-proof', () => {
     const last = lines.at(-1) ?? ''
 
     expect(last).toMatch(/^node tools\/landing\/paint-report\.mjs "\$OUT" --templates /)
+  })
+})
+
+/**
+ * ================================================================================
+ * THE `§11` ROUND'S FIXES TO THE TWO SCRIPTS — pinned, and where possible DRIVEN
+ * ================================================================================
+ *
+ * QA L12 is right that the two defects the revert proof found in itself were BEHAVIOURAL and the
+ * first pins above only match constructs. These cases drive what can be driven cheaply — every
+ * one of them fails the script BEFORE it touches shared state, so none writes to the demo
+ * restaurant or the bucket — and pin what cannot.
+ */
+describe('theme-paint-proof refuses before it touches anything', () => {
+  const script = join(REPO, 'tools/gate/bin/theme-paint-proof')
+
+  /** A free port, held open for the duration of `body`. */
+  const holdingPort = async (body) => {
+    const server = createServer()
+
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+
+    try {
+      return await body(server.address().port, server)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  }
+
+  const run = (env) =>
+    spawnSync(script, [], {
+      encoding: 'utf8',
+      env: { ...process.env, ...env },
+      timeout: 60_000,
+    })
+
+  it('REFUSES a held port and leaves its holder ALIVE — Security 2 / QA M1', async () => {
+    await holdingPort(async (port, server) => {
+      // the holder answers connections, as a developer's own server would
+      let connections = 0
+
+      server.on('connection', (socket) => {
+        connections += 1
+        socket.end()
+      })
+
+      const result = run({ QRPAGER_PAINT_PORT: String(port) })
+
+      expect(result.status).toBe(1)
+      expect(result.stdout + result.stderr).toContain(`port ${String(port)} is already in use`)
+
+      // refused BEFORE the seed, the cache clear and the build: none of them ran
+      expect(result.stdout).not.toContain('clearing the compiled views')
+      expect(result.stdout).not.toContain('seeding the demo restaurant')
+      expect(result.stdout).not.toContain('building apps/site')
+
+      // and the holder was NOT killed: the old cleanup ran `kill -9` on whatever owned the port
+      expect(server.listening).toBe(true)
+
+      const probe = spawnSync(
+        process.execPath,
+        [
+          '-e',
+          `require('net').connect(${String(port)}, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))`,
+        ],
+        { timeout: 10_000 },
+      )
+
+      expect(probe.status, 'the holder no longer accepts connections: it was killed').toBe(0)
+      // `spawnSync` blocks this process's event loop, so the holder's `connection` events fire only
+      // once it returns: give them a turn before counting. The script probes the port, so >= 1.
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      expect(connections).toBeGreaterThan(0)
+    })
+  })
+
+  it('REFUSES an environment that is not local or testing, before clearing a cache — Security 6', () => {
+    const result = run({ APP_ENV: 'production', QRPAGER_PAINT_PORT: '39097' })
+
+    expect(result.status).toBe(1)
+    expect(result.stdout + result.stderr).toMatch(/refusing to run: APP_ENV is 'production'/)
+    expect(result.stdout).not.toContain('clearing the compiled views')
+    expect(result.stdout).not.toContain('seeding the demo restaurant')
+  })
+
+  it('REFUSES an output directory outside its own trees, and deletes nothing — Security 3 / QA L8', () => {
+    const docs = join(REPO, 'docs')
+
+    for (const out of [
+      docs,
+      REPO,
+      join(REPO, 'storage', 'theme-paint', '..', '..', 'docs'),
+      join(REPO, 'apps'),
+    ]) {
+      const result = run({ QRPAGER_PAINT_OUT: out, QRPAGER_PAINT_PORT: '39098' })
+
+      expect(result.status, `${out} was accepted`).toBe(1)
+      expect(result.stdout + result.stderr).toContain(
+        'is not storage/theme-paint or storage/theme-paint-revert',
+      )
+      expect(result.stdout).not.toContain('clearing the compiled views')
+    }
+
+    // the thing a `rm -rf "$OUT"` would have taken
+    expect(existsSync(join(docs, 'PLAN.md'))).toBe(true)
+    expect(existsSync(join(REPO, 'apps', 'api', 'artisan'))).toBe(true)
+  })
+
+  it('frees the port ONLY for a server this run started, and turns a failed restore red', () => {
+    const body = code('tools/gate/bin/theme-paint-proof')
+
+    expect(body).toMatch(/if \[ -n "\$SITE_PID" \]; then\s+free_port "\$PORT"\s+fi/)
+    // …and that is the ONLY call: an unconditional one is what SIGKILLed a holder it had just refused
+    expect(body.match(/free_port "\$PORT"/g)?.length).toBe(1)
+    expect(body).toMatch(/restore_failed=1/)
+    expect(body).toMatch(
+      /if \[ "\$status" -eq 0 \] && \[ "\$restore_failed" -eq 1 \]; then\s+status=1/,
+    )
+  })
+
+  it('puts the object-store secret in the process environment, never on a command line — Security 8', () => {
+    const body = code('tools/gate/bin/theme-paint-proof')
+
+    expect(body).not.toMatch(/\bsetsid env\b/)
+    expect(body).not.toMatch(/\benv\s+[A-Z_]+=/)
+    expect(body).toMatch(
+      /AWS_SECRET_ACCESS_KEY="\$SECRET" AWS_DEFAULT_REGION="\$REGION" \\\s+setsid pnpm/,
+    )
+  })
+
+  it('names the process it waits for, rather than every child — QA L15', () => {
+    const body = code('tools/gate/bin/theme-paint-proof')
+
+    expect(body).not.toMatch(/^\s*wait 2>\/dev\/null/m)
+    expect(body).toMatch(/wait "\$SITE_PID"/)
+  })
+})
+
+describe('the signal traps really exit — QA M2', () => {
+  /** The three trap lines, cut out of the REAL script so the pin and the behaviour are one thing. */
+  const trapLines = (file) =>
+    read(file)
+      .split('\n')
+      .filter((line) => /^trap (cleanup EXIT|'exit 130' INT|'exit 143' TERM)\s*$/.test(line))
+
+  for (const file of [
+    'tools/gate/bin/theme-paint-proof',
+    'tools/gate/bin/theme-paint-revert-proof',
+  ]) {
+    it(`${file} carries exactly the three traps, and not the one that resumed the script`, () => {
+      expect(trapLines(file)).toEqual([
+        'trap cleanup EXIT',
+        "trap 'exit 130' INT",
+        "trap 'exit 143' TERM",
+      ])
+      expect(code(file)).not.toMatch(/trap cleanup EXIT INT TERM/)
+    })
+
+    it(`${file}'s trap lines, run for real: SIGTERM exits 143, cleanup runs ONCE, the next step never runs`, async () => {
+      const harness = [
+        'cleanup() { local s=$?; echo "cleanup-ran status=$s"; kill "$SLEEPER" 2>/dev/null; }',
+        ...trapLines(file),
+        'echo ready',
+        'sleep 5 & SLEEPER=$!',
+        'wait $SLEEPER',
+        'echo STEP-AFTER-THE-SIGNAL',
+      ].join('\n')
+
+      const child = spawn('bash', ['-c', harness], { stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      let signalled = false
+
+      child.stdout.on('data', (chunk) => {
+        out += String(chunk)
+
+        // not at once: SIGTERM between `sleep 5 &` and `SLEEPER=$!` would orphan the sleeper, which
+        // holds this pipe open and makes the case time out — a race in the HARNESS, not the trap
+        if (out.includes('ready') && !signalled) {
+          signalled = true
+          setTimeout(() => child.kill('SIGTERM'), 400)
+        }
+      })
+
+      const status = await new Promise((resolve) => child.on('close', resolve))
+
+      expect(status).toBe(143)
+      expect(out.match(/cleanup-ran/g)?.length).toBe(1)
+      expect(out).toContain('cleanup-ran status=143')
+      expect(out).not.toContain('STEP-AFTER-THE-SIGNAL')
+    })
+  }
+})
+
+describe('theme-paint-revert-proof re-seeds the demo after any abort — QA M3', () => {
+  const body = code('tools/gate/bin/theme-paint-revert-proof')
+
+  it('marks the demo as possibly polluted at the first injection and clears the mark only after the final green run', () => {
+    expect(body).toMatch(/^NEEDS_RESEED=0$/m)
+    expect(body).toMatch(/invalidate_views\n\s+NEEDS_RESEED=1/)
+    // cleared only inside the branch where the final harness run passed
+    expect(body).toMatch(/if harness after [^\n]+; then\s+NEEDS_RESEED=0/)
+  })
+
+  it('re-runs the seeder from the trap when the mark is set, and fails the run if that fails', () => {
+    expect(body).toMatch(
+      /if \[ "\$NEEDS_RESEED" = "1" \]; then[\s\S]*studio:demo-tenant[\s\S]*status=1/,
+    )
+  })
+
+  it('injects the SAME literal into a second property, so a collector that cannot read it fails the proof', () => {
+    expect(read('tools/gate/bin/theme-paint-revert-proof')).toContain('accent-color:${LITERAL}')
+    expect(read('tools/gate/bin/theme-paint-revert-proof')).toMatch(
+      /no finding names .* in accent-color/,
+    )
+  })
+
+  it('prints its totals lines with a pattern that can match what the report prints — QA L1', () => {
+    // the report prints `  totals: …` indented, and has no `collected` line
+    expect(body).not.toContain('|collected|totals:)')
+    expect(body).toContain('[[:space:]]+totals:')
   })
 })

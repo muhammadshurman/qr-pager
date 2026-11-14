@@ -103,7 +103,8 @@ describe('parseColour reads every notation an engine or an author can produce', 
   })
 
   it('clamps an out-of-gamut channel rather than wrapping it', () => {
-    expect(parseColour('rgb(300, -5, 228)')).toEqual({ r: 255, g: 0, b: 228, a: 1 })
+    // clamped, and MARKED: a channel that had to be forced into range is not what an engine returned
+    expect(parseColour('rgb(300, -5, 228)')).toEqual({ r: 255, g: 0, b: 228, a: 1, inexact: true })
     expect(parseColour('rgb(255 0 228 / 7)')).toEqual({ r: 255, g: 0, b: 228, a: 1 })
   })
 
@@ -117,7 +118,12 @@ describe('describeColour', () => {
     expect(describeColour({ r: 255, g: 0, b: 228, a: 1 })).toBe('#ff00e4')
     expect(describeColour({ r: 0, g: 0, b: 0, a: 0 })).toBe('rgba(0, 0, 0, 0)')
     expect(describeColour({ r: 255, g: 0, b: 228, a: 0.5 })).toBe('rgba(255, 0, 228, 0.5)')
-    expect(describeColour({ r: 1, g: 2, b: 3, a: 0.123456 })).toBe('rgba(1, 2, 3, 0.123)')
+    expect(describeColour({ r: 1, g: 2, b: 3, a: 0.123456 })).toBe('rgba(1, 2, 3, 0.123456)')
+    // QA L6: a near-opaque alpha must never print as 1, or it reads as opaque and merges groups
+    expect(describeColour({ r: 255, g: 0, b: 228, a: 0.9996 })).toBe('rgba(255, 0, 228, 0.9996)')
+    expect(describeColour({ r: 255, g: 0, b: 228, a: 0.99999999 })).toBe(
+      'rgba(255, 0, 228, 0.999999)',
+    )
   })
 })
 
@@ -304,10 +310,9 @@ describe('paintVerdict — can a recorded value reach a pixel?', () => {
   const reason = (overrides) => paintVerdict(sample(overrides)).reason
 
   it('is false for an element with no box, whatever the value', () => {
-    expect(reason({ box: { w: 1, h: 1 } })).toBe('the element has no box larger than 2px')
-    expect(paints({ box: { w: 2, h: 100 } })).toBe(false)
-    expect(paints({ box: { w: 100, h: 2 } })).toBe(false)
-    expect(paints({ box: { w: 3, h: 3 } })).toBe(true)
+    expect(reason({ box: { w: 0, h: 10 } })).toBe('the element has no box')
+    expect(paints({ box: { w: 100, h: 0 } })).toBe(false)
+    expect(paints({ box: { w: 0, h: 0 } })).toBe(false)
   })
 
   it('is false for a fully transparent value of any property', () => {
@@ -423,6 +428,134 @@ describe('paintVerdict — can a recorded value reach a pixel?', () => {
   })
 })
 
+describe('exactness — QA L4, L5, L6: what the classifier will not round into a match', () => {
+  it('L4: an alpha that is not EXACTLY zero is not the non-themed member', () => {
+    expect(kind('rgba(0, 0, 0, 0.0004)')).toBe('other')
+    expect(kind('rgba(0, 0, 0, 0.0000001)')).toBe('other')
+    expect(classify('rgba(0, 0, 0, 0.0004)', SENTINELS).token).toBe('rgba(0, 0, 0, 0.0004)')
+    expect(kind('rgba(0, 0, 0, 0)')).toBe('nonThemed')
+  })
+
+  it('L5: a fractional channel is not the sentinel it rounds to', () => {
+    expect(kind('rgb(254.5, 0, 228)')).toBe('other')
+    expect(kind('rgb(255, 0, 228.4)')).toBe('other')
+    expect(kind('color(srgb 1 0 0.8959)')).toBe('other')
+    expect(classify('rgb(254.5, 0, 228)', SENTINELS).why).toBe(
+      'a channel that is not an exact 8-bit value, which no engine returns',
+    )
+    // …while the engine's own colour(srgb) form, which is an integer over 255 to its printed
+    // precision, still IS the sentinel
+    expect(kind('color(srgb 1 0 0.894118)')).toBe('sentinel')
+    expect(kind('rgb(255.004, 0, 228)')).toBe('sentinel')
+  })
+
+  it('L5: an out-of-gamut channel that was clamped is not the sentinel it clamps to', () => {
+    expect(kind('rgb(300, 0, 228)')).toBe('other')
+    expect(kind('rgb(255, -4, 228)')).toBe('other')
+  })
+
+  it('L6: a near-opaque alpha is reported with its alpha, never as `1`', () => {
+    expect(classify('rgba(255, 0, 228, 0.9996)', SENTINELS)).toMatchObject({
+      kind: 'other',
+      token: 'rgba(255, 0, 228, 0.9996)',
+    })
+    expect(classify('rgba(255, 0, 228, 0.9996)', SENTINELS).token).not.toBe('rgba(255, 0, 228, 1)')
+    // and two different alphas are two different tokens, so two groups
+    expect(classify('rgba(255, 0, 228, 0.9996)', SENTINELS).token).not.toBe(
+      classify('rgba(255, 0, 228, 0.9994)', SENTINELS).token,
+    )
+  })
+})
+
+describe('paintVerdict — measured render facts, not a box-size threshold', () => {
+  const verdict = (overrides) => paintVerdict(sample(overrides))
+
+  it('M5: a 1px hairline paints — the old 2px threshold called it unpainted', () => {
+    const bar = { property: 'background-color', facts: {}, box: { w: 300, h: 1 } }
+
+    expect(verdict(bar).paints).toBe(true)
+    expect(verdict({ ...bar, box: { w: 1, h: 300 } }).paints).toBe(true)
+    expect(verdict({ ...bar, box: { w: 1, h: 1 } }).paints).toBe(true)
+  })
+
+  it('still excludes the visually-hidden 1px box, by what actually hides it', () => {
+    // `.sr`: position:absolute; 1px by 1px; overflow:hidden; clip-path:inset(50%)
+    const hidden = { box: { w: 1, h: 1 }, render: { clipPath: 'inset(50%)' } }
+
+    expect(verdict(hidden).paints).toBe(false)
+    expect(verdict(hidden).reason).toBe('clipped by clip-path: inset(50%)')
+    expect(verdict({ box: { w: 1, h: 1 }, render: { clipPath: 'none' } }).paints).toBe(true)
+  })
+
+  it('M4: visibility, effective opacity, clip and a zero font size each stop a value painting', () => {
+    expect(verdict({ render: { visibility: 'hidden' } })).toEqual({
+      paints: false,
+      reason: 'visibility is hidden',
+    })
+    expect(verdict({ render: { visibility: 'collapse' } }).paints).toBe(false)
+    expect(verdict({ render: { visibility: 'visible' } }).paints).toBe(true)
+
+    expect(verdict({ render: { opacity: 0 } })).toEqual({
+      paints: false,
+      reason: 'the element’s effective opacity is 0',
+    })
+    expect(verdict({ render: { opacity: 0.01 } }).paints).toBe(true)
+    expect(verdict({ render: { opacity: 1 } }).paints).toBe(true)
+
+    expect(verdict({ render: { clip: 'rect(0px, 0px, 0px, 0px)' } }).paints).toBe(false)
+    expect(verdict({ render: { clip: 'auto' } }).paints).toBe(true)
+
+    // font size matters to TEXT paint only
+    expect(verdict({ render: { fontSize: 0 } })).toEqual({
+      paints: false,
+      reason: 'the font size is 0',
+    })
+    expect(
+      verdict({ property: 'background-color', facts: {}, render: { fontSize: 0 } }).paints,
+    ).toBe(true)
+    expect(verdict({ render: { fontSize: 16 } }).paints).toBe(true)
+  })
+
+  it('M4: a generated box is not measured, so it counts as unpainted rather than inheriting its parent’s size', () => {
+    const generated = {
+      property: 'background-color',
+      facts: {},
+      pseudo: '::before',
+      box: { w: 300, h: 40 },
+    }
+
+    expect(verdict(generated).paints).toBe(false)
+    expect(verdict(generated).reason).toBe(
+      'a generated box’s own size is not measured, so it counts as unpainted',
+    )
+    expect(verdict({ ...generated, pseudo: null }).paints).toBe(true)
+  })
+
+  it('a text stroke paints only when the text has a stroke width', () => {
+    expect(
+      verdict({ property: '-webkit-text-stroke-color', facts: { hasText: true, width: 1 } }).paints,
+    ).toBe(true)
+    expect(
+      verdict({ property: '-webkit-text-stroke-color', facts: { hasText: true, width: 0 } }).paints,
+    ).toBe(false)
+    expect(
+      verdict({ property: '-webkit-text-stroke-color', facts: { hasText: false, width: 1 } })
+        .paints,
+    ).toBe(false)
+    expect(
+      verdict({
+        property: '-webkit-text-stroke-color',
+        facts: { hasText: true, width: 1 },
+        render: { fontSize: 0 },
+      }).paints,
+    ).toBe(false)
+  })
+
+  it('treats a sample with no render facts as visible, so a record without them is not silently all-dead', () => {
+    expect(paintVerdict(sample({})).paints).toBe(true)
+  })
+})
+
 describe('analysePage', () => {
   const page = (samples) => ({ samples })
 
@@ -455,7 +588,7 @@ describe('analysePage', () => {
           el: 2,
           property: 'background-color',
           colour: 'rgb(255, 122, 0)',
-          box: { w: 1, h: 1 },
+          box: { w: 0, h: 0 },
           facts: {},
         }),
       ]),
@@ -482,8 +615,12 @@ describe('analysePage', () => {
 
     const analysis = analysePage(page(samples), SENTINELS)
 
-    expect(CURRENTCOLOR_DERIVED).toHaveLength(10)
-    expect(analysis.counts).toMatchObject({ samples: 11, other: 11, derived: 10 })
+    expect(CURRENTCOLOR_DERIVED).toHaveLength(11)
+    expect(analysis.counts).toMatchObject({
+      samples: CURRENTCOLOR_DERIVED.length + 1,
+      other: CURRENTCOLOR_DERIVED.length + 1,
+      derived: CURRENTCOLOR_DERIVED.length,
+    })
     expect(analysis.findings).toHaveLength(1)
     expect(analysis.findings[0]).toMatchObject({ property: 'color', value: '#000000', count: 1 })
     expect(analysis.findings[0].derived).toEqual([...CURRENTCOLOR_DERIVED].sort())
