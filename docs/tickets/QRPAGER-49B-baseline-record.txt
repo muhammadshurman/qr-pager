@@ -2,7 +2,7 @@
 theme-paint-baseline-proof — THE BASELINE, SHOWN WRONG IN EVERY WAY. QRPAGER-49B.
 ================================================================================
 
-tree     : committed, at 78ba975
+tree     : committed, at 819f508
 baseline : tools/landing/paint-baseline.json  (rail/color.surface, ember/color.accent_text)
 
 ================================================================================

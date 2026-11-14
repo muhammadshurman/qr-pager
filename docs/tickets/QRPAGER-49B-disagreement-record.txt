@@ -1,7 +1,7 @@
 ================================================================================
 guard-disagreement-proof — WHERE scan-css AND THE PAINT HARNESS STILL DISAGREE. QRPAGER-49B.
 ================================================================================
-tree: committed, at ba4e607
+tree: committed, at 819f508
 literal planted each time: #123456   (1 = the guard went red, 0 = it stayed green)
 BASELINE: theme-paint-proof exit 0 and scan-css exit 0 on the unmodified tree
 

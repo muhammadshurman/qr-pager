@@ -11,7 +11,7 @@ synthetic records. Neither substitutes for the other.
 does not iterate: a transcript of a DECLARED red is evidence; a transcript of a gate that
 failed is not, and the two must not be stored under one name.
 
-tree     : committed, at 30887b5
+tree     : committed, at 819f508
 injected : <p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
            an inline style attribute on a NEW element, prepended to the template's Blade
 
@@ -30,8 +30,8 @@ REVERT 1 of 3 — rail: one literal colour in apps/api/resources/views/landing/t
 ================================================================================
 
 the injection, as a diff:
-  --- apps/api/resources/views/landing/templates/rail.blade.php.revert-proof-backup	2026-11-14 17:15:45.150589119 +0300
-  +++ apps/api/resources/views/landing/templates/rail.blade.php	2026-11-14 17:15:45.151659969 +0300
+  --- apps/api/resources/views/landing/templates/rail.blade.php.revert-proof-backup	2026-11-14 17:52:07.415164341 +0300
+  +++ apps/api/resources/views/landing/templates/rail.blade.php	2026-11-14 17:52:07.415911341 +0300
   @@ -1,3 +1,4 @@
   +<p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
    {{--
@@ -65,8 +65,8 @@ REVERT 2 of 3 — ember: one literal colour in apps/api/resources/views/landing/
 ================================================================================
 
 the injection, as a diff:
-  --- apps/api/resources/views/landing/templates/ember.blade.php.revert-proof-backup	2026-11-14 17:16:14.349054499 +0300
-  +++ apps/api/resources/views/landing/templates/ember.blade.php	2026-11-14 17:16:14.349863274 +0300
+  --- apps/api/resources/views/landing/templates/ember.blade.php.revert-proof-backup	2026-11-14 17:52:31.857707079 +0300
+  +++ apps/api/resources/views/landing/templates/ember.blade.php	2026-11-14 17:52:31.858381562 +0300
   @@ -1,3 +1,4 @@
   +<p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
    {{--
@@ -100,8 +100,8 @@ REVERT 3 of 3 — tile: one literal colour in apps/api/resources/views/landing/t
 ================================================================================
 
 the injection, as a diff:
-  --- apps/api/resources/views/landing/templates/tile.blade.php.revert-proof-backup	2026-11-14 17:16:41.745154772 +0300
-  +++ apps/api/resources/views/landing/templates/tile.blade.php	2026-11-14 17:16:41.745996272 +0300
+  --- apps/api/resources/views/landing/templates/tile.blade.php.revert-proof-backup	2026-11-14 17:52:58.015662642 +0300
+  +++ apps/api/resources/views/landing/templates/tile.blade.php	2026-11-14 17:52:58.016319892 +0300
   @@ -1,3 +1,4 @@
   +<p data-revert-proof style="color:#123456;accent-color:#123456">revert proof</p>
    {{--
