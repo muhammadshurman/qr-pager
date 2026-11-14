@@ -56,8 +56,15 @@
 # ⛔ LOCAL AND TESTING ONLY, through the scripts it runs.
 #
 # USAGE:  tools/gate/bin/theme-paint-revert-proof    # writes its own transcript to stdout
-set -euo pipefail
+set -Eeuo pipefail
 umask 077
+
+# ⚠ A SILENT ABORT IS THE FAILURE THIS GUARDS AGAINST. The first run of this script died with
+# `EXIT=1` and not one word of explanation after launching the harness for `rail`: errexit fired
+# on a status it had been meant to read. `-E` makes the trap below inherited by functions, so any
+# command that aborts the script says WHICH line did. (`||` contexts, which are how a status is
+# read on purpose, do not trigger it.)
+trap 'echo "theme-paint-revert-proof: aborted by errexit at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 cd "$(dirname "$0")/../../.."
 REPO="$(pwd)"
@@ -148,13 +155,22 @@ done
 # `QRPAGER_PAINT_LOG` set means theme-paint-proof does not re-exec itself under `tee`; its
 # stdout is captured here instead, and its own EXIT= trailer is its status line.
 harness() {
-    local label="$1" out_dir="$2" status
+    local label="$1" out_dir="$2" status=0
 
-    set +e
-    QRPAGER_PAINT_LOG="${WORK}/${label}.log" QRPAGER_PAINT_OUT="${out_dir}" \
-        tools/gate/bin/theme-paint-proof >"${WORK}/${label}.txt" 2>&1
-    status=$?
-    set -e
+    # ⚠ NO `set +e` / `set -e` IN HERE, AND THE FIRST VERSION HAD BOTH. A function runs in the
+    # caller's shell, so the trailing `set -e` re-armed errexit just before `return "$status"`
+    # handed back the harness's non-zero status -- which is the status this script exists to read.
+    # The caller's own `set +e` was undone from inside, and the script aborted the moment the
+    # harness reddened, i.e. exactly when it was working. The baseline run survived only because it
+    # sat inside an `if`, where errexit is ignored. an `if … then … else status=$?` reads a status without ever
+    # disabling the safety (and is the form `check-shell-evidence` accepts: a `$?` alone on its line,
+    # directly after the command it belongs to).
+    if QRPAGER_PAINT_LOG="${WORK}/${label}.log" QRPAGER_PAINT_OUT="${out_dir}" \
+        tools/gate/bin/theme-paint-proof >"${WORK}/${label}.txt" 2>&1; then
+        status=0
+    else
+        status=$?
+    fi
 
     return "$status"
 }
@@ -204,10 +220,11 @@ for template in "${TEMPLATES[@]}"; do
 
     # The OLD claim, on the same injected tree, as an observation. Not an assertion: the point
     # is whether a source guard sees what the rendered page shows.
-    set +e
-    scan_out="$(node tools/design-tokens/bin/scan-css.mjs 2>&1)"
-    scan_status=$?
-    set -e
+    if scan_out="$(node tools/design-tokens/bin/scan-css.mjs 2>&1)"; then
+        scan_status=0
+    else
+        scan_status=$?
+    fi
     say ""
     say "scan-css (the SOURCE-level guard) on the injected tree: exit ${scan_status}"
     say "  $(printf '%s' "$scan_out" | tail -1)"
@@ -215,10 +232,11 @@ for template in "${TEMPLATES[@]}"; do
     say ""
     say "theme-paint-proof (the RENDERED-pixel check) on the injected tree:"
 
-    set +e
-    harness "inject-${template}" "$out"
-    harness_status=$?
-    set -e
+    if harness "inject-${template}" "$out"; then
+        harness_status=0
+    else
+        harness_status=$?
+    fi
 
     say "  exit ${harness_status}"
 
