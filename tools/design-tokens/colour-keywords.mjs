@@ -158,25 +158,46 @@ list-style list-style-type src unicode-range
  */
 export function literalColourKeywords(text) {
   const found = []
+
+  /*
+   * ⚠ STRINGS AND `url()` ARE BLANKED ON THE WHOLE TEXT BEFORE ANY DECLARATION IS CUT — the
+   * §11 QA round's M-1. They used to be blanked inside the value AFTER the cut, so the `;` in
+   * `url(data:image/png;base64,AAA) red` ended the declaration at `png` and the `red` after the
+   * url was never in any declaration. A CSS string cannot span a line, so neither does this one:
+   * a stray apostrophe blanks to the end of its line and no further.
+   */
+  const clean = text
+    .replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, (m) => ' '.repeat(m.length))
+    .replace(/url\([^)]*\)/gi, (m) => ' '.repeat(m.length))
+
   const declaration = /(?<![\w-])(--[\w-]+|-?[a-z][\w-]*)\s*:(?!:)([^;{}]*)/gi
   let decl
 
-  while ((decl = declaration.exec(text)) !== null) {
-    const property = decl[1].toLowerCase()
+  while ((decl = declaration.exec(clean)) !== null) {
+    /*
+     * ⚠ A "DECLARATION" THAT ENDS IN `{` IS A SELECTOR OR AN AT-RULE PRELUDE — the QA round's
+     * M-2. `li:hover mark{…}` reads as property `li`, value `hover mark`, and `mark` is a system
+     * colour; so does `a:has(menu)` and `@media (prefers-color-scheme:dark)`. A declaration
+     * ends at `;`, at `}` or at the end of its attribute, never at `{`.
+     */
+    if (clean[decl.index + decl[0].length] === '{') continue
+
+    // A vendor prefix does not make `-webkit-transition` a colour property.
+    const property = decl[1].toLowerCase().replace(/^-(?:webkit|moz|ms|o)-/, '')
     if (NON_COLOUR_PROPERTIES.has(property)) continue
 
     const valueStart = decl.index + decl[0].length - decl[2].length
-    // Blank what is not a colour position, keeping every offset: strings, then url(...).
     const value = decl[2]
-      .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, (m) => ' '.repeat(m.length))
-      .replace(/url\([^)]*\)/gi, (m) => ' '.repeat(m.length))
-
     const identifier = /(?<![\w#.\-@\\])-?[a-z][\w-]*(?![\w-])/gi
     let id
 
     while ((id = identifier.exec(value)) !== null) {
       if (isLiteralColourKeyword(id[0])) {
-        found.push({ index: valueStart + id.index, keyword: id[0], property })
+        found.push({
+          index: valueStart + id.index,
+          keyword: id[0],
+          property: decl[1].toLowerCase(),
+        })
       }
     }
   }

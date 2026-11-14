@@ -86,6 +86,15 @@ trap 'exit 143' TERM
 
 say() { printf '%s\n' "$1"; }
 
+# A backup left by a killed run is NOT pristine -- it may be the planted copy -- so it is a refusal,
+# never an input (the §11 round: `git diff --quiet` ignores untracked files, and this proof's
+# backups are untracked).
+for leftover in "$PAGE" "$TILE"; do
+    if [ -f "${leftover}.disagreement-backup" ]; then
+        fail "${leftover}.disagreement-backup exists: a previous run was killed. Inspect it, restore from git, delete it, and re-run."
+    fi
+done
+
 if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
     fail "a tracked file outside docs/ differs from HEAD. A proof on uncommitted code proves nothing about the committed code -- commit first."
 fi

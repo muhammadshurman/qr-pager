@@ -104,6 +104,18 @@ const BLADE_DIRECTIVES = [
   'endenv',
 ]
 
+/**
+ * Blank every CSS comment INSIDE ONE KEPT REGION, an unterminated one to the region's end.
+ *
+ * ⚠ DONE PER REGION, BEFORE THE REGIONS ARE JOINED — the §11 security round's M-2. `scan-css`
+ * strips comments from the MASKED text, where the gaps between regions are spaces, so `/*` in
+ * one attribute and `*\/` in another bridged everything between them and hid it. A browser ends
+ * an unterminated comment at the end of its attribute or element, which is what this does.
+ */
+function blankComments(region) {
+  return region.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, blank)
+}
+
 /** Replace every non-newline character of `text` with a space, so offsets never move. */
 function blank(text) {
   return String(text).replace(/[^\n]/g, ' ')
@@ -174,8 +186,11 @@ export function maskBladeCss(source) {
    * 2. `style="…"`, `style='…'` and the unquoted `style=value`, anywhere OUTSIDE a `<style>`
    * element — a `[style="x"]` attribute SELECTOR in a stylesheet is not an attribute.
    *
-   * `(?<![\w-])` keeps `data-style=` out and lets `:style=` and `x-bind:style=` in, which
-   * over-reports (their value is PHP or JS, not CSS) rather than under-reports. The character
+   * `(?<![\w-])` keeps `data-style=` out and lets `:style=` and `x-bind:style=` in. ⚠ THAT IS
+   * NOT "OVER-REPORTS RATHER THAN UNDER-REPORTS", WHICH IS WHAT THIS COMMENT SAID until the
+   * `§11` round measured it: a bound value is JS, and `:style="{ color: 'red' }"` reads as a
+   * string that is blanked, so a NAMED colour in object syntax is missed (the hex form is
+   * caught). It is listed in `R-326`. The character
    * AFTER the value — the closing quote, or the delimiter of an unquoted one — is kept as a
    * `;`, so two attributes never run together into one declaration: without it the value of
    * `style="font-family:x"` and the next attribute's `color:red` are one string to the reader,
@@ -192,6 +207,54 @@ export function maskBladeCss(source) {
     keep.push([to, to + 1, ';'])
   }
 
+  /*
+   * 3. `@style([...])` — BLADE'S OWN INLINE-STYLE DIRECTIVE, which renders as a `style="…"`
+   * attribute and which the §11 round found invisible: it is on the blank-the-directive list
+   * below, and the attribute regex above needs `style=`. So `<p @style(['color:#ff00ff'])>`
+   * was a literal in the one form a template author is MOST likely to write. Each quoted
+   * string in its argument is a declaration list (`'color:red'`, or the key of
+   * `'font-weight:bold' => $on`), so its CONTENTS are kept and the quotes become separators;
+   * the PHP around them is blanked like any other PHP.
+   */
+  const styleDirective = /@style\s*\(/gi
+
+  while ((match = styleDirective.exec(text)) !== null) {
+    if (elements.some(([from, to]) => match.index >= from && match.index < to)) continue
+
+    const open = match.index + match[0].length - 1
+    let depth = 0
+    let quote = null
+    let close = -1
+
+    for (let at = open; at < text.length; at++) {
+      const char = text[at]
+
+      if (quote !== null) {
+        if (char === '\\') at++
+        else if (char === quote) quote = null
+      } else if (char === "'" || char === '"') quote = char
+      else if (char === '(') depth++
+      else if (char === ')' && --depth === 0) {
+        close = at
+
+        break
+      }
+    }
+
+    if (close === -1) continue
+
+    const strings = /'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/dg
+    const args = text.slice(open, close)
+    let string
+
+    while ((string = strings.exec(args)) !== null) {
+      const [from, to] = string.indices.slice(1).find((range) => range !== undefined)
+
+      keep.push([open + from, open + to])
+      keep.push([open + to, open + to + 1, ';'])
+    }
+  }
+
   keep.sort((x, y) => x[0] - y[0])
 
   let masked = ''
@@ -202,7 +265,9 @@ export function maskBladeCss(source) {
 
     masked += blank(text.slice(cursor, from))
     masked +=
-      fill === undefined ? text.slice(from, to) : fill.padEnd(to - from, ' ').slice(0, to - from)
+      fill === undefined
+        ? blankComments(text.slice(from, to))
+        : fill.padEnd(to - from, ' ').slice(0, to - from)
     cursor = to
   }
 
@@ -306,7 +371,7 @@ export function styleBodyCount(source) {
   return found === null ? 0 : found.length
 }
 
-/** The number of `style` attributes outside any `<style>` element. */
+/** The number of `style` attributes and `@style(…)` directives outside any `<style>` element. */
 export function styleAttributeCount(source) {
   const text = String(source)
     .replace(/\{\{--[\s\S]*?--\}\}/g, blank)
@@ -315,6 +380,7 @@ export function styleAttributeCount(source) {
     .replace(/@php\b[\s\S]*?@endphp\b/gi, blank)
     .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, blank)
   const found = text.match(/(?<![\w-])style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>=`]+)/gi)
+  const directives = text.match(/@style\s*\(/gi)
 
-  return found === null ? 0 : found.length
+  return (found === null ? 0 : found.length) + (directives === null ? 0 : directives.length)
 }

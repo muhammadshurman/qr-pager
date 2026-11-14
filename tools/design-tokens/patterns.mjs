@@ -537,7 +537,14 @@ export function colourValueIsAcceptable(rawValue) {
   // keyword inside one is fine -- what must not appear is a colour that is not a token.
   const parts = splitTopLevel(value)
   if (parts.length > 1) {
-    return parts.every((part) => colourValueIsAcceptable(part) || valueIsAcceptable(part))
+    // ⚠ `valueIsAcceptable` judges MAGNITUDES, and `red` carries no digit — so a part that is a
+    // literal colour keyword is refused here explicitly (the §11 QA round's M-4: `1px solid red`
+    // and `red, blue` passed this reader).
+    return parts.every(
+      (part) =>
+        colourValueIsAcceptable(part) ||
+        (valueIsAcceptable(part) && literalColourKeywords(`x:${part}`).length === 0),
+    )
   }
 
   // A token reference, with its fallback judged too.

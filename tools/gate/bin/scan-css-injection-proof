@@ -62,6 +62,15 @@ trap 'exit 143' TERM
 
 say() { printf '%s\n' "$1"; }
 
+# A backup left by a killed run is NOT pristine -- it may be the planted copy -- so it is a refusal,
+# never an input (the §11 round: `git diff --quiet` ignores untracked files, and this proof's
+# backups are untracked).
+for leftover in "$ATTRIBUTE_ONLY" "$STYLE_BODY"; do
+    if [ -f "${leftover}.injection-backup" ]; then
+        fail "${leftover}.injection-backup exists: a previous run was killed. Inspect it, restore from git, delete it, and re-run."
+    fi
+done
+
 if ! git diff --quiet HEAD -- . ':(exclude)docs'; then
     fail "a tracked file outside docs/ differs from HEAD. A proof on uncommitted code proves nothing about the committed code -- commit first."
 fi
@@ -162,6 +171,11 @@ inject "hex in an attribute, in a template that had NO CSS at all" \
 inject "hex in an attribute, in a template already scanned" \
     "$STYLE_BODY" prepend '<p style="color:#123456">proof</p>' 1 0
 
+inject "hex in Blade's own @style directive — the form a template author is most likely to write" \
+    "$ATTRIBUTE_ONLY" prepend "<p @style(['color:#123456'])>proof</p>" 1 1
+inject "a named colour after a comment that was opened in one attribute and closed in another" \
+    "$ATTRIBUTE_ONLY" prepend '<p style="/*">a</p><p style="color:red">b</p><p style="*/">c</p>' 1 1
+
 say ""
 say "=== 2: named colours are literals =================================================="
 inject "named colour ending a rule with } — the shape the old regex passed" \
@@ -190,4 +204,4 @@ scan
 say "AFTER (reverted tree): scan-css exit ${SCAN_EXIT}, ${SCAN_FILES} file(s)"
 [ "$SCAN_EXIT" -eq 0 ] || fail "the reverted tree is red"
 [ "$SCAN_FILES" -eq "$BASE_FILES" ] || fail "the file count did not return to ${BASE_FILES}"
-say "scan-css-injection-proof: 8 injections, 5 refused and 3 allowed, every one reverted."
+say "scan-css-injection-proof: 10 injections, 7 refused and 3 allowed, every one reverted."
