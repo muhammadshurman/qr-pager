@@ -219,13 +219,22 @@ describe('the workspace gate and CI run the same steps', () => {
     ).toContain('gate:domain-move')
   })
 
+  /**
+   * Whether a CI job text RUNS a command: a `run:` line carrying exactly that command, not a
+   * mention of it. `toContain` was the first version of this check and it is satisfied by a
+   * comment, so a step that was commented out of `ci.yml` — the likeliest way for a gate to
+   * quietly stop running — would have passed it (`§11` QA L2).
+   */
+  const jobRuns = (job, command) =>
+    job.split('\n').some((line) => new RegExp(`^\\s*(?:- )?run:\\s*${command}\\s*$`).test(line))
+
   it('requires CI to run QRPAGER-49A’s theme-paint gate, in the job that can', () => {
     expect(
-      gatesJob,
-      `CI's gates job does not run ${THEME_PAINT_GATE} -- whether a tenant's theme reaches the ` +
-        'rendered pixel, and whether any studio colour picker is dead, would then be verified by ' +
-        'no runner',
-    ).toContain(THEME_PAINT_GATE)
+      jobRuns(gatesJob, THEME_PAINT_GATE),
+      `CI's gates job has no \`run: ${THEME_PAINT_GATE}\` line -- whether a tenant's theme reaches ` +
+        'the rendered pixel, and whether any studio colour picker is dead, would then be verified ' +
+        'by no runner',
+    ).toBe(true)
 
     const pkg = JSON.parse(read('package.json'))
 
@@ -239,13 +248,22 @@ describe('the workspace gate and CI run the same steps', () => {
     expect(existsSync(join(REPO, 'tools/gate/bin/theme-paint-proof'))).toBe(true)
   })
 
-  it('would REFUSE a CI job that dropped the theme-paint step — the control', () => {
-    // The assertion above, shown to say no: the job text with the step removed must not
-    // contain the command. A check never shown to refuse is the shape this ticket rules out.
-    const without = gatesJob.replaceAll(THEME_PAINT_GATE, '')
+  it('REFUSES a CI job that dropped the theme-paint step, or only commented it out — the control', () => {
+    // The SAME function the assertion above uses, run on the real job text with the step removed
+    // and with the step commented out. The first version of this control asserted that
+    // `String.replaceAll` removes a substring, which tests JavaScript and not the check.
+    const dropped = gatesJob
+      .split('\n')
+      .filter((line) => !line.includes(THEME_PAINT_GATE))
+      .join('\n')
+    const commented = gatesJob.replaceAll(`run: ${THEME_PAINT_GATE}`, `# run: ${THEME_PAINT_GATE}`)
 
-    expect(without).not.toContain(THEME_PAINT_GATE)
-    expect(gatesJob).toContain(THEME_PAINT_GATE)
+    expect(jobRuns(gatesJob, THEME_PAINT_GATE)).toBe(true)
+    expect(jobRuns(dropped, THEME_PAINT_GATE)).toBe(false)
+    expect(jobRuns(commented, THEME_PAINT_GATE)).toBe(false)
+    // …and a lookalike line is not the command
+    expect(jobRuns(`        run: ${THEME_PAINT_GATE}-extra`, THEME_PAINT_GATE)).toBe(false)
+    expect(jobRuns(`        run: echo ${THEME_PAINT_GATE}`, THEME_PAINT_GATE)).toBe(false)
   })
 
   it('ships the revert proof as a script, so the claim can be re-run rather than re-read', () => {
