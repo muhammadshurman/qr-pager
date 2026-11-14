@@ -9807,8 +9807,10 @@ Both members live inside the existing `jsonb` document, so adding an arrangement
 
 The committed contract `docs/contracts/landing-page.schema.json:577-586` carries `template` with its `enum` list, and that file is GENERATED from `values()` by `php artisan landing:schema-export` with `bin/landing-schema-check` byte-diffing it. So a new case updates a generated artefact, not a schema.
 
-### `QRPAGER-49A` — **does the theme reach the pixel?** — PHASE 1 ONLY, 2026-11-14 on `qrpager-49a/theme-paint`, branched off `0d7f694`
+### `QRPAGER-49A` — **does the theme reach the pixel?** — PHASE 1 ACCEPTED, PHASE 2 BUILT AND REVIEWED, 2026-11-14 on `qrpager-49a/theme-paint`, branched off `0d7f694`
 
+> *(Phase 1's instruction, kept as written. **Everything from `PHASE 2` below supersedes it where the two disagree**, and the sections between are Phase 1's record, marked where Phase 2 changed them.)*
+>
 > **PHASE 1 IS A MEASUREMENT AND NOTHING IS FIXED IN IT**, by instruction: *"measure the current
 > three. Harness + report. Fix nothing. Then STOP and report. Do not start Phase 2 until I rule."*
 
@@ -9859,7 +9861,7 @@ whole repository excluding `vendor/`, `node_modules/`, `.git/`, `storage/` and `
 attributable — nothing else in this product can emit it — and it is why they are far apart in RGB:
 six near-neighbours would let a misattributed role read as a pass.
 
-#### THE DECLARED NON-THEMED SET — two members, declared before the measurement
+#### THE DECLARED NON-THEMED SET — **PHASE 1's TWO MEMBERS. SUPERSEDED: IT HAS ONE NOW, `rgba(0, 0, 0, 0)`; see RULING 1**
 
 **`tools/landing/paint-report.mjs` carries them with their reasons, and the test a member has to
 pass is that it is not a colour at all.**
@@ -9874,7 +9876,7 @@ in category (c) are all one colour (`#000000`) on one element, and **not one of 
 admitted to this table.** The ticket's rule is Muhammad's: *"adding a member is a ruling I make,
 not an exemption you write."*
 
-#### PHASE 1's MEASUREMENT — `storage/theme-paint`, transcript `docs/tickets/QRPAGER-49A-theme-paint.txt`
+#### PHASE 1's MEASUREMENT — **HISTORICAL: the 66 findings below were produced by the unfixed root and are not what the transcript at that path says now (8,606 values, 0 other); see RULING 1**
 
 **Subject:** the demo restaurant `مطعم السَّرو` (`studio:demo-tenant`), its own seven blocks and its
 own ten images, `lang="ar" dir="rtl"`, one document, published three times — once per arrangement
@@ -9981,14 +9983,11 @@ paths differ in exactly two things, neither of which is the theme: the document'
 unsaved Redis state or the stored draft, against `published_document`) and the asset URLs (the
 panel's authenticated media route against the published `/assets/…` paths).
 
-#### THE EVIDENCE — every run, and the file that holds it
+#### PHASE 1's EVIDENCE — **HISTORICAL, and its transcripts were overwritten by Phase 2's runs**
 
-| run | figure | transcript |
-| --- | --- | --- |
-| `composer gate`, 10/10 green | **1,593 passed / 14,886 assertions** | `docs/tickets/QRPAGER-49A-gate-php.txt` (`EXIT=0`), **second attempt — and the first red was this repository's own control working.** `FixtureScriptGuardTest` holds an EXACT set of the scripts that write as the database owner, derived from `bin/` by grep; a new one may not be added without a reader seeing it, and it refused `bin/publish-sentinel-theme` until one did. |
-| `pnpm gate`, 14/14 green | **1,237 passed** across 67 files, 103 browser cases, **90.54% branches** | `docs/tickets/QRPAGER-49A-gate-frontend.txt` (`EXIT=0`), **first attempt.** Its last step is `records:check`, which is GREEN here and was RED at `0d7f694` — see `§0`. |
-| `tools/gate/bin/theme-paint-proof` | 7,944 colour-bearing values; 66 in category (c); 2 dead pickers | `docs/tickets/QRPAGER-49A-theme-paint.txt` — **`EXIT=1`, BY DESIGN AND NOT A GATE THAT FAILED.** The reporter exits non-zero when category (c) is non-empty, and in Phase 1 it is: the transcript records a MEASUREMENT whose result is 66 findings. `check-records` already draws exactly this distinction for `-lighthouse.txt` — *"a transcript of a DECLARED non-delivery is evidence; a transcript of a gate that failed is not"* — and this file's name is outside its evidence pattern, so nothing is being dodged. |
-| the two renders | the sentinel page as a browser paints it | `docs/tickets/qrpager-49a-rail-390.png`, `docs/tickets/qrpager-49a-ember-390.png` |
+Phase 1's figures, measured at `1cad680` and `c4544db`: `composer gate` 10/10, 1,593 passed / 14,886 assertions; `pnpm gate` 14/14, 1,237 Vitest, 90.54% branches
+(a WORKSPACE figure); the sentinel run `EXIT=1` by design with 66 findings. **The transcript FILENAMES are reused by Phase 2** — `R-295`'s shape, an older
+claim citing a file that no longer holds its run — so the current figures are in the table under `PHASE 2`'s evidence, and `records(e)` holds THAT table to the files.
 
 ⚠ **THE TWO COMMITTED IMAGES ARE PUBLIC PAGES AND `R-287`'s STATED RULE IS MET.** That row's rule
 is *"a committed panel screenshot comes only from an `e2e` fixture tenant, never from a real or
@@ -10002,8 +10001,7 @@ behind them.
 
 #### WHAT THIS HARNESS CANNOT SEE — the honest boundary of the claim
 
-Stated here in Phase 1; the ticket puts it in the PR body and into `§5` with an owner and a date in
-Phase 2.
+Stated here in Phase 1; **widened by the `§11` round and carried in `§5` as `R-318` with an owner and a date**, and printed in every run's output. The table below is Phase 1's list; `R-318` is the current one.
 
 | not covered | why, and what it would take |
 | --- | --- |
@@ -10024,12 +10022,228 @@ commits no gate transcript and states no total; it would matter in Phase 2, wher
 `composer gate` and `pnpm gate` figures and nothing would hold them to the suite. Reported rather
 than fixed: `check-records` is shared tooling and this phase fixes nothing.
 
-#### WHAT IS NOT DONE — all of Phase 2, by instruction
+#### PHASE 2 — AFTER MUHAMMAD'S RULINGS OF 2026-11-14
 
-The revert proof per template (*"a harness never shown to redden is not a harness"*), the gate
-wiring, the unit coverage, the `§6` gate in full, the `§11` round, the PR, and the `§5` rows for the
-boundary table above. **Nothing in category (c) and neither dead picker is fixed**, and `§0`'s
-*Next up* says so.
+**PHASE 1 WAS NOT ACCEPTED AT FIRST, AND THE REASON IS THE LESSON.** The first relay led with
+`pnpm gate`'s figure. His reply: *"A `pnpm gate` result is not Phase 1's deliverable. Phase 1 asked for a
+measurement report; what was relayed is a gate figure."* He asked eight questions and the answers
+are what changed the work, so they are recorded, including the ones that were uncomfortable:
+
+| his question | the answer, and what it cost |
+| --- | --- |
+| **runtime** — Vitest/jsdom, or a browser? | **Playwright, real Chromium** (`browser/theme-paint.spec.ts`, project `theme-paint`). His suspicion of jsdom was wrong and he said so; the evidence was a resolved `var()` triple, non-zero geometry and a media query that fired at one width and not the other. |
+| **the 390/1280 clause** — read from the environment, not the config | **It had NOT been.** The collector recorded the width it was *asked* for and the report called it the width it measured. `window.innerWidth` is now read from the page and the report REFUSES a record where it differs. |
+| **the nine hours** | **Not reconcilable, and not invented.** The artefacts timestamp about 15½ minutes of instrumented runs inside a 1h41m window; he was told that and asked which clock he meant. |
+| **the three watchers** | **"Stale" was the wrong diagnosis.** `until ! pgrep -f "composer gate"` matches its own command line, so the predicate could never become false and every `RUNNING` printed was the waiter seeing itself. Three of them spun until killed by PID. |
+| **coverage scope** | **90.54% was the workspace, not this ticket**, and no per-ticket figure existed. |
+
+#### WHAT PHASE 2 BUILT
+
+| file | job |
+| --- | --- |
+| `apps/api/resources/views/landing/page.blade.php` | **one declaration**, on the same line as the rule it joins so the frozen landing baseline's line numbers do not move: `:root{color-scheme:light dark;color:var(--color-text)}` |
+| `tools/landing/paint-classify.mjs` | **the classifier, as a pure module** — what counts as a finding. 133 unit cases across it and the reporter (`tools/landing/test/`). |
+| `tools/landing/paint-report.mjs` | the reporter: reads the records, runs the classifier, prints EVERY figure the claim relies on, and exits 0 only when (c) is empty AND the dead controls are exactly the baseline |
+| `tools/landing/paint-baseline.json` | the frozen allowance for the two dead controls Muhammad ruled are not to be fixed |
+| `browser/theme-paint.spec.ts` | the collector — now records raw engine strings and raw *facts* and judges nothing |
+| `tools/gate/bin/theme-paint-revert-proof` | ruling 3(b): one injection per template, from the enum |
+| `apps/api/tests/Support/SentinelTheme.php` | the six sentinels, written once |
+| `package.json`, `.github/workflows/ci.yml`, `tools/gate/test/ci-parity.test.mjs` | `pnpm run gate:theme-paint`, required of CI in the job that can run it, with a control proving the parity case refuses a job that drops it |
+
+#### RULING 1 — THE ROOT, AND THE SET
+
+**(c) is ZERO across all six renders, by mechanism.** `docs/tickets/QRPAGER-49A-theme-paint.txt`, the transcript the harness wrote, `EXIT=0`:
+**8,606 colour-bearing computed values — 7,990 sentinel, 616 declared non-themed, 0 other.** The arithmetic that says the fix moved what it
+should and nothing else: the FIRST post-fix run read 7,944 values, **7,328 sentinel — Phase 1's 7,262 plus exactly the 66 that were black**; the `§11` round
+then widened the property list by eleven and the same harness reads 662 more values, **every one of them a sentinel**.
+
+- **`#000000` was NOT admitted to the declared set.** It would have been the exemption his ruling forbids, and the cause was one declaration.
+- **`currentcolor` is REMOVED, and the ruling was right about more than that member.** The engine never returns the keyword, so it was unreachable. But `transparent` had the same fault in a better disguise: the engine returns `rgba(0, 0, 0, 0)`, and **Phase 1's collector hid that by rewriting every zero-alpha value to the string `transparent` inside the browser before the report saw it** — a shim that made the world match a set written in the wrong language. The shim is gone; the one remaining member is keyed on the computed form.
+- **The set is stricter than "any zero-alpha colour", deliberately:** `rgba(1, 2, 3, 0)` paints nothing, but it is a literal somebody wrote, and absorbing it would let an invisible literal through while a visible one reddened the report. It is a finding.
+- **The reporter collapses the ten `currentcolor`-derived properties into their source `color`.** The revert record shows it: one injected literal is ONE finding with ten consequences listed, not eleven rows. Collapse is by equality with the element's own `color`, so a derived property that later DIVERGES stops collapsing and is reported on its own — a test drives exactly that.
+
+#### RULING 2 — THE DEAD-CONTROL CHECK IS PERMANENT, AND THE BASELINE NEEDS HIS CONFIRMATION
+
+It enumerates from `LandingTemplate::values()` and prints each of the six roles by name per template as
+`occurrences/painting`. **`rail`/`color.surface` and `ember`/`color.accent_text` are NOT fixed.**
+
+⚠ **ONE DECISION WAS MINE AND IS FLAGGED RATHER THAN BURIED.** He ruled the check permanent AND ruled
+the two controls are not to be fixed. A permanent check that is red on `main` is not a gate, so the two are
+enumerated BY NAME in `tools/landing/paint-baseline.json` with an owner (`QRPAGER-49`). **It is not the
+non-themed set and he has not ruled on it.** It can only shrink — a new dead control, a stale entry, and an
+entry for a template no longer in the enum are each RED — and the third is what makes it `QRPAGER-49`'s acceptance
+criterion: replacing the three arrangements makes every entry `gone`, so the only way back to green is to
+delete them, at which point all new templates must paint with all six roles. **The alternative is a
+report-only check until 49 merges; the cost of that is a regression in a third control going unnoticed until
+then.** Say which and it changes in one file.
+
+#### RULING 3 — TWO PROOFS, AND THEY PROVE DIFFERENT THINGS
+
+- **(a) the classifier, on synthetic records:** rgb(), rgba(), hsl() (computed independently of the module, so a mistake in its conversion cannot be agreed with by a copy of itself), named colours, `color-mix()` in both forms (the engine's `color(srgb …)` result, and an unevaluated string no engine returns), a value ONE digit off each sentinel, the same colour at 99% alpha, and the hex forms.
+- **(b) the revert record** — `docs/tickets/QRPAGER-49A-revert-record.txt`. **Three of three reddened, attributed to the injected literal on the injected template, the other two unmoved, every revert byte-identical, green again.** ⚠ **AND THE SOURCE GUARD SAID EXIT 0 ON ALL THREE** — `scan-css` is blind to an inline `style` attribute, so `R-322` is *observed*, not argued: the two claims differ, shown on a real input.
+
+#### THE DEFECTS THE WORK FOUND IN ITSELF
+
+**None of these is in the product. All of them are in the instrument or in my own account of it, and most were found by the instrument's own controls, which is the case for building the controls.**
+
+| # | what was wrong | how it was found | what fixed it |
+| --- | --- | --- | --- |
+| 1 | **The first relay led with a gate figure** instead of the measurement. | Muhammad. | The deliverable is now the report; the transcript prints every figure. |
+| 2 | **`window.innerWidth` was requested, never read.** | Muhammad's question 2. | Read from the page; the reporter refuses a mismatch. |
+| 3 | **Three `pgrep -f` waiters that could never finish.** | Muhammad's question 7. | Killed by PID; polling dropped; wait on the job's exit status. |
+| 4 | **A backgrounded wrapper whose last command was `echo`, so the harness reported exit 0 for a vitest run that exited 1.** | The transcript, which I had written with an `EXIT=` trailer; the notification said 0, the file said 1. | The command run in the background is now the program itself. |
+| 5 | **The sentinels were described as sharing "no channel pair".** False: `text` and `accent_text` both have green 0 and blue 255. | Computing the distances for a test. Closest pair is `text`/`accent_text` at 105.0 against 1.0 for a near miss. | The docblock states the measured figure; the test's floor is set from it. |
+| 6 | **`publish-sentinel-theme`'s docblock said it "writes as the database owner".** It runs as the APP role under RLS. | Muhammad's finding C. | Rewritten, with the code paths, and asserted by a test on the script's code. |
+| 7 | **The resolver caller-count scan MISSED `\App\Features\Landing\ThemeStylesheet::declarations()`** — in PHP 8 a qualified name is one `T_NAME_FULLY_QUALIFIED` token, not a `T_STRING`. | **The planted control**, on its first run. | Qualified names resolve to their last segment; the planted cases are committed. |
+| 8 | **The three publish cases compared a `jsonb` theme map in insertion order.** | Three red cases. | Compared as a map; Postgres stores keys by length then alphabetically. |
+| 9 | **A report column was exactly as wide as its widest value** (`alpha @ 12801280`). | A regex in a test. | The column follows the longest label. |
+| 10 | **A first check that the demo page was clean read `null` and said "no".** | The pointer did not exist. | Existence is now asserted before content; a test restored the prefix and the check was re-run non-vacuously. |
+| 11 | **The existing R-267 test anchored on the literal text `:root{color-scheme:light dark}`**, which this ticket legitimately changed. | A red vitest, classified before anything was re-run. | Anchored on the rule, not its current text. |
+| 12 | **`SentinelThemeScriptTest`'s docblock said the existing seeder tests leave the default demo in the bucket on every run.** False: `LandingFixtures::bucket()` empties `sites/` and `media/` before every landing case (`QRPAGER-48`'s `§4a` already records and works around it). | Looking for the pointer afterwards and finding none. | Corrected to what the cleanup actually narrows: a magenta demo page is worse than a missing one. |
+| 13 | **The revert proof aborted silently, `EXIT=1`, the moment the harness reddened** — the one moment it was supposed to carry on. | Its own transcript: no message. | `harness()` ran `set +e … set -e` inside itself, which re-armed errexit before returning the status the script exists to read. No toggling; `set -E` plus an `ERR` trap that names the line. |
+| 14 | **A stale compiled view survived the revert, and the demo page was re-seeded from it.** The trap restored the template with `cp -p`, preserving an mtime two days older than the compile made from the injected text, so Laravel kept serving the injection from a tree byte-identical to `HEAD`. | The **baseline** of the next run found its own injected literal. The proof's guard refused to proceed. | Restore without `-p`, clear the views after every edit and restore, **and `theme-paint-proof` clears them before it publishes anything** — the systemic half. The demo prefix was re-seeded and checked non-vacuously. |
+
+| 15 | **`R-321`'s first draft said "MEASURED" about a `records(c)` mismatch I had never measured.** In Phase 1 the total happened to match, so green proved nothing. | Re-reading the row before it was inserted. | Measured with a genuine mismatch (the transcript records 1593, the suite enumerates 1615): silent under the lettered name, refused under a plain one. |
+| 16 | **`theme-paint-proof`'s held-port refusal never printed.** `exec 3<&- 2>/dev/null` applies its redirection to the CURRENT shell permanently, so the script's own stderr went to `/dev/null` and the `fail` message vanished; the run ended `EXIT=1` with no explanation. Copied from `site-isolation-proof`. | **The held-port test**, which asserts the message. | The line is deleted (the descriptor was opened in a subshell and never existed there). **It remains in `domain-move-proof:202` and `site-isolation-proof:199`/`:420` — `R-324`.** |
+| 17 | **The revert proof refused to run because of its own output file.** Once the record was committed, the shell's redirect truncated the tracked transcript before the script's clean-tree check, which then saw a tracked file differing from `HEAD`. | The proof's own refusal. | The check excludes `docs/`, the boundary `check-records` (b3) already draws. |
+| 18 | **The fix pass moved the tenant read to before the `$refuse` closure that it calls**, so the first failure would have been an undefined-variable fatal — worse than the leak it fixed. | Reading the file after the edit, before running it. | Moved to after; an `awk` line-order check, then the SQL-leak test. |
+| 19 | **A race in the SIGTERM test's own harness**: a signal between `sleep 5 &` and `SLEEPER=$!` orphans the sleeper, which holds the pipe open until the case times out. | Intermittent timeout; reproduced by hand. | The signal waits 400 ms; stable across three runs. |
+| 20 | **The review count.** QA's header said 23 (6 Medium) and its list has 24 (7 Medium); I then put "33" in a commit subject, the sum of the two headers. | Counting the list. | The record's count is the list's: **34**. The commit subject is not rewritten. |
+| 21 | **A wrong path in my own new scan**: `docker/` at the repository root; it is `apps/api/docker/`. | **The vacuity guard I had just added**, which refuses to pass over a root that does not exist. | Corrected. |
+
+⚠ **#13 AND #14 ARE THE SAME LESSON AS `site-isolation-proof`'s FOUR RUNS AGAINST A STALE BUILD:** a harness that can silently measure a
+leftover artefact, or abort without saying why, reports the reassuring answer. Both are pinned in
+`tools/gate/test/theme-paint-scripts.test.mjs`, which was shown to fail with the cure removed.
+
+#### THE THREE FINDINGS
+
+**A — the caller-count guard.** Widened from `app/` to `app`, `bin`, `config`, `database`, `routes`, `resources`, `guard`,
+`tests/Support` and the repository's `tools/`, by PHP's own tokenizer (a comment is not a call; the extensionless `bin/*`
+are read). Plus a NAME search of PHP strings and of the TypeScript half for the landing role property names, with
+`--color-surface` excluded because the product's own token layer defines one. Its boundary — dynamic class names,
+`use … as`, the edge — is **`R-319`**.
+
+**B — a repo guard for a trailing string the API does not treat as a message.** **PROPOSED, not built; he rules on scope.**
+`SourceGuard` rule 7 already exists and covers ONE of three shapes. **Measured, by reflection and a tokenizer scan of all 213 test
+files and 5,224 calls in 0.10 s:** `Pest\\Mixins\\Expectation` has 74 matchers that take a message and only
+`toContain`/`toContainEqual` are variadic; **`Illuminate\\Testing\\TestResponse` has 100 `assert*` methods and none takes a
+message**; and matchers with an optional data parameter before `message` turn a message passed one slot early into the
+expected VALUE. **A live inert assertion was found:** `TemplateArrangementTest.php:86` — `->not->toHaveKey('template', '<message>')`
+**passes when the key exists**, demonstrated against Pest itself. Five `assertStatus($code, $message)` calls discard the message.
+59 `toThrow($class, 'text')` are legitimate and are the exemption a guard needs. Nothing is changed (`R-250`). **`R-320`**.
+
+**C — `bin/publish-sentinel-theme`, with code paths.**
+
+| his question | the answer |
+| --- | --- |
+| tenant context per tenant, or a named audited bypass? | **Per tenant, no bypass, and not as the owner.** Every statement runs through `LandingPages`, whose every `withTenant($id, …)` passes no connection, which `TenantContext::run()` resolves at `:158` to `DatabaseRoles::connection('app')` — the APP role, under FORCE RLS, `app.tenant_id` set per transaction. The code contains no `pgsql_owner`, no `withoutTenantScope`, no `DB::connection(`; `SentinelThemeScriptTest` asserts that on the script's code with comments stripped by the tokenizer (its own docblock names every forbidden thing). |
+| any statement that references no column of its table? | **No write.** Its own statement is `select name from tenants where id = ?`. The writes it reaches are `saveDraft()`'s `UPDATE … WHERE tenant_id = ?` and `publish()`'s `UPDATE … WHERE tenant_id = ? AND status = ? AND published_at is not distinct from ?`; `row()` INSERTs with explicit `id` and `tenant_id`. There is no `DELETE` on the path. The one unkeyed statement reachable — `LandingPages::publishedPrefixes()`'s `select hostname from tenant_domains` (`:877`) — is a SELECT, on the lost-the-race branch (`:523`) this script never takes, and §4's trap is about bulk UPDATE and DELETE. |
+| refused outside local and test? | **Yes, before any database or bucket touch, failing CLOSED** on an unset or unrecognised `APP_ENV`. `FixtureScriptGuardTest` drives it under `production` and under every unrecognised environment; **`SentinelThemeScriptTest` additionally asserts a refusal leaves the demo tenant's row and published pointer byte-identical** — which the generic case cannot, because it counts `users` and `tenants` and this script writes neither. |
+| why is the widened exact set safe? | **Written, in `FixtureScriptGuardTest`:** the set is not an allow-list of approved scripts; it is the list that CARRY THE GUARD, derived from `bin/` and held exact so a grep that stopped matching cannot make the loop vacuous and a writer cannot appear unseen. Admitting this script means only that it carries the guard and is now driven under `production`. It is sufficient because the script has three independent halves — environment, a FIXED tenant with **no argument** (an extra one is refused, not ignored, and a test passes a second tenant's id and asserts nothing is written for either), and the app role under RLS. |
+
+#### THE FIVE BLOCKERS
+
+1. **Done.** Three waiters killed by PID and verified gone. Every long job since is run as the program itself, in the background, and its completion read. ⚠ **AND I GOT THIS WRONG ONCE MORE WHILE FIXING IT** (#4 above): the notification said exit 0 for a command whose last stage was `echo`; the transcript I had written said `EXIT=1`.
+2. **Done.** `tools/landing/*.mjs` is in `vitest.config.ts`'s coverage `include`; `**`tools/landing`: 96.52% statements, 94.88% branches, 94.23% functions, 96.41% lines** over the directory (`paint-classify.mjs` is printed by no row, which this reporter means as 100%); **`paint-report.mjs` alone is 93.36 / 82.66 / 82.35 / 92.96 — its branch figure is UNDER 90 and is named rather than averaged away.** The workspace figure, 91.09% branches, is NOT this ticket's`.
+3. **Done — see the next table.**
+4. **Done.** `window.innerWidth`, `innerHeight`, `clientWidth`, `devicePixelRatio`, `matchMedia('(min-width: 48rem)')` and the browser's own build (`browser.version()` and the user agent) are in every record and printed in the transcript: **`chromium 156.0.8078.4`**.
+5. **Done, and the answer is that no PHP number can exist for most of this ticket — `R-323`.** ``bin/coverage --task=0d7f694 --min=90`: **98.34% (178/181) over this task's one `app/` file, `SeedDemoTenantCommand.php`**; whole `app/` 94.8%`.
+
+#### THE `§11` ROUND — **34 findings: 0 Critical, 1 High, 8 Medium, 25 Low**, every one dispositioned
+
+⚠ **THE COUNT IS CORRECTED RATHER THAN CARRIED.** QA's report opened *"23 findings: 0 Critical, 1 High, 6 Medium, 16 Low"* and its list
+contains **seven** Mediums (`M1`–`M7`), which is 24. The relay rule requires the count to match the list, so **QA is 24 (1 High, 7 Medium, 16
+Low), Security is 10 (1 Medium, 9 Low), and the total is 34 — 8 Medium, 25 Low.** The fix commit's subject says *"33 findings"*, which was
+the sum of the two headers; the number in this table is the list's. **The reviewers ran in parallel, in separate contexts, against
+`0d7f694..920c80f`; the ticket asked for ONE round, so the fix diff (`dfed75a`, `2ce7ef4`) is UNREVIEWED**, which `§11`'s round limit permits
+and which is stated here rather than implied. Neither reviewer found a Critical, and **neither found a failure of the stated invariant** —
+QA's High is the one that bears on it, and it is fixed.
+
+**QA** — *"the High is the only finding that bears on the stated invariant"*:
+
+| # | sev | what the reviewer found | disposition |
+| --- | --- | --- | --- |
+| **H1** | **High** | The collector does not read every colour-bearing computed style: `-webkit-text-stroke-color`, `accent-color`, `scrollbar-color`, `border-image-source`, `mask-image`, `filter`, `list-style-image`, SVG `stop`/`flood`/`lighting` colours, and the pseudo-elements `::selection`, `::placeholder`, `::first-line`, `::first-letter`, `::file-selector-button`. A template could ship `accent-color:#f0f` and the gate stay green. | **FIXED for the properties:** 11 added to the read list (printed in the transcript header), `url(…)` stripped first, and **the revert proof now injects the same literal into a SECOND property (`accent-color`) and requires a finding on it** — the proof of fix the reviewer named. **The five pseudo-elements are NOT walked and are named in `R-318`**, with an owner and a date. |
+| **M1** | Medium | The script refuses a held port and then `kill -9`s the holder, because the failure runs the cleanup trap. | **FIXED** — the port is freed only when `SITE_PID` is set (this run started the server), and the check moved to before anything is touched. **A behavioural test holds a port, runs the script, and asserts it was refused and the holder still accepts connections.** It also found that the refusal message had **never printed**: `exec 3<&- 2>/dev/null` applies the redirection to the script's own stderr, permanently. Copied from `site-isolation-proof`, which therefore swallows the same message (`R-324`). |
+| **M2** | Medium | `trap cleanup EXIT INT TERM` never exits: SIGTERM printed `EXIT=0`, the script carried on, printed it again, and ended 0. | **FIXED** in both scripts — `trap 'exit 130' INT`, `trap 'exit 143' TERM`, `cleanup` on `EXIT` once. **Tested by running the real trap lines, cut out of each script, against a real SIGTERM**: exit 143, cleanup once, the next step never runs. |
+| **M3** | Medium | Every abort path of the revert proof after an injection leaves the demo restaurant's published page carrying the injected literal, because each inner run re-seeds from the Blade it still sees. | **FIXED** — `NEEDS_RESEED` is set at the first injection and cleared only after the final green run; the trap re-seeds when it is set and **turns a failed re-seed into a non-zero exit**. Pinned. |
+| **M4** | Medium | The dead-control verdict can say "paints" for something that does not: a pseudo-element inheriting its parent's rect, `opacity:0`, `visibility:hidden`, clipping, a covered element, a `color` overridden by `-webkit-text-fill-color`. | **FIXED for what can be measured:** the collector records `visibility`, EFFECTIVE opacity (the product up the ancestors), `clip-path`, `clip` and font size, and a generated box counts as unpainted because its own size is not measurable. **NOT judged, and named in `R-318`:** an element covered by another, one positioned off-screen, ancestor `overflow` clipping, and the `-webkit-text-fill-color` override. |
+| **M5** | Medium | `box.w > 2 && box.h > 2` reads a 1px or 2px hairline as unpainted — a false dead control. | **FIXED** — the threshold is removed; `.sr`'s 1px box is excluded by what hides it (its own `clip-path`). A 1px bar is a unit case. |
+| **M6** | Medium | The post-fix six-render transcript was not committed; `QRPAGER-49A-theme-paint.txt` was still the Phase 1 run (`EXIT=1`, 66 findings). | **FIXED** — `docs/tickets/QRPAGER-49A-theme-paint.txt` at `dfed75a`, script-written, `EXIT=0`. |
+| **M7** | Medium | The script's docblock and `FixtureScriptGuardTest`'s comment say the guard is driven under "every unrecognised environment"; that loop runs over `bin/issue-pager-session` only. | **FIXED, both halves:** both comments corrected, and **`SentinelThemeScriptTest` now drives THIS script under `staging`, `Local`, `prod`, `development` and `Testing`** with the row and pointer asserted byte-identical. An UNSET `APP_ENV` cannot be driven (a child reads `.env`, which supplies `local`) and the comment says so. |
+| L1 | Low | The summary grep is anchored and can never match `  totals:`. | **FIXED** (pattern + a pin). |
+| L2 | Low | The `ci-parity` control asserts that `String.replaceAll` removes a substring. | **FIXED** — the check now requires a real `run:` line (a commented-out step used to pass it), and the control runs that same function on the job with the step deleted, commented out, and two lookalike lines. |
+| L3 | Low | `SentinelThemeTest`'s second case is a tautology (`$contract` and `colourRoles()` are the same code). | **FIXED** — `SentinelTheme::uncovered()` is a pure function; the case hands it a contract that grew. |
+| L4 | Low | Alpha is rounded to 3 places before the non-themed lookup: `rgba(0,0,0,0.0004)` is classified `nonThemed` while `paintVerdict` says it paints. | **FIXED** — judged on the parsed value; exactly zero alpha on exactly black. Unit cases at `0.0004` and `0.0000001`. |
+| L5 | Low | Channels are rounded to the nearest integer: `rgb(254.5,0,228)` and `color(srgb 1 0 0.8959)` classify as the sentinel. | **FIXED** — a channel must be an exact 8-bit value (to 0.01) and an out-of-range channel is marked inexact; both sort `other`. The engine's own `color(srgb 0.894118…)` form is still a sentinel. |
+| L6 | Low | A near-opaque alpha prints as `1`: `rgba(255,0,228,0.9996)` reads as opaque and merges groups. | **FIXED** — never `1` for a non-1 alpha; six decimals. |
+| L7 | Low | The colour regex runs over `url(…)`, so a file name containing `field` or `canvas` is read as a system colour. | **FIXED** — `url(…)` is removed before extraction. |
+| L8 | Low | `rm -rf "$OUT"` accepts any path inside the repository (`$REPO/docs`). | **FIXED** — canonicalised with `realpath -m` and pinned to `storage/theme-paint` and `storage/theme-paint-revert/*`. **Behaviourally tested on four hostile paths, asserting `docs/PLAN.md` survives.** |
+| L9 | Low | The caller scan omits `bootstrap/`, `public/`, `artisan`, `apps/api/docker/`, `packages/`, `browser/`. | **FIXED** — all are scanned; the §5 row lists what remains. |
+| L10 | Low | The planted-resolver cases write executables into the real `bin/` and `tools/`. | **FIXED** — planted in a temporary directory passed as an extra root; the real tree is asserted free of `zz-*`. |
+| L11 | Low | The by-name scan asserts no count of files scanned, so a renamed directory is skipped silently. | **FIXED** — every root must exist and the walk reports files visited per root; the by-name scan asserts more than 300 files read. **The vacuity guard immediately caught my own wrong path (`docker/` at the repo root; it is `apps/api/docker/`).** |
+| L12 | Low | The mtime guard is source text only, and `cp -a` slips past it. | **PARTLY — the construct list is widened (`cp -a`, `--preserve`, `rsync`, `touch -r/-d`) and the behaviours that CAN be driven cheaply now are** (held port, hostile output path, unrecognised environment, SIGTERM). The compiled-view behaviour itself is still pinned by source and proven by the revert proof's own run. |
+| L13 | Low | The collapse cannot tell a literal from an inherited value and the report states it as fact. | **FIXED** — the line now reads *"the same value as this element's own color, so inherited via currentcolor or written to match it"*. |
+| L14 | Low | `devices['Desktop Chrome']` at 390 is not a phone: no touch, no mobile flag, DPR 1, so `hover`, `pointer` and resolution queries evaluate as desktop. | **NAMED in `R-318`**, not changed: switching emulation changes the measurement, and the ticket named a width. |
+| L15 | Low | `wait 2>/dev/null \|\| true` is argument-less and can hang. | **FIXED** — `wait "$SITE_PID"`. |
+| L16 | Low | Ruling 3(a)'s notations are asserted at classifier level only; at `run()` level only rgb flows through. | **FIXED** — a case feeds hsl, the engine's `color(srgb)` form, a named colour and an unevaluated `color-mix()` through `run()`. |
+
+**Security** — *"Nothing blocks the task-49A tag under §11. The tenant-isolation questions about the publisher script come back clean."*
+
+| # | sev | what the reviewer found | disposition |
+| --- | --- | --- | --- |
+| **S1** | **Medium** | The collector reads only two lists of properties; `accent-color`, `scrollbar-color`, `-webkit-text-stroke-color`, `filter`, `mask-image`, … and four pseudo-elements are unread, and inline `style=""` attributes are listed but never classified. | **Same defect as QA H1 — FIXED the same way.** On the inline attributes: a colour written inline appears in the element's COMPUTED value and is classified there; the list is a reading aid, and that is now stated in the report. |
+| S2 | Low | The EXIT trap `free_port`s unconditionally, including after the "port already in use — refusing" check. | **Same as QA M1 — FIXED.** |
+| S3 | Low | `rm -rf "$OUT"` accepts `$REPO/../..` and `$REPO/apps`. | **Same as QA L8 — FIXED.** |
+| S4 | Low | The widening comment's claim about unrecognised environments is false for this script. | **Same as QA M7 — FIXED.** |
+| S5 | Low | `$refuse` prints `$e->getMessage()` of any Throwable; a `QueryException` carries SQL and bound parameters into a transcript this ticket commits. | **FIXED** — the message is printed only for `PublishFailed` and `LandingDocumentInvalid`; anything else prints its class and is `report()`ed. The tenant read, which sat outside any handler, is inside one. **A test forces a refusing database (port 1) and asserts none of `select`, `SQLSTATE`, `SQL:`, the host or the role name reaches the output.** |
+| S6 | Low | `view:clear` runs before the first guarded call, so under `production` the script clears a cache before it refuses. | **FIXED** — the environment guard is the first thing the orchestrator does, reading `artisan env`, and is tested under `APP_ENV=production` (nothing after it runs). |
+| S7 | Low | "Paints" ignores `visibility`, `opacity`, `clip`, `font-size:0`, occlusion. | **Same as QA M4 — FIXED for what is measurable; the rest is in `R-318`.** |
+| S8 | Low | The object-store secret is on the argv of `env` until it execs; `apps/site` is bound to `0.0.0.0` with those credentials. | **PARTLY — the secret is now a prefix assignment in the process environment and never on a command line (pinned).** **The `0.0.0.0` bind is ACCEPTED, with the reason:** the browser container reaches this host as `host.docker.internal`, which is not loopback, and `site-isolation-proof` carries the same bind; the port is held for one run. `R-324`. |
+| S9 | Low | The committed transcripts carry absolute local paths, which discloses the developer's login name. | **ACCEPTED, `R-324`:** it matches existing transcripts (`QRPAGER-12`, `QRPAGER-15`), so it is a precedent and not a regression; the two screenshots show only the fictional demo restaurant. |
+| S10 | Low | A failed restore only echoes a warning, so a green run whose restore failed exits 0 and leaves the sentinel theme on the demo tenant. | **FIXED** — a failed restore turns the run red. (A crash between `saveDraft()` and `publish()` leaves the demo DRAFT themed with the published page unchanged; the next run's seeder resets the draft.) |
+
+**WHAT BOTH REVIEWERS CHECKED THAT CAME BACK CLEAN, so a reader knows it was looked at:** the publisher script runs as the APP role under RLS
+(`TenantContext::run()` at `:152-159`, `DatabaseRoles::connection('app')`), its one statement of its own is keyed, its writes are `UPDATE … WHERE
+tenant_id`, there is no `DELETE`, no bypass, no new GUC, and no argument, environment variable or file that selects a tenant; the classifier's
+failure direction is right for every spelling they probed (unevaluable, `color-mix`, any alpha other than 1, one-digit-off all land in "other");
+no `eval`, no `child_process`, no dynamic `RegExp` in the reporter; **no new package**; no secret in the committed transcripts; the
+template list comes from the enum everywhere and the shell tests assert no literal.
+
+#### §2's FIGURES — WHICH ARE COMMITTED AND WHICH ARE NOT (his blocker 3)
+
+| figure | where it is | committed? |
+| --- | --- | --- |
+| totals, the (c) listing, the dead-control table, the non-themed set | `QRPAGER-49A-theme-paint.txt` | **yes** |
+| `window.innerWidth` and `innerHeight` per render, **document height** per render, `matchMedia('(min-width: 48rem)')` per render | the same transcript, section (1) | **yes — these were NOT in Phase 1** |
+| **"zero occurrences anywhere in the render"** (`0/0`) per role, per template, per width | the same transcript, section (6), as `occurrences/painting` | **yes — this was NOT in Phase 1** |
+| the property list read per element | the same transcript, header | **yes** |
+| the browser build | the same transcript, header, from the collector | **yes** |
+| the two screenshots | `docs/tickets/qrpager-49a-rail-390.png`, `…-ember-390.png` | yes (Phase 1; produced from the unfixed root and are unchanged evidence of the dead pickers) |
+| the raw per-element records, the other four screenshots | `storage/theme-paint/` | **NO — git-ignored, by design:** hundreds of KB per render, and every figure a claim relies on is printed above |
+
+#### EVIDENCE
+
+| run | figure | transcript |
+| --- | --- | --- |
+| `composer gate` | **1,617 passed / 15,141 assertions**, 10/10 steps green | `docs/tickets/QRPAGER-49A-gate-php.txt` (`EXIT=0`), **first attempt**, at `c954565`, the head whose code the PR carries. |
+| `pnpm gate` | **1,395 passed** (Vitest, 70 files), 14/14 steps green, `records:check` green inside it | `docs/tickets/QRPAGER-49A-gate-frontend.txt` (`EXIT=0`), **first attempt**. 91.09% branches is a WORKSPACE figure; this ticket's own is in the next row. |
+| `tools/landing` coverage | **96.52% statements, 94.88% branches, 94.23% functions, 96.41% lines** over the directory; `paint-report.mjs` alone **93.36 / 82.66 / 82.35 / 92.96** | the coverage table in `docs/tickets/QRPAGER-49A-gate-frontend.txt`. **`paint-report.mjs`'s branch figure is UNDER 90 on its own and is named, not averaged away:** the uncovered lines are the CLI entry (driven by a subprocess test, which the v8 driver cannot follow) and one error branch. `paint-classify.mjs` is printed by no row, which this reporter means as 100%. |
+| `bin/coverage` | **98.34% (178/181)** over this task's ONE `app/` file, `SeedDemoTenantCommand.php`; whole `app/` 94.8% | `docs/tickets/QRPAGER-49A-coverage-php.txt` (`EXIT=0`). Everything else this ticket wrote in PHP is outside the tool's scope — `R-323`. |
+| `gate:e2e` | **564 passed** in 10.2m, `e2e: green`, none skipped or flaky | `docs/tickets/QRPAGER-49A-e2e.txt` (`EXIT=0`), **first attempt**, at `c954565`. |
+| `gate:theme-paint` | 8,606 colour-bearing computed values over six renders — 7,990 sentinel, 616 declared non-themed, **0 other**; the two baselined dead controls; chromium 156.0.8078.4 | `docs/tickets/QRPAGER-49A-theme-paint.txt` (`EXIT=0`), written by the script at `dfed75a`. |
+| `theme-paint-revert-proof` | **3 of 3 templates reddened**, each on `color` AND `accent-color`, controls unmoved, reverts byte-identical, green again | `docs/tickets/QRPAGER-49A-revert-record.txt` (`EXIT=0`), at `c954565`. **Its first three runs failed, each on a defect in the proof and not in the harness** (rows 13, 14 and 17 above). `scan-css`: exit 0 on all three. |
+| **an ABORTED proof** | SIGTERM to the process group mid-injection: **exit 143**, the re-seed message printed, **tree byte-clean, no backup, no injection in the Blade files or the compiled views, the demo page present at its clean 10,764 bytes with no injected paragraph** | **performed by hand against the real stack and NOT committed as a transcript** — it is the one figure here that is not a script-written file, and it is stated as that. The behaviour it exercises is pinned and its trap lines are driven in `theme-paint-scripts.test.mjs`. |
+
+⚠ **THE LOCAL `§0.0f` BAR IS CI GREEN AT THE CANDIDATE COMMIT**, and the PR's checks are read per job at its current head before this ticket is called done (`§0.0h`).
+
+
+#### WHAT IS NOT DONE, BY INSTRUCTION
+
+**The PR is opened and NOT merged, and nothing is tagged. `QRPAGER-49` is not touched.** `§5`'s `R-318`…`R-323` carry what the harness cannot see, the
+guard boundaries, finding B's proposal, the `check-records` letter-suffix hole, the source guard's blindness to an inline
+`style` attribute, and the coverage tooling's scope — each with an owner and a date, most of them *proposed* owners that
+Muhammad confirms or reassigns.
 
 ---
 
