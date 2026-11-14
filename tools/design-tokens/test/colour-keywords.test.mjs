@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 import { hasInlineCss, maskBladeCss, styleAttributeCount } from '../blade-css.mjs'
 import { scanSource } from '../bin/scan-css.mjs'
@@ -12,7 +15,7 @@ import {
   literalColourKeywords,
 } from '../colour-keywords.mjs'
 import { NON_THEMED } from '../../landing/paint-classify.mjs'
-import { colourValueIsAcceptable } from '../patterns.mjs'
+import { colourValueIsAcceptable, valueIsAcceptable } from '../patterns.mjs'
 
 /*
  * QRPAGER-49B, item 2 — the allowlist is ONE definition, and the named-colour hole is closed.
@@ -267,5 +270,42 @@ describe('QRPAGER-49B §11 — shapes the first version got wrong', () => {
     expect(read('<p style="/* color:red */margin:0">')).toEqual([])
     // and an unterminated one ends with its region, as a browser ends it
     expect(read('<p style="margin:0;/* color:red">')).toEqual([])
+  })
+})
+
+/*
+ * QRPAGER-49C, Muhammad's ruling 2: *"`KEYWORD_SAFE` and the regex inside `page.evaluate` stayed
+ * as two separate lists for the same semantic question — the drift I ruled out, reinstated one
+ * layer down … One definition, three consumers."* These are SOURCE assertions and say so: they
+ * cannot show behaviour, only that the second list is not written again.
+ */
+describe('one definition, three consumers — QRPAGER-49C', () => {
+  const read = (path) => readFileSync(join(import.meta.dirname, '..', '..', '..', path), 'utf8')
+
+  it('the magnitude guard takes every allowlisted keyword from the module', () => {
+    for (const keyword of Object.keys(ALLOWED_COLOUR_KEYWORDS)) {
+      expect(valueIsAcceptable(keyword), keyword).toBe(true)
+    }
+
+    const source = read('tools/design-tokens/patterns.mjs')
+
+    expect(source).toMatch(/Object\.keys\(ALLOWED_COLOUR_KEYWORDS\)/)
+    // the old hand-written list, which named the CSS-wide keywords itself
+    expect(source).not.toMatch(/inherit\|initial\|unset\|revert/)
+  })
+
+  it('the in-page detector is built from the module and writes no keyword list of its own', () => {
+    const source = read('browser/theme-paint.spec.ts')
+
+    expect(source).toMatch(/from '\.\.\/tools\/design-tokens\/colour-keywords\.mjs'/)
+    expect(source).toMatch(
+      /keywords: \[\.\.\.Object\.keys\(ALLOWED_COLOUR_KEYWORDS\), \.\.\.COLOUR_KEYWORDS\]/,
+    )
+    expect(source).not.toMatch(/canvastext|linktext|buttonface|accentcolor/i)
+  })
+
+  it('the harness’s classifier and the scanner both read the same module', () => {
+    expect(read('tools/landing/paint-classify.mjs')).toMatch(/design-tokens\/colour-keywords\.mjs/)
+    expect(read('tools/design-tokens/patterns.mjs')).toMatch(/\.\/colour-keywords\.mjs/)
   })
 })

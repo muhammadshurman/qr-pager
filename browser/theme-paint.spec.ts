@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import {
+  ALLOWED_COLOUR_KEYWORDS,
+  COLOUR_KEYWORDS,
+} from '../tools/design-tokens/colour-keywords.mjs'
+
 /*
  * ================================================================================
  * DOES THE THEME REACH THE PIXEL? — QRPAGER-49A's collector
@@ -172,7 +177,7 @@ async function collect(
   width: number,
 ): Promise<Omit<Collected, 'browser'> & { userAgent: string }> {
   return page.evaluate(
-    ({ template: name, width: requestedWidth }) => {
+    ({ template: name, width: requestedWidth, keywords }) => {
       /*
        * ⚠ THE PROPERTY LIST, AND THE SPLIT IN IT IS THE TICKET'S OWN BOUNDARY. `NAMED` are the
        * properties `QRPAGER-49A` enumerates; `ALSO` are colour-bearing properties this file adds
@@ -241,8 +246,22 @@ async function collect(
        */
       const SVG_ONLY = ['fill', 'stroke', 'stop-color', 'flood-color', 'lighting-color']
 
-      const COLOUR =
-        /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*(?:\([^()]*\)[^()]*)*\)|#[0-9a-f]{3,8}\b|\b(?:transparent|currentcolor|canvas|canvastext|linktext|visitedtext|activetext|buttonface|buttontext|buttonborder|field|fieldtext|highlight|highlighttext|selecteditem|selecteditemtext|graytext|accentcolor|accentcolortext)\b/gi
+      /*
+       * ⚠ THE KEYWORD HALF IS PASSED IN, NOT WRITTEN HERE — QRPAGER-49C. This closure is
+       * serialised into the page and cannot import, which is why it used to carry its own list
+       * (`transparent|currentcolor|canvas|…`, eighteen of about forty). `page.evaluate` takes an
+       * argument, so the list is `colour-keywords.mjs`'s: the allowlist plus every colour keyword
+       * `scan-css` calls a literal. A keyword that SURVIVES into a computed value is a value the
+       * engine did not resolve, which is what this exists to say loudly.
+       */
+      const COLOUR = new RegExp(
+        '(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\([^()]*(?:\\([^()]*\\)[^()]*)*\\)' +
+          '|#[0-9a-f]{3,8}\\b' +
+          '|(?<![\\w-])(?:' +
+          keywords.join('|') +
+          ')(?![\\w-])',
+        'gi',
+      )
 
       const pathOf = (element: Element): string => {
         const parts: string[] = []
@@ -475,7 +494,11 @@ async function collect(
         userAgent: navigator.userAgent,
       }
     },
-    { template, width },
+    {
+      template,
+      width,
+      keywords: [...Object.keys(ALLOWED_COLOUR_KEYWORDS), ...COLOUR_KEYWORDS],
+    },
   )
 }
 

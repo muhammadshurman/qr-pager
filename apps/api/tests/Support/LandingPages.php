@@ -62,6 +62,46 @@ final class LandingPages
     }
 
     /**
+     * Every custom property the page READS — `var(--name…)` in its `<style>` block AND in every
+     * `style` attribute, sorted and unique.
+     *
+     * ⚠ THE ATTRIBUTES ARE `R-325`, CLOSED AT `QRPAGER-49C`. This used to read the `<style>`
+     * block only, so `<p style="background-color:var(--color-typo)">` was a reference with
+     * nothing behind it that NO guard saw: `scan-css` has no literal to find, the paint harness
+     * sees an unresolved `var()` compute to its initial value (the declared non-themed member),
+     * and the closure test did not read the attribute. Muhammad's ruling, 2026-11-14: *"a
+     * mistyped token name resolves to nothing and the element silently inherits, so the page
+     * looks almost right and nothing catches it."*
+     *
+     * ⚠ READ FROM THE RENDERED HTML, so Blade's `@style([...])` — which renders as exactly this
+     * attribute — is covered by the same read and needs no second one. The attribute value is
+     * entity-decoded first, because Blade escapes the quotes inside it.
+     *
+     * @return list<string>
+     */
+    public static function referencedTokens(string $html): array
+    {
+        $outsideStyle = preg_replace('/<style>.*?<\/style>/s', '', $html) ?? $html;
+        $sources = [self::styleBlock($html)];
+
+        $attributes = [];
+        preg_match_all('/(?<![\w-])style\s*=\s*(?:"([^"]*)"|\'([^\']*)\')/i', $outsideStyle, $attributes);
+
+        foreach ([...$attributes[1], ...$attributes[2]] as $value) {
+            $sources[] = html_entity_decode($value, ENT_QUOTES);
+        }
+
+        $found = [];
+        preg_match_all('/var\(\s*(--[a-z0-9-]+)/i', implode("\n", $sources), $found);
+
+        /** @var list<string> $names */
+        $names = array_values(array_unique($found[1]));
+        sort($names);
+
+        return $names;
+    }
+
+    /**
      * The declaration list on the root element, as `property => value`.
      *
      * @return array<string, string>

@@ -12,14 +12,16 @@
 # (`1` = the guard went red, `0` = it stayed green), so a guard that gains or loses a blind spot
 # fails this script rather than silently changing what the gate means.
 #
-# The one case where BOTH are green and the plant is still wrong -- an undefined token in an
-# inline style attribute -- was asked of a third guard, `TemplateTokenSetTest` (QRPAGER-46's
-# referenced-is-a-subset-of-emitted closure), on the expectation that it would go red. IT DID NOT:
-# `referencedTokens()` collects `var()` from the page's <style> element only, so a reference in a
-# style="" attribute is invisible to it. The first run of this script failed on exactly that
-# expectation (docs/tickets/QRPAGER-49B-disagreement-first-attempt.txt), and the case now asserts
-# what was MEASURED: all three guards are blind. That is `R-325`, proposed -- the same hole as
-# R-322 (inline style attributes), seen from the closure guard instead of the literal scanner.
+# The cases where BOTH are green and the plant is still wrong -- an undefined token in an inline
+# style attribute, written as `style=""` or as Blade's `@style([...])` -- are asked of a third
+# guard, `TemplateTokenSetTest` (QRPAGER-46's referenced-is-a-subset-of-emitted closure).
+#
+# HISTORY, KEPT BECAUSE IT IS THE POINT: at QRPAGER-49B this script EXPECTED the third guard to
+# go red and it did not -- `referencedTokens()` collected `var()` from the <style> element only
+# (docs/tickets/QRPAGER-49B-disagreement-first-attempt.txt), and the case was changed to assert
+# the measured state, ALL THREE BLIND, as R-325. QRPAGER-49C closed R-325 on Muhammad's ruling:
+# the closure reads style attributes, and `@style` renders as one. These two cases now assert the
+# third guard RED, so the division of labour is a measurement and not a claim.
 #
 # NOTHING IS KEPT: every plant is reverted and checked byte-for-byte against HEAD, the compiled
 # views are cleared after every edit and restore, and the demo restaurant is re-seeded on exit.
@@ -222,6 +224,7 @@ probe() {
     if [ "$got_scan" = 0 ] && [ "$got_harness" = 1 ]; then blind="SCAN-CSS IS BLIND"; fi
     if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ]; then blind="BOTH ARE BLIND"; fi
     if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ] && [ "$third_status" = "0" ]; then blind="ALL THREE ARE BLIND"; fi
+    if [ "$got_scan" = 0 ] && [ "$got_harness" = 0 ] && [ "$third_status" != "0" ] && [ "$third_status" != "-" ]; then blind="both blind; THE THIRD GUARD SEES IT"; fi
     if [ "$got_scan" = 1 ] && [ "$got_harness" = 1 ]; then blind="none: they agree"; fi
 
     say "  verdict    : as required — ${blind}"
@@ -267,9 +270,12 @@ probe "a literal in an SVG presentation attribute, which is not a style attribut
     "scan-css reads <style> bodies and style=\"\" values; fill= is neither"
 
 # ---- BOTH are blind, and a third guard is what sees it -----------------------------------
-probe "a token that is referenced and never emitted" \
-    "$TILE" prepend '<p style="background-color:var(--color-nonexistent)">proof</p>' 0 0 0 \
-    "no literal exists, so scan-css has nothing to read; an unresolved var() computes to the initial value, which is the declared non-themed member, so the harness sees nothing; and TemplateTokenSetTest reads var() from the <style> element only (R-325, proposed)"
+probe "a token that is referenced and never emitted, in a style attribute" \
+    "$TILE" prepend '<p style="background-color:var(--color-nonexistent)">proof</p>' 0 0 1 \
+    "no literal exists, so scan-css has nothing to read; an unresolved var() computes to the initial value, which is the declared non-themed member, so the harness sees nothing; TemplateTokenSetTest reads it from the attribute (R-325, closed at 49C)"
+probe "the same typo through Blade's @style directive, which renders as that attribute" \
+    "$TILE" prepend "<p @style(['background-color:var(--color-nonexistent)'])>proof</p>" 0 0 1 \
+    "the closure reads the RENDERED html, so @style needs no second reader"
 
 say ""
 say "================================================================================"
