@@ -907,9 +907,7 @@ export function checkStatedCounts(plan, dir = join(REPO, 'docs', 'tickets')) {
  * that quotes one must be able to point at it.
  */
 export function checkEveryEvidenceRow(plan, dir = join(REPO, 'docs', 'tickets')) {
-  const rows = plan
-    .split('\n')
-    .filter((line) => /^\|\s*`[^`]+`\s*\|/.test(line) && line.includes('docs/tickets/'))
+  const rows = plan.split('\n').filter((line) => /^\|\s*`[^`]+`\s*\|/.test(line) && line.includes('docs/tickets/'))
 
   let checked = 0
 
@@ -930,9 +928,7 @@ export function checkEveryEvidenceRow(plan, dir = join(REPO, 'docs', 'tickets'))
     // tickets, other shas and other rows, and reading those as claims would be noise.
     const cells = row.split('|')
     const figure = cells.length > 2 ? cells[2] : ''
-    const claimed = [...figure.matchAll(/([\d][\d,]{2,})\s+passed/g)].map((m) =>
-      Number(m[1].replace(/,/g, '')),
-    )
+    const claimed = [...figure.matchAll(/([\d][\d,]{2,})\s+passed/g)].map((m) => Number(m[1].replace(/,/g, '')))
 
     if (claimed.length === 0) continue
 
@@ -1013,7 +1009,10 @@ const SELF_TESTS = [
      */
     what: 'a §5 row with six cells that is not in the baseline (the 59th row)',
     run: () => {
-      const plan = readFileSync(PLAN, 'utf8').replace(/^(\| \*\*R-314\*\* \| [^\n]*?) \| /m, '$1 ')
+      const plan = readFileSync(PLAN, 'utf8').replace(
+        /^(\| \*\*R-314\*\* \| [^\n]*?) \| /m,
+        '$1 ',
+      )
       const before = failures.length
       checkRowShape(plan)
 
@@ -1027,7 +1026,7 @@ const SELF_TESTS = [
      * that comparison a frozen row could decay quietly, which is the failure QRPAGER-46's
      * baseline records a count to prevent one layer over.
      */
-    what: 'a baselined §5 row whose width CHANGED and is still malformed',
+    what: "a baselined §5 row whose width CHANGED and is still malformed",
     run: () => {
       const plan = readFileSync(PLAN, 'utf8').replace(
         /^\| \*\*R-296\*\* \|[^\n]*$/m,
