@@ -172,7 +172,10 @@ export function parseColour(input) {
 
   const text = input.trim().toLowerCase()
 
-  if (text === 'transparent') return { r: 0, g: 0, b: 0, a: 0 }
+  // An allowlisted keyword that has a computed form IS that form — never spelt out a second time.
+  const member = computedNonThemedMembers().find((entry) => entry.keyword === text)
+
+  if (member !== undefined) return parseColour(member.computed)
 
   const hex = /^#([0-9a-f]+)$/.exec(text)
 

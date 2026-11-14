@@ -19,3 +19,4 @@ export function computedNonThemedMembers(): {
 export function literalColourKeywords(
   text: string,
 ): { index: number; keyword: string; property: string }[]
+export function colourKeywordPattern(): string

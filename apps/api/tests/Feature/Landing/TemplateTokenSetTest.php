@@ -305,27 +305,29 @@ it('fills only tokens the contract knows, whoever calls it', function (): void {
  * The browser-level proof is `guard-disagreement-proof` cases 8 and 9 (the third guard now RED);
  * these are its cheap siblings, on the reader and on a REAL render with a typo planted in it.
  */
-it('reads var() from style attributes as well as from the style block, in either quote', function (): void {
+it('reads var() wherever it is written: block, either quote, unquoted, a presentation attribute, a second style element', function (): void {
     $html = '<style>a{color:var(--in-block)}</style>'
+        .'<style media="print">a{color:var(--in-print)}</style>'
         .'<p style="background:var(--in-double)">x</p>'
-        ."<p style='border-color:var( --in-single , #fff)'>y</p>";
+        ."<p style='border-color:var( --in-single , #fff)'>y</p>"
+        .'<p style=color:var(--in-unquoted)>z</p>'
+        .'<svg><path fill="var(--in-fill)"/></svg>';
 
-    expect(LandingPages::referencedTokens($html))->toBe(['--in-block', '--in-double', '--in-single']);
+    expect(LandingPages::referencedTokens($html))->toBe([
+        '--in-block', '--in-double', '--in-fill', '--in-print', '--in-single', '--in-unquoted',
+    ]);
 });
 
-it('reads an entity-encoded attribute, which is how Blade writes an @style value', function (): void {
-    // `@style(['color:var(--a)', 'margin:0' => true])` renders `style="color:var(--a); margin:0"`;
-    // a quote inside an echoed value arrives as &quot;, and the value is decoded before it is read.
-    expect(LandingPages::referencedTokens('<p style="font-family:&quot;x&quot;;color:var(--decoded)">'))
+it('reads an entity-encoded reference, and a name with an underscore whole', function (): void {
+    expect(LandingPages::referencedTokens('<p style="font-family:&quot;x&quot;;color:var(&#45;&#45;decoded)">'))
         ->toBe(['--decoded']);
+    // `var(--color-text_x)` must not be read as the emitted `--color-text`: that would report a typo as emitted.
+    expect(LandingPages::referencedTokens('<p style="color:var(--color-text_x)">'))->toBe(['--color-text_x']);
 });
 
-it('does not read data-style, or a [style=…] selector inside the style block, as an attribute', function (): void {
-    // (Prose that itself contains `style="…"` IS read: there is no HTML tokenizer, which is an
-    // accepted limit of the scanner too, R-326, and it errs towards reporting.)
-    expect(LandingPages::referencedTokens('<p data-style="color:var(--data)">x</p>'))->toBe([]);
-    expect(LandingPages::referencedTokens('<style>[style="x"]{color:var(--only-block)}</style>'))
-        ->toBe(['--only-block']);
+it('reads a var() the way the closure needs it: case-insensitively on the function, exactly on the name', function (): void {
+    expect(LandingPages::referencedTokens('<p style="color:VAR(--A-b)">'))->toBe(['--A-b']);
+    expect(LandingPages::referencedTokens('<p style="color:red">no references</p>'))->toBe([]);
 });
 
 it('REDDENS the closure for a typo planted in an attribute of a real render — the control', function (): void {

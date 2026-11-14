@@ -62,37 +62,46 @@ final class LandingPages
     }
 
     /**
-     * Every custom property the page READS — `var(--name…)` in its `<style>` block AND in every
-     * `style` attribute, sorted and unique.
+     * Every custom property the page READS — each `var(--name…)` anywhere in the served document —
+     * sorted and unique.
      *
-     * ⚠ THE ATTRIBUTES ARE `R-325`, CLOSED AT `QRPAGER-49C`. This used to read the `<style>`
-     * block only, so `<p style="background-color:var(--color-typo)">` was a reference with
-     * nothing behind it that NO guard saw: `scan-css` has no literal to find, the paint harness
-     * sees an unresolved `var()` compute to its initial value (the declared non-themed member),
-     * and the closure test did not read the attribute. Muhammad's ruling, 2026-11-14: *"a
-     * mistyped token name resolves to nothing and the element silently inherits, so the page
-     * looks almost right and nothing catches it."*
+     * ⚠ THE WHOLE DOCUMENT, AND THAT IS `R-325`, CLOSED AT `QRPAGER-49C`. This used to read the
+     * `<style>` block only, so `<p style="background-color:var(--color-typo)">` was a reference
+     * with nothing behind it that NO guard saw: `scan-css` has no literal to find, the paint
+     * harness sees an unresolved `var()` compute to its initial value (the declared non-themed
+     * member), and the closure test did not read the attribute. Muhammad's ruling: *"a mistyped
+     * token name resolves to nothing and the element silently inherits, so the page looks almost
+     * right and nothing catches it."*
      *
-     * ⚠ READ FROM THE RENDERED HTML, so Blade's `@style([...])` — which renders as exactly this
-     * attribute — is covered by the same read and needs no second one. The attribute value is
-     * entity-decoded first, because Blade escapes the quotes inside it.
+     * The first fix of it read `style=""` attributes specifically, and the `§11` QA round showed
+     * the shapes that leaves: an UNQUOTED value, `fill="var(--x)"` (a presentation attribute),
+     * a second `<style media="print">`. A `var()` is a reference wherever it is written, so this
+     * reads them all. It is the RENDERED html, so Blade's `@style([...])` — which renders as an
+     * ordinary `style="…"` attribute — needs no reader of its own.
+     *
+     * The document is entity-decoded first (`var(&#45;&#45;x)` is a reference to a browser). It
+     * errs toward REPORTING: a `var(` in a comment or a script is read too, which makes the
+     * closure red and a human look, never green.
+     *
+     * ⚠ KNOWN, STATED, NOT CLOSED: a custom property a template declares and reads LOCALLY
+     * (`style="--i:1;transition-delay:calc(var(--i)*1s)"`) reads as a reference to `--i`, which
+     * is not emitted, so the equality test would go red. No template does this today; the day one
+     * does, that is a ruling on whether locals are exempt, not a quiet exception here. The name
+     * class includes `_`, because `var(--color-text_x)` truncated to `--color-text` would report a
+     * typo as emitted.
      *
      * @return list<string>
      */
     public static function referencedTokens(string $html): array
     {
-        $outsideStyle = preg_replace('/<style>.*?<\/style>/s', '', $html) ?? $html;
-        $sources = [self::styleBlock($html)];
-
-        $attributes = [];
-        preg_match_all('/(?<![\w-])style\s*=\s*(?:"([^"]*)"|\'([^\']*)\')/i', $outsideStyle, $attributes);
-
-        foreach ([...$attributes[1], ...$attributes[2]] as $value) {
-            $sources[] = html_entity_decode($value, ENT_QUOTES);
-        }
-
         $found = [];
-        preg_match_all('/var\(\s*(--[a-z0-9-]+)/i', implode("\n", $sources), $found);
+        $matched = preg_match_all('/var\(\s*(--[A-Za-z0-9_-]+)/i', html_entity_decode($html, ENT_QUOTES), $found);
+
+        // A failed regex must be LOUD: `false` here would otherwise read as "no references", which
+        // is the closure passing for the wrong reason.
+        if ($matched === false || preg_last_error() !== PREG_NO_ERROR) {
+            throw new \RuntimeException('referencedTokens: the reference scan failed: '.preg_last_error_msg());
+        }
 
         /** @var list<string> $names */
         $names = array_values(array_unique($found[1]));

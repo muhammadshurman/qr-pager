@@ -217,6 +217,15 @@ probe() {
         local got_third=0
         [ "$third_status" -eq 0 ] || got_third=1
         [ "$got_third" = "$want_third" ] || fail "case ${CASE_NO} (${label}): the third guard said ${got_third}, expected ${want_third}"
+
+        # RED is not enough: a plant that breaks the suite for an unrelated reason (a Blade compile
+        # error, a fatal, a database that is down) is red too, and would read as "the closure caught
+        # it". The red must NAME the planted token (the §11 security round's L-3).
+        if [ "$want_third" = "1" ]; then
+            grep -qF -- '--color-nonexistent' "${WORK}/third-${CASE_NO}.txt" \
+                || { tail -20 "${WORK}/third-${CASE_NO}.txt" >&2; fail "case ${CASE_NO} (${label}): the third guard is red but its output never names --color-nonexistent, so it is not the closure that caught the plant"; }
+            say "  the third guard's red names the planted token: --color-nonexistent"
+        fi
     fi
 
     local blind="neither"

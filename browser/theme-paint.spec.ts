@@ -5,10 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import {
-  ALLOWED_COLOUR_KEYWORDS,
-  COLOUR_KEYWORDS,
-} from '../tools/design-tokens/colour-keywords.mjs'
+import { colourKeywordPattern } from '../tools/design-tokens/colour-keywords.mjs'
 
 /*
  * ================================================================================
@@ -177,7 +174,7 @@ async function collect(
   width: number,
 ): Promise<Omit<Collected, 'browser'> & { userAgent: string }> {
   return page.evaluate(
-    ({ template: name, width: requestedWidth, keywords }) => {
+    ({ template: name, width: requestedWidth, keywordPattern }) => {
       /*
        * ⚠ THE PROPERTY LIST, AND THE SPLIT IN IT IS THE TICKET'S OWN BOUNDARY. `NAMED` are the
        * properties `QRPAGER-49A` enumerates; `ALSO` are colour-bearing properties this file adds
@@ -249,17 +246,16 @@ async function collect(
       /*
        * ⚠ THE KEYWORD HALF IS PASSED IN, NOT WRITTEN HERE — QRPAGER-49C. This closure is
        * serialised into the page and cannot import, which is why it used to carry its own list
-       * (`transparent|currentcolor|canvas|…`, eighteen of about forty). `page.evaluate` takes an
-       * argument, so the list is `colour-keywords.mjs`'s: the allowlist plus every colour keyword
-       * `scan-css` calls a literal. A keyword that SURVIVES into a computed value is a value the
+       * (a hand-written alternation of eighteen of about forty). `page.evaluate` takes an
+       * argument, so the PATTERN is `colour-keywords.mjs`'s `colourKeywordPattern()`, built and
+       * unit-tested there: the allowlist plus every colour keyword `scan-css` calls a literal. A keyword that SURVIVES into a computed value is a value the
        * engine did not resolve, which is what this exists to say loudly.
        */
       const COLOUR = new RegExp(
         '(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\([^()]*(?:\\([^()]*\\)[^()]*)*\\)' +
           '|#[0-9a-f]{3,8}\\b' +
-          '|(?<![\\w-])(?:' +
-          keywords.join('|') +
-          ')(?![\\w-])',
+          '|' +
+          keywordPattern,
         'gi',
       )
 
@@ -497,7 +493,7 @@ async function collect(
     {
       template,
       width,
-      keywords: [...Object.keys(ALLOWED_COLOUR_KEYWORDS), ...COLOUR_KEYWORDS],
+      keywordPattern: colourKeywordPattern(),
     },
   )
 }
